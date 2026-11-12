@@ -53,6 +53,7 @@ object AccountTokenService {
 
   /** A new link of the account, sent to `email` (or, `shared`, shown to its creator to pass on,
     * the account's address as it is now); its id and the token, to be mailed or shown once.
+    * `unsent`: an invitation kept without a mail (V96), whose token nobody is shown.
     */
   def create(
       userId: Long,
@@ -61,15 +62,16 @@ object AccountTokenService {
       contestId: Option[Long] = None,
       role: Option[String] = None,
       createdBy: Option[Long] = None,
-      shared: Boolean = false
+      shared: Boolean = false,
+      unsent: Boolean = false
   )(implicit session: DBSession = AutoSession): (Long, String) = {
     val token = generate()
     val id = AccountTokenJdbc.create(userId, purpose, hash(token), LoginText.email(email), contestId, role, createdBy,
-      validSeconds(purpose), shared)
+      validSeconds(purpose), shared, unsent)
     logger.info(
       s"account_token_created purpose=$purpose tokenId=$id accountId=$userId" +
         createdBy.fold("")(c => s" byAccountId=$c") + contestId.fold("")(c => s" contestId=$c") +
-        role.fold("")(r => s" role=$r") + (if (shared) " shared=true" else ""))
+        role.fold("")(r => s" role=$r") + (if (shared) " shared=true" else "") + (if (unsent) " unsent=true" else ""))
     (id, token)
   }
 
@@ -294,7 +296,7 @@ object AccountTokenService {
     * and the rule checked again inside; the log line after the commit. The account as stored now.
     */
   def setPasswordByAdmin(actor: User, accountId: Long, contestId: Option[Long], passwordHash: String,
-      wikimediaSignIn: Boolean): Either[ShareLinkService.Refusal, User] = {
+      wikimediaSignIn: Boolean, comment: Option[String] = None): Either[ShareLinkService.Refusal, User] = {
     val result = User.quietTx { implicit session =>
       User.lockRow(accountId).toRight(ShareLinkService.NotInContest).flatMap { account =>
         ShareLinkService.mayCreate(actor, account, AccountTokenJdbc.PasswordReset, contestId, wikimediaSignIn)
@@ -302,7 +304,11 @@ object AccountTokenService {
           .map { _ =>
             // the invitations a shared link sent to the account's address would find
             val pending = AccountTokenJdbc.pendingInvitationsOf(accountId, account.emailLo)
-            applyProof(account, None, actor.id, pending, Some(passwordHash), emailProven = false)
+            val proof = applyProof(account, None, actor.id, pending, Some(passwordHash), emailProven = false)
+            // the account change log, in the same transaction (never the hash)
+            AccountChangeLog.record(actor, accountId, contestId, db.scalikejdbc.AccountChangeJdbc.Password,
+              comment = comment)
+            proof
           }
       }
     }

@@ -1,6 +1,6 @@
 @(
         adminUser: db.scalikejdbc.User,
-        importUserForm: Form[(String, String)],
+        importUserForm: Form[(String, String, Boolean)],
         contestId: Long)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 @import helper._
 
@@ -36,6 +36,10 @@
                     Symbol("_label") -> Messages("role"),
                     Symbol("id") -> "import-role",
                     Symbol("_help") -> Messages("coi.role.help"))
+
+                @* no mail unless ticked: the admin may share a link instead (users page) *@
+                @bs.checkbox(importUserForm("sendInvitation"), Symbol("_label") -> Messages("invitation.send.email"),
+                    Symbol("_help") -> Messages("invitation.send.email.help"))
 
                 <div class="form-actions">
                     @snippets.submit("import")

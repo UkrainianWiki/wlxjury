@@ -518,7 +518,7 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
         createContests(10)
         val admin = member("admin@example.com", 10L -> "admin")
         val failing = new UserService(mailer, app.configuration) {
-          override def createNewUser(user: User, formUser: User)(implicit messages: play.api.i18n.Messages,
+          override def createNewUser(user: User, formUser: User, sendInvitation: Boolean)(implicit messages: play.api.i18n.Messages,
                                                                 linkHost: services.LinkHost) =
             throw new IllegalArgumentException("something else")
         }

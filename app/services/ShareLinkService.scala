@@ -178,6 +178,9 @@ object ShareLinkService {
           val revoked = AccountTokenJdbc.revokeUnused(accountId, Seq(purpose), if (invitation) contestId else None)
           val (id, token) = AccountTokenService.create(accountId, purpose, account.emailLo, contestId, pendingRole,
             actor.id, shared = true)
+          // the account change log, in the same transaction: a link shown, never mailed
+          AccountChangeLog.record(actor, accountId, contestId, db.scalikejdbc.AccountChangeJdbc.ShareLink,
+            newValue = Some(purpose), mailSent = Some(false))
           AccountTokenJdbc.find(id).toRight(NotInContest).map(link => (link, token, account, revoked))
         }
       }

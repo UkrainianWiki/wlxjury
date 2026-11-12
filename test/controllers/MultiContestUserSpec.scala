@@ -69,7 +69,7 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
         val mail = mailer
 
         val added = userService(mail).createUser(
-          alice, User("", " Alice@Example.com", roles = Set("organizer")), Some(c20)
+          alice, User("", " Alice@Example.com", roles = Set("organizer")), Some(c20), sendInvitation = true
         )(messages)
 
         added.id === alice.id
@@ -298,7 +298,9 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
 
         status(result) === SEE_OTHER
         flash(result).get("users-added") must beSome(
-          "New accounts: 1. Existing accounts added to the contest: 1. Already in the contest: 1.")
+          // the new account's invitation not mailed: "Send an invitation email" unticked (2026-11-12)
+          "New accounts: 1. Existing accounts added to the contest: 1. Already in the contest: 1. " +
+            "Invitations not emailed, as chosen: 1. Send them with the envelope button, or create a link to share.")
       }
     }
   }

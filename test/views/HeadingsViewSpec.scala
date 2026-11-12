@@ -38,7 +38,7 @@ class HeadingsViewSpec extends PlaySpecification {
   "a page" should {
 
     "have its title as its one h1: an admin page's, with an h3's look" in {
-      val form = Form(tuple("userstoimport" -> text, "role" -> text))
+      val form = Form(tuple("userstoimport" -> text, "role" -> text, "sendInvitation" -> play.api.data.Forms.boolean))
       h1s(contentAsString(views.html.importUsers(admin, form, 1L))) must_== Seq("h3" -> "import")
     }
 

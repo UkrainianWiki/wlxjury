@@ -33,7 +33,10 @@
 
                 <div class="mb-2">
                     <a href="@routes.UserController.importUsers(contest.id)" class="btn btn-outline-secondary me-1">@Messages("mass.import")</a>
-                    <a href="@routes.UserController.editGreeting(contest.id)" class="btn btn-outline-secondary">@Messages("edit.greeting.message")</a>
+                    <a href="@routes.UserController.editGreeting(contest.id)" class="btn btn-outline-secondary me-1">@Messages("edit.greeting.message")</a>
+                    @for(id <- contest.id) {
+                        <a href="@routes.AccountChangeController.changes(id)" class="btn btn-outline-secondary account-changes-link">@Messages("account.changes.title")</a>
+                    }
                 </div>
             }
 
@@ -204,6 +207,11 @@
             @* what the add row's roles do (its select's description) *@
             @for(contest <- contestOpt) {
                 <p class="form-text" id="add-user-role-help">@Messages("coi.role.help")</p>
+                @* the add row's mail choice, outside the table (its form attribute submits it with the row):
+                   unticked by default, no mail; the admin may share a link instead *@
+                @bs.checkbox(editUserForm("sendInvitation"), Symbol("_label") -> Messages("invitation.send.email"),
+                    Symbol("form") -> "add-user", Symbol("id") -> "add-user-send-invitation",
+                    Symbol("_help") -> Messages("invitation.send.email.help"))
             }
 
             @* each account's latest invitation into the contest, live or of the last 30 days, with its
@@ -229,14 +237,14 @@
                         <tr class="invitation-@invitation.status.key">
                             <td>@if(invitation.email.nonEmpty) { @invitation.email } else { @account.flatMap(_.wikiAccount).getOrElse(account.map(_.fullname).getOrElse("")) }</td>
                             <td>@invitation.role.map(r => Messages("role." + r)).getOrElse(account.map(_.contestRoles.toSeq.sorted.map(r => Messages("role." + r)).mkString(", ")).getOrElse(""))</td>
-                            <td>@Messages(if (invitation.shared) "link.sent.shared" else "link.sent.mail")</td>
+                            <td>@Messages(invitation.sentKey)</td>
                             <td>@linkStatus(invitation)</td>
                             <td>
                                 @if(invitation.live) {
                                     @if(invitation.email.nonEmpty) {
                                         <form action="@routes.UserController.reinvite(invitation.userId, contestId)" method="post" class="d-inline">
                                             @helper.CSRF.formField
-                                            <button type="submit" class="btn btn-outline-secondary btn-sm reinvite">@Messages("invitation.send")</button>
+                                            <button type="submit" class="btn btn-outline-secondary btn-sm reinvite">@Messages(if (invitation.unsent) "invitation.send.now" else "invitation.send")</button>
                                         </form>
                                     }
                                     @if(shareable.contains(invitation.userId)) {

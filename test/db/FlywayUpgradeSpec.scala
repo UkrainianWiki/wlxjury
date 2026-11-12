@@ -615,4 +615,50 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+
+  /** V96's rollback SQL after reopen (CHANGELOG, the account change log): the live unsent
+    * invitations revoked first, since an older release would show one as mailed; the log dropped.
+    */
+  private val v96Rollback = Seq(
+    "UPDATE account_token SET revoked_at = NOW(3) WHERE unsent AND used_at IS NULL AND revoked_at IS NULL",
+    "ALTER TABLE account_token DROP COLUMN unsent, ALGORITHM = INSTANT",
+    "DROP TABLE account_change",
+    "DELETE FROM flyway_schema_history WHERE version = '96'")
+
+  "V96's account change log" should {
+    "mark every existing link sent, take an entry, rerun as a no-op, and roll back to the previous schema" in {
+      val before = versions.takeWhile(_ != "96").last
+      emptyDb("fw_v96_prev")
+      flyway("fw_v96_prev", production.copy(target = Some(before))).migrate()
+      emptyDb("fw_v96_back")
+      flyway("fw_v96_back", production.copy(target = Some(before))).migrate().success must beTrue
+      Using.resource(connect("fw_v96_back"))(c => run(c, Seq(
+        "INSERT INTO users (id, fullname, email) VALUES (1, 'A', 'a@example.com')",
+        "INSERT INTO account_token (id, user_id, purpose, token_hash, email, created_at, expires_at) " +
+          s"VALUES (1, 1, 'invitation', '${"a" * 64}', 'a@example.com', '2020-01-01 00:00:00', '2020-01-08 00:00:00')")))
+      flyway("fw_v96_back", production.copy(target = Some("96"))).migrate().success must beTrue
+      val once = schema("fw_v96_back")
+      val (stored, refused) = Using.resource(connect("fw_v96_back")) { c =>
+        run(c, Seq("INSERT INTO account_change (user_id, actor_id, contest_id, field, old_value, new_value, mail_sent) " +
+          "VALUES (1, 2, NULL, 'email', 'a@example.com', 'b@example.com', 1)"))
+        val refused = scala.util.Try(run(c, Seq(
+          "INSERT INTO account_change (user_id, actor_id, field) VALUES (1, 2, 'Email')"))).isFailure
+        (rows(c, "SELECT unsent FROM account_token")(_.getBoolean(1)), refused)
+      }
+      (stored === List(false)) and (refused must beTrue) and {
+        Using.resource(connect("fw_v96_back"))(c => run(c, Seq("DELETE FROM account_change")))
+        val reset = schema("fw_v96_back")
+        Using.resource(connect("fw_v96_back"))(c => run(c, statements("V96__Account_change_log.sql")))
+        schema("fw_v96_back") === reset
+      } and {
+        Using.resource(connect("fw_v96_back"))(c => run(c, v96Rollback))
+        def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+        (history("fw_v96_back").map(_.split(" \\| ")(1)) === upTo(before)) and
+          (tablesOnly(schema("fw_v96_back")) === tablesOnly(schema("fw_v96_prev"))) and
+          (flyway("fw_v96_back", production.copy(target = Some("96"))).migrate().success must beTrue) and
+          (tablesOnly(schema("fw_v96_back")) === tablesOnly(once))
+      }
+    }
+  }
+
 }

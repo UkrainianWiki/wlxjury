@@ -45,7 +45,7 @@ class LoginSpacesSpec extends PlaySpecification with PlayTestDb with AccountTest
     implicit val mat: Materializer = app.materializer
     call(userController(mail).importUsers(Some(contestId)),
       as(admin, Some(contestId))(FakeRequest(POST, s"/admin/importusers?contestId=$contestId"))
-        .withFormUrlEncodedBody("userstoimport" -> lines, "role" -> "jury").withCSRFToken)
+        .withFormUrlEncodedBody("sendInvitation" -> "true", "userstoimport" -> lines, "role" -> "jury").withCSRFToken)
   }
 
   /** The account the sign-in's session names on the next request ([[Secured.sessionUserOf]]). */
@@ -106,7 +106,7 @@ class LoginSpacesSpec extends PlaySpecification with PlayTestDb with AccountTest
         val admin = account("admin@example.com", Some(10), "admin", verified = true)
         val mail = new RecordingMail
 
-        val result = save(mail, admin, 10, "id" -> "0", "fullname" -> "Pasted", "email" -> s"${Nbsp}Pasted@Example.com\t$Nbsp",
+        val result = save(mail, admin, 10, "id" -> "0", "sendInvitation" -> "true", "fullname" -> "Pasted", "email" -> s"${Nbsp}Pasted@Example.com\t$Nbsp",
           "wikiAccount" -> s"${Nbsp}pasted_name ", "roles" -> "jury", "contest" -> "10")
 
         status(result) === SEE_OTHER
@@ -122,7 +122,7 @@ class LoginSpacesSpec extends PlaySpecification with PlayTestDb with AccountTest
         createContests(10)
         val admin = account("admin@example.com", Some(10), "admin", verified = true)
 
-        val result = save(new RecordingMail, admin, 10, "id" -> "0", "fullname" -> "Inner",
+        val result = save(new RecordingMail, admin, 10, "id" -> "0", "sendInvitation" -> "true", "fullname" -> "Inner",
           "email" -> s"inner${Nbsp}@example.com", "roles" -> "jury", "contest" -> "10")
 
         status(result) === BAD_REQUEST

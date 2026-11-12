@@ -14,7 +14,8 @@ import scala.concurrent.Future
 /** Security batch S2: one's own password or email changes only with the current password (N2),
   * a new email only once a link mailed to it is followed, without telling whether another
   * account has it (N7); one's own wiki account is read-only (another account's password:
-  * [[AdminSetPasswordSpec]]); admins change another's email only for an invitee without a password; wiki
+  * [[AdminSetPasswordSpec]]); admins and root change another's email directly, password or not
+  * (the maintainer, 2026-11-12: [[AccountOverrideSpec]]); wiki
   * accounts are valid, normalised, unique on change, and encoded in links (N4); sessions of an
   * older auth version are refused; deleted accounts and ambiguous wiki names sign in no one
   * (P14, P18, N4).
@@ -170,35 +171,42 @@ class OwnAccountSpec extends PlaySpecification with PlayTestDb with AccountTestS
   "another account [S-09]" should {
     // its password, set by an admin or root where a link to share would be allowed: AdminSetPasswordSpec
 
-    "have its email changed by an admin only while it is an invitee without a password, which gets a new invitation" in {
+    "have its email changed by an admin directly, password or not; an invitee's new invitation only if asked for" in {
       testDbApp { implicit app =>
         createContests(10)
         val admin = account("admin@example.com", Some(10), "admin", verified = true)
         val juror = account("juror@example.com", Some(10), "jury", password = Some("pw-juror"))
         val mail = new RecordingMail
 
-        val refused = save(mail, admin, Some(10), other(juror, 10, "jury", "email" -> "admins@example.com"): _*)
-        status(refused) === BAD_REQUEST
-        contentAsString(refused) must contain("can only be changed by its owner")
-        reloaded(juror).email === "juror@example.com"
+        // the maintainer's decision of 2026-11-12: no longer "only by its owner"
+        status(save(mail, admin, Some(10), other(juror, 10, "jury", "email" -> "fixed@example.com"): _*)) === SEE_OTHER
+        reloaded(juror).email === "fixed@example.com"
+        reloaded(juror).emailVerified must beFalse
+        User.login("fixed@example.com", "pw-juror") must beSome
+        mail.sent must beEmpty // its former address was unverified: no notice
 
         // the add row with a typo; the invitation to it is replaced by one to the fixed address
-        status(save(mail, admin, Some(10), "id" -> "0", "fullname" -> "Typo", "email" -> "tpyo@example.com",
-          "roles" -> "jury", "contest" -> "10")) === SEE_OTHER
+        status(save(mail, admin, Some(10), "id" -> "0", "sendInvitation" -> "true", "fullname" -> "Typo",
+          "email" -> "tpyo@example.com", "roles" -> "jury", "contest" -> "10")) === SEE_OTHER
         val typoToken = mail.lastToken
         val invitee = User.findByEmail("tpyo@example.com").head
-        val fixed = save(mail, admin, Some(10), other(invitee.copy(contestId = Some(10)), 10, "jury",
+        val unticked = save(mail, admin, Some(10), other(invitee.copy(contestId = Some(10)), 10, "jury",
           "email" -> "typo@example.com"): _*)
-        status(fixed) === SEE_OTHER
+        status(unticked) === SEE_OTHER
+        flash(unticked).get("users-added") must beSome(contain("No invitation was emailed"))
         reloaded(invitee).email === "typo@example.com"
         reloaded(invitee).emailVerified must beFalse
-        mail.recipients.last === "typo@example.com"
+        mail.recipients === Seq("tpyo@example.com")
         AccountTokenService.check(typoToken, AccountTokenJdbc.SetsPassword) must beLeft
+
+        status(save(mail, admin, Some(10), other(reloaded(invitee).copy(contestId = Some(10)), 10, "jury",
+          "sendInvitation" -> "true"): _*)) === SEE_OTHER
+        mail.recipients.last === "typo@example.com"
         AccountTokenService.check(mail.lastToken, AccountTokenJdbc.SetsPassword) must beRight
       }
     }
 
-    "have its email changed by root through a link mailed to the new address" in {
+    "have its email changed by root directly, keeping its password, with a notice to a verified former address" in {
       testDbApp { implicit app =>
         createContests(10)
         val root = account("root@example.com", None, "no", root = true, verified = true)
@@ -206,10 +214,10 @@ class OwnAccountSpec extends PlaySpecification with PlayTestDb with AccountTestS
         val mail = new RecordingMail
 
         status(save(mail, root, None, other(juror, 10, "jury", "email" -> "moved@example.com"): _*)) === SEE_OTHER
-        reloaded(juror).email === "juror@example.com"
-        mail.recipients === Seq("moved@example.com")
-        status(confirm(mail.lastToken)) === OK
         reloaded(juror).email === "moved@example.com"
+        User.login("moved@example.com", "pw-juror") must beSome
+        mail.recipients === Seq("juror@example.com")
+        mail.sent.last._4 must not(contain("http"))
       }
     }
 

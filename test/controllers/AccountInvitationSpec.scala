@@ -36,7 +36,7 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
   private def add(mail: RecordingMail, admin: User, contestId: Long, email: String, role: String = "jury")(implicit
       app: Application
   ): Future[Result] =
-    save(mail, admin, contestId, "id" -> "0", "fullname" -> "Person", "email" -> email, "roles" -> role)
+    save(mail, admin, contestId, "id" -> "0", "sendInvitation" -> "true", "fullname" -> "Person", "email" -> email, "roles" -> role)
 
   private def importUsers(mail: RecordingMail, admin: User, contestId: Long, lines: String, role: String = "jury")(
       implicit app: Application
@@ -44,7 +44,7 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
     implicit val mat: Materializer = app.materializer
     call(userController(mail).importUsers(Some(contestId)),
       as(admin, Some(contestId))(FakeRequest(POST, s"/admin/importusers?contestId=$contestId"))
-        .withFormUrlEncodedBody("userstoimport" -> lines, "role" -> role).withCSRFToken)
+        .withFormUrlEncodedBody("sendInvitation" -> "true", "userstoimport" -> lines, "role" -> role).withCSRFToken)
   }
 
   private def invitationPage(token: String)(implicit app: Application): Future[Result] = {
@@ -263,7 +263,7 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
         // a hand-made request: the users page always sends `contest`
         val added = call(userController(mail).saveUser(),
           as(root, Some(10))(FakeRequest(POST, "/users/save"))
-            .withFormUrlEncodedBody("id" -> "0", "fullname" -> "Person", "email" -> "victim@example.com",
+            .withFormUrlEncodedBody("id" -> "0", "sendInvitation" -> "true", "fullname" -> "Person", "email" -> "victim@example.com",
               "roles" -> "jury").withCSRFToken)
         status(added) === SEE_OTHER
         flash(added).get("users-added") must beSome(contain("Invited (role given once they accept): 1."))
@@ -288,7 +288,7 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
 
         def addTo(contest: String, email: String) = call(userController(mail).saveUser(),
           as(root, Some(10))(FakeRequest(POST, "/users/save"))
-            .withFormUrlEncodedBody("contest" -> contest, "id" -> "0", "fullname" -> "Person",
+            .withFormUrlEncodedBody("contest" -> contest, "id" -> "0", "sendInvitation" -> "true", "fullname" -> "Person",
               "email" -> email, "roles" -> "jury").withCSRFToken)
         val refused = addTo("999", "victim@example.com")
         status(refused) === NOT_FOUND
@@ -363,8 +363,9 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
         val admin = account("admin@example.com", Some(10), "admin", verified = true)
         val member = account("member@example.com", Some(10), "no")
         val mail = new RecordingMail
+        // "Send an invitation email" ticked (2026-11-12: the role's invitation is mailed only then)
         def form(role: String) = Seq("id" -> member.getId.toString, "fullname" -> member.fullname,
-          "email" -> member.email, "roles" -> role)
+          "email" -> member.email, "roles" -> role, "sendInvitation" -> "true")
 
         val result = save(mail, admin, 10, form("jury"): _*)
         status(result) === SEE_OTHER
@@ -579,18 +580,19 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
         val admin = account("admin@example.com", Some(10), "admin", verified = true)
         val failing = new services.UserService(new RecordingMail, app.configuration) {
           override protected def mailInBackground(send: => Unit): Unit = send
-          override def addToContest(creator: User, formUser: User, contestOpt: Option[org.intracer.wmua.ContestJury])(
+          override def addToContest(creator: User, formUser: User, contestOpt: Option[org.intracer.wmua.ContestJury],
+              sendInvitation: Boolean)(
               implicit messages: play.api.i18n.Messages, linkHost: services.LinkHost): services.UserService.Added =
             if (formUser.email == "broken@example.com")
               throw new java.sql.SQLException("Duplicate entry 'broken@example.com' for key 'email'")
-            else super.addToContest(creator, formUser, contestOpt)
+            else super.addToContest(creator, formUser, contestOpt, sendInvitation)
         }
         val controller = new UserController(app.injector.instanceOf[play.api.mvc.ControllerComponents], failing,
           app.injector.instanceOf[modules.BlockingExecutionContext])
         val (result, log) = accountLog {
           val r = call(controller.importUsers(Some(10L)),
             as(admin, Some(10L))(FakeRequest(POST, "/admin/importusers?contestId=10"))
-              .withFormUrlEncodedBody("userstoimport" -> "first@example.com\nbroken@example.com\nlast@example.com",
+              .withFormUrlEncodedBody("sendInvitation" -> "true", "userstoimport" -> "first@example.com\nbroken@example.com\nlast@example.com",
                 "role" -> "jury").withCSRFToken)
           status(r)
           r

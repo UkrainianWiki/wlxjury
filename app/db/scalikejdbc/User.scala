@@ -602,7 +602,11 @@ object User extends CRUDMapper[User] {
     if (ids.isEmpty) Nil else findAllBy(sqls.in(u.id, ids)).sortBy(_.id)
   }
 
-  def countByEmail(id: Long, email: String): Long =
+  /** The accounts with these ids, deleted ones too (the change log names them). */
+  def findByIds(ids: Seq[Long]): Seq[User] =
+    if (ids.isEmpty) Nil else findAllBy(sqls.in(u.id, ids.distinct))
+
+  def countByEmail(id: Long, email: String)(implicit session: DBSession = autoSession): Long =
     countBy(
       sqls
         .eq(column.email, email)
@@ -708,7 +712,7 @@ object User extends CRUDMapper[User] {
       fullname: String,
       lang: Option[String],
       sort: Option[Int]
-  ): Unit =
+  )(implicit session: DBSession = autoSession): Unit =
     updateById(id)
       .withAttributes(
         "fullname" -> fullname,
@@ -796,7 +800,8 @@ object User extends CRUDMapper[User] {
     * already was as asked (another root's change came first), nothing written. A removal always
     * leaves a root: the actor, an active root other than the target, re-read under its lock.
     */
-  def setRootLocked(actorId: Long, targetId: Long, root: Boolean): Either[String, Boolean] =
+  def setRootLocked(actorId: Long, targetId: Long, root: Boolean,
+      onChanged: DBSession => Unit = _ => ()): Either[String, Boolean] =
     WriteTx.write { implicit session =>
       val rows = sql"""SELECT id, is_root, deleted_at IS NULL AS active, password IS NOT NULL AS has_password,
                          email_verified_at IS NOT NULL AS verified
@@ -815,6 +820,8 @@ object User extends CRUDMapper[User] {
           Left("root.needs.verified.email")
         case Some(_) =>
           sql"UPDATE users SET is_root = $root WHERE id = $targetId".update.apply()
+          // the caller's account change log entry, in this transaction
+          onChanged(session)
           Right(true)
       }
     }
