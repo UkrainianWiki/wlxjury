@@ -36,10 +36,15 @@ class VoteVotedAtSpec extends Specification with ThrownExpectations with TestDb 
     Fixture(contest, juror, round)
   }
 
+  /** An instant from seconds since the epoch (UNIX_TIMESTAMP): zone-independent, unlike a JDBC
+    * timestamp read (the session's wall time taken in the JVM's zone, VoteJdbc.votedAtEpoch). */
+  private def instant(seconds: java.math.BigDecimal): Instant = Instant.ofEpochMilli(seconds.movePointRight(3).longValueExact())
+
   private def votedAt(pageId: Long, f: Fixture): Option[Instant] =
     DB.readOnly { implicit s =>
-      sql"SELECT voted_at FROM vote WHERE page_id = $pageId AND jury_id = ${f.juror.getId} AND round_id = ${f.round.getId}"
-        .map(_.timestampOpt(1).map(_.toInstant)).single().flatten
+      sql"""SELECT UNIX_TIMESTAMP(voted_at) FROM vote
+            WHERE page_id = $pageId AND jury_id = ${f.juror.getId} AND round_id = ${f.round.getId}"""
+        .map(_.bigDecimalOpt(1).map(instant)).single().flatten
     }
 
   private def setVotedAt(pageId: Long, f: Fixture, at: Option[String]): Unit =
@@ -48,11 +53,11 @@ class VoteVotedAtSpec extends Specification with ThrownExpectations with TestDb 
       sql"UPDATE vote SET voted_at = $value WHERE page_id = $pageId AND jury_id = ${f.juror.getId}".update()
     }
 
-  private def dbNow: Instant = DB.readOnly(implicit s => sql"SELECT NOW(3)".map(_.timestamp(1).toInstant).single().get)
+  private def dbNow: Instant = DB.readOnly(implicit s => sql"SELECT UNIX_TIMESTAMP(NOW(3))".map(rs => instant(rs.bigDecimal(1))).single().get)
 
   private val old = "2026-01-02 03:04:05.678"
   private def oldInstant: Instant = DB.readOnly { implicit s =>
-    sql"SELECT TIMESTAMP '2026-01-02 03:04:05.678'".map(_.timestamp(1).toInstant).single().get
+    sql"SELECT UNIX_TIMESTAMP(TIMESTAMP '2026-01-02 03:04:05.678')".map(rs => instant(rs.bigDecimal(1))).single().get
   }
 
   "a juror's vote" should {
@@ -135,6 +140,43 @@ class VoteVotedAtSpec extends Specification with ThrownExpectations with TestDb 
     }
   }
 
+  "a vote's time" should {
+
+    /** `body` on one connection in the session time zone `zone`, set back after it (pooled). */
+    def inZone[A](zone: String)(body: DBSession => A): A =
+      DB.localTx { implicit s =>
+        SQL(s"SET time_zone = '$zone'").execute()
+        try body(s)
+        finally sql"SET time_zone = @@global.time_zone".execute()
+      }
+
+    "read back as the instant written, whatever the session's and the JVM's time zones" in {
+      val f = fixture()
+      val instant = Instant.parse("2026-11-12T14:05:00.123Z")
+      selectionDao.batchInsert(Seq(Vote(1L, f.juror.getId, f.round.getId, 3), Vote(2L, f.juror.getId, f.round.getId, 4)))
+      // written as wall time in +05:00: 19:05:00.123 there is 14:05:00.123Z
+      inZone("+05:00") { implicit s =>
+        sql"UPDATE vote SET voted_at = '2026-11-12 19:05:00.123' WHERE page_id = 1".update()
+      }
+      // given to batchInsert in a +05:00 session, read in -03:00
+      val given = instant.plusSeconds(3600).atZone(ZoneId.of("Asia/Tokyo"))
+      inZone("+05:00") { implicit s =>
+        VoteJdbc.batchInsert(Seq(Vote(3L, f.juror.getId, f.round.getId, 2, votedAt = Some(given))))
+      }
+      def read(zone: String) = inZone(zone) { implicit s =>
+        // the finders' select (VoteJdbc.singleSelectQuery)
+        val finder = VoteJdbc.where("pageId" -> 1L, "juryId" -> f.juror.getId, "roundId" -> f.round.getId).apply()(s)
+          .headOption.flatMap(_.votedAt).map(_.toInstant)
+        val list = db.scalikejdbc.rewrite.ImageDbNew.SelectionQuery(userId = Some(f.juror.getId), roundId = f.round.id,
+          order = Seq("s.page_id" -> 1)).list()(s).flatMap(_.votes).map(v => v.pageId -> v.votedAt.map(_.toInstant)).toMap
+        val epoch = sql"SELECT UNIX_TIMESTAMP(voted_at) FROM vote WHERE page_id = 3".map(_.bigDecimal(1)).single().get
+        (finder, list(1L), list(3L), Instant.ofEpochMilli(epoch.movePointRight(3).longValueExact()))
+      }
+      val expected = (Some(instant), Some(instant), Some(given.toInstant), given.toInstant)
+      (read("+05:00") === expected) and (read("-03:00") === expected) and (read("+00:00") === expected)
+    }
+  }
+
   "a vote moved aside and back" should {
     "keep its time" in {
       val f = fixture()
@@ -145,7 +187,7 @@ class VoteVotedAtSpec extends Specification with ThrownExpectations with TestDb 
         ImageJdbc.moveVotesAsideInRound(f.round.getId, Seq(1L))
       }
       val aside = DB.readOnly { implicit s =>
-        sql"SELECT voted_at FROM vote_aside WHERE page_id = 1".map(_.timestampOpt(1).map(_.toInstant)).single().flatten
+        sql"SELECT UNIX_TIMESTAMP(voted_at) FROM vote_aside WHERE page_id = 1".map(_.bigDecimalOpt(1).map(instant)).single().flatten
       }
       DB.localTx { implicit s =>
         RoundWrites.lock(Seq(f.round.getId))
