@@ -4,6 +4,7 @@ import db.scalikejdbc._
 import db.scalikejdbc.rewrite.ImageDbNew.Limit
 import org.intracer.wmua.{ContestJury, Image, Vote}
 import org.jsoup.Jsoup
+import org.specs2.matcher.ThrownExpectations
 import play.api.Application
 import play.api.mvc.Result
 import play.api.test.CSRFTokenHelper._
@@ -17,9 +18,10 @@ import scala.jdk.CollectionConverters._
 /** A juror's gallery by vote time ([[ListOrder.LatestVote]], [[ListOrder.OldestVote]], V97's
   * `vote.voted_at`): the timed votes by their time, the untimed ones (voted before V97) older than
   * any timed one, the unrated last, ties in file order; the same order on every page, in the
-  * large view's places and through the router; the order menu's entries per tab.
+  * large view's places and through the router; the order menu's entries per tab. Thrown
+  * expectations: the helpers' status checks count.
   */
-class VoteTimeOrderSpec extends PlaySpecification with PlayTestDb {
+class VoteTimeOrderSpec extends PlaySpecification with ThrownExpectations with PlayTestDb {
 
   sequential
 
@@ -222,6 +224,29 @@ class VoteTimeOrderSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "refuse an organiser of another contest, and a non-juror of the round, as without the order" in {
+      testDbApp { implicit app =>
+        val f = fixture(Round.binaryRound, binaryRates)
+        val (_, organizer) = others(f)
+        val elsewhere = contestDao.create(None, "Wiki Loves Earth", 2026, "Ukraine")
+        val stranger = userDao.create(User("Stranger", "stranger@example.com", None, Set("organizer"), contestId = elsewhere.id))
+        // a juror of the contest, not of the round
+        val outsider = userDao.create(User("Outsider", "outsider@example.com", None, Set("jury"), contestId = f.contest.id))
+        def both(viewer: User, asUser: Long) = {
+          val path = s"/gallery/round/${f.round.getId}/user/$asUser/page/1"
+          val plain = getAs(path, viewer)
+          val ordered = getAs(path + "?sort=latest-vote", viewer)
+          (status(plain), status(ordered), contentAsString(ordered).contains("gallerybox"))
+        }
+        val (strangerPlain, strangerOrdered, strangerFiles) = both(stranger, f.juror.getId)
+        val (outsiderPlain, outsiderOrdered, outsiderFiles) = both(organizer, outsider.getId)
+        val (selfPlain, selfOrdered, selfFiles) = both(f.juror, outsider.getId)
+        (strangerPlain must not(beEqualTo(OK))) and (strangerOrdered === strangerPlain) and (strangerFiles must beFalse) and
+          (outsiderPlain === NOT_FOUND) and (outsiderOrdered === outsiderPlain) and (outsiderFiles must beFalse) and
+          (selfPlain must not(beEqualTo(OK))) and (selfOrdered === selfPlain) and (selfFiles must beFalse)
+      }
+    }
+
     "leave all the jurors' votes together without an order by vote time" in {
       testDbApp { implicit app =>
         val f = fixture(Round.binaryRound, binaryRates)
@@ -244,9 +269,10 @@ class VoteTimeOrderSpec extends PlaySpecification with PlayTestDb {
         val f = fixture(Round.binaryRound, binaryRates)
         val byTime = page(gallery(f, "?sort=latest-vote"), f)
         def votedAt(html: String) = """data-voted-at="([^"]*)"""".r.findAllMatchIn(html).map(_.group(1)).toList
-        // latest first: 1, 5, 8, 3 timed, 4 and 7 untimed; the unrated 2 and 6 have none
-        (votedAt(byTime) === List(iso(5), iso(5), iso(3), iso(1), "", "")) and
-          ("""data-voted-none="time not recorded"""".r.findAllMatchIn(byTime).size === 2) and
+        // latest first: 1, 5, 8, 3 timed, 4 and 7 untimed, the unrated 2 and 6 none (every tile has
+        // the attribute, so an in-page vote can show its time)
+        (votedAt(byTime) === List(iso(5), iso(5), iso(3), iso(1), "", "", "", "")) and
+          ("""data-voted-none="Time not recorded"""".r.findAllMatchIn(byTime).size === 2) and
           (votedAt(page(gallery(f, "?sort=file"), f)) must beEmpty) and
           (votedAt(page(gallery(f, "?sort=rate"), f)) must beEmpty)
       }
@@ -260,8 +286,8 @@ class VoteTimeOrderSpec extends PlaySpecification with PlayTestDb {
         def times(h: String) = """<time class="wlx-vote-time" datetime="([^"]*)"""".r.findAllMatchIn(h).map(_.group(1)).toList
         val byTime = html("?sort=oldest-vote")
         (times(byTime) === List(iso(1), iso(3), iso(5), iso(5))) and
-          (byTime must contain("time not recorded")) and
-          (times(html("?sort=rate")) must beEmpty) and (html("?sort=rate") must not(contain("time not recorded")))
+          (byTime must contain("Time not recorded")) and
+          (times(html("?sort=rate")) must beEmpty) and (html("?sort=rate") must not(contain("Time not recorded")))
       }
     }
 
@@ -281,7 +307,7 @@ class VoteTimeOrderSpec extends PlaySpecification with PlayTestDb {
         val asOrganizer = large(organizer, f.juror.getId, 8L, "?sort=latest-vote")
         val all = large(organizer, 0L, 1L, "")
         (own must beMatching(s"""(?s).*Voted\\s*<time class="wlx-vote-time" datetime="${java.util.regex.Pattern.quote(iso(5))}">.*""")) and
-          (ownUntimed must contain("""<span class="wlx-vote-time-none text-body-secondary">time not recorded</span>""")) and
+          (ownUntimed must contain("""<span class="wlx-vote-time-none text-body-secondary">Time not recorded</span>""")) and
           (ownUnrated must not(contain("wlx-large-vote-time"))) and
           (asOrganizer must contain(s"""<time class="wlx-vote-time" datetime="${iso(3)}">""")) and
           (all must not(contain("wlx-large-vote-time"))) and (all must not(contain("wlx-vote-time")))

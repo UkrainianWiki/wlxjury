@@ -202,7 +202,7 @@ added count as older than any other. Your browser remembers your choice; on anot
 browser, choose it again.
 
 In these two orders each file you voted on shows when you voted, in your own time zone (for
-example "12 Nov, 14:05"); a vote from before these options says **time not recorded**. The
+example "12 Nov, 14:05"); a vote from before these options says **Time not recorded**. The
 large view shows the time of your vote on the file in every order.
 
 On the **Selected** and **Rejected** tabs of a yes/no round the menu has **In file order**,

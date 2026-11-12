@@ -32,6 +32,10 @@ describe("format", () => {
         expect(uk).toMatch(/лист/);
     });
 
+    test("adds the year when asked, for the tooltip", () => {
+        expect(format("2026-11-12T14:05:00Z", "en-GB", "UTC", now, true)).toBe("12 Nov 2026, 14:05");
+    });
+
     test("gives null for no valid time", () => {
         expect(format("", "en", "UTC", now)).toBeNull();
         expect(format("not a time", "en", "UTC", now)).toBeNull();
@@ -46,13 +50,15 @@ describe("localize", () => {
         document.body.innerHTML =
             '<time class="wlx-vote-time" datetime="2026-11-12T14:05:00Z">2026-11-12T14:05:00Z</time>' +
             '<time class="wlx-vote-time" datetime="nonsense">nonsense</time>' +
-            '<span class="wlx-vote-time-none">time not recorded</span>';
+            '<span class="wlx-vote-time-none">Time not recorded</span>';
         localize(document);
         const [good, bad] = document.querySelectorAll("time");
         expect(good.textContent).toBe(format("2026-11-12T14:05:00Z", "en"));
         expect(good.textContent).not.toBe("2026-11-12T14:05:00Z");
-        expect(good.title).toBe("2026-11-12T14:05:00Z");
+        // the tooltip: local, with the year, not the raw UTC value
+        expect(good.title).toBe(format("2026-11-12T14:05:00Z", "en", undefined, undefined, true));
+        expect(good.title).toMatch(/2026/);
         expect(bad.textContent).toBe("nonsense");
-        expect(document.querySelector(".wlx-vote-time-none").textContent).toBe("time not recorded");
+        expect(document.querySelector(".wlx-vote-time-none").textContent).toBe("Time not recorded");
     });
 });

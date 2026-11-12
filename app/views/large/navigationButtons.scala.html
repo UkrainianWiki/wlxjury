@@ -139,5 +139,8 @@
 @* the time of one juror's vote on the file (theirs, or as the organisers view it; never all the
    jurors' votes together), in any order *@
 @if(list.showsVoteTime && files(index).rate != 0) {
-    <div class="wlx-large-vote-time small mt-1">@Messages("vote.time.voted") @snippets.voteTime(files(index).votes.headOption.flatMap(_.votedAt))</div>
+    @* "Voted" only before a time; a vote without one says just that none was recorded *@
+    @defining(files(index).votes.headOption.flatMap(_.votedAt)) { votedAt =>
+    <div class="wlx-large-vote-time small mt-1">@if(votedAt.nonEmpty) {@Messages("vote.time.voted") }@snippets.voteTime(votedAt)</div>
+    }
 }

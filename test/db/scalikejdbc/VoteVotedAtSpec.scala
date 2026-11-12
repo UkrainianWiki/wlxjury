@@ -1,6 +1,7 @@
 package db.scalikejdbc
 
 import org.intracer.wmua.{ContestJury, CriteriaRate, Image, Vote}
+import org.specs2.matcher.ThrownExpectations
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
 import scalikejdbc._
@@ -14,9 +15,9 @@ import java.time.{Instant, ZoneId, ZonedDateTime}
   * back ([[ImageJdbc.moveVotesAsideInRound]]).
   *
   * Service-level: the writes open their own transactions, so the tables are truncated before
-  * each example (CLAUDE.md).
+  * each example (CLAUDE.md). Thrown expectations: a check in the middle of an example counts.
   */
-class VoteVotedAtSpec extends Specification with TestDb with BeforeAll with BeforeEach {
+class VoteVotedAtSpec extends Specification with ThrownExpectations with TestDb with BeforeAll with BeforeEach {
 
   sequential
 

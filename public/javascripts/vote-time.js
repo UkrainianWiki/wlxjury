@@ -14,21 +14,22 @@
   }
 
   /** The time `iso` (ISO 8601) as the page shows it, in `locale` and `timeZone` (the browser's
-    * if none), with the year if it isn't `now`'s; null for no valid time. */
-  function format(iso, locale, timeZone, now) {
+    * if none), with the year if it isn't `now`'s, or always (`withYear`: the tooltip's); null for
+    * no valid time. */
+  function format(iso, locale, timeZone, now, withYear) {
     var date = new Date(iso);
     if (!iso || isNaN(date.getTime())) return null;
     var options = { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
     if (timeZone) options.timeZone = timeZone;
     try {
-      if (yearOf(date, timeZone) !== yearOf(now || new Date(), timeZone)) options.year = 'numeric';
+      if (withYear || yearOf(date, timeZone) !== yearOf(now || new Date(), timeZone)) options.year = 'numeric';
       return new Intl.DateTimeFormat(locale || undefined, options).format(date);
     } catch (e) {
       return null; // an unknown locale or time zone: the server's text stays
     }
   }
 
-  /** Formats every vote time under `root` in the page's language; the UTC value stays as its title. */
+  /** Formats every vote time under `root` in the page's language, its tooltip the same with the year. */
   function localize(root) {
     var lang = document.documentElement.getAttribute('lang') || undefined;
     Array.prototype.forEach.call(root.querySelectorAll('time.wlx-vote-time[datetime]'), function (el) {
@@ -36,7 +37,7 @@
       var text = format(iso, lang);
       if (text) {
         el.textContent = text;
-        el.title = iso;
+        el.title = format(iso, lang, undefined, undefined, true);
       }
     });
   }
