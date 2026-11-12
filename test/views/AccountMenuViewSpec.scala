@@ -52,6 +52,10 @@ class AccountMenuViewSpec extends PlaySpecification with PlayTestDb with Account
           shows(ofJuror, "Signed in as", "Jana Juror", "JanaWiki", "juror@example.com") and
           (ofJuror.select(".navbar-account-role").text === "Role: Juror") and
           (ofJuror.select(".navbar-account-wiki .visually-hidden").text === "Wiki account:") and
+          // the role first, then which login
+          (ofJuror.select(".navbar-account-role, .navbar-account-wiki, .navbar-account-email").eachAttr("class")
+            .toArray.toSeq.map(_.toString.split(' ').filter(_.startsWith("navbar-account-")).mkString) ===
+            Seq("navbar-account-role", "navbar-account-wiki", "navbar-account-email")) and
           hides(ofJuror, other.fullname, "OlgaWiki", other.email, "Admin") and
           shows(ofAdmin, "Adam Admin", "admin@example.com") and
           (ofAdmin.select(".navbar-account-role").text === "Role: Admin") and

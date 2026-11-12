@@ -61,23 +61,24 @@
             </a>
             <ul class="dropdown-menu dropdown-menu-end">
                 @* who is signed in (one person may have an account per contest or year): the signed-in
-                   account's own name, wiki login, sign-in email and role in the current contest (root:
-                   root), never the contest. Text, not a menu item: Bootstrap's arrow keys move between
+                   account's own name, role in the current contest (root: root), then wiki login and sign-in
+                   email; never the contest. Text, not a menu item: Bootstrap's arrow keys move between
                    .dropdown-item only, so they skip it; screen readers read it as the list's first item *@
                 <li>
                     <div class="dropdown-item-text navbar-account" id="navbar-account">
                         <div class="small text-body-secondary">@Messages("signed.in.as")</div>
                         <div class="fw-semibold text-break">@user.fullname</div>
+                        @* the role first, then which login (an admin's suggestion) *@
+                        @defining((if (user.isRoot || user.hasRole(db.scalikejdbc.User.ROOT_ROLE)) Seq(db.scalikejdbc.User.ROOT_ROLE) else Nil) ++ user.contestRole.toSeq) { roles =>
+                            @if(roles.nonEmpty) {
+                                <div class="d-flex align-items-baseline gap-1 navbar-account-role"><i class="bi bi-person-badge" aria-hidden="true"></i><span class="text-break"><span class="visually-hidden">@Messages("role"):</span> @roles.map(r => Messages("role." + r)).mkString(", ")</span></div>
+                            }
+                        }
                         @for(wiki <- user.wikiAccount.filter(_.trim.nonEmpty)) {
                             <div class="d-flex align-items-baseline gap-1 navbar-account-wiki"><i class="bi bi-wikipedia" aria-hidden="true"></i><span class="text-break"><span class="visually-hidden">@Messages("wiki.account"):</span> @wiki</span></div>
                         }
                         @if(user.email.trim.nonEmpty) {
                             <div class="d-flex align-items-baseline gap-1 navbar-account-email"><i class="bi bi-envelope" aria-hidden="true"></i><span class="text-break"><span class="visually-hidden">@Messages("email"):</span> @user.email</span></div>
-                        }
-                        @defining((if (user.isRoot || user.hasRole(db.scalikejdbc.User.ROOT_ROLE)) Seq(db.scalikejdbc.User.ROOT_ROLE) else Nil) ++ user.contestRole.toSeq) { roles =>
-                            @if(roles.nonEmpty) {
-                                <div class="d-flex align-items-baseline gap-1 navbar-account-role"><i class="bi bi-person-badge" aria-hidden="true"></i><span class="text-break"><span class="visually-hidden">@Messages("role"):</span> @roles.map(r => Messages("role." + r)).mkString(", ")</span></div>
-                            }
                         }
                     </div>
                 </li>
