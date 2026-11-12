@@ -563,6 +563,35 @@ sudo wlxjury-release restore OPERATION --accept-data-loss
 
 Rehearse the deployment and each section of this runbook on a production copy before relying on them.
 
+### One-off: vote times from the access logs (after V97)
+
+V97 adds `vote.voted_at`, set by the app whenever a vote's rate changes. Votes cast before the release with V97 have no time; the only record of them is the Apache access log, which rotates after 14 days. `scripts/backfill/voted_at_from_logs.py` (Python 3.8+, stdlib only) recovers them: for each round, file and juror it takes the latest vote request it can attribute with certainty (the file has a single vote row in the round, or the request came from a page of that juror's own list), and only if the value that request set is the vote's current rate, not 0. Its SQL changes only a vote with that rate and no time yet (`... WHERE id = ? AND rate = ? AND voted_at IS NULL`), so it is safe to rerun and never overwrites a time the app set. `--session-attribution` also attributes by IP address + user agent (a dozen votes; off by default).
+
+A saved extract covers 2026-10-29 to 2026-11-12 08:46 UTC (kept by the maintainer, outside the repository). With a fresh extract taken by 2026-11-25 the two overlap, so together they cover every vote from 2026-10-29; overlapping lines are counted once.
+
+The extracts hold IP addresses and user agents: never copy them, or anything derived from them, into the repository, an issue or a chat. The script writes neither: its report has counts only, its SQL vote ids, rates and times.
+
+1. After the release with V97 is live (so every later vote gets its time from the app), extract the jury vhosts' requests as root:
+   ```bash
+   for f in /var/log/apache2/other_vhosts_access.log*; do zcat -f $f | grep '^jury' | grep -E '"(GET|POST) /(rate/|large/|gallery/|byrate/|wikipedia/commons/thumb/|switch-contest|auth|logout)' | sed "s|^|$(basename $f) |"; done | gzip > /home/ilya/jury-votelog.gz; chown ilya /home/ilya/jury-votelog.gz
+   ```
+2. Copy the script and the saved extract to `/home/ilya/` (scp), then generate the SQL. It reads the votes of the logged rounds with the `mariadb` client and the admin login:
+   ```bash
+   sudo python3 /home/ilya/voted_at_from_logs.py --defaults-extra-file /etc/wlxjury-runtime/db-admin.cnf --db wlxjury \
+     --out /home/ilya/voted_at.sql /home/ilya/jury-votelog-2026-10-29_2026-11-12.gz /home/ilya/jury-votelog.gz
+   ```
+   (`--dry-run` instead of `--out` reports without writing.) Review the report: requests attributed or skipped (failed request, criteria round, vote row missing, ambiguous juror), vote rows matched or skipped (value mismatch, unrated now, already timed), and the times to set per UTC day. On the local production copy (taken on 2026-11-11) the saved extract gave 36,550 times (36,562 with `--session-attribution`) from 40,332 vote requests.
+3. Apply it, then check how many of those rows now have their time from the logs (a row voted again in the app since shows as "another time"):
+   ```bash
+   sudo mariadb --defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf wlxjury < /home/ilya/voted_at.sql
+   sudo python3 /home/ilya/voted_at_from_logs.py --defaults-extra-file /etc/wlxjury-runtime/db-admin.cnf --db wlxjury --check \
+     /home/ilya/jury-votelog-2026-10-29_2026-11-12.gz /home/ilya/jury-votelog.gz
+   ```
+   The SQL sets `time_zone = '+00:00'` first and commits every 1,000 updates (`--batch`); each update finds its vote by id.
+4. Delete the extracts and the SQL on the server (`rm /home/ilya/jury-votelog*.gz /home/ilya/voted_at.sql`), and the saved extract wherever else it is kept.
+
+Votes that get no time stay untimed: they count as older than every timed vote in the juror's newest/oldest orders.
+
 ## Release checklist
 
 The one list of the checks made by hand before or after a release (the user, 2026-11-04). The
