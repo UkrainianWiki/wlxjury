@@ -144,7 +144,7 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "have no By my rating on tabs of one rate, ignore it there, and keep it for the other tabs" in {
+    "have no By my rating on tabs of one rate, but In file order as text, and keep it for the other tabs" in {
       testDbApp { implicit app =>
         val f = fixture(Round.binaryRound)
         // selected: 5, 2 and 12 (file order 2, 5, 12); rejected: 3
@@ -152,6 +152,13 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         VoteJdbc.rate(f.pageIds(2), f.juror.getId, f.round.getId, -1)
         def html(query: String) = page(gallery(f, query), f).replace("&amp;", "&")
         def hasRateOrder(h: String) = h.contains("By my rating")
+        // the plain "In file order" in the menu's place, not a menu
+        def fixedOrder(h: String) = {
+          val label = org.jsoup.Jsoup.parse(h).select("nav span.gallery-order-fixed")
+          label.size == 1 && label.text == "In file order" &&
+            !label.parents.eachAttr("class").toString.contains("dropdown") &&
+            (0 until label.parents.size).forall(i => !Set("a", "button").contains(label.parents.get(i).tagName))
+        }
         val base = s"/gallery/round/${f.round.getId}/user/${f.juror.getId}/page/1"
 
         // all files by rate: the selected first, the option shown and current
@@ -168,6 +175,9 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
           (tiles(all).take(3) === selectedFirst.toList) and
           (all must contain(s"""href="$selectedLink">Selected (3)</a>""")) and
           (hasRateOrder(selected) must beFalse) and
+          (fixedOrder(selected) must beTrue) and (fixedOrder(all) must beFalse) and
+          (fixedOrder(html("?filter=rejected&sort=rate")) must beTrue) and
+          (fixedOrder(html("?filter=unrated")) must beTrue) and
           (tiles(selected) === selectedFirst.toList) and
           (selected must contain(s"""href="$allLink">All (20)</a>""")) and
           (hasRateOrder(html("?filter=rejected&sort=rate")) must beFalse) and
@@ -190,6 +200,9 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         (page(gallery(f), f) must contain("By my rating")) and
           (page(gallery(f, "?filter=rated"), f) must contain("By my rating")) and
           (unrated must not(contain("By my rating"))) and
+          (unrated must contain("""<span class="navbar-text d-block px-2 gallery-order-fixed">In file order</span>""")) and
+          (page(gallery(f, "?filter=rated"), f) must not(contain("gallery-order-fixed"))) and
+          (back must not(contain("gallery-order-fixed"))) and
           // file order there (the rated file is not in it), the order kept for the other tabs
           (tiles(unrated).take(3) === f.pageIds.filterNot(_ == f.pageIds(9)).take(3).toList) and
           (unrated must contain(s"""href="$base?sort=rate">All (20)</a>""")) and
