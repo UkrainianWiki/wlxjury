@@ -1103,6 +1103,9 @@ class UserController @Inject()(cc: ControllerComponents,
   def cancelInvitation(id: Long, contestId: Long): EssentialAction =
     withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
       val cancelled = scalikejdbc.DB.localTx { implicit session =>
+        // the account's row first, then its links: the order of a link's acceptance and of
+        // UserService.invite (the log entry's foreign key would take the row after the links)
+        val _ = User.lockRow(id)
         val n = AccountTokenJdbc.revokeInvitations(id, contestId)
         if (n > 0) AccountChangeLog.record(user, id, Some(contestId), AccountChangeJdbc.InvitationCancelled)
         n
