@@ -140,7 +140,9 @@ object ListOrder {
     override def messageKey: String = order.messageKey
   }
 
-  val all: Seq[ListOrder] = Seq(FileOrder, ByRate, LatestVote, OldestVote) ++ BinaryOrder.all.map(Binary)
+  // lazy: LatestVote and OldestVote read UnratedLast and VoteTime, so either initialised first
+  // initialises ListOrder, whose eager list would then hold it as null
+  lazy val all: Seq[ListOrder] = Seq(FileOrder, ByRate, LatestVote, OldestVote) ++ BinaryOrder.all.map(Binary)
 
   def parse(param: String): Option[ListOrder] = all.find(_.param == param)
 }
