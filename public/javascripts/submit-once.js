@@ -6,8 +6,11 @@
 (function () {
   'use strict';
 
-  /** Handles a submit of `form`: true if it may go, false (and the event cancelled) if repeated. */
+  /** Handles a submit of `form`: true unless this handler cancelled it as a repeat (then false).
+    * A submit another handler already cancelled is not sent, so it leaves the form unlocked (only a
+    * handler that ran before this document-level one is seen). */
   function onSubmit(form, event) {
+    if (event && event.defaultPrevented) return true;
     if (!form || !form.hasAttribute || !form.hasAttribute('data-submit-once')) return true;
     if (form.getAttribute('data-submitted') === 'true') {
       if (event) event.preventDefault();

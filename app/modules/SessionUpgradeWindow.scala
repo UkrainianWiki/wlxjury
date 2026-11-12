@@ -11,8 +11,9 @@ import SessionUpgradeWindow._
 /** Until when (epoch seconds, the app's clock) a session cookie from before S3 is upgraded in
   * place: the end V80 recorded at the S3 deploy (`session_upgrade_window`), read once, at the
   * first such cookie, as the time left on the database clock. A failed read is not kept (the next
-  * old cookie tries again) and leaves that request's cookie as it is ([[Unknown]]); no row closes
-  * the window for good.
+  * old cookie tries again) and leaves that request's cookie as it is ([[Unknown]]); no row (or no
+  * table: V80 undone) closes the window for good. The window is kept for the JVM's life once read,
+  * so undoing V80 takes effect at the next app restart.
   *
   * @param secondsLeft the window's time left, from the database ([[SessionUpgradeWindowJdbc]])
   * @param now         the app's clock, in epoch seconds

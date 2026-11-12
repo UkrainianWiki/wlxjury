@@ -27,11 +27,32 @@ object SourceScan {
 
   /** Twirl `@* *@`, block `/* */` and line `//` comments (not `://` in URLs), as blanks of the
     * same line count, so offsets still give the right line.
+    *
+    * A text scan, not a parser: a `//` inside a string literal (`"a //b"`) starts a "comment" too,
+    * so the rest of that line is blanked and a sink after it is not seen. Accepted: the guard specs
+    * back review, they do not replace it.
     */
   def stripComments(text: String): String = {
     def blank(s: String) = s.map(c => if (c == '\n') '\n' else ' ')
     val noBlocks = """(?s)@\*.*?\*@|/\*.*?\*/""".r.replaceAllIn(text, m => java.util.regex.Matcher.quoteReplacement(blank(m.matched)))
     """(?m)(?<![:"'\\])//.*$""".r.replaceAllIn(noBlocks, m => java.util.regex.Matcher.quoteReplacement(blank(m.matched)))
+  }
+
+  /** The text of the call starting at `from` (after its opening parenthesis), up to its closing
+    * one (parentheses counted, those in strings included) or 600 characters.
+    */
+  def callText(text: String, from: Int): String = {
+    var depth = 1
+    var i = from
+    while (i < text.length && depth > 0 && i - from < 600) {
+      text.charAt(i) match {
+        case '(' => depth += 1
+        case ')' => depth -= 1
+        case _   =>
+      }
+      i += 1
+    }
+    text.substring(from, i)
   }
 
   /** The files (path relative to the project) where `pattern` matches, and their lines. */

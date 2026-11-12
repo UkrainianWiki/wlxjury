@@ -89,8 +89,7 @@ object CriteriaRate extends SQLSyntaxSupport[CriteriaRate] {
     *  - only votes rated in every criterion (`vote.rate > 0`: U5 keeps a partly rated vote's
     *    rate at 0), and of those only criteria rated (`rate > 0`: a partly rated vote from
     *    before U5 keeps its sum, and its pre-created rows of 0 are not rates);
-    *  - only the round's criteria (`round_criterion`): a vote moved from another round
-    *    ([[db.scalikejdbc.VoteJdbc.setRound]]) keeps that round's rates.
+    *  - only the round's criteria (`round_criterion`).
     * A file without such a vote, or a criterion none rated, has no entry. One query per
     * [[AveragesChunk]] files, from the votes by `vote_round_page_rate_idx`, then each one's
     * rates by `criteria_rate_vote_criterion_uidx`.
@@ -112,8 +111,8 @@ object CriteriaRate extends SQLSyntaxSupport[CriteriaRate] {
 
   /** The rates of the round's criteria of each vote of one file in the round, by vote id,
     * then criterion id, the criteria rated only (`rate > 0`), also of a partly rated vote:
-    * the large view's list of each juror's vote, which only organisers see. A criterion of
-    * another round (a vote moved by [[db.scalikejdbc.VoteJdbc.setRound]]) is left out.
+    * the large view's list of each juror's vote, which only organisers see. A criterion that
+    * is not the round's is left out.
     */
   def ratesOfFile(roundId: Long, pageId: Long)(implicit
       session: DBSession = autoSession

@@ -81,6 +81,41 @@ class SqlLoggingSpec extends Specification with BeforeAll {
       SqlLogging.template("SELECT *\n  FROM users WHERE email = 'a@b.c' AND name = 'O''Brien' AND id = ?") ===
         "SELECT * FROM users WHERE email = '?' AND name = '?' AND id = ?"
     }
+
+    "lose a literal with a backslash-escaped quote whole (R227-2)" in {
+      // the SQL text: email = 'a\'b@x.c'
+      SqlLogging.template("SELECT * FROM users WHERE email = 'a\\'b@x.c' AND id = ?") ===
+        "SELECT * FROM users WHERE email = '?' AND id = ?"
+    }
+
+    "lose a literal with a backslash before a line break whole (R227-2)" in {
+      // the SQL text: name = 'secret\<line break>value'
+      SqlLogging.template("SELECT * FROM users WHERE name = 'secret\\\nvalue' AND id = ?") ===
+        "SELECT * FROM users WHERE name = '?' AND id = ?"
+    }
+
+    "lose an empty literal, and literals of only escapes or doubled quotes" in {
+      // the SQL text: a = '' AND b = '\\' AND c = '''' AND d = 'x\'''y'
+      SqlLogging.template("SELECT 1 WHERE a = '' AND b = '\\\\' AND c = '''' AND d = 'x\\'''y'") ===
+        "SELECT 1 WHERE a = '?' AND b = '?' AND c = '?' AND d = '?'"
+    }
+
+    "mask a 10,000-character literal without a stack overflow" in {
+      val long = "x\\'" * 2500 + "y''" * 900 + "z" * 300
+      SqlLogging.template(s"SELECT * FROM comment WHERE body = '$long' AND id = ?") ===
+        "SELECT * FROM comment WHERE body = '?' AND id = ?"
+    }
+  }
+
+  "an exception's description" should {
+    "give the SQLState and code of a wrapped SQLException, never a message" in {
+      val sql = new java.sql.SQLIntegrityConstraintViolationException("Duplicate entry 'a@b.c'", "23000", 1062)
+      val wrapped = new RuntimeException("wrapper: Duplicate entry 'a@b.c'", new IllegalStateException(sql))
+      SqlLogging.describe(sql) === "java.sql.SQLIntegrityConstraintViolationException, SQLState 23000, code 1062"
+      SqlLogging.describe(wrapped) ===
+        "java.lang.RuntimeException caused by java.sql.SQLIntegrityConstraintViolationException, SQLState 23000, code 1062"
+      SqlLogging.describe(new IllegalStateException("secret")) === "java.lang.IllegalStateException"
+    }
   }
 
   "the shipped config" should {

@@ -48,15 +48,44 @@ object SqlLogging {
     (statement, _, e, _) => logger.error(s"SQL statement failed (${describe(e)}): ${template(statement)}")
 
   /** The statement on one line, its quoted literals (if a fragment was built with
-    * `createUnsafely`) as `'?'`; bound values are `?` already.
+    * `createUnsafely`) as `'?'`; bound values are `?` already. A literal ends at a quote that is
+    * neither doubled nor after a backslash (MariaDB's default `sql_mode` keeps backslash escapes;
+    * an escaped line break included). This assumes that default: under `NO_BACKSLASH_ESCAPES` a
+    * literal ending in a backslash (`'a\'`) would run on to the next quote, and part of a literal
+    * could be logged; the app never sets that mode.
+    *
+    * The pattern is unrolled and possessive, so a long literal costs no recursion; should the
+    * regex engine still overflow its stack, the line gets [[NotShown]] instead of the statement.
     */
   def template(statement: String): String =
-    statement.replaceAll("'(?:[^']|'')*'", "'?'").replaceAll("\\s+", " ").trim
+    try statement.replaceAll(QuotedLiteral, "'?'").replaceAll("\\s+", " ").trim
+    catch { case _: StackOverflowError => NotShown }
 
-  /** An exception without its message, which may quote a value ("Duplicate entry '…'"). */
-  def describe(e: Throwable): String = e match {
-    case sql: java.sql.SQLException =>
+  /** A quoted literal: plain characters, then any number of (an escaped character or a doubled
+    * quote, then plain characters), all possessive.
+    */
+  private val QuotedLiteral = """'[^'\\]*+(?:(?:\\[\s\S]|'')[^'\\]*+)*+'"""
+
+  /** What [[template]] gives for a statement it could not mask. */
+  val NotShown = "(statement not shown)"
+
+  /** An exception without its message, which may quote a value ("Duplicate entry '…'"): its
+    * class, and the SQLState and vendor code of it or of the first SQLException among its causes
+    * (a few levels down: a wrapper's).
+    */
+  def describe(e: Throwable): String = {
+    def sqlOf(t: Throwable, depth: Int): Option[java.sql.SQLException] = t match {
+      case null                       => None
+      case sql: java.sql.SQLException => Some(sql)
+      case _ if depth >= 8            => None
+      case _                          => sqlOf(t.getCause, depth + 1)
+    }
+    def codes(sql: java.sql.SQLException) =
       s"${sql.getClass.getName}, SQLState ${sql.getSQLState}, code ${sql.getErrorCode}"
-    case other => other.getClass.getName
+    sqlOf(e, 0) match {
+      case Some(sql) if sql eq e => codes(sql)
+      case Some(sql)             => s"${e.getClass.getName} caused by ${codes(sql)}"
+      case None                  => e.getClass.getName
+    }
   }
 }

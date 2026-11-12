@@ -398,7 +398,9 @@ Cookies from before S3 (without the sign-in times) are upgraded in place on thei
 for 30 days after the S3 deploy (V80 records the end, `session_upgrade_window`; a restart or a
 later deploy does not move it), so nobody is signed out by the release. After that window such a
 cookie is signed out (`old_cookie_expired` on `security.auth`): a copy of an old cookie that never
-took the upgraded value (a replay) ends with it.
+took the upgraded value (a replay) ends with it. To close the window early, `DELETE FROM
+session_upgrade_window` (or drop the table) and restart the app: a running app keeps the window it
+has read.
 
 **Rotating the signing key** (`PLAY_HTTP_SECRET_KEY` in `runtime.env`) ends every session at once,
 for every account: everyone signs in again. It also invalidates the flash and the CSRF tokens of
@@ -438,12 +440,21 @@ This is expected. V85 changes nothing on 10.6 and is recorded as applied.
 index in the app's database:
 
 1. Connect as the release tool does. The database is `WLXJURY_DB` in
-   `/etc/wlxjury-runtime/runtime.env` (`wlxjury` in the example), and `--host` is its
-   `WLXJURY_DB_HOST`:
+   `/etc/wlxjury-runtime/runtime.env` (`wlxjury` in the example), and the host is its
+   `WLXJURY_DB_HOST`. For `localhost` (production: the local server, through the socket):
 
    ```bash
-   sudo mariadb --defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf --host=localhost wlxjury
+   sudo mariadb --defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf --host=localhost --protocol=SOCKET wlxjury
    ```
+
+   For any other value, `host` or `host:port`, give the host and the port (3306 if none) by TCP:
+
+   ```bash
+   sudo mariadb --defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf --host=db.example.org --port=3307 --protocol=TCP wlxjury
+   ```
+
+   Then check that this is the app's server, as the release tool does: `SELECT @@port;` gives
+   the app's port (3306 for `localhost`).
 
 2. Run the check:
 
@@ -465,10 +476,12 @@ index in the app's database:
 
 **To run V85 again**, run the script itself in that session. It ships in the release at
 `/opt/wlxjury/current/conf/db/migration/default/V85__Vote_gallery_index_rate_desc.sql`
-(`release_root` in `deployment.json`, then the release's `conf/`):
+(`release_root` in `deployment.json`, then the release's `conf/`), with the connection options of
+step 1 (here production's `localhost`; for another host, its `--host`, `--port` and
+`--protocol=TCP`):
 
 ```bash
-sudo mariadb --defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf --host=localhost wlxjury \
+sudo mariadb --defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf --host=localhost --protocol=SOCKET wlxjury \
   < /opt/wlxjury/current/conf/db/migration/default/V85__Vote_gallery_index_rate_desc.sql
 ```
 
