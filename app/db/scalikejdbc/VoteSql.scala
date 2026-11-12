@@ -55,6 +55,18 @@ object VoteSql {
     */
   val GradeSum: String = s"sum(${grade().value})"
 
+  /** The new value of a vote's `voted_at` (V97) as its rate goes from `before` to `after`, for an
+    * UPDATE of the row: unchanged if the rate is the same; the database's NOW(3) for another
+    * rate; NULL for a vote cleared to unrated, which has no vote time (an unrated vote is last
+    * in either order by time, whatever the column holds). The database clock, as V96's account
+    * changes have it, not the app's: one clock for every app process, no time zone conversion of
+    * a bound value, and the time is taken by the statement that changes the rate.
+    */
+  def votedAt(before: Int, after: Int): SQLSyntax =
+    if (after == before) sqls"voted_at"
+    else if (after == 0) sqls"NULL"
+    else sqls"NOW(3)"
+
   /** A file's rated votes in a rated round, grouped by file: any vote, a ✗ included. */
   val VotedCount: String = s"SUM(${voted().value})"
 }

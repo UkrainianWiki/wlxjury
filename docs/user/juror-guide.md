@@ -193,9 +193,21 @@ The bar at the top has tabs for your own files in the round, each with a count:
 
 ### Sorting your files
 
-The sort menu next to the tabs has **In file order** and **By my rating**. **In file order**
-keeps every file in its place when you vote. **By my rating** puts your highest-rated files
-first. Your browser remembers your choice; on another computer or browser, choose it again.
+The sort menu next to the tabs has **In file order**, **By my rating**, **Newest votes first**
+and **Oldest votes first**. **In file order** keeps every file in its place when you vote.
+**By my rating** puts your highest-rated files first. **Newest votes first** puts the files whose
+vote you changed most recently first, and **Oldest votes first** the ones you voted on longest
+ago; in both, files you haven't voted on yet come last, and votes from before these options were
+added count as older than any other. Your browser remembers your choice; on another computer or
+browser, choose it again.
+
+In these two orders each file you voted on shows when you voted, in your own time zone (for
+example "12 Nov, 14:05"); a vote from before these options says **time not recorded**. The
+large view shows the time of your vote on the file in every order.
+
+On the **Selected** and **Rejected** tabs of a yes/no round the menu has **In file order**,
+**Newest votes first** and **Oldest votes first**. On the **Unrated** tab the files are always
+in file order.
 
 A file you vote on stays where it is on the page until you reload it. In your list of a rated
 round, a note above the files says so after your first vote on the page: **Changed rates are

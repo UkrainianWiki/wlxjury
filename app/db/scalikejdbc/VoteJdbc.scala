@@ -26,7 +26,8 @@ object VoteJdbc extends CRUDMapper[Vote] {
     id         = rs.longOpt(c.id),
     createdAt  = rs.timestampOpt(c.createdAt).map(_.toZonedDateTime),
     deletedAt  = rs.timestampOpt(c.deletedAt).map(_.toZonedDateTime),
-    monumentId = rs.stringOpt(c.monumentId)
+    monumentId = rs.stringOpt(c.monumentId),
+    votedAt    = rs.timestampOpt(c.votedAt).map(_.toZonedDateTime)
   )
 
   def apply(c: ResultName[Vote])(rs: WrappedResultSet): Vote =
@@ -38,7 +39,8 @@ object VoteJdbc extends CRUDMapper[Vote] {
       id         = rs.longOpt(c.id),
       createdAt  = rs.timestampOpt(c.createdAt).map(_.toZonedDateTime),
       deletedAt  = rs.timestampOpt(c.deletedAt).map(_.toZonedDateTime),
-      monumentId = rs.stringOpt(c.monumentId)
+      monumentId = rs.stringOpt(c.monumentId),
+      votedAt    = rs.timestampOpt(c.votedAt).map(_.toZonedDateTime)
     )
 
   def create(
@@ -61,7 +63,9 @@ object VoteJdbc extends CRUDMapper[Vote] {
             column.rate       -> rate,
             column.juryId     -> juryId,
             column.roundId    -> roundId,
-            column.monumentId -> monumentId
+            column.monumentId -> monumentId,
+            // a vote inserted rated was rated now (V97); an unrated one has no time
+            column.votedAt    -> (if (Vote.isVoted(rate)) sqls"NOW(3)" else sqls"NULL")
           )
       }.updateAndReturnGeneratedKey()
       RoundImageJdbc.addVoted(Seq(roundId -> pageId), RoundImageJdbc.Origin.Manual)
@@ -80,7 +84,9 @@ object VoteJdbc extends CRUDMapper[Vote] {
   }
 
   /** Inserts the vote rows, and adds their files to their rounds ([[RoundImageJdbc.addVoted]],
-    * as `origin` added them), in one transaction: the caller's, or one of its own. Their
+    * as `origin` added them), in one transaction: the caller's, or one of its own. A rated row's
+    * `voted_at` (V97) is its [[Vote.votedAt]] if it has one (a vote copied with its time), else
+    * the database's NOW(3); an unrated row's is NULL, whatever its `votedAt`. Their
     * rounds are locked for update first ([[RoundWrites.lock]]): an insert is a structural
     * write, and round_image's foreign key would otherwise lock them after the votes.
     */
@@ -90,7 +96,10 @@ object VoteJdbc extends CRUDMapper[Vote] {
     RoundWrites.lock(selections.map(_.roundId).toSeq)
     val column = VoteJdbc.column
     val batchParams: Seq[Seq[Any]] =
-      selections.map(i => Seq(i.pageId, i.rate, i.juryId, i.roundId, i.monumentId.orNull)).toSeq
+      selections.map { i =>
+        Seq(i.pageId, i.rate, i.juryId, i.roundId, i.monumentId.orNull,
+          i.rate, i.votedAt.map(t => java.sql.Timestamp.from(t.toInstant)).orNull)
+      }.toSeq
     withSQL {
       insert
         .into(VoteJdbc)
@@ -99,7 +108,8 @@ object VoteJdbc extends CRUDMapper[Vote] {
           column.rate       -> sqls.?,
           column.juryId     -> sqls.?,
           column.roundId    -> sqls.?,
-          column.monumentId -> sqls.?
+          column.monumentId -> sqls.?,
+          column.votedAt    -> sqls"IF(? <> 0, COALESCE(?, NOW(3)), NULL)"
         )
     }.batch(batchParams: _*).apply()
     RoundImageJdbc.addVoted(selections.map(v => v.roundId -> v.pageId), origin)
@@ -186,7 +196,9 @@ object VoteJdbc extends CRUDMapper[Vote] {
   private def voteId(pageId: Long, juryId: Long, roundId: Long)(implicit session: DBSession): Option[Long] =
     sql"SELECT id FROM vote WHERE page_id = $pageId AND jury_id = $juryId AND round_id = $roundId".map(_.long(1)).single()
 
-  /** [[rate]] of the vote `id` in the caller's transaction. A rate that changes marks the
+  /** [[rate]] of the vote `id` in the caller's transaction. A rate that changes sets the vote's
+    * `voted_at` to now, or clears it with the rate back to unrated ([[VoteSql.votedAt]]); the
+    * same rate again keeps it. A rate that changes marks the
     * file's counts in the round dirty, last ([[RoundCounts.markFile]], P2a): no count delta and
     * no lock on the round or its `round_image` row.
     *
@@ -204,7 +216,7 @@ object VoteJdbc extends CRUDMapper[Vote] {
       .map(_ => ()).single().isDefined
     locked match {
       case Some((pageId, before)) if !stopped && !criteria =>
-        val updated = sql"UPDATE vote SET rate = $rate WHERE id = $id".update()
+        val updated = sql"UPDATE vote SET rate = $rate, voted_at = ${VoteSql.votedAt(before, rate)} WHERE id = $id".update()
         if (rate != before) RoundCounts.markFile(roundId, pageId)
         updated
       case _ => 0

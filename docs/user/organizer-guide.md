@@ -105,6 +105,22 @@ votes.
 You can see a juror's votes only for a juror of that round. Choosing another person's page
 shows the tool's "not found" page.
 
+A single juror's **Gallery** and **By rate** views have an order menu, by that juror's votes:
+**In file order**, **By rating**, **Newest votes first** and **Oldest votes first** (when the
+juror last changed each vote; votes from before these options count as the oldest, unrated
+files come last). With a yes/no round's **Selected** or **Rejected** filter it has **In file
+order** and the two vote-time orders; with **Unrated**, the files are in file order. In the
+vote-time orders each file shows when the juror voted (in your time zone; **time not recorded**
+for votes from before), and the large view of a single juror's vote shows it in every order. The
+views of **All** jurors keep their own order and show no vote times.
+
+A single juror's **Gallery** and **By rate** views have an order menu, by that juror's votes:
+**In file order**, **By rating**, **Newest votes first** and **Oldest votes first** (when the
+juror last changed each vote; votes from before these options count as the oldest, unrated
+files come last). With a yes/no round's **Selected** or **Rejected** filter it has **In file
+order** and the two vote-time orders; with **Unrated**, the files are in file order. The views of
+**All** jurors keep their own order.
+
 <a id="o-score"></a>
 ### The score
 

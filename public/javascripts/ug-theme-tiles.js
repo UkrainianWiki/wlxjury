@@ -140,6 +140,7 @@ function UGTheme_tiles(){
 		if(window.wlxTileVotes){
 			g_objTilesWrapper.find(".ug-tile").each(function(){
 				wlxTileVotes.addTally(this, g_objTileDesign.getItemByTile(jQuery(this)));
+				wlxTileVotes.addVoteTime(this, g_objTileDesign.getItemByTile(jQuery(this)));
 			});
 		}
 	}

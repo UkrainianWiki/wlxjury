@@ -46,23 +46,42 @@
     }
 }
 
-@* The order of the viewer's own gallery, if they have files in the round: in file order, which a
-   vote doesn't change, or by their rate. On a tab where all their votes are one rate (unrated,
-   selected, rejected: RoundList.oneRate), by rate would change nothing: plain text saying the
-   files are in file order in the menu's place (navbar-text, a block padded as a nav link, so the
-   bar doesn't shift between tabs); the list's links keep the order chosen for the other tabs *@
+@* The order of the viewer's own gallery, if they have files in the round (RoundList.orderChoices):
+   in file order, which a vote doesn't change, by their rate, or by when they rated, the latest or
+   the oldest first. On a tab of one rate (selected, rejected: RoundList.oneRate) by rate would
+   change nothing, so it isn't offered and shows as file order. On the unrated tab only file order
+   applies: plain text saying so in the menu's place (navbar-text, a block padded as a nav link, so
+   the bar doesn't shift between tabs); the list's links keep the order chosen for the other tabs *@
 @sortMenu(l: RoundList) = {
     @defining(ownList(l)) { own =>
     @if(rates.all > 0) {
-    @if(own.oneRate) {
+    @if(own.orderChoices.size == 1) {
     <li class="nav-item"><span class="navbar-text d-block px-2 gallery-order-fixed">@Messages("sort.file")</span></li>
     } else {
     @(new UiSelectionDto[ListOrder](
         (order: ListOrder) => Call("GET", own.withOrder(order).pageUrl(1)),
-        own.order,
-        Seq(ListOrder.FileOrder -> SelectionItem("sort.file"), ListOrder.ByRate -> SelectionItem("sort.rate"))
+        own.shownOrder,
+        own.orderChoices.map(order => order -> SelectionItem(order.messageKey))
     ).toDropDown())
     }
+    }
+    }
+}
+
+@* The order of one juror's votes as the organisers view them (the juror menu: RoundList.asUserId a
+   juror of the round, not the viewer), in the gallery and by-rate views, which follow it: by that
+   juror's votes and vote times, as the juror's own menu offers them (RoundList.orderChoices), by
+   rating labelled as someone else's. Not for all the jurors' votes together (binaryOrderMenu) *@
+@jurorOrderMenu(l: RoundList) = {
+    @if(l.asUserId != 0 && l.asUserId != user.getId && (l.view == GalleryView.Gallery || l.view == GalleryView.ByRate)) {
+    @if(l.orderChoices.size == 1) {
+    <li class="nav-item"><span class="navbar-text d-block px-2 gallery-order-fixed">@Messages("sort.file")</span></li>
+    } else {
+    @(new UiSelectionDto[ListOrder](
+        (order: ListOrder) => Call("GET", l.withOrder(order).pageUrl(1)),
+        l.shownOrder,
+        l.orderChoices.map(order => order -> SelectionItem(if (order == ListOrder.ByRate) "sort.rate.juror" else order.messageKey))
+    ).toDropDown())
     }
     }
 }
@@ -162,6 +181,7 @@
                         ).toDropDown())
 
                         @binaryOrderMenu(l)
+                        @jurorOrderMenu(l)
 
                         @ownTabs(l)
 

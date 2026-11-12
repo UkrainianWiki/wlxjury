@@ -405,6 +405,20 @@ a:has(> .btn) { text-decoration: none; }
     pointer-events: none;
 }
 
+/* the time of the juror's vote on their tile in an order by vote time (tile-votes.js
+   addVoteTime): as the tally, at the tile's top; none recorded in the secondary text colour */
+.ug-thumb-wrapper.ug-tile .wlx-tile-time {
+    position: absolute;
+    left: 6px;
+    top: 6px;
+    z-index: 6;
+    color: var(--bs-body-color);
+    background-color: rgba(var(--bs-body-bg-rgb), .85);
+    font-weight: normal;
+    pointer-events: none;
+}
+.ug-thumb-wrapper.ug-tile .wlx-tile-time.wlx-vote-time-none { color: var(--bs-secondary-color); }
+
 /* the round and user forms' Save and Cancel (snippets/submit, snippets/button) */
 .form-action-wide { width: 25%; }
 

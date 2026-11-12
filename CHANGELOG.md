@@ -35,6 +35,21 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   rows added, fixed or removed, the orphaned criteria rates archived and the rounds skipped); a failed or
   cancelled check shows its status with a link to the job. No longer raw JSON at /admin/jobs/:id only.
   The all-rounds summary is root's alone.
+- **Sort by vote time** (the maintainer's design A of 2026-11-12): a juror's own gallery's
+  order menu adds **Newest votes first** and **Oldest votes first** (on the **All** and **Rated**
+  tabs with **In file order** and **By my rating**; on a yes/no round's **Selected** and
+  **Rejected** tabs with **In file order**; the **Unrated** tab stays in file order). Unrated files
+  come last in both; votes cast before this release, without a time, count as older than any
+  timed one; files of the same time are in file order, so pages and the large view's neighbours
+  stay stable. A vote's time is when its rate last changed to another value (the database clock);
+  the same rate again keeps it, a vote cleared to unrated has none. A large view vote that moves
+  the file in such an order says it moved "by vote time". An organizer viewing one juror's votes
+  (the juror menu) gets the same order menu, by that juror's votes and times, with **By rating**
+  in place of **By my rating**; the views of all the jurors together are unchanged. In a vote-time
+  order the tiles and the by-rate list show each vote's time, and the large view of one juror's
+  votes shows it in every order ("Voted 12 Nov, 14:05", formatted in the browser in the viewer's
+  time zone and the page's language, `vote-time.js`; "time not recorded" for a vote without one);
+  never in the views of all the jurors. Juror and organizer guides updated.
 
 **Fixes**
 
@@ -46,6 +61,12 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   job is queued or running, and lists each one (id, kind, contest, status); `--allow-running-jobs`
   deploys anyway with a warning (the jobs resume after the restart). A `job` table it cannot read
   stops the deployment too. This replaces the manual check before each deploy.
+- **V97:** `vote.voted_at` and `vote_aside.voted_at`, `TIMESTAMP(3) NULL DEFAULT NULL` (no implicit
+  default or ON UPDATE under any `explicit_defaults_for_timestamp`), added `ALGORITHM = INSTANT`;
+  index `vote_jury_round_voted_at_idx (jury_id, round_id, voted_at)` online (`INPLACE, LOCK = NONE`).
+  Existing rows stay NULL (a log backfill may fill them later). Set by `VoteJdbc.rateIn` and
+  `CriteriaRate.updateRateIn` (`VoteSql.votedAt`), and by `VoteJdbc.create` / `batchInsert` for a
+  rated row; moved with the vote between `vote` and `vote_aside`.
 
 ## 26.11.2 (2026-11-12)
 

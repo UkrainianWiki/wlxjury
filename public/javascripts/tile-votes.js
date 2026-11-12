@@ -288,9 +288,34 @@
     return badge;
   }
 
+  /** The time of the juror's vote on its tile, in an order by vote time (gallery.scala.html's
+    * data-voted-at, ISO 8601 in UTC): formatted in the viewer's time zone and the page's language
+    * (vote-time.js), or the text saying none was recorded (data-voted-none); none for a tile
+    * without it. */
+  function addVoteTime(tile, item) {
+    if (item.votedAt === undefined || item.votedAt === null) return null;
+    var badge = document.createElement('span');
+    badge.className = 'badge wlx-tile-time';
+    if (item.votedAt) {
+      var time = document.createElement('time');
+      time.className = 'wlx-vote-time';
+      time.setAttribute('datetime', item.votedAt);
+      var lang = document.documentElement.getAttribute('lang') || undefined;
+      var text = window.wlxVoteTime ? window.wlxVoteTime.format(item.votedAt, lang) : null;
+      time.textContent = text || item.votedAt;
+      time.title = item.votedAt;
+      badge.appendChild(time);
+    } else {
+      badge.classList.add('wlx-vote-time-none');
+      badge.textContent = item.votedNone || '';
+    }
+    tile.appendChild(badge);
+    return badge;
+  }
+
   window.wlxTileVotes = {
     voteUrl: voteUrl, send: send, explain: explain, addVote: addVote, vote: vote, addStars: addStars,
-    addListStars: addListStars, addTally: addTally
+    addListStars: addListStars, addTally: addTally, addVoteTime: addVoteTime
   };
 
   // the by-rate list's stars, once the page is there (raty loaded only where it has them)

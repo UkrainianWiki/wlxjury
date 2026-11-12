@@ -20,7 +20,7 @@ require("../public/javascripts/large-rate.js");
 const { voteErrorMessage, voteErrorTexts } = require("../public/javascripts/vote-errors.js");
 window.voteErrorMessage = voteErrorMessage;
 window.voteErrorTexts = voteErrorTexts;
-const { addStars, addVote, vote, addListStars, addTally } = require("../public/javascripts/tile-votes.js");
+const { addStars, addVote, vote, addListStars, addTally, addVoteTime } = require("../public/javascripts/tile-votes.js");
 
 let requests; // the votes sent: { options, answer (a Deferred) }
 
@@ -410,5 +410,40 @@ describe("a tile's approvals and rejections", () => {
     test("add nothing to a tile without them, as a juror's own", () => {
         expect(addTally(tile(), { rate: "1" })).toBeNull();
         expect(tile().querySelector(".wlx-tile-tally")).toBeNull();
+    });
+});
+
+// The time of the juror's vote on a tile in an order by vote time (addVoteTime): a <time> with the
+// UTC value, formatted by vote-time.js where loaded; the text for a vote without a time; nothing
+// for a tile without the attribute (any other order).
+describe("a tile's vote time", () => {
+    afterEach(() => { delete window.wlxVoteTime; });
+
+    test("shows the time formatted, the UTC value as its datetime and title", () => {
+        window.wlxVoteTime = { format: (iso, lang) => `formatted ${iso} ${lang || ""}`.trim() };
+        document.documentElement.setAttribute("lang", "uk");
+        const badge = addVoteTime(tile(), { votedAt: "2026-11-12T14:05:00Z" });
+        const time = badge.querySelector("time.wlx-vote-time");
+        expect(tile().querySelector(".wlx-tile-time")).toBe(badge);
+        expect(time.getAttribute("datetime")).toBe("2026-11-12T14:05:00Z");
+        expect(time.title).toBe("2026-11-12T14:05:00Z");
+        expect(time.textContent).toBe("formatted 2026-11-12T14:05:00Z uk");
+    });
+
+    test("keeps the UTC value without the formatter", () => {
+        const badge = addVoteTime(tile(), { votedAt: "2026-11-12T14:05:00Z" });
+        expect(badge.querySelector("time").textContent).toBe("2026-11-12T14:05:00Z");
+    });
+
+    test("says no time was recorded for a vote without one", () => {
+        const badge = addVoteTime(tile(), { votedAt: "", votedNone: "time not recorded" });
+        expect(badge.querySelector("time")).toBeNull();
+        expect(badge.classList.contains("wlx-vote-time-none")).toBe(true);
+        expect(badge.textContent).toBe("time not recorded");
+    });
+
+    test("adds nothing in another order", () => {
+        expect(addVoteTime(tile(), { rate: "1" })).toBeNull();
+        expect(tile().querySelector(".wlx-tile-time")).toBeNull();
     });
 });
