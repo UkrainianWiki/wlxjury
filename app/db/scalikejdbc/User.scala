@@ -745,14 +745,25 @@ object User extends CRUDMapper[User] {
     * accepted link proves an address ([[services.AccountTokenService]]); an admin's fix of an
     * invitee's address leaves it unverified.
     */
-  def setEmail(id: Long, email: String, verified: Boolean)(implicit session: DBSession = autoSession): Unit = {
+  def setEmail(id: Long, email: String, verified: Boolean, byAdmin: Boolean = false)(implicit
+      session: DBSession = autoSession): Unit = {
     val stored = storedEmail(email)
-    // a changed address ends the account's sessions (auth_version + 1): see setWikiAccount
+    // a changed address ends the account's sessions (auth_version + 1): see setWikiAccount. An
+    // address a non-root admin set is marked (V96, [[emailSetByAdmin]]); a proved one, or one
+    // root or its owner set, is not
     sql"""UPDATE users SET
             auth_version = IF(email <=> $stored, auth_version, $BumpAuthVersion),
-            email = $stored, email_verified_at = IF($verified, NOW(3), NULL)
+            email = $stored, email_verified_at = IF($verified, NOW(3), NULL),
+            email_set_by_admin_at = IF($byAdmin AND NOT $verified, NOW(3), NULL)
           WHERE id = $id""".update.apply()
   }
+
+  /** Whether a non-root admin set the account's current address and its owner hasn't proved it
+    * since (`users.email_set_by_admin_at`, V96; [[services.UserService.invitationRefused]]).
+    */
+  def emailSetByAdmin(id: Long)(implicit session: DBSession = autoSession): Boolean =
+    sql"SELECT email_set_by_admin_at IS NOT NULL FROM users WHERE id = $id".map(_.boolean(1)).single.apply()
+      .contains(true)
 
   /** The other non-deleted accounts with the wiki account (compared as the column's
     * collation does: case-insensitively).

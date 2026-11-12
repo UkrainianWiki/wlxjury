@@ -251,15 +251,18 @@ object AccountTokenService {
   private def applyProof(user: User, usedLinkId: Option[Long], createdBy: Option[Long], pending: Seq[AccountToken],
       passwordHash: Option[String], emailProven: Boolean)(implicit session: DBSession): Proof = {
     (passwordHash, emailProven) match {
+      // a proved address is its owner's: no longer one an admin set (V96)
       case (Some(h), true) =>
-        sql"""UPDATE users SET password = $h, email_verified_at = NOW(3), auth_version = ${User.BumpAuthVersion}
+        sql"""UPDATE users SET password = $h, email_verified_at = NOW(3), email_set_by_admin_at = NULL,
+                auth_version = ${User.BumpAuthVersion}
               WHERE id = ${user.getId}""".update.apply()
       case (Some(h), false) =>
         sql"""UPDATE users SET password = $h, email_verified_at = NULL, wiki_account_verified_at = NULL,
                 auth_version = ${User.BumpAuthVersion}
               WHERE id = ${user.getId}""".update.apply()
       case (None, _) =>
-        sql"""UPDATE users SET email_verified_at = NOW(3), auth_version = ${User.BumpAuthVersion}
+        sql"""UPDATE users SET email_verified_at = NOW(3), email_set_by_admin_at = NULL,
+                auth_version = ${User.BumpAuthVersion}
               WHERE id = ${user.getId}""".update.apply()
     }
     val revokedApiCount = ApiTokenJdbc.revokeAll(user.getId)

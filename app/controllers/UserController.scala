@@ -378,7 +378,9 @@ class UserController @Inject()(cc: ControllerComponents,
               val staleEmail = emailWas.exists(_ != editedUser.emailLo)
               val emailEdited = !emailWas.contains(LoginText.email(formUser.email))
               if (staleEmail && emailEdited)
-                formErrors(bound.withError("email", "user.email.changed.meanwhile"))
+                // shown again with the stored address as the one the page showed: a resubmit is current
+                formErrors(bound.copy(data = bound.data + ("emailWas" -> editedUser.emailLo))
+                  .withError("email", "user.email.changed.meanwhile"))
               else if (toggle.nonEmpty && !user.hasRole(User.ROOT_ROLE))
                 // only a crafted request: nobody else's page has the field
                 onUnAuthorized(user, request, Secured.Denial(pageContestOf(user, editedUser), Some(s"account:$userId"),
@@ -453,15 +455,20 @@ class UserController @Inject()(cc: ControllerComponents,
     lazy val passwordRefusal = if (own) None else setPasswordRefusal(user, editedUser)
     // the "Set password" field on a page shown again: where the rule passed (false once it was
     // refused under the account's lock)
+    // `emailWas`: the address the page shows again as the one it showed (an address changed
+    // meanwhile: the stored one), else as sent
     def badRequest(form: Form[User], maySetPassword: => Boolean = passwordRefusal.isEmpty,
-        notice: Option[String] = None) =
+        notice: Option[String] = None, emailWas: Option[String] = None) =
       if (own) ownProfile(BadRequest, user, userForm = Some(form))
-      else BadRequest(views.html.editUser(user, keepRootWas(form), contestId = editedUser.contestId,
-        maySetPassword = maySetPassword, notice = notice))
+      else {
+        val kept = keepRootWas(form)
+        BadRequest(views.html.editUser(user, emailWas.fold(kept)(was => kept.copy(data = kept.data + ("emailWas" -> was))),
+          contestId = editedUser.contestId, maySetPassword = maySetPassword, notice = notice))
+      }
     def refused(field: Option[String], key: String, maySetPassword: => Boolean = passwordRefusal.isEmpty,
-        notice: Option[String] = None) = {
+        notice: Option[String] = None, emailWas: Option[String] = None) = {
       val form = editUserForm.fill(formUser.copy(password = None))
-      badRequest(field.fold(form.withGlobalError(key))(form.withError(_, key)), maySetPassword, notice)
+      badRequest(field.fold(form.withGlobalError(key))(form.withError(_, key)), maySetPassword, notice, emailWas)
     }
 
     val userId = editedUser.getId
@@ -570,7 +577,9 @@ class UserController @Inject()(cc: ControllerComponents,
       }
       // a save refused inside its transaction: the address's, or the account no longer the editor's
       def refusedInside(key: String): Result =
-        refused(if (key == "user.in.other.contests") None else Some("email"), key)
+        refused(if (key == "user.in.other.contests") None else Some("email"), key,
+          emailWas = Option.when(key == "user.email.changed.meanwhile")(
+            User.findById(userId).map(_.emailLo).getOrElse("")))
       val save: Option[String] => Result = {
         case Some(hash) if !own =>
           // another account's: last, after the rest of the form is saved (a failure there leaves
@@ -668,6 +677,9 @@ class UserController @Inject()(cc: ControllerComponents,
             AccountChangeLog.record(user, userId, inContest, AccountChangeJdbc.Name, Some(editedUser.fullname),
               Some(formUser.fullname), comment = comment)
           if (wikiChanged) {
+            // checked before the transaction (otherAccountsWithWikiAccount); a concurrent save of the
+            // same name elsewhere hits the unique key here: a 500 with a reference, not mapped by
+            // isDuplicateKey (users.email's key only), and nothing of this save is written
             User.setWikiAccount(userId, newWiki)
             // the name may now be someone else's: a Wikimedia account linked to the old one goes
             wikiUnlinked = UserIdentityJdbc.deleteByUser(userId, Some(OAuthProviders.Wikimedia))

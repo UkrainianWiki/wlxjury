@@ -28,7 +28,10 @@ final case class AccountChange(
     createdAt: Instant
 )
 
-/** The `account_change` table (V96). Times from the database clock. */
+/** The `account_change` table (V96). Times from the database clock. It is history for the
+  * contest's admins and root to read, not a security control: no rule reads it (an admin-set
+  * address is `users.email_set_by_admin_at`, [[User.emailSetByAdmin]]).
+  */
 object AccountChangeJdbc {
 
   val Email = "email"
@@ -108,15 +111,6 @@ object AccountChangeJdbc {
   ): Seq[AccountChange] =
     sql"""SELECT $columns FROM account_change WHERE contest_id = $contestId
           ORDER BY created_at DESC, id DESC LIMIT $limit OFFSET $offset""".map(extract).list.apply()
-
-  /** Whether the account's address `email` was set by an admin who is not root now: an `email`
-    * entry to it by such an actor ([[services.UserService.invitationRefused]]). Before V96 no admin
-    * could change the address of an account with a password.
-    */
-  def emailSetByAdmin(userId: Long, email: String)(implicit session: DBSession = AutoSession): Boolean =
-    email.nonEmpty && sql"""SELECT EXISTS(SELECT 1 FROM account_change c JOIN users a ON a.id = c.actor_id
-          WHERE c.user_id = $userId AND c.field = $Email AND c.new_value = $email AND a.is_root = 0)"""
-      .map(_.boolean(1)).single.apply().contains(true)
 
   def countByContest(contestId: Long)(implicit session: DBSession = AutoSession): Long =
     sql"SELECT COUNT(*) FROM account_change WHERE contest_id = $contestId".map(_.long(1)).single.apply().getOrElse(0L)

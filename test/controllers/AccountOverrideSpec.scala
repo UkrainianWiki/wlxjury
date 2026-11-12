@@ -470,4 +470,56 @@ class AccountOverrideSpec extends PlaySpecification with PlayTestDb with Account
       }
     }
   }
+
+  "the follow-up review of 2026-11-12" should {
+    "not let an admin hand a co-admin who signs in only with Google to an address they set" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        createContests(10)
+        val adminA = account("a@example.com", Some(10), "admin", verified = true)
+        // accepted with Google: no password, an identity
+        val adminB = account("b@example.com", Some(10), "admin", password = None, verified = true)
+        UserIdentityJdbc.create(UserIdentity("google", "b-subject", adminB.getId, Some("b@example.com"), None))
+        val mail = new RecordingMail
+
+        val changed = save(mail, adminA, Some(10), form(adminB, Some(10), "admin", "email" -> "a.alias@example.com",
+          "sendInvitation" -> "true"): _*)
+        status(changed) === SEE_OTHER
+        flash(changed).get("users-added") must beSome(contain("No invitation can be sent to this account."))
+        User.emailSetByAdmin(adminB.getId) must beTrue
+        // its identity is unlinked (a tombstone): it still counts as an account that signed in
+        UserIdentityJdbc.findByUser(adminB.getId) must beEmpty
+        status(call(userController(mail).reinvite(adminB.getId, 10),
+          as(adminA, Some(10))(FakeRequest(POST, s"/users/${adminB.getId}/invite")).withCSRFToken)) === BAD_REQUEST
+        mail.recipients === Seq("b@example.com")
+        AccountTokenJdbc.findByUser(adminB.getId).filter(_.live) must beEmpty
+      }
+    }
+
+    "mark an address only when a non-root admin sets it, and clear it once its owner proves it" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        val root = account("root@example.com", None, "no", root = true, verified = true)
+        val juror = account("juror@example.com", Some(10), "jury", password = Some("pw"), verified = true)
+        val other = account("other@example.com", Some(10), "jury", password = Some("pw"), verified = true)
+        val mail = new RecordingMail
+
+        status(save(mail, root, None, form(other, Some(10), "jury", "email" -> "other.new@example.com"): _*)) === SEE_OTHER
+        User.emailSetByAdmin(other.getId) must beFalse
+
+        status(save(mail, admin, Some(10), form(juror, Some(10), "jury", "email" -> "juror.new@example.com",
+          "sendInvitation" -> "true"): _*)) === SEE_OTHER
+        User.emailSetByAdmin(juror.getId) must beTrue
+        // the juror is the admin's alone: invited all the same; using the link proves the address
+        mail.recipients.last === "juror.new@example.com"
+        implicit val mat: Materializer = app.materializer
+        status(call(loginController(new RecordingMail).acceptInvitation(), FakeRequest(POST, "/invitation")
+          .withFormUrlEncodedBody("token" -> mail.lastToken, "password" -> "new-pw", "repeat.password" -> "new-pw")
+          .withCSRFToken)) === SEE_OTHER
+        User.emailSetByAdmin(juror.getId) must beFalse
+        reloaded(juror).emailVerified must beTrue
+      }
+    }
+  }
 }

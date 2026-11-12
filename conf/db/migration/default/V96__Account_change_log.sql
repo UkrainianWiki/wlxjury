@@ -15,7 +15,9 @@
 --    address, a password link); NULL where no mail applies.
 --  * comment: the editor's optional comment for the log (the edit form's, at most 500 characters).
 --
--- Rows go with their account (ON DELETE CASCADE): the log holds the person's addresses.
+-- Rows go with their account (ON DELETE CASCADE): the log holds the person's addresses. The log is
+-- history for people to read, not a security control: no rule reads it (users.email_set_by_admin_at
+-- below is the one that does).
 -- Indexes: a contest's changes, newest first (the "Account changes" page), and an account's (its
 -- edit page). A new, empty table: no copy, rerunnable.
 CREATE TABLE IF NOT EXISTS account_change (
@@ -45,4 +47,15 @@ CREATE TABLE IF NOT EXISTS account_change (
 -- (existing rows read the default); the statement fails rather than copies. Rerunnable.
 ALTER TABLE account_token
   ADD COLUMN IF NOT EXISTS unsent BOOLEAN NOT NULL DEFAULT FALSE,
+  ALGORITHM = INSTANT;
+
+-- When a non-root admin last set the account's address (services.UserService.changeEmailByAdmin):
+-- an account that can sign in (a password, or a Google or Wikimedia identity, linked or not) and
+-- whose address an admin set gets an invitation only from who may hand it a set-password link
+-- (UserService.invitationRefused): otherwise an admin could set a co-admin's address to their own
+-- and invite it. NULL: the address is the owner's (given by them, proved by a used link or a
+-- confirmed change, which clear it, or set by root). Existing rows: NULL (before V96 no admin could
+-- change the address of an account that signs in). ALGORITHM=INSTANT, metadata only. Rerunnable.
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS email_set_by_admin_at TIMESTAMP(3) NULL DEFAULT NULL,
   ALGORITHM = INSTANT;

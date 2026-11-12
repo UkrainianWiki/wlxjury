@@ -622,6 +622,7 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
   private val v96Rollback = Seq(
     "UPDATE account_token SET revoked_at = NOW(3) WHERE unsent AND used_at IS NULL AND revoked_at IS NULL",
     "ALTER TABLE account_token DROP COLUMN unsent, ALGORITHM = INSTANT",
+    "ALTER TABLE users DROP COLUMN email_set_by_admin_at, ALGORITHM = INSTANT",
     "DROP TABLE account_change",
     "DELETE FROM flyway_schema_history WHERE version = '96'")
 
@@ -643,9 +644,10 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
           "VALUES (1, 2, NULL, 'email', 'a@example.com', 'b@example.com', 1)"))
         val refused = scala.util.Try(run(c, Seq(
           "INSERT INTO account_change (user_id, actor_id, field) VALUES (1, 2, 'Email')"))).isFailure
-        (rows(c, "SELECT unsent FROM account_token")(_.getBoolean(1)), refused)
+        (rows(c, "SELECT unsent FROM account_token")(_.getBoolean(1)) ++
+          rows(c, "SELECT email_set_by_admin_at IS NOT NULL FROM users")(_.getBoolean(1)), refused)
       }
-      (stored === List(false)) and (refused must beTrue) and {
+      (stored === List(false, false)) and (refused must beTrue) and {
         Using.resource(connect("fw_v96_back"))(c => run(c, Seq("DELETE FROM account_change")))
         val reset = schema("fw_v96_back")
         Using.resource(connect("fw_v96_back"))(c => run(c, statements("V96__Account_change_log.sql")))

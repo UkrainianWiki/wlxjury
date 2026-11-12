@@ -231,17 +231,19 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     sent
   }
 
-  /** Whether `creator` may not send `account` an invitation (review of 2026-11-12): accepting one
-    * sets the password, so an account with a password whose address an admin set (the account
-    * change log, [[AccountChangeJdbc.emailSetByAdmin]]) gets one only from who may hand it a
-    * set-password link anyway ([[ShareLinkService.handOverRefusal]]: root; an admin, for a juror
-    * or organizer whose every tie is in their contests). Otherwise an admin could change a
-    * co-admin's address to their own and invite it. An address its owner gave, or root set, is
-    * the owner's: the invitation reaches them.
+  /** Whether `creator` may not send `account` an invitation (reviews of 2026-11-12): accepting one
+    * sets the password, so an account that could sign in (a password, or a Google or Wikimedia
+    * identity, linked or unlinked since) whose address a non-root admin set
+    * (`users.email_set_by_admin_at`, [[User.emailSetByAdmin]]) gets one only from who may hand it
+    * a set-password link anyway ([[ShareLinkService.handOverRefusal]]: root; an admin, for a
+    * juror or organizer whose every tie is in their contests). Otherwise an admin could change a
+    * co-admin's address to their own and invite it. An address its owner gave or proved, or root
+    * set, is the owner's: the invitation reaches them. An invitee who never signed in is not
+    * concerned: nobody's account is taken.
     */
   def invitationRefused(creator: User, account: User): Boolean =
-    account.password.nonEmpty && !(creator.isRoot || creator.hasRole(User.ROOT_ROLE)) &&
-      AccountChangeJdbc.emailSetByAdmin(account.getId, account.emailLo) &&
+    !(creator.isRoot || creator.hasRole(User.ROOT_ROLE)) && User.emailSetByAdmin(account.getId) &&
+      (account.password.nonEmpty || UserIdentityJdbc.everLinked(account.getId)) &&
       ShareLinkService.handOverRefusal(creator, account).nonEmpty
 
   /** Sends the member (or a pending invitee) of the contest a new invitation: the role of a
@@ -388,7 +390,9 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
         val unlinked =
           if (old == email) 0
           else {
-            User.setEmail(accountId, email, verified = false)
+            // marked as set by an admin unless root set it (V96, [[invitationRefused]])
+            User.setEmail(accountId, email, verified = false,
+              byAdmin = !(actor.isRoot || actor.hasRole(User.ROOT_ROLE)))
             AccountTokenJdbc.revokeUnused(accountId, AccountTokenJdbc.SetsPassword :+ AccountTokenJdbc.EmailChange)
             AccountChangeLog.record(actor, accountId, contestId, AccountChangeJdbc.Email, Some(old), Some(email),
               mailSent = Some(notifyFormer), comment = comment)
