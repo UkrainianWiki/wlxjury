@@ -226,8 +226,18 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
       val (subject, body) = invitationText(creator, account, contestOpt, link)
       mailLink(creator, account, subject, body, AccountTokenJdbc.Invitation, tokenId)
     }
-    AccountChangeLog.record(creator, account.getId, contestId, AccountChangeJdbc.Invitation,
+    // the mail is the last step that can fail the call: once it is out (a working link), the
+    // invitation stands, and a log entry that can't be written doesn't fail the add or a line
+    // of an import (shown as failed, it would be imported again: a second mail); the server log
+    // says which entry is missing
+    try AccountChangeLog.record(creator, account.getId, contestId, AccountChangeJdbc.Invitation,
       newValue = role, mailSent = Some(sent), comment = comment)
+    catch {
+      case NonFatal(e) if sent =>
+        accountLogger.error(s"account_change_not_recorded field=${AccountChangeJdbc.Invitation} " +
+          s"accountId=${account.getId} byAccountId=${creator.getId} contestId=${contestId.getOrElse("")} " +
+          s"tokenId=$tokenId mailSent=true error=${e.getClass.getName}", e)
+    }
     sent
   }
 

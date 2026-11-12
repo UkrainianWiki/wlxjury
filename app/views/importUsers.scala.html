@@ -1,13 +1,32 @@
 @(
         adminUser: db.scalikejdbc.User,
         importUserForm: Form[(String, String, Boolean)],
-        contestId: Long)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+        contestId: Long,
+        problems: Seq[controllers.UserController.ImportProblem] = Nil,
+        result: Option[String] = None)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 @import helper._
 
 @mainAdmin("users", adminUser, adminUser.getId, contestId = Some(contestId)) {
     <div class="row" >
 
         <h1 class="h3">@Messages("import")</h1>
+
+        @* after an import with lines not added: what was added, then each of those lines *@
+        @result.map { msg =>
+            <div class="alert alert-info">@msg</div>
+        }
+        @if(problems.nonEmpty) {
+            <div class="alert alert-warning" role="alert" id="import-problems">
+                <h2 class="h5">@Messages("users.import.problems.title")</h2>
+                <ul class="mb-2">
+                    @for(p <- problems) {
+                        <li>@p.reference.fold(Messages("users.import.line.invalid", p.line.toString, p.entry))(ref =>
+                            Messages("users.import.line.failed", p.line.toString, p.entry, ref))</li>
+                    }
+                </ul>
+                <p class="mb-0">@Messages(if (problems.exists(_.reference.nonEmpty)) "users.import.problems.retry" else "users.import.problems.correct")</p>
+            </div>
+        }
         <div>
             @Messages("separate.entries.with.commas.newline.or.both")
             @Messages("entries.can.be.either.wikimedia.projects.accounts.or.emails")

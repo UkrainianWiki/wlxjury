@@ -573,7 +573,7 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
   }
 
   "an import line that fails (R220-1)" should {
-    "count it as not added, add the other lines, and log the failure's class only" in {
+    "list it with a reference, add the other lines, and log the failure's class and reference only" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
         createContests(10)
@@ -597,13 +597,17 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
           status(r)
           r
         }
-        status(result) === SEE_OTHER
-        flash(result).get("users-added") must beSome(contain("1 could not be added. Please import them again."))
+        val failed = log.filter(_.startsWith("user_import_line_failed"))
+        val reference = failed.flatMap("ref=([0-9a-f]{8}) ".r.findFirstMatchIn(_).map(_.group(1)))
+        status(result) === OK
+        // the admin's own input back to them, with the log line's reference; no exception text
+        contentAsString(result) must contain(s"Line 2: broken@example.com: an error on our side (reference ${reference.head}).")
+        contentAsString(result) must not(contain("Duplicate entry"))
         User.findByEmail("first@example.com") must not(beEmpty)
         User.findByEmail("last@example.com") must not(beEmpty)
         User.findByEmail("broken@example.com") must beEmpty
-        log.filter(_.startsWith("user_import_line_failed")) ===
-          Seq(s"user_import_line_failed byAccountId=${admin.getId} contestId=10 error=java.sql.SQLException")
+        failed === Seq(s"user_import_line_failed ref=${reference.head} line=2 byAccountId=${admin.getId} contestId=10 " +
+          "error=java.sql.SQLException")
         log.mkString("\n") must not(contain("broken@example.com"))
       }
     }

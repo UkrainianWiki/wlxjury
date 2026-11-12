@@ -64,6 +64,18 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
 **Fixes**
 
 - **Ukrainian:** a round that is not active shows «Ні» (no) in the rounds list's Active column, not «Немає» (absent).
+- **Adding a new person failed since 26.11** with a server error, and Import Users silently skipped them (counted as
+  "could not be added"): production's `users.password` was still `NOT NULL` from a 2015 Play evolution, while
+  accounts are created without a password since S2 (26.11, ddf45d50; fresh and test databases had V2's nullable
+  column). Fixed on production by hand on 2026-11-12 and recorded by **V98**. Adding an email that already had an
+  account was not affected.
+- **Import Users no longer fails silently:** a line that fails with an error is listed on the import page by line
+  number and the email or wiki account entered, with an error reference that is on the server log's
+  `user_import_line_failed` line (with the exception), and a line with an invalid wiki account name is listed as
+  such; the other lines are added as before (each line in its own transactions), and the form comes back with only
+  the lines not added, to import again. No mail goes out for a failed line: an invitation's mail is its last step,
+  and once it is out a change log entry that can't be written is logged (`account_change_not_recorded`) instead of
+  failing the line.
 
 **Development**
 
@@ -71,6 +83,10 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   job is queued or running, and lists each one (id, kind, contest, status); `--allow-running-jobs`
   deploys anyway with a warning (the jobs resume after the restart). A `job` table it cannot read
   stops the deployment too. This replaces the manual check before each deploy.
+- **V98:** `users.password` nullable (`VARCHAR(255) NULL DEFAULT NULL`, `ALGORITHM = INPLACE, LOCK = NONE`),
+  only where it is still `NOT NULL` (production's, applied there by hand on 2026-11-12); a no-op on fresh databases.
+  `scripts/schema_parity.py` compares a database's columns with a freshly migrated one's and flags a column `NOT
+  NULL` only in the target, for the release rehearsal on the production copy (Release checklist).
 - **V97:** `vote.voted_at` and `vote_aside.voted_at`, `TIMESTAMP(3) NULL DEFAULT NULL` (no implicit
   default or ON UPDATE under any `explicit_defaults_for_timestamp`), added `ALGORITHM = INSTANT`;
   no index (the orders sort by expressions). Existing rows stay NULL (a log backfill may fill them later). Set by `VoteJdbc.rateIn` and
