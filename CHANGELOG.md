@@ -62,6 +62,10 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   address without the slash, the query kept (signed out, the page then asks to sign in as usual).
   Only within the site: an address that would lead elsewhere (`//host/`, encoded slashes or
   backslashes) stays a 404, as does a form sent to such an address.
+- **Users page:** in the add-person row the role select and the add button sat at the top of the
+  row, level with the field labels, not with the inputs (since the Bootstrap 5 templates hid the
+  role's label). The role has its label again and the button the label's space, so both are level
+  with the inputs, also when an error shows under a field.
 
 **Development**
 
