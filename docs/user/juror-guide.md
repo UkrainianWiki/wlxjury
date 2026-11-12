@@ -119,11 +119,11 @@ assigned to you in it.
 The bar at the top shows the round's name. If you are in more than one open round, the
 round's name is a menu instead: choose another round there.
 
-If no round is open for you in the current contest but one is in another of your contests (for
-example this year's, while you were still in last year's), the tool opens that one. If no round
-is open for you anywhere, it says **No round configured yet. Please wait until contest admin
-configures the tool.**, with a **Logout** button (and your other contests, if you have a
-different role in one). Come back later, or ask your contest admin when the round opens.
+If no round is open for you in the current contest but one is in a newer contest of yours (for
+example this year's, while you were still in last year's), the tool opens that one. Otherwise it
+says **No round configured yet. Please wait until contest admin configures the tool.**, with a
+**Logout** button and buttons for your other contests where you can go (for example last year's,
+if its round is still open). Come back later, or ask your contest admin when the round opens.
 
 ### Rounds you don't see
 

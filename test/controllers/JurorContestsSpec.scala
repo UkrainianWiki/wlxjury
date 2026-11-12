@@ -38,9 +38,10 @@ class JurorContestsSpec extends PlaySpecification with PlayTestDb {
     round
   }
 
-  private def send(app: Application, method: String, path: String, user: User, contestId: Long): Future[Result] =
+  private def send(app: Application, method: String, path: String, user: User, contestId: Long,
+      headers: (String, String)*): Future[Result] =
     route(app, FakeRequest(method, path)
-      .withHeaders(ACCEPT -> "text/html")
+      .withHeaders(Seq(ACCEPT -> "text/html") ++ headers: _*)
       .withSession(Secured.UserName -> user.email, Secured.CurrentContestId -> contestId.toString).withCSRFToken).get
 
   /** The contests the navbar's switcher offers on the user's profile page (none: no switcher). */
@@ -102,6 +103,61 @@ class JurorContestsSpec extends PlaySpecification with PlayTestDb {
         (status(gallery) === OK) and
           (contentAsString(gallery) must not(contain("No round configured yet."))) and
           (session(gallery).get(Secured.CurrentContestId) must beSome("20"))
+      }
+    }
+  }
+
+  "a juror waiting for this year's first round" should {
+    "stay in this year's contest, last year's open round offered as a switch, not entered" in {
+      testDbApp { implicit app =>
+        createContests(10, 20)
+        val juror = member("juror@example.com", 20L -> "jury", 10L -> "jury")
+        // last year's final round stays active
+        openRound(10, juror)
+        val start = send(app, GET, "/", juror, 20)
+        val gallery = send(app, GET, s"/gallery/user/${juror.getId}/page/1", juror, 20)
+        val page = Jsoup.parse(contentAsString(start))
+        (status(start) === OK) and
+          (page.text must contain("No round configured yet.")) and
+          (page.select("form.no-round-switch").asScala.map(_.attr("action")).toSeq === Seq("/switch-contest/10")) and
+          (session(start).get(Secured.CurrentContestId) must not(beSome("10"))) and
+          (contentAsString(gallery) must contain("No round configured yet.")) and
+          (session(gallery).get(Secured.CurrentContestId) must not(beSome("10")))
+      }
+    }
+  }
+
+  "the move to a newer contest" should {
+    "not happen for a script request or a prefetch, which leave the session's contest" in {
+      testDbApp { implicit app =>
+        createContests(10, 20)
+        val juror = member("juror@example.com", 10L -> "jury", 20L -> "jury")
+        openRound(20, juror)
+        val gallery = s"/gallery/user/${juror.getId}/page/1"
+        val notPages = Seq(
+          "/" -> ("X-Requested-With" -> "XMLHttpRequest"),
+          "/" -> ("Sec-Purpose" -> "prefetch"),
+          gallery -> ("Sec-Fetch-Mode" -> "cors"),
+          gallery -> ("Purpose" -> "prefetch"))
+        val switched = notPages.map { case (path, header) =>
+          (path, header) -> session(send(app, GET, path, juror, 10, header)).get(Secured.CurrentContestId)
+        }
+        (switched.filter(_._2.contains("20")) must beEmpty) and
+          // the same page opened in the browser does move
+          (session(send(app, GET, "/", juror, 10)).get(Secured.CurrentContestId) must beSome("20"))
+      }
+    }
+
+    "not happen for an organizer of the current contest who is a juror in a newer one" in {
+      testDbApp { implicit app =>
+        createContests(20, 30)
+        val organizer = member("org@example.com", 20L -> "organizer", 30L -> "jury")
+        openRound(30, organizer)
+        val gallery = send(app, GET, s"/gallery/user/${organizer.getId}/page/1", organizer, 20)
+        val large = send(app, GET, "/large/pageid/1", organizer, 20)
+        (session(gallery).get(Secured.CurrentContestId) must not(beSome("30"))) and
+          (session(large).get(Secured.CurrentContestId) must not(beSome("30"))) and
+          (contentAsString(gallery) must contain("No round configured yet."))
       }
     }
   }
