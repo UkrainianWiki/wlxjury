@@ -38,7 +38,9 @@ schema V95 (no migrations), from `26.11`.
 
 - **Dark mode:** secondary buttons and the pager's links have a visible light border and text
   (at least 3:1 and 4.5:1 on the dark greys), with distinct hover, pressed and disabled states;
-  they were grey on grey. Light mode is unchanged.
+  they were grey on grey.
+- **Light mode:** secondary buttons have darker text (`#343a40` instead of `#6c757d`), so they no
+  longer look disabled.
 
 ## 26.11 (2026-11-11)
 
