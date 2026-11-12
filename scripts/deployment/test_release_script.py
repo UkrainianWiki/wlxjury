@@ -99,7 +99,7 @@ def key(version):
     return tuple(int(part) for part in version.split('.'))
 
 if key(manifest['schemaVersion']) > key(schema()):
-    sql('ALTER TABLE votes ENGINE=InnoDB; CREATE TABLE job (id INT PRIMARY KEY) ENGINE=InnoDB')
+    sql('ALTER TABLE votes ENGINE=InnoDB; CREATE TABLE round_image (id INT PRIMARY KEY) ENGINE=InnoDB')
     if manifest.get('failMigration'):
         sys.exit('killed mid-migration: DDL applied, no history row')
     sql("INSERT INTO flyway_schema_history SELECT MAX(installed_rank) + 1, '%s', 456, 1 "
@@ -282,7 +282,10 @@ class ReleaseScriptTest(unittest.TestCase):
                  "checksum INT, success BOOLEAN) ENGINE=InnoDB; "
                  "INSERT INTO flyway_schema_history VALUES (1, '53', 123, 1); "
                  "CREATE TABLE votes (id INT PRIMARY KEY, value VARCHAR(100)) ENGINE=MyISAM; "
-                 "INSERT INTO votes VALUES (1, 'first vote'), (2, 'Україна')")
+                 "INSERT INTO votes VALUES (1, 'first vote'), (2, 'Україна'); "
+                 # deploy reads the background jobs (V60's table, the columns it uses), which production has.
+                 "CREATE TABLE job (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, kind VARCHAR(64) NOT NULL, "
+                 "contest_id BIGINT UNSIGNED NULL, status VARCHAR(16) NOT NULL) ENGINE=InnoDB")
 
     def client(self):
         return ['mariadb', '--defaults-extra-file=' + str(self.runtime / 'db-admin.cnf'), '--batch', '--skip-column-names']
@@ -479,7 +482,7 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertTrue(self.flag.exists())
         self.assertTrue(self.hold.exists())
         self.assertEqual(self.sql("SELECT COUNT(*) FROM information_schema.TABLES "
-                                  "WHERE TABLE_SCHEMA = 'jury' AND TABLE_NAME = 'job'"), '1')
+                                  "WHERE TABLE_SCHEMA = 'jury' AND TABLE_NAME = 'round_image'"), '1')
         # Reopening refuses a release that is not ready.
         refused = self.release('reopen', operation.name)
         self.assertEqual(refused.returncode, 1)
@@ -519,7 +522,7 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertEqual(self.sql("SELECT ENGINE FROM information_schema.TABLES "
                                   "WHERE TABLE_SCHEMA = 'jury' AND TABLE_NAME = 'votes'"), 'MyISAM')
         self.assertEqual(self.sql("SELECT GROUP_CONCAT(TABLE_NAME ORDER BY TABLE_NAME) FROM information_schema.TABLES "
-                                  "WHERE TABLE_SCHEMA = 'jury'"), 'flyway_schema_history,votes')
+                                  "WHERE TABLE_SCHEMA = 'jury'"), 'flyway_schema_history,job,votes')
         self.assertEqual(self.sql("SELECT DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA "
                                   "WHERE SCHEMA_NAME = 'jury'"), 'utf8mb4_general_ci')
 
@@ -539,7 +542,7 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertIn('backup checksum mismatch; nothing was changed', damaged.stderr)
         self.assertNotIn('restoring', self.milestones(operation))
         self.assertEqual(self.sql("SELECT COUNT(*) FROM information_schema.TABLES "
-                                  "WHERE TABLE_SCHEMA = 'jury' AND TABLE_NAME = 'job'"), '1')
+                                  "WHERE TABLE_SCHEMA = 'jury' AND TABLE_NAME = 'round_image'"), '1')
         # A readable backup whose SQL fails part-way: the import stops the restore,
         # nothing is recorded as restored, and reopening refuses.
         with gzip.open(str(dump), 'wb') as broken:
@@ -682,7 +685,7 @@ class ReleaseScriptTest(unittest.TestCase):
                       % self.db_port, refused.stderr)
         self.assertNotIn('restoring', self.milestones(operation))
         self.assertEqual(self.sql("SELECT COUNT(*) FROM information_schema.TABLES "
-                                  "WHERE TABLE_SCHEMA = 'jury' AND TABLE_NAME = 'job'"), '1')
+                                  "WHERE TABLE_SCHEMA = 'jury' AND TABLE_NAME = 'round_image'"), '1')
 
     def test_restore_needs_the_recovery_reserve_and_room_for_the_rescue_dump(self):
         operation = self.reopened_deployment()
@@ -735,6 +738,59 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('cannot reach MariaDB at localhost:', result.stderr)
         self.assertUnchanged()
+
+    def assertJobsRefused(self, result, text):
+        """Refused at the jobs check: nothing stopped or switched, no staging or operation left."""
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(text, result.stderr)
+        self.assertIn('nothing was changed', result.stderr)
+        self.assertUnchanged()
+        self.assertEqual((self.root / 'current').resolve(), self.old)
+        self.assertFalse(any(call.startswith('stop') for call in self.calls()))
+
+    def test_queued_or_running_jobs_stop_the_deployment_before_anything_changes(self):
+        self.sql("INSERT INTO job (id, kind, contest_id, status) VALUES "
+                 "(1, 'round_distribution', 7, 'queued'), (2, 'round_image_check', NULL, 'running'), "
+                 "(3, 'round_distribution', 7, 'done')")
+        archive, sha = self.release_zip()
+        result = self.release('deploy', archive, sha, '--backup')
+        self.assertJobsRefused(result, 'background jobs are queued or running')
+        self.assertIn('  job 1: round_distribution, contest 7, queued\n'
+                      '  job 2: round_image_check, contest none, running\n', result.stderr)
+        self.assertNotIn('job 3', result.stderr)
+        self.assertIn('Wait for them to finish (or cancel them in the app), or rerun with --allow-running-jobs',
+                      result.stderr)
+
+    def test_allow_running_jobs_deploys_and_lists_them(self):
+        self.sql("INSERT INTO job (id, kind, contest_id, status) VALUES (4, 'round_distribution', 9, 'running')")
+        archive, sha = self.release_zip(schema='53', build='0.13-same')
+        # The options in either order; each at most once.
+        result = self.release('deploy', archive, sha, '--allow-running-jobs', '--backup')
+        self.assertSucceeded(result)
+        self.assertIn('warning: deploying with background jobs queued or running (--allow-running-jobs)', result.stderr)
+        self.assertIn('  job 4: round_distribution, contest 9, running', result.stderr)
+        operation = self.operation()
+        self.assertEqual(self.milestones(operation), ['started', 'backup-complete', 'migration-may-start', 'ready'])
+        self.assertIn('  job 4: round_distribution, contest 9, running', (operation / 'operation.log').read_text())
+        self.assertEqual((self.root / 'current').resolve(), self.root / 'releases' / ('0.13-same-' + sha[:12]))
+        for duplicate in (['--allow-running-jobs', '--allow-running-jobs'], ['--backup', '--backup']):
+            self.assertEqual(self.release('deploy', archive, sha, *duplicate).returncode, 2)  # Usage error.
+
+    def test_finished_failed_and_cancelled_jobs_do_not_stop_the_deployment(self):
+        self.sql("INSERT INTO job (id, kind, contest_id, status) VALUES "
+                 "(1, 'round_distribution', 7, 'done'), (2, 'round_distribution', 7, 'failed'), "
+                 "(3, 'round_image_check', NULL, 'cancelled')")
+        archive, sha = self.release_zip()
+        result = self.release('deploy', archive, sha)
+        self.assertSucceeded(result)
+        self.assertNotIn('background jobs', result.stderr)
+        self.assertEqual(self.milestones(self.operation())[-1], 'ready')
+
+    def test_an_unreadable_job_table_stops_the_deployment_before_anything_changes(self):
+        self.sql('DROP TABLE job')
+        archive, sha = self.release_zip()
+        result = self.release('deploy', archive, sha, '--allow-running-jobs')
+        self.assertJobsRefused(result, 'cannot read the background jobs (table job)')
 
     def test_older_release_is_refused_before_anything_changes(self):
         archive, sha = self.release_zip(schema='50', build='0.11-old')

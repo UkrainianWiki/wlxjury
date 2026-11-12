@@ -40,6 +40,13 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
 
 - **Ukrainian:** a round that is not active shows «Ні» (no) in the rounds list's Active column, not «Немає» (absent).
 
+**Development**
+
+- **Deployment tool:** `wlxjury-release deploy` refuses, before anything changes, while a background
+  job is queued or running, and lists each one (id, kind, contest, status); `--allow-running-jobs`
+  deploys anyway with a warning (the jobs resume after the restart). A `job` table it cannot read
+  stops the deployment too. This replaces the manual check before each deploy.
+
 ## 26.11.2 (2026-11-12)
 
 Deployed 2026-11-12, build `26.11.2-5fee540412f4` (release commit `5fee5404` on `release/26.11.2`),
