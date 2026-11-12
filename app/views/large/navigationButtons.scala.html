@@ -151,18 +151,19 @@
    jurors' votes together), in any order, after the vote: the juror's own controls or, read-only, the
    viewed juror's stars above. A yes/no round's read-only view (one juror's votes as the organisers
    view them) has no controls, so the vote itself goes first: the read-only mark of the gallery's
-   tiles (a thumb in the vote's colour) and its words, unrated without a time *@
+   tiles (a thumb in the vote's colour) and its words (one vote's: vote.selected, not the tabs'
+   plural "selected"), unrated without a time *@
 @if(list.showsVoteTime) {
     @defining(files(index).votes.headOption.flatMap(_.votedAt)) { votedAt =>
     @defining(files(index).rate) { rate =>
-    @if(round.isBinary && readOnly) {
+    @if(round.isBinary && readOnly && list.asUserId != user.getId) {
     <div class="wlx-large-viewed-vote small mt-1">
         @if(rate > 0) {
-        <span class="wlx-viewed-vote-mark wlx-vote-selected"><i class="bi bi-hand-thumbs-up-fill" aria-hidden="true"></i> @Messages("selected")</span>
+        <span class="wlx-viewed-vote-mark wlx-vote-selected"><i class="bi bi-hand-thumbs-up-fill" aria-hidden="true"></i> @Messages("vote.selected")</span>
         } else if (rate < 0) {
-        <span class="wlx-viewed-vote-mark wlx-vote-rejected"><i class="bi bi-hand-thumbs-down-fill" aria-hidden="true"></i> @Messages("rejected")</span>
+        <span class="wlx-viewed-vote-mark wlx-vote-rejected"><i class="bi bi-hand-thumbs-down-fill" aria-hidden="true"></i> @Messages("vote.rejected")</span>
         } else {
-        <span class="wlx-viewed-vote-mark text-body-secondary">@Messages("unrated")</span>
+        <span class="wlx-viewed-vote-mark text-body-secondary">@Messages("vote.unrated")</span>
         }
         @if(rate != 0) {
         <span class="wlx-large-vote-time"><span aria-hidden="true">·</span> @if(votedAt.nonEmpty) {@Messages("vote.time.voted") }@snippets.voteTime(votedAt)</span>

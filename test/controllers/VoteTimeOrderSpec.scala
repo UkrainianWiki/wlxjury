@@ -371,7 +371,11 @@ class VoteTimeOrderSpec extends PlaySpecification with ThrownExpectations with P
           (rated.select(".wlx-large-vote-time").text === s"Voted ${iso(3)}") and
           (rated.select("[data-vote-url], [data-vote-prefix]").size === 0) and
           (unrated.selectFirst("#rate-number").text === "–") and
-          (unrated.select(".wlx-large-vote-time").size === 0)
+          (unrated.select(".wlx-large-vote-time").size === 0) and {
+            // a juror without a name: no empty line for it
+            DB.autoCommit { implicit s => sql"UPDATE users SET fullname = '' WHERE id = ${f.juror.getId}".update() }
+            large(8L).select(".wlx-viewed-juror").size === 0
+          }
       }
     }
 

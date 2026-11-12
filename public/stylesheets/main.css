@@ -445,6 +445,8 @@ a:has(> .btn) { text-decoration: none; }
 .wlx-viewed-vote-mark { font-weight: 600; }
 .wlx-viewed-vote-mark.wlx-vote-selected { color: var(--wlx-vote-selected); }
 .wlx-viewed-vote-mark.wlx-vote-rejected { color: var(--wlx-vote-rejected); }
+/* its time wraps as a whole, onto the next line in the narrow side column */
+.wlx-large-viewed-vote .wlx-large-vote-time { white-space: nowrap; }
 
 /* the time of the juror's vote on their tile in an order by vote time (tile-votes.js
    addVoteTime): as the tally, at the tile's top; none recorded in the secondary text colour */
