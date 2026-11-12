@@ -457,8 +457,8 @@ an `hd` claim), only if the account's email is verified, or it has no password a
 that address, which the sign-in accepts (`AccountTokenService.acceptByProvider`, sharing
 `proveEmail` with `acceptPasswordLink`); by wiki account only for a never-linked placeholder (no
 password, no email, no Wikimedia identity now or before); never creating an account. Accepting a
-link, root's password reset, an admin's change of an invitee's email or another's wiki account
-unlink identities; unlinking ends the account's other sessions.
+link, root's password reset, an admin's or root's change of another account's email or wiki
+account unlink identities; unlinking ends the account's other sessions.
 
 **Exceptions.** N5 (postponed): the greeting/invitation is sent "From" the inviter.
 Duplicate wiki accounts are refused at sign-in, not merged (postponed).

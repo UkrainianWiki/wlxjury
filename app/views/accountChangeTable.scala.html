@@ -1,0 +1,54 @@
+@(rows: Seq[services.AccountChangeLog.Row], showAccount: Boolean)(implicit messages: Messages)
+@* The account change log's entries (V96), the newest first: when, who, (whose account), what changed
+   from what to what, whether a mail went out, and the comment. Only for the contest's admins and root
+   (the edit page, AccountChangeController): the values hold email addresses. *@
+@import db.scalikejdbc.AccountChangeJdbc
+@value(field: String, v: Option[String]) = @{
+    v.map { s =>
+        field match {
+            case AccountChangeJdbc.Role | AccountChangeJdbc.Invitation => Messages("role." + s)
+            case AccountChangeJdbc.Root => Messages(if (s == "true") "yes" else "no")
+            case AccountChangeJdbc.ShareLink => Messages("link.purpose." + s)
+            case _ => s
+        }
+    }
+}
+@* a name, else the account's id: never an account's current address, which the log doesn't record *@
+@name(u: Option[db.scalikejdbc.User], id: Long) = @{
+    u.flatMap(a => Option(a.fullname).map(_.trim).filter(_.nonEmpty)).getOrElse("#" + id)
+}
+<div class="table-responsive">
+    <table class="table table-sm align-middle account-changes">
+        <thead>
+            <tr>
+                <th scope="col">@Messages("account.change.when")</th>
+                <th scope="col">@Messages("account.change.who")</th>
+                @if(showAccount) {
+                    <th scope="col">@Messages("account.change.account")</th>
+                }
+                <th scope="col">@Messages("account.change.what")</th>
+                <th scope="col">@Messages("account.change.from")</th>
+                <th scope="col">@Messages("account.change.to")</th>
+                <th scope="col">@Messages("account.change.mail")</th>
+                <th scope="col">@Messages("account.change.comment")</th>
+            </tr>
+        </thead>
+        <tbody>
+        @for(row <- rows) {
+            <tr class="account-change account-change-@row.change.field">
+                <td class="text-nowrap">@views.LinkTimes.utc(row.change.createdAt)</td>
+                <td>@name(row.actor, row.change.actorId)</td>
+                @if(showAccount) {
+                    <td>@name(row.account, row.change.userId)</td>
+                }
+                <td>@Messages("account.change.field." + row.change.field)</td>
+                <td>@value(row.change.field, row.change.oldValue).getOrElse("")</td>
+                <td>@value(row.change.field, row.change.newValue).getOrElse("")</td>
+                @* an email change's notice to the former address goes out after the save: queued *@
+                <td>@row.change.mailSent.map(s => Messages(if (!s) "account.change.mail.not.sent" else if (row.change.field == AccountChangeJdbc.Email) "account.change.mail.notice.queued" else "account.change.mail.sent")).getOrElse("")</td>
+                <td class="account-change-comment">@row.change.comment.getOrElse("")</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>

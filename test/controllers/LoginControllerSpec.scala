@@ -317,10 +317,11 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
       testDbApp { implicit app =>
         val messages = app.injector.instanceOf[MessagesApi]
         val link = "https://jury.example.org/invitation/abc"
-        val mails = Seq("invitation.subject.tool" -> Nil, "invitation.body.tool" -> Seq(link, 7),
+        val mails = Seq("invitation.subject.tool" -> Nil, "invitation.body.tool" -> Seq(link, 7, "Anna Admin"),
           "password.link.subject" -> Nil, "password.link.body" -> Seq(link, 7),
-          "email.change.subject" -> Nil, "email.change.body" -> Seq(link, 24),
-          "email.changed.subject" -> Nil, "email.changed.body" -> Seq("new@example.org"))
+          "email.change.subject" -> Nil, "email.change.body" -> Seq(link, 24, "jury.example.org"),
+          "email.changed.subject" -> Nil, "email.changed.body" -> Seq("new@example.org"),
+          "email.changed.by.admin.body" -> Seq("n***@example.org", "Anna Admin", "jury.example.org"))
         forall(for (l <- Seq("en", "fr", "uk", "ru"); (key, args) <- mails) yield (l, key, args)) { case (l, key, args) =>
           val text = messages(key, args: _*)(Lang(l))
           (text must contain("WLX Jury")) and (text must not(contain("<"))) and

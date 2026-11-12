@@ -91,6 +91,8 @@ GET         /large/pageid/:pageid                                               
 GET         /large/region/:region/pageid/:pageid                                    controllers.LargeViewController.largeCurrentUser(pageid: Long, region: String)
 
 GET         /admin/users                                                            @controllers.UserController.users(contestId: Option[Long] ?= None)
+# the contest's account change log (V96): its admins and root only
+GET         /admin/account-changes                                                  @controllers.AccountChangeController.changes(contestId: Long, page: Int ?= 1)
 GET         /admin/allUsers                                                         @controllers.UserController.allUsers()
 GET         /admin/importusers                                                      @controllers.UserController.showImportUsers(contestId: Option[Long] ?= None)
 POST        /admin/importusers                                                      @controllers.UserController.importUsers(contestId: Option[Long] ?= None)
