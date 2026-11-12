@@ -25,7 +25,22 @@ with `.N` for an extra deploy in the same month (`26.11.1`), and release heading
 
 ## Unreleased (developed, not yet deployed)
 
-Nothing yet: the next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`).
+The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 2026-11-11.
+
+Nothing yet.
+
+## 26.11.1 (2026-11-12)
+
+Deployed 2026-11-12, build `26.11.1-cc645bcf6f0c` (release commit `cc645bcf` on `release/26.11.1`),
+schema V95 (no migrations), from `26.11`.
+
+**Features**
+
+- **Dark mode:** secondary buttons and the pager's links have a visible light border and text
+  (at least 3:1 and 4.5:1 on the dark greys), with distinct hover, pressed and disabled states;
+  they were grey on grey.
+- **Light mode:** secondary buttons have darker text (`#343a40` instead of `#6c757d`), so they no
+  longer look disabled.
 
 ## 26.11 (2026-11-11)
 
