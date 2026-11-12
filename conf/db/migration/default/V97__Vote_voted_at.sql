@@ -16,6 +16,11 @@
 -- columns in the same order, and keeps a moved vote's time. vote_orphan (V82's archive, nothing
 -- writes or reads it) is left as it is.
 --
+-- No index: the orders by vote time sort by expressions (unrated last, then the time), which no
+-- index on (jury_id, round_id, voted_at) can give, and the gallery's deferred join needs more
+-- columns than it has; an index would only cost every vote write. Whether a covering index
+-- pays is for a benchmark first.
+--
 -- 1. The columns: ALGORITHM = INSTANT, metadata only (existing rows read the default NULL; the
 --    statement fails rather than copies). Rerunnable. A 60 s lock_wait_timeout for the metadata
 --    lock (a long transaction or backup: the statement fails with nothing changed).
@@ -28,10 +33,3 @@ SET STATEMENT lock_wait_timeout = 60 FOR
 ALTER TABLE vote_aside
   ADD COLUMN IF NOT EXISTS voted_at TIMESTAMP(3) NULL DEFAULT NULL,
   ALGORITHM = INSTANT;
-
--- 2. A juror's votes in a round by vote time: online (INPLACE, LOCK = NONE: the statement fails
---    rather than copies or locks the table while it is built). Rerunnable.
-SET STATEMENT lock_wait_timeout = 60 FOR
-ALTER TABLE vote
-  ADD INDEX IF NOT EXISTS vote_jury_round_voted_at_idx (jury_id, round_id, voted_at),
-  ALGORITHM = INPLACE, LOCK = NONE;

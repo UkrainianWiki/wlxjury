@@ -48,7 +48,7 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   in place of **By my rating**; the views of all the jurors together are unchanged. In a vote-time
   order the tiles and the by-rate list show each vote's time, and the large view of one juror's
   votes shows it in every order ("Voted 12 Nov, 14:05", formatted in the browser in the viewer's
-  time zone and the page's language, `vote-time.js`; "time not recorded" for a vote without one);
+  time zone and the page's language, `vote-time.js`; "Time not recorded" for a vote without one);
   never in the views of all the jurors. Juror and organizer guides updated.
 
 **Fixes**
@@ -63,8 +63,7 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   stops the deployment too. This replaces the manual check before each deploy.
 - **V97:** `vote.voted_at` and `vote_aside.voted_at`, `TIMESTAMP(3) NULL DEFAULT NULL` (no implicit
   default or ON UPDATE under any `explicit_defaults_for_timestamp`), added `ALGORITHM = INSTANT`;
-  index `vote_jury_round_voted_at_idx (jury_id, round_id, voted_at)` online (`INPLACE, LOCK = NONE`).
-  Existing rows stay NULL (a log backfill may fill them later). Set by `VoteJdbc.rateIn` and
+  no index (the orders sort by expressions). Existing rows stay NULL (a log backfill may fill them later). Set by `VoteJdbc.rateIn` and
   `CriteriaRate.updateRateIn` (`VoteSql.votedAt`), and by `VoteJdbc.create` / `batchInsert` for a
   rated row; moved with the vote between `vote` and `vote_aside`.
 

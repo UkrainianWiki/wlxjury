@@ -41,19 +41,20 @@ class VoteVotedAtMigrationSpec extends Specification with BeforeAll with AfterAl
           ORDER BY TABLE_NAME""")(rs => (rs.getString(1), rs.getString(2), Option(rs.getString(3)).getOrElse("NULL"),
       rs.getString(4)))
 
-  private def index(c: Connection, database: String): List[String] =
+  /** The indexes of vote with voted_at. */
+  private def indexed(c: Connection, database: String): List[String] =
     query(c,
-      s"""SELECT COLUMN_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = '$database'
-          AND TABLE_NAME = 'vote' AND INDEX_NAME = 'vote_jury_round_voted_at_idx' ORDER BY SEQ_IN_INDEX""")(_.getString(1))
+      s"""SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = '$database'
+          AND TABLE_NAME = 'vote' AND COLUMN_NAME = 'voted_at'""")(_.getString(1))
 
   private val nullable = List(("vote", "YES", "NULL", ""), ("vote_aside", "YES", "NULL", ""))
 
   "V97" should {
 
-    "give vote and vote_aside a nullable voted_at without a default or ON UPDATE, and the juror's index" in {
+    "give vote and vote_aside a nullable voted_at without a default or ON UPDATE, and no index on it" in {
       Using.resource(root("wlxjury")) { c =>
         (columns(c, "wlxjury", "voted_at") === nullable) and
-          (index(c, "wlxjury") === List("jury_id", "round_id", "voted_at")) and
+          (indexed(c, "wlxjury") must beEmpty) and
           // vote_aside takes vote's rows by SELECT *: the same columns in the same order
           (query(c, """SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY ORDINAL_POSITION) FROM information_schema.COLUMNS
                        WHERE TABLE_SCHEMA = 'wlxjury' AND TABLE_NAME = 'vote'""")(_.getString(1)) ===
@@ -88,9 +89,9 @@ class VoteVotedAtMigrationSpec extends Specification with BeforeAll with AfterAl
           (first must beEmpty) and
           (after === nullable) and
           (columns(c, scratch, "voted_at") === nullable) and
-          (index(c, scratch) === List("jury_id", "round_id", "voted_at")) and
+          (indexed(c, scratch) must beEmpty) and
           // the rerun only notes what is there already (MariaDB's "Duplicate column name" / "key name")
-          (again.forall(w => w.toLowerCase.contains("duplicate") || w.toLowerCase.contains("exist")) must beTrue) and
+          (again.forall(w => w.toLowerCase.contains("duplicate column")) must beTrue) and
           (untouched === List(None))
       }
     }
