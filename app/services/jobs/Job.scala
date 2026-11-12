@@ -162,9 +162,11 @@ object JobJdbc {
         .flatMap(j => j.subjectId.map(_ -> j))
         .toMap
 
-  /** The latest job with the dedupe key, active or not (e.g. the latest all-rounds image check). */
+  /** The latest job with the dedupe key, active or not (e.g. the latest all-rounds image check). Only for jobs of no contest: with
+    * `contest_id IS NULL` the contest index narrows the scan (no index covers `dedupe_key`).
+    */
   def latestByDedupeKey(key: String)(implicit session: DBSession = AutoSession): Option[Job] =
-    sql"SELECT $columns FROM job WHERE dedupe_key = $key ORDER BY id DESC LIMIT 1".map(extract).single()
+    sql"SELECT $columns FROM job WHERE contest_id IS NULL AND dedupe_key = $key ORDER BY id DESC LIMIT 1".map(extract).single()
 
   def activeOfKind(kind: String)(implicit session: DBSession = AutoSession): Seq[Job] =
     sql"SELECT $columns FROM job WHERE status IN (${JobStatus.active.toSeq}) AND kind = $kind ORDER BY id"

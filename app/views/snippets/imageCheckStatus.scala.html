@@ -4,12 +4,14 @@
    what it found and fixed; queued, running, failed or cancelled as the job's status (polled
    by job-status.js while active, with Retry / Cancel) and a link to the job. *@
 <div class="image-check-status card card-body p-2 mt-2 mb-3">
-    @if(job.isDone) {
-        <span class="image-check-summary">@views.ImageCheckSummary.text(job)</span>
+    @defining(if (job.isDone) views.ImageCheckSummary.text(job) else None) { summary =>
+    @if(summary.isDefined) {
+        <span class="image-check-summary">@summary.get</span>
     } else {
         @Messages("round.images.check.status", job.id.toString):
         @snippets.jobStatus(job, returnTo)
         <a href="@routes.JobController.status(job.id)">@Messages("round.images.check.job.link", job.id.toString)</a>
         <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
+    }
     }
 </div>

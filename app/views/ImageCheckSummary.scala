@@ -1,7 +1,7 @@
 package views
 
 import play.api.i18n.Messages
-import services.distribution.RoundImageCheckHandler
+import services.distribution.{ImageCheckState, RoundImageCheckHandler}
 import services.jobs.Job
 
 import java.time.{Instant, ZoneOffset}
@@ -12,8 +12,11 @@ import java.time.{Instant, ZoneOffset}
   */
 object ImageCheckSummary {
 
-  def text(job: Job)(implicit messages: Messages): String = {
-    val st = RoundImageCheckHandler.stateOf(job)
+  /** The summary; None if the job's state can't be read (not shown as "no mismatches"). */
+  def text(job: Job)(implicit messages: Messages): Option[String] =
+    job.state.validate[ImageCheckState].asOpt.map(summary(job, _))
+
+  private def summary(job: Job, st: ImageCheckState)(implicit messages: Messages): String = {
     val all = RoundImageCheckHandler.roundOf(job).isEmpty
     val counts = Seq(
       "added" -> st.added,

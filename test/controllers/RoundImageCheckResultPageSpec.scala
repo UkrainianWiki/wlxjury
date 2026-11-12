@@ -53,11 +53,44 @@ class RoundImageCheckResultPageSpec extends PlaySpecification with PlayTestDb {
         val running = jobWith(RoundImageCheckHandler.allJob(root), JobStatus.Running, ImageCheckState(rounds = 40L))
         val runningText = page(app, "root@example.com", s"/admin/rounds?contestId=$contestId")
         (doneText must contain(s"Image check (job $done, ")) and
-          (doneText must contain("1,823 rounds checked, 5 rows added, 2 statuses fixed, 1 rounds skipped")) and
+          (doneText must contain("1,823 rounds checked, 5 rows added, 2 statuses fixed, 1 round skipped (distribution running)")) and
           (cleanText must contain(s"Image check (job $clean, ")) and
           (cleanText must contain("1,823 rounds checked, no mismatches")) and
           (runningText must contain(s"""data-src="/admin/jobs/$running"""")) and
           (runningText must not(contain("rounds checked")))
+      }
+    }
+
+    "show a failed or cancelled all-rounds check as its status with the job link, not as a summary" in {
+      testDbApp { app =>
+        setUp()
+        val failed = jobWith(RoundImageCheckHandler.allJob(root), JobStatus.Failed, ImageCheckState(rounds = 40L))
+        val failedText = page(app, "root@example.com", s"/admin/rounds?contestId=$contestId")
+        val cancelled = jobWith(RoundImageCheckHandler.allJob(root), JobStatus.Cancelled, ImageCheckState(rounds = 40L))
+        val cancelledText = page(app, "root@example.com", s"/admin/rounds?contestId=$contestId")
+        (failedText must contain("""data-status="failed"""")) and
+          (failedText must contain(s"""href="/admin/jobs/$failed"""")) and
+          (failedText must not(contain("rounds checked"))) and
+          (cancelledText must contain("""data-status="cancelled"""")) and
+          (cancelledText must contain(s"""href="/admin/jobs/$cancelled"""")) and
+          (cancelledText must not(contain("rounds checked")))
+      }
+    }
+
+    "show a done check whose state can't be read as its status, not as no mismatches" in {
+      testDbApp { app =>
+        setUp()
+        val id = jobWith(RoundImageCheckHandler.allJob(root), JobStatus.Done, ImageCheckState())
+        DB.autoCommit(implicit s => sql"""UPDATE job SET state = '{"rounds": "many"}' WHERE id = $id""".update())
+        val text = page(app, "root@example.com", s"/admin/rounds?contestId=$contestId")
+        (text must not(contain("no mismatches"))) and (text must contain(s"""href="/admin/jobs/$id""""))
+      }
+    }
+
+    "show no all-rounds check when none ever ran" in {
+      testDbApp { app =>
+        setUp()
+        page(app, "root@example.com", s"/admin/rounds?contestId=$contestId") must not(contain("image-check-status"))
       }
     }
 
@@ -84,10 +117,21 @@ class RoundImageCheckResultPageSpec extends PlaySpecification with PlayTestDb {
           ImageCheckState())
         val runningText = page(app, "admin@example.com", path)
         (doneText must contain(s"Image check (job $done, ")) and
-          (doneText must contain("3 rows removed, 1 orphaned criteria rates archived")) and
+          (doneText must contain("3 rows removed, 1 orphaned criteria rate archived")) and
           (doneText must not(contain("rounds checked"))) and
           (runningText must contain(s"""data-src="/admin/jobs/$running"""")) and
           (runningText must not(contain("rows removed")))
+      }
+    }
+
+    "show a done round check that skipped the round" in {
+      testDbApp { app =>
+        val round = setUp()
+        val done = jobWith(RoundImageCheckHandler.roundJob(round.getId, contestId, root), JobStatus.Done,
+          ImageCheckState(rounds = 0L, skipped = Seq(round.getId)))
+        val text = page(app, "admin@example.com", s"/admin/rounds/edit?contestId=$contestId&id=${round.getId}")
+        (text must contain(s"Image check (job $done, ")) and
+          (text must contain("1 round skipped (distribution running)")) and (text must not(contain("no mismatches")))
       }
     }
 
