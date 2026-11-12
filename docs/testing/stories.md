@@ -39,10 +39,10 @@ a guide or a test needs them.
 | J-05 | A juror whose wiki name has several accounts chooses one | [When one wiki name has several jury accounts](../user/juror-guide.md#when-one-wiki-name-has-several-jury-accounts) | |
 | J-06 | A juror signs out from the user menu | [Signing out](../user/juror-guide.md#signing-out) | also "sign out everywhere" |
 | J-07 | A signed-out juror opening a page signs in and comes back to it | [When you are signed out](../user/juror-guide.md#when-you-are-signed-out) | browser: the `returnTo` redirect only |
-| J-08 | After signing in, the first open round's gallery opens, or "No round configured yet" | [What you see after signing in](../user/juror-guide.md#what-you-see-after-signing-in) | *Part:* only the page without an active round |
+| J-08 | After signing in, the first open round's gallery opens (in another of the juror's contests if the current one has none), or "No round configured yet" with Sign out, no link back to the start page | [What you see after signing in](../user/juror-guide.md#what-you-see-after-signing-in) | *Part:* only the page without an active round |
 | J-09 | A juror in several open rounds switches round from the round menu | [What you see after signing in](../user/juror-guide.md#what-you-see-after-signing-in) | |
 | J-10 | A round being prepared, stopped or paused for the juror is not shown | [Rounds you don't see](../user/juror-guide.md#rounds-you-dont-see) | |
-| J-11 | A juror in several contests switches contest from the contest menu, or by a link | [Taking part in several contests](../user/juror-guide.md#taking-part-in-several-contests) | |
+| J-11 | A juror in several contests switches contest from the contest menu (juror-only contests without an open round left out), or by a link | [Taking part in several contests](../user/juror-guide.md#taking-part-in-several-contests) | |
 | J-12 | The gallery's tabs (all, unrated, selected, rejected) show their files and counts | [Tabs: all, unrated, selected, rejected](../user/juror-guide.md#tabs-all-unrated-selected-rejected) | browser: the page tour opens the galleries only |
 | J-13 | A juror sorts the gallery | [Sorting your files](../user/juror-guide.md#sorting-your-files) | |
 | J-14 | A juror filters the gallery by region | [Regions](../user/juror-guide.md#regions) | |

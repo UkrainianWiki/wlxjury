@@ -132,6 +132,8 @@ down.key = Descendre
 format.boolean=
 
 no.round.yet=Aucun tour configuré pour le moment. Veuillez attendre que l''administrateur du concours configure l''outil.
+no.round.yet.title = Pas encore de tour
+no.round.yet.other.contests = Vos autres concours :
 
 
 edit.user = Modifier l''utilisateur

@@ -73,6 +73,13 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   **Profile** link carries it; kept when a save is refused, and on the profile when the save has
   a notice to show, e.g. an email change's link sent). Only a page of the site, never the profile
   itself, sign-out or a contest switch; otherwise the save goes where it did before.
+- **Jurors with last year's membership:** the contest menu no longer lists a contest where the
+  person is only a juror and no round is open to them (the current contest always shows; an
+  organizer or admin keeps all theirs), so with one contest left there is no menu. The start page
+  (and a gallery or large view without a round) opens a round of the juror's latest other contest
+  (highest contest id) when the current one has none, and the session goes on there. "No round
+  configured yet" no longer links to the start page, which showed it again: it has **Logout** and
+  the person's other contests to switch to.
 
 **Development**
 

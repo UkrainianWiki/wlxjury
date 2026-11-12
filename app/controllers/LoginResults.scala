@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{Round, User}
+import db.scalikejdbc.User
 import play.api.i18n.{I18nSupport, Lang}
 import play.api.mvc._
 
@@ -20,15 +20,17 @@ trait LoginResults { this: Secured with I18nSupport =>
       case u if u.hasAnyRole(User.ORG_COM_ROLES) =>
         Redirect(routes.RoundController.currentRoundStat())
       case u if u.hasAnyRole(User.JURY_ROLES) =>
-        Round
-          .activeRounds(u)
-          .headOption
+        // an open round of the current contest, else of the juror's latest other contest with
+        // one (last year's membership has none): the session goes on in that contest
+        JurorContests
+          .firstOpenRound(u)
           .fold {
             // a state, not an error: the juror waits for a round
-            Ok(views.html.errorPage(Some(u), "error.title", "no.round.yet"))
+            JurorContests.noRoundPage(u)
           } { round =>
+            val inRound = Secured.inContest(u, round.contestId)
             // all the juror's files, in their order
-            Redirect(RoundList.landing(round, u).pageUrl(1))
+            Secured.switchingContest(u, inRound)(Redirect(RoundList.landing(round, inRound).pageUrl(1)))
           }
       case u if u.hasRole(User.ROOT_ROLE) =>
         Redirect(routes.ContestController.list())

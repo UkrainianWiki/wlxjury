@@ -130,6 +130,8 @@ down.key = Down
 format.boolean=
 
 no.round.yet=No round configured yet. Please wait until contest admin configures the tool.
+no.round.yet.title = No round yet
+no.round.yet.other.contests = Your other contests:
 
 
 edit.user = Edit user
