@@ -14,6 +14,22 @@
         filters: Html = Html(""),
         backHere: Boolean = true)(implicit messages: Messages, request: RequestHeader)
 
+@* A link of the bar's start: its text, and in the organisers' crowded results bar (resultsBar)
+   below 1700 px its icon instead, the text read by screen readers and shown as a tooltip
+   (main.css wlx-nav-icon, wlx-nav-label) *@
+@navLink(href: String, key: String, iconClass: String, id: Option[String] = None) = {
+    @if(resultsBar) {
+    <li class="nav-item"><a class="nav-link" @for(i <- id) {id="@i" }href="@href" title="@Messages(key)"><i class="bi @iconClass wlx-nav-icon" aria-hidden="true"></i><span class="wlx-nav-label">@Messages(key)</span></a></li>
+    } else {
+    <li class="nav-item"><a class="nav-link" @for(i <- id) {id="@i" }href="@href">@Messages(key)</a></li>
+    }
+}
+
+@* The organisers' bar of a round's results (another's votes, or all together): with its round,
+   juror, filter, order, view and region menus and the pager it is the most crowded, so its links
+   and menus compact on narrower screens (wlx-nav-results, main.css) to stay on one line *@
+@resultsBar = @{ user != null && selectedRound.exists(r => user.getId != asUserId && user.canViewOrgInfo(r)) }
+
 @* The viewer's own gallery: the page's list if it is that, else where they start in its round *@
 @ownList(l: RoundList) = @{
     if (l.asUserId == user.getId && l.view == GalleryView.Gallery) l else RoundList.landing(l.round, user)
@@ -71,7 +87,9 @@
 @* The order of one juror's votes as the organisers view them (the juror menu: RoundList.asUserId a
    juror of the round, not the viewer), in the gallery and by-rate views, which follow it: by that
    juror's votes and vote times, as the juror's own menu offers them (RoundList.orderChoices), by
-   rating labelled as someone else's. Not for all the jurors' votes together (binaryOrderMenu) *@
+   rating labelled as someone else's. Not for all the jurors' votes together (binaryOrderMenu).
+   Compact (a sort icon, its order's name beside it on extra-wide screens only): the organisers'
+   bar has their menus besides, and kept the pager on its line at 1280 px only so *@
 @jurorOrderMenu(l: RoundList) = {
     @if(l.asUserId != 0 && l.asUserId != user.getId && (l.view == GalleryView.Gallery || l.view == GalleryView.ByRate)) {
     @if(l.orderChoices.size == 1) {
@@ -81,7 +99,7 @@
         (order: ListOrder) => Call("GET", l.withOrder(order).pageUrl(1)),
         l.shownOrder,
         l.orderChoices.map(order => order -> SelectionItem(if (order == ListOrder.ByRate) "sort.rate.juror" else order.messageKey))
-    ).toDropDown())
+    ).toDropDown(compactIcon = Some("bi bi-sort-down")))
     }
     }
 }
@@ -99,13 +117,13 @@
 }
 
 <!-- Navigation bar on the top of the page, in the page's colour mode -->
-<nav class="navbar navbar-expand bg-body-tertiary border-bottom mb-2 py-1">
+<nav class="navbar navbar-expand bg-body-tertiary border-bottom mb-2 py-1@if(resultsBar) { wlx-nav-results}">
     <div class="container-fluid px-2">
         <ul class="navbar-nav flex-wrap align-items-center me-auto">
             @if(user != null) {
 
                 @if(user.hasRole(User.ROOT_ROLE)) {
-                    <li class="nav-item"><a class="nav-link" href="@routes.ContestController.list()">@Messages("contests")</a></li>
+                    @navLink(routes.ContestController.list().url, "contests", "bi-trophy")
                     @if(contestId.isEmpty) {
                         <li class="nav-item"><a class="nav-link" href="@routes.UserController.allUsers()">@Messages("users")</a></li>
                     }
@@ -113,23 +131,23 @@
                 <!-- The contest's files: their gallery, which links their import for admins -->
                 @for(cId <- contestId) {
                     @if(user.canViewContestFiles(cId)) {
-                        <li class="nav-item"><a class="nav-link" id="menu-contest-files" href="@routes.GalleryController.contestFiles(cId)">@Messages("contest.files")</a></li>
+                        @navLink(routes.GalleryController.contestFiles(cId).url, "contest.files", "bi-images", Some("menu-contest-files"))
                     }
                 }
                 <!-- Admin items: users and rounds setup -->
                 @if(user.hasAnyRole(User.ADMIN_ROLES)) {
                     @for(cId <- contestId) {
-                        <li class="nav-item"><a class="nav-link" href="@routes.UserController.users(contestId)">@Messages("users")</a></li>
-                        <li class="nav-item"><a class="nav-link" href="@routes.RoundController.rounds(contestId)">@Messages("rounds")</a></li>
+                        @navLink(routes.UserController.users(contestId).url, "users", "bi-people")
+                        @navLink(routes.RoundController.rounds(contestId).url, "rounds", "bi-collection")
                     }
                 }
 
                 <!-- Link to statistics view, if user has rights -->
                 @if(selectedRound.nonEmpty && user.canViewOrgInfo(selectedRound.get)) {
-                    <li class="nav-item"><a class="nav-link" href="@routes.RoundController.roundStat(selectedRound.get.getId)">@Messages("statistics")</a></li>
+                    @navLink(routes.RoundController.roundStat(selectedRound.get.getId).url, "statistics", "bi-bar-chart")
                 } else {
                     @if(rounds.exists(round => user.canViewOrgInfo(round))) {
-                        <li class="nav-item"><a class="nav-link" href="@routes.RoundController.currentRoundStat(contestId)">@Messages("statistics")</a></li>
+                        @navLink(routes.RoundController.currentRoundStat(contestId).url, "statistics", "bi-bar-chart")
                     }
                 }
 

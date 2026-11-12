@@ -313,5 +313,42 @@ class VoteTimeOrderSpec extends PlaySpecification with ThrownExpectations with P
           (all must not(contain("wlx-large-vote-time"))) and (all must not(contain("wlx-vote-time")))
       }
     }
+
+    /** #gallery's attribute `name`, and each tile's in file order. */
+    def galleryAttr(html: String, name: String): Option[String] =
+      Option(Jsoup.parse(html).getElementById("gallery")).map(_.attr(name)).filter(_.nonEmpty)
+    def tileAttrs(html: String, name: String): List[String] =
+      Jsoup.parse(html).select("#gallery img").asScala.map(_.attr(name)).toList
+
+    "show one juror's yes/no votes read-only to an organiser, never in the all-jurors view" in {
+      testDbApp { implicit app =>
+        val f = fixture(Round.binaryRound, binaryRates)
+        val (_, organizer) = others(f)
+        val oneJuror = contentAsString(getAs(gallery(f, "?sort=file"), organizer))
+        val all = contentAsString(getAs(s"/gallery/round/${f.round.getId}/user/0/page/1", organizer))
+        val own = page(gallery(f, "?sort=file"), f)
+        (galleryAttr(oneJuror, "data-view-votes") === Some("""{"binary":true}""")) and
+          // the viewed juror's votes on the tiles, in file order: yes, unrated, yes, yes, no, unrated, no, yes
+          (tileAttrs(oneJuror, "data-rate") === List("1", "0", "1", "1", "-1", "0", "-1", "1")) and
+          // nothing to vote with: the tiles aren't the viewer's
+          (galleryAttr(oneJuror, "data-jury") === Some("false")) and
+          (galleryAttr(all, "data-view-votes") must beNone) and
+          // the juror's own tiles vote, as before
+          (galleryAttr(own, "data-view-votes") must beNone) and (galleryAttr(own, "data-jury") === Some("true"))
+      }
+    }
+
+    "show one juror's stars read-only to an organiser in a rated round, as before (its by-rate list)" in {
+      testDbApp { implicit app =>
+        val f = fixture(Round.ratesById(5), starRates)
+        val (_, organizer) = others(f)
+        val oneJuror = contentAsString(getAs(gallery(f, "?sort=file"), organizer))
+        val doc = Jsoup.parse(oneJuror)
+        // a line of stars per file, static (no juror's own stars to click: wlx-byrate-stars)
+        (doc.select("li.gallerybox .rate-stars").size === 8) and
+          (doc.select(".wlx-byrate-stars").size === 0) and
+          (galleryAttr(oneJuror, "data-view-votes") must beNone)
+      }
+    }
   }
 }

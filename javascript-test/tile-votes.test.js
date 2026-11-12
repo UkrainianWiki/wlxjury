@@ -20,7 +20,7 @@ require("../public/javascripts/large-rate.js");
 const { voteErrorMessage, voteErrorTexts } = require("../public/javascripts/vote-errors.js");
 window.voteErrorMessage = voteErrorMessage;
 window.voteErrorTexts = voteErrorTexts;
-const { addStars, addVote, vote, addListStars, addTally, addVoteTime } = require("../public/javascripts/tile-votes.js");
+const { addStars, addVote, vote, addListStars, addTally, addVoteTime, addVoteMark } = require("../public/javascripts/tile-votes.js");
 
 let requests; // the votes sent: { options, answer (a Deferred) }
 
@@ -503,5 +503,37 @@ describe("a tile's vote time", () => {
         requests[0].answer.resolve("success");
         expect(badge()).toBeNull();
         expect(item.votedAt).toBeUndefined();
+    });
+});
+
+// One juror's vote on a binary round's tile as an organiser views it (addVoteMark): read-only,
+// no thumbs to click; the frame and a thumb named by the page; nothing for an unrated file.
+describe("a tile's read-only vote", () => {
+    beforeEach(() => {
+        const holder = document.body.firstElementChild;
+        holder.setAttribute("data-vote-selected", "Selected");
+        holder.setAttribute("data-vote-rejected", "Rejected");
+    });
+
+    test.each([[1, "wlx-tile-selected", "bi-hand-thumbs-up-fill", "Selected"],
+               [-1, "wlx-tile-rejected", "bi-hand-thumbs-down-fill", "Rejected"]])(
+        "a binary round's %i: frame %s, its thumb and name", (rate, frame, icon, name) => {
+            const mark = addVoteMark(tile(), { rate: String(rate) }, { binary: true });
+            expect(tile().classList.contains(frame)).toBe(true);
+            expect(mark.querySelector("i." + icon)).not.toBeNull();
+            expect(mark.querySelector(".visually-hidden").textContent).toBe(name);
+            expect(mark.title).toBe(name);
+            // nothing to vote with
+            expect(tile().querySelectorAll("[role=button], .ug-tile-icon, a, button")).toHaveLength(0);
+        });
+
+    test("an unrated file in a binary round: no frame, no mark", () => {
+        expect(addVoteMark(tile(), { rate: "0" }, { binary: true })).toBeNull();
+        expect(tile().className).toBe("ug-tile");
+    });
+
+    test("none in a rated round (its by-rate list shows the stars)", () => {
+        expect(addVoteMark(tile(), { rate: "4" }, { binary: false })).toBeNull();
+        expect(tile().className).toBe("ug-tile");
     });
 });

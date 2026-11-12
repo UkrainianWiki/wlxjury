@@ -50,6 +50,16 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   votes shows it in every order ("Voted 12 Nov, 14:05", formatted in the browser in the viewer's
   time zone and the page's language, `vote-time.js`; "Time not recorded" for a vote without one);
   never in the views of all the jurors. Juror and organizer guides updated.
+- **One juror's votes on the tiles:** an organizer viewing one juror's gallery sees that juror's
+  vote on each tile, read-only: a yes/no round's frame and thumb (selected or rejected), a rated
+  round's stars or ✗. Before, only the juror's own tiles showed their votes, so an organizer's
+  view of a juror in any order showed none (not new with the vote-time orders, which made it
+  matter). The views of all the jurors together keep their tallies.
+- **The organizers' results bar stays on one line:** with the juror menu and the order menu it
+  wrapped the pager onto a second line (Ukrainian, up to ~1600 px wide). In that bar, below
+  1700 px the order menu and its links (Contests, Contest files, Users, Rounds, Statistics) are
+  icons and the region menu shows the place without "Region:"; each text is still read by screen
+  readers and shown as a tooltip. Other pages' bars are unchanged.
 
 **Fixes**
 
@@ -65,7 +75,10 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   default or ON UPDATE under any `explicit_defaults_for_timestamp`), added `ALGORITHM = INSTANT`;
   no index (the orders sort by expressions). Existing rows stay NULL (a log backfill may fill them later). Set by `VoteJdbc.rateIn` and
   `CriteriaRate.updateRateIn` (`VoteSql.votedAt`), and by `VoteJdbc.create` / `batchInsert` for a
-  rated row; moved with the vote between `vote` and `vote_aside`.
+  rated row; moved with the vote between `vote` and `vote_aside`. Read as
+  `UNIX_TIMESTAMP(voted_at)` (`VoteJdbc.votedAtEpoch`), and a given time written by
+  `FROM_UNIXTIME`, so the instant is right whatever the JVM's and the database session's time
+  zones (a JDBC timestamp read showed every time 2 h early with a UTC session and a Kyiv JVM).
 
 ## 26.11.2 (2026-11-12)
 

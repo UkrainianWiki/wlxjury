@@ -105,6 +105,9 @@ votes.
 You can see a juror's votes only for a juror of that round. Choosing another person's page
 shows the tool's "not found" page.
 
+In a single juror's **Gallery** each file shows that juror's vote, read-only: in a yes/no round a
+green or red frame with a thumb, in a rated round the juror's stars (or ✗).
+
 A single juror's **Gallery** and **By rate** views have an order menu, by that juror's votes:
 **In file order**, **By rating**, **Newest votes first** and **Oldest votes first** (when the
 juror last changed each vote; votes from before these options count as the oldest, unrated
