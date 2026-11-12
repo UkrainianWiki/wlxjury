@@ -95,6 +95,12 @@ object AccountChangeJdbc {
       .updateAndReturnGeneratedKey.apply()
   }
 
+  /** Sets whether the entry's mail went out (an invitation's, written before its mail). */
+  def setMailSent(id: Long, sent: Boolean)(implicit session: DBSession = AutoSession): Unit = {
+    sql"UPDATE account_change SET mail_sent = $sent WHERE id = $id".update.apply()
+    ()
+  }
+
   /** The account's entries, the newest first, at most `limit`: those made in `contestId` if given
     * (an admin's view), else all of them (root's).
     */

@@ -347,7 +347,6 @@ password.too.long=The password is too long: at most {0} bytes (Latin letters and
 password.empty=The password must not be blank.
 signin.busy=Too many sign-ins at once. Please try again in a few seconds.
 password.busy=The server is busy checking passwords. Please try again in a few seconds.
-users.not.added={0} could not be added. Please import them again.
 users.added=New accounts: {0}. Existing accounts added to the contest: {1}. Already in the contest: {2}.
 
 files.import.cache = Import and cache
@@ -827,5 +826,7 @@ account.change.mail.notice.queued = notice to the former address queued
 users.import.problems.title = Not added
 users.import.line.failed = Line {0}: {1}: an error on our side (reference {2}).
 users.import.line.invalid = Line {0}: {1}: not an email address or a valid Wikimedia account name.
-users.import.problems.retry = The other lines were imported. The lines not added are filled in below: import them again. If an error comes back, send its reference to the jury tool''s maintainers. Anyone the users page already lists only needs their invitation sent from there.
-users.import.problems.correct = The other lines were imported. The lines not added are filled in below: correct them and import them again.
+users.import.problems.intro = The other lines were imported. The lines not added are filled in below, to import again.
+users.import.problems.correct = Correct the entries that are not valid before importing them again.
+users.import.problems.retry = If an error happens again, tell whoever runs the jury tool its reference. Anyone the users page already lists only needs their invitation sent from there.
+users.import.problems.lost = {0} lines were not added, and their list is no longer available. Check the users page and import the people missing from it again.

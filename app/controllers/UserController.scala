@@ -858,12 +858,26 @@ class UserController @Inject()(cc: ControllerComponents,
     withAuth(contestPermission(User.ADMIN_ROLES, contestIdParam)) {
       user => implicit request =>
         withContestId(user, contestIdParam) { contestId =>
-          Ok(views.html.importUsers(user, importUsersForm, contestId))
+          // after an import that didn't add every line (post/redirect/get): its result, once
+          request.flash.get(UserController.ImportResultKey) match {
+            case None => Ok(views.html.importUsers(user, importUsersForm, contestId))
+            case Some(key) =>
+              val summary = request.flash.get("users-added")
+              ImportResults.take(key, user.getId, contestId).fold {
+                // gone (a restart, or read already): how many lines it had, from the flash
+                val lost = request.flash.get(UserController.ImportResultCount).flatMap(_.toIntOption).getOrElse(0)
+                Ok(views.html.importUsers(user, importUsersForm, contestId, result = summary, lost = lost))
+              } { r =>
+                Ok(views.html.importUsers(user,
+                  importUsersForm.fill((r.problems.map(_.entryText).mkString("\n"), r.role, r.sendInvitation)),
+                  contestId, r.problems, summary))
+              }
+          }
         }
     }
 
   def importUsers(contestIdParam: Option[Long] = None): EssentialAction =
-    // a bcrypt hash per new account: off Play's default dispatcher
+    // a database round trip or more per line: off Play's default dispatcher
     withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, contestIdParam)) {
       user => implicit request => withContestId(user, contestIdParam) { contestId =>
         importUsersForm
@@ -885,42 +899,38 @@ class UserController @Inject()(cc: ControllerComponents,
               // created (in its invitation) leaves the account, which the users page then lists
               // (a retry finds it a member: its invitation is sent from there); no mail goes out
               // for a failed line (the invitation's mail is its last step, UserService.invite).
-              // After a password that got no turn to be hashed, the rest aren't tried (each
-              // would wait as long), and all those not added are counted.
-              val start = (Vector.empty[UserService.Added], Vector.empty[UserController.ImportProblem], 0, false)
-              val (added, problems, notAdded, _) =
-                parsed.foldLeft(start) {
-                  case ((done, problems, skipped, true), _) => (done, problems, skipped + 1, true)
-                  case ((done, problems, skipped, false), (line, pu)) =>
+              val (added, problems) =
+                parsed.foldLeft((Vector.empty[UserService.Added], Vector.empty[UserController.ImportProblem])) {
+                  case ((done, problems), (line, pu)) =>
                     Try(userService.addToContest(user, pu.copy(roles = Set(role)), contest, sendInvitation)) match {
-                      case Success(a)                       => (done :+ a, problems, skipped, false)
-                      case Failure(_: PasswordHasher.Busy) => (done, problems, skipped + 1, true)
+                      case Success(a) => (done :+ a, problems)
                       case Failure(_: UserService.InvalidWikiAccount) =>
-                        (done, problems :+ UserController.ImportProblem(line, pu, None), skipped, false)
+                        (done, problems :+ UserController.ImportProblem(line, pu, None))
                       case Failure(e) =>
                         // as ErrorHandler's: the reference the admin is shown, on the log line;
-                        // with the exception's class and stack, not its message, which can carry
-                        // the line's email or SQL values (R220-1)
+                        // with the classes and stacks of the exception and its causes, not their
+                        // messages, which can carry the line's email or SQL values (R220-1)
                         val reference = Secured.newReference()
-                        val trace = new Exception(s"${e.getClass.getName} (message not logged)")
-                        trace.setStackTrace(e.getStackTrace)
                         play.api.Logger("security.account").error(s"user_import_line_failed ref=$reference " +
-                          s"line=$line byAccountId=${user.getId} contestId=$contestId error=${e.getClass.getName}", trace)
-                        (done, problems :+ UserController.ImportProblem(line, pu, Some(reference)), skipped, false)
+                          s"line=$line byAccountId=${user.getId} contestId=$contestId error=${e.getClass.getName}" +
+                          services.LogSafe.causesField(e), services.LogSafe.withoutMessages(e))
+                        (done, problems :+ UserController.ImportProblem(line, pu, Some(reference)))
                     }
                 }
-              val message = addedMessage(added) +
-                (if (notAdded > 0) " " + Messages("users.not.added", notAdded) else "")
+              val message = addedMessage(added)
 
               if (problems.isEmpty)
                 Redirect(routes.UserController.users(Some(contestId)))
                   .flashing("users-added" -> message)
-              else
-                // the import page again: what was added, each line not added with why (and an
-                // error's reference), and the form with only those people, to import again
-                Ok(views.html.importUsers(user,
-                  importUsersForm.fill((problems.map(_.entryText).mkString("\n"), role, sendInvitation)),
-                  contestId, problems, Some(message)))
+              else {
+                // the import page (post/redirect/get: a reload imports nothing again), with what
+                // was added, each line not added with why (and an error's reference), and the
+                // form with only those people, to import again ([[ImportResults]])
+                val key = ImportResults.put(user.getId, contestId, ImportResults.Result(problems, role, sendInvitation))
+                Redirect(routes.UserController.showImportUsers(Some(contestId))).flashing(
+                  "users-added" -> message, UserController.ImportResultKey -> key,
+                  UserController.ImportResultCount -> problems.size.toString)
+              }
             }
           )
       }
@@ -1216,6 +1226,12 @@ object UserController {
     if (!backHere || request.method != "GET") None
     else if (request.path.startsWith("/users/edit/")) profileReturnTo(request.getQueryString("returnTo"))
     else profileReturnTo(Some(request.uri))
+
+  /** The flash keys of an import's result ([[ImportResults]]): its key, and how many lines it
+    * lists (said if the result is gone).
+    */
+  val ImportResultKey = "import-result"
+  val ImportResultCount = "import-result-count"
 
   /** "Import users"' people, each with the line (1-based) it is on: [[User.parseList]] line by
     * line (it splits at line ends as well as commas and `|`, so this finds the same people).

@@ -54,46 +54,79 @@ class NewAccountProductionSchemaSpec extends PlaySpecification with PlayTestDb w
 
   private def created(email: String): User = User.findByEmail(email).head
 
+  /** The import page after an import's redirect, with the flash it set. */
+  private def importPage(mail: RecordingMail, admin: User, contestId: Long, after: Future[Result])(implicit
+      app: Application
+  ): Future[Result] = {
+    implicit val mat: Materializer = app.materializer
+    call(userController(mail).showImportUsers(Some(contestId)),
+      as(admin, contestId)(FakeRequest(GET, s"/admin/importusers?contestId=$contestId"))
+        .withFlash(flash(after).data.toSeq: _*).withCSRFToken)
+  }
+
+  /** The account's invitation entries in the account change log: whether each was mailed. */
+  private def invitationEntries(userId: Long): Seq[Option[Boolean]] =
+    DB.readOnly(implicit s => sql"SELECT mail_sent FROM account_change WHERE user_id = $userId AND field = 'invitation' ORDER BY id"
+      .map(_.booleanOpt(1)).list())
+
   /** The import form's text area's content, as the page has it (HTML-escaped). */
   private def textarea(page: String): String =
     """(?s)<textarea[^>]*id="userstoimport"[^>]*>(.*?)</textarea>""".r.findFirstMatchIn(page).map(_.group(1)).getOrElse("")
 
   "Import Users" should {
-    "list a line that fails with an error, with the reference of its log line, and add the other lines" in {
+    "add the lines it can, and show each line not added after a redirect, with the reference of its log line" in {
       testDbApp { implicit app =>
         createContests(10, 11)
         val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        val otherAdmin = account("admin2@example.com", Some(10), "admin", verified = true)
         val existing = account("existing@example.com", Some(11), "jury", verified = true)
+        // an account with a password and no verified email: invited into the contest (O2)
+        val invitee = account("invitee@example.com", Some(11), "jury")
         val mail = new RecordingMail
         try {
           productionShape() // a new account fails, as on production before V98
-          val lines = "existing@example.com\nСергій Тестовий <new+tag@example.com>, User:Bad#name\n\nplain-new@example.com"
-          val (result, log) = accountLog {
+          val lines = "existing@example.com\nСергій Тестовий <new+tag@example.com>, User:Bad#name\n\n" +
+            "plain-new@example.com\ninvitee@example.com"
+          val (posted, log) = accountLog {
             val r = importUsers(mail, admin, 10, lines, sendInvitation = true)
-            (status(r), contentAsString(r))
+            status(r)
+            r
           }
-          val (code, page) = result
           val failedLines = log.filter(_.startsWith("user_import_line_failed"))
           val refs = failedLines.flatMap(l => "ref=([0-9a-f]{8})".r.findFirstMatchIn(l).map(_.group(1)))
 
-          (code === OK) and
+          // post/redirect/get: the result is the import page's, once, and only for its admin
+          val othersPage = contentAsString(importPage(mail, otherAdmin, 10, posted))
+          val page = contentAsString(importPage(mail, admin, 10, posted))
+          val again = contentAsString(importPage(mail, admin, 10, posted))
+
+          (status(posted) === SEE_OTHER) and
+            (redirectLocation(posted) must beSome("/admin/importusers?contestId=10")) and
+            (flash(posted).data.values.mkString must not(contain("new+tag@example.com"))) and
             (failedLines.size === 2) and (refs.size === 2) and
             (failedLines.head must contain("line=2")) and (failedLines(1) must contain("line=4")) and
-            (failedLines.head must contain("SQLIntegrityConstraintViolationException")) and
+            (failedLines.head must contain("error=java.sql.SQLIntegrityConstraintViolationException")) and
             (page must contain(s"Line 2: new+tag@example.com: an error on our side (reference ${refs.head}).")) and
             (page must contain(s"Line 4: plain-new@example.com: an error on our side (reference ${refs(1)}).")) and
             (page must contain("Line 2: Bad#name: not an email address or a valid Wikimedia account name.")) and
-            (page must contain("send its reference to the jury tool&#x27;s maintainers")) and
+            // both kinds of lines, both pieces of advice
+            (page must contain("Correct the entries that are not valid")) and
+            (page must contain("tell whoever runs the jury tool its reference")) and
             // the form again with only the people not added, the name kept
             (textarea(page).linesIterator.toSeq.map(_.trim).filter(_.nonEmpty) must beLike {
               case Seq(named, "Bad#name", "plain-new@example.com") =>
                 (named must contain("Сергій Тестовий")) and (named must endWith("&lt;new+tag@example.com&gt;"))
             }) and
             (page must contain("Existing accounts added to the contest: 1.")) and
-            // the line that could be added is, and committed; no mail to anyone not added
+            (othersPage must not(contain("new+tag@example.com"))) and
+            (again must not(contain("new+tag@example.com"))) and
+            (again must contain("3 lines were not added, and their list is no longer available.")) and
+            // the lines that could be added are, and committed; one invitation mailed, once; no mail
+            // to anyone not added
             (UserContestJdbc.findByUser(existing.getId).map(_.contestId).sorted === Seq(10L, 11L)) and
             (User.findByEmail("new+tag@example.com") must beEmpty) and
             (User.findByEmail("plain-new@example.com") must beEmpty) and
+            (mail.recipients.count(_ == invitee.email) === 1) and
             (mail.recipients must not(containAnyOf(Seq("new+tag@example.com", "plain-new@example.com"))))
         } finally restore()
       }
@@ -106,6 +139,56 @@ class NewAccountProductionSchemaSpec extends PlaySpecification with PlayTestDb w
         val result = importUsers(new RecordingMail, admin, 10, "first@example.com\nUser:Wiki_first")
         (status(result) === SEE_OTHER) and (redirectLocation(result) must beSome("/admin/users?contestId=10")) and
           (flash(result).get("users-added") must beSome(contain("New accounts: 2.")))
+      }
+    }
+  }
+
+  "the invitation's change log entry" should {
+    "say whether the mail went out, written after it" in {
+      testDbApp { implicit app =>
+        createContests(10, 11)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        // with a password and no verified email: the role waits for an invitation, kept unsent
+        // without "Send an invitation email" (a new account gets none then: nothing to log)
+        val waiting = account("waiting@example.com", Some(11), "jury")
+        val mail = new RecordingMail
+        status(add(mail, admin, 10, "mailed@example.com", sendInvitation = true)) === SEE_OTHER
+        status(add(mail, admin, 10, "waiting@example.com")) === SEE_OTHER
+        (invitationEntries(created("mailed@example.com").getId) === Seq(Some(true))) and
+          (invitationEntries(waiting.getId) === Seq(Some(false))) and
+          (mail.recipients === Seq("mailed@example.com"))
+      }
+    }
+
+    "stay, without the flag, if the flag can't be written once the mail is out: the add succeeds" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        createContests(10)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        val mail = new RecordingMail
+        val failingFlag = new services.UserService(mail, app.configuration) {
+          override protected def mailInBackground(send: => Unit): Unit = send
+          override protected def recordMailSent(changeId: Long, sent: Boolean): Unit =
+            throw new java.sql.SQLException("flag of flagged@example.com", new java.io.IOException("connection reset"))
+        }
+        val controller = new UserController(app.injector.instanceOf[play.api.mvc.ControllerComponents], failingFlag,
+          app.injector.instanceOf[modules.BlockingExecutionContext])
+        val (result, log) = accountLog {
+          val r = call(controller.saveUser(), as(admin, 10)(FakeRequest(POST, "/users/save"))
+            .withFormUrlEncodedBody("id" -> "0", "contest" -> "10", "fullname" -> "Flagged", "email" -> "flagged@example.com",
+              "roles" -> "jury", "sendInvitation" -> "true").withCSRFToken)
+          status(r)
+          r
+        }
+        val flagged = User.findByEmail("flagged@example.com").headOption
+        val notRecorded = log.filter(_.startsWith("account_change_mail_flag_not_recorded"))
+        (status(result) === SEE_OTHER) and
+          (flagged must beSome) and
+          (mail.recipients === Seq("flagged@example.com")) and
+          (invitationEntries(flagged.get.getId) === Seq(None)) and
+          (notRecorded.size === 1) and
+          (notRecorded.head must contain("mailSent=true error=java.sql.SQLException causes=java.io.IOException")) and
+          (log.mkString("\n") must not(contain("flagged@example.com")))
       }
     }
   }

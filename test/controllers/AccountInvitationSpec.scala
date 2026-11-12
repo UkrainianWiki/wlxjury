@@ -599,10 +599,15 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
         }
         val failed = log.filter(_.startsWith("user_import_line_failed"))
         val reference = failed.flatMap("ref=([0-9a-f]{8}) ".r.findFirstMatchIn(_).map(_.group(1)))
-        status(result) === OK
-        // the admin's own input back to them, with the log line's reference; no exception text
-        contentAsString(result) must contain(s"Line 2: broken@example.com: an error on our side (reference ${reference.head}).")
-        contentAsString(result) must not(contain("Duplicate entry"))
+        status(result) === SEE_OTHER
+        redirectLocation(result) must beSome("/admin/importusers?contestId=10")
+        // the import page it goes to: the admin's own input back to them, with the log line's
+        // reference; no exception text
+        val page = contentAsString(call(controller.showImportUsers(Some(10L)),
+          as(admin, Some(10L))(FakeRequest(GET, "/admin/importusers?contestId=10"))
+            .withFlash(flash(result).data.toSeq: _*).withCSRFToken))
+        page must contain(s"Line 2: broken@example.com: an error on our side (reference ${reference.head}).")
+        page must not(contain("Duplicate entry"))
         User.findByEmail("first@example.com") must not(beEmpty)
         User.findByEmail("last@example.com") must not(beEmpty)
         User.findByEmail("broken@example.com") must beEmpty

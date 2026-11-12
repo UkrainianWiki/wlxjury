@@ -71,11 +71,15 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   account was not affected.
 - **Import Users no longer fails silently:** a line that fails with an error is listed on the import page by line
   number and the email or wiki account entered, with an error reference that is on the server log's
-  `user_import_line_failed` line (with the exception), and a line with an invalid wiki account name is listed as
-  such; the other lines are added as before (each line in its own transactions), and the form comes back with only
-  the lines not added, to import again. No mail goes out for a failed line: an invitation's mail is its last step,
-  and once it is out a change log entry that can't be written is logged (`account_change_not_recorded`) instead of
-  failing the line.
+  `user_import_line_failed` line (the classes and stacks of the exception and its causes, never their messages),
+  and a line with an invalid wiki account name is listed as such; the other lines are added as before (each line
+  in its own transactions), and the form comes back with only the lines not added, to import again. The import
+  redirects to that page (post/redirect/get: a reload imports nothing again, so no second invitation mail); the
+  list waits on the server for that page, once, for its admin only, up to 10 minutes (after a restart the page
+  says how many lines it had). No mail goes out for a failed line: an invitation's change log entry is written
+  with its token, and its mail is the last step; whether it was mailed is set after it, and a flag that can't be
+  written is logged (`account_change_mail_flag_not_recorded`) without failing the add. The "could not be added"
+  count (`users.not.added`) is gone: nothing skips lines any more.
 
 **Development**
 

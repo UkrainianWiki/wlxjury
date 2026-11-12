@@ -20,6 +20,12 @@
 -- lock_wait_timeout for the metadata lock (a long transaction or backup: the statement fails
 -- with nothing changed). The column keeps the table's character set and collation, as before.
 --
+-- If it fails (a lock wait timeout, say), the column is unchanged, but MariaDB has no DDL
+-- transactions, so Flyway (13.12, as 9.16.3: DbMigrate) records V98 as a failed row in
+-- flyway_schema_history (success = 0), and the next start refuses ("contains a failed
+-- migration"). After checking that the column is still NOT NULL, delete that row (or run Flyway's
+-- repair), then start again.
+--
 -- Undo (only while no account has a NULL password):
 --   ALTER TABLE users MODIFY password VARCHAR(255) NOT NULL;
 
