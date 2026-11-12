@@ -74,6 +74,21 @@ class ProfileReturnToSpec extends PlaySpecification with PlayTestDb with Account
       }
     }
 
+    "go back to returnTo on Cancel, and where it did without one" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        createContests(10)
+        val juror = account("juror@example.com", Some(10), "jury")
+        def cancel(returnTo: Option[String]) = {
+          val query = returnTo.fold("")(r => "?returnTo=" + java.net.URLEncoder.encode(r, "UTF-8"))
+          val html = contentAsString(call(userController(new RecordingMail).editUser(juror.getId, None, returnTo),
+            session(juror)(FakeRequest(GET, s"/users/edit/${juror.getId}$query")).withCSRFToken))
+          Jsoup.parse(html).select(".form-actions a.btn").attr("href")
+        }
+        (cancel(Some(Gallery)) === Gallery) and (cancel(Some("//evil.example")) === "/") and (cancel(None) === "/")
+      }
+    }
+
     "go back to a safe returnTo after a save" in {
       testDbApp { implicit app =>
         createContests(10)

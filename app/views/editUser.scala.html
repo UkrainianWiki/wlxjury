@@ -198,7 +198,11 @@
 
                 <div class="form-actions">
                     @snippets.submit("save")
-                    @if(user.hasAnyRole(User.ADMIN_ROLES)) {
+                    @* own profile opened from a page: Cancel goes back there, as a save does (returnTo is
+                       UserController.profileReturnTo's output: a checked local path) *@
+                    @if(returnTo.nonEmpty) {
+                        <a href="@returnTo.get" class="btn btn-outline-secondary">@Messages("cancel")</a>
+                    } else if(user.hasAnyRole(User.ADMIN_ROLES)) {
                         <a href="@routes.UserController.users(contestId)" class="btn btn-outline-secondary">@Messages("cancel")</a>
                     } else {
                         <a href="@routes.LoginController.index" class="btn btn-outline-secondary">@Messages("cancel")</a>
