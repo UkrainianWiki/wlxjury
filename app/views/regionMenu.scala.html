@@ -9,7 +9,9 @@
         data-loading="@Messages("region.menu.loading")" data-failed="@Messages("region.menu.failed")">
         <a class="nav-link dropdown-toggle" href="@m.allUrl" data-bs-toggle="dropdown" role="button"
             aria-expanded="false">
-            @Messages(m.label): <b>@m.current.getOrElse(Messages(m.allLabel))</b>
+            @* the label, read by screen readers only below 1700 px in the organisers' results bar
+               (main.css wlx-nav-label): the place shown says what the menu is *@
+            <span class="wlx-nav-label">@Messages(m.label):</span> <b>@m.current.getOrElse(Messages(m.allLabel))</b>
         </a>
         <ul class="dropdown-menu region-menu-list">
             <li><a class="dropdown-item@if(m.current.isEmpty) { active}" href="@m.allUrl">@Messages(m.allLabel)</a></li>

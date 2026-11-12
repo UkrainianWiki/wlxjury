@@ -1,6 +1,6 @@
 package db.scalikejdbc
 
-import java.time.ZonedDateTime
+import java.time.{Instant, ZoneOffset, ZonedDateTime}
 import org.intracer.wmua.Vote
 import scalikejdbc._
 import scalikejdbc.orm.CRUDMapper
@@ -18,6 +18,30 @@ object VoteJdbc extends CRUDMapper[Vote] {
 
   override lazy val defaultAlias = createAlias("s")
 
+  /** The vote's time (`voted_at`, V97) as seconds since the epoch, exact to the millisecond, as
+    * the extra column `<its result name>_ms`: a TIMESTAMP read as a JDBC timestamp is the
+    * session time zone's wall time taken in the JVM's zone, wrong by their difference (2 h on a
+    * UTC database session read by a Kyiv JVM); UNIX_TIMESTAMP of a TIMESTAMP column is its
+    * stored instant whatever either zone. Every query a vote is read from selects it
+    * ([[resultAll]], [[singleSelectQuery]] for the finders), as [[votedAt]] reads it.
+    */
+  def votedAtEpoch(p: QuerySQLSyntaxProvider[SQLSyntaxSupport[Vote], Vote]): SQLSyntax =
+    sqls"UNIX_TIMESTAMP(${p.votedAt}) AS ${p.resultName.votedAt}_ms"
+
+  /** A vote's columns, and its time as [[votedAtEpoch]]: what [[apply]] and [[extract]] read. */
+  def resultAll(p: QuerySQLSyntaxProvider[SQLSyntaxSupport[Vote], Vote]): SQLSyntax =
+    sqls"${p.result.*}, ${votedAtEpoch(p)}"
+
+  // the finders' select: the vote's columns and its time ([[resultAll]])
+  override def singleSelectQuery: SelectSQLBuilder[Vote] =
+    select(resultAll(defaultAlias)).from(as(defaultAlias))
+
+  /** The vote's time from [[votedAtEpoch]]'s column, an instant (in UTC) whatever the zones. */
+  private def votedAt(rs: WrappedResultSet, c: ResultName[Vote]): Option[ZonedDateTime] =
+    rs.bigDecimalOpt(c.votedAt.value + "_ms").map { seconds =>
+      Instant.ofEpochMilli(seconds.movePointRight(3).longValueExact()).atZone(ZoneOffset.UTC)
+    }
+
   override def extract(rs: WrappedResultSet, c: ResultName[Vote]): Vote = Vote(
     pageId     = rs.long(c.pageId),
     juryId     = rs.long(c.juryId),
@@ -27,7 +51,7 @@ object VoteJdbc extends CRUDMapper[Vote] {
     createdAt  = rs.timestampOpt(c.createdAt).map(_.toZonedDateTime),
     deletedAt  = rs.timestampOpt(c.deletedAt).map(_.toZonedDateTime),
     monumentId = rs.stringOpt(c.monumentId),
-    votedAt    = rs.timestampOpt(c.votedAt).map(_.toZonedDateTime)
+    votedAt    = votedAt(rs, c)
   )
 
   def apply(c: ResultName[Vote])(rs: WrappedResultSet): Vote =
@@ -40,7 +64,7 @@ object VoteJdbc extends CRUDMapper[Vote] {
       createdAt  = rs.timestampOpt(c.createdAt).map(_.toZonedDateTime),
       deletedAt  = rs.timestampOpt(c.deletedAt).map(_.toZonedDateTime),
       monumentId = rs.stringOpt(c.monumentId),
-      votedAt    = rs.timestampOpt(c.votedAt).map(_.toZonedDateTime)
+      votedAt    = votedAt(rs, c)
     )
 
   def create(
@@ -98,7 +122,7 @@ object VoteJdbc extends CRUDMapper[Vote] {
     val batchParams: Seq[Seq[Any]] =
       selections.map { i =>
         Seq(i.pageId, i.rate, i.juryId, i.roundId, i.monumentId.orNull,
-          i.rate, i.votedAt.map(t => java.sql.Timestamp.from(t.toInstant)).orNull)
+          i.rate, i.votedAt.map(t => java.math.BigDecimal.valueOf(t.toInstant.toEpochMilli, 3)).orNull)
       }.toSeq
     withSQL {
       insert
@@ -109,7 +133,9 @@ object VoteJdbc extends CRUDMapper[Vote] {
           column.juryId     -> sqls.?,
           column.roundId    -> sqls.?,
           column.monumentId -> sqls.?,
-          column.votedAt    -> sqls"IF(? <> 0, COALESCE(?, NOW(3)), NULL)"
+          // a given time as seconds since the epoch, not a JDBC timestamp (zone-dependent:
+          // votedAtEpoch)
+          column.votedAt    -> sqls"IF(? <> 0, COALESCE(FROM_UNIXTIME(?), NOW(3)), NULL)"
         )
     }.batch(batchParams: _*).apply()
     RoundImageJdbc.addVoted(selections.map(v => v.roundId -> v.pageId), origin)
@@ -140,7 +166,7 @@ object VoteJdbc extends CRUDMapper[Vote] {
     */
   def byRoundAndImageWithJury(roundId: Long, imageId: Long): Seq[(Vote, User)] =
     withSQL {
-      select
+      select(sqls"${resultAll(s)}, ${u.result.*}")
         .from(VoteJdbc as s)
         .innerJoin(User as u)
         .on(u.id, s.juryId)

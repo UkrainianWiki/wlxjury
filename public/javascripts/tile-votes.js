@@ -333,10 +333,36 @@
     addVoteTime(tile, item);
   }
 
+  /** One juror's vote on a binary round's tile, read-only (no thumbs, no clicks: the viewer
+    * doesn't vote for them), where the page shows it (gallery-init.js wlx_view_votes, `view`):
+    * the frame of the juror's own tiles and a thumb badge named by the page (data-vote-selected /
+    * -rejected); nothing for an unrated file. */
+  function addVoteMark(tile, item, view) {
+    if (!view || !view.binary) return null;
+    var rate = +item.rate || 0;
+    showVote(tile, rate);
+    if (!rate) return null;
+    var holder = document.querySelector('[data-csrf-token]');
+    var name = (holder && holder.getAttribute(rate > 0 ? 'data-vote-selected' : 'data-vote-rejected')) || '';
+    var mark = document.createElement('span');
+    mark.className = 'badge wlx-tile-vote-mark ' + (rate > 0 ? 'wlx-vote-selected' : 'wlx-vote-rejected');
+    mark.title = name;
+    var thumb = document.createElement('i');
+    thumb.className = 'bi ' + (rate > 0 ? 'bi-hand-thumbs-up-fill' : 'bi-hand-thumbs-down-fill');
+    thumb.setAttribute('aria-hidden', 'true');
+    var text = document.createElement('span');
+    text.className = 'visually-hidden';
+    text.textContent = name;
+    mark.appendChild(thumb);
+    mark.appendChild(text);
+    tile.appendChild(mark);
+    return mark;
+  }
+
   window.wlxTileVotes = {
     voteUrl: voteUrl, send: send, explain: explain, addVote: addVote, vote: vote, addStars: addStars,
     addListStars: addListStars, addTally: addTally, addVoteTime: addVoteTime,
-    voteTimeAfter: voteTimeAfter
+    voteTimeAfter: voteTimeAfter, addVoteMark: addVoteMark
   };
 
   // the by-rate list's stars, once the page is there (raty loaded only where it has them)

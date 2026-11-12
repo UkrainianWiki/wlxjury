@@ -405,6 +405,41 @@ a:has(> .btn) { text-decoration: none; }
     pointer-events: none;
 }
 
+/* The organisers' bar of a round's results (navbar.scala.html wlx-nav-results): below 1700 px
+   its order menu (dropDownSelection's compactIcon) and its links are icons and its region menu
+   shows the place without "Region:", each text then read by screen readers only (as Bootstrap's
+   visually-hidden) and shown as a tooltip, so the bar and its pager stay on one line from 1280
+   px in Ukrainian (its longest), with a long juror name. Elsewhere, and wider, the texts. */
+.wlx-nav-icon { display: none; }
+@media (max-width: 1699.98px) {
+    .wlx-nav-results .wlx-nav-icon { display: inline-block; }
+    .wlx-nav-results .wlx-nav-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+}
+
+/* one juror's vote shown read-only on an organiser's view of their binary round's tiles
+   (tile-votes.js addVoteMark): the frame as above with a thumb at the tile's top right, not
+   clickable (the tile's click opens the large view) */
+.ug-thumb-wrapper.ug-tile .wlx-tile-vote-mark {
+    position: absolute;
+    right: 6px;
+    top: 6px;
+    z-index: 6;
+    background-color: rgba(var(--bs-body-bg-rgb), .85);
+    pointer-events: none;
+}
+.ug-thumb-wrapper.ug-tile .wlx-tile-vote-mark.wlx-vote-selected { color: var(--wlx-vote-selected); }
+.ug-thumb-wrapper.ug-tile .wlx-tile-vote-mark.wlx-vote-rejected { color: var(--wlx-vote-rejected); }
+
 /* the time of the juror's vote on their tile in an order by vote time (tile-votes.js
    addVoteTime): as the tally, at the tile's top; none recorded in the secondary text colour */
 .ug-thumb-wrapper.ug-tile .wlx-tile-time {

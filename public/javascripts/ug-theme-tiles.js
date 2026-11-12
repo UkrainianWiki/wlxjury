@@ -141,6 +141,10 @@ function UGTheme_tiles(){
 			g_objTilesWrapper.find(".ug-tile").each(function(){
 				wlxTileVotes.addTally(this, g_objTileDesign.getItemByTile(jQuery(this)));
 				wlxTileVotes.addVoteTime(this, g_objTileDesign.getItemByTile(jQuery(this)));
+				//wlxjury: one juror's vote, read-only, where the viewer doesn't vote (gallery-init.js
+				//wlx_view_votes: an organiser's view of a juror's votes)
+				if(g_options.wlx_view_votes)
+					wlxTileVotes.addVoteMark(this, g_objTileDesign.getItemByTile(jQuery(this)), g_options.wlx_view_votes);
 			});
 		}
 	}

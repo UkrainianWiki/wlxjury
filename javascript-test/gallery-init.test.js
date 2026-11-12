@@ -31,6 +31,13 @@ describe("options", () => {
         expect(o.wlx_stars).toEqual({ number: 5, half: true });
     });
 
+    test("one juror's votes shown read-only, from data-view-votes; none without it", () => {
+        expect(options(gallery('data-jury="false" data-binary="true" data-view-votes="{&quot;binary&quot;:true}"')).wlx_view_votes)
+            .toEqual({ binary: true });
+        expect(options(gallery('data-jury="true" data-binary="true"')).wlx_view_votes).toBeNull();
+        expect(options(gallery('data-view-votes="{binary"')).wlx_view_votes).toBeNull();
+    });
+
     test("no votes without the attributes, and no stars from broken JSON", () => {
         const o = options(gallery('data-stars="{number: 5"'));
         expect(o.jury).toBe(false);
