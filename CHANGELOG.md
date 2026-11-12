@@ -27,7 +27,9 @@ with `.N` for an extra deploy in the same month (`26.11.1`), and release heading
 
 The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 2026-11-11.
 
-Nothing yet.
+**Fixes**
+
+- **Profile:** the password change form asks for the current password first, then the new one.
 
 ## 26.11.1 (2026-11-12)
 
