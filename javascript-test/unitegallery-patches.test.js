@@ -44,7 +44,7 @@ beforeAll(() => {
 beforeEach(() => {
     window.pwned = undefined;
     window.open = jest.fn();
-    window.wlxTileVotes = { addVote: jest.fn(), addStars: jest.fn(), addTally: jest.fn(), vote: jest.fn() };
+    window.wlxTileVotes = { addVote: jest.fn(), addStars: jest.fn(), addTally: jest.fn(), addVoteTime: jest.fn(), addVoteMark: jest.fn(), vote: jest.fn() };
 });
 
 const tick = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -350,6 +350,43 @@ describe("the tiles theme (ug-theme-tiles.js)", () => {
         const [el, item] = window.wlxTileVotes.addTally.mock.calls[0];
         expect(el).toBe(tiles[0]);
         expect([item.approvals, item.rejections, item.tally]).toEqual(["a, b", "c", "2 yes, 1 no"]);
+    });
+
+    test("the juror's vote time on every tile, from data-voted-at / data-voted-none", async () => {
+        const tiles = await gallery([
+            { src: loaded("/t/v.jpg"), "data-rate": "1", "data-voted-at": "2026-11-12T14:05:00.123Z" },
+            { src: loaded("/t/w.jpg"), "data-rate": "-1", "data-voted-at": "", "data-voted-none": "Time not recorded" },
+            { src: loaded("/t/x.jpg") }
+        ]);
+        expect(window.wlxTileVotes.addVoteTime).toHaveBeenCalledTimes(3);
+        const items = window.wlxTileVotes.addVoteTime.mock.calls.map(([el, item]) => [el, item.votedAt, item.votedNone]);
+        expect(items).toEqual([
+            [tiles[0], "2026-11-12T14:05:00.123Z", undefined],
+            [tiles[1], "", "Time not recorded"],
+            // another order: no attribute, which addVoteTime takes as no time to show
+            [tiles[2], undefined, undefined]
+        ]);
+    });
+
+    test("one juror's vote, read-only, on every tile where the page shows it (wlx_view_votes)", async () => {
+        const view = { binary: true };
+        const tiles = await gallery([
+            { src: loaded("/t/y.jpg"), "data-rate": "-1" },
+            { src: loaded("/t/z.jpg"), "data-rate": "0" }
+        ], { binary: true, wlx_view_votes: view });
+        expect(window.wlxTileVotes.addVoteMark).toHaveBeenCalledTimes(2);
+        const [el, item, v] = window.wlxTileVotes.addVoteMark.mock.calls[0];
+        expect(el).toBe(tiles[0]);
+        expect(item.rate).toBe("-1");
+        expect(v).toEqual(view);
+        // no thumbs to vote with: the tiles aren't the viewer's (jury off)
+        expect(tiles[0].querySelectorAll(".ug-icon-select, .ug-icon-reject")).toHaveLength(0);
+        expect(window.wlxTileVotes.addVote).not.toHaveBeenCalled();
+    });
+
+    test("no read-only votes without wlx_view_votes", async () => {
+        await gallery([{ src: loaded("/t/za.jpg"), "data-rate": "1" }]);
+        expect(window.wlxTileVotes.addVoteMark).not.toHaveBeenCalled();
     });
 
     test("a page without tile-votes.js (contestFiles) gets no tally, and no error", async () => {

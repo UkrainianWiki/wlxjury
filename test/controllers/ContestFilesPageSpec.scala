@@ -256,7 +256,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
 
         val (_, deleted) = get(s"$base?deleted=true&region=14", f.admin)
         tiles(deleted) === List(6L)
-        deleted must contain("Region: <b>14</b>") // the region shown
+        deleted must contain("""<span class="wlx-nav-label">Region:</span> <b>14</b>""") // the region shown
         // the deleted files' regions
         counted(menuPlaces(deleted, "regionmenu", f.admin)) ===
           Map(s"$base?deleted=true&region=07" -> 1, s"$base?deleted=true&region=14" -> 1)

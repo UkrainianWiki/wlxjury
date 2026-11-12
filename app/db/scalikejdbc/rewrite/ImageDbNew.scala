@@ -103,7 +103,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
              if (byRegion)
                s"m.$regionColumn, count(DISTINCT i.page_id)"
              else if (!grouped)
-               sqls"""${i.result.*}, ${s.result.*} """.value
+               sqls"""${i.result.*}, ${VoteJdbc.resultAll(s)} """.value
              else if (tally)
                sqls"""${SQLSyntax.createUnsafely(rateSum)} as rate, count(*) as rate_count,
                        ${SQLSyntax.createUnsafely(tallyColumns)}, ${i.result.*} """.value
@@ -245,7 +245,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
           .map(ImageJdbc(i)(_)).list().map(image => image.pageId -> image).toMap
         val conditions = copy(regions = Set.empty, keyset = None, withPageId = None).where()
         val inPage = if (conditions.value.isEmpty) sqls"where" else sqls"$conditions and"
-        val votes = sql"select ${s.result.*} from vote s $inPage s.page_id in ($pageIds) order by s.id"
+        val votes = sql"select ${VoteJdbc.resultAll(s)} from vote s $inPage s.page_id in ($pageIds) order by s.id"
           .map(VoteJdbc(s)(_)).list().groupBy(_.pageId)
         pageIds.flatMap(id => images.get(id).map(ImageWithRating(_, votes.getOrElse(id, Nil))))
       }

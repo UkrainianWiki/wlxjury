@@ -20,9 +20,12 @@ class UiSelectionDto[T](val itemUrlFunction: T => Call,
   /** The selected item; a neutral one if it is not in the menu, never an error. */
   def current: SelectionItem = map.getOrElse(selectedItemId, UiSelectionDto.Unlisted)
 
-  def toDropDown(iconOnly: Boolean = false)(implicit messages: Messages): Html =
+  /** The menu; `compactIcon`: in the organisers' crowded results bar, its toggle that icon below
+    * 1700 px, the current item's text read by screen readers and shown as a tooltip, so the bar
+    * stays on one line (dropDownSelection.scala.html, main.css). */
+  def toDropDown(iconOnly: Boolean = false, compactIcon: Option[String] = None)(implicit messages: Messages): Html =
     views.html
-      .dropDownSelection(this.asInstanceOf[UiSelectionDto[Any]], iconOnly)
+      .dropDownSelection(this.asInstanceOf[UiSelectionDto[Any]], iconOnly, compactIcon)
 }
 
 object UiSelectionDto {

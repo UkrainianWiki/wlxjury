@@ -21,13 +21,17 @@ import java.net.{CookieManager, CookiePolicy, URI}
 class GatlingSmokeSpec extends Specification with AfterAll {
   sequential
 
-  /** The fixture's app (TestServer) stays up for the JVM, and PlayDBApiAdapterModule made its
-    * pool, on the fixture's own container, ScalikeJDBC's default: the specs after this one in
+  /** The fixture's app (TestServer) would stay up for the JVM, and PlayDBApiAdapterModule made
+    * its pool, on the fixture's own container, ScalikeJDBC's default: the specs after this one in
     * the same JVM ran on that database (truncating it, and CriteriaRateSpec's lock specs
-    * reading another server's INNODB_TRX). Give them the shared test database's pool back.
+    * reading another server's INNODB_TRX). Stop the fixture first (its app's job scheduler and
+    * recount timer with it: once the pool is the shared test database's, the scheduler claimed
+    * the queued jobs ExcludeRoundsSpec inserts), then give the later specs the shared test
+    * database's pool back.
     */
   override def afterAll(): Unit =
-    if (db.scalikejdbc.SharedTestDb.isStarted) db.scalikejdbc.SharedTestDb.reregisterDefault()
+    try gatling.setup.GatlingFixtureLifecycle.stop()
+    finally if (db.scalikejdbc.SharedTestDb.isStarted) db.scalikejdbc.SharedTestDb.reregisterDefault()
 
   private val MaxMs     = 1000L
   private lazy val base = s"http://localhost:${GatlingTestFixture.port}"

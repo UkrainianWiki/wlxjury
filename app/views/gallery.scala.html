@@ -47,6 +47,15 @@
                         data-roundId="@roundId"
                         data-rate="@file.rate"
                         data-largeUrl="@list.largeUrl(file.pageId)"
+                        @* in an order by vote time, every tile's: the time of the juror's vote, ISO 8601 in
+                           UTC; "" for an unrated file, or a vote with none recorded (its text with it);
+                           kept up to date by an in-page vote (tile-votes.js addVoteTime, vote-time.js) *@
+                        @if(list.showsVoteTimes) {
+                        @file.votes.headOption.flatMap(_.votedAt).filter(_ => file.rate != 0) match {
+                            case Some(at) => {data-voted-at="@at.toInstant.toString"}
+                            case None => {data-voted-at=""@if(file.rate != 0) { data-voted-none="@Messages("vote.time.none")"}}
+                        }
+                        }
                         @* all the jurors' votes on a binary round's file, on its tile (tile-votes.js addTally):
                            approvals, rejections and what a screen reader reads, as binaryTally has them *@
                         @if(list.aggregateBinary) {

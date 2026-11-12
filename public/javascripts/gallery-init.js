@@ -2,21 +2,26 @@
 // the page's #gallery, once it is parsed. What the tiles do comes from #gallery's attributes
 // (views.GalleryTiles): data-jury, "true" when the viewer votes on them (their own files in an
 // active round); data-binary, "true" in a binary round (thumbs up and down, tile-votes.js);
-// data-stars, a rated round's tile stars as JSON, {"number": 5, "half": false}, or none.
+// data-stars, a rated round's tile stars as JSON, {"number": 5, "half": false}, or none;
+// data-view-votes, one juror's votes shown read-only (GalleryTiles.viewVotes), or none.
 (function () {
   'use strict';
 
+  /** The JSON of `el`'s attribute `name`, null for none or one not read (no stars or marks rather
+    * than no gallery). */
+  function parsed(el, name) {
+    var json = el.getAttribute(name);
+    if (!json) return null;
+    try {
+      return JSON.parse(json);
+    } catch (e) {
+      return null;
+    }
+  }
+
   /** unitegallery's options for the #gallery element `el`. */
   function options(el) {
-    var stars = null;
-    var json = el.getAttribute('data-stars');
-    if (json) {
-      try {
-        stars = JSON.parse(json);
-      } catch (e) {
-        stars = null; // no stars rather than no gallery
-      }
-    }
+    var stars = parsed(el, 'data-stars');
     return {
       gallery_theme: 'tiles',
       tiles_type: 'justified',
@@ -31,7 +36,10 @@
       jury: el.getAttribute('data-jury') === 'true',
       binary: el.getAttribute('data-binary') === 'true',
       // a rated round's tile stars: their number, and whether in half stars
-      wlx_stars: stars
+      wlx_stars: stars,
+      // one juror's votes shown read-only on a binary round's tiles (data-view-votes:
+      // {"binary": true}), tile-votes.js addVoteMark
+      wlx_view_votes: parsed(el, 'data-view-votes')
     };
   }
 

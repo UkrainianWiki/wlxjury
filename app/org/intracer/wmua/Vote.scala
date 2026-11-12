@@ -10,13 +10,17 @@ import db.scalikejdbc.{Round, VoteJdbc, User}
   * every average and total and as a vote toward progress. Code asks what a rate means through
   * [[Vote.isPositive]], [[Vote.isRejected]], [[Vote.isUnrated]], [[Vote.isVoted]] and
   * [[Vote.grade]] (in SQL, `db.scalikejdbc.VoteSql`), not by comparing it.
+  *
+  * `votedAt` (`vote.voted_at`, V97): when the juror last changed the rate to another value, by
+  * the database clock; None for an unrated vote, and for one rated before V97 (untimed).
   */
 case class Vote(pageId: Long, juryId: Long, roundId: Long,
                      var rate: Int = 0, id: Option[Long] = None,
                      createdAt: Option[ZonedDateTime] = None,
                      deletedAt: Option[ZonedDateTime] = None,
                      criteriaId: Option[Int] = None,
-                     monumentId: Option[String] = None) extends HasId {
+                     monumentId: Option[String] = None,
+                     votedAt: Option[ZonedDateTime] = None) extends HasId {
 
   def isPositive: Boolean = Vote.isPositive(rate)
 

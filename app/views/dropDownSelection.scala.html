@@ -1,14 +1,24 @@
-@(dto: UiSelectionDto[Any], iconOnly: Boolean = false)(implicit messages: Messages)
+@(dto: UiSelectionDto[Any], iconOnly: Boolean = false, compactIcon: Option[String] = None)(implicit messages: Messages)
 @* A navbar menu: its toggle shows the current item (its icon only if `iconOnly` and it has one,
    the text then read by screen readers and shown as a tooltip), the menu every item, the current
-   one marked active. Icons are full class strings (`bi bi-…`). *@
+   one marked active. Icons are full class strings (`bi bi-…`). With `compactIcon`, in the
+   organisers' crowded results bar (navbar.scala.html, wlx-nav-results) the toggle is that icon
+   below 1700 px, its text read by screen readers and shown as a tooltip; elsewhere, and from
+   1700 px, the text (main.css, UiSelectionDto.toDropDown) *@
 @icon(iconClass: String) = {<i class="@iconClass" aria-hidden="true"></i>}
 <li class="nav-item dropdown">
     <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" role="button" aria-expanded="false" href="#"
-        @if(iconOnly && dto.current.icon.nonEmpty) {title="@dto.current.localizedText"}>
+        @if((iconOnly && dto.current.icon.nonEmpty) || compactIcon.nonEmpty) {title="@dto.current.localizedText"}>
+        @compactIcon match {
+        case Some(iconClass) => {
+            @icon(iconClass + " wlx-nav-icon")<span class="wlx-nav-label">@dto.current.localizedText</span>
+        }
+        case None => {
         @dto.current.icon.filter(_ => iconOnly) match {
             case Some(iconClass) => { @icon(iconClass)<span class="visually-hidden">@dto.current.localizedText</span> }
             case None => { @dto.current.localizedText }
+        }
+        }
         }
     </a>
     <ul class="dropdown-menu">

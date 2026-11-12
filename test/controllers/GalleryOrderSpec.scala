@@ -144,7 +144,7 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "have no By my rating on tabs of one rate, but In file order as text, and keep it for the other tabs" in {
+    "have no By my rating on tabs of one rate, In file order shown (as text on the unrated tab), and keep it for the other tabs" in {
       testDbApp { implicit app =>
         val f = fixture(Round.binaryRound)
         // selected: 5, 2 and 12 (file order 2, 5, 12); rejected: 3
@@ -152,7 +152,8 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         VoteJdbc.rate(f.pageIds(2), f.juror.getId, f.round.getId, -1)
         def html(query: String) = page(gallery(f, query), f).replace("&amp;", "&")
         def hasRateOrder(h: String) = h.contains("By my rating")
-        // the plain "In file order" in the menu's place, not a menu
+        // the plain "In file order" in the menu's place, not a menu: the unrated tab's (the
+        // selected and rejected have a menu of file order and by vote time, VoteTimeOrderSpec)
         def fixedOrder(h: String) = {
           val label = org.jsoup.Jsoup.parse(h).select("nav span.gallery-order-fixed")
           label.size == 1 && label.text == "In file order" &&
@@ -175,8 +176,9 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
           (tiles(all).take(3) === selectedFirst.toList) and
           (all must contain(s"""href="$selectedLink">Selected (3)</a>""")) and
           (hasRateOrder(selected) must beFalse) and
-          (fixedOrder(selected) must beTrue) and (fixedOrder(all) must beFalse) and
-          (fixedOrder(html("?filter=rejected&sort=rate")) must beTrue) and
+          (fixedOrder(selected) must beFalse) and (fixedOrder(all) must beFalse) and
+          (selected must contain("""<a class="dropdown-item active" aria-current="true" href="""" + base + "?filter=selected&sort=file\">")) and
+          (fixedOrder(html("?filter=rejected&sort=rate")) must beFalse) and
           (fixedOrder(html("?filter=unrated")) must beTrue) and
           (tiles(selected) === selectedFirst.toList) and
           (selected must contain(s"""href="$allLink">All (20)</a>""")) and
@@ -261,7 +263,7 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
   }
 
   "an organiser who has no files in the round" should {
-    "see a juror's gallery without tabs or an order of their own" in {
+    "see a juror's gallery without tabs of their own, ordered by the juror's votes (VoteTimeOrderSpec)" in {
       testDbApp { implicit app =>
         val f = fixture()
         val organizer = userDao.create(User("Organizer", "org@example.com", None, Set("organizer"), contestId = f.contest.id))
@@ -270,7 +272,9 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         status(result) === OK
         val html = contentAsString(result)
         html must not(contain("All (0)"))
-        html must not(contain("In file order"))
+        // no own menu: the viewed juror's, by rating, not "my" rating
+        html must not(contain("By my rating"))
+        html must contain("By rating")
       }
     }
   }

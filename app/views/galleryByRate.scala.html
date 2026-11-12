@@ -50,6 +50,10 @@
         @if(criteria.nonEmpty) {
             @criteriaAverages(criteria.of(file.pageId))
         }
+        @* in an order by vote time, the time of the juror's vote *@
+        @if(list.showsVoteTimes && file.rate != 0) {
+        <div class="wlx-vote-time-line small">@snippets.voteTime(file.votes.headOption.flatMap(_.votedAt))</div>
+        }
     }
     }
     }

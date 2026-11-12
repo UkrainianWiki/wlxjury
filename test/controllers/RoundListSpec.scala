@@ -245,4 +245,78 @@ class RoundListSpec extends Specification {
       remembered("/?sort=difference", None, r = round) must beNone
     }
   }
+
+  "a juror's order by vote time" should {
+    val binary = round.copy(id = Some(8), rates = Round.binaryRound)
+
+    "be read from sort=latest-vote and sort=oldest-vote, and the older values still read" in {
+      (parse("/?sort=latest-vote").order === ListOrder.LatestVote) and
+        (parse("/?sort=oldest-vote").order === ListOrder.OldestVote) and
+        (parse("/?sort=file").order === ListOrder.FileOrder) and
+        (parse("/?sort=rate").order === ListOrder.ByRate) and
+        (parse("/?sort=latest-vote").pageUrl(1) === "/gallery/round/7/user/3/page/1?sort=latest-vote") and
+        (Seq(ListOrder.LatestVote, ListOrder.OldestVote).map(o => ListOrder.parse(o.param)) ===
+          Seq(Some(ListOrder.LatestVote), Some(ListOrder.OldestVote)))
+    }
+
+    "be remembered in the juror's own gallery, and their default when the URL names none" in {
+      implicit val req: play.api.mvc.RequestHeader = request("/?sort=oldest-vote", Some("rate"))
+      (RoundList.remembered(RoundList.of(round, juror, 3, "all", GalleryView.Gallery), juror, secure = false)
+        .map(_.value) === Some("oldest-vote")) and
+        (parse("/", sortCookie = Some("latest-vote")).order === ListOrder.LatestVote) and
+        (RoundList.landing(round, juror)(request("/", Some("oldest-vote"))).order === ListOrder.OldestVote)
+    }
+
+    "be by rate for all the jurors' votes together, the binary order on a yes/no round" in {
+      def all(r: Round, uri: String) = RoundList.of(r, organizer, 0, "all", GalleryView.ByRate)(FakeRequest("GET", uri))
+      (all(round, "/?sort=latest-vote").order === ListOrder.ByRate) and
+        (all(round, "/?sort=oldest-vote").order === ListOrder.ByRate) and
+        (all(binary, "/?sort=latest-vote").order === ListOrder.Binary(BinaryOrder.Default)) and
+        // a juror's list viewed by an organiser keeps it
+        (RoundList.of(round, organizer, 3, "all", GalleryView.Gallery)(FakeRequest("GET", "/?sort=latest-vote")).order ===
+          ListOrder.LatestVote) and
+        // all the jurors' rated list built with it orders by the round's rank, as by rate
+        (RoundList(round, 0, order = ListOrder.LatestVote, view = GalleryView.ByRate).query.order ===
+          RoundList(round, 0, order = ListOrder.ByRate, view = GalleryView.ByRate).query.order)
+    }
+
+    "order the rated by time, the unrated last, ties in file order" in {
+      val latest = RoundList(round, 3, order = ListOrder.LatestVote).query.order
+      val oldest = RoundList(round, 3, order = ListOrder.OldestVote).query.order
+      (latest === Seq("(s.rate = 0)" -> 1, ListOrder.VoteTime -> -1, "s.monument_id" -> 1, "s.page_id" -> 1)) and
+        (oldest === Seq("(s.rate = 0)" -> 1, ListOrder.VoteTime -> 1, "s.monument_id" -> 1, "s.page_id" -> 1)) and
+        (RoundList(round, 3, order = ListOrder.LatestVote).query.keyed must beTrue)
+    }
+
+    "show no ranks in the by-rate view, which they wouldn't follow" in {
+      (RoundList(round, 3, order = ListOrder.LatestVote, view = GalleryView.ByRate).ranked must beFalse) and
+        (RoundList(round, 3, order = ListOrder.ByRate, view = GalleryView.ByRate).ranked must beTrue)
+    }
+
+    "be offered with file order and by rating on all and rated files, without by rating on selected or rejected, not on unrated" in {
+      def choices(r: Round, filter: VoteFilter) = RoundList(r, 3, filter = filter).orderChoices
+      val four = Seq(ListOrder.FileOrder, ListOrder.ByRate, ListOrder.LatestVote, ListOrder.OldestVote)
+      val three = Seq(ListOrder.FileOrder, ListOrder.LatestVote, ListOrder.OldestVote)
+      (choices(round, VoteFilter.All) === four) and
+        (choices(round, VoteFilter.Rated) === four) and
+        (choices(binary, VoteFilter.All) === four) and
+        (choices(binary, VoteFilter.Rate(1)) === three) and
+        (choices(binary, VoteFilter.Rate(-1)) === three) and
+        (choices(binary, VoteFilter.Unrated) === Seq(ListOrder.FileOrder)) and
+        (choices(round, VoteFilter.Unrated) === Seq(ListOrder.FileOrder))
+    }
+
+    "show by rating on a tab of one rate as file order, which it is there" in {
+      (RoundList(binary, 3, filter = VoteFilter.Rate(1), order = ListOrder.ByRate).shownOrder === ListOrder.FileOrder) and
+        (RoundList(binary, 3, filter = VoteFilter.Rate(1), order = ListOrder.LatestVote).shownOrder === ListOrder.LatestVote) and
+        (RoundList(binary, 3, order = ListOrder.OldestVote).shownOrder === ListOrder.OldestVote) and
+        (RoundList(binary, 3, filter = VoteFilter.Unrated, order = ListOrder.LatestVote).shownOrder === ListOrder.FileOrder)
+    }
+
+    "have their labels' message keys" in {
+      Seq(ListOrder.FileOrder, ListOrder.ByRate, ListOrder.LatestVote, ListOrder.OldestVote,
+        ListOrder.Binary(BinaryOrder.Difference)).map(_.messageKey) ===
+        Seq("sort.file", "sort.rate", "sort.latest-vote", "sort.oldest-vote", "binary.order.difference")
+    }
+  }
 }

@@ -13,7 +13,9 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
 
   private val selectionFields =
     "s.id as i_on_s, s.jury_id as ji_on_s, s.created_at as ca_on_s, s.deleted_at as da_on_s, " +
-      "s.round_id as ri_on_s, s.page_id as pi_on_s, s.rate as r_on_s, s.criteria_id as ci_on_s, s.monument_id as mi_on_s"
+      "s.round_id as ri_on_s, s.page_id as pi_on_s, s.rate as r_on_s, s.criteria_id as ci_on_s, s.monument_id as mi_on_s, " +
+      // the vote's time (V97), and as seconds since the epoch, which VoteJdbc reads it by
+      "s.voted_at as va_on_s, UNIX_TIMESTAMP(s.voted_at) AS va_on_s_ms"
 
   private val allFields = imageFields + ", " + selectionFields
 

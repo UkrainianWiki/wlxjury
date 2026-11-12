@@ -14,6 +14,9 @@ class SelectionSpec extends Specification with BeforeAll {
 
   private def sameTime(s: Seq[Vote]): Seq[Vote] = s.map(_.copy(createdAt = Some(time)))
   private def noIds(s: Seq[Vote]): Seq[Vote] = s.map(_.copy(id = None))
+  // the vote times (V97, VoteVotedAtSpec checks them): here whether a row has one
+  private def untimed(s: Seq[Vote]): Seq[Vote] = s.map(_.copy(votedAt = None))
+  private def timed(s: Seq[Vote]): Seq[Boolean] = s.map(_.votedAt.isDefined)
 
   "fresh database" should {
     "be empty" in new AutoRollbackDb {
@@ -27,8 +30,10 @@ class SelectionSpec extends Specification with BeforeAll {
       val created = selectionDao.create(s.pageId, s.rate, s.juryId, s.roundId)
       val id = created.getId
       created === s.copy(id = Some(id))
-      selectionDao.findById(id) === Some(created)
-      selectionDao.findAll() === Seq(created)
+      // read back, the rated vote has the time it was inserted at (create returns none)
+      selectionDao.findById(id).map(_.copy(votedAt = None)) === Some(created)
+      selectionDao.findById(id).flatMap(_.votedAt) must beSome
+      untimed(selectionDao.findAll()) === Seq(created)
     }
 
     "batch insert selections" in new AutoRollbackDb {
@@ -45,7 +50,8 @@ class SelectionSpec extends Specification with BeforeAll {
       val ids = selections.flatMap(_.id)
       ids.size === 3
       ids === ids.min.to(ids.min + 2).toList
-      noIds(selections) === s
+      untimed(noIds(selections)) === s
+      timed(selections) === Seq(true, true, true)
     }
 
     "reject a vote row whose image doesn't exist" in new AutoRollbackDb {
@@ -74,12 +80,14 @@ class SelectionSpec extends Specification with BeforeAll {
 
       selectionDao.rate(pageId = 1, juryId = 10, roundId = 20, rate = 1)
 
-      noIds(sameTime(selectionDao.findAll())) === s.head.copy(rate = 1) +: s.tail
+      untimed(noIds(sameTime(selectionDao.findAll()))) === s.head.copy(rate = 1) +: s.tail
+      timed(selectionDao.findAll()) === Seq(true, false, false, false, false)
 
       selectionDao.rate(pageId = 1, juryId = 10, roundId = 20, rate = -1)
-      noIds(sameTime(selectionDao.findAll())) === s.head.copy(rate = -1) +: s.tail
+      untimed(noIds(sameTime(selectionDao.findAll()))) === s.head.copy(rate = -1) +: s.tail
 
       selectionDao.rate(pageId = 1, juryId = 10, roundId = 20, rate = 0)
+      // cleared: no time again
       noIds(sameTime(selectionDao.findAll())) === s
     }
 
