@@ -61,7 +61,7 @@
             </a>
             <ul class="dropdown-menu dropdown-menu-end">
                 <li>
-                    <a class="dropdown-item" href="@routes.UserController.editUser(user.getId)">
+                    <a class="dropdown-item" href="@routes.UserController.editUser(user.getId, None, controllers.UserController.profileLinkReturnTo(request, backHere))">
                         <i class="bi bi-person" aria-hidden="true"></i> @Messages("profile")
                     </a>
                 </li>

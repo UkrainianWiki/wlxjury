@@ -9,7 +9,8 @@
         signsInWithWikimedia: Option[String] = None,
         maySetPassword: Boolean = false,
         notice: Option[String] = None,
-        changes: Seq[services.AccountChangeLog.Row] = Nil
+        changes: Seq[services.AccountChangeLog.Row] = Nil,
+        returnTo: Option[String] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @import helper._
@@ -44,6 +45,10 @@
 
             @form(routes.UserController.saveUser(), Symbol("class") -> "form-vertical") {
                 @helper.CSRF.formField
+                @* the page the own profile was opened from: the save goes back there *@
+                @for(back <- returnTo) {
+                    <input type="hidden" name="returnTo" value="@back">
+                }
 
                 @flash.get("account-notice").map { msg =>
                     <div class="alert alert-info" role="status">@msg</div>

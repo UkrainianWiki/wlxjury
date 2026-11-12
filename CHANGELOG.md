@@ -66,6 +66,10 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   row, level with the field labels, not with the inputs (since the Bootstrap 5 templates hid the
   role's label). The role has its label again and the button the label's space, so both are level
   with the inputs, also when an error shows under a field.
+- **Profile:** saving one's own profile goes back to the page it was opened from (the user menu's
+  **Profile** link carries it; kept when a save is refused, and on the profile when the save has
+  a notice to show, e.g. an email change's link sent). Only a page of the site, never the profile
+  itself, sign-out or a contest switch; otherwise the save goes where it did before.
 
 **Development**
 

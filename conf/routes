@@ -98,7 +98,7 @@ GET         /admin/importusers                                                  
 POST        /admin/importusers                                                      @controllers.UserController.importUsers(contestId: Option[Long] ?= None)
 GET         /admin/greeting                                                         @controllers.UserController.editGreeting(contestId: Option[Long] ?= None)
 POST        /admin/greeting                                                         @controllers.UserController.saveGreeting(contestId: Option[Long] ?= None)
-GET         /users/edit/:id                                                         @controllers.UserController.editUser(id: Long, contestId: Option[Long] ?= None)
+GET         /users/edit/:id                                                         @controllers.UserController.editUser(id: Long, contestId: Option[Long] ?= None, returnTo: Option[String] ?= None)
 POST        /users/save                                                             @controllers.UserController.saveUser()
 # root: mails the account a link that sets a new password (P7)
 POST        /users/resetpasswd/:id                                                  @controllers.UserController.resetPassword(id: Long)

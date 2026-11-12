@@ -162,11 +162,13 @@ class UserController @Inject()(cc: ControllerComponents,
     * @param contestId for root, the contest whose role the form shows
     * @return edit user form view
     */
-  def editUser(userId: Long, contestId: Option[Long] = None): EssentialAction =
+  def editUser(userId: Long, contestId: Option[Long] = None, returnTo: Option[String] = None): EssentialAction =
     withAuth(rolePermission(
       Set(User.ADMIN_ROLE, User.ROOT_ROLE, s"USER_ID_$userId"))) {
       user => implicit request =>
         editableUser(user, userId, contestId).fold(Redirect(routes.LoginController.index)) { editedUser =>
+          // returnTo: the page the profile was opened from (the navbar's link), read again by
+          // ownProfile from the request
           if (user.id.contains(userId)) ownProfile(Ok, user)
           else {
             val pageContest = editedUser.contestId.orElse(user.currentContest)
@@ -222,7 +224,9 @@ class UserController @Inject()(cc: ControllerComponents,
     else Nil
 
   /** The own profile with `status`: the form (`userForm`, else the user's, its theme the stored
-    * one, else the one this browser shows) and the API tokens card ([[ApiTokensCard]]) with
+    * one, else the one this browser shows, and the request's returnTo,
+    * [[UserController.requestReturnTo]], to go back to after a save) and the API tokens card
+    * ([[ApiTokensCard]]) with
     * `tokenForm`, a `notice` (a message key) and, right after creating one, `newToken`. Each
     * rendering puts a new nonce in the session and the create form, so that a create is taken
     * once: reloading its response re-posts a used nonce.
@@ -246,7 +250,7 @@ class UserController @Inject()(cc: ControllerComponents,
     val linked = LinkedAccountsCard(UserIdentityJdbc.findByUser(user.getId), oauthSettings.providersFor(request.host),
       linkNonce)
     status(views.html.editUser(user, userForm.getOrElse(editUserForm.fill(withTheme)), user.currentContest, card,
-      Some(linked)))
+      Some(linked), returnTo = UserController.requestReturnTo(request)))
       .addingToSession(ApiTokensCard.NonceKey -> nonce, OAuthController.LinkNonceKey -> linkNonce)
   }
 
@@ -772,9 +776,13 @@ class UserController @Inject()(cc: ControllerComponents,
     if (setOthersPassword.nonEmpty) notices += Messages("password.set.by.admin.done")
 
     val notice = notices.result().mkString(" ")
-    // one's own profile with a notice (an email change's link sent) shows it there
+    // one's own profile with a notice (an email change's link sent) shows it there, still
+    // with the page it was opened from; without one, back to that page
+    val back = if (own) UserController.requestReturnTo(request) else None
     val result = if (own && notice.nonEmpty) {
-      Redirect(routes.UserController.editUser(userId))
+      Redirect(routes.UserController.editUser(userId, None, back))
+    } else if (back.nonEmpty) {
+      Redirect(back.get)
     } else if (user.hasAnyRole(User.ADMIN_ROLES)) {
       Redirect(routes.UserController.users(editedUser.contestId))
     } else {
@@ -1156,6 +1164,37 @@ class UserController @Inject()(cc: ControllerComponents,
 }
 
 object UserController {
+
+  /** A page the own profile may send back to after a save: a local path
+    * ([[Secured.safeLocalPath]]), not the profile's or another account action's (`/users/...`,
+    * no loop), nor signing out or switching the contest. None: the save goes where it did
+    * before (the users list for an admin, else the start page).
+    */
+  def profileReturnTo(value: Option[String]): Option[String] =
+    Secured.safeLocalPath(value).filterNot { url =>
+      val path = url.takeWhile(c => c != '?' && c != '#')
+      path.startsWith("/users/") || path == "/logout" || path.startsWith("/logout/") ||
+        path.startsWith("/switch-contest/")
+    }
+
+  /** The request's returnTo for the profile: the query's (the profile page's GET) or the form's
+    * (its save, also a refused one), if [[profileReturnTo]] takes it.
+    */
+  def requestReturnTo(request: play.api.mvc.Request[_]): Option[String] = {
+    val formField = request.body match {
+      case body: AnyContent => body.asFormUrlEncoded.flatMap(_.get("returnTo")).flatMap(_.headOption)
+      case _                => None
+    }
+    profileReturnTo(request.getQueryString("returnTo").orElse(formField))
+  }
+
+  /** The navbar's profile link's returnTo: the page shown (a GET's, `backHere`), or on the
+    * profile itself the one it was opened from.
+    */
+  def profileLinkReturnTo(request: play.api.mvc.RequestHeader, backHere: Boolean): Option[String] =
+    if (!backHere || request.method != "GET") None
+    else if (request.path.startsWith("/users/edit/")) profileReturnTo(request.getQueryString("returnTo"))
+    else profileReturnTo(Some(request.uri))
 
   /** The edit form's fields that are not the account's: "Send an invitation email" (unticked by
     * default) and an optional comment for the account change log.
