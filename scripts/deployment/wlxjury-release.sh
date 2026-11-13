@@ -940,7 +940,7 @@ prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention 
     previous=$(record_of "$dir" previous)
     name=$(release_name "$previous")
     if [ ! -d "$ROOT/releases/$name" ]; then
-      echo "Note: the previous release of $(basename "$dir") is gone, so its dump is for a manual import only"
+      kept "Note: the previous release of $(basename "$dir") is gone, so its dump is for a manual import only"
     elif [ -z "${keep[$name]:-}" ]; then
       keep[$name]="restore of the kept dump $(basename "$dir") switches back to it"
     fi
@@ -953,9 +953,9 @@ prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention 
     if [ ! -e "$dir" ] && [ ! -L "$dir" ]; then continue; fi
     name=$(basename "$dir")
     if [ -L "$dir" ]; then
-      echo "Skip $name: a symlink, never pruned"
+      kept "Skip $name: a symlink, never pruned"
     elif [ ! -d "$dir" ] || [ ! -f "$dir/wlxjury-build.json" ]; then
-      echo "Skip $name: not a release folder (no wlxjury-build.json), never pruned"
+      kept "Skip $name: not a release folder (no wlxjury-build.json), never pruned"
     else
       mtime=$(stat -c %Y -- "$dir" 2>/dev/null) || mtime=0
       lines+=("${last[$name]:-0}"$'\t'"$mtime"$'\t'"$name")

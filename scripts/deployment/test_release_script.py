@@ -1797,7 +1797,11 @@ class ReleaseScriptTest(unittest.TestCase):
         self.select(self.root / 'releases' / 'r4')
         (self.root / 'releases' / 'lost+found').mkdir()
         (self.root / 'releases' / 'link').symlink_to(self.root / 'releases' / 'r1')
-        pruned = self.release('prune')
+        quiet = self.release('prune', '--dry-run')  # Skips are listed only with --verbose.
+        self.assertSucceeded(quiet)
+        self.assertNotIn('Skip', quiet.stdout)
+        self.assertIn('Would delete release r1', quiet.stdout)
+        pruned = self.release('prune', '--verbose')
         self.assertSucceeded(pruned)
         self.assertIn('Skip lost+found: not a release folder', pruned.stdout)
         self.assertIn('Skip link: a symlink', pruned.stdout)

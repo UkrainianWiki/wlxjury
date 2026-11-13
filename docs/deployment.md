@@ -300,7 +300,7 @@ It never restores config: if the release changed config, restore `config.tgz` by
 
 ### Retention: old releases and dumps
 
-Release folders and pre-deployment dumps (`database.sql.gz`) stay on the server only as long as a `restore` can need them; the server's long-term backup is separate. `wlxjury-release prune` deletes the rest. It runs by itself at the end of every successful `reopen`, never after a failed one, so a rollback stays possible throughout a deployment; there it prints only what it deletes. `--verbose` also lists what it keeps and why. By hand:
+Release folders and pre-deployment dumps (`database.sql.gz`) stay on the server only as long as a `restore` can need them; the server's long-term backup is separate. `wlxjury-release prune` deletes the rest. It runs by itself at the end of every successful `reopen`, never after a failed one, so a rollback stays possible throughout a deployment; there it prints only what it deletes (and anything it cannot read). `--verbose` also lists what it keeps and why, what it skips (symlinks, folders that are not releases) and dumps whose previous release is gone. By hand:
 
 ```bash
 sudo wlxjury-release prune --dry-run --verbose   # what it keeps and why, and what it would delete
