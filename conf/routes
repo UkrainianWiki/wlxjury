@@ -77,6 +77,12 @@ GET         /filelist/user/:user/region/:region/page/:page                      
 GET         /filelist/round/:round/user/:user/page/:page                            controllers.GalleryController.fileList(user: Long, page: Int, region: String = "all", round: Long, format:String ?= "wiki")
 GET         /filelist/round/:round/user/:user/region/:region/page/:page             controllers.GalleryController.fileList(user: Long, page: Int, region: String, round: Long, format:String ?= "wiki")
 
+# the organisers' comments report of a round's list (GalleryView.Comments), its page with a file, its CSV
+GET         /comments/round/:round/user/:user/page/:page                            controllers.GalleryController.comments(user: Long, page: Int, region: String = "all", round: Long)
+GET         /comments/round/:round/user/:user/region/:region/page/:page             controllers.GalleryController.comments(user: Long, page: Int, region: String, round: Long)
+GET         /comments/round/:round/user/:user/region/:region/pageid/:pageid         controllers.GalleryController.commentsAt(user: Long, pageid: Long, region: String, round: Long)
+GET         /comments/round/:round/user/:user/region/:region/csv                    controllers.GalleryController.commentsCsv(user: Long, region: String, round: Long)
+
 
 POST        /comment/region/:region/pageid/:pageid                                  controllers.ImageDiscussionController.addComment(pageid: Long, region: String, round: Option[Long] ?= None, contestId: Option[Long] ?= None, user: Option[Long] ?= None)
 

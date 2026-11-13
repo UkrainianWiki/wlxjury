@@ -130,6 +130,24 @@ object CommentJdbc extends SQLSyntaxSupport[Comment] {
             where contest_id = $contestId and room in (${rooms.distinct}) group by room"""
         .map(rs => rs.long(1) -> rs.int(2)).list().toMap
 
+  /** The comments on the files (`room`) in the contest, in the round if one is given, in the
+    * order written (by id): a page of the comments report's files at once, on comment's
+    * (contest_id, room) index (V101).
+    */
+  def findByRooms(contestId: Long, rooms: Seq[Long], roundId: Option[Long] = None)(implicit
+      session: DBSession = autoSession
+  ): List[Comment] =
+    if (rooms.isEmpty) Nil
+    else
+      withSQL {
+        select.from(CommentJdbc as c)
+          .where
+          .eq(c.contestId, contestId).and
+          .in(c.room, rooms.distinct)
+          .and(roundId.map(r => sqls.eq(c.roundId, r)))
+          .orderBy(c.id)
+      }.map(CommentJdbc(c)).list()
+
   def findBySubjectAndContest(subject: Long, contestId: Long)(implicit session: DBSession = autoSession): List[Comment] = withSQL {
     select.from(CommentJdbc as c)
       .where
