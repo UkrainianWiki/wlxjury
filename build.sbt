@@ -373,6 +373,26 @@ Test / javaOptions ++= Seq("integration", "docker.tests", "generate.baseline", "
   sys.props.get(key).map(v => s"-D$key=$v")
 }
 
+// QueryPlanSpec in a forked JVM of its own, after the others: it starts its own MariaDB
+// (production-like, auto-recalc off, ~1M seeded votes), makes it the JVM's default pool and
+// throws it away with the JVM (docs/plans/2026-11-13-query-plan-checks.md, decision 4); the
+// property tells it the JVM is its own (elsewhere it skips). Every other spec stays in the one
+// JVM sbt's default grouping gives them, with the same fork options.
+Test / testGrouping := {
+  val (plans, others) = (Test / definedTests).value.partition(_.name == "plans.QueryPlanSpec")
+  // all the defined specs, before testOnly's filter: a renamed or moved spec fails the build
+  // instead of landing in the default group, where it would skip
+  require(plans.nonEmpty, "QueryPlanSpec not found: update the query-plans group (build.sbt)")
+  val options = (Test / forkOptions).value
+  val ownJvm = options.withRunJVMOptions(options.runJVMOptions :+ "-Dwlxjury.query-plans.own-jvm=true")
+  new Tests.Group("<default>", others, Tests.SubProcess(options)) +:
+    plans.map(spec => new Tests.Group("query-plans", Seq(spec), Tests.SubProcess(ownJvm)))
+}
+// Forked groups run one at a time (sbt's ForkedTestGroup limit) but, with parallel execution,
+// in no set order; without it, in testGrouping's order (QueryPlanSpec last). Each forked JVM
+// runs its specs one after another either way (Test / testForkedParallel is off).
+Test / parallelExecution := false
+
 // All Gatling simulations in a fixed order: rounds are created and their images
 // distributed before voting starts, so RoundDistribution runs first. Each simulation
 // forks its own JVM and restores the fixture DB, so the order doesn't change results.
