@@ -238,4 +238,68 @@ class DenialContestReasonSpec extends PlaySpecification with PlayTestDb {
       }
     }
   }
+
+  "the denial page's roles" should {
+    "fall back to the generic page, logged, if the contests can't be loaded: never a server error" in {
+      testDbApp { implicit app =>
+        val round = fixture()
+        val user = Secured.inCurrentContest(member("ann@example.com", 10L -> "admin"), None)
+        var loads = 0
+        val controller = new Secured(app.injector.instanceOf[ControllerComponents]) {
+          override protected def deniedContests(ids: Seq[Long]) = {
+            loads += 1
+            throw new IllegalStateException("database down")
+          }
+        }
+
+        val (result, log) = withAuthzLog(controller.onUnAuthorized(user, FakeRequest(GET, gallery(round)),
+          Secured.Denial.round(round, Secured.ViewerRoles)))
+        val html = contentAsString(Future.successful(result))
+
+        result.header.status === FORBIDDEN
+        loads === 1
+        html must contain("This account does not have permission to open the requested page.")
+        html must contain("This page is for: Admin, Juror, Organizer, Root.")
+        html must not(contain("database down"))
+        html must not(contain("This account’s roles"))
+        val reference = "Reference: ([0-9a-f]{8})".r.findFirstMatchIn(html).map(_.group(1)).get
+        log.count(line => line.startsWith(s"denial_roles_unavailable ref=$reference ") &&
+          line.contains("error=\"java.lang.IllegalStateException\"") && !line.contains("database down")) === 1
+      }
+    }
+
+    "not be loaded for a stopped round's page, which names no roles" in {
+      testDbApp { implicit app =>
+        val round = fixture()
+        val user = Secured.inCurrentContest(member("ann@example.com", 10L -> "admin"), None)
+        var loads = 0
+        val controller = new Secured(app.injector.instanceOf[ControllerComponents]) {
+          override protected def deniedContests(ids: Seq[Long]) = { loads += 1; Nil }
+        }
+
+        val result = controller.onUnAuthorized(user, FakeRequest(GET, gallery(round)),
+          Secured.Denial.round(round, User.VoterRoles).copy(reason = Some("round_stopped")))
+
+        result.header.status === FORBIDDEN
+        contentAsString(Future.successful(result)) must contain("This round is stopped")
+        loads === 0
+      }
+    }
+
+    "load the account's contests in one query" in {
+      testDbApp { implicit app =>
+        val round = fixture()
+        createContests(30)
+        val user = Secured.inCurrentContest(member("ann@example.com", 10L -> "admin", 30L -> "jury"), Some("10"))
+        var queries = Seq.empty[Seq[Long]]
+        val roles = Secured.deniedRoles(user, Secured.Denial.round(round, Secured.ViewerRoles),
+          ids => { queries :+= ids; Secured.contestsByIds(ids) })
+
+        queries.map(_.toSet) === Seq(Set(10L, 30L))
+        roles must beLike { case Secured.DeniedRoles.OutsideContests(contests, false) =>
+          contests.map(c => c.contest.getId -> c.roles) === Seq(10L -> Set("admin"), 30L -> Set("jury"))
+        }
+      }
+    }
+  }
 }
