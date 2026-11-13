@@ -59,7 +59,7 @@
 
         @form(routes.UserController.importUsers(Some(contestId)), Symbol("id") -> "import-users") {
             <div class="mb-3">
-                @helper.CSRF.formField
+                @csrfField()
 
                 @bs.textarea(importUserForm("userstoimport"),
                     Symbol("rows") -> 7, Symbol("cols") -> 50,

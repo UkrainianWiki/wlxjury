@@ -55,7 +55,7 @@
             }
 
             @bs.form(routes.RoundController.saveRound(), Symbol("id") -> "round-form") {
-                @helper.CSRF.formField
+                @csrfField()
 
                 @snippets.formError(editRoundForm)
 
@@ -220,7 +220,7 @@
               <h2 class="h4">@Messages("local.image.cache")</h2>
               <div id="round-cache-status" data-cache-status-url="@routes.ImageController.roundImageCacheStatus(cid, rid)"></div>
               <form method="post" action="@routes.ImageController.startRoundImageCache(cid, rid)">
-                @helper.CSRF.formField
+                @csrfField()
                 <button type="submit" class="btn btn-outline-secondary">@Messages("download.images.locally")</button>
               </form>
 
@@ -233,7 +233,7 @@
               <hr/>
               <h2 class="h4">@Messages("round.images.check.title")</h2>
               <form method="post" action="@routes.RoundImageCheckController.checkRound(rid)">
-                @helper.CSRF.formField
+                @csrfField()
                 <button type="submit" class="btn btn-outline-secondary">@Messages("round.images.check")</button>
               </form>
               @for(job <- imageCheckJob) {
