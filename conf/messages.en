@@ -21,6 +21,11 @@ access.denied.inactive=Your membership in this contest has been deactivated.
 access.denied.round.stopped=This round is stopped: comments can no longer be added to its files. Your comment was not saved.
 access.denied.back.to.file=Back to the file
 access.denied.contact=If you need access, ask your contest admin.
+access.denied.other.contest=The requested page belongs to a contest in which this account has no role.
+access.denied.account.roles=This account’s roles:
+access.denied.role.in={0} in “{1}”
+access.denied.no.roles=This account has no role in any contest.
+access.denied.contact.other=If you need this page, ask an admin of that contest to add this account to it.
 access.denied.reference=Reference: {0}, {1}
 password=Password
 profile = Profile
@@ -161,6 +166,22 @@ comments.count.few = {0} comments
 comments.count.many = {0} comments
 comments.count.other = {0} comments
 comment.round.other = Written in round {0}
+# the organisers' comments report (a round list's view, GalleryView.Comments): its scope, order,
+# CSV, file count (by the language's plural form: views.CommentCount.files), and its link in the
+# round's statistics
+comments.report.scope = Which comments
+comments.report.scope.round = This round
+comments.report.scope.contest = All rounds of the contest
+comments.report.order = Order
+sort.latest-comment = Latest comment first
+comments.report.csv = Comments CSV
+comments.report.files.one = {0} file
+comments.report.files.few = {0} files
+comments.report.files.many = {0} files
+comments.report.files.other = {0} files
+comments.report.empty.round = No file in this list has a comment written in this round.
+comments.report.empty.contest = No file in this list has a comment in this contest.
+comments.report.link = Comments on the round''s files
 
 media.type = Media Type
 files = Files
@@ -469,6 +490,7 @@ coi.disqualify.frozen = Round {0}: a next round''s distribution is reading its v
 coi.action.open = Round {0} is open to its jurors: stop it first to disqualify or requalify files.
 coi.requalified = Round {1}: {0} files requalified, with their votes.
 coi.none.selected = No file selected.
+coi.too.many.selected = More than {0,number,#} files selected: select at most {0,number,#} and repeat for the rest.
 coi.requalify.reason.missing = Choose why the files are requalified.
 coi.round.link = Conflicts of interest of this round
 coi.round.title = Conflicts of interest

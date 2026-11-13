@@ -964,12 +964,51 @@ class CredentialScanTest(unittest.TestCase):
             self.assertEqual(self.hocon(text), ([], set()), text)
 
     def test_comments_mentioning_a_token_or_key_are_kept(self):
-        for text in ('# e.g. WLXJURY_SETUP_TOKEN=$(openssl rand -hex 32),', 'x = 1 // token: abc',
-                     '# api_key = "old"'):
+        # An example that generates the value, and a trailing comment (which would refuse).
+        for text in ('# e.g. WLXJURY_SETUP_TOKEN=$(openssl rand -hex 32),', '# API_KEY=$API_KEY',
+                     'x = 1 // token: abc'):
             self.assertEqual(self.hocon(text), ([], set()), text)
-        self.assertEqual(deploy.config_credentials('# API_KEY=old\nAPI_KEY=${X}\n', '.env'), ([], set()))
         # A commented-out password is still dropped, as before.
         self.assertEqual(deploy.config_credentials('# DB_PASSWORD=old\n', '.env'), ([], {1}))
+
+    def test_commented_out_keys_and_tokens_are_dropped(self):
+        # The leaf of play.http.secret.key is key: a commented-out signing key must not stay in the copy.
+        for text in ('# play.http.secret.key = "old-signing-key"', '# api_key = "old"', '// oauth.access_token: t'):
+            self.assertEqual(self.hocon(text), ([], {1}), text)
+        self.assertEqual(deploy.config_credentials('# API_KEY=old\nAPI_KEY=${X}\n', '.env'), ([], {1}))
+        self.assertEqual(deploy.config_credentials('; secret.key = old\n', '.ini'), ([], {1}))
+
+    def test_only_an_expansion_is_kept_as_an_example(self):
+        # A value that merely starts with $ is a literal: dropped in a whole-line comment,
+        # refused in a trailing one.
+        self.assertEqual(deploy.config_credentials('# DB_PASSWORD=$ecretP4ss\n', '.env'), ([], {1}))
+        self.assertEqual(self.hocon('x = 1 # password=$abc123'), ([(1, 'password in a comment')], set()))
+        for text in ('# DB_PASSWORD=${DB_PASSWORD}', '# API_KEY=$API_KEY', '# TOKEN=$(openssl rand -hex 32),'):
+            self.assertEqual(self.hocon(text), ([], set()), text)
+
+    def test_a_quoted_key_with_dots_is_one_segment(self):
+        # Typesafe Config reads "legacyPasswords.retire" as one key, so its leaf names a password.
+        self.assertEqual(self.hocon('wlxjury."legacyPasswords.retire" = "private"'),
+                         ([(1, 'wlxjury.legacyPasswords.retire')], set()))
+        self.assertEqual(self.hocon('wlxjury { "legacyPasswords.retire" = "private" }'),
+                         ([(1, 'wlxjury.legacyPasswords.retire')], set()))
+        # Unquoted, it is the schedule's flag under legacyPasswords; quoted parts still join.
+        self.assertEqual(self.hocon('wlxjury.legacyPasswords.retire = "on"'), ([], set()))
+        self.assertEqual(self.hocon('wlxjury."legacyPasswords".retire = "on"'), ([], set()))
+        self.assertEqual(self.hocon('"pass"word = "joined"'), ([(1, 'password')], set()))
+        # A quoted leaf with dots: its last dot-part names a key or token as an unquoted leaf would.
+        self.assertEqual(self.hocon('stripe."api.key" = "sk_live_abc"'), ([(1, 'stripe.api.key')], set()))
+        self.assertEqual(self.hocon('oauth { "access.token" = "t0k" }'), ([(1, 'oauth.access.token')], set()))
+        self.assertEqual(self.hocon('"key.policy" = "strict"'), ([], set()))
+
+    def test_booleans_and_durations_are_credentials_in_line_formats(self):
+        # Exempt only in HOCON settings, where they are typed values: in a line format they can
+        # be the password itself.
+        self.assertEqual(deploy.config_credentials('[client]\npassword=on\n', '.cnf'), ([(2, 'password')], set()))
+        self.assertEqual(deploy.config_credentials('DB_PASSWORD=no\nAPI_TOKEN=6h\n', '.env'),
+                         ([(1, 'DB_PASSWORD'), (2, 'API_TOKEN')], set()))
+        self.assertEqual(deploy.config_credentials('mail.password 6h\n', '.properties'), ([(1, 'mail.password')], set()))
+        self.assertEqual(self.hocon('mail.password = true'), ([], set()))
 
     def test_the_shipped_application_conf_keeps_its_token_comments(self):
         shipped = Path(__file__).resolve().parents[2] / 'conf' / 'application.conf'

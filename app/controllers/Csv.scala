@@ -3,10 +3,10 @@
   import java.io.{StringWriter, Writer}
 
   import com.github.tototoshi.csv.CSVWriter
-  import db.scalikejdbc.{Round, User, VoteJdbc}
+  import db.scalikejdbc.{ImageJdbc, Round, User, VoteJdbc}
   import org.apache.pekko.NotUsed
   import org.apache.pekko.stream.scaladsl.Source
-  import org.intracer.wmua.{BinaryOrder, CriteriaRate, CriteriaResults, ImageWithRating}
+  import org.intracer.wmua.{BinaryOrder, CommentJdbc, CriteriaRate, CriteriaResults, ImageWithRating}
   import org.intracer.wmua.ImageWithRating.Ranks
 
   import scala.concurrent.{ExecutionContext, Future}
@@ -95,6 +95,39 @@
             files.map(file => row(file, rankOf.getOrElse(file.pageId, ""), jurors, list.round, criteria, averages))
           } ++
         Source(legend(list.round, anyWorst).toList)
+    }
+
+    /** The comments report's header ([[commentRows]]), in English as the rates' is. */
+    val CommentHeader: Seq[String] = Seq("File", "Page id", "Commons URL", "Author", "Time (UTC)", "Round", "Comment")
+
+    /** The comments report's comments ([[GalleryView.CommentsCsv]]), one row each, the header
+      * first with a BOM: the file's title, page id and page on Commons, the comment's author,
+      * time (UTC, ISO 8601; its stored text if that can't be read, [[org.intracer.wmua.Comment.parseTime]]),
+      * round (its name, its id if not found) and text. Its files as the report lists them: the
+      * list's (juror, filter, region, order) with comments in its scope ([[CommentScope]]), their
+      * page ids read at once, then their files and comments a [[Chunk]] of files at a time on
+      * `ec` as the rows are sent; each file's comments in the order written. Every cell through
+      * [[cell]] ([[writeRow]]): an author's name or a text can't be a formula; a text's line
+      * breaks and quotes are kept, quoted.
+      */
+    def commentRows(list: RoundList, chunk: Int = Chunk)(implicit ec: ExecutionContext): Source[Seq[String], NotUsed] = {
+      val pageIds = list.query.pageKeys(Nil).map(_._1)
+      val roundNames = Round.findByContest(list.round.contestId).map(r => r.getId -> r.description).toMap
+      Source.single(addBom(Seq(CommentHeader)).head) ++
+        Source.fromIterator(() => pageIds.grouped(chunk))
+          .mapAsync(1)(ids => Future {
+            (ids, ImageJdbc.findByPageIds(ids),
+              CommentJdbc.findByRooms(list.round.contestId, ids, list.commentsRound).groupBy(_.room))
+          })
+          .mapConcat { case (ids, images, comments) =>
+            for {
+              pageId  <- ids
+              image   <- images.get(pageId).toSeq
+              comment <- comments.getOrElse(pageId, Nil)
+            } yield Seq(image.title, pageId.toString, Global.commonsPageUrl(image), comment.username,
+              comment.createdInstant.fold(comment.createdAt)(_.toString),
+              roundNames.getOrElse(comment.roundId, comment.roundId.toString), comment.body)
+          }
     }
 
     /** A binary round's last row, after the files: what its "Overall" and juror columns hold,

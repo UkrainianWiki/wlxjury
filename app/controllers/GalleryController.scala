@@ -71,14 +71,17 @@ class GalleryController @Inject() (
   ): EssentialAction =
     listGeneric(GalleryView.parse(module), asUserId.getOrElse(0), Left(page), region, roundId)
 
+  /** The gallery of a juror's votes, or of all the jurors' (`asUserId` 0) as the view menu's
+    * Gallery opens it; their by-rate gallery is [[byRate]].
+    */
   def list(asUserId: Long, page: Int = 1, region: String = "all", roundId: Long = 0): EssentialAction =
-    listGeneric(Some(GalleryView.ofPath(asUserId)), asUserId, Left(page), region, roundId)
+    listGeneric(Some(GalleryView.Gallery), asUserId, Left(page), region, roundId)
 
   /** The page of the list with the file ([[RoundList.atUrl]]): a redirect to it, so the URL
     * shows the page.
     */
   def listAtId(asUserId: Long, pageId: Long, region: String = "all", roundId: Long = 0): EssentialAction =
-    listGeneric(Some(GalleryView.ofPath(asUserId)), asUserId, Right(pageId), region, roundId)
+    listGeneric(Some(GalleryView.Gallery), asUserId, Right(pageId), region, roundId)
 
   def byRate(asUserId: Long, page: Int = 1, region: String = "all", roundId: Long = 0): EssentialAction =
     listGeneric(Some(GalleryView.ByRate), asUserId, Left(page), region, roundId)
@@ -95,6 +98,21 @@ class GalleryController @Inject() (
       format: String = "wiki"
   ): EssentialAction =
     listGeneric(Some(GalleryView.FileList), asUserId, Left(page), region, roundId)
+
+  /** The organisers' comments report of a round's list ([[GalleryView.Comments]]): its files with
+    * comments in its scope ([[CommentScope]]), a page of them, each with its comments. Refused
+    * to all but those who may view the round's organiser info ([[gallery]]).
+    */
+  def comments(asUserId: Long, page: Int = 1, region: String = "all", roundId: Long): EssentialAction =
+    listGeneric(Some(GalleryView.Comments), asUserId, Left(page), region, roundId)
+
+  /** The page of the comments report with the file ([[RoundList.atUrl]]), as [[listAtId]]. */
+  def commentsAt(asUserId: Long, pageId: Long, region: String = "all", roundId: Long): EssentialAction =
+    listGeneric(Some(GalleryView.Comments), asUserId, Right(pageId), region, roundId)
+
+  /** The comments report's comments as CSV ([[Csv.commentRows]]), as [[comments]] refuses it. */
+  def commentsCsv(asUserId: Long, region: String = "all", roundId: Long): EssentialAction =
+    listGeneric(Some(GalleryView.CommentsCsv), asUserId, Left(1), region, roundId)
 
   def listCurrent(page: Int = 1, region: String = "all"): EssentialAction =
     withAuth() { user => implicit request =>
@@ -139,6 +157,12 @@ class GalleryController @Inject() (
 
     if (galleryService.isNotAuthorized(user, Some(round), round.contestId, rounds)) {
       onUnAuthorized(user, request, Secured.Denial.round(round, Secured.ViewerRoles))
+    } else if (view.exists(_.comments) && !user.canViewOrgInfo(round)) {
+      // the comments report and its CSV: the round's contest's admins, organizers and root, as
+      // the view menu that offers it; never a juror, even of their own files
+      val denial = Secured.Denial.round(round, User.ADMIN_ROLES ++ User.ORG_COM_ROLES)
+      if (Secured.isScriptRequest(request)) onUnAuthorizedJson(user, request, denial)
+      else onUnAuthorized(user, request, denial)
     } else galleryService.viewAs(user, round, asUserId) match {
       // a juror's votes are their own: another's, or all together, for the organisers
       case refusal if refusal != GalleryService.ViewAs.Allowed =>
@@ -194,7 +218,7 @@ class GalleryController @Inject() (
 
     // the viewer's own tabs: the counts above when the list is their own, of all their files
     // also with the comments toggle on (the toggle tells how many of them have comments)
-    lazy val rates = Option.when(user.id.contains(asUserId))(if (list.comments) list.withComments(false).jurorCounts() else counts)
+    lazy val rates = Option.when(user.id.contains(asUserId))(if (list.commentsOnly) list.allFiles.jurorCounts() else counts)
       .flatten.fold(galleryService.rateDistribution(user, round))(c => new RateDistribution(c.rates))
 
     // the comments toggle's number: the list's files with comments, the list's own total when on
@@ -218,6 +242,22 @@ class GalleryController @Inject() (
         // a criteria round's average columns, named in the viewer's language (U8)
         val criteria = if (round.hasCriteria) RoundCriterion.ofRound(round.getId).map(c => c.id -> c.name) else Nil
         csvStream(Csv.rateRows(list, jurors, criteria)(blocking), name)
+
+      case GalleryView.Comments =>
+        // the page's files' comments in the scope, and the names of the other rounds they were
+        // written in (all the contest's), for their badges
+        val comments = list.commentsOf(files)
+        val otherRounds = comments.values.flatten.map(_.roundId).filter(_ != round.getId).toSeq.distinct
+        val roundNames =
+          if (otherRounds.isEmpty) Map.empty[Long, String]
+          else Round.findByIds(round.contestId, otherRounds).map(r => r.getId -> r.description).toMap
+        // a criteria round's results drawn per criterion, as by rate: the round with its number
+        // of criteria (withCriteria), else a 3-criteria 4/4/4 vote would be 12 stars
+        Ok(RequestTiming.render(views.html.commentsReport(user, withCriteria(list, criteriaResults(list, files)), files,
+          pager, rounds, menu, rates, comments, roundNames, list.commentCount())))
+
+      case GalleryView.CommentsCsv =>
+        csvStream(Csv.commentRows(list)(blocking), "WLXJury_Round_" + round.description + "_comments")
 
       case GalleryView.FileList =>
         val useTable = !round.isBinary || asUserId == 0
@@ -300,7 +340,7 @@ class GalleryController @Inject() (
               ContestJuryJdbc.findById(round.contestId).fold[Result](
                 NotFound(Json.obj("error" -> "contest_not_found"))
               ) { contest =>
-                val view = request.getQueryString("module").flatMap(GalleryView.parse).getOrElse(GalleryView.ofPath(asUserId))
+                val view = request.getQueryString("module").flatMap(GalleryView.parse).getOrElse(GalleryView.Gallery)
                 val list = RoundList.of(round, user, asUserId, region, view).withCountsRead(countsRead)
                 val regions = listRegions(list, contest, list.jurorCounts())
                 Ok(placesJson(list.region, messagesApi.preferred(request)("region.all"),

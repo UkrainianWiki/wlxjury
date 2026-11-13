@@ -761,6 +761,37 @@ class OAuthControllerSpec extends PlaySpecification with Results with PlayTestDb
       UserIdentityJdbc.findByUser(alice.getId) must beEmpty
     }
 
+    "end the account's sessions with the identities root's password link unlinks" in testDbApp { implicit app =>
+      createContests(10L)
+      val root   = account("root@example.com", None, "jury", verified = true, root = true)
+      val alice  = verified("alice@example.com")
+      UserIdentityJdbc.create(UserIdentity("google", "g-1", alice.getId))
+      val before = User.findById(alice.getId).get.authVersion
+
+      val result = call(profileController.resetPassword(alice.getId),
+        FakeRequest(POST, s"/users/${alice.getId}/password").withSession(signedInAs(root).data.toSeq: _*).withCSRFToken)
+
+      status(result) === SEE_OTHER
+      UserIdentityJdbc.findByUser(alice.getId) must beEmpty
+      User.findById(alice.getId).get.authVersion !== before
+    }
+
+    "keep the only sign-in of an account without an email, which no link can reach" in testDbApp { implicit app =>
+      createContests(10L)
+      val root  = account("root@example.com", None, "jury", verified = true, root = true)
+      val alice = verified("alice@example.com")
+      UserIdentityJdbc.create(UserIdentity("wikimedia", "777", alice.getId, username = Some("Alice")))
+      DB.autoCommit(implicit s => sql"UPDATE users SET email = '', password = NULL WHERE id = ${alice.getId}".update.apply())
+      val before = User.findById(alice.getId).get.authVersion
+
+      val result = call(profileController.resetPassword(alice.getId),
+        FakeRequest(POST, s"/users/${alice.getId}/password").withSession(signedInAs(root).data.toSeq: _*).withCSRFToken)
+
+      status(result) === SEE_OTHER
+      UserIdentityJdbc.find("wikimedia", "777").map(_.userId) must beSome(alice.getId)
+      User.findById(alice.getId).get.authVersion === before
+    }
+
     "unlink a Wikimedia account when an admin changes the wiki account" in testDbApp { implicit app =>
       createContests(10L)
       val admin = verified("admin@example.com", role = Some("admin"))

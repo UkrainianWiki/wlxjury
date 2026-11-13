@@ -26,6 +26,7 @@ a different role in each contest. Roles are explained in the [admin guide](admin
 | See the contest's files and the conflicts page | no | yes | yes |
 | See the files' authors and the authors list | no | yes | yes |
 | Comment on a file of an open round | their own files | any file of the round | any file of the round |
+| Read the [comments report](#o-comments-report) and its CSV | no | yes | yes |
 | Set up rounds and files, start and stop rounds, pause jurors, disqualify files, manage people | no | no | yes |
 
 **Root**, the tool's own administrators, can do what an admin can, in every contest.
@@ -99,8 +100,8 @@ Under the table:
 ### Reading the results
 
 The bar at the top of a round's results has the menus that show other views of the same
-round: the round, the juror (a single juror's votes, or **All**), a vote filter and four views:
-the **Gallery**, **By rate**, **File list** and **CSV**. The views of **All** jurors take no
+round: the round, the juror (a single juror's votes, or **All**), a vote filter and five views:
+the **Gallery**, **By rate**, **File list**, **CSV** and [**Comments**](#o-comments-report). The views of **All** jurors take no
 votes. In a window narrower than about 1700 pixels, this bar shows **Contest files** and
 **Statistics** as icons (photos and a bar chart) and a single juror's order menu as a sort icon,
 and the region menu shows only the chosen place, without the word "Region" (or "Country"); point
@@ -119,8 +120,35 @@ speech bubble icon. In the gallery, the by-rate gallery and the large view's **N
 file with comments shows a speech bubble with their number. Both count the comments the file's
 large view shows: from any round of the contest, by anyone.
 
+<a id="o-comments-report"></a>
+**Comments report:** the **Comments** view (a speech bubble in the view menu; also **Comments on
+the round's files** in the round's statistics) lists the files with comments, 20 to a page. Each
+file has its thumbnail and name, which open its large view, its result in the round (the votes of
+**All** jurors, or the chosen juror's vote, a rated round's stars), and then its comments, each
+with its author, its time and, for a comment from another round, that round's name. Above the
+list:
+
+- **This round** (the default) or **All rounds of the contest**: which comments the report shows.
+  A file is listed when it has at least one comment of that choice; **All rounds of the contest**
+  shows every comment its large view shows.
+- The order: **Latest comment first** (the default), by the newest comment of the choice above,
+  or the view's own (for **All** jurors the yes/no orders or by rating, and file order; for one
+  juror that juror's orders). The report opens in it from the view menu and the round's
+  statistics; the order chosen in the report is kept by its pages, the CSV and the large view's
+  previous and next. Leaving the report for another view keeps that order, except **Latest
+  comment first**, which goes back to by rating.
+- **Comments CSV**: a spreadsheet with one row per comment of the report, in its order: the file,
+  its page id and Commons link, the author, the time (UTC), the round and the text.
+
+The juror, vote filter and region menus and the pager work as in the other views, the CSV
+included. Only admins and organizers of the contest (and root) can open the report and its CSV;
+jurors cannot, even for their own files. Comment authors' names and texts leave the tool in the
+CSV: share it only with the contest's team.
+
 In a single juror's **Gallery** each file shows that juror's vote, read-only: in a yes/no round a
-green or red frame with a thumb, in a rated round the juror's stars (or ✗).
+green or red frame with a thumb, in a rated round the juror's stars (or ✗). In the **Gallery** of
+**All** jurors' votes on a yes/no round each file shows its tally, approvals (✓) and rejections
+(✗), in the order chosen in the menu next to the views.
 
 A single juror's **Gallery** and **By rate** views have an order menu, by that juror's votes:
 **In file order**, **By rating**, **Newest votes first** and **Oldest votes first** (when the

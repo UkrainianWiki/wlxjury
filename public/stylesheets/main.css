@@ -90,17 +90,43 @@ img.cropped {
     padding-left: 0;
 }
 
-.large-comments .msg {
+.large-comments .msg, .wlx-comments-report .msg {
     padding: .5rem .75rem;
     background: var(--bs-secondary-bg);
     color: var(--bs-body-color);
 }
-/* a comment's author, time and (another round's) round above its text; the text keeps its own
-   line breaks */
-.large-comments .wlx-comment-meta { color: var(--bs-secondary-color); }
-.large-comments .wlx-comment-meta strong { color: var(--bs-body-color); }
-.large-comments .wlx-comment-round { font-weight: normal; }
-.large-comments .wlx-comment-body { white-space: pre-line; }
+/* a comment's author, time and (another round's) round above its text (snippets/comment); the
+   text keeps its own line breaks, and a long word or link breaks rather than widen the page */
+.large-comments .wlx-comment-meta, .wlx-comments-report .wlx-comment-meta { color: var(--bs-secondary-color); }
+.large-comments .wlx-comment-meta strong, .wlx-comments-report .wlx-comment-meta strong { color: var(--bs-body-color); }
+.large-comments .wlx-comment-round, .wlx-comments-report .wlx-comment-round { font-weight: normal; }
+.large-comments .wlx-comment-body, .wlx-comments-report .wlx-comment-body { white-space: pre-line; overflow-wrap: anywhere; }
+
+/* the comments report (commentsReport.scala.html): a row per file, its ~200 px thumbnail beside
+   its title, result and comments, which keep a readable line; on a phone the thumbnail above,
+   the column's width. Another round's comment has a line at its start besides its badge */
+.wlx-comments-row {
+    display: flex;
+    gap: 1rem;
+    padding: .9rem 0;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+.wlx-comments-thumb { flex: none; width: 200px; }
+.wlx-comments-thumb img, .wlx-comments-thumb video {
+    display: block;
+    width: 200px;
+    height: auto;
+    max-height: 200px;
+    object-fit: contain;
+    border-radius: .25rem;
+}
+.wlx-comments-main { flex: 1 1 auto; min-width: 0; max-width: 48rem; }
+.wlx-comments-main h2 { overflow-wrap: anywhere; }
+.wlx-comments-report .wlx-comment-other-round { border-left: 3px solid var(--bs-secondary-color); }
+@media (max-width: 575.98px) {
+    .wlx-comments-row { flex-direction: column; }
+    .wlx-comments-thumb, .wlx-comments-thumb img, .wlx-comments-thumb video { width: 100%; max-height: 240px; }
+}
 
 .imageComment {
     resize: vertical;
@@ -518,6 +544,8 @@ li.gallerybox .wlx-comment-badge, .ug-thumb-wrapper.ug-tile .wlx-tile-comments {
    width .text-break allows and splits it mid-word); only a value longer than 20rem, or than the
    screen, wraps */
 .navbar-account {
+    /* stylelint-disable-next-line plugin/no-unsupported-browser-features -- max-content works in
+       every supported browser (Firefox 66, Chrome 46); caniuse's "partial" is about stretch */
     width: max-content;
     max-width: min(20rem, calc(100vw - 2rem));
 }

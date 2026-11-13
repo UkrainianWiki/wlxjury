@@ -737,7 +737,10 @@ contest files page's author filter and the authors list are for admins, organize
 (the organizer guide explains [them](organizer-guide.md#o-authors)). In the large view of a file
 they see comments of other jurors, with names. Their **Only with comments** toggle and the comment counts on their tiles cover
 their own files only; the organizer guide explains [both](organizer-guide.md#o-comments-filter).
-A stopped round takes no comments, also from admins and organizers.
+A stopped round takes no comments, also from admins and organizers. Admins and organizers also
+have the round's [comments report](organizer-guide.md#o-comments-report), with its CSV: every
+file with comments of the round (or of the whole contest) and its comments on one page. Jurors
+cannot open it.
 
 <a id="a-leave-out-conflicts"></a>
 ### Leaving conflicts of interest out of a round

@@ -1,7 +1,8 @@
 package controllers
 
 import controllers.Secured.{CurrentContestId, UserName}
-import db.scalikejdbc.{ContestJuryJdbc, Round, User, UserContestJdbc}
+import db.scalikejdbc.{ContestJuryJdbc, Round, User, UserContest, UserContestJdbc}
+import org.intracer.wmua.ContestJury
 import modules.RequestTiming
 import play.api.Logging
 import play.api.libs.json.Json
@@ -47,17 +48,23 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
   def onUnAuthorized(user: User, request: RequestHeader, denial: Secured.Denial = Secured.Denial.empty,
       notice: Option[String] = None, back: Option[String] = None): Result = {
     val reference = Secured.logDenial(user, request, denial)
-    val suggestion = suggestedAccess(user)(request)
+    // a destination is a help, not the page: none if it can't be found (a database error)
+    val suggestion = Secured.orOnFailure[Option[Secured.AccessSuggestion]](
+      "denial_suggestion_unavailable", user, reference, None)(suggestedAccess(user)(request))
     val safeReturnTo = Secured.safeLocalPath(Option.when(request.method == "GET")(request.uri))
     val messages = cc.messagesApi.preferred(request)
-    val currentContest = user.contestId.flatMap(ContestJuryJdbc.findById)
+    val reason = Secured.denialReason(user, denial)
+    // a stopped round's page says nothing of roles
+    val roles =
+      if (reason == "round_stopped") Secured.DeniedRoles.Unknown
+      else Secured.deniedRolesOrUnknown(user, denial, reference, deniedContests)
     Results.Forbidden(
       views.html.accessDenied(
         user,
         suggestion,
         safeReturnTo,
-        denial.copy(reason = Some(Secured.denialReason(user, denial))),
-        currentContest,
+        denial.copy(reason = Some(reason)),
+        roles,
         reference,
         Secured.referenceTime(),
         notice,
@@ -65,6 +72,9 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
       )(request.flash, messages, request)
     )
   }
+
+  /** The contests of these ids, for the denial page's roles ([[Secured.deniedRoles]]). */
+  protected def deniedContests(ids: Seq[Long]): Seq[ContestJury] = Secured.contestsByIds(ids)
 
   /** [[onUnAuthorized]] for JSON endpoints: the same log line, a JSON body, no suggestion. */
   def onUnAuthorizedJson(user: User, request: RequestHeader, denial: Secured.Denial = Secured.Denial.empty): Result = {
@@ -97,7 +107,7 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
   /** A useful destination from an active membership, the current contest's first: the
     * contest's files if the user may view them, else a gallery of one of its active rounds.
     */
-  private def suggestedAccess(user: User)(implicit request: RequestHeader): Option[Secured.AccessSuggestion] = {
+  protected def suggestedAccess(user: User)(implicit request: RequestHeader): Option[Secured.AccessSuggestion] = {
     val memberships = user.userContests
       .filter(_.active)
       .sortBy(membership => if (user.contestId.contains(membership.contestId)) 0 else 1)
@@ -286,6 +296,94 @@ object Secured {
     def round(round: Round, roles: Set[String]): Denial =
       Denial(Some(round.contestId), Some(s"round:${round.getId}"), roles)
   }
+
+  /** What the denial page says about the account's roles ([[deniedRoles]]). */
+  sealed trait DeniedRoles
+
+  object DeniedRoles {
+
+    /** The account's role in the contest the page was checked in: the denied resource's, or,
+      * for a page of no particular contest, the session's current one.
+      */
+    final case class In(contest: ContestJury, roles: Set[String]) extends DeniedRoles
+
+    /** The page belongs to a contest the account has no role in (never a member of it, or no
+      * longer an active one: `inactive`). That contest is not named: contest names are shown
+      * only to their members and root (the contest list is root's), and a page of a contest
+      * that does not exist reads the same. The account's own contests are, with its role in each.
+      */
+    final case class OutsideContests(contests: Seq[In], inactive: Boolean) extends DeniedRoles
+
+    /** Nothing to say: no contest to name (root's denials, a page of no contest without a
+      * current one).
+      */
+    case object Unknown extends DeniedRoles
+  }
+
+  /** The account's roles as the denial page puts them. A page of a contest the account has
+    * no role in (a link to a round of a contest it was never added to) says so, rather than
+    * "this page is for: Admin" beside "your role in <its own contest>: Admin"; a page of
+    * another of its contests gives its role there, not in the session's current contest. Root,
+    * which needs no membership, is never outside a contest: its denials (a vote, which needs
+    * a juror) keep the required roles.
+    */
+  def deniedRoles(user: User, denial: Denial,
+      contestsByIds: Seq[Long] => Seq[ContestJury] = contestsByIds): DeniedRoles = {
+    val active = user.userContests.filter(_.active)
+    // the contests named, in one query
+    def named(memberships: Seq[(Long, Set[String])]): Seq[DeniedRoles.In] =
+      if (memberships.isEmpty) Nil
+      else {
+        val contests = contestsByIds(memberships.map(_._1).distinct)
+        memberships.flatMap { case (id, roles) => contests.find(_.id.contains(id)).map(DeniedRoles.In(_, roles)) }
+      }
+    def rolesIn(membership: UserContest) = membership.contestId -> (membership.roles -- User.INACTIVE_ROLES)
+
+    denial.contestId match {
+      case Some(id) =>
+        active.find(_.contestId == id) match {
+          case Some(membership) => named(Seq(rolesIn(membership))).headOption.getOrElse(DeniedRoles.Unknown)
+          case None if user.hasRole(User.ROOT_ROLE) => DeniedRoles.Unknown
+          case None =>
+            // the current contest first, then the latest
+            val ordered = active.sortBy(m => (!user.contestId.contains(m.contestId), -m.contestId))
+            DeniedRoles.OutsideContests(named(ordered.map(rolesIn)), inactive = user.userContests.exists(_.contestId == id))
+        }
+      case None =>
+        val roles = user.contestRoles - User.NO_ROLE
+        user.contestId
+          .filter(_ => roles.nonEmpty)
+          .flatMap(id => named(Seq(id -> roles)).headOption)
+          .getOrElse(DeniedRoles.Unknown)
+    }
+  }
+
+  /** [[deniedRoles]], or, if they can't be loaded (a database error), [[DeniedRoles.Unknown]]:
+    * the generic denial page, logged at WARN with the denial's reference. A denial page is
+    * never a server error.
+    */
+  def deniedRolesOrUnknown(user: User, denial: Denial, reference: String,
+      contestsByIds: Seq[Long] => Seq[ContestJury] = contestsByIds): DeniedRoles =
+    orOnFailure("denial_roles_unavailable", user, reference, DeniedRoles.Unknown: DeniedRoles)(
+      deniedRoles(user, denial, contestsByIds))
+
+  /** `part` of a denial page, or `fallback` if it fails (a database error), logged at WARN on
+    * security.authz as `event` with the denial's reference and the exception's class (the
+    * exception attached, its message not in the line): a denial page is never a server error.
+    */
+  def orOnFailure[T](event: String, user: User, reference: String, fallback: T)(part: => T): T =
+    try part
+    catch {
+      case scala.util.control.NonFatal(e) =>
+        authzLogger.warn(s"$event ref=$reference accountId=${user.getId} error=${logValue(e.getClass.getName)}", e)
+        fallback
+    }
+
+  /** The contests of these ids, in one query. */
+  def contestsByIds(ids: Seq[Long]): Seq[ContestJury] =
+    if (ids.isEmpty) Nil
+    else ContestJuryJdbc.findAllBy(scalikejdbc.sqls.in(ContestJuryJdbc.defaultAlias.id, ids))
+
 
   /** A permission that tells its denial what it requires. */
   sealed trait DescribedPermission extends (User => Boolean) {

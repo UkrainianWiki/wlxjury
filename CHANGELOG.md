@@ -44,6 +44,20 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
   now show their author, time (in the viewer's time zone and language; none where the stored time
   can't be read) and, for a comment from another round, that round's name (to admins, organizers
   and root only: jurors see the comment without it).
+- **Comments report** (the admin's request, second part; developed 2026-11-13,
+  `stack/130-comments-report`): a fifth view of a round's list, **Comments** (in the view menu, and
+  linked from the round's statistics), for the contest's admins, organizers and root only (a juror
+  gets the 403 page, or JSON from a script, also for their own files). It lists the files with
+  comments, 20 to a page: a ~200 px thumbnail and the name linking to the large view (which then
+  moves among the report's files), the file's result in the round (all the jurors' tally or one
+  juror's vote, a rated round's stars), and each comment with its author, time and, from another
+  round, that round's name; texts keep their line breaks and are never HTML. A switch **This
+  round** (the default) / **All rounds of the contest** chooses the comments: a file is listed if it
+  has one of them. Its order menu has **Latest comment first** (by the newest comment of that
+  choice; the default, also when opened from the view menu or the round's statistics, the CSV and
+  the large view included) and the list's own orders. **Comments CSV** has a row per comment
+  (file, page id, Commons URL, author, time in UTC, round, text), every cell formula-safe. The
+  juror, vote filter, region and pager work as in the other views.
 - **Authors for staff** (developed 2026-11-13, `stack/131-authors`): admins, organizers and root
   see each file's author, as their Commons account, with two links: the name opens the contest
   files page narrowed to that author's files, with a removable chip **Author: X (N) ×**, and a
@@ -74,6 +88,13 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
 
 **Fixes**
 
+- **View menu stuck on «By rate»** (reported on 26.11.5; developed 2026-11-13,
+  `stack/134-view-menu-state`): an organizer's **Gallery** of all the jurors' votes
+  (`/gallery/round/R/user/0/...`) showed the by-rate view, so the view menu showed **By rate** as
+  chosen and its **Gallery** item went back to the same page, in any order; broken since the
+  gallery's list rework (cf56da73, 26.11). The gallery path is now always the gallery, also for
+  all the jurors (their by-rate view stays at `/byrate/...`), and the order (`sort=`) stays apart
+  from the view.
 - **Authors shown as wiki markup** (developed 2026-11-13): a file imported before authors were
   resolved kept its author as wikitext, so organizers saw e.g. «Автор: [[User:Liliia2022|Liliia2022]]»
   in the large views and the round file list (on the production copy: 160,492 of 1,029,265 files,

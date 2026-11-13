@@ -10,6 +10,12 @@ object CommentCount {
 
   def label(n: Int)(implicit messages: Messages): String =
     Messages(s"comments.count.${Plural.form(n, messages.lang.language)}", n)
+
+  /** A number of files in words, as the comments report counts its files ("268 files", "268 файлів"):
+    * `comments.report.files.one`, `.few`, `.many` or `.other` by the page language's plural form.
+    */
+  def files(n: Int)(implicit messages: Messages): String =
+    Messages(s"comments.report.files.${Plural.form(n, messages.lang.language)}", n)
 }
 
 /** The plural forms (CLDR's) of the app's languages for a whole number: Ukrainian and Russian

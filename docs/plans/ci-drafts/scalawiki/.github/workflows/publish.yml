@@ -27,6 +27,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # sbt-dynver reads the tags
+          persist-credentials: false
 
       - uses: actions/setup-java@v4
         with:
@@ -37,8 +38,18 @@ jobs:
       - uses: sbt/setup-sbt@v1
 
       - name: The version is the tag
-        # Fails unless HEAD is exactly at a tag and the tree is clean: never publish a snapshot
-        run: sbt -batch dynverAssertTagVersion
+        # dynverAssertTagVersion only checks that the version comes from a tag: with two tags on
+        # one commit, git describe may pick the other one. So the version must equal the pushed
+        # tag, and not be a snapshot (a dirty tree or commits after the tag): never publish one.
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          sbt -batch dynverAssertTagVersion
+          version="$(sbt -batch -error 'print scalawiki-core/version' | tail -n 1 | tr -d '[:space:]')"
+          snapshot="$(sbt -batch -error 'print scalawiki-core/isSnapshot' | tail -n 1 | tr -d '[:space:]')"
+          [ "$version" = "$TAG" ] || { echo "::error::version $version is not the tag $TAG"; exit 1; }
+          [ "$snapshot" = false ] || { echo "::error::$version is a snapshot"; exit 1; }
 
       # Anonymous (anonymous-tests.diff): no SCALAWIKI_LOGIN / SCALAWIKI_PASSWORD or other wiki
       # credentials anywhere in this workflow; live-wiki specs stay off (no -Dscalawiki.live).
