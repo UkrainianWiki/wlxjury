@@ -71,14 +71,17 @@ class GalleryController @Inject() (
   ): EssentialAction =
     listGeneric(GalleryView.parse(module), asUserId.getOrElse(0), Left(page), region, roundId)
 
+  /** The gallery of a juror's votes, or of all the jurors' (`asUserId` 0) as the view menu's
+    * Gallery opens it; their by-rate gallery is [[byRate]].
+    */
   def list(asUserId: Long, page: Int = 1, region: String = "all", roundId: Long = 0): EssentialAction =
-    listGeneric(Some(GalleryView.ofPath(asUserId)), asUserId, Left(page), region, roundId)
+    listGeneric(Some(GalleryView.Gallery), asUserId, Left(page), region, roundId)
 
   /** The page of the list with the file ([[RoundList.atUrl]]): a redirect to it, so the URL
     * shows the page.
     */
   def listAtId(asUserId: Long, pageId: Long, region: String = "all", roundId: Long = 0): EssentialAction =
-    listGeneric(Some(GalleryView.ofPath(asUserId)), asUserId, Right(pageId), region, roundId)
+    listGeneric(Some(GalleryView.Gallery), asUserId, Right(pageId), region, roundId)
 
   def byRate(asUserId: Long, page: Int = 1, region: String = "all", roundId: Long = 0): EssentialAction =
     listGeneric(Some(GalleryView.ByRate), asUserId, Left(page), region, roundId)
@@ -337,7 +340,7 @@ class GalleryController @Inject() (
               ContestJuryJdbc.findById(round.contestId).fold[Result](
                 NotFound(Json.obj("error" -> "contest_not_found"))
               ) { contest =>
-                val view = request.getQueryString("module").flatMap(GalleryView.parse).getOrElse(GalleryView.ofPath(asUserId))
+                val view = request.getQueryString("module").flatMap(GalleryView.parse).getOrElse(GalleryView.Gallery)
                 val list = RoundList.of(round, user, asUserId, region, view).withCountsRead(countsRead)
                 val regions = listRegions(list, contest, list.jurorCounts())
                 Ok(placesJson(list.region, messagesApi.preferred(request)("region.all"),
