@@ -1,0 +1,42 @@
+{
+  "_about": "QueryPlanSpec's rules (docs/plans/2026-11-13-query-plan-checks.md, §4.3). JSON, a subset of YAML, so P2's plans.py reads it with the standard library. named: the groups R3 and the canary check; expect: the keys their constant-bound single-table vote access may use, per server; canary: the intersection must show on the group with V100's four indexes back. r1Allow: groups exempt from R1, each with a reason (none).",
+  "named": [
+    {
+      "group": "ImageDbNew.SelectionQuery.list",
+      "expect": {"10.6": ["vote_jury_round_rate_mon_page_idx"]},
+      "canary": true,
+      "why": "the juror gallery's page (the deferred join's inner select) and the large view's neighbours: V99/V100's gallery index"
+    },
+    {
+      "group": "ImageDbNew.SelectionQuery.regionRateCounts",
+      "expect": {"10.6": ["vote_jury_round_rate_mon_page_idx", "vote_round_jury_rate_idx"]},
+      "canary": true,
+      "why": "the juror's counts by region and rate (the gallery's total, tabs and region menu)"
+    },
+    {
+      "group": "ImageDbNew.SelectionQuery.countBefore",
+      "expect": {"10.6": ["vote_jury_round_rate_mon_page_idx"]},
+      "canary": true,
+      "why": "a file's place in the juror's list (large view, a vote, a file's page)"
+    },
+    {
+      "group": "ImageDbNew.SelectionQuery.orderKey",
+      "expect": {"10.6": ["vote_page_jury_round_uidx"]},
+      "canary": false,
+      "why": "a file's order key in the juror's list: one vote by its unique key"
+    },
+    {
+      "group": "VoteJdbc.voteId",
+      "expect": {"10.6": ["vote_page_jury_round_uidx"]},
+      "canary": false,
+      "why": "the vote's id before a rate: one vote by its unique key"
+    },
+    {
+      "group": "ImageJdbc.rateDistribution",
+      "expect": {"10.6": ["vote_jury_round_rate_mon_page_idx", "vote_round_jury_rate_idx"]},
+      "canary": false,
+      "why": "the juror's votes by rate (the tabs)"
+    }
+  ],
+  "r1Allow": {}
+}

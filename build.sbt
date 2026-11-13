@@ -373,6 +373,18 @@ Test / javaOptions ++= Seq("integration", "docker.tests", "generate.baseline", "
   sys.props.get(key).map(v => s"-D$key=$v")
 }
 
+// QueryPlanSpec in a forked JVM of its own, after the others: it starts its own MariaDB
+// (production-like, auto-recalc off, ~1M seeded votes) and throws it away with the JVM
+// (docs/plans/2026-11-13-query-plan-checks.md, decision 4). Every other spec stays in the one
+// JVM sbt's default grouping gives them, with the same fork options. Groups run one at a time
+// (sbt's default limit on forked test groups), so the two containers never run together.
+Test / testGrouping := {
+  val (plans, others) = (Test / definedTests).value.partition(_.name == "db.plans.QueryPlanSpec")
+  val options = (Test / forkOptions).value
+  new Tests.Group("<default>", others, Tests.SubProcess(options)) +:
+    plans.map(spec => new Tests.Group("query-plans", Seq(spec), Tests.SubProcess(options)))
+}
+
 // All Gatling simulations in a fixed order: rounds are created and their images
 // distributed before voting starts, so RoundDistribution runs first. Each simulation
 // forks its own JVM and restores the fixture DB, so the order doesn't change results.

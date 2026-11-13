@@ -104,6 +104,19 @@ jobs:
         env:
           MARIADB_IMAGE: ${{ matrix.mariadb }}
 
+      # QueryPlanSpec's report (docs/plans/2026-11-13-query-plan-checks.md): R1, R3, the canary,
+      # the seed's times, in the job's summary, whether it passed or failed; on the 10.11 leg it
+      # skips and says why (decision 9). It runs in its own forked JVM and container after the
+      # other specs (build.sbt, Test / testGrouping); its catalog goes with the artifact below.
+      - name: Query plan summary
+        if: success() || failure()
+        run: |
+          if [ -f target/query-plans/summary.md ]; then
+            cat target/query-plans/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "QueryPlanSpec wrote no report (sbt stopped before it ran)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       # The supported browsers (.browserslistrc) against our scripts' APIs and the CSS features
       # caniuse lists, in seconds and without a browser (UI practices §6.1a), with its self-test.
       # After the tests and whatever they did, so that a lint failure never hides the suite's
@@ -138,6 +151,7 @@ jobs:
           path: |
             target/test-reports/
             target/checks/
+            target/query-plans/
             hs_err_pid*.log
           if-no-files-found: warn
           retention-days: 14
