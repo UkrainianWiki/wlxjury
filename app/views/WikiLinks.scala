@@ -24,6 +24,14 @@ object WikiLinks {
   def encodedUserName(name: String): String =
     URLEncoder.encode(name.trim.replace(' ', '_'), StandardCharsets.UTF_8)
 
+  /** A wiki account's user page on Commons: `User:` and the name as MediaWiki normalizes it
+    * ([[db.scalikejdbc.CoiMembers.normalize]]: `_` as a space, runs of spaces as one, the first
+    * letter in title case), then [[encodedUserName]] (spaces as `_`; `'`, `&`, `?`, `#`, `/`
+    * and every non-ASCII character percent-encoded).
+    */
+  def commonsUserUrl(name: String): String =
+    "https://commons.wikimedia.org/wiki/User:" + encodedUserName(db.scalikejdbc.CoiMembers.normalize(name))
+
   private val Link = """\[\[([^\[\]|]+)(?:\|([^\[\]]*))?\]\]""".r
 
   def apply(wikiText: Option[String], host: String): Html = apply(wikiText.getOrElse(""), host)

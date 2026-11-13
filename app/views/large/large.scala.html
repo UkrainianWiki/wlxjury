@@ -37,7 +37,7 @@
                     @* under the stars, what they rate: the file's details, then the files after it *@
                     @sideSection("large-info", "large.file.info", open = true) {
                         @if(user.canViewOrgInfo(round)){
-                            @authorInfo(image, user)
+                            @authorInfo(image, round.contestId)
                         }
                         @monumentInfo(image, monument)
                         @fullSizeUrl(image, round)

@@ -732,8 +732,10 @@ distribution is done. When a round is stopped it disappears from the jurors' vie
 it are refused ("This round is closed for voting"). Votes are kept, and the round comes back
 when you start it again. A juror with no round open sees **No round configured yet**.
 
-Jurors see their own votes only. In the large view of a file they see comments of other jurors,
-with names. Their **Only with comments** toggle and the comment counts on their tiles cover
+Jurors see their own votes only, and never the files' authors: the author's name and links, the
+contest files page's author filter and the authors list are for admins, organizers and root
+(the organizer guide explains [them](organizer-guide.md#o-authors)). In the large view of a file
+they see comments of other jurors, with names. Their **Only with comments** toggle and the comment counts on their tiles cover
 their own files only; the organizer guide explains [both](organizer-guide.md#o-comments-filter).
 A stopped round takes no comments, also from admins and organizers. Admins and organizers also
 have the round's [comments report](organizer-guide.md#o-comments-report), with its CSV: every

@@ -1,7 +1,9 @@
-@(image: org.intracer.wmua.Image, user: db.scalikejdbc.User)(implicit messages: Messages)
-@* The account, as plain text (StoredAuthors.shown): never an older import's raw wikitext. *@
-@for(author <- services.imports.StoredAuthors.shown(image.author)) {
+@(image: org.intracer.wmua.Image, contestId: Long)(implicit messages: Messages)
+@* The author, for those who may see authors only (User.canViewAuthors: the caller checks): the
+   account as plain text (StoredAuthors.shown), never an older import's raw wikitext, linking the
+   author's files in the contest and their Commons user page (snippets.authorLinks). *@
+@for(stored <- image.author; author <- services.imports.StoredAuthors.shown(Some(stored))) {
     <div id="author" class="card card-body large-box">
-        @Messages("author"): @author
+        <div>@Messages("author"): @snippets.authorLinks(stored, contestId)</div>
     </div>
 }

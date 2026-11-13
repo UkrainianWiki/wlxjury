@@ -881,3 +881,35 @@ users.import.problems.retry = If an error happens again, tell whoever runs the j
 users.import.problems.lost = Lines not added: {0}. Their list is no longer available: check the users page and import the people missing from it again.
 users.import.problems.more = Lines not added and not listed here: {0}. Check the users page for who is missing.
 account.change.mail.unknown = not known
+# the authors of a contest's files, for its admins, organizers and root only (never jurors): links
+# from an author's name to their files (the contest files page's author filter, its chip) and to
+# their Commons user page; the authors list of the contest or a round (AuthorsController)
+author.files.title = The contest''s files by {0}
+author.commons = Commons ↗
+author.commons.title = {0}''s user page on Wikimedia Commons (opens in a new tab)
+author.filter.chip = Author: {0} ({1})
+author.filter.remove = Show the files of all authors
+authors.list = Authors
+authors.of = Authors of the contest or of a round
+authors.whole.contest = Whole contest
+authors.round.link = Authors of this round
+authors.summary = {0}: {1}, {2}
+authors.count.one = {0} author
+authors.count.few = {0} authors
+authors.count.many = {0} authors
+authors.count.other = {0} authors
+authors.files.count.one = {0} file
+authors.files.count.few = {0} files
+authors.files.count.many = {0} files
+authors.files.count.other = {0} files
+authors.largest = most by one author: {0} ({1})
+authors.without = Files without a stored author: {0}
+authors.none = No author is stored for these files.
+authors.worst = ✗ (worst mark)
+authors.average = Average
+authors.binary.note = Each file of the round counts once, by the votes of all its jurors: approved (at least one yes), rejected by all (votes cast, no yes) or not voted yet (no vote cast, including a file nobody is assigned), so the three add up to the author''s files, each with its share of them. Approval rate: the yes votes among all the yes and no votes cast on the author''s files, comparable whatever the number of jurors per file; — without any vote.
+authors.approved = Approved
+authors.rejected.all = Rejected by all
+authors.not.voted = Not voted yet
+authors.approval.rate = Approval rate
+authors.rated.note = Rated: files with at least one rating. ✗: files with at least one worst mark. Average: the average score of the author''s rated files, in stars, as the round scores a file (per criterion in a round with criteria).

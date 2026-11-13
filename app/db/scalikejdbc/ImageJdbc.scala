@@ -607,7 +607,10 @@ object ImageJdbc extends CRUDMapper[Image]
     */
   sealed trait FileList
 
-  /** The files of a country, by page id (services.imports.ContestCountries.fileCountries). */
+  /** The files of a country, by page id (services.imports.ContestCountries.fileCountries); or
+    * of any other set of the category's files a contest files page narrows its list to: the
+    * conflicts of interest, an author's ([[categoryAuthorFiles]]), or the files in all of them.
+    */
   final case class CountryFilter(pageIds: Seq[Long])
 
   object FileList {
@@ -677,6 +680,20 @@ object ImageJdbc extends CRUDMapper[Image]
         .map(rs => (rs.long(1), rs.long(2), rs.string(3)))
         .list()
     }
+
+  /** The category's files by the author, by page id: those whose stored author is `author`
+    * byte for byte (`BINARY`), not in the column's `utf8mb4_general_ci` collation, where
+    * "Ivan" would also match "ivan" and "Iván". `images.author` has no index: the category's
+    * members by its index, each image by its primary key (on the production copy, 2026-11-13,
+    * the 32,531 files of WLM UA 2026 in about 0.07 s).
+    */
+  def categoryAuthorFiles(categoryId: Long, author: String)(implicit
+      session: DBSession = AutoSession
+  ): Seq[Long] =
+    sql"""SELECT m.page_id FROM category_members m STRAIGHT_JOIN images i ON i.page_id = m.page_id
+          WHERE m.category_id = $categoryId AND BINARY i.author = $author ORDER BY m.page_id"""
+      .map(_.long(1))
+      .list()
 
   /** The number of the category's files deleted on Commons, of the country or all of them,
     * from the files marked deleted (V64's index).
