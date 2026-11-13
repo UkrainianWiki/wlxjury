@@ -68,6 +68,32 @@ class FindByRoundSelectionSpec extends Specification with BeforeAll with TestDb 
     }
   }
 
+  "roundsJuredIn" should {
+
+    "be, in one query, the rounds isRoundJuror accepts: votes only, assigned (active or not), not neither nor a missing user" in {
+      withCleanDb { implicit session =>
+        implicit val contest: ContestJury = ContestJuryJdbc.create(Some(50), "contest50", 2050, "country50")
+        val Seq(votesOnly, assigned, inactive, neither) = (1 to 4).map(n => roundDao.create(mkRound(contest.getId, n)))
+        val Seq(juror, other) = createUsers("jury", 1, 2)
+        selectionDao.create(pageId = 40L, rate = 0, juryId = juror.getId, roundId = votesOnly.getId)
+        assigned.addUsers(Seq(RoundUser(assigned.getId, juror.getId, "jury", active = true)))
+        inactive.addUsers(Seq(RoundUser(inactive.getId, juror.getId, "jury", active = false)))
+        // another juror's votes and assignment in the round the juror has neither
+        selectionDao.create(pageId = 41L, rate = 1, juryId = other.getId, roundId = neither.getId)
+        neither.addUsers(Seq(RoundUser(neither.getId, other.getId, "jury", active = true)))
+
+        val ids = Seq(votesOnly, assigned, inactive, neither).map(_.getId) :+ 999999L
+        forall(Seq(juror.getId, other.getId, 999999L)) { userId =>
+          User.roundsJuredIn(userId, ids) must_== ids.filter(User.isRoundJuror(_, userId)).toSet
+        } and
+          (User.roundsJuredIn(juror.getId, ids) must_== Set(votesOnly.getId, assigned.getId, inactive.getId)) and
+          (User.roundsJuredIn(other.getId, ids) must_== Set(neither.getId)) and
+          (User.roundsJuredIn(999999L, ids) must beEmpty) and
+          (User.roundsJuredIn(juror.getId, Nil) must beEmpty)
+      }
+    }
+  }
+
   "findRoundJurors" should {
 
     "return the jurors with selections, not round_user, when there are selections" in {

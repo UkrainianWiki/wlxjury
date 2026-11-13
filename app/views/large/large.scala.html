@@ -25,7 +25,12 @@
             <div class="row h-100">
                 <div class="col-1 large-side">
 
-                    @navigationButtons(user, list, hood, score, criteria, readOnly)
+                    @* the viewed juror's name, beside their read-only vote: one juror's votes as the
+                       organisers view them, whose list of votes has the juror; none without a name *@
+                    @navigationButtons(user, list, hood, score, criteria, readOnly,
+                        viewedJuror = Option.when(list.asUserId != 0 && list.asUserId != user.getId)(
+                            votes.collectFirst { case (_, juror) if juror.id.contains(list.asUserId) => juror.fullname }).flatten
+                            .filter(_.trim.nonEmpty))
                     @* under the stars, what they rate: the file's details, then the files after it *@
                     @sideSection("large-info", "large.file.info", open = true) {
                         @if(user.canViewOrgInfo(round)){

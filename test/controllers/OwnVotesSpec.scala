@@ -226,6 +226,91 @@ class OwnVotesSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  "the galleries' round menu, viewing a juror's votes" should {
+
+    /** The page's links to the round's lists, unescaped. */
+    def roundLinks(page: String, round: Round): Seq[String] =
+      s"""href="(/(?:gallery|byrate|filelist)/round/${round.getId}/[^"#]*)"""".r
+        .findAllMatchIn(page).map(_.group(1).replace("&amp;", "&")).toSeq.distinct
+
+    /** Rounds of contest A besides the fixture's: a rated and a yes/no one of juror 2's alone, one
+      * juror 1 is assigned to without a vote yet, and one juror 1 has votes in without a round_user
+      * row (a legacy round).
+      */
+    def otherRounds(f: Fixture): (Round, Round, Round, Round) = {
+      def round(n: Int, name: String, rates: Rates) =
+        roundDao.create(Round(None, n, Some(name), contestId = f.roundA.contestId, rates = rates, active = true))
+      val rated = round(3, "Juror 2's rated round", Round.ratesById(5))
+      val binary = round(4, "Juror 2's yes/no round", Round.binaryRound)
+      val assigned = round(5, "Juror 1 assigned", Round.ratesById(5))
+      val votesOnly = round(6, "Juror 1's votes only", Round.ratesById(5))
+      Seq(rated, binary).foreach { r =>
+        r.addUsers(Seq(RoundUser(r.getId, f.juror2.getId, "jury", active = true)))
+        selectionDao.batchInsert(f.images.map(image => Vote(image, f.juror2, r, rate = 1)))
+      }
+      assigned.addUsers(Seq(RoundUser(assigned.getId, f.juror1.getId, "jury", active = true)))
+      selectionDao.batchInsert(f.images.map(image => Vote(image, f.juror1, votesOnly, rate = 2)))
+      (rated, binary, assigned, votesOnly)
+    }
+
+    "keep the juror in the rounds they are a juror of, by votes (also without round_user) or assigned, with the list's order" in {
+      testDbApp { app =>
+        val f = fixture()
+        val (_, _, assigned, votesOnly) = otherRounds(f)
+        val page = contentAsString(get(app, f.organizer,
+          s"/gallery/round/${f.roundA.getId}/user/${f.juror1.getId}/page/1?sort=oldest-vote"))
+        val kept = Seq(f.orgViewRound, assigned, votesOnly)
+        forall(kept) { round =>
+          roundLinks(page, round) === Seq(s"/gallery/round/${round.getId}/user/${f.juror1.getId}/page/1?sort=oldest-vote")
+        } and forall(kept.flatMap(roundLinks(page, _))) { link =>
+          (link, status(get(app, f.organizer, link))) === (link, OK)
+        }
+      }
+    }
+
+    "open all the jurors' votes, in their default order, in a round the juror is not a juror of, which is no 404 and sets no order cookie" in {
+      testDbApp { app =>
+        val f = fixture()
+        val (rated, binary, _, _) = otherRounds(f)
+        forall(Seq(f.organizer, f.admin, f.root)) { viewer =>
+          val page = contentAsString(get(app, viewer,
+            s"/gallery/round/${f.roundA.getId}/user/${f.juror1.getId}/page/1?filter=rated&sort=oldest-vote"))
+          forall(Seq(rated, binary)) { round =>
+            val links = roundLinks(page, round)
+            // a binary round has no "rated" filter: all files there, as before
+            val filter = if (round.isBinary) "" else "filter=rated&"
+            val target = get(app, viewer, links.headOption.getOrElse("/none"))
+            (links === Seq(s"/gallery/round/${round.getId}/user/0/page/1?${filter}sort=rate")) and
+              ((links.head, status(target)) === (links.head, OK)) and
+              (cookies(target).get(RoundList.SortCookie) must beNone) and
+              (cookies(target).get(RoundList.BinarySortCookie) must beNone)
+          }
+        }
+      }
+    }
+
+    "still refuse the juror's votes in a round they are not a juror of, by its URL" in {
+      testDbApp { app =>
+        val f = fixture()
+        val (rated, binary, _, _) = otherRounds(f)
+        forall(Seq(rated, binary)) { round =>
+          status(get(app, f.organizer, s"/gallery/round/${round.getId}/user/${f.juror1.getId}/page/1")) === NOT_FOUND
+        }
+      }
+    }
+
+    "leave a juror's own gallery's round menu as it was: their own votes in their other rounds" in {
+      testDbApp { app =>
+        val f = fixture()
+        otherRounds(f)
+        val page = contentAsString(get(app, f.juror1,
+          s"/gallery/round/${f.roundA.getId}/user/${f.juror1.getId}/page/1?sort=oldest-vote"))
+        roundLinks(page, f.orgViewRound) === Seq(
+          s"/gallery/round/${f.orgViewRound.getId}/user/${f.juror1.getId}/page/1?sort=oldest-vote")
+      }
+    }
+  }
+
   "a juror's normal navigation [J-27]" should {
 
     /** The app's links to galleries and large views in the page, unescaped. */

@@ -5,7 +5,8 @@
         hood: Neighbourhood,
         score: Double = 0,
         criteria: Seq[(org.intracer.wmua.Criterion, Double)] = Nil,
-        readOnly: Boolean = true)(
+        readOnly: Boolean = true,
+        viewedJuror: Option[String] = None)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 
 @round = @{ list.round }
@@ -63,6 +64,14 @@
     }
 }
 
+@* whose vote the read-only side bar shows, in one juror's votes as the organisers view them (the
+   large view has no navbar with its juror menu, and the file's details list every juror's vote) *@
+@viewedName() = {
+    @for(name <- viewedJuror) {
+    <div class="wlx-viewed-juror small text-body-secondary mt-1 text-break">@name</div>
+    }
+}
+
 @buttonGallery() = {
     <a role="button" class="btn btn-outline-secondary btn-sm" data-nav="gallery" href="@list.atUrl(files(index).pageId)" title="@Messages("back.to.gallery") &lt;Esc&gt;">
         <i class="bi bi-grid-3x3-gap-fill" aria-hidden="true"></i>
@@ -102,8 +111,10 @@
             @buttonSelect()
         }
     </div>
+    @viewedName()
     } else {
         </div>
+    @viewedName()
     @if(round.hasCriteria) {
        @* the round's criteria in their order, each with its stars (0: not rated yet): the viewed
           juror's rates, or for all the jurors (list.asUserId 0, read-only) first the file's rate
@@ -137,10 +148,33 @@
     }
     }
 @* the time of one juror's vote on the file (theirs, or as the organisers view it; never all the
-   jurors' votes together), in any order *@
-@if(list.showsVoteTime && files(index).rate != 0) {
-    @* "Voted" only before a time; a vote without one says just that none was recorded *@
+   jurors' votes together), in any order, after the vote: the juror's own controls or, read-only, the
+   viewed juror's stars above. A yes/no round's read-only view (one juror's votes as the organisers
+   view them) has no controls, so the vote itself goes first: the read-only mark of the gallery's
+   tiles (a thumb in the vote's colour) and its words (one vote's: vote.selected, not the tabs'
+   plural "selected"), unrated without a time *@
+@if(list.showsVoteTime) {
     @defining(files(index).votes.headOption.flatMap(_.votedAt)) { votedAt =>
+    @defining(files(index).rate) { rate =>
+    @if(round.isBinary && readOnly && list.asUserId != user.getId) {
+    <div class="wlx-large-viewed-vote small mt-1">
+        @if(rate > 0) {
+        <span class="wlx-viewed-vote-mark wlx-vote-selected"><i class="bi bi-hand-thumbs-up-fill" aria-hidden="true"></i> @Messages("vote.selected")</span>
+        } else if (rate < 0) {
+        <span class="wlx-viewed-vote-mark wlx-vote-rejected"><i class="bi bi-hand-thumbs-down-fill" aria-hidden="true"></i> @Messages("vote.rejected")</span>
+        } else {
+        <span class="wlx-viewed-vote-mark text-body-secondary">@Messages("vote.unrated")</span>
+        }
+        @if(rate != 0) {
+        <span class="wlx-large-vote-time"><span aria-hidden="true">·</span> @if(votedAt.nonEmpty) {@Messages("vote.time.voted") }@snippets.voteTime(votedAt)</span>
+        }
+    </div>
+    } else {
+    @if(rate != 0) {
+    @* "Voted" only before a time; a vote without one says just that none was recorded *@
     <div class="wlx-large-vote-time small mt-1">@if(votedAt.nonEmpty) {@Messages("vote.time.voted") }@snippets.voteTime(votedAt)</div>
+    }
+    }
+    }
     }
 }
