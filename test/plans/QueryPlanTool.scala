@@ -1,14 +1,14 @@
-package db.plans
+package plans
 
 import scala.util.Using
 
 /** QueryPlanSpec's commands, each on a container of its own, stopped at the end:
   *
   * {{{
-  * Test/runMain db.plans.QueryPlanTool snapshot
+  * Test/runMain plans.QueryPlanTool snapshot
   *     # takes the statistics snapshot of the seed (PlanSeed's sizes) and writes
-  *     # test/resources/db/plans/vote-stats-<server>.json; refuses an implausible one
-  * Test/runMain db.plans.QueryPlanTool measure 12,25 indexes-after,indexes-before
+  *     # test/resources/plans/vote-stats-<server>.json; refuses an implausible one
+  * Test/runMain plans.QueryPlanTool measure 12,25 indexes-after,indexes-before
   *     # the seed size's measure (decision 2): per filler size and seed mode, the seed's times
   *     # and whether the canary groups show the intersection with real statistics
   * }}}
@@ -16,7 +16,8 @@ import scala.util.Using
 object QueryPlanTool {
 
   def main(args: Array[String]): Unit = {
-    PlanDb.skipReason().foreach { r => System.err.println(r); sys.exit(2) }
+    // Test/runMain forks (Test / fork): a JVM of its own, as the spec's
+    PlanDb.serverSkipReason().foreach { r => System.err.println(r); sys.exit(2) }
     args.headOption match {
       case Some("snapshot") => snapshot()
       case Some("measure") =>
@@ -55,7 +56,7 @@ object QueryPlanTool {
     Using.resource(db.root()) { c =>
       val rules = PlanCheck.rules()
       val (corner, t) = PlanSeed.seed(c, mode, fillerRounds)
-      val ids = PlanCheck.Ids(corner.jurorId, corner.roundId, corner.pageId, corner.contestId)
+      val ids = corner.ids
       StatementCapture.reset()
       StatementCapture.install()
       PlanScenarios.juror(corner)

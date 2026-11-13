@@ -1,4 +1,4 @@
-package db.plans
+package plans
 
 import play.api.libs.json._
 
@@ -17,6 +17,18 @@ object QueryPlanReport {
     Files.createDirectories(Dir)
     Files.write(Dir.resolve(name), text.getBytes(UTF_8))
   }
+
+  /** Empties the directory, so a report is never a previous run's. */
+  def clear(): Unit =
+    if (Files.isDirectory(Dir))
+      scala.util.Using.resource(Files.list(Dir))(_.forEach(f => Files.deleteIfExists(f)))
+
+  /** What the check can't see (plan §3.5, §7), printed with every report. */
+  val KnownLimits: String =
+    "Known limits: the seed's distributions are not production's (one juror per round, uniform files; " +
+      "only vote's statistics injected, scaled from the seed); coverage is the juror scenarios and the " +
+      "distribution (organizer, aggregation and admin statements are not captured); ranges are listed, not " +
+      "checked (R3: ref access only). Production's copy (P2) covers the rest."
 
   def skipped(reason: String): Unit =
     write("summary.md", s"## Query plans (QueryPlanSpec)\n\n**Skipped:** $reason\n")
@@ -42,7 +54,6 @@ object QueryPlanReport {
     val noContext = shapes.filter(_.contexts.contains(StatementCapture.NoContext))
     val batches = shapes.filter(_.batch)
     val failedShapes = shapes.filter(_.failures > 0)
-    val v100 = run.stage("v100")
     val canaryIntersects = run.stage("canary").count(p => run.intersects(p).nonEmpty)
     val realIntersects = run.stage("canary-real").count(p => run.intersects(p).nonEmpty)
 
@@ -52,12 +63,16 @@ object QueryPlanReport {
       s"snapshot `${StatsSnapshot.file(run.server).getFileName}` taken ${run.snapshot.taken}, factor ${f"${run.snapshot.factor}%.3f"} " +
       s"to ${run.snapshot.productionRows} rows.\n\n"
     md ++= "| Check | Result |\n|---|---|\n"
-    md ++= s"| R1: no index-merge intersection on vote | ${mark(r1)}: ${v100.size + run.stage("distribution").size} vote plans |\n"
+    md ++= s"| R1: no index-merge intersection on vote | ${mark(r1)}: ${run.r1Plans.size} vote plans; " +
+      s"${run.withSample.size} EXPLAINed with their sample's values (unbound with the corner's), " +
+      s"${run.unbound.size} unbound with both |\n"
     md ++= s"| R3: named groups' constant-bound vote access uses the expected key | ${mark(r3)}: ${run.named.size} groups |\n"
     md ++= s"| Canary: V100's indexes back, snapshot injected | ${mark(canary)}: $canaryIntersects plans with the intersection |\n"
     md ++= s"| Canary with real statistics (seed size, decision 2) | $realIntersects plans with the intersection; " +
       run.canaryReal.toSeq.sortBy(_._1).map { case (g, fired) => s"$g ${if (fired) "fires" else "doesn't"}" }.mkString(", ") + " |\n"
-    md ++= s"| Statistics read back | ${run.injections.size} injections, all read back |\n\n"
+    md ++= s"| Statistics read back | ${run.injections.size} injections (${run.injections.map(_._1).mkString(", ")}); " +
+      "a read-back that differed would have stopped the run |\n\n"
+    md ++= s"$KnownLimits\n\n"
 
     val failures = r1 ++ r3 ++ canary
     if (failures.nonEmpty) {
@@ -92,7 +107,7 @@ object QueryPlanReport {
 
     val catalog = shapes.map { s =>
       def plan(stage: String) = run.plans.get(stage).flatMap(_.get(s.id)).map(p => Json.obj(
-        "sql" -> p.sql, "error" -> p.error, "unbound" -> p.unbound,
+        "sql" -> p.sql, "error" -> p.error, "unbound" -> p.unbound, "withSample" -> p.withSample,
         "rows" -> p.rows.map(r => Json.obj("id" -> r.id, "select_type" -> r.selectType, "table" -> r.table, "type" -> r.accessType,
           "possible_keys" -> Option(r.possibleKeys), "key" -> Option(r.key), "ref" -> Option(r.ref), "rows" -> Option(r.rows),
           "extra" -> Option(r.extra)))))

@@ -1,7 +1,7 @@
-package db.plans
+package plans
 
 import db.scalikejdbc.{ContestJuryJdbc, Round, RoundUser, User}
-import db.plans.PlanDb.{execute, long, rows}
+import plans.PlanDb.{execute, long, rows}
 
 import java.sql.Connection
 
@@ -62,6 +62,8 @@ object PlanSeed {
     def roundId: Long = round.getId
     /** A file of the corner round, in its middle (rebinding's page_id). */
     def pageId: Long = Images - CornerFiles / 2
+    /** For rebinding: an IN list's page ids are the corner round's files in page order. */
+    def ids: PlanCheck.Ids = PlanCheck.Ids(jurorId, roundId, pageId, contestId, k => Images - CornerFiles + 1 + (k % CornerFiles))
   }
 
   final case class Timings(rows: Long, insertSeconds: Double, indexSeconds: Double, analyzeSeconds: Double) {

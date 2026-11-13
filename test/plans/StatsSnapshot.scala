@@ -1,6 +1,6 @@
-package db.plans
+package plans
 
-import db.plans.PlanDb.{execute, rows, update}
+import plans.PlanDb.{execute, rows, update}
 import play.api.libs.json._
 
 import java.nio.charset.StandardCharsets.UTF_8
@@ -60,11 +60,16 @@ object StatsSnapshot {
   /** ANALYZE's sample for a snapshot: above the seed's leaf pages, so every page is read. */
   val SamplePages = 65535
 
-  def file(server: String): Path = Paths.get("test", "resources", "db", "plans", s"vote-stats-$server.json")
+  /** Where QueryPlanTool writes the snapshot (the source tree), and where the spec reads it (the
+    * classpath).
+    */
+  def file(server: String): Path = Paths.get("test", "resources", "plans", s"vote-stats-$server.json")
+
+  def resource(server: String): String = s"/plans/vote-stats-$server.json"
 
   implicit val format: OFormat[StatsSnapshot] = Json.format[StatsSnapshot]
 
-  def read(path: Path): StatsSnapshot = Json.parse(Files.readAllBytes(path)).as[StatsSnapshot]
+  def read(resource: String): StatsSnapshot = Json.parse(PlanCheck.resourceBytes(resource)).as[StatsSnapshot]
 
   def write(snapshot: StatsSnapshot, path: Path): Unit = {
     Files.createDirectories(path.getParent)
@@ -188,26 +193,35 @@ object StatsSnapshot {
     val (storedRows, _, _) = tableStats(c)
     val loaded = rows(c, "SELECT TABLE_ROWS FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vote'")(
       _.getLong(1)).head
-    // the loaded cardinality of each index's first column: n_rows over the rows per value the
-    // server derives from n_diff_pfx01, which a reload of other statistics would not give
-    val cardinality = rows(c, """SELECT INDEX_NAME, CARDINALITY FROM information_schema.STATISTICS
-        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vote' AND SEQ_IN_INDEX = 1""")(rs => rs.getString(1) -> rs.getLong(2)).toMap
+    // the loaded cardinality of each index's columns: n_rows over the rows per value the server
+    // derives from n_diff_pfxNN, which a reload of other statistics would not give
+    val cardinality = rows(c, """SELECT INDEX_NAME, SEQ_IN_INDEX, CARDINALITY FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vote'""")(rs => (rs.getString(1), rs.getInt(2)) -> rs.getLong(3)).toMap
+    // engine-independent statistics (mysql.*_stats) would be used beside InnoDB's: none for vote
+    val eits = Seq("table_stats", "index_stats", "column_stats").flatMap { t =>
+      val n = PlanDb.long(c, s"SELECT COUNT(*) FROM mysql.$t WHERE db_name = DATABASE() AND table_name = 'vote'")
+      Option.when(n > 0)(s"mysql.$t has $n rows for vote: engine-independent statistics, not the snapshot's")
+    }
     Seq(
       Option.when(storedRows != nRows)(s"innodb_table_stats.n_rows $storedRows, injected $nRows"),
       Option.when(loaded != nRows)(s"the server's loaded row count $loaded, injected $nRows: the statistics were not reloaded")
-    ).flatten ++ present.toSeq.sorted.flatMap { index =>
+    ).flatten ++ eits ++ present.toSeq.sorted.flatMap { index =>
       val want = snapshot.injected(index)
       val have = stored.getOrElse(index, Map.empty)
       val stats = want.toSeq.sorted.collect { case (stat, v) if !have.get(stat).contains(v) => s"$index.$stat: ${have.get(stat)} stored, $v injected" }
-      val diff1 = want("n_diff_pfx01")
-      val card = cardinality.getOrElse(index, -1L)
-      // as 10.6 derives it (ha_innobase::info_low): rows per value n_rows / n_diff as a whole
-      // number, halved ("we pretend index selectivity is 2 times better"), at least 1; SHOW
-      // INDEX's cardinality is n_rows over that
-      val perValue = math.max(1L, (if (diff1 == 0) nRows else (nRows.toDouble / diff1).toLong) / 2)
-      val expected = nRows / perValue
-      stats ++ Option.when(card != expected)(
-        s"$index: loaded cardinality $card, $expected from the injected n_diff_pfx01 $diff1")
+      val columns = cardinality.keys.collect { case (`index`, seq) => seq }.toSeq.sorted
+      val cards = columns.flatMap { seq =>
+        val diff = want.getOrElse(f"n_diff_pfx$seq%02d", -1L)
+        val card = cardinality((index, seq))
+        // as 10.6 derives it (ha_innobase::info_low): rows per value n_rows / n_diff as a whole
+        // number, halved ("we pretend index selectivity is 2 times better"), at least 1; SHOW
+        // INDEX's cardinality is n_rows over that
+        val perValue = math.max(1L, (if (diff <= 0) nRows else (nRows.toDouble / diff).toLong) / 2)
+        val expected = nRows / perValue
+        Option.when(diff < 0 || card != expected)(
+          s"$index column $seq: loaded cardinality $card, $expected from the injected n_diff_pfx$seq $diff")
+      }
+      stats ++ cards
     }
   }
 }

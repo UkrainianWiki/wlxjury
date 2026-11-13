@@ -1,9 +1,9 @@
-package db.plans
+package plans
 
-import db.plans.PlanCheck.{Ids, Named, Plan, Rules}
-import db.plans.PlanSeed.{Corner, Timings}
-import db.plans.StatementCapture.Shape
-import db.plans.StatsSnapshot.Injected
+import plans.PlanCheck.{Ids, Named, Plan, Rules}
+import plans.PlanSeed.{Corner, Timings}
+import plans.StatementCapture.Shape
+import plans.StatsSnapshot.Injected
 
 import java.sql.Connection
 import scala.collection.mutable
@@ -34,7 +34,7 @@ final class QueryPlanRun(val rules: Rules, val server: String) {
   var shapes: Seq[Shape] = Nil
   var voteIndexes: Set[String] = Set.empty
 
-  def ids: Ids = Ids(corner.jurorId, corner.roundId, corner.pageId, corner.contestId)
+  def ids: Ids = corner.ids
 
   private def timed[T](what: String)(body: => T): T = {
     val t0 = System.nanoTime()
@@ -61,7 +61,7 @@ final class QueryPlanRun(val rules: Rules, val server: String) {
     * dives into index pages that still held the votes' delete-marked entries.
     */
   private def inject(c: Connection, stage: String): Injected = {
-    PlanDb.execute(c, "SET GLOBAL innodb_max_purge_lag_wait = 0")
+    PlanDb.purged(c)
     PlanSeed.analyze(c)
     val injected = StatsSnapshot.inject(c, snapshot)
     injections += stage -> injected
@@ -69,13 +69,21 @@ final class QueryPlanRun(val rules: Rules, val server: String) {
     injected
   }
 
-  def run(db: PlanDb, snapshotFile: java.nio.file.Path): Unit = Using.resource(db.root()) { c =>
+  def run(db: PlanDb, snapshotResource: String): Unit = Using.resource(db.root()) { c =>
+    try runIn(c, snapshotResource)
+    finally {
+      StatementCapture.uninstall()
+      shapes = StatementCapture.all
+    }
+  }
+
+  private def runIn(c: Connection, snapshotResource: String): Unit = {
     serverVersion = PlanDb.string(c, "SELECT VERSION()")
     optimizerSwitch = PlanDb.string(c, "SELECT @@optimizer_switch")
     val (seeded, t) = timed("seed (total)")(PlanSeed.seed(c))
     corner = seeded
     timings = t
-    snapshot = StatsSnapshot.read(snapshotFile)
+    snapshot = StatsSnapshot.read(snapshotResource)
     voteIndexes = PlanSeed.voteIndexes(c)
 
     timed("scenarios") {
@@ -107,8 +115,6 @@ final class QueryPlanRun(val rules: Rules, val server: String) {
       inject(c, "after the distribution")
       explainAll("distribution", voteShapes(s => !before(s.id) || s.contexts.contains(PlanScenarios.DistributionScenario)))
     }
-    StatementCapture.uninstall()
-    shapes = StatementCapture.all
   }
 
   // ---- verdicts ----------------------------------------------------------------------------
@@ -119,16 +125,26 @@ final class QueryPlanRun(val rules: Rules, val server: String) {
     PlanCheck.voteRows(plan, voteIndexes ++ PlanSeed.CanaryIndexes.map(_._1)).filter(_.intersect) ++
       plan.rows.filter(r => r.intersect && r.keys.exists(_.startsWith("round_image")))
 
+  /** The plans R1 checks: after V100, the juror scenarios' and the distribution's. */
+  def r1Plans: Seq[Plan] = (stage("v100") ++ stage("distribution")).distinctBy(_.shape.id)
+
+  /** Plans unbound with the corner's ids, EXPLAINed with their sample's. */
+  def withSample: Seq[Plan] = r1Plans.filter(_.withSample)
+
+  /** Plans unbound with the sample's ids too: R1 can't check them. */
+  def unbound: Seq[Plan] = r1Plans.filter(_.unbound)
+
   /** R1: no intersection on vote (or round_image), after V100, juror scenarios and distribution;
-    * a vote statement that can't be EXPLAINed fails too.
+    * a vote statement that can't be EXPLAINed, or whose plan stays unbound (unless allowed in
+    * rules.json's `unboundAllow`), fails too: R1 can't see its plan.
     */
   def r1Failures: Seq[String] =
-    (stage("v100") ++ stage("distribution")).distinctBy(_.shape.id)
-      .filterNot(p => rules.r1Allow.contains(p.shape.group))
-      .flatMap { p =>
-        p.error.map(e => s"${p.shape.id}: not EXPLAINed ($e)").toSeq ++
-          intersects(p).map(r => s"${p.shape.id}: index-merge intersection: ${r.line}")
-      }
+    r1Plans.filterNot(p => rules.r1Allow.contains(p.shape.group)).flatMap { p =>
+      p.error.map(e => s"${p.shape.id}: not EXPLAINed ($e)").toSeq ++
+        Option.when(p.unbound && !rules.unboundAllow.contains(p.shape.group))(
+          s"${p.shape.id}: unbound with the corner's and the sample's values: ${p.summary}") ++
+        intersects(p).map(r => s"${p.shape.id}: index-merge intersection: ${r.line}")
+    }
 
   def shapesOf(group: String, stageName: String): Seq[Plan] = stage(stageName).filter(_.shape.group == group)
 

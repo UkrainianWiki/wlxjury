@@ -1,7 +1,7 @@
-package db.plans
+package plans
 
 import com.dimafeng.testcontainers.MariaDBContainer
-import db.scalikejdbc.{HikariTestPool, Round}
+import db.scalikejdbc.{HikariTestPool, Round, SharedTestDb}
 import org.testcontainers.utility.DockerImageName
 import scalikejdbc.ConnectionPool
 
@@ -31,8 +31,13 @@ final class PlanDb private (val container: MariaDBContainer, val startSeconds: D
 
 object PlanDb {
 
-  /** The server image: the suite's (`-Dwlxjury.test.mariadb-image`, as SharedTestDb.Image). */
-  val Image: String = sys.props.getOrElse("wlxjury.test.mariadb-image", "mariadb:10.6.22")
+  /** The server image: the suite's (`-Dwlxjury.test.mariadb-image`, SharedTestDb.Image). Reading
+    * it starts nothing.
+    */
+  def Image: String = SharedTestDb.Image
+
+  /** Set by build.sbt for the `query-plans` test group only: the spec's JVM is its own. */
+  val OwnJvmProperty = "wlxjury.query-plans.own-jvm"
 
   /** The server versions the spec runs on (decision 9 = C: 10.6 only until the server move). */
   val SupportedServer = "10.6"
@@ -41,8 +46,20 @@ object PlanDb {
   def imageServer(image: String = Image): Option[String] =
     "^[^:]+:(\\d+)\\.(\\d+)".r.findFirstMatchIn(image).map(m => s"${m.group(1)}.${m.group(2)}")
 
-  /** Why the spec doesn't run on this image, if it doesn't. */
+  /** Why the spec doesn't run here, if it doesn't: another server than 10.6, or a JVM it would
+    * share (it makes its container the default connection pool and closes every pool at the end:
+    * an IDE's or a non-forked run's JVM, or one whose shared test database is up).
+    */
   def skipReason(image: String = Image): Option[String] =
+    if (!sys.props.get(OwnJvmProperty).contains("true"))
+      Some(s"QueryPlanSpec runs only in a forked JVM of its own (build.sbt's query-plans test group sets " +
+        s"-D$OwnJvmProperty=true): it replaces the JVM's default connection pool")
+    else if (SharedTestDb.isStarted)
+      Some("QueryPlanSpec doesn't run in a JVM whose shared test database is started: it replaces the default pool")
+    else serverSkipReason(image)
+
+  /** Why not on this image: MariaDB 10.6 only until the server move (decision 9 = C). */
+  def serverSkipReason(image: String = Image): Option[String] =
     Option.when(!imageServer(image).contains(SupportedServer))(
       s"QueryPlanSpec runs on MariaDB $SupportedServer only until the server move is scheduled " +
         s"(docs/plans/2026-11-13-query-plan-checks.md, decision 9 = C); this run's image is $image")
@@ -79,6 +96,17 @@ object PlanDb {
   }
 
   def execute(c: Connection, sql: String): Unit = Using.resource(c.createStatement())(_.execute(sql))
+
+  /** How long [[purged]] waits. */
+  val PurgeTimeoutSeconds = 120
+
+  /** Waits until InnoDB's purge has caught up (`innodb_max_purge_lag_wait = 0` returns then),
+    * failing after [[PurgeTimeoutSeconds]].
+    */
+  def purged(c: Connection): Unit = Using.resource(c.createStatement()) { st =>
+    st.setQueryTimeout(PurgeTimeoutSeconds)
+    st.execute("SET GLOBAL innodb_max_purge_lag_wait = 0")
+  }
 
   def update(c: Connection, sql: String): Int = Using.resource(c.createStatement())(_.executeUpdate(sql))
 

@@ -1,10 +1,9 @@
-package db.plans
+package plans
 
-import db.plans.StatementCapture.Shape
+import plans.StatementCapture.Shape
 import play.api.libs.json._
 import scalikejdbc._
 
-import java.nio.file.{Files, Path, Paths}
 
 /** EXPLAIN of captured statements, rebound to the corner, and the rules (plan §4.3).
   *
@@ -15,7 +14,8 @@ import java.nio.file.{Files, Path, Paths}
   */
 object PlanCheck {
 
-  final case class Ids(jurorId: Long, roundId: Long, pageId: Long, contestId: Long) {
+  /** The corner's ids; `pages(k)` the k-th of distinct files of the corner round, for an IN list. */
+  final case class Ids(jurorId: Long, roundId: Long, pageId: Long, contestId: Long, pages: Int => Long) {
     def of(column: String): Option[Long] = column.toLowerCase match {
       case "jury_id"    => Some(jurorId)
       case "round_id"   => Some(roundId)
@@ -32,35 +32,54 @@ object PlanCheck {
     def line: String = s"$id $selectType $table $accessType key=${Option(key).getOrElse("-")} ref=${Option(ref).getOrElse("-")} rows=$rows ${Option(extra).getOrElse("")}".trim
   }
 
-  final case class Plan(shape: Shape, sql: String, rows: Seq[Row], error: Option[String]) {
+  /** A shape's plan; `withSample`: EXPLAINed with its own sample's values, as the corner's left
+    * it unbound.
+    */
+  final case class Plan(shape: Shape, sql: String, rows: Seq[Row], error: Option[String], withSample: Boolean = false) {
     def unbound: Boolean = rows.exists(r => Option(r.extra).exists(e =>
       e.contains("Impossible WHERE") || e.contains("no matching row in const table")))
     def summary: String = error.map("error: " + _).getOrElse(rows.map(_.line).mkString(" | "))
   }
 
-  /** The column each `?` is compared with (`=` or in an `IN` list), if any, in order. */
-  def placeholderColumns(sql: String): Seq[Option[String]] = {
-    val out = Seq.newBuilder[Option[String]]
+  /** What a `?` is compared with: its column, and its place in an IN list (None for `=`). */
+  final case class Placeholder(column: String, inList: Option[Int])
+
+  private val comparedWith = """(?i)(?:\b(\w+)\s*(?:=|<=>)\s*|\b(\w+)\s+in\s*\(((?:\s*\?\s*,)*)\s*)$""".r
+
+  /** For each `?` in order, the column it is compared with (`=`, or in an `IN` list), if any. */
+  def placeholderColumns(sql: String): Seq[Option[Placeholder]] = {
+    val out = Seq.newBuilder[Option[Placeholder]]
     var quote: Char = 0
     sql.indices.foreach { i =>
       val c = sql(i)
       if (quote != 0) { if (c == quote) quote = 0 }
       else if (c == '\'' || c == '"' || c == '`') quote = c
       else if (c == '?') {
-        val before = sql.substring(math.max(0, i - 4000), i)
-        out += "(?i)(?:\\b(\\w+)\\s*(?:=|<=>)\\s*|\\b(\\w+)\\s+in\\s*\\((?:\\s*\\?\\s*,)*\\s*)$".r.findFirstMatchIn(before)
-          .map(m => Option(m.group(1)).getOrElse(m.group(2)))
+        val before = sql.substring(math.max(0, i - 20000), i)
+        out += comparedWith.findFirstMatchIn(before).map { m =>
+          Option(m.group(1)).fold(Placeholder(m.group(2), Some(m.group(3).count(_ == '?'))))(Placeholder(_, None))
+        }
       }
     }
     out.result()
   }
 
-  private val literal = "(?i)\\b((?:\\w+\\.)?(jury_id|round_id|page_id|contest_id))(\\s*=\\s*)(\\d+)\\b".r
+  private val literal = """(?i)\b((?:\w+\.)?(jury_id|round_id|page_id|contest_id))(\s*=\s*)(\d+)\b""".r
 
-  /** The statement and its parameters bound to the corner. */
+  /** The statement and its parameters bound to the corner (§4.1): a `?` or a number compared
+    * by `=` with `jury_id`, `round_id`, `page_id` or `contest_id` takes the corner's value; in an
+    * `IN` list, page ids take distinct files of the corner round (the list keeps its length) and
+    * other ids keep the sample's; other values keep the sample's.
+    */
   def rebind(sql: String, params: Seq[Any], ids: Ids): (String, Seq[Any]) = {
     val columns = placeholderColumns(sql)
-    val bound = params.zipWithIndex.map { case (p, i) => columns.lift(i).flatten.flatMap(ids.of).getOrElse(p) }
+    val bound = params.zipWithIndex.map { case (p, i) =>
+      columns.lift(i).flatten.flatMap {
+        case Placeholder(col, None) => ids.of(col)
+        case Placeholder(col, Some(k)) if col.equalsIgnoreCase("page_id") => Some(ids.pages(k))
+        case _ => None
+      }.getOrElse(p)
+    }
     val text = literal.replaceAllIn(sql, m =>
       scala.util.matching.Regex.quoteReplacement(ids.of(m.group(2)).fold(m.matched)(v => s"${m.group(1)}${m.group(3)}$v")))
     (text, bound)
@@ -71,9 +90,18 @@ object PlanCheck {
 
   def explainable(sql: String): Boolean = "(?i)^\\s*(select|update|delete|insert|replace)\\b".r.findFirstIn(sql).isDefined
 
-  /** EXPLAINs the shape's sample rebound to the corner, in a session of its own, uncaptured. */
+  /** EXPLAINs the shape's sample rebound to the corner, in a session of its own, uncaptured; if
+    * the corner's values leave the plan unbound (no such rows), EXPLAINs it again with the
+    * sample's own values (`withSample`), whose rows exist. Still unbound, it is reported.
+    */
   def explain(shape: Shape, ids: Ids): Plan = {
     val (sql, params) = rebind(shape.template, shape.sample.getOrElse(Nil), ids)
+    val plan = explainSql(shape, sql, params)
+    if (!plan.unbound) plan
+    else explainSql(shape, shape.template, shape.sample.getOrElse(Nil)).copy(withSample = true)
+  }
+
+  private def explainSql(shape: Shape, sql: String, params: Seq[Any]): Plan =
     StatementCapture.pausedFor {
       try {
         val rows = DB.readOnly { implicit s =>
@@ -85,7 +113,6 @@ object PlanCheck {
         Plan(shape, sql, rows, None)
       } catch { case e: Exception => Plan(shape, sql, Nil, Some(e.getMessage.linesIterator.nextOption().getOrElse(e.toString))) }
     }
-  }
 
   /** The aliases of vote in a statement (and `vote` itself). */
   def voteAliases(sql: String): Set[String] =
@@ -126,12 +153,20 @@ object PlanCheck {
     */
   final case class Named(group: String, expect: Map[String, Seq[String]], canary: Boolean, why: String)
 
-  final case class Rules(named: Seq[Named], r1Allow: Map[String, String])
+  /** `r1Allow`: groups exempt from R1; `unboundAllow`: groups whose vote statements may stay
+    * unbound (no rows for the corner's or the sample's values); each with a reason.
+    */
+  final case class Rules(named: Seq[Named], r1Allow: Map[String, String], unboundAllow: Map[String, String] = Map.empty)
 
   implicit val namedReads: Reads[Named] = Json.reads[Named]
-  implicit val rulesReads: Reads[Rules] = Json.reads[Rules]
+  implicit val rulesReads: Reads[Rules] = Json.using[Json.WithDefaultValues].reads[Rules]
 
-  val RulesFile: Path = Paths.get("test", "resources", "db", "plans", "rules.json")
+  /** test/resources/plans/rules.json, from the classpath. */
+  val RulesResource = "/plans/rules.json"
 
-  def rules(path: Path = RulesFile): Rules = Json.parse(Files.readAllBytes(path)).as[Rules]
+  def rules(resource: String = RulesResource): Rules = Json.parse(resourceBytes(resource)).as[Rules]
+
+  def resourceBytes(resource: String): Array[Byte] =
+    scala.util.Using.resource(Option(getClass.getResourceAsStream(resource)).getOrElse(
+      throw new IllegalStateException(s"$resource is not on the classpath")))(_.readAllBytes())
 }

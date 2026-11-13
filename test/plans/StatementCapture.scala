@@ -1,4 +1,4 @@
-package db.plans
+package plans
 
 import scalikejdbc.GlobalSettings
 
@@ -136,30 +136,37 @@ object StatementCapture {
   }
 
   private val appPackages = Seq("db.", "services.", "controllers.", "org.intracer.", "modules.", "api.")
-  private val notCallers = Seq("db.scalikejdbc.SqlLogging", "db.plans.")
-  private val fromTests = new ConcurrentHashMap[String, java.lang.Boolean]()
+  private val notCallers = Seq("db.scalikejdbc.SqlLogging")
+  private val fromApp = new ConcurrentHashMap[String, java.lang.Boolean]()
 
-  /** Whether the class was compiled from test/ (test-classes): a test helper, not the app. */
-  private def isTestClass(className: String): Boolean =
-    fromTests.computeIfAbsent(className, name =>
+  private def location(c: Class[_]): Option[String] =
+    Option(c.getProtectionDomain.getCodeSource).flatMap(cs => Option(cs.getLocation)).map(_.toString)
+
+  /** Where the application's classes are (a directory or a jar): those of `app/`, not `test/`. */
+  private lazy val appLocation: Option[String] = location(classOf[db.scalikejdbc.User])
+
+  /** Whether the class comes from the application's classes, not a test helper of the same
+    * package (`db.scalikejdbc.TestDb`). Unknown (no code source): taken as the app's.
+    */
+  private def isAppClass(className: String): Boolean =
+    fromApp.computeIfAbsent(className, name =>
       try {
-        val location = Option(Class.forName(name, false, getClass.getClassLoader).getProtectionDomain.getCodeSource)
-          .flatMap(cs => Option(cs.getLocation)).map(_.toString).getOrElse("")
-        location.contains("test-classes")
-      } catch { case _: Throwable => false })
+        val here = location(Class.forName(name, false, getClass.getClassLoader))
+        here.isEmpty || appLocation.isEmpty || here == appLocation
+      } catch { case _: Throwable => true })
 
   /** The first frame of the application's code: `ImageDbNew.SelectionQuery.list`, without the
     * package, line numbers and `$anonfun$…$N` / `$1` suffixes, so unrelated edits keep it. A
-    * statement the spec itself runs is `test:` and its first test frame.
+    * statement the spec itself runs is `test:` and its first frame in this package (`plans.`).
     */
   def callerGroup(): String = {
     val frames = Thread.currentThread.getStackTrace.toSeq
     val app = frames.find { f =>
       val c = f.getClassName
-      appPackages.exists(c.startsWith) && !notCallers.exists(c.startsWith) && !isTestClass(c)
+      appPackages.exists(c.startsWith) && !notCallers.exists(c.startsWith) && isAppClass(c)
     }
     app.map(groupOf).getOrElse(
-      frames.find(f => appPackages.exists(f.getClassName.startsWith) && !f.getClassName.startsWith("db.plans.StatementCapture"))
+      frames.find(f => f.getClassName.startsWith("plans.") && !f.getClassName.startsWith("plans.StatementCapture"))
         .map(f => "test:" + groupOf(f)).getOrElse("?"))
   }
 

@@ -1,8 +1,8 @@
-package db.plans
+package plans
 
 import controllers.{GalleryView, ListOrder, Pager, RoundList, VoteFilter}
-import db.plans.PlanSeed.Corner
-import db.plans.StatementCapture.within
+import plans.PlanSeed.Corner
+import plans.StatementCapture.within
 import db.scalikejdbc.{CategoryLinkJdbc, ContestJuryJdbc, MonumentJdbc, Round, RoundUser, User, VoteJdbc}
 import org.intracer.wmua.{CommentJdbc, Image}
 import services.{GalleryService, TestRoundServices}

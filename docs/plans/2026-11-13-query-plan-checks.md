@@ -184,7 +184,7 @@ Desktop, `mariadb:10.6.22`, the real schema after every migration, the container
 disk, a 256M buffer pool). CI's numbers come from the job summary, which every run prints
 (decision 2: the size is one constant, `PlanSeed.FillerRounds`, adjusted after the first CI run).
 
-**Seed size** (`Test/runMain db.plans.QueryPlanTool measure 12,25 indexes-after,indexes-before`),
+**Seed size** (`Test/runMain plans.QueryPlanTool measure 12,25 indexes-after,indexes-before`),
 each in a fresh container. "Canary, real statistics": with V100's four indexes added back and a
 default `ANALYZE`, no injection, whether the named shapes show the intersection:
 
@@ -414,7 +414,7 @@ server move (decision 9). It disturbs no shared fixture or shared test DB. What 
 
 ### P1 as built (2026-11-13, `stack/127-query-plan-spec`)
 
-All test-only, in `test/db/plans/`:
+All test-only, in `test/plans/` (package `plans`, outside `db.`, so `testOnly db.*` doesn't run it; alone: `testOnly plans.QueryPlanSpec`):
 - `StatementCapture`: ScalikeJDBC's completion and failure listeners chained; `within(scenario)`
   sets the context on the calling thread, a statement without one is "no context"; the caller
   group is the first application frame (compiled from `app/`, not `test/`), without the package,
@@ -428,7 +428,7 @@ All test-only, in `test/db/plans/`:
   rounds and `round_user`, the votes are `INSERT … SELECT` with vote's secondary indexes dropped
   and rebuilt in the migrated order (checked against the migrated definitions); the canary's
   `ADD INDEX IF NOT EXISTS` and V100's own script.
-- `StatsSnapshot` and `test/resources/db/plans/vote-stats-10.6.json` (committed): the seed's
+- `StatsSnapshot` and `test/resources/plans/vote-stats-10.6.json` (committed): the seed's
   statistics as sampled and one factor (production's 3,345,551 rows over the seed's), coverage
   and plausibility checked when taken and when injected, read back after each injection.
 - `PlanScenarios`: as the corner juror, with `RoundList` and the DAOs the controllers call: the
@@ -437,7 +437,7 @@ All test-only, in `test/db/plans/`:
   from the unrated tab, the juror's counts; last, a 300-file round filled by
   `RoundDistributionHandler` (a fake Commons with no files) and "Distribute new files".
 - `PlanCheck`: rebinding to the corner (§4.1), EXPLAIN (uncaptured), R1, R3's scope, and
-  `test/resources/db/plans/rules.json` (committed): the named groups, their expected keys on
+  `test/resources/plans/rules.json` (committed): the named groups, their expected keys on
   10.6, which the canary checks, and R1's allow-list (empty). JSON, a subset of YAML, so P2's
   `plans.py` reads it with the standard library (decision 7's `rules.yaml`).
 - `QueryPlanRun` (the order of §5's P1 list), `QueryPlanSpec` (4 examples: the run with every
@@ -453,6 +453,34 @@ reports.
 The named groups (rules.json): `ImageDbNew.SelectionQuery.list`, `.regionRateCounts` and
 `.countBefore` (the canary's; the gallery index), `.orderKey` and `VoteJdbc.voteId` (the unique
 key), `ImageJdbc.rateDistribution` (the gallery index or `vote_round_jury_rate_idx`).
+
+After the review (2026-11-13):
+- **Rebinding of IN lists:** a `page_id IN (…)` list takes distinct files of the corner round
+  (it keeps its length); other ids in a list keep the sample's. A plan the corner's values leave
+  unbound (`Impossible WHERE`, no row in a const table) is EXPLAINed again with the sample's own
+  values; one unbound with both fails R1 unless rules.json's `unboundAllow` names its group. The
+  summary counts both. (Before, `RoundImageJdbc.addVoted`'s 300-value list was bound to one
+  page and passed unbound.)
+- **Own JVM, enforced:** the `query-plans` group sets `-Dwlxjury.query-plans.own-jvm=true`;
+  without it (an IDE, a non-forked run), or with the shared test database started, the spec
+  skips, saying why, since it replaces the default pool. The capture is uninstalled in a
+  `finally`; the run happens once, in `beforeAll`; `target/query-plans/` is emptied first.
+- **Group order:** `Test / parallelExecution := false`, so the forked groups run in
+  testGrouping's order (QueryPlanSpec last). With forked tests it only changes how the groups are
+  folded: each JVM already ran its specs one after another (`Test / testForkedParallel` is
+  false), and the full suite's totals are unchanged. `Gatling / testGrouping` (one group per
+  simulation) is not affected.
+- **Package `plans`**, not `db.plans`: `testOnly db.*` doesn't run it.
+- **Read-back:** every column's cardinality (`SEQ_IN_INDEX`), not only the first; and no
+  engine-independent statistics (`mysql.table_stats`, `index_stats`, `column_stats`) for vote.
+  The purge wait has a 120 s limit. Rules and the snapshot are read from the classpath; the
+  caller's code is told from a test helper by its classes' location, the app's.
+- **Known limits** in every summary: the seed's distributions aren't production's, coverage is
+  the juror scenarios and the distribution (organizer and aggregation statements aren't
+  captured), ranges are listed, not checked.
+- **A tmpfs datadir** (2 GB) was measured against the disk one, one run each: the same plans,
+  migrations 3.8 s instead of 8.0 s, the seed the same (20.5 s against 19.2 s), the whole run
+  50 s against 61 s. Not kept: it saves ~10 s and costs up to 2 GB of the runner's memory.
 
 Not in P1 (P2 and later): `plans.py`, the release check, R2 and R4, the timing port,
 `images`/`round_image` statistics, a 10.11 snapshot (decision 9).
