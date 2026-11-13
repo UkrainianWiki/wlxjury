@@ -1,0 +1,104 @@
+@import controllers.Global
+@import db.scalikejdbc.Round
+@import org.intracer.wmua.{Comment, ImageWithRating}
+@(user: db.scalikejdbc.User,
+        list: RoundList,
+        files: Seq[ImageWithRating],
+        pager: Pager,
+        rounds: Seq[Round],
+        regionMenu: Option[RegionMenu],
+        rates: RateDistribution,
+        comments: Map[Long, Seq[Comment]],
+        roundNames: Map[Long, String],
+        commentTotal: Int)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+
+@* The organisers' comments report of a round's list (GalleryView.Comments; GalleryController
+   refuses it to anyone who may not view the round's organiser info): the list's files with a
+   comment in its scope (CommentScope: this round's, the default, or all the contest's), a page
+   of them (RoundList.CommentsPageSize), one row each: its thumbnail and title linking to its
+   large view in this list, its result in the round (as the by-rate view shows it: all the
+   jurors' tally or one juror's vote, a rated round's stars), then its comments in the scope in
+   the order written (snippets.comment), another round's marked with its name. The list's juror,
+   filter and region menus and pager are the navbar's; the scope, the order (the list's own and
+   the latest comment first) and the comments' CSV are above the rows *@
+
+@* a file's result in the round: as galleryByRate's, without ranks or stars to click *@
+@result(file: ImageWithRating) = {
+    @defining(list.round) { round =>
+    @if(round.rates.id > 0) {
+    <span class="rate-stars">
+        @if(round.isBinary) {
+            @if(list.asUserId == 0) { @binaryTally(file.approvals, file.rejections) } else { @binaryVote(file.rate, unrated = true) }
+        } else {
+            @for(i <- 1 to round.numberOfStars) {
+                @showStar(i, round.starsRate(file.starRate(round)), round.rates.id > 5 && round.halfStar)
+            }
+            @if(round.hasCriteria) { @file.criteriaRateString(round) } else { @file.rateText(round) @snippets.worstMarks(file, round) }
+        }
+    </span>
+    }
+    }
+}
+
+@defining(list.round) { round =>
+@main("comments", user, list.asUserId, Some(round), rounds, gallery = false, Some(list), pagerNav(pager, list.pageUrl), rates,
+    filters = views.html.regionMenu(regionMenu)) {
+
+    <div class="wlx-comments-report">
+        <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+            <h1 class="h5 mb-0 me-3">@Messages("comments") <span class="text-body-secondary fw-normal" id="comments-report-count">· @views.CommentCount.files(pager.count), @views.CommentCount.label(commentTotal)</span></h1>
+
+            @* which comments: this round's (the default) or all the contest's, the list kept *@
+            <div class="btn-group btn-group-sm" role="group" aria-label="@Messages("comments.report.scope")" id="comments-report-scope">
+                @for((scope, key) <- Seq(CommentScope.ThisRound -> "comments.report.scope.round", CommentScope.AllRounds -> "comments.report.scope.contest")) {
+                    @defining(list.commentScope == scope) { active =>
+                    <a class="btn btn-outline-secondary@if(active) { active}" @if(active) {aria-current="true" }href="@list.withScope(scope).pageUrl(1)">@Messages(key)</a>
+                    }
+                }
+            </div>
+
+            @* the order: the list's own, or the latest comment in the scope first *@
+            <div class="dropdown" id="comments-report-order">
+                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <span class="visually-hidden">@Messages("comments.report.order"): </span>@Messages(list.shownCommentOrder.messageKey)
+                </button>
+                <ul class="dropdown-menu">
+                    @for(order <- list.commentOrderChoices) {
+                        @defining(order == list.shownCommentOrder) { active =>
+                        <li><a class="dropdown-item@if(active) { active}" @if(active) {aria-current="true" }href="@list.withOrder(order).pageUrl(1)">@Messages(order.messageKey)</a></li>
+                        }
+                    }
+                </ul>
+            </div>
+
+            <a class="btn btn-sm btn-outline-primary ms-auto" id="comments-report-csv" href="@list.withView(GalleryView.CommentsCsv).pageUrl(1)"><i class="bi bi-filetype-csv" aria-hidden="true"></i> @Messages("comments.report.csv")</a>
+        </div>
+
+        @if(files.isEmpty) {
+            <p class="text-body-secondary" id="comments-report-empty">@Messages(if (list.commentScope == CommentScope.ThisRound) "comments.report.empty.round" else "comments.report.empty.contest")</p>
+        }
+
+        @for(file <- files) {
+            @* its id: where a list's link to the file (commentsAt, #pageId) scrolls *@
+            <article class="wlx-comments-row" id="@file.pageId" aria-labelledby="file-title-@file.pageId">
+                <a class="wlx-comments-thumb" href="@list.largeUrl(file.pageId)" tabindex="-1" aria-hidden="true">
+                    @if(file.image.isImage) {
+                        <img alt="" loading="lazy" src="@Global.resizeTo(file.image, Global.gallerySizeX, Global.gallerySizeY)"
+                        srcset="@Global.srcSet(file.image, Global.gallerySizeX, Global.gallerySizeY)">
+                    }
+                    @if(file.image.isVideo) {
+                        <video muted preload="metadata"><source src="@file.image.url" type="video/webm"></video>
+                    }
+                </a>
+                <div class="wlx-comments-main">
+                    <h2 class="h6 mb-1" id="file-title-@file.pageId"><a href="@list.largeUrl(file.pageId)">@file.title</a></h2>
+                    <div class="small mb-2 wlx-comments-result">@result(file)</div>
+                    @for(msg <- comments.getOrElse(file.pageId, Nil)) {
+                        @snippets.comment(msg, Option.when(msg.roundId != round.getId)(roundNames.getOrElse(msg.roundId, msg.roundId.toString)))
+                    }
+                </div>
+            </article>
+        }
+    </div>
+}
+}

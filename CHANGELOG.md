@@ -44,6 +44,19 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
   now show their author, time (in the viewer's time zone and language; none where the stored time
   can't be read) and, for a comment from another round, that round's name (to admins, organizers
   and root only: jurors see the comment without it).
+- **Comments report** (the admin's request, second part; developed 2026-11-13,
+  `stack/130-comments-report`): a fifth view of a round's list, **Comments** (in the view menu, and
+  linked from the round's statistics), for the contest's admins, organizers and root only (a juror
+  gets the 403 page, or JSON from a script, also for their own files). It lists the files with
+  comments, 20 to a page: a ~200 px thumbnail and the name linking to the large view (which then
+  moves among the report's files), the file's result in the round (all the jurors' tally or one
+  juror's vote, a rated round's stars), and each comment with its author, time and, from another
+  round, that round's name; texts keep their line breaks and are never HTML. A switch **This
+  round** (the default) / **All rounds of the contest** chooses the comments: a file is listed if it
+  has one of them. Its order menu has the list's own orders and **Latest comment first** (by the
+  newest comment of that choice). **Comments CSV** has a row per comment (file, page id, Commons
+  URL, author, time in UTC, round, text), every cell formula-safe. The juror, vote filter, region
+  and pager work as in the other views.
 - A comment on a stopped round's file is refused on the server too, for admins, organizers and
   root as for jurors: a 403 page saying the comment was not saved, with a link back to the file
   (or JSON) and its reference, logged on `security.authz` with the reason `round_stopped`. The

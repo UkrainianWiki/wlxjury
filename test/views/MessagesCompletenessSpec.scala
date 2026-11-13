@@ -1,6 +1,6 @@
 package views
 
-import controllers.{LoginController, Theme}
+import controllers.{ListOrder, LoginController, Theme}
 import db.scalikejdbc.{MediaType, User}
 import org.intracer.wmua.{BinaryOrder, CategoryOperation, Criterion}
 import org.specs2.mutable.Specification
@@ -113,7 +113,10 @@ class MessagesCompletenessSpec extends Specification {
     Seq("missing", "not.failed", "no.handler", "duplicate").map("job.retry." + _), // JobScheduler.retry
     Criterion.ShippedKeys,                                                 // V83's criteria, Criterion.name
     Seq("full", "exists").map("criteria.catalogue." + _),                  // CriterionJdbc.AddRefusal
-    Plural.Forms.map("comments.count." + _)                                // CommentCount.label, by plural form
+    Plural.Forms.map("comments.count." + _),                               // CommentCount.label, by plural form
+    Plural.Forms.map("comments.report.files." + _),                        // CommentCount.files, by plural form
+    Seq(ListOrder.LatestComment.messageKey),                               // commentsReport's order menu
+    Seq("round", "contest").flatMap(w => Seq(s"comments.report.scope.$w", s"comments.report.empty.$w")) // commentsReport
   ).flatten
 
   /** Texts in a key's place that are shown as they are, not keys, each with its reason. */
