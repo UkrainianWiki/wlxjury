@@ -7,8 +7,9 @@
 -- so each of these read all the contest's comments. Production's size (rehearsal copy, V98):
 -- 20,822 comments, at most ~2,000 in a contest.
 --
--- V101 was planned for round lineage's round.status, which moved to V101 (docs/plans/2026-11-02-roadmap.md,
--- "Migration numbers": numbers are assigned at merge, and this merges first).
+-- V101 was planned for round lineage's round.status, which moved to V102
+-- (docs/plans/2026-11-02-roadmap.md, "Migration numbers": numbers are assigned at merge, and this
+-- merges first).
 --
 -- Rerunnable: the index is added only where it isn't there (DO 0 otherwise: no ALTER, no
 -- metadata lock). One ALTER, online (ALGORITHM = INPLACE, LOCK = NONE: reads and writes go on;

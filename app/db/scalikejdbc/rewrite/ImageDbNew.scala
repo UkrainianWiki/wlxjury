@@ -465,13 +465,27 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
 
     /** The comments filter's condition on a vote row ([[commentsIn]]): a file with a comment in
       * the contest, a semi-join on comment's (contest_id, room) index (V101); and the file
-      * `withPageId` too, whatever its comments, as [[voteFilter]] keeps it.
+      * `withPageId` too, whatever its comments, as [[voteFilter]] keeps it. That file has comments
+      * unless its URL was typed with the toggle on, so the OR, which keeps MariaDB from the
+      * semi-join (a review of 2026-11-13, all the jurors' large view of a round of production's
+      * copy: a file's rank 63 ms with it, 2.4 ms without), is added only for a file without them ([[pageWithoutComments]]).
       */
     private def commentsFilter: Option[SQLSyntax] =
       commentsIn.map { contestId =>
         val commented = SelectionQuery.commented(contestId)
-        withPageId.fold(commented)(pageId => sqls"($commented or s.page_id = $pageId)")
+        pageWithoutComments.fold(commented)(pageId => sqls"($commented or s.page_id = $pageId)")
       }
+
+    /** The file `withPageId` if it has no comment in the contest ([[commentsIn]]): one read of
+      * comment's (contest_id, room) index, once per query.
+      */
+    private lazy val pageWithoutComments: Option[Long] =
+      for {
+        contestId <- commentsIn
+        pageId    <- withPageId
+        if sql"select 1 from comment c where c.contest_id = $contestId and c.room = $pageId limit 1"
+          .map(_.int(1)).single().isEmpty
+      } yield pageId
 
     /** The `rated` filter's condition on a vote row: rated, or unrated. Rated is a yes/no
       * round's yes, and a rated round's any vote, stars or a ✗ ([[grades]]).

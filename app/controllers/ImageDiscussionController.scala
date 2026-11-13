@@ -32,7 +32,8 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
   def addComment(pageId: Long,
                  region: String = "all",
                  round: Option[Long],
-                 contestId: Option[Long]): EssentialAction = withAuth() {
+                 contestId: Option[Long],
+                 asUserId: Option[Long] = None): EssentialAction = withAuth() {
     sessionUser => implicit request =>
       val requested = round.flatMap(Round.findById)
       val commenterRoles = User.ADMIN_ROLES ++ User.JURY_ROLES ++ User.ORG_COM_ROLES
@@ -47,8 +48,9 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
             val denial = Secured.Denial.round(targetRound, commenterRoles)
               .copy(reason = Some(ImageDiscussionController.RoundStopped))
             if (Secured.isScriptRequest(request)) onUnAuthorizedJson(user, request, denial)
-            else onUnAuthorized(user, request, denial)
-          } else addCommentTo(user, targetRound, pageId, region)
+            else onUnAuthorized(user, request, denial,
+              back = Some(listOf(user, targetRound, region, asUserId).largeUrl(pageId)))
+          } else addCommentTo(user, targetRound, pageId, region, asUserId)
         }
   }
 
@@ -61,14 +63,26 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
       galleryService.mayViewRound(user, round) &&
       VoteJdbc.inRound(round.getId, pageId, Option.unless(user.canViewOrgInfo(round))(user.getId))
 
-  /** Adds the comment, then goes back to the file's large view in the user's list it was
-    * made in ([[RoundList.commentUrl]]).
+  /** The list the comment was made in ([[RoundList.commentUrl]]): its votes' user (`asUserId`,
+    * another juror's or 0 for all of them) if the user may view the round so
+    * ([[GalleryService.viewAs]], as the large view checks it), else the user's own; its
+    * region, view, filter, comments toggle and order from the request.
     */
-  private def addCommentTo(user: User, targetRound: Round, pageId: Long, region: String)(implicit
+  private def listOf(user: User, round: Round, region: String, asUserId: Option[Long])(implicit
+      request: Request[AnyContent]
+  ): RoundList = {
+    val viewed = asUserId.filter(id => galleryService.viewAs(user, round, id) == GalleryService.ViewAs.Allowed)
+    RoundList.of(round, user, viewed.getOrElse(user.getId), region, GalleryView.of(request))
+  }
+
+  /** Adds the comment, then goes back to the file's large view in the list it was made in
+    * ([[listOf]]).
+    */
+  private def addCommentTo(user: User, targetRound: Round, pageId: Long, region: String, asUserId: Option[Long])(implicit
       request: Request[AnyContent]
   ): Result = {
     val roundId = targetRound.getId
-    val list = RoundList.of(targetRound, user, user.getId, region, GalleryView.of(request))
+    val list = listOf(user, targetRound, region, asUserId)
 
     editCommentForm.bindFromRequest().fold(
       _ => Redirect(list.largeUrl(pageId)),

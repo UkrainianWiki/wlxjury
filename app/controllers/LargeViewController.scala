@@ -183,8 +183,11 @@ class LargeViewController @Inject() (
     val monument = hood.file.image.monumentId.flatMap(id => if (id.trim.nonEmpty) MonumentJdbc.find(id) else None)
 
     val comments = CommentJdbc.findBySubjectAndContest(pageId, round.contestId)
-    // the names of the other rounds the comments were written in, for their badges
-    lazy val otherRounds = comments.map(_.roundId).filter(_ != round.getId).distinct
+    // the names of the other rounds the comments were written in, for their badges, where the
+    // viewer is shown them (LargeViewController.showsCommentRounds)
+    lazy val otherRounds =
+      if (!LargeViewController.showsCommentRounds(user, round)) Nil
+      else comments.map(_.roundId).filter(_ != round.getId).distinct
     lazy val commentRounds =
       if (otherRounds.isEmpty) Map.empty[Long, String]
       else Round.findByIds(round.contestId, otherRounds).map(r => r.getId -> r.description).toMap
@@ -205,7 +208,8 @@ class LargeViewController @Inject() (
               criteria,
               jurorCriteria,
               commentCounts,
-              commentRounds
+              commentRounds,
+              LargeViewController.showsCommentRounds(user, round)
             )
           )
         )
@@ -225,4 +229,13 @@ class LargeViewController @Inject() (
         )
     }
   }
+}
+
+object LargeViewController {
+
+  /** Whether the large view names the round a comment from another round of the contest was
+    * written in (its badge): to everyone who sees the comments, for now. The one place that
+    * decides it (a round a juror isn't in may be named there: under review, 2026-11-13).
+    */
+  def showsCommentRounds(user: User, round: Round): Boolean = true
 }

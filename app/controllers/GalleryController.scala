@@ -194,9 +194,8 @@ class GalleryController @Inject() (
 
     // the viewer's own tabs: the counts above when the list is their own, of all their files
     // also with the comments toggle on (the toggle tells how many of them have comments)
-    lazy val rates = (if (list.comments) list.withComments(false).jurorCounts() else counts)
-      .filter(_ => user.id.contains(asUserId)).fold(galleryService.rateDistribution(user, round))(c =>
-        new RateDistribution(c.rates))
+    lazy val rates = Option.when(user.id.contains(asUserId))(if (list.comments) list.withComments(false).jurorCounts() else counts)
+      .flatten.fold(galleryService.rateDistribution(user, round))(c => new RateDistribution(c.rates))
 
     // the comments toggle's number: the list's files with comments, the list's own total when on
     lazy val commented = Some(if (list.comments) pager.count else list.commentedCount())

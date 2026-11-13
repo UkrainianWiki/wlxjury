@@ -3,15 +3,17 @@
         objectId: Long,
         list: RoundList,
         comments: Seq[Comment],
-        rounds: Map[Long, String] = Map.empty)(
+        rounds: Map[Long, String] = Map.empty,
+        showsRounds: Boolean = true)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 @import helper._
 
 @* A file's comments in the round's contest, in the order written (by id), each with its author,
    its time (comment.created_at: a <time> in UTC, formatted in the viewer's time zone and the
    page's language by vote-time.js; none where the stored text can't be read, Comment.createdInstant)
-   and, if written in another round of the contest, that round's name (`rounds`, by id; its number
-   if not found). The form only while the round is open *@
+   and, if written in another round of the contest and the viewer is shown it (`showsRounds`,
+   LargeViewController.showsCommentRounds), that round's name (`rounds`, by id; its id if not
+   found). The form only while the round is open *@
 @defining(list.round) { round =>
 @if(round.active || comments.nonEmpty) {
     @* below the file, as wide as the column but never wider than a readable line; the button
@@ -22,7 +24,7 @@
            pre-line), so the template adds none inside it *@
         @for(msg <- comments) {
             <div class="msg rounded mb-2" id="comment-@msg.id">
-                <div class="wlx-comment-meta small"><strong>@msg.username</strong>@for(at <- msg.createdInstant) { <span aria-hidden="true">·</span> <time class="wlx-vote-time wlx-comment-time" datetime="@at.toString">@at.toString</time>}@if(msg.roundId != round.getId) { @defining(rounds.getOrElse(msg.roundId, msg.roundId.toString)) { name => <span class="badge text-bg-secondary wlx-comment-round" title="@Messages("comment.round.other", name)"><span class="visually-hidden">@Messages("comment.round.other", name)</span><span aria-hidden="true">@name</span></span>}}</div>
+                <div class="wlx-comment-meta small"><strong>@msg.username</strong>@for(at <- msg.createdInstant) { <span aria-hidden="true">·</span> <time class="wlx-vote-time wlx-comment-time" datetime="@at.toString">@at.toString</time>}@if(showsRounds && msg.roundId != round.getId) { @defining(rounds.getOrElse(msg.roundId, msg.roundId.toString)) { name => <span class="badge text-bg-secondary wlx-comment-round" title="@Messages("comment.round.other", name)"><span class="visually-hidden">@Messages("comment.round.other", name)</span><span aria-hidden="true">@name</span></span>}}</div>
                 <div class="wlx-comment-body">@msg.body</div>
             </div>
         }

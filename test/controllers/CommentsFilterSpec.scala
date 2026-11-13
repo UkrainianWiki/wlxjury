@@ -170,6 +170,9 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
         // all the jurors' (by rank, at an offset)
         list(f, 0, order = ListOrder.Binary(BinaryOrder.Default)).around(5).map(_.files.map(_.pageId).sorted) ===
           Some(Seq(1L, 3L, 5L, 7L))
+        // all the jurors' list at a file without comments: itself among them too
+        list(f, 0, order = ListOrder.Binary(BinaryOrder.Default)).around(2).map(_.files.map(_.pageId).sorted) ===
+          Some(Seq(1L, 2L, 3L, 5L, 7L))
         // another juror's file is not in juror 1's list
         own.around(7) must beNone
       }
@@ -321,6 +324,32 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
         doc.select(".large-comments .wlx-comment-round").size === 0
         doc.select(".large-comments time.wlx-comment-time").asScala.map(_.attr("datetime")) ===
           Seq("2026-11-12T12:05:00Z", "2026-11-12T12:05:00Z")
+      }
+    }
+
+    "go back after a comment to the list it was made in: a juror's or all the jurors' for the organisers, the viewer's own for a juror" in {
+      testDbApp { app =>
+        val f = fixture()
+        def commentFrom(viewer: User, l: RoundList, pageId: Long) = {
+          val result = route(app, FakeRequest(POST, l.commentUrl(pageId))
+            .withSession(Secured.UserName -> viewer.email)
+            .withFormUrlEncodedBody("id" -> "0", "text" -> "a comment")
+            .withCSRFToken).get
+          status(result) === SEE_OTHER
+          redirectLocation(result).get
+        }
+        val fromJuror2 = commentFrom(f.organizer, list(f, f.juror2.getId), 5)
+        fromJuror2 must startWith(s"/large/round/${f.round.getId}/user/${f.juror2.getId}/pageid/5?")
+        fromJuror2 must contain("comments=1")
+        val fromAll = commentFrom(f.organizer, list(f, 0, VoteFilter.Rate(1), ListOrder.Binary(BinaryOrder.Default),
+          GalleryView.ByRate), 7)
+        fromAll must startWith(s"/large/round/${f.round.getId}/user/0/pageid/7?")
+        forall(Seq("module=byrate", "filter=selected", "comments=1"))(p => fromAll must contain(p))
+        // a juror naming another juror's list: their comment on their own file is added, and they go
+        // back to their own list, never the other's
+        val juror = commentFrom(f.juror1, list(f, f.juror2.getId), 5)
+        juror must startWith(s"/large/round/${f.round.getId}/user/${f.juror1.getId}/pageid/5?")
+        CommentJdbc.findBySubjectAndContest(5, f.contest.getId).count(_.userId == f.juror1.getId) === 1
       }
     }
 

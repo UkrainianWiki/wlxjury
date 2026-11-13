@@ -131,7 +131,13 @@ class CommentAuthorizationSpec extends PlaySpecification with PlayTestDb {
         forall(Seq(f.organizer, f.admin, f.root)) { viewer =>
           val page = comment(app, viewer, f)
           status(page) === FORBIDDEN
-          contentAsString(page) must contain("This round is stopped")
+          val doc = org.jsoup.Jsoup.parse(contentAsString(page))
+          doc.text must contain("This round is stopped")
+          doc.text must contain("Your comment was not saved")
+          // no account to switch or admin to ask: the way back to the file
+          doc.select(".alert-danger form").size === 0
+          doc.selectFirst(".alert-danger a.btn-primary").attr("href") must
+            startWith(s"/large/round/${f.round.getId}/user/${viewer.getId}/pageid/${f.image.pageId}")
           val (json, log) = withAuthzLog {
             val result = comment(app, viewer, f, script = true)
             status(result)

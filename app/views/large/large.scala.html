@@ -14,7 +14,8 @@
         criteria: Seq[(org.intracer.wmua.Criterion, Double)] = Nil,
         jurorCriteria: org.intracer.wmua.JurorCriteria = org.intracer.wmua.JurorCriteria.empty,
         commentCounts: Map[Long, Int] = Map.empty,
-        commentRounds: Map[Long, String] = Map.empty)(
+        commentRounds: Map[Long, String] = Map.empty,
+        showsCommentRounds: Boolean = true)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 
     @defining(list.round) { round =>
@@ -75,7 +76,7 @@
                          }
                     </a>
 
-                    @commentsView(hood.file.pageId, list, comments, commentRounds)
+                    @commentsView(hood.file.pageId, list, comments, commentRounds, showsCommentRounds)
 
                 </div>
         </div>

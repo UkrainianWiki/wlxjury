@@ -569,9 +569,12 @@ final case class RoundList(
     withParams(routes.GalleryController.regions(asUserId, regionParam, roundId).url,
       Option.when(view != GalleryView.Gallery)("module" -> view.name).toSeq ++ params(module = false))
 
-  /** A comment on the file in its large view, going back to it in this list. */
+  /** A comment on the file in its large view, going back to it in this list: whose votes
+    * (`user`, as the large view's path has them) with the rest of its parameters.
+    */
   def commentUrl(pageId: Long): String =
-    withParams(routes.ImageDiscussionController.addComment(pageId, regionParam, Some(roundId)).url, params(module = true))
+    withParams(routes.ImageDiscussionController.addComment(pageId, regionParam, Some(roundId), None, Some(asUserId)).url,
+      params(module = true))
 }
 
 /** Which source one request's statements of all the jurors' list read (P2b), per round:

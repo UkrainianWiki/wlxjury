@@ -21,10 +21,12 @@ case class Comment(
 
 object Comment {
 
-  /** A `comment.created_at` (varchar(40)) as an instant, leniently: the app has written it as an
+  /** A `comment.created_at` as an instant, leniently: the app has written it as an
     * OffsetDateTime (`2026-11-12T14:05:00+02:00`, [[CommentJdbc.now]]) and before that as a
     * ZonedDateTime's text, with a zone id and fractions of a second
-    * (`2016-10-05T12:34:56.464+02:00[Europe/Kiev]`), which varchar(40) may have cut short. Also
+    * (`2016-10-05T12:34:56.464+02:00[Europe/Kiev]`). The migrations make the column varchar(40),
+    * which would cut such a text short; production's column has drifted to mediumtext, with values
+    * up to 50 characters, whole. Also
     * a space for the `T`, a `Z` offset, no seconds. The offset decides the instant; a zone id
     * alone (no offset) is read in that zone. A text without either, cut inside its offset, or
     * not a time at all is None: the large view then shows no time, never a wrong one.
