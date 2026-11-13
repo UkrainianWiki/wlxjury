@@ -362,11 +362,15 @@ class VoteGalleryIndexSpec extends Specification with TestDb with BeforeAll with
     def count(c: Connection, sql: String): Long =
       Using.resource(c.createStatement())(st => Using.resource(st.executeQuery(sql)) { rs => rs.next(); rs.getLong(1) })
 
-    /** The scratch vote table with production's foreign key to a scratch images table, added after
-      * the single-column indexes, as on production (V58 after V7). */
+    /** The scratch vote table with production's foreign key to a scratch images table, served by
+      * vote_page_id_idx: the unique key (page_id first) is dropped while the foreign key is added
+      * and then added back, so V100 has to move the key. (Production's key is most likely on the unique
+      * key already, as V91 rebuilt the table; this is the harder state for V100.) */
     def withImagesKey(): Unit = Using.resource(root(scratch)) { c =>
       execute(c, "CREATE TABLE images LIKE wlxjury.images")
+      execute(c, "ALTER TABLE vote DROP INDEX vote_page_jury_round_uidx")
       execute(c, "ALTER TABLE vote ADD CONSTRAINT vote_page_id_fk FOREIGN KEY (page_id) REFERENCES images (page_id) ON DELETE CASCADE")
+      execute(c, "ALTER TABLE vote ADD UNIQUE INDEX vote_page_jury_round_uidx (page_id, jury_id, round_id)")
     }
 
     "leave the migrated database without the four single-column indexes, the foreign key on page_id kept" in {
@@ -400,11 +404,14 @@ class VoteGalleryIndexSpec extends Specification with TestDb with BeforeAll with
         val left = count(c, "SELECT COUNT(*) FROM vote")
         val refused = execute(c, "INSERT INTO vote (jury_id, round_id, page_id, rate) VALUES (1, 1, 404, 0)") must
           throwA[java.sql.SQLException](message = "foreign key constraint fails")
+        // the key now on the unique key: it can't be dropped (1553: needed in a foreign key constraint)
+        val moved = execute(c, "ALTER TABLE vote DROP INDEX vote_page_jury_round_uidx") must
+          throwA[java.sql.SQLException].like { case e: java.sql.SQLException => e.getErrorCode === 1553 }
         ((before.map(_._1).toSet intersect singles) === singles) and (altered === 1L) and (warnings must beEmpty) and
           (after === before.filterNot(i => singles(i._1))) and (galleryIndexes(c, scratch) === gallery) and
           (Seq("round_id", "jury_id", "page_id").filter(leading(c, scratch, _).isEmpty) must beEmpty) and
           (foreignKeys(c, scratch) === List(("vote_page_id_fk", "images", "CASCADE"))) and
-          (alteredAgain === 0L) and (leadingColumns(c, scratch) === after) and (left === 1L) and refused
+          (alteredAgain === 0L) and (leadingColumns(c, scratch) === after) and (left === 1L) and refused and moved
       }
     }
 

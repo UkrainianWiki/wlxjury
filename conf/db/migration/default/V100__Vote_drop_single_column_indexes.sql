@@ -13,8 +13,9 @@
 --     at the same speed (within 0.4 ms).
 -- No code names any of them (no index hints).
 --
--- The foreign key: vote's only one, vote_page_id_fk (page_id -> images, ON DELETE CASCADE), was
--- served by vote_page_id_idx (V58's selection_page_id_index). InnoDB moves it to
+-- The foreign key: vote's only one, vote_page_id_fk (page_id -> images, ON DELETE CASCADE). If it
+-- is served by vote_page_id_idx (InnoDB takes the first suitable index in its order: on
+-- production most likely the unique key already, as V91 rebuilt the table), InnoDB moves it to
 -- vote_page_jury_round_uidx, which starts with page_id, in the same ALTER: the key stays, an
 -- image's delete still deletes its votes and a vote for a missing image is still refused (1452).
 -- From then on that unique key can't be dropped while the foreign key exists (1553).
