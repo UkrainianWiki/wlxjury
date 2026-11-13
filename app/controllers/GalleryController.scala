@@ -113,14 +113,14 @@ class GalleryController @Inject() (
       roundId: Long = 0
   ): EssentialAction = noStore(withAuthOn(blocking)() { sessionUser => implicit request =>
     val maybeRound =
-      if (roundId == 0) Round.activeRounds(sessionUser).headOption
+      if (roundId == 0) JurorContests.firstOpenRound(sessionUser)
       else Round.findById(roundId)
     // a round of another of the user's contests opens in that contest
     val user = maybeRound.fold(sessionUser)(r => Secured.inContest(sessionUser, r.contestId))
 
     maybeRound.fold {
       // no such round, or no active one: a page saying so, not a server error
-      if (roundId == 0) Ok(views.html.errorPage(Some(sessionUser), "error.title", "no.round.yet"))
+      if (roundId == 0) JurorContests.noRoundPage(sessionUser)
       else NotFound(views.html.errorPage(Some(sessionUser), "error.title", "error.round.not.found"))
     } { round =>
       Secured.switchingContest(sessionUser, user)(gallery(user, view, asUserId, at, region, round))

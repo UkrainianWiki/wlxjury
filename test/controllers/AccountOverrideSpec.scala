@@ -81,7 +81,7 @@ class AccountOverrideSpec extends PlaySpecification with PlayTestDb with Account
       testDbApp { implicit app =>
         createContests(10)
         val admin = account("admin@example.com", Some(10), "admin", verified = true).copy(fullname = "Anna Admin")
-        User.updateUser(admin.getId, "Anna Admin", None, None)
+        User.updateUser(admin.getId, "Anna Admin", None)
         val juror = account("placeholder@example.com", Some(10), "jury", password = Some("pw-juror"), verified = true)
         UserIdentityJdbc.create(UserIdentity("google", "g-1", juror.getId, Some("placeholder@example.com"), None))
         val version = authVersion(juror.getId)

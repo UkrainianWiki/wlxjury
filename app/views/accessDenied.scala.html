@@ -26,7 +26,9 @@
     selectedRound = suggestion.flatMap(_.round),
     rounds = suggestion.map(_.rounds).getOrElse(Seq.empty),
     gallery = suggestion.exists(_.round.nonEmpty),
-    contestId = suggestion.flatMap(_.contestId)
+    contestId = suggestion.flatMap(_.contestId),
+    // the denied page is no page to come back to (the theme switch, the profile link)
+    backHere = false
 ) {
     @* what the request did before it was refused (a page's other fields saved) *@
     @for(text <- notice) {

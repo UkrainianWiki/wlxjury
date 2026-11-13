@@ -427,6 +427,19 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       .orderBy(r.id)
       .apply()
 
+  /** Of `contestIds`, those with a round open to the user as a juror, as [[activeRounds(user*]]
+    * takes one: active, not being distributed, with an active round_user row of the user. One
+    * query (the navbar's contest switcher runs it on every page of a multi-contest juror).
+    */
+  def contestsWithOpenRound(userId: Long, contestIds: Seq[Long])(implicit
+      session: DBSession = AutoSession): Set[Long] =
+    if (contestIds.isEmpty) Set.empty
+    else
+      sql"""SELECT DISTINCT r.contest_id FROM round r
+            JOIN round_user ru ON ru.round_id = r.id AND ru.user_id = $userId AND ru.active = TRUE
+            WHERE r.contest_id IN (${contestIds.distinct}) AND r.active = TRUE AND r.distributing = FALSE"""
+        .map(_.long(1)).list().toSet
+
   def activeRounds(user: User): Seq[Round] = {
     user.currentContest
       .map { contestId =>

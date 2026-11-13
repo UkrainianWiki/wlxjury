@@ -114,6 +114,8 @@ object RouteAuthSpec {
     "controllers.LoginController.emailConfirm" -> "confirming an email change: token checked, POST with CSRF",
     "controllers.LoginController.setupView" -> "404 unless users is empty and wlxjury.setup.token is set",
     "controllers.LoginController.setup" -> "404 unless users is empty; the setup token is checked",
+    "controllers.TrailingSlashController.untrail" ->
+      "a redirect to the same local path without its trailing slashes (or a 404); the target checks access",
     "controllers.UserController.switchContestLink" -> "an old link: redirects to / and changes nothing (switching is a POST)",
     "controllers.OAuthController.login" ->
       "leaves for the provider (404 if not offered on the host); only the session's flow keys change",

@@ -416,3 +416,14 @@ a:has(> .btn) { text-decoration: none; }
     margin-right: calc(var(--bs-gutter-x) * .5);
     width: calc(100% - var(--bs-gutter-x));
 }
+
+/* the navbar's signed-in account (logged.scala.html): as wide as its longest line, so an email
+   stays on one line (the menu, positioned at the toggle, otherwise shrinks to the narrowest
+   width .text-break allows and splits it mid-word); only a value longer than 20rem, or than the
+   screen, wraps */
+.navbar-account {
+    /* stylelint-disable-next-line plugin/no-unsupported-browser-features -- max-content works in
+       every supported browser (Firefox 66, Chrome 46); caniuse's "partial" is about stretch */
+    width: max-content;
+    max-width: min(20rem, calc(100vw - 2rem));
+}

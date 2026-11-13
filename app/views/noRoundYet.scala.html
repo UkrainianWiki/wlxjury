@@ -1,0 +1,29 @@
+@import db.scalikejdbc.{User, UserContest}
+@import org.intracer.wmua.ContestJury
+@(user: User, otherContests: Seq[(UserContest, ContestJury)])(implicit messages: Messages, request: RequestHeader)
+
+@* A state, not an error: no round is open to the user in the current contest (and, for a juror,
+   in none of their contests: the start page goes on to one with a round, JurorContests). No
+   link to the start page, which would come back here; signing out, or another of the user's
+   contests (POSTs with the CSRF token, as the navbar's) *@
+@main("no.round.yet.title", user, user.getId, backHere = false) {
+    <div class="alert alert-info" role="status">
+        <h1 class="h4">@Messages("no.round.yet.title")</h1>
+        <p>@Messages("no.round.yet")</p>
+        @if(otherContests.nonEmpty) {
+            <p class="mb-2">@Messages("no.round.yet.other.contests")</p>
+            <div class="d-flex flex-wrap gap-2 mb-3">
+            @for((membership, contest) <- otherContests) {
+                <form method="post" action="@routes.UserController.switchContest(membership.contestId)" class="no-round-switch">
+                    @csrfField()
+                    <button type="submit" class="btn btn-outline-primary">@contest.fullName (@membership.roles.map(r => Messages("role." + r)).mkString(", "))</button>
+                </form>
+            }
+            </div>
+        }
+        <form method="post" action="@routes.LoginController.logout()" class="no-round-logout">
+            @csrfField()
+            <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-power" aria-hidden="true"></i> @Messages("logout")</button>
+        </form>
+    </div>
+}

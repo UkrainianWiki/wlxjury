@@ -166,6 +166,13 @@ final case class RoundList(
   /** Files with their jurors' votes, one row each (file list, CSV). */
   private def withDetails: Boolean = view == GalleryView.FileList || view == GalleryView.Csv
 
+  /** A juror's list whose filter fixes the rate (unrated, a yes/no round's selected or rejected,
+    * a single rate): every file in it has the same vote, so by rate is file order (the rate
+    * column is one value, then monument and page id) and the order menu leaves it out. The
+    * list keeps its order for its links, so the juror's choice holds on the other tabs.
+    */
+  def oneRate: Boolean = asUserId != 0 && filter.rate.isDefined
+
   /** All the jurors' votes on a yes/no round's files together: ordered by a [[BinaryOrder]]. */
   def aggregateBinary: Boolean = asUserId == 0 && round.isBinary
 

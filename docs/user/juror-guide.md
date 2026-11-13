@@ -119,9 +119,11 @@ assigned to you in it.
 The bar at the top shows the round's name. If you are in more than one open round, the
 round's name is a menu instead: choose another round there.
 
-If no round is open for you, the tool says **No round configured yet. Please wait until
-contest admin configures the tool.** Come back later, or ask your contest admin when the
-round opens.
+If no round is open for you in the current contest but one is in a newer contest of yours (for
+example this year's, while you were still in last year's), the tool opens that one. Otherwise it
+says **No round configured yet. Please wait until contest admin configures the tool.**, with a
+**Logout** button and buttons for your other contests where you can go (for example last year's,
+if its round is still open). Come back later, or ask your contest admin when the round opens.
 
 ### Rounds you don't see
 
@@ -141,7 +143,8 @@ Your votes are kept in each case.
 One account can be a juror in several contests. When you are in more than one, the top bar has
 a contest menu (shuffle icon) showing the current contest's name. Open it and choose a contest:
 each one is listed with your role there, for example "(Jury)". The tool opens your first round in
-that contest.
+that contest. A contest where you are only a juror and no round is open for you (say, last
+year's) is not listed, so with one such contest left there is no menu.
 
 Opening a link to a page of another contest you belong to also takes you to that contest.
 

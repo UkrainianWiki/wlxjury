@@ -107,6 +107,7 @@ total = Разом
 85=Севастополь
 
 profile=Профіль
+signed.in.as = Ви увійшли як
 
 full.resolution = Повна роздільність: <nobr>{0}</nobr>; {1} Мпкс
 mpx = Мпкс
@@ -170,7 +171,7 @@ edit.greeting.message = Редагувати привітання
 role=Роль
 edit=Редагувати
 
-no=Немає
+no=Ні
 yes=Так
 
 contests=Конкурси
@@ -339,6 +340,8 @@ id.template.from.campaign = типовий для кампанії цього к
 id.template.help = Порожнє: типовий шаблон кампанії цього конкурсу або його виду й країни, якщо він є
 region.other = Інше ({0})
 no.round.yet=Ще не налаштовано жодного раунду. Зачекайте, поки адміністратор конкурсу налаштує інструмент.
+no.round.yet.title = Ще немає раунду
+no.round.yet.other.contests = Ваші інші конкурси:
 role.no=Без ролі
 role.admin=Адміністратор
 role.organizer=Організатор
@@ -467,7 +470,6 @@ coi.round.started = Раунд {0} запущено.
 
 close = Закрити
 signin.repeat.your.password = Повторіть пароль
-sort = Сортування
 theme = Тема
 theme.light = Світла
 theme.dark = Темна
