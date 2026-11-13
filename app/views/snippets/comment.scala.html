@@ -1,12 +1,13 @@
-@(msg: org.intracer.wmua.Comment, otherRound: Option[String] = None)(implicit messages: Messages)
+@(msg: org.intracer.wmua.Comment, otherRound: Option[String] = None, authorLinks: Html = play.twirl.api.HtmlFormat.empty)(implicit messages: Messages)
 @* One comment, as the large view (large/commentsView) and the comments report (commentsReport)
    show it: its author, its time (comment.created_at: a <time> in UTC, formatted in the viewer's
    time zone and the page's language by vote-time.js; none where the stored text can't be read,
    Comment.createdInstant) and, if it was written in another round and the viewer is shown which,
-   that round's name (`otherRound`); then its text, on its own line, which keeps its own line
+   that round's name (`otherRound`); in the comments report, after the name, its links by the
+   author (`authorLinks`: icons, commentsReport's authorLinks); then its text, on its own line, which keeps its own line
    breaks (main.css: white-space: pre-line), so nothing is added inside it. Twirl escapes the
    name and the text: never HTML *@
 <div class="msg rounded mb-2@if(otherRound.isDefined) { wlx-comment-other-round}" id="comment-@msg.id">
-    <div class="wlx-comment-meta small"><strong>@msg.username</strong>@for(at <- msg.createdInstant) { <span aria-hidden="true">·</span> <time class="wlx-vote-time wlx-comment-time" datetime="@at.toString">@at.toString</time>}@for(name <- otherRound) { <span class="badge text-bg-secondary wlx-comment-round" title="@Messages("comment.round.other", name)"><span class="visually-hidden">@Messages("comment.round.other", name)</span><span aria-hidden="true">@name</span></span>}</div>
+    <div class="wlx-comment-meta small"><strong>@msg.username</strong>@authorLinks@for(at <- msg.createdInstant) { <span aria-hidden="true">·</span> <time class="wlx-vote-time wlx-comment-time" datetime="@at.toString">@at.toString</time>}@for(name <- otherRound) { <span class="badge text-bg-secondary wlx-comment-round" title="@Messages("comment.round.other", name)"><span class="visually-hidden">@Messages("comment.round.other", name)</span><span aria-hidden="true">@name</span></span>}</div>
     <div class="wlx-comment-body">@msg.body</div>
 </div>

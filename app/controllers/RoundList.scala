@@ -238,6 +238,9 @@ final case class RoundList(
     comments: Boolean = false,
     // the comments report's scope ([[CommentScope]]): only in that view ([[GalleryView.comments]])
     commentScope: CommentScope = CommentScope.ThisRound,
+    // the comments report's filter by author ([[RoundList.CommenterParam]]): only the files with
+    // a comment in the scope by this account (`comment.user_id`); only in that view ([[commentsBy]])
+    commenter: Option[Long] = None,
     // `roundImage.read` (P2b): all the jurors' list from round_image's counts ([[countsQuery]])
     countsRead: Boolean = false,
     // which source this request's statements read, shared by the list's copies ([[CountsSession]])
@@ -258,6 +261,11 @@ final case class RoundList(
     * for all the contest's, and outside the report, whose toggle is the contest's.
     */
   def commentsRound: Option[Long] = Option.when(view.comments && commentScope == CommentScope.ThisRound)(roundId)
+
+  /** The account whose comments alone the comments report lists its files by ([[commenter]]),
+    * counts and orders them by the latest of, and its CSV has; None outside the report.
+    */
+  def commentsBy: Option[Long] = commenter.filter(_ => view.comments)
 
   /** Files with their jurors' votes, one row each (file list, CSV). */
   private def withDetails: Boolean = view == GalleryView.FileList || view == GalleryView.Csv
@@ -302,7 +310,7 @@ final case class RoundList(
     */
   private def orderColumns: Seq[(String, Int)] =
     if (order == ListOrder.LatestComment && view.comments)
-      (SelectionQuery.latestComment(round.contestId, commentsRound) -> -1) +: ListOrder.FileOrder.columns
+      (SelectionQuery.latestComment(round.contestId, commentsRound, commentsBy) -> -1) +: ListOrder.FileOrder.columns
     else if (withDetails) rankKey.columns ++ (if (round.isBinary) Seq("s.page_id" -> 1) else ListOrder.FileOrder.columns)
     else if (aggregateBinary && order != ListOrder.FileOrder) ListOrder.Binary(binaryOrder).columns
     // all the jurors' votes on a rated round by rate: by the average under the round's rule, as
@@ -354,7 +362,8 @@ final case class RoundList(
       grades = !round.isBinary,
       subRegions = round.specialNomination.contains("Віа Регіа"),
       commentsIn = Option.when(commentsOnly)(round.contestId),
-      commentsRound = commentsRound
+      commentsRound = commentsRound,
+      commentsBy = commentsBy
     )
 
   /** The list over `round_image`'s counts ([[RoundImageQuery]]), if it may be read from them:
@@ -584,10 +593,14 @@ final case class RoundList(
   def commentCount(): Int = query.commentCount()
 
   /** The comments of the files of a page of the comments report, in its scope, each file's in
-    * the order written.
+    * the order written: everyone's, also with the filter by author ([[commentsBy]]), whose
+    * comments the report shows, the others' folded under them (commentsReport).
     */
   def commentsOf(files: Seq[ImageWithRating]): Map[Long, Seq[org.intracer.wmua.Comment]] =
     org.intracer.wmua.CommentJdbc.findByRooms(round.contestId, files.map(_.pageId), commentsRound).groupBy(_.room)
+
+  /** The comments report of only the comments by the account, or (None) of everyone's. */
+  def withCommenter(userId: Option[Long]): RoundList = copy(commenter = userId.filter(_ > 0))
 
   /** The list in a region, or all of them ("all"). */
   def withRegion(region: String): RoundList = copy(region = Some(region).filter(_ != "all"))
@@ -624,14 +637,15 @@ final case class RoundList(
     else withRound(round).withViewer(0).withOrder(if (view.comments) ListOrder.LatestComment else ListOrder.ByRate)
 
   /** The list's query string: its view (`module`, for a large view's way back), filter, the
-    * comments toggle and order.
+    * comments toggle, the comments report's scope and filter by author, and order.
     */
   private def params(module: Boolean): Seq[(String, String)] =
     Option.when(module && view != GalleryView.Gallery)("module" -> view.name).toSeq ++
       Option.when(filter != VoteFilter.All)("filter" -> filter.param).toSeq ++
       Option.when(comments)(RoundList.CommentsParam -> "1").toSeq ++
       Option.when(view.comments && commentScope != CommentScope.ThisRound)(RoundList.ScopeParam -> commentScope.param)
-        .toSeq :+
+        .toSeq ++
+      commentsBy.map(RoundList.CommenterParam -> _.toString).toSeq :+
       ("sort" -> order.param)
 
   private def withParams(path: String, params: Seq[(String, String)]): String =
@@ -825,6 +839,11 @@ object RoundList {
   /** A comments report URL's parameter of its scope ([[CommentScope]]): `scope=contest`. */
   val ScopeParam = "scope"
 
+  /** A comments report URL's parameter of its filter by author ([[RoundList.commenter]]):
+    * `commenter=<user id>`.
+    */
+  val CommenterParam = "commenter"
+
   /** The comments report's files to a page: a round's busiest had 1,542 comments on 321 files. */
   val CommentsPageSize = 20
 
@@ -853,7 +872,11 @@ object RoundList {
         .getOrElse(defaultOrder(viewer, asUserId, shown)),
       shown,
       comments = request.getQueryString(CommentsParam).contains("1"),
-      commentScope = CommentScope.of(request)
+      commentScope = CommentScope.of(request),
+      // the report's filter by author: only in the report, so a juror's large view naming it with
+      // module=comments (their gallery, above) ignores it
+      commenter = Option.when(shown.comments)(
+        request.getQueryString(CommenterParam).flatMap(_.toLongOption).filter(_ > 0)).flatten
     )
     list.order match {
       case ListOrder.ByRate if list.aggregateBinary => list.withOrder(ListOrder.Binary(rememberedBinary))
