@@ -20,7 +20,7 @@ require("../public/javascripts/large-rate.js");
 const { voteErrorMessage, voteErrorTexts } = require("../public/javascripts/vote-errors.js");
 window.voteErrorMessage = voteErrorMessage;
 window.voteErrorTexts = voteErrorTexts;
-const { addStars, addVote, vote, addListStars, addTally, addVoteTime, addVoteMark } = require("../public/javascripts/tile-votes.js");
+const { addStars, addVote, vote, addListStars, addTally, addVoteTime, addVoteMark, addComments } = require("../public/javascripts/tile-votes.js");
 
 let requests; // the votes sent: { options, answer (a Deferred) }
 
@@ -493,6 +493,32 @@ describe("a tile's approvals and rejections", () => {
     test("add nothing to a tile without them, as a juror's own", () => {
         expect(addTally(tile(), { rate: "1" })).toBeNull();
         expect(tile().querySelector(".wlx-tile-tally")).toBeNull();
+    });
+});
+
+// A file's comments in the contest on its tile (addComments): a speech bubble and the number,
+// hidden from screen readers, which read the page's words (its plural form), also the tooltip;
+// nothing for a file without comments.
+describe("a tile's comments", () => {
+    test("show a bubble and the number, the words for screen readers and as the tooltip", () => {
+        const badge = addComments(tile(), { comments: "3", commentsLabel: "3 коментарі" });
+        expect(tile().querySelector(".wlx-tile-comments")).toBe(badge);
+        expect(badge.querySelector("i.bi-chat-left-text-fill").getAttribute("aria-hidden")).toBe("true");
+        const shown = badge.querySelector("span[aria-hidden=true]");
+        expect(shown.textContent.trim()).toBe("3");
+        expect(badge.querySelector(".visually-hidden").textContent).toBe("3 коментарі");
+        expect(badge.title).toBe("3 коментарі");
+        // the badge's text as a screen reader has it: the words only
+        const read = Array.from(badge.childNodes).filter(n => !(n.getAttribute && n.getAttribute("aria-hidden") === "true"))
+            .map(n => n.textContent).join("");
+        expect(read).toBe("3 коментарі");
+    });
+
+    test("add nothing to a tile without comments", () => {
+        expect(addComments(tile(), {})).toBeNull();
+        expect(addComments(tile(), { comments: "0", commentsLabel: "0 comments" })).toBeNull();
+        expect(addComments(tile(), { comments: "x" })).toBeNull();
+        expect(tile().querySelector(".wlx-tile-comments")).toBeNull();
     });
 });
 

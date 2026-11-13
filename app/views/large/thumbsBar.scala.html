@@ -1,11 +1,12 @@
 @import controllers.Global
 @(
         list: RoundList,
-        hood: Neighbourhood)(
+        hood: Neighbourhood,
+        commentCounts: Map[Long, Int] = Map.empty)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 @* A round's large view's strip of the files after its file (Neighbourhood.following), in a
    section closed by default; none at the list's end. Not the file itself, which the stars
-   above rate, nor those before it. *@
+   above rate, nor those before it. Each with its comments' badge (snippets.commentBadge) *@
 
 @if(hood.following.nonEmpty) {
 @sideSection("large-next", "large.next.files", open = false) {
@@ -16,6 +17,7 @@
     <div class="thumb_small">
         <div class="my-1 mx-auto">
             <a href="@list.largeUrl(file.pageId)">
+                @snippets.commentBadge(commentCounts.getOrElse(file.pageId, 0))
                 @if(file.image.isImage) {
                     <img class="cropped" alt="@file.title"
                     src="@Global.resizeTo(file.image, Global.thumbSizeX, Global.thumbSizeY)"

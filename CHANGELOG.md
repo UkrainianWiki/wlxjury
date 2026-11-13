@@ -25,8 +25,37 @@ with `.N` for an extra deploy in the same month (`26.11.1`), and release heading
 
 ## Unreleased (developed, not yet deployed)
 
-The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Nothing yet: everything developed
-up to 2026-11-13 was deployed in `26.11.4`.
+The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything developed up to
+2026-11-13 before the entries below was deployed in `26.11.4`.
+
+**Features**
+
+- **Files with comments** (asked for by a contest admin; developed 2026-11-13,
+  `stack/128-comments-badge-filter`): a file with comments shows a speech bubble with their number
+  on its gallery tile, its by-rate tile and in the large view's **Next files**, read by screen
+  readers as words ("3 comments", in the language's plural form). A toggle **Only with comments
+  (N)** beside the tabs (organizers: beside the vote filter) narrows the round's list to those
+  files, combined with any tab, region, order and view, the CSV included; N is the current tab's
+  number. The toggle is kept by every link of the list: its pages, the large view's previous and
+  next, votes and comments (a comment goes back to the list it was made in, also an organizer's
+  view of a juror's or of all the jurors' votes). Jurors get it on their own files, organizers and admins in every view
+  they already have; it never shows a file the viewer couldn't see. Both count the comments a
+  file's large view shows: any round's of the contest, any author's. The large view's comments
+  now show their author, time (in the viewer's time zone and language; none where the stored time
+  can't be read) and, for a comment from another round, that round's name (to admins, organizers
+  and root only: jurors see the comment without it).
+- A comment on a stopped round's file is refused on the server too, for admins, organizers and
+  root as for jurors: a 403 page saying the comment was not saved, with a link back to the file
+  (or JSON) and its reference, logged on `security.authz` with the reason `round_stopped`. The
+  form was already hidden there.
+
+**Development**
+
+- V101: index `comment_contest_room_idx` on `comment (contest_id, room)`, which also takes over
+  the foreign key from the single-column `contest_id` index (dropped where a dump kept it, so an
+  upgraded schema equals a fresh one), online and rerunnable,
+  for the toggle's semi-join, the badges' one grouped query per page and the large view's
+  comments. Round lineage's planned `round.status` moves from V101 to V102.
 
 ## 26.11.4 (2026-11-13)
 
