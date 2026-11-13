@@ -10,7 +10,7 @@
             <p>@Messages("email.change.confirm", email)</p>
             @bs.form(routes.LoginController.emailConfirm()) {
                 <input type="hidden" name="token" value="@value">
-                @helper.CSRF.formField
+                @csrfField()
                 <button id="submit" type="submit" class="btn btn-primary">@Messages("email.change.confirm.button")</button>
             }
         }

@@ -44,7 +44,7 @@
             }
 
             @form(routes.UserController.saveUser(), Symbol("class") -> "form-vertical") {
-                @helper.CSRF.formField
+                @csrfField()
                 @* the page the own profile was opened from: the save goes back there *@
                 @for(back <- returnTo) {
                     <input type="hidden" name="returnTo" value="@back">
@@ -214,7 +214,7 @@
             <div class="d-none">
             @form(routes.UserController.resetPassword(editUserForm("id").value.map(_.toLong).get),
                 Symbol("class") -> "form-vertical", Symbol("id") -> "reset-password") {
-                @helper.CSRF.formField
+                @csrfField()
                 <input type="submit" class="btn btn-outline-secondary" value="@Messages("resetpassword")">
                 }
             @* root's "end sessions" of this account (S3): its session version goes up *@

@@ -1,4 +1,8 @@
+@* The request's CSRF token as a form field, if it has one. Every form uses this, not
+   helper.CSRF.formField, which throws without a token (a 500). The filter gives every GET and
+   HEAD a token (modules.ApiCsrfConfigProvider), so a page has one; a request without one (an
+   error page of a request the filter refused) renders the form without it, and a POST of that
+   form gets the CSRF page asking to reload. No whitespace around the field (no newline at the end
+   of this file): a form of one field stays on one line. *@
 @()(implicit request: RequestHeader)
-@* The request's CSRF token as a form field, if it has one: helper.CSRF.formField fails
-   without one (an error page of a request the CSRF filter did not give one to). *@
 @for(token <- play.filters.csrf.CSRF.getToken(request)) {<input type="hidden" name="@token.name" value="@token.value"/>}

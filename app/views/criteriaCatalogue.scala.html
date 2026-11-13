@@ -38,7 +38,7 @@
             </table>
 
             @bs.form(routes.CriteriaController.add(contestId), Symbol("id") -> "criteria-add") {
-                @helper.CSRF.formField
+                @csrfField()
                 @bs.text(addForm("name"), Symbol("_label") -> Messages("criteria.add.name"),
                     Symbol("_help") -> Messages("criteria.add.help"), Symbol("maxlength") -> Criterion.MaxNameLength)
                 <div class="form-actions mt-2">

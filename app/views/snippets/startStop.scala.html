@@ -7,7 +7,7 @@
 @label = @{ Messages(s"$what.${if (active) "stop" else "start"}") }
 @if(withText){@if(active) { @Messages("yes") } else { @Messages("no") }}
 @form(submit(), Symbol("class") -> "d-inline", Symbol("id") -> s"set-active-form-$id", Symbol("role") -> "form") {
-    @helper.CSRF.formField
+    @csrfField()
     <input type="hidden" id="current-@id" name="currentId" value='@id' />
     <input type="hidden" id="parent-@id" name="parentId" value='@parentId' />
     <input type="hidden" id="setActive-@id" name="setActive" value='@{!active}' />

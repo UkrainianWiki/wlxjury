@@ -8,13 +8,13 @@
     <span class="job-status-text">@job.status@for(done <- job.progressDone; total <- job.progressTotal) { (@done / @total @job.progressUnit.getOrElse(""))}@for(e <- job.failure) {: @e.message}</span>
     <form method="post" action="@routes.JobController.retry(job.id)" class="job-retry"
           style="display: @if(job.isFailed) {inline} else {none}">
-        @helper.CSRF.formField
+        @csrfField()
         <input type="hidden" name="returnTo" value="@returnTo" />
         <button type="submit" class="btn btn-outline-secondary btn-sm">@Messages("job.retry")</button>
     </form>
     <form method="post" action="@routes.JobController.cancel(job.id)" class="job-cancel"
           style="display: @if(job.isActive || job.isFailed) {inline} else {none}">
-        @helper.CSRF.formField
+        @csrfField()
         <input type="hidden" name="returnTo" value="@returnTo" />
         <button type="submit" class="btn btn-outline-secondary btn-sm">@Messages("job.cancel")</button>
     </form>

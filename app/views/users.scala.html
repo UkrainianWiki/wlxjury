@@ -117,7 +117,7 @@
                                     }
                                     @for(contest <- contestOpt; contestId <- contest.id; if !user.isRoot) {
                                         <form action="@routes.UserController.reinvite(user.getId, contestId)" method="post" class="d-inline">
-                                            @helper.CSRF.formField
+                                            @csrfField()
                                             <button type="submit" class="btn btn-outline-secondary btn-sm reinvite" title="@Messages("invitation.send")" aria-label="@Messages("invitation.send")">
                                                 <i class="bi bi-envelope-arrow-up" aria-hidden="true"></i>
                                             </button>
@@ -127,7 +127,7 @@
                                 @* a link to share instead of a mail, where this admin may create one *@
                                 @for(contest <- contestOpt; contestId <- contest.id; if shareable.contains(user.getId)) {
                                     <form action="@routes.UserController.shareInvitation(user.getId, contestId)" method="post" class="d-inline">
-                                        @helper.CSRF.formField
+                                        @csrfField()
                                         <button type="submit" class="btn btn-outline-secondary btn-sm share-link" title="@Messages("share.link.create")" aria-label="@Messages("share.link.create")">
                                             <i class="bi bi-link-45deg" aria-hidden="true"></i>
                                         </button>
@@ -160,7 +160,7 @@
 
                     @for(contest <- contestOpt) {
                     @form(routes.UserController.saveUser(), Symbol("class") -> "form-vertical", Symbol("id") -> "add-user") {
-                        @helper.CSRF.formField
+                        @csrfField()
                         <tr>
                             @if(editUserForm.hasGlobalErrors) {
                                 <p class="error">
@@ -247,18 +247,18 @@
                                 @if(invitation.live) {
                                     @if(invitation.email.nonEmpty) {
                                         <form action="@routes.UserController.reinvite(invitation.userId, contestId)" method="post" class="d-inline">
-                                            @helper.CSRF.formField
+                                            @csrfField()
                                             <button type="submit" class="btn btn-outline-secondary btn-sm reinvite">@Messages(if (invitation.unsent) "invitation.send.now" else "invitation.send")</button>
                                         </form>
                                     }
                                     @if(shareable.contains(invitation.userId)) {
                                         <form action="@routes.UserController.shareInvitation(invitation.userId, contestId)" method="post" class="d-inline">
-                                            @helper.CSRF.formField
+                                            @csrfField()
                                             <button type="submit" class="btn btn-outline-secondary btn-sm share-link">@Messages("share.link.create")</button>
                                         </form>
                                     }
                                     <form action="@routes.UserController.cancelInvitation(invitation.userId, contestId)" method="post" class="d-inline">
-                                        @helper.CSRF.formField
+                                        @csrfField()
                                         <button type="submit" class="btn btn-outline-danger btn-sm cancel-invitation">@Messages("invitation.cancel")</button>
                                     </form>
                                 }

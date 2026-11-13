@@ -47,7 +47,7 @@
 
         @bs.text(loginForm("login"), Symbol("_hiddenLabel") -> Messages("signin.your.login"), Symbol("placeholder") -> Messages("login"), Symbol("class") -> "form-control-lg")
         @bs.password(loginForm("password"), Symbol("_hiddenLabel") -> Messages("signin.your.password"), Symbol("placeholder") -> Messages("signin.your.password"), Symbol("class") -> "form-control-lg")
-        @helper.CSRF.formField
+        @csrfField()
 
         @* "Keep me signed in": checked on a new form, else as it was sent; unchecked, the session
            cookie ends with the browser (controllers.SessionLifetime) *@

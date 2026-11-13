@@ -86,7 +86,7 @@
                 <a class="btn btn-primary" href="@routes.RoundController.editRound(id = None, contestId = contest.getId)">@Messages("add.round")</a>
                 @if(adminUser.isRoot) {
                     <form method="post" action="@routes.RoundImageCheckController.checkAll()" class="d-inline">
-                        @helper.CSRF.formField
+                        @csrfField()
                         <input type="hidden" name="returnTo" value="@routes.RoundController.rounds(contest.id).url">
                         <button type="submit" class="btn btn-outline-secondary">@Messages("round.images.check.all")</button>
                     </form>
