@@ -15,6 +15,10 @@ import scala.util.Using
   * orders read only the index), keeping its name, and on 10.8+ does V85's swap too: after the
   * move it is V99 that runs again.
   *
+  * V100 drops vote's single-column `vote_round_idx` and `vote_jury_id_idx` (prefixes of the
+  * composite indexes, the gallery index among them), whose index-merge intersection 10.6 chose
+  * over the gallery index.
+  *
   * The examples follow the test server (`-Dwlxjury.test.mariadb-image`): the default 10.6
   * checks the no-op, 10.11 the swap. The re-run examples also check the start's backstop,
   * [[Migrations.galleryIndexState]].
@@ -71,6 +75,18 @@ class VoteGalleryIndexSpec extends Specification with TestDb with BeforeAll with
 
   private def runV85(c: Connection): Seq[String] = MigrationScript.run(c, "V85__Vote_gallery_index_rate_desc.sql")
   private def runV99(c: Connection): Seq[String] = MigrationScript.run(c, "V99__Vote_gallery_index_voted_at.sql")
+  private def runV100(c: Connection): Seq[String] = MigrationScript.run(c, "V100__Vote_drop_single_column_indexes.sql")
+
+  /** Each index of a vote table with its first column: (index, column). */
+  private def leadingColumns(c: Connection, database: String): List[(String, String)] =
+    Using.resource(c.prepareStatement(
+      """SELECT INDEX_NAME, COLUMN_NAME FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'vote' AND SEQ_IN_INDEX = 1 ORDER BY INDEX_NAME""")) { st =>
+      st.setString(1, database)
+      Using.resource(st.executeQuery()) { rs =>
+        Iterator.continually(rs).takeWhile(_.next()).map(r => (r.getString(1), r.getString(2))).toList
+      }
+    }
 
   private def state: Migrations.GalleryIndexState =
     Migrations.galleryIndexState(url(scratch), "root", SharedTestDb.password)
@@ -318,6 +334,53 @@ class VoteGalleryIndexSpec extends Specification with TestDb with BeforeAll with
       }
       // a covering read ("Using index"), not "Using index condition" with row reads
       extra must beMatching("(?s).*Using index(;.*|$)")
+    }
+  }
+
+  "V100" should {
+
+    val singles = Set("vote_round_idx", "vote_jury_id_idx")
+    // the gallery index as V99 leaves it on this server
+    def galleryDone = if (SharedTestDb.descendingIndexKeys) newIndexV99 else oldIndexV99
+
+    "leave the migrated database without the single-column round and juror indexes, each column still leading one" in {
+      Using.resource(root("")) { c =>
+        val leading = leadingColumns(c, "wlxjury")
+        ((leading.map(_._1).toSet intersect singles) must beEmpty) and
+          (leading.collect { case (i, "round_id") => i } must not(beEmpty)) and
+          (leading.collect { case (i, "jury_id") => i } must not(beEmpty))
+      }
+    }
+
+    "drop both where they exist, keep the other indexes, and change nothing when run again" in {
+      // a vote table as production's has it before V100
+      scratchVote(galleryDone, "ADD INDEX vote_round_idx (round_id)", "ADD INDEX vote_jury_id_idx (jury_id)")
+      Using.resource(root(scratch)) { c =>
+        val before = leadingColumns(c, scratch)
+        val gallery = galleryIndexes(c, scratch)
+        val altersBefore = alters(c)
+        val warnings = runV100(c)
+        val altered = alters(c) - altersBefore
+        val after = leadingColumns(c, scratch)
+        val altersAgain = alters(c)
+        runV100(c)
+        ((before.map(_._1).toSet intersect singles) === singles) and (altered === 1L) and (warnings must beEmpty) and
+          (after === before.filterNot(i => singles(i._1))) and (galleryIndexes(c, scratch) === gallery) and
+          (after.collect { case (i, "round_id") => i } must not(beEmpty)) and
+          (after.collect { case (i, "jury_id") => i } must not(beEmpty)) and
+          (alters(c) - altersAgain === 0L) and (leadingColumns(c, scratch) === after)
+      }
+    }
+
+    "drop the one left where the other is already gone" in {
+      scratchVote(galleryDone, "ADD INDEX vote_jury_id_idx (jury_id)")
+      Using.resource(root(scratch)) { c =>
+        val altersBefore = alters(c)
+        runV100(c)
+        val leading = leadingColumns(c, scratch)
+        (alters(c) - altersBefore === 1L) and ((leading.map(_._1).toSet intersect singles) must beEmpty) and
+          (leading.collect { case (i, "jury_id") => i } must not(beEmpty))
+      }
     }
   }
 }

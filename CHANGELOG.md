@@ -89,6 +89,13 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   job is queued or running, and lists each one (id, kind, contest, status); `--allow-running-jobs`
   deploys anyway with a warning (the jobs resume after the restart). A `job` table it cannot read
   stops the deployment too. This replaces the manual check before each deploy.
+- **V100:** drops `vote`'s single-column `vote_round_idx` (round_id) and `vote_jury_id_idx` (jury_id), from V7:
+  each a prefix of a composite index, needed by no foreign key, named by no code. MariaDB 10.6 chose their
+  index-merge intersection for a juror's votes in a round instead of the gallery index; without them those
+  statements are 3–10x faster on production's copy (a large round's gallery page 107 → 28 ms, a large view
+  step 197 → 43 ms, a 2026 round's page 27 → 4 ms), none slower; a round's vote inserts and deletes 12–16%
+  faster, 152 MB freed. Metadata-only (`INPLACE`, `LOCK = NONE`, ~0.5 s), rerunnable. `vote_aside` and
+  `vote_orphan` keep theirs.
 - **V99:** `vote.voted_at` added as the juror gallery index's last column, the index keeping its name
   (`vote_jury_round_rate_mon_page_idx (jury_id, round_id, rate, monument_id, page_id, voted_at)` on 10.6;
   on MariaDB 10.8+ V85's `vote_jury_round_ratedesc_mon_page_idx` with `rate DESC`, V85's swap included), online
