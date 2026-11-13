@@ -15,8 +15,8 @@ developed (its first to last commit), or "released around" a git tag, with the r
 where a tag or `version :=` in `build.sbt` gives one. Earlier deploy dates may be added later.
 Plans that aren't built
 yet are in the [roadmap](docs/plans/2026-11-02-roadmap.md). PR numbers are the stacked series,
-#184–#249 (01–59 in `docs/plans/2026-11-03-pr-series.md` on `origin/stack/series-doc`, the
-later ones in the roadmap).
+from #184 on (01–59 in `docs/plans/2026-11-03-pr-series.md` on `origin/stack/series-doc`, the
+later ones in the roadmap and its deploy records).
 
 **Versioning:** from the next release on, versions are calendar-based, `YY.MM` (e.g. `26.11`),
 with `.N` for an extra deploy in the same month (`26.11.1`), and release headings will read
@@ -25,7 +25,85 @@ with `.N` for an extra deploy in the same month (`26.11.1`), and release heading
 
 ## Unreleased (developed, not yet deployed)
 
-The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 2026-11-11.
+The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Nothing yet: everything developed
+up to 2026-11-13 was deployed in `26.11.4`.
+
+## 26.11.4 (2026-11-13)
+
+Deployed 2026-11-13, build `26.11.4-0d23398ae816` (release commit `0d23398a` on `release/26.11.4`),
+schema V100 (migrations V99: `voted_at` in the vote gallery index, 12.4 s; V100: `vote`'s
+single-column indexes dropped, 20 ms; on production), from `26.11.3`. PRs #301-#306, and the
+release tool of #297 (in `26.11.3`'s commit, installed on the server just before this deploy).
+Deploy record: roadmap, "26.11.4 deploy record".
+
+**Features**
+
+- **One juror's vote in the large view:** in an organizer's read-only view of one juror's votes,
+  the side bar shows the juror's name, then the juror's vote in the gallery's vote colours with its
+  time (e.g. "Selected · Voted 12 Nov, 19:36", "Rejected", "Unrated"), where it showed only
+  "Voted …" and the vote itself was at the end of the often-collapsed file details, among every
+  juror's votes. A rated round keeps its read-only stars and the time, with the name added. The
+  juror's own voting view and the view of all the jurors are unchanged.
+
+**Fixes**
+
+- **Switching rounds in one juror's view:** the round menu kept the viewed juror in every round, so
+  an organizer viewing a juror's votes who switched to a round where that person is not a juror got
+  the error page "This user is not a juror of the round". The menu now keeps the juror
+  only in the rounds where they are a juror; for the other rounds it opens that round's view of all
+  the jurors, keeping the view, region and filter.
+- **Stored times shown shifted:** times the database stored were shown shifted when the app's and
+  the database's time zones differ, e.g. an invitation's or a shared link's expiry 2 h early. Fixed
+  for job times (the image check's summary date included), invitation, shared-link, password and
+  email link times, API tokens, the account change log, the conflicts of interest history, the
+  disqualification date and the "deleted on Commons" date (as `vote.voted_at` was in `26.11.3`).
+  What the times enforce (expiry, the job lease) was always right: it is compared in the database.
+- **By rate:** in the one-juror By rate view in a vote-time order, a vote's time appears or changes
+  at once, as on the gallery's tiles; it showed only after a reload.
+
+**Development**
+
+- **Deployment tool** (in the repository since `26.11.3`, installed on the server on 2026-11-13,
+  before this deploy; `26.11.3` was deployed with the old tool): `wlxjury-release deploy` refuses,
+  before anything changes, while a background job is queued or running, and lists each one (id,
+  kind, contest, status); `--allow-running-jobs` deploys anyway with a warning (the jobs resume
+  after the restart). A `job` table it cannot read stops the deployment too. This replaces the
+  manual check before each deploy.
+- **Stored times read as instants:** `db.scalikejdbc.DbTime` reads a database-written `TIMESTAMP` as
+  `UNIX_TIMESTAMP(col)` and builds the `Instant` from it, as `VoteJdbc` does for `voted_at`; nothing
+  written changes, and where the zones match the reads are as before. `DbTimeZoneSpec` writes in
+  one session zone and reads in another, both different from the JVM's. `RawSqlSpec` allows
+  `DbTime`'s checked column names.
+- **V100:** drops `vote`'s four single-column indexes from V7, named by no code: `vote_round_idx` (round_id)
+  and `vote_jury_id_idx` (jury_id), prefixes of composite indexes, whose index-merge intersection MariaDB 10.6
+  chose for a juror's votes in a round instead of the gallery index; `vote_rate_idx` (rate), used by no plan;
+  `vote_page_id_idx` (page_id), a prefix of `vote_page_jury_round_uidx`, which now serves the foreign key
+  `vote_page_id_fk` (cascade and refusal unchanged). On production's copy the intersection's statements are
+  3–10x faster (a large round's gallery page 107 → 28 ms, a large view step 197 → 43 ms, a 2026 round's page
+  27 → 4 ms), none slower; a round's vote inserts ~14% and deletes ~21% faster; ~335 MB freed. Metadata-only
+  (`INPLACE`, `LOCK = NONE`, 20 ms on production), rerunnable. `vote_aside` and `vote_orphan` keep theirs.
+- **V99:** `vote.voted_at` added as the juror gallery index's last column, the index keeping its name
+  (`vote_jury_round_rate_mon_page_idx (jury_id, round_id, rate, monument_id, page_id, voted_at)` on 10.6;
+  on MariaDB 10.8+ V85's `vote_jury_round_ratedesc_mon_page_idx` with `rate DESC`, V85's swap included), online
+  (`INPLACE`, `LOCK = NONE`, 12.4 s on production's 3.35M votes), rerunnable from every state it reads. The
+  vote-time orders read only the index: 2–4x faster on production's copy (worst page 1 82 → 26 ms, large view
+  step 243 → 80 ms), as fast as file order; vote writes cost the same. After the move to 10.11 it is V99's
+  script that runs again, not V85's (docs/deployment.md); the start warns also when a gallery index lacks
+  `voted_at` last (`Migrations.galleryIndexState`).
+- **Guides' screenshots and the Gatling fixture:** the guides' 28 screenshots regenerated from a
+  clean fixture (vote times, the results bar, the one-juror block in the large view, the invitation
+  mail choice, expiry times read right); the organizer guide says how the results bar looks below
+  about 1700 px. The fixture's "Binary Round" is "Yes/No Round" (`fixture-v8`), and the restore from
+  the cached dump finds the rounds by exact name and restores jurors in creation order, like a cold
+  build.
+
+## 26.11.3 (2026-11-12)
+
+Deployed 2026-11-12 (evening), build `26.11.3-564e74e1a1d3` (release commit `564e74e1` on
+`release/26.11.3`), schema V98 (migrations V97: `vote.voted_at`, 44 ms; V98: `users.password`
+nullable, 2 ms, already fixed by hand that afternoon; on production), from `26.11.2`. PRs #296-#300,
+except the release tool's job check (#297): it was installed on the server on 2026-11-13 (see
+`26.11.4`). Deploy record: roadmap, "26.11.3 deploy record".
 
 **Features**
 
@@ -49,7 +127,9 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   order the tiles and the by-rate list show each vote's time, and the large view of one juror's
   votes shows it in every order ("Voted 12 Nov, 14:05", formatted in the browser in the viewer's
   time zone and the page's language, `vote-time.js`; "Time not recorded" for a vote without one);
-  never in the views of all the jurors. Juror and organizer guides updated.
+  never in the views of all the jurors. Juror and organizer guides updated. On production, votes
+  cast from 2026-10-28 to 2026-11-12 got their times from the access logs after the deploy, where the
+  logs allow (the backfill under Development).
 - **One juror's votes on the tiles:** an organizer viewing one juror's gallery sees that juror's
   vote on each tile, read-only: a yes/no round's frame and thumb (selected or rejected), a rated
   round's stars or ✗. Before, only the juror's own tiles showed their votes, so an organizer's
@@ -85,30 +165,29 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
 
 **Development**
 
-- **Deployment tool:** `wlxjury-release deploy` refuses, before anything changes, while a background
-  job is queued or running, and lists each one (id, kind, contest, status); `--allow-running-jobs`
-  deploys anyway with a warning (the jobs resume after the restart). A `job` table it cannot read
-  stops the deployment too. This replaces the manual check before each deploy.
-- **V99:** `vote.voted_at` added as the juror gallery index's last column, the index keeping its name
-  (`vote_jury_round_rate_mon_page_idx (jury_id, round_id, rate, monument_id, page_id, voted_at)` on 10.6;
-  on MariaDB 10.8+ V85's `vote_jury_round_ratedesc_mon_page_idx` with `rate DESC`, V85's swap included), online
-  (`INPLACE`, `LOCK = NONE`, ~12.6 s on production's 3.35M votes), rerunnable from every state it reads. The
-  vote-time orders read only the index: 2–4x faster on production's copy (worst page 1 82 → 26 ms, large view
-  step 243 → 80 ms), as fast as file order; vote writes cost the same. After the move to 10.11 it is V99's
-  script that runs again, not V85's (docs/deployment.md); the start warns also when a gallery index lacks
-  `voted_at` last (`Migrations.galleryIndexState`).
 - **V98:** `users.password` nullable (`VARCHAR(255) NULL DEFAULT NULL`, `ALGORITHM = INPLACE, LOCK = NONE`),
   only where it is still `NOT NULL` (production's, applied there by hand on 2026-11-12); a no-op on fresh databases.
   `scripts/schema_parity.py` compares a database's columns with a freshly migrated one's and flags a column `NOT
   NULL` only in the target, for the release rehearsal on the production copy (Release checklist).
 - **V97:** `vote.voted_at` and `vote_aside.voted_at`, `TIMESTAMP(3) NULL DEFAULT NULL` (no implicit
   default or ON UPDATE under any `explicit_defaults_for_timestamp`), added `ALGORITHM = INSTANT`;
-  no index (the orders sort by expressions; V99 adds it to the gallery index). Existing rows stay NULL (a log backfill may fill them later). Set by `VoteJdbc.rateIn` and
+  no index (the orders sort by expressions; V99 adds it to the gallery index). Existing rows stay NULL
+  (the one-off backfill below filled production's recent ones). Set by `VoteJdbc.rateIn` and
   `CriteriaRate.updateRateIn` (`VoteSql.votedAt`), and by `VoteJdbc.create` / `batchInsert` for a
   rated row; moved with the vote between `vote` and `vote_aside`. Read as
   `UNIX_TIMESTAMP(voted_at)` (`VoteJdbc.votedAtEpoch`), and a given time written by
   `FROM_UNIXTIME`, so the instant is right whatever the JVM's and the database session's time
-  zones (a JDBC timestamp read showed every time 2 h early with a UTC session and a Kyiv JVM).
+  zones (a JDBC timestamp read showed every time 2 h early with a UTC session and a Kyiv JVM;
+  found and fixed before the deploy).
+- **Vote times from the access logs (one-off):** `scripts/backfill/voted_at_from_logs.py` (Python
+  3.8, standard library only; 48 unit tests, run on CI) fills `vote.voted_at` for votes cast before
+  V97 from Apache access-log extracts (`docs/deployment.md`, "One-off: vote times from the access
+  logs (after V97)"). Per round, file and juror, from the requests it can attribute with certainty,
+  it takes the time the current value was first chosen in its last run of same-value requests (the
+  app's rule), and writes it only where the vote still has that rate and no time, so a rerun or a
+  vote changed since is never overwritten; an undo file is written alongside. Run on production
+  after the deploy: 37,894 votes got their time (extracts from 2026-10-28 23:13 to 2026-11-12 17:12
+  UTC; the dry run matched 37,894 and `--check` found every one with the time from the logs).
 
 ## 26.11.2 (2026-11-12)
 
