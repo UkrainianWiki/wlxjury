@@ -359,9 +359,10 @@ object RoundImageJdbc {
 
   /** The round's disqualified files, by page id. */
   def disqualified(roundId: Long)(implicit session: DBSession = AutoSession): Seq[DqRow] =
-    sql"""SELECT page_id, dq_code, dq_detail, dq_by, dq_at FROM round_image
+    sql"""SELECT page_id, dq_code, dq_detail, dq_by, UNIX_TIMESTAMP(dq_at) FROM round_image
           WHERE round_id = $roundId AND status = ${Status.Dq} ORDER BY page_id"""
-      .map(rs => DqRow(rs.long(1), rs.stringOpt(2), rs.stringOpt(3), rs.longOpt(4), rs.zonedDateTimeOpt(5)))
+      .map(rs => DqRow(rs.long(1), rs.stringOpt(2), rs.stringOpt(3), rs.longOpt(4),
+        DbTime.instantOpt(rs, 5).map(DbTime.local))) // whatever the zones (DbTime)
       .list()
 
   private def row(rs: WrappedResultSet): Row =
