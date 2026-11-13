@@ -418,7 +418,10 @@ deadlocks over three 90 s runs).
 migration is not a transaction, can't be rolled back, and a failure leaves it part-applied
 (Flyway marks it failed; `wlxjury-release restore` is the way back). Hence §8.2–§8.3: a change
 that must be all-or-nothing is one `ALTER` (V87 drops and re-adds `account_token`'s check in
-one statement), and every step is safe to run again.
+one statement), and every other step is safe to run again. Such an `ALTER` either fails whole,
+so a rerun starts from the state before it, or commits: it can't run twice (V87's `DROP
+CONSTRAINT` names the old check, gone after the first run), so it is the migration's last
+statement, or the steps after it are rerunnable.
 
 **8.1 Names and order.** `V<n>__<description>.sql` only (Flyway silently skips what it can't
 parse: V45a–V45g never ran). No `B` (baseline) files: from Flyway 9.21 the newest `B` builds

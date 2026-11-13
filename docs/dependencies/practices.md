@@ -149,7 +149,11 @@ action: it uses `actions/checkout` as above and the `gh` preinstalled on the run
 `koalaman/shellcheck:v0.11.0` (and `rhysd/actionlint:1.7.7` when run by hand); Testcontainers' image through
 `SharedTestDb.Image`; runners `ubuntu-24.04`, not `ubuntu-latest` (Testcontainers' Docker API
 compatibility depends on the engine version, so a runner move is deliberate). Never `latest` or
-`stable`. *Why:* a moving tag changes the test server under an unchanged commit.
+`stable`. *Why:* a moving tag changes the test server under an unchanged commit. An exact tag
+is not immutable either (§2.2: a tag can be moved; the official images are rebuilt under the same
+tag for OS fixes), so it pins the version, not the bytes. That residual risk is accepted for test
+and CI images: the server and runtime versions are what the tests depend on, and a digest would
+need a bump for every rebuild.
 
 **2.4 Bases pinned too.** The bench server and `Dockerfile.test` name their Ubuntu release and
 production's MariaDB build (performance §2.6).

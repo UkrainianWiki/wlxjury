@@ -207,13 +207,23 @@ object VoteJdbc extends CRUDMapper[Vote] {
     * of its criteria locks the round's votes first, [[RoundCriterion.update]], so a vote waiting
     * for it reads the committed criteria); then the rate. A juror's vote never locks the round:
     * it is row-level, not a structural write ([[RoundWrites]]).
+    *
+    * A vote row replaced while the juror waited for its lock (a restore moves a rated vote back
+    * over the juror's unrated new one, [[ImageJdbc]]'s `moveVotesBack`: deleted, and the
+    * restored row inserted with its own id) is found again by a second plain read, which at
+    * READ COMMITTED sees the restore's commit, and that row is rated: by its id, as before.
     */
   def rate(pageId: Long, juryId: Long, roundId: Long, rate: Int = 1)(implicit session: DBSession = AutoSession): Int = {
+    // the id read on the transaction's own connection, before the locks (a plain read)
+    def rateFound(s: DBSession): Int =
+      voteId(pageId, juryId, roundId)(s).fold(0) { id =>
+        rateIn(id, juryId, roundId, rate)(s).getOrElse {
+          voteId(pageId, juryId, roundId)(s).filter(_ != id).flatMap(rateIn(_, juryId, roundId, rate)(s)).getOrElse(0)
+        }
+      }
     session match {
-      case _: AutoSession =>
-        // the id read on the transaction's own connection, before the locks (a plain read)
-        WriteTx.write(tx => voteId(pageId, juryId, roundId)(tx).fold(0)(id => rateIn(id, juryId, roundId, rate)(tx)))
-      case s => voteId(pageId, juryId, roundId)(s).fold(0)(id => rateIn(id, juryId, roundId, rate)(s)) // the caller's transaction
+      case _: AutoSession => WriteTx.write(tx => rateFound(tx))
+      case s              => rateFound(s) // the caller's transaction
     }
   }
 
@@ -229,8 +239,12 @@ object VoteJdbc extends CRUDMapper[Vote] {
     * A ✗ (-1) is checked against the round's worst mark by the caller (`Round.acceptsRate`, on the
     * round read before), not here: a vote doesn't lock the round row, so a ✗ racing the option's
     * turn-off is taken, as a ✗ given just before it is (both stay, counted as 0; round images §18).
+    *
+    * @return the number of votes rated (0 or 1), or None if the row `id` is gone
     */
-  private[scalikejdbc] def rateIn(id: Long, juryId: Long, roundId: Long, rate: Int)(implicit session: DBSession): Int = {
+  private[scalikejdbc] def rateIn(id: Long, juryId: Long, roundId: Long, rate: Int)(implicit
+      session: DBSession
+  ): Option[Int] = {
     // the vote's file and its rate before, read as it is locked
     val locked = sql"SELECT page_id, rate FROM vote WHERE id = $id AND jury_id = $juryId AND round_id = $roundId FOR UPDATE"
       .map(rs => rs.long(1) -> rs.int(2)).single()
@@ -238,8 +252,8 @@ object VoteJdbc extends CRUDMapper[Vote] {
                         LOCK IN SHARE MODE""".map(_ => ()).single().isDefined
     def criteria = sql"SELECT 1 FROM round_criterion WHERE round_id = $roundId LIMIT 1 LOCK IN SHARE MODE"
       .map(_ => ()).single().isDefined
-    locked match {
-      case Some((pageId, before)) if !stopped && !criteria =>
+    locked.map {
+      case (pageId, before) if !stopped && !criteria =>
         val updated = sql"UPDATE vote SET rate = $rate, voted_at = ${VoteSql.votedAt(before, rate)} WHERE id = $id".update()
         if (rate != before) RoundCounts.markFile(roundId, pageId)
         updated

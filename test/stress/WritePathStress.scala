@@ -43,7 +43,8 @@ import scala.util.control.NonFatal
   * Variants (`stress.variants`, comma separated, each on a freshly seeded database in one JVM):
   * `baseline` (the code as it is, at READ COMMITTED as the app's pools), `rr` (the server's old
   * default REPEATABLE READ), `retry` (every harness operation retried 3 times on a deadlock);
-  * `+` combines them, `#n` repeats one (`baseline#2`).
+  * `+` combines them, `#n` names a repeat (`baseline,baseline#2` runs baseline twice, each with
+  * its own logs; `rr#2` runs as `rr`).
   *
   * Production-like settings: `-Dstress.chunkRows=15000` (the job's default), `-Dstress.importPage=500`
   * (an import page's stored files), `-Dstress.importChanged=15` (the changed ones among them).
@@ -395,7 +396,8 @@ object WritePathStress {
   private final case class Outcome(variant: String, json: JsObject, text: String)
 
   private def runVariant(variant: String): Outcome = {
-    val parts = variant.split("\\+").toSet
+    // the settings without a repeat's `#n` (rr#2 is rr)
+    val parts = variant.replaceFirst("#\\d+$", "").split("\\+").toSet
     // the app's pools run at READ COMMITTED (W1); `rr` runs the old default
     val rc = !parts.contains("rr")
     val retryAll = parts.contains("retry")

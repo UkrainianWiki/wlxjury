@@ -43,6 +43,8 @@ jobs:
           && '["mariadb:10.6.22", "mariadb:10.11.14"]' || '["mariadb:10.6.22"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # The check script's own tests (timeout, process tree, lock, keep-awake): its Windows-only
       # parts are mocked or skipped here, the POSIX signal path runs. Standard library only.
@@ -54,6 +56,11 @@ jobs:
       - name: schema parity tests
         working-directory: scripts
         run: python3 -B -m unittest -v test_schema_parity
+
+      # The browser statistics script's window and output (synthetic log lines). Standard library only.
+      - name: browser-stats tests
+        working-directory: scripts
+        run: python3 -B -m unittest -v test_browser_stats
 
       # The one-off vote time backfill (synthetic log lines only). Standard library only.
       - name: voted_at backfill tests

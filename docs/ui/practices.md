@@ -60,8 +60,8 @@ a form marked `data-submit-once` is sent once (`submit-once.js`) (secure-coding 
 ## 3. Theme modes and the design system
 
 **3.1 Three modes.** `light`, `dark`, `auto` from the `theme` cookie (and `users.theme`, V71,
-copied to the cookie at sign-in); `Theme.parse` accepts exactly those, anything else is `auto`, and
-only the fixed strings reach the page. `layout.scala.html` renders
+copied to the cookie at sign-in); `Theme.parse` accepts exactly those, and no cookie or anything
+else is `Theme.Default`, `dark`; only the fixed strings reach the page. `layout.scala.html` renders
 `<html data-bs-theme=… data-theme-pref=…>`; for `auto` the hashed inline script resolves
 `prefers-color-scheme` before the first paint. The switch in the user menu is a CSRF POST to
 `/theme`; the login page's switch only sets the cookie. *Why:* no flash of the wrong mode, and a
@@ -148,7 +148,8 @@ fixtures (`npm --prefix javascript-test run lint:selftest`), and reports a needl
 client and browser pairs) about a fifth used old browsers: Firefox 115 ESR, Chrome 109 (the last
 for Windows 7/8) and old Opera releases. Rerun the count each contest season and raise the floor as
 they drop out: `ssh <server> 'python3 -' < scripts/browser-stats.py` (read-only; prints counts only,
-no addresses or user agents).
+no addresses or user agents; the last 14 days, `'python3 - 30'` for another window, every major
+version seen, and a warning when the logs don't reach back that far).
 
 **6.2 Mobile: not supported yet.** Pages render on phones but are not designed or tested for
 them. Mobile support is queued in the roadmap ("Mobile support (not supported yet)"), and the
