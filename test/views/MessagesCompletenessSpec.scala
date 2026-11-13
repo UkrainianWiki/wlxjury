@@ -113,7 +113,8 @@ class MessagesCompletenessSpec extends Specification {
     Seq("missing", "not.failed", "no.handler", "duplicate").map("job.retry." + _), // JobScheduler.retry
     Criterion.ShippedKeys,                                                 // V83's criteria, Criterion.name
     Seq("full", "exists").map("criteria.catalogue." + _),                  // CriterionJdbc.AddRefusal
-    Plural.Forms.map("comments.count." + _)                                // CommentCount.label, by plural form
+    Plural.Forms.map("comments.count." + _),                               // CommentCount.label, by plural form
+    Seq("authors.count.", "authors.files.count.").flatMap(k => Plural.Forms.map(k + _)) // authors.scala.html
   ).flatten
 
   /** Texts in a key's place that are shown as they are, not keys, each with its reason. */

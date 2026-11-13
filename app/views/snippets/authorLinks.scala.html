@@ -1,0 +1,9 @@
+@(stored: String, contestId: Long)(implicit messages: Messages)
+@* A file's author, only where the viewer may see authors (User.canViewAuthors: the caller
+   checks): the account as plain text (StoredAuthors.shown), linking the contest files page
+   narrowed to the author's files (by the value as stored, compared byte for byte), and their
+   user page on Commons in a new tab. Nothing for an empty author. *@
+@for(name <- services.imports.StoredAuthors.shown(Some(stored))) {
+<span class="author-links"><a class="author-files" href="@routes.GalleryController.contestFiles(contestId, author = Some(stored))" title="@Messages("author.files.title", name)">@name</a>
+<a class="author-commons small text-nowrap ms-1" href="@views.WikiLinks.commonsUserUrl(name)" target="_blank" rel="noopener" title="@Messages("author.commons.title", name)">@Messages("author.commons")</a></span>
+}

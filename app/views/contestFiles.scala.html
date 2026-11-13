@@ -21,6 +21,11 @@
                 <a id="import-files" class="btn btn-outline-secondary btn-sm ms-2"
                    href="@routes.ImageController.images(view.contest.getId)">@Messages("files.import.cache")</a>
             }
+            @* the contest's authors with their files, for those who may see authors *@
+            @if(user.canViewAuthors(view.contest.getId)) {
+                <a id="authors-link" class="btn btn-outline-secondary btn-sm ms-2"
+                   href="@routes.AuthorsController.list(view.contest.getId)">@Messages("authors.list")</a>
+            }
         </h1>
 
         @view.round match {
@@ -45,6 +50,32 @@
                     </li>
                 </ul>
             }
+        }
+
+        @* the author the list is narrowed to (only for those who may see authors: the view has
+           none for others), as a chip that removes the filter, with its files' count *@
+        @for(author <- view.author.filter(_ => user.canViewAuthors(view.contest.getId))) {
+            <div id="author-filter" class="mb-2">
+                <span class="badge rounded-pill text-bg-secondary fs-6 fw-normal author-chip">
+                    @Messages("author.filter.chip", services.imports.StoredAuthors.shown(Some(author)).getOrElse(author), pager.count)
+                    <a id="author-filter-remove" class="link-light text-decoration-none ms-1" href="@view.withoutAuthorUrl"
+                       title="@Messages("author.filter.remove")" aria-label="@Messages("author.filter.remove")">&times;</a>
+                </span>
+                @for(name <- services.imports.StoredAuthors.shown(Some(author))) {
+                    <a class="author-commons small ms-2" href="@views.WikiLinks.commonsUserUrl(name)" target="_blank" rel="noopener"
+                       title="@Messages("author.commons.title", name)">@Messages("author.commons")</a>
+                }
+            </div>
+        }
+
+        @* the people whose files are the conflicts of interest, each linking their files and
+           their Commons user page *@
+        @if(view.coi && view.coiPeople.nonEmpty && user.canViewAuthors(view.contest.getId)) {
+            <ul id="coi-people" class="list-unstyled mb-2">
+            @for((member, files) <- view.coiPeople) {
+                <li>@snippets.authorLinks(member.account, view.contest.getId) — @member.role (@files)</li>
+            }
+            </ul>
         }
     </div>
 

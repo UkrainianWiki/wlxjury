@@ -112,7 +112,7 @@
 
                 @if(wrapInTable) {
                     @if(showAuthor) {
-                        <td> @services.imports.StoredAuthors.shown(file.image.author).getOrElse("") </td>
+                        <td class="file-author">@for(author <- file.image.author) {@snippets.authorLinks(author, list.round.contestId)}</td>
                     }
                 }
 

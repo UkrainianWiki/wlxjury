@@ -118,6 +118,17 @@ case class User(
   def canViewContestFiles(refContestId: Long): Boolean =
     hasContestRole(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(refContestId))
 
+  /** Whether the user may see the authors of the contest's files: their names and links, the
+    * contest files page's author filter ([[controllers.GalleryController.contestFiles]]'s
+    * `author`) and the authors list ([[controllers.AuthorsController]]). Its admins and
+    * organizers, and root; never its jurors, from whom the files' authors are hidden. The check
+    * of every author surface outside a round's pages, so a page jurors may open shows them
+    * none; a round's large view, its JSON and file list check [[canViewOrgInfo]], the same
+    * people for a round of the contest.
+    */
+  def canViewAuthors(refContestId: Long): Boolean =
+    hasContestRole(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(refContestId))
+
   /** Whether the user may open a round's conflicts of interest page
     * ([[controllers.RoundConflictsController.page]]): the contest's admins and organizers (only
     * its admins disqualify or requalify). The round's statistics page links it for them.
