@@ -22,6 +22,11 @@ access.denied.inactive=Вашу участь у цьому конкурсі де
 access.denied.round.stopped=Цей раунд зупинено: коментарі до його файлів більше не додаються. Ваш коментар не збережено.
 access.denied.back.to.file=Назад до файлу
 access.denied.contact=Якщо вам потрібен доступ, зверніться до адміністратора вашого конкурсу.
+access.denied.other.contest=Запитана сторінка належить конкурсу, у якому цей обліковий запис не має ролі.
+access.denied.account.roles=Ролі цього облікового запису:
+access.denied.role.in={0} у «{1}»
+access.denied.no.roles=Цей обліковий запис не має ролі в жодному конкурсі.
+access.denied.contact.other=Якщо вам потрібна ця сторінка, попросіть адміністратора того конкурсу додати до нього цей обліковий запис.
 access.denied.reference=Код: {0}, {1}
 password=Пароль
 

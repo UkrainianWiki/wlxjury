@@ -1,12 +1,11 @@
 @import db.scalikejdbc.User
-@import controllers.Secured.{AccessSuggestion, Denial}
-@import org.intracer.wmua.ContestJury
+@import controllers.Secured.{AccessSuggestion, Denial, DeniedRoles}
 @(
     user: User,
     suggestion: Option[AccessSuggestion],
     returnTo: Option[String],
     denial: Denial,
-    currentContest: Option[ContestJury],
+    deniedRoles: DeniedRoles,
     reference: String,
     time: String,
     notice: Option[String] = None,
@@ -51,17 +50,44 @@
     <div class="alert alert-danger" role="alert">
         <h1 class="h4">@Messages("access.denied.title")</h1>
         <p>@Messages("access.denied.account", user.emailLo)</p>
-        <p>@Messages("access.denied.explanation")</p>
-        @if(requiredRoles.nonEmpty) {
-            <p>@Messages("access.denied.required", roleNames(requiredRoles))</p>
+        @* a page of a contest the account has no role in: that first, not what the page is for
+           there (beside the account's role in its own contest, it read as a contradiction); that
+           contest unnamed, the account's own ones with its role in each, whom to ask *@
+        @deniedRoles match {
+            case DeniedRoles.OutsideContests(contests, inactive) => {
+                <p>@Messages("access.denied.other.contest")</p>
+                @if(inactive) {
+                    <p>@Messages("access.denied.inactive")</p>
+                }
+                @if(contests.nonEmpty) {
+                    <p class="mb-1">@Messages("access.denied.account.roles")</p>
+                    <ul>
+                        @for(c <- contests) {
+                            <li>@Messages("access.denied.role.in", roleNames(c.roles), c.contest.fullName)</li>
+                        }
+                    </ul>
+                } else {
+                    <p>@Messages("access.denied.no.roles")</p>
+                }
+                <p>@Messages("access.denied.contact.other")</p>
+            }
+            case _ => {
+                <p>@Messages("access.denied.explanation")</p>
+                @if(requiredRoles.nonEmpty) {
+                    <p>@Messages("access.denied.required", roleNames(requiredRoles))</p>
+                }
+                @deniedRoles match {
+                    case DeniedRoles.In(contest, roles) if roles.nonEmpty => {
+                        <p>@Messages("access.denied.current.role", contest.fullName, roleNames(roles))</p>
+                    }
+                    case _ => {}
+                }
+                @if(denial.reason.contains("membership_inactive")) {
+                    <p>@Messages("access.denied.inactive")</p>
+                }
+                <p>@Messages("access.denied.contact")</p>
+            }
         }
-        @for(contest <- currentContest.filter(_ => (user.contestRoles - User.NO_ROLE).nonEmpty)) {
-            <p>@Messages("access.denied.current.role", contest.fullName, roleNames(user.contestRoles - User.NO_ROLE))</p>
-        }
-        @if(denial.reason.contains("membership_inactive")) {
-            <p>@Messages("access.denied.inactive")</p>
-        }
-        <p>@Messages("access.denied.contact")</p>
         <p>
             @for(destination <- suggestion) {
                 <a class="btn btn-primary" href="@destination.url">@Messages(destination.labelKey)</a>

@@ -135,22 +135,40 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
 
     "say what the page needs, the user's role here, whom to ask and the reference" in {
       testDbApp { implicit app =>
-        createContests(2025, 603)
+        createContests(2025)
         val juror = User.create(User("Juror", "juror@server.com", None, Set("jury"), Some("hash"), Some(2025L)))
         val (status, html) = page(Secured.inCurrentContest(juror, None),
-          Secured.Denial.contest(Some(603L), User.ADMIN_ROLES))
+          Secured.Denial.contest(Some(2025L), User.ADMIN_ROLES))
 
         status === Helpers.FORBIDDEN
         html must contain("This page is for: Admin, Root.")
         html must contain("Your role in contest2025 4025 in country2025: Juror.")
         html must contain("If you need access, ask your contest admin.")
         html must beMatching("""(?s).*Reference: [0-9a-f]{8}, \d{4}-\d\d-\d\d \d\d:\d\d UTC.*""")
-        // contest 603 is not the user's: not named
-        html must not(contain("contest603"))
         html must not(contain("has been deactivated"))
+        html must not(contain("belongs to a contest in which this account has no role"))
         // nothing to suggest: signing out is all there is
         html must not(contain("btn-primary"))
         html must contain("Sign out and sign in with another account")
+      }
+    }
+
+    "say a page of another contest is one the account has no role in, without naming it" in {
+      testDbApp { implicit app =>
+        createContests(2025, 603)
+        val juror = User.create(User("Juror", "juror@server.com", None, Set("jury"), Some("hash"), Some(2025L)))
+        val (status, html) = page(Secured.inCurrentContest(juror, None),
+          Secured.Denial.contest(Some(603L), User.ADMIN_ROLES))
+
+        status === Helpers.FORBIDDEN
+        html must contain("The requested page belongs to a contest in which this account has no role.")
+        html must contain("<li>Juror in “contest2025 4025 in country2025”</li>")
+        html must contain("If you need this page, ask an admin of that contest to add this account to it.")
+        html must beMatching("""(?s).*Reference: [0-9a-f]{8}, \d{4}-\d\d-\d\d \d\d:\d\d UTC.*""")
+        // contest 603 is not the user's: not named; nor what the page needs there
+        html must not(contain("contest603"))
+        html must not(contain("This page is for"))
+        html must not(contain("has been deactivated"))
       }
     }
 
