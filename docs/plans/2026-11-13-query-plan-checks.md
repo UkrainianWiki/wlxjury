@@ -207,6 +207,16 @@ took 59–70 s: container start 10–11 s, migrations 9–13 s, seed 21–30 s (
 build 8–11 s), scenarios ~2 s, EXPLAINs < 0.5 s, canary ~6 s, distribution ~1.4 s. The first
 measurement run's container start was 17–29 s (image layers cold).
 
+**After merging stack/128** (the comments toggle and badges, added to the scenarios): 2 fresh
+runs pass with 101 shapes (64 vote plans), 17 plans with the intersection in the canary, 20
+with real statistics; one run's container was slow (migrations 34 s, inserts 43 s), the other's
+as above (seed 19.6 s). With V100's indexes in the schema, R1 fails on the same 17 shapes (13 ×
+`list`, 2 × `countBefore`, 2 × `regionRateCounts`) and R3 on the 3 canary groups, whose only
+constant-bound access is then the intersection. The full suite after the merge: 2453 tests, 2442
+passed, 9 skipped, 1 pending, 2 failed. The 2 failures are FlywayUpgradeSpec's, from stack/128
+itself (they fail the same way on its own tip, 5746ec74): V101 leaves `FK_comment_contest` beside
+`comment_contest_room_idx` on the upgraded database, not on a fresh one.
+
 **What the measurements changed in the design:**
 - **`n_leaf_pages = 1`** (§3.4's anomaly) is 10.6's full-scan path: once `STATS_SAMPLE_PAGES`
   covers the index (65535 here), `ANALYZE` leaves `n_leaf_pages` at 1 for every index, PRIMARY
