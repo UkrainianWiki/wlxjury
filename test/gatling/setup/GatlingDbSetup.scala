@@ -173,7 +173,7 @@ object GatlingDbSetup {
                                   contestId = Some(contestId))
     val organizer   = (orgUser.id.get, orgEmail, orgPassword)
 
-    val binaryRound = Round.create(Round(id = None, number = 1, name = Some("Binary Round"),
+    val binaryRound = Round.create(Round(id = None, number = 1, name = Some("Yes/No Round"),
                                          contestId = contestId, rates = Round.binaryRound, active = true))
     val ratingRound = Round.create(Round(id = None, number = 2, name = Some("Rating Round"),
                                          contestId = contestId,

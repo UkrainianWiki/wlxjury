@@ -266,8 +266,19 @@ test.describe('the guides\' screenshots', () => {
       await page.locator('#fullname').fill('Sample Invitee');
       await page.locator('#email').fill('invitee@example.org');
       await page.locator('#roles').selectOption({ label: 'Juror' });
+      // mailing is a choice, unticked by default: tick it, so that the invitations list has the
+      // invitation (the fixture's mailer only logs it)
+      await page.locator('#add-user-send-invitation').check();
       await page.locator('#add-user-button').click();
       await page.waitForLoadState('networkidle');
+    }
+    // an earlier run that added the address without an invitation: send it from the member's row
+    if (await page.locator('table.pending-invitations tr', { hasText: 'invitee@example.org' }).count() === 0) {
+      await page.getByRole('row', { name: /invitee@example\.org/ }).first()
+        .getByRole('button', { name: 'Send the invitation again' }).click();
+      await page.waitForLoadState('networkidle');
+      await page.goto(`/admin/users?contestId=${contest}`);
+      await expect(page.locator('table.pending-invitations tr', { hasText: 'invitee@example.org' })).toHaveCount(1);
     }
     // the top of the table (the fixture has 30 members)
     await top(page, path.join(OUT_DIR, 'admin-users.png'), await belowTableRow(page, 4));

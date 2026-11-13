@@ -100,7 +100,9 @@ Under the table:
 The bar at the top of a round's results has the menus that show other views of the same
 round: the round, the juror (a single juror's votes, or **All**), a vote filter and four views:
 the **Gallery**, **By rate**, **File list** and **CSV**. The views of **All** jurors take no
-votes.
+votes. On screens narrower than about 1700 pixels, this bar shows **Contest files** and
+**Statistics** as icons (photos and a bar chart), a single juror's order menu as a sort icon, and
+the region menu without the word "Region"; point at an icon to see its name.
 
 You can see a juror's votes only for a juror of that round. Choosing another person's page
 shows the tool's "not found" page.

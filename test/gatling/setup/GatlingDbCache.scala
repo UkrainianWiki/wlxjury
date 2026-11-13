@@ -28,8 +28,9 @@ object GatlingDbCache {
     * v5: the dump's rows are INSERT IGNORE, so rows a migration seeds itself (V80's
     *     session_upgrade_window) don't clash on restore after the migrations ran.
     * v6: round_image (V84) rows, written by VoteJdbc.batchInsert with the votes.
-    * v7: round_image's counts (V89) recounted after the load (RoundCountsRecompute), the rounds clean. */
-  val FixtureVersion = "fixture-v7"
+    * v7: round_image's counts (V89) recounted after the load (RoundCountsRecompute), the rounds clean.
+    * v8: the binary round is named "Yes/No Round", as the UI calls the kind (was "Binary Round"). */
+  val FixtureVersion = "fixture-v8"
 
   // ── Cache key ──────────────────────────────────────────────────────────────
 
