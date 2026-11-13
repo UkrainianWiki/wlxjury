@@ -93,6 +93,8 @@ sbt "testOnly db.scalikejdbc.*"                       # Run all DB tests
 
 Tests use Testcontainers (Docker) to spin up a MariaDB 10.6 instance automatically (`SharedTestDb.Image`; `-Dwlxjury.test.mariadb-image=mariadb:10.11.14` runs them, and the Gatling fixture, on another server version). No manual DB setup needed for tests. Test configuration is at `test/resources/application.conf`.
 
+`QueryPlanSpec` (`test/plans/`, `docs/plans/2026-11-13-query-plan-checks.md`) checks the juror statements' query plans on a seeded corner with production-scaled statistics: `sbt "testOnly plans.QueryPlanSpec"`, ~1 min, in a forked JVM and MariaDB container of its own (`Test / testGrouping`). Outside that group, or on 10.11, it skips and says why; `testOnly db.*` doesn't include it. Its report: `target/query-plans/summary.md`.
+
 **Tests are anonymous to Wikimedia; live, high-load tests are opt-in.**
 - **No account in tests:** the test config sets `commons.user` and `commons.password` to `""`, with no `${?COMMONS_USER}` substitution.
   - `CommonsLogin.credentials` gives no account in Mode.Test unless `commons.allowTestLogin` is true. No spec or CI job sets it.
