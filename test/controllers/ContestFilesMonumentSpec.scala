@@ -201,6 +201,65 @@ class ContestFilesMonumentSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "count their regions from the category's cached counts, as a full count would, and page a region" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val before = RegionCountCache.loads.get
+        val (_, page) = get(f.base, f.juror)
+        val (counts, _) = regionCounts(page, f.juror)
+        RegionCountCache.loads.get === before + 1 // the cache, read once, not a full count per menu
+        val categoryId = f.contest.categoryId.orElse(ContestJuryJdbc.findById(f.contest.getId).flatMap(_.categoryId)).get
+        counts === ImageJdbc.regionCounts(ImageJdbc.FileList.Category(categoryId, deletedOnly = false,
+          excluded = ImageJdbc.categoryDeletedIds(categoryId)))
+        counts === Map("07" -> 4, "14" -> 1)
+        val (_, region) = get(s"${f.base}?region=07", f.juror)
+        tiles(region) === List(1L, 3L, 4L, 5L)
+      }
+    }
+
+    "count their regions the same with the cache switched off" in {
+      implicit val cfg: Map[String, String] = Map("regions.countCache" -> "false")
+      testDbApp { implicit app =>
+        SharedTestDb.truncateAll() // a per-test app doesn't
+        val f = fixture()
+        regionCounts(get(f.base, f.juror)._2, f.juror)._1 === Map("07" -> 4, "14" -> 1)
+      }
+    }
+
+    "refuse an inactive membership of the contest, no role or one without access, on the page, its menus and large view" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        // a former juror ("no": the edit form's no role), and a board member (a role without access)
+        val former = stranger()
+        UserContestJdbc.createMembership(former.getId, f.contest.getId, User.NO_ROLE)
+        val board = userDao.create(User("board", "board@example.com", None, Set("jury"),
+          contestId = createContests(40).head.id))
+        UserContestJdbc.createMembership(board.getId, f.contest.getId, User.BOARD_ROLE)
+        Seq(former, board).flatMap { u =>
+          Seq(status(route(app, request(f.base, u)).get), status(route(app, request(s"${f.base}/1", u)).get),
+            status(script(s"${f.base}/regions", u)))
+        } === Seq.fill(6)(FORBIDDEN)
+      }
+    }
+
+    "let a juror of several contests open another of theirs, switching the session's contest to it" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val both = stranger() // a juror of contest 30, the session's
+        UserContestJdbc.createMembership(both.getId, f.contest.getId, "jury")
+        val result = route(app, request(f.base, both).withSession(Secured.UserName -> both.email,
+          Secured.CurrentContestId -> "30")).get
+        status(result) === OK
+        tiles(contentAsString(result)) === List(1L, 3L, 4L, 5L, 6L) // the juror's page: no deleted file
+        session(result).get(Secured.CurrentContestId) must beSome(f.contest.getId.toString)
+        // its menus, a script's request: allowed in that contest, the session left as it is
+        val regions = route(app, request(s"${f.base}/regions", both).withSession(Secured.UserName -> both.email,
+          Secured.CurrentContestId -> "30").withHeaders("X-Requested-With" -> "XMLHttpRequest")).get
+        status(regions) === OK
+        session(regions).get(Secured.CurrentContestId) must not(beSome(f.contest.getId.toString)) // still 30
+      }
+    }
+
     "refuse a juror of another contest, its page, menus and large view" in {
       testDbApp { implicit app =>
         val f = fixture()

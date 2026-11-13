@@ -548,11 +548,15 @@ class GalleryController @Inject() (
     view.contest.categoryId.filter(_ => view.round.isEmpty).map(categoryCounts)
 
   /** The files of the page's list (without its region) in each region: the category's, from
-    * `all`'s cached counts, else counted.
+    * `all`'s cached counts (a juror's without the excluded files, counted by their few page
+    * ids: no full count of the category per menu), else counted.
     */
   private def fileRegionCounts(view: ContestFilesView, all: Option[RegionCountCache.Counts]): Map[String, Int] =
     view.list match {
       case Some(ImageJdbc.FileList.Category(_, false, None, Nil)) => all.fold(Map.empty[String, Int])(_.byRegion)
+      case Some(ImageJdbc.FileList.Category(_, false, None, excluded)) if all.isDefined =>
+        val left = ImageJdbc.pageRegionCounts(excluded)
+        all.get.byRegion.map { case (region, n) => region -> (n - left.getOrElse(region, 0)) }.filter(_._2 > 0)
       case list => list.fold(Map.empty[String, Int])(ImageJdbc.regionCounts(_))
     }
 
@@ -628,6 +632,8 @@ class GalleryController @Inject() (
         CoiMembers.files(_, CoiMembers.forContest(contestId)))
     }
     val chosenCountry = country.filter(_ => maybeRound.isEmpty && coiFiles.isEmpty)
+    // a juror's countries: of the files they may see, so a country of only deleted files is none
+    val visible = { val left = excluded.toSet; (pageId: Long) => !left(pageId) }
     // the countries of a contest of many: of its files' links to its country categories
     val countryFiles = (for {
       c <- contest.filter(c => maybeRound.isEmpty && ContestCountries.ofManyCountries(c))
@@ -636,7 +642,8 @@ class GalleryController @Inject() (
       .getOrElse(Map.empty[Long, String])
     if (contest.isEmpty) Left("error.contest.not.found")
     else if (round.isDefined && maybeRound.isEmpty) Left("error.round.not.found")
-    else if (chosenCountry.exists(c => !countryFiles.values.exists(_ == c))) Left("error.not.found")
+    else if (chosenCountry.exists(c => !countryFiles.exists { case (pageId, fc) => fc == c && visible(pageId) }))
+      Left("error.not.found")
     else
       Right(ContestFilesView(contest.get, deletedOnly = deleted || maybeRound.isDefined, maybeRound,
         Some(region).filter(_ != "all"), chosenCountry, countryFiles, coiFiles = coiFiles, author = chosenAuthor,

@@ -198,6 +198,33 @@ class MonumentControllerSpec extends Specification with PlayTestDb {
       }
     }
 
+    "show no files to an inactive membership of the contest, no role or one without access" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val former =
+          userDao.create(User("former", "former@example.com", None, Set("jury"), contestId = createContests(30).head.id))
+        UserContestJdbc.createMembership(former.getId, f.contest.getId, User.NO_ROLE)
+        val board =
+          userDao.create(User("board", "board@example.com", None, Set("jury"), contestId = createContests(40).head.id))
+        UserContestJdbc.createMembership(board.getId, f.contest.getId, User.BOARD_ROLE)
+        Seq(former, board).map(u => files(page(u, contestQuery(f, Some(f.round))))) === Seq(None, None)
+      }
+    }
+
+    "count in another of a juror's contests than the session's, without switching to it" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val both =
+          userDao.create(User("both", "both@example.com", None, Set("jury"), contestId = createContests(30).head.id))
+        UserContestJdbc.createMembership(both.getId, f.contest.getId, "jury")
+        val result = route(app, FakeRequest(GET, s"/monuments/id/$Id${contestQuery(f, Some(f.round))}")
+          .withSession(Secured.UserName -> both.email, Secured.CurrentContestId -> "30")).get
+        status(result) === OK
+        files(contentAsString(result)) === Some("In the contest: 2 →")
+        session(result).get(Secured.CurrentContestId) must not(beSome(f.contest.getId.toString)) // still 30
+      }
+    }
+
     "show a contest without the monument's files as a count without a link" in {
       testDbApp { implicit app =>
         val f = fixture()

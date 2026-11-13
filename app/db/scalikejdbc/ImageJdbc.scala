@@ -699,6 +699,15 @@ object ImageJdbc extends CRUDMapper[Image]
       .map(_.long(1))
       .list()
 
+  /** The number of the files `pageIds` (a few, by page id) in each region, those without one
+    * left out: what a juror's contest files menu takes off the category's cached counts.
+    */
+  def pageRegionCounts(pageIds: Seq[Long])(implicit session: DBSession = AutoSession): Map[String, Int] =
+    if (pageIds.isEmpty) Map.empty
+    else
+      sql"""SELECT ${regionOf(sqls"i")} AS region, COUNT(*) FROM images i WHERE i.page_id IN ($pageIds) GROUP BY region"""
+        .map(rs => rs.stringOpt(1) -> rs.int(2)).list().collect { case (Some(region), n) => region -> n }.toMap
+
   /** The category's files deleted on Commons, by page id: what a juror's contest files list
     * leaves out ([[FileList.Category]]'s `excluded`). From the few files marked deleted (V64's
     * index): 8 at most in a category on production's copy (2026-11-13).

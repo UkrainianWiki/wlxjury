@@ -363,6 +363,12 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         val (_, armenia) = get(countries.head._3, f.admin)
         tiles(armenia) === List(1L)
         armenia must contain("<b>Armenia</b>")
+
+        // a juror's countries are of the files they see: Bénin's only file is deleted on Commons
+        val (_, jurorPage) = get(base, f.juror)
+        menuPlaces(jurorPage, "countrymenu", f.juror).map { case (name, n, _) => name -> n } === Seq("Armenia" -> Some(1))
+        get(countries(1)._3, f.admin)._1 === OK
+        get(countries(1)._3, f.juror)._1 === NOT_FOUND
       }
     }
 
