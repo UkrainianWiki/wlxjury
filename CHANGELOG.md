@@ -64,6 +64,24 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
 **Fixes**
 
 - **Ukrainian:** a round that is not active shows «Ні» (no) in the rounds list's Active column, not «Немає» (absent).
+- **Adding a new person failed since 26.11** with a server error, and Import Users silently skipped them (counted as
+  "could not be added"): production's `users.password` was still `NOT NULL` from a 2015 Play evolution, while
+  accounts are created without a password since S2 (26.11, ddf45d50; fresh and test databases had V2's nullable
+  column). Fixed on production by hand on 2026-11-12 and recorded by **V98**. Adding an email that already had an
+  account was not affected.
+- **Import Users no longer fails silently:** a line that fails with an error is listed on the import page by line
+  number and the email or wiki account entered, with an error reference that is on the server log's
+  `user_import_line_failed` line (the classes and stacks of the exception and its causes, never their messages),
+  and a line with an invalid wiki account name is listed as such; the other lines are added as before (each line
+  in its own transactions), and the form comes back with only the lines not added, to import again. The import
+  redirects to that page (post/redirect/get: a reload imports nothing again, so no second invitation mail); the
+  list waits on the server for that page, once, for its admin only, up to 10 minutes and 1,000 lines (the rest
+  counted; after a restart the page says how many lines it had). No mail goes out for a failed line: an
+  invitation's change log entry is written with its token (the account's row locked first, as a link's
+  acceptance does), and its mail is the last step; whether it was mailed is set after it, and a flag that can't
+  be written is logged (`account_change_mail_flag_not_recorded`) without failing the add; the change log then
+  shows the invitation's mail as "not known". The "could not be added"
+  count (`users.not.added`) is gone: nothing skips lines any more.
 
 **Development**
 
@@ -71,6 +89,10 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   job is queued or running, and lists each one (id, kind, contest, status); `--allow-running-jobs`
   deploys anyway with a warning (the jobs resume after the restart). A `job` table it cannot read
   stops the deployment too. This replaces the manual check before each deploy.
+- **V98:** `users.password` nullable (`VARCHAR(255) NULL DEFAULT NULL`, `ALGORITHM = INPLACE, LOCK = NONE`),
+  only where it is still `NOT NULL` (production's, applied there by hand on 2026-11-12); a no-op on fresh databases.
+  `scripts/schema_parity.py` compares a database's columns with a freshly migrated one's and flags a column `NOT
+  NULL` only in the target, for the release rehearsal on the production copy (Release checklist).
 - **V97:** `vote.voted_at` and `vote_aside.voted_at`, `TIMESTAMP(3) NULL DEFAULT NULL` (no implicit
   default or ON UPDATE under any `explicit_defaults_for_timestamp`), added `ALGORITHM = INSTANT`;
   no index (the orders sort by expressions). Existing rows stay NULL (a log backfill may fill them later). Set by `VoteJdbc.rateIn` and

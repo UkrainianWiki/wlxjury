@@ -12,7 +12,9 @@ import java.time.Instant
   * @param actorId   who changed it
   * @param contestId the contest it was changed in (None: by root outside a contest)
   * @param field     what changed, one of [[AccountChangeJdbc.Fields]]
-  * @param mailSent  whether the change mailed someone (None: no mail applies)
+  * @param mailSent  whether the change mailed someone (None: no mail applies; for an invitation,
+  *                  not known: its flag is set after the mail, and that write failed, or the mail
+  *                  is still going out)
   * @param comment   the editor's optional comment for the log
   */
 final case class AccountChange(
@@ -93,6 +95,12 @@ object AccountChangeJdbc {
             (user_id, actor_id, contest_id, field, old_value, new_value, mail_sent, comment, created_at)
           VALUES ($userId, $actorId, $contestId, $field, $oldV, $newV, $mailSent, $text, NOW(3))"""
       .updateAndReturnGeneratedKey.apply()
+  }
+
+  /** Sets whether the entry's mail went out (an invitation's, written before its mail). */
+  def setMailSent(id: Long, sent: Boolean)(implicit session: DBSession = AutoSession): Unit = {
+    sql"UPDATE account_change SET mail_sent = $sent WHERE id = $id".update.apply()
+    ()
   }
 
   /** The account's entries, the newest first, at most `limit`: those made in `contestId` if given

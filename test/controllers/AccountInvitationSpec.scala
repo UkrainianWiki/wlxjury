@@ -573,7 +573,7 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
   }
 
   "an import line that fails (R220-1)" should {
-    "count it as not added, add the other lines, and log the failure's class only" in {
+    "list it with a reference, add the other lines, and log the failure's class and reference only" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
         createContests(10)
@@ -589,7 +589,7 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
         }
         val controller = new UserController(app.injector.instanceOf[play.api.mvc.ControllerComponents], failing,
           app.injector.instanceOf[modules.BlockingExecutionContext])
-        val (result, log) = accountLog {
+        val (result, entries) = accountLogWithThrowables {
           val r = call(controller.importUsers(Some(10L)),
             as(admin, Some(10L))(FakeRequest(POST, "/admin/importusers?contestId=10"))
               .withFormUrlEncodedBody("sendInvitation" -> "true", "userstoimport" -> "first@example.com\nbroken@example.com\nlast@example.com",
@@ -597,14 +597,30 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
           status(r)
           r
         }
+        val log = entries.map(_._1)
+        val failed = log.filter(_.startsWith("user_import_line_failed"))
+        // the log file's text: the lines and the exceptions logged with them
+        val logged = entries.flatMap { case (line, trace) => line +: trace.toSeq }.mkString("\n")
+        val reference = failed.flatMap("ref=([0-9a-f]{8}) ".r.findFirstMatchIn(_).map(_.group(1)))
         status(result) === SEE_OTHER
-        flash(result).get("users-added") must beSome(contain("1 could not be added. Please import them again."))
+        redirectLocation(result) must beSome("/admin/importusers?contestId=10")
+        // the import page it goes to: the admin's own input back to them, with the log line's
+        // reference; no exception text
+        val page = contentAsString(call(controller.showImportUsers(Some(10L)),
+          as(admin, Some(10L))(FakeRequest(GET, "/admin/importusers?contestId=10"))
+            .withFlash(flash(result).data.toSeq: _*).withCSRFToken))
+        page must contain(s"Line 2: broken@example.com: an error on our side (reference ${reference.head}).")
+        page must not(contain("Duplicate entry"))
         User.findByEmail("first@example.com") must not(beEmpty)
         User.findByEmail("last@example.com") must not(beEmpty)
         User.findByEmail("broken@example.com") must beEmpty
-        log.filter(_.startsWith("user_import_line_failed")) ===
-          Seq(s"user_import_line_failed byAccountId=${admin.getId} contestId=10 error=java.sql.SQLException")
-        log.mkString("\n") must not(contain("broken@example.com"))
+        failed === Seq(s"user_import_line_failed ref=${reference.head} line=2 byAccountId=${admin.getId} contestId=10 " +
+          "error=java.sql.SQLException")
+        // the exception's class and stack are logged, never its message (R220-1)
+        logged must contain("java.lang.Exception: java.sql.SQLException (message not logged)")
+        logged must contain("UserController")
+        logged must not(contain("broken@example.com"))
+        logged must not(contain("Duplicate entry"))
       }
     }
   }
