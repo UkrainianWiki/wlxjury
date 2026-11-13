@@ -43,6 +43,8 @@ jobs:
           && '["mariadb:10.6.22", "mariadb:10.11.14"]' || '["mariadb:10.6.22"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # The check script's own tests (timeout, process tree, lock, keep-awake): its Windows-only
       # parts are mocked or skipped here, the POSIX signal path runs. Standard library only.
