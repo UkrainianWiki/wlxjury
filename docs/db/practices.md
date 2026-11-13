@@ -568,10 +568,10 @@ SCALAWIKI_PASSWORD`; live-Commons specs only with `-Dintegration=true`.
   `LOCK IN SHARE MODE` as a separate statement.
 - **V11 (3.8), index candidates.** The 2026-03 analysis (`docs/history/db-performance-analysis.md`,
   pre-V82 names) is applied: V45–V47 indexes, V46 schema fixes (except `monument`'s key, V6),
-  V50 region stats, the ranking and `roundUserStat` rewrites. V100 dropped the single-column
-  `vote` indexes that were prefixes of composite ones, `vote_round_idx` and `vote_jury_id_idx`
-  (10.6 chose their index-merge intersection over the gallery index; benchmark of 2026-11-13 on
-  production's copy, 596 statements: 3–10x faster, none slower). Left: `vote_rate_idx` (rate
-  alone) and `vote_page_id_idx` (a prefix of `vote_page_jury_round_uidx`): drop candidates under
-  §3.8, after `EXPLAIN` of the queries that might use them. `vote_aside` and `vote_orphan` keep
-  all their copies (nothing pages them).
+  V50 region stats, the ranking and `roundUserStat` rewrites. V100 dropped `vote`'s four
+  single-column indexes (V7's): `vote_round_idx` and `vote_jury_id_idx`, prefixes of composite
+  ones, whose index-merge intersection 10.6 chose over the gallery index; `vote_rate_idx`, used
+  by no plan; `vote_page_id_idx`, a prefix of `vote_page_jury_round_uidx`, which now serves
+  `vote_page_id_fk`. Benchmarks of 2026-11-13 on production's copy (636 statements, the write
+  paths included): the intersection's statements 3–10x faster, none slower. No candidates are
+  left here; `vote_aside` and `vote_orphan` keep all their copies (nothing pages them).

@@ -511,7 +511,7 @@ changed now):
   i.e. `paused` with `distributing = 0`.
 
 **V101, in phase 1** (decisions 4, 5, 17): one migration. "V101" is the roadmap's next free number
-today (renumbered from V99 on 2026-11-13, when V99 went to the vote gallery index's `voted_at`, then from V100 the same day, when V100 went to dropping vote's single-column round and juror indexes); the number is assigned at merge, per the roadmap's migration-number rule
+today (renumbered from V99 on 2026-11-13, when V99 went to the vote gallery index's `voted_at`, then from V100 the same day, when V100 went to dropping vote's four single-column indexes); the number is assigned at merge, per the roadmap's migration-number rule
 (`2026-11-02-roadmap.md:463-474`: "Assigned at merge time … Renumber on merge if two collide"),
 and doesn't depend on V96–V98 landing first. Its statements follow V95's pattern
 (`V95__Round_exclude_rounds.sql:20-26`), where `ALGORITHM=INSTANT` with a CHECK fails rather than
@@ -763,7 +763,7 @@ options' `data-*`, read by `round-form.js`.
 | Round images P3 | `round.status` (`:148-161`); "Why is this image here"; filters editable while paused (`:296-318`); disqualify with a reason; §11 item 8 | V101 brings `round.status` and its backfill forward (§2.6). P3 then adds its own transitions and readers; `finalized` stays with Montage parity. P3's table lacks a stopped round (`paused`, `distributing = 0`, `active = 0`), which §2.6 adds: P3 must tell "before first activation" by `distributing = 1`, and its paused-gated review and Distribute (`:505-508`) must not apply to finished rounds. Provenance is the "why" page's rounds part. `updateFilters` calls `wouldCreateCycle`. §11 item 8 (jurors added to an existing round) belongs to P3, with the Montage gaps (decision 18). P3's file isn't changed now |
 | Montage parity | lifecycle (item 9, `:69`); jury changes (items 12–13, `:103`) | Phase 1's `cancelled` is the first part of item 9; `finalized`, which locks votes, stays there. Jury changes reach the app through P3 (§11 item 8) |
 | Import top of another contest | the first cross-contest edge | Text "from contest C, round R" |
-| Roadmap numbers | V101 next free (V99: the vote gallery index's `voted_at`; V100: vote's single-column round and juror indexes dropped) | Assigned at merge, renumbered on collision; not tied to V96–V98 landing first |
+| Roadmap numbers | V101 next free (V99: the vote gallery index's `voted_at`; V100: vote's four single-column indexes dropped) | Assigned at merge, renumbered on collision; not tied to V96–V98 landing first |
 
 ---
 
