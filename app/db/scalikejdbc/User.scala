@@ -860,11 +860,13 @@ object User extends CRUDMapper[User] {
     * sessions" (S3). The new version; None if there is no such account.
     */
   def endSessions(id: Long): Option[Int] =
-    DB.localTx { s =>
-      implicit val session: DBSession = s
-      sql"UPDATE users SET auth_version = $BumpAuthVersion WHERE id = $id".update.apply()
-      authVersionOf(id)
-    }
+    DB.localTx(s => endSessionsIn(id)(s))
+
+  /** [[endSessions]] in the caller's transaction, with the write it belongs to. */
+  def endSessionsIn(id: Long)(implicit session: DBSession): Option[Int] = {
+    sql"UPDATE users SET auth_version = $BumpAuthVersion WHERE id = $id".update.apply()
+    authVersionOf(id)
+  }
 
   /** Marks the account's wiki account verified, if it is `wikiAccount` (as the column compares):
     * a Wikimedia sign-in by that very name proved it (services.oauth.IdentityLinker). The name

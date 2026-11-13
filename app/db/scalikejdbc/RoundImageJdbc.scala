@@ -100,13 +100,19 @@ object RoundImageJdbc {
   private[scalikejdbc] val Chunk = 2000
 
   /** Runs `f` in the caller's transaction, or in one of its own when the caller passed an
-    * auto-commit session (the DAO defaults): a vote insert and its rows commit together.
+    * auto-commit session (the DAO defaults, or a `DB.autoCommit` session, whose round lock would
+    * end with its statement: [[RoundWrites.lock]] refuses it): a vote insert and its rows commit
+    * together, under the round's lock. A read-only session (`DB.readOnly`) runs `f` as it is, so
+    * the write fails as before, never on another connection. A `DB.autoCommit` session of a named
+    * pool (`NamedDB(name).autoCommit`) isn't told apart: its transaction would be on the default
+    * pool, so that case is not supported (the app has none).
     */
   private[scalikejdbc] def inTransaction[A](session: DBSession)(f: DBSession => A): A =
     session match {
-      case _: AutoSession            => WriteTx.write(f)
-      case NamedAutoSession(name, _) => WriteTx.retry(NamedDB(name).localTx(f))
-      case s                         => f(s)
+      case _: AutoSession                                      => WriteTx.write(f)
+      case NamedAutoSession(name, _)                           => WriteTx.retry(NamedDB(name).localTx(f))
+      case s if !s.isReadOnly && RoundWrites.inAutoCommitMode(s) => WriteTx.write(f)
+      case s                                                   => f(s)
     }
 
   /** Adds the files of vote rows just inserted to their rounds, status `in`, after the

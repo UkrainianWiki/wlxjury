@@ -2,6 +2,8 @@ package controllers
 
 import db.scalikejdbc.{Round, RoundConflicts, User}
 import modules.BlockingExecutionContext
+import play.api.data.Form
+import play.api.data.Forms.{longNumber, optional, seq, text, tuple}
 import play.api.i18n.Messages
 import play.api.mvc.{AnyContent, ControllerComponents, EssentialAction, Request, RequestHeader, Result}
 import services.distribution.RoundDistributionHandler
@@ -43,34 +45,30 @@ class RoundConflictsController @Inject() (
       }
     }
 
-  /** "Disqualify" of the files ticked (`pageId`): those still conflicts of interest. */
+  /** "Disqualify" of the files ticked (`pageId[]`): those still conflicts of interest. */
   def disqualify(id: Long): EssentialAction =
     withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { sessionUser => implicit request =>
       withRound(sessionUser, id, User.ADMIN_ROLES, mayEdit) { (user, round) =>
-        val pageIds = longs("pageId")
         val messages = messagesApi.preferred(request)
-        if (pageIds.isEmpty) back(round).flashing("error" -> messages("coi.none.selected"))
-        else
+        withFiles(round, messages) { (pageIds, _) =>
           RoundConflicts.disqualify(round.getId, user, RoundDistributionHandler.dedupeKey(round.getId),
             only = Some(pageIds.toSet)) match {
             case RoundConflicts.Outcome.Disqualified(files) =>
               back(round).flashing("success" -> messages("coi.disqualified", files.size, round.number))
             case refused => refusal(round, refused)(messages)
           }
+        }
       }
     }
 
-  /** "Requalify" of the files ticked (`pageId`), with a reason (`reason`, a code). */
+  /** "Requalify" of the files ticked (`pageId[]`), with a reason (`reason`, a code). */
   def requalify(id: Long): EssentialAction =
     withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { sessionUser => implicit request =>
       withRound(sessionUser, id, User.ADMIN_ROLES, mayEdit) { (user, round) =>
-        val pageIds = longs("pageId")
-        val reason = field("reason").filter(RoundConflicts.RequalifyReason.All.contains)
         val messages = messagesApi.preferred(request)
-        (pageIds, reason) match {
-          case (Nil, _)  => back(round).flashing("error" -> messages("coi.none.selected"))
+        withFiles(round, messages) {
           case (_, None) => back(round).flashing("error" -> messages("coi.requalify.reason.missing"))
-          case (_, Some(code)) =>
+          case (pageIds, Some(code)) =>
             RoundConflicts.requalify(round.getId, pageIds, code, user, RoundDistributionHandler.dedupeKey(round.getId)) match {
               case RoundConflicts.Outcome.Requalified(files) =>
                 back(round).flashing("success" -> messages("coi.requalified", files.size, round.number))
@@ -79,6 +77,28 @@ class RoundConflictsController @Inject() (
         }
       }
     }
+
+  /** The forms' fields, bound by [[filesForm]]: `f` with the files ticked (at least one, at most
+    * [[RoundConflictsController.MaxFiles]]: more is refused, never cut) and the reason, if it is
+    * one of the codes; otherwise back to the page with the error.
+    */
+  private def withFiles(round: Round, messages: Messages)(f: (Seq[Long], Option[String]) => Result)(implicit
+      request: Request[AnyContent]
+  ): Result =
+    filesForm.bindFromRequest().fold(
+      errors => {
+        val tooMany = errors.errors("pageId").exists(_.message == "coi.too.many.selected")
+        val reason  = errors.errors("reason").nonEmpty && errors.errors("pageId").isEmpty
+        back(round).flashing("error" ->
+          (if (tooMany) messages("coi.too.many.selected", RoundConflictsController.MaxFiles)
+           else if (reason) messages("coi.requalify.reason.missing")
+           else messages("error.invalid")))
+      },
+      {
+        case (Nil, _)            => back(round).flashing("error" -> messages("coi.none.selected"))
+        case (pageIds, reason)   => f(pageIds.distinct, reason)
+      }
+    )
 
   /** The round, checked in its own contest by `allowed` (root needs no membership): `f` with
     * the user in that contest; 404 for no round, 403 (logged, naming `roles`) otherwise.
@@ -108,16 +128,13 @@ class RoundConflictsController @Inject() (
 
   private def back(round: Round): Result = Redirect(routes.RoundConflictsController.page(round.getId))
 
-  private def form(implicit request: Request[AnyContent]): Map[String, Seq[String]] =
-    request.body.asFormUrlEncoded.getOrElse(Map.empty)
-
-  private def field(name: String)(implicit request: Request[AnyContent]): Option[String] =
-    form.get(name).flatMap(_.headOption).map(_.trim).filter(_.nonEmpty)
-
-  /** The form's page ids: `name` and `name[]`, numbers only, at most [[MaxFiles]]. */
-  private def longs(name: String)(implicit request: Request[AnyContent]): Seq[Long] =
-    (form.getOrElse(name, Nil) ++ form.getOrElse(s"$name[]", Nil)).flatMap(_.trim.toLongOption).distinct
-      .take(RoundConflictsController.MaxFiles)
+  /** The ticked files (`pageId[]`, page ids) and requalify's reason (one of the codes;
+    * disqualify sends none), as typed form fields (secure-coding §1).
+    */
+  private val filesForm: Form[(Seq[Long], Option[String])] = Form(tuple(
+    "pageId" -> seq(longNumber).verifying("coi.too.many.selected", _.distinct.size <= RoundConflictsController.MaxFiles),
+    "reason" -> optional(text.verifying("coi.requalify.reason.missing", RoundConflicts.RequalifyReason.All.contains _))
+  ))
 }
 
 object RoundConflictsController {

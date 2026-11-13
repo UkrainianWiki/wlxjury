@@ -90,6 +90,32 @@ class WritePathLockSpec extends Specification with TestDb with BeforeAll with Be
       }
     }
 
+    "rate the row that replaced its vote while it waited (a restore's moved-back vote)" in withPool { implicit ec =>
+      implicit val contest: ContestJury = createContests(10).head
+      val Seq(juror) = createUsers("jury", 1)
+      val round = roundDao.create(Round(None, 1, None, contest.getId, active = true)).getId
+      imageDao.batchInsert(Seq(image(1)))
+      val vote = selectionDao.create(1L, rate = 0, juryId = juror.getId, roundId = round)
+      val ready = new CountDownLatch(1)
+      val go = new CountDownLatch(1)
+      // as ImageJdbc.moveVotesBack replaces an unrated new vote by the rated one moved back:
+      // the row locked, deleted, and the moved row inserted with its own id
+      val restorer = held({ implicit s => sql"SELECT id FROM vote WHERE round_id = $round FOR UPDATE".map(_.long(1)).list(); () }, go, ready) {
+        implicit s =>
+          sql"DELETE FROM vote WHERE id = ${vote.getId}".update()
+          sql"""INSERT INTO vote (page_id, jury_id, round_id, rate) VALUES (1, ${juror.getId}, $round, 3)"""
+            .updateAndReturnGeneratedKey()
+      }
+      ready.await(30, TimeUnit.SECONDS) must beTrue
+      val voting = Future(VoteJdbc.rate(1L, juror.getId, round, 1))
+      (lockWait(voting) === "LOCK WAIT") and {
+        go.countDown()
+        val restored = Await.result(restorer, 30.seconds)
+        (restored !== vote.getId) and (Await.result(voting, 30.seconds) === 1) and
+          (VoteJdbc.findBy(1L, juror.getId, round).map(v => v.getId -> v.rate) === Some(restored -> 1))
+      }
+    }
+
     "wait for the juror's stop on the round, and be refused" in withPool { implicit ec =>
       implicit val contest: ContestJury = createContests(10).head
       val Seq(juror) = createUsers("jury", 1)

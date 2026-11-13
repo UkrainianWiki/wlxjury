@@ -83,9 +83,13 @@ class OAuthController @Inject() (
     * signed in with the identity, perhaps in someone else's browser, ends with it).
     */
   def unlink(provider: String): EssentialAction = withAuthOn(blocking)(_ => true) { user => implicit request =>
-    val subject  = request.body.asFormUrlEncoded.flatMap(_.get("subject")).flatMap(_.headOption)
-    val unlinked = subject.exists(UserIdentityJdbc.delete(user.getId, provider, _))
-    val version  = if (unlinked) User.endSessions(user.getId) else None
+    val subject = request.body.asFormUrlEncoded.flatMap(_.get("subject")).flatMap(_.headOption)
+    // the unlink and the sessions' end commit together: an unlink without it couldn't be
+    // repaired by a retry (the identity is no longer the user's, so a retry ends nothing)
+    val (unlinked, version) = scalikejdbc.DB.localTx { implicit s =>
+      val unlinked = subject.exists(UserIdentityJdbc.delete(user.getId, provider, _))
+      (unlinked, if (unlinked) User.endSessionsIn(user.getId) else None)
+    }
     if (unlinked)
       log.info(s"oauth_unlinked provider=${Secured.logValue(provider)} accountId=${user.getId} sessionsEnded=true")
     val result = Redirect(routes.UserController.editUser(user.getId))

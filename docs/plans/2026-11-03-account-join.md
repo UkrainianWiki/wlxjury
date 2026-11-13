@@ -42,12 +42,16 @@ contests rework with an admin UI for merging accounts"); the OAuth port's note
   the same file in the same round) is listed in the preview; rule: keep the kept account's vote,
   is a deferred question (below).
 - **Conflicts of interest:** CoI keys on `users.wiki_account`, so nothing moves; the kept account's
-  wiki account is the joined one's (verified if either was), and the preview shows a CoI change if
-  the names differ.
+  wiki account is the joined one's, and the preview shows a CoI change if the names differ. Its
+  verification goes only with the name it proves (review of #240): the name kept is verified only
+  if the account it came from verified that name, or both accounts have that name and either
+  verified it; a verified name A never makes a joined unverified name B verified (verification
+  gates role matching by wiki name, security-resolution S2).
 - **Comments** (`comment`): author moved.
 - **API tokens:** revoked on both accounts (shown once, never moved).
 - **Identities** (`user_identity`): moved to the kept account (a Google or Wikimedia sign-in then
-  opens it).
+  opens it), each listed in the preview with its provider and username. In a join without the
+  user's proof, which identities may move is deferred question 3 (below).
 - **Sessions:** ended on both (`auth_version` bumped).
 - **Links** (`account_token`): every unused one of both revoked.
 - **Audit:** one `security.account` line per join (`account_joined keptAccountId= joinedAccountId=
@@ -56,16 +60,24 @@ contests rework with an admin UI for merging accounts"); the OAuth port's note
 ## Safety
 
 - **Preview** before anything is written: both accounts' memberships, rounds, vote counts, the
-  conflicts (role, vote collisions, CoI name change), and what the user chose; the performer
+  conflicts (role, vote collisions, CoI name change), the identities that move (provider and
+  username), and what the user chose; the performer
   confirms it (POST with CSRF).
 - **One job** (`account_join`, `services.jobs.JobScheduler`): the round-first rule and the lock order
   of the write-path plan (`round → images → vote → criteria_rate → vote_aside → round_image`), one
   round per step, each step one transaction; the users' rows locked last; the job refuses to start
-  while a round of either account is being distributed (`round.distributing`), and a vote by either
-  account during the job waits on the round's lock. `RoundImageInvariants.violations` checked per
-  round after its step.
-- Idempotent steps (a retried step finds its rows moved); Cancel leaves both accounts usable (the
-  other account is retired only in the last step).
+  while a round of either account is being distributed (`round.distributing`).
+  `RoundImageInvariants.violations` checked per round after its step.
+- **Votes during the job** (review of #240): a juror's vote is row-level and never takes the round's
+  lock (`RoundWrites`), so a vote by the retiring account can commit after its round's step and
+  stay on that account. The first step therefore ends both accounts' sessions and refuses the
+  retiring account's sign-in and votes while the join runs, and the last step, under the users'
+  row locks, moves whatever rows the retiring account still has (a sweep of every round) before it
+  retires it.
+- Idempotent steps (a retried step finds its rows moved). **Cancel** only before the first round
+  step commits; after it, a failed step is retried (Retry), never cancelled, since moved votes and
+  assignments are not moved back (review of #240). Until the last step both accounts stay
+  usable apart from the retiring account's refused votes.
 
 ## Placement
 
@@ -80,7 +92,8 @@ either has one `user_contest` row of the kept account.
 
 ## Deferred questions
 
-Both deferred by the user (2026-11-03): decide when the join is planned.
+Decide when the join is planned: 1 and 2 deferred by the user (2026-11-03), 3 from the review of
+#240 (2026-11-13).
 
 1. **A vote collision** (the same person was a juror twice in a round and voted on the same file
    with both accounts). Deferred by the user (2026-11-03): decide when the join is planned. Options
@@ -93,3 +106,13 @@ Both deferred by the user (2026-11-03): decide when the join is planned.
 2. **Two verified emails and no request:** which account is kept. Deferred by the user
    (2026-11-03): decide when the join is planned. Option discussed so far: root decides in the
    preview (no automatic choice).
+3. **Identities in a join without the user's proof** (from the duplicates report; CodeRabbit on
+   #240). A report can pair accounts by an unverified wiki name, so moving the other account's
+   identities to the kept one could open the kept account (its password and roles) to whoever
+   linked that name's placeholder. Not decided; options:
+   - such a join moves no identity: it unlinks them (tombstones), and their holder links again
+     from the kept account's own profile after signing in to it;
+   - an identity moves only if the kept account's wiki account is verified by its holder and is
+     the identity's name (Wikimedia), or the identity's verified email is the kept account's
+     (Google).
+   Joins from a request (the user proved both accounts) move every identity.

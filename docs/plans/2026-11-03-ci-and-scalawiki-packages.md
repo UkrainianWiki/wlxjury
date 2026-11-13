@@ -70,7 +70,7 @@ Artifacts: `org.scalawiki:scalawiki-core_2.13`, `scalawiki-wlx_2.13`, `http-exte
 ### Publishing
 
 - **Plain `publishTo` and credentials, not `sbt-github-packages`.** That's six lines with no plugin to keep updated, and the resolver order on the consumer side stays explicit.
-- **The publish workflow:** on a tag push it checks that HEAD is exactly at the tag and clean (`dynverAssertTagVersion`), runs `sbt test`, then `sbt publish` with `GITHUB_TOKEN` and `packages: write`.
+- **The publish workflow:** on a tag push it checks that the version sbt-dynver derives is exactly the pushed tag and not a snapshot (`version` equal to `github.ref_name`, `isSnapshot` false: `dynverAssertTagVersion` alone only checks that the version comes from some tag, and with two tags on one commit `git describe` may pick the other), runs `sbt test`, then `sbt publish` with `GITHUB_TOKEN` and `packages: write`.
 - **What is published:** the root aggregate and `scalawiki-bots` set `publish / skip := true`. `http-extensions` has to be published, because `scalawiki-core`'s POM depends on it.
 - **Package visibility:** Maven packages on GitHub are **repository-scoped**. Each one is linked to `UkrainianWiki/scalawiki` and inherits its permissions and visibility, which is public. Sources: [About permissions for GitHub Packages](https://docs.github.com/en/packages/learn-github-packages/about-permissions-for-github-packages) ("Apache Maven … only support repository-scoped permissions").
 
@@ -348,11 +348,11 @@ The two scalawiki diffs (`publishing.diff`, `anonymous-tests.diff`) both change 
 - **A2.** Watch the first runs. Fix runner-only failures: Docker API version, tmpfs, encoding, timing-sensitive specs. Re-measure the times in this plan.
 - **A3.** In scalawiki, a branch from `page-categories` with `publishing.diff` and `publish.yml`. Remove `appveyor.yml` there; optionally remove the dead Bintray and JCenter resolvers from `Dependencies.scala`.
   - Verify locally with `sbt dynverAssertTagVersion` (it should fail on an untagged commit), `show scalawiki-core/version` and `publishLocal`, run in a scratch clone so `~/.ivy2/local` keeps the developers' snapshot.
-- **A4.** After U5: test the cross-repository read with a throwaway `workflow_dispatch` workflow in wlxjury. With `permissions: packages: read` it should run `curl -fsSI -u "x:$GITHUB_TOKEN" https://maven.pkg.github.com/UkrainianWiki/scalawiki/org/scalawiki/scalawiki-core_2.13/0.7.0-M1/scalawiki-core_2.13-0.7.0-M1.pom`. Record the result here.
+- **A4.** After U5: test the cross-repository read with a throwaway `workflow_dispatch` workflow in wlxjury. With `permissions: packages: read` and the token in the step's environment (`env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`: the permission alone doesn't expose it to commands) it should run `curl -fsSI -u "x:$GITHUB_TOKEN" https://maven.pkg.github.com/UkrainianWiki/scalawiki/org/scalawiki/scalawiki-core_2.13/0.7.0-M1/scalawiki-core_2.13-0.7.0-M1.pom`. Record the result here.
 - **A5.** If A4 passes:
-  - Apply `consume-scalawiki-package.diff`, add `packages: read` to the three workflows, and remove the scalawiki action and `project/scalawiki.sha` (it replaced the workflows' `SCALAWIKI_SHA` on 2026-11-04).
+  - Apply `consume-scalawiki-package.diff`, add `packages: read` to every workflow that uses the scalawiki action and pass the token to each sbt step (`env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`, which `build.sbt`'s credentials read; the permission alone sets no variable), and remove the scalawiki action and `project/scalawiki.sha` (it replaced the workflows' `SCALAWIKI_SHA` on 2026-11-04).
   - Update DEV.md (setup note) and CLAUDE.md (the scalawiki line under "Wikimedia Commons Integration").
-- **A6.** If A4 fails: keep from-source in CI, replacing the pinned SHA with the tag `0.7.0-M1`. Developers still use the package with their PAT.
+- **A6.** If A4 fails: keep from-source in CI, replacing the pinned SHA with the tag `0.7.0-M1`. Developers still use the package with their PAT. Two things change with it, since the tagged commit has sbt-dynver: the action fetches the tag as a tag (`git fetch --depth 1 <url> refs/tags/0.7.0-M1:refs/tags/0.7.0-M1`; a fetch into `FETCH_HEAD` makes no tag ref, so dynver would publish a `0.0.0+…` version), and wlxjury's `ScalawikiVersion` becomes `0.7.0-M1` (the version line of `consume-scalawiki-package.diff`, without its resolver), so the locally published modules are the ones it asks for.
 
 ### Order
 

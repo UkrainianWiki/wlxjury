@@ -89,7 +89,9 @@ answers a thumbnail at any other width with 400 at the edge
 
 **2.1 Pinned to a commit.** wlxjury builds against `UkrainianWiki/scalawiki` `origin/page-categories`
 at the commit in `project/scalawiki.sha` (version `0.7.0-SNAPSHOT`). Locally it comes from `~/.ivy2/local` via scalawiki's
-`publishLocal`; CI's composite action `.github/actions/scalawiki` fetches that commit and runs
+`publishLocal` of that commit: check out scalawiki at the SHA and publish its three modules, as
+[DEV.md](../../DEV.md) says (a snapshot published from another checkout has the same version, so
+nothing tells them apart: publish again after the SHA changes); CI's composite action `.github/actions/scalawiki` fetches that commit and runs
 `publishLocal`, cached by SHA. The SHA is in one file, `project/scalawiki.sha`, which the
 action reads (every workflow uses it without a `sha` input): bump it there. *Why:* a snapshot that exists
 only in each developer's `~/.ivy2/local` can't be reproduced; the pin makes CI and laptops build
@@ -106,7 +108,8 @@ and `PekkoHttpVersion` (1.0.1) in `build.sbt` match scalawiki's `project/Depende
 
 **2.4 Planned: a published package.** GitHub Packages under the existing group `org.scalawiki`
 (`scalawiki-core_2.13`, `scalawiki-wlx_2.13`, `http-extensions_2.13`), released only from tags
-(`0.7.0-M1` first, on `25951dbe`), no published snapshots, versions never moved or deleted;
+(`0.7.0-M1` first, on top of scalawiki's Java 17 and publishing branches: the CI plan's "First
+release"), no published snapshots, versions never moved or deleted;
 wlxjury resolves `~/.ivy2/local`, `~/.m2`, Maven Central, then GitHub Packages last, and
 `-Dscalawiki.version=0.7.0-SNAPSHOT` for joint work. The drafts are in `docs/plans/ci-drafts/`.
 

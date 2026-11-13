@@ -140,9 +140,10 @@ java.exe`) would have killed a parallel batch's run.
 
 ## 5. Commits
 
-**5.1 Commit only your paths.** `git commit -- <paths>` (or `git add <paths>` first), never
-`git commit -a` in a shared tree. *Why:* other agents' and the user's files are in the same
-status.
+**5.1 Commit only your paths.** `git commit -- <paths>`, never `git commit -a` in a shared tree.
+`git add <paths>` and then a bare `git commit` commits everything staged, someone else's staged
+files too: check `git diff --cached --name-only` first, or keep the pathspec on the commit.
+*Why:* other agents' and the user's files are in the same status and the same index.
 
 **5.2 Messages from a file.** Write the message with the Write tool into your own scratch folder
 and commit with `git commit -F <file>`; never a heredoc or a multi-line `-m` (backslashes and
