@@ -18,6 +18,8 @@ access.denied.suggested.files=Открыть файлы конкурса, дос
 access.denied.required=Эта страница для: {0}.
 access.denied.current.role=Ваша роль в {0}: {1}.
 access.denied.inactive=Ваше участие в этом конкурсе деактивировано.
+access.denied.round.stopped=Этот раунд остановлен: комментарии к его файлам больше не добавляются. Ваш комментарий не сохранён.
+access.denied.back.to.file=Назад к файлу
 access.denied.contact=Если вам нужен доступ, обратитесь к администратору вашего конкурса.
 access.denied.reference=Код: {0}, {1}
 password=Пароль
@@ -447,6 +449,14 @@ your.comment.here = Ваш комментарий
 your.comment = Ваш комментарий
 comments = Комментарии
 submit.comment = Добавить комментарий
+# the comments badge on thumbnails (its words by the language's plural form: views.Plural), the
+# list's toggle of only the files with comments, a comment's round in the large view
+comments.only = Только с комментариями ({0})
+comments.count.one = {0} комментарий
+comments.count.few = {0} комментария
+comments.count.many = {0} комментариев
+comments.count.other = {0} комментария
+comment.round.other = Написано в раунде {0}
 media.type = Тип файлов
 files = Файлы
 role = Роль

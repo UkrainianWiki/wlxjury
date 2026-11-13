@@ -10,7 +10,9 @@
         regionMenu: Option[RegionMenu],
         rates: RateDistribution,
         ranks: Seq[String] = Nil,
-        criteria: org.intracer.wmua.CriteriaResults = org.intracer.wmua.CriteriaResults.empty)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+        criteria: org.intracer.wmua.CriteriaResults = org.intracer.wmua.CriteriaResults.empty,
+        commented: Option[Int] = None,
+        commentCounts: Map[Long, Int] = Map.empty)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
     @* the juror rates their own files here with stars as on the gallery's tiles (TileStars) *@
     @starsRound = @{ views.TileStars.round(user, list.asUserId, Some(list.round)) }
@@ -60,7 +62,8 @@
     }
 
     @main("byrate", user, list.asUserId, Some(list.round), rounds, true, Some(list), pagerNav(pager, list.pageUrl), rates,
-        filters = views.html.regionMenu(regionMenu), head = snippets.tileVoteScripts(starsRound.nonEmpty)) {
+        filters = views.html.regionMenu(regionMenu), head = snippets.tileVoteScripts(starsRound.nonEmpty),
+        commented = commented) {
 
         @defining(list.round) { round =>
 
@@ -91,6 +94,7 @@
 
                         <div class="thumb">
                             <a href="@list.largeUrl(file.pageId)" >
+                            @snippets.commentBadge(commentCounts.getOrElse(file.pageId, 0))
                             @if(file.image.isImage) {
                                 <img class="cropped" alt="@file.title"
                                 src="@Global.resizeTo(file.image, Global.gallerySizeX, Global.gallerySizeY)"

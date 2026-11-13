@@ -44,7 +44,7 @@ beforeAll(() => {
 beforeEach(() => {
     window.pwned = undefined;
     window.open = jest.fn();
-    window.wlxTileVotes = { addVote: jest.fn(), addStars: jest.fn(), addTally: jest.fn(), addVoteTime: jest.fn(), addVoteMark: jest.fn(), vote: jest.fn() };
+    window.wlxTileVotes = { addVote: jest.fn(), addStars: jest.fn(), addTally: jest.fn(), addVoteTime: jest.fn(), addVoteMark: jest.fn(), addComments: jest.fn(), vote: jest.fn() };
 });
 
 const tick = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -350,6 +350,20 @@ describe("the tiles theme (ug-theme-tiles.js)", () => {
         const [el, item] = window.wlxTileVotes.addTally.mock.calls[0];
         expect(el).toBe(tiles[0]);
         expect([item.approvals, item.rejections, item.tally]).toEqual(["a, b", "c", "2 yes, 1 no"]);
+    });
+
+    test("the file's comments on every tile, from data-comments / data-comments-label", async () => {
+        const tiles = await gallery([
+            { src: loaded("/t/c.jpg"), "data-comments": "3", "data-comments-label": "3 коментарі" },
+            { src: loaded("/t/d.jpg") }
+        ]);
+        expect(window.wlxTileVotes.addComments).toHaveBeenCalledTimes(2);
+        const items = window.wlxTileVotes.addComments.mock.calls.map(([el, item]) => [el, item.comments, item.commentsLabel]);
+        expect(items).toEqual([
+            [tiles[0], "3", "3 коментарі"],
+            // a file without comments: no attribute, which addComments takes as no badge
+            [tiles[1], undefined, undefined]
+        ]);
     });
 
     test("the juror's vote time on every tile, from data-voted-at / data-voted-none", async () => {

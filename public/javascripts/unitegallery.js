@@ -19898,6 +19898,9 @@ function UniteGalleryMain(){
 				//addVoteTime): ISO 8601, "" with the text for a vote without one
 				objItem.votedAt = objChild.attr("data-voted-at");
 				objItem.votedNone = objChild.attr("data-voted-none");
+				//wlxjury: the file's comments in the contest and their text (tile-votes.js addComments)
+				objItem.comments = objChild.attr("data-comments");
+				objItem.commentsLabel = objChild.attr("data-comments-label");
 
 				//always set thumb image to object
 				objItem.objThumbImage = objChild;

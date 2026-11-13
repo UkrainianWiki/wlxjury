@@ -12,7 +12,8 @@
         contestId: Option[Long] = None,
         rates: RateDistribution = new RateDistribution(Map.empty),
         filters: Html = Html(""),
-        backHere: Boolean = true)(implicit messages: Messages, request: RequestHeader)
+        backHere: Boolean = true,
+        commented: Option[Int] = None)(implicit messages: Messages, request: RequestHeader)
 
 @* A link of the bar's start: its text, and in the organisers' crowded results bar (resultsBar)
    below 1700 px its icon instead, the text read by screen readers and shown as a tooltip
@@ -64,6 +65,20 @@
         }
     }
     }
+    }
+}
+
+@* The page's list with only its files that have comments in the contest, or all of them again
+   (RoundList.comments, kept by all the list's links): beside the tabs, with which it combines
+   (the selected with comments, ...), and with the number of the list's files with comments in
+   the tab, region and view shown (`commented`, given by a round's list page only). Pressed
+   (aria-current) when on. Only narrows what the viewer may see: a juror's own files, the
+   organisers' views of a juror's or all the jurors' votes *@
+@commentsToggle(l: RoundList) = {
+    @for(n <- commented if list.isDefined) {
+    <li class="nav-item">
+        <a class="nav-link wlx-comments-toggle@if(l.comments) { active}" @if(l.comments) {aria-current="true" }href="@l.withComments(!l.comments).pageUrl(1)" title="@Messages("comments.only", n)"><i class="bi bi-chat-left-text" aria-hidden="true"></i> <span class="wlx-nav-label">@Messages("comments.only", n)</span></a>
+    </li>
     }
 }
 
@@ -174,6 +189,9 @@
 
                         <!-- The viewer's own files by their votes, and their order -->
                         @ownTabs(l)
+                        @if(l.asUserId == user.getId) {
+                            @commentsToggle(l)
+                        }
                         @sortMenu(l)
                     }
 
@@ -202,6 +220,8 @@
                             ),
                             Some(VoteFilter.All -> SelectionItem("all"))
                         ).toDropDown())
+
+                        @commentsToggle(l)
 
                         @binaryOrderMenu(l)
                         @jurorOrderMenu(l)

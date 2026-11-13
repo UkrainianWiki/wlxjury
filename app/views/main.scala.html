@@ -14,10 +14,12 @@
         contestId: Option[Long] = None,
         filters: Html = Html(""),
         backHere: Boolean = true,
-        head: Html = Html(""))(content: Html)(implicit messages: Messages, request: RequestHeader)
+        head: Html = Html(""),
+        commented: Option[Int] = None)(content: Html)(implicit messages: Messages, request: RequestHeader)
 @* `head`: the page's own scripts and styles (snippets.galleryScripts, tileVoteScripts,
    multiSelectScripts), after the navbar's region menu and pager scripts, which every page with
-   a navbar may show *@
+   a navbar may show. `commented`: the number of the list's files with comments, for the navbar's
+   toggle (a round's list pages only) *@
 @layout(Messages(title), bodyClass = if (gallery) "gallery" else "") {
         <script src="@routes.Assets.versioned("javascripts/region-menu.js")"></script>
         <script src="@routes.Assets.versioned("javascripts/pager-jump.js")"></script>
@@ -25,7 +27,7 @@
         @head
 } {
         @navbar(title, user, asUserId, selectedRound, rounds, list, pager,
-            contestId = contestId.orElse(selectedRound.map(_.contestId)), rates, filters, backHere)
+            contestId = contestId.orElse(selectedRound.map(_.contestId)), rates, filters, backHere, commented)
 
      <div class="container-fluid">
 

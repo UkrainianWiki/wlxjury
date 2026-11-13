@@ -1,0 +1,8 @@
+@(count: Int)(implicit messages: Messages)
+@* A file's comments in its contest (as its large view shows them) on its thumbnail, inside its
+   link: a speech bubble and the number, which screen readers read as words with the link
+   ("3 comments": views.CommentCount), the same words as its tooltip; nothing without comments.
+   As tile-votes.js addComments draws it on the gallery's tiles *@
+@if(count > 0) {@defining(views.CommentCount.label(count)) { label =>
+<span class="badge wlx-comment-badge" title="@label"><i class="bi bi-chat-left-text-fill" aria-hidden="true"></i><span aria-hidden="true"> @count</span><span class="visually-hidden">@label</span></span>
+}}

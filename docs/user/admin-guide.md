@@ -733,7 +733,9 @@ it are refused ("This round is closed for voting"). Votes are kept, and the roun
 when you start it again. A juror with no round open sees **No round configured yet**.
 
 Jurors see their own votes only. In the large view of a file they see comments of other jurors,
-with names.
+with names. Their **Only with comments** toggle and the comment counts on their tiles cover
+their own files only; the organizer guide explains [both](organizer-guide.md#o-comments-filter).
+A stopped round takes no comments, also from admins and organizers.
 
 <a id="a-leave-out-conflicts"></a>
 ### Leaving conflicts of interest out of a round

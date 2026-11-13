@@ -61,4 +61,19 @@ describe("localize", () => {
         expect(bad.textContent).toBe("nonsense");
         expect(document.querySelector(".wlx-vote-time-none").textContent).toBe("Time not recorded");
     });
+
+    test("formats a comment's time in the large view the same way, in the page's language", () => {
+        document.documentElement.setAttribute("lang", "uk");
+        // as large/commentsView.scala.html renders it: the UTC instant, its text the same
+        document.body.innerHTML =
+            '<div class="wlx-comment-meta"><strong>Juror</strong> <span aria-hidden="true">·</span> ' +
+            '<time class="wlx-vote-time wlx-comment-time" datetime="2016-10-05T10:34:56.464Z">2016-10-05T10:34:56.464Z</time></div>';
+        localize(document);
+        const time = document.querySelector("time.wlx-comment-time");
+        expect(time.textContent).toBe(format("2016-10-05T10:34:56.464Z", "uk"));
+        // another year: with the year, in Ukrainian
+        expect(time.textContent).toMatch(/2016/);
+        expect(time.textContent).toMatch(/жовт/);
+        expect(time.title).toBe(format("2016-10-05T10:34:56.464Z", "uk", undefined, undefined, true));
+    });
 });

@@ -58,6 +58,9 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       // VoteSql.grade), and the rated filter is any vote, a ✗ included (VoteSql.voted); a yes/no
       // round's (false) keeps the sum of its rates and its approvals as the rated
       grades: Boolean = false,
+      // only the files with a comment in this contest (the toggle "Only with comments"): any
+      // round's, any author's, as the file's large view shows them (CommentJdbc.findBySubjectAndContest)
+      commentsIn: Option[Long] = None,
       driver: String = "mysql"
   ) {
 
@@ -243,7 +246,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       else {
         val images = sql"select ${i.result.*} from images i where i.page_id in ($pageIds)"
           .map(ImageJdbc(i)(_)).list().map(image => image.pageId -> image).toMap
-        val conditions = copy(regions = Set.empty, keyset = None, withPageId = None).where()
+        val conditions = copy(regions = Set.empty, keyset = None, withPageId = None, commentsIn = None).where()
         val inPage = if (conditions.value.isEmpty) sqls"where" else sqls"$conditions and"
         val votes = sql"select ${VoteJdbc.resultAll(s)} from vote s $inPage s.page_id in ($pageIds) order by s.id"
           .map(VoteJdbc(s)(_)).list().groupBy(_.pageId)
@@ -284,12 +287,13 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       userId.isDefined && roundId.isDefined && !grouped && !groupWithDetails && order.nonEmpty && !monumentJoin
 
     /** The file's values of the list's order columns, from the juror's row of it in the round
-      * (in the list's region), whatever the vote filter: None if the juror has no such file.
+      * (in the list's region), whatever the vote and comments filters: None if the juror has no
+      * such file.
       */
     def orderKey(pageId: Long)(implicit session: DBSession = autoSession): Option[Keyset] = {
       require(keyed, "a juror's list in a round")
       val columns = SQLSyntax.createUnsafely(order.map(_._1).mkString(", "))
-      val conditions = copy(rate = None, rated = None, withPageId = None).where()
+      val conditions = copy(rate = None, rated = None, withPageId = None, commentsIn = None).where()
       sql"select $columns from vote s $conditions and s.page_id = $pageId"
         .map(rs => Keyset((1 to order.size).map(i => Option(rs.any(i))), before = true))
         .single()
@@ -366,7 +370,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     /** The number of the query's images in each region, without its region filter: every
       * region of the juror's (or the round's) images, those the rate filter leaves out
       * counted 0, so a region's count is what its link lists. Files without a monument id
-      * are left out. The vote filter's extra file (`withPageId`) isn't counted.
+      * are left out. The vote filter's extra file (`withPageId`) isn't counted. With the
+      * comments filter ([[commentsIn]]) only commented files count, the others as 0.
       *
       * A juror's: one scan of the juror's rows on (jury_id, round_id, rate, monument_id,
       * page_id) (V48), the juror having one row per image. The whole round's: its images
@@ -379,14 +384,16 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       val hit = if (conditions.isEmpty) "1" else conditions.mkString("(", " AND ", ")")
       val sql = userId match {
         case Some(juror) =>
-          s"""SELECT ${regionOf("s.monument_id")} AS region, SUM($hit) FROM vote s
+          s"""SELECT ${regionOf("s.monument_id")} AS region, SUM($hit${commentedHit}) FROM vote s
+             |${commentedJoin("s.page_id")}
              |WHERE s.jury_id = ${juror.toLong} AND s.round_id = ${roundId.get.toLong}
              |GROUP BY region ORDER BY NULL""".stripMargin
         case None =>
-          s"""SELECT ${regionOf("i.monument_id")} AS region, SUM(p.hit)
+          s"""SELECT ${regionOf("i.monument_id")} AS region, SUM(p.hit${commentedHit})
              |FROM (SELECT s.page_id, MAX($hit) AS hit FROM vote s WHERE s.round_id = ${roundId.get.toLong}
              |      GROUP BY s.page_id) p
              |JOIN images i FORCE INDEX (images_page_monument_idx) ON i.page_id = p.page_id
+             |${commentedJoin("p.page_id")}
              |GROUP BY region ORDER BY NULL""".stripMargin
       }
       SQL(sql).map(rs => rs.stringOpt(1) -> rs.int(2)).list().collect { case (Some(region), n) => region -> n }.toMap
@@ -396,17 +403,31 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       * of them whatever the query's filters: one scan of the juror's rows on (jury_id,
       * round_id, rate, monument_id, page_id) (V48), the juror having one row per file. The
       * tabs' counts, the region nav's and the list's total all come from it
-      * ([[controllers.JurorCounts]]).
+      * ([[controllers.JurorCounts]]). With the comments filter ([[commentsIn]]) each count is of
+      * the commented files, 0 for none, every region and rate kept.
       */
     def regionRateCounts()(implicit session: DBSession = autoSession): Map[(Option[String], Int), Int] = {
       require(userId.isDefined && roundId.isDefined, "a juror's counts in a round")
-      SQL(s"""SELECT ${regionOf("s.monument_id")} AS region, s.rate, COUNT(*) FROM vote s
+      val count = if (commentsIn.isEmpty) "COUNT(*)" else s"SUM(1${commentedHit})"
+      SQL(s"""SELECT ${regionOf("s.monument_id")} AS region, s.rate, $count FROM vote s
+             |${commentedJoin("s.page_id")}
              |WHERE s.jury_id = ${userId.get.toLong} AND s.round_id = ${roundId.get.toLong} AND s.page_id IS NOT NULL
              |GROUP BY region, s.rate ORDER BY NULL""".stripMargin)
         .map(rs => (rs.stringOpt(1), rs.int(2)) -> rs.int(3))
         .list()
         .toMap
     }
+
+    /** With the comments filter, the commented files of the contest joined to a file's rows
+      * (`pageId`), for the counts that keep every region and rate of the list's files, those
+      * without a comment counted 0 ([[commentedHit]]); "" without it.
+      */
+    private def commentedJoin(pageId: String): String =
+      commentsIn.fold("")(contestId =>
+        s"LEFT JOIN (SELECT DISTINCT c.room FROM comment c WHERE c.contest_id = ${contestId.toLong}) cm ON cm.room = $pageId")
+
+    /** A factor of a count's term: 1 for a commented file, else 0 ([[commentedJoin]]); "" without it. */
+    private def commentedHit: String = commentsIn.fold("")(_ => " * (cm.room IS NOT NULL)")
 
     /** A single sub-region (adm1) filter, which the monument table has. */
     private def subRegionFilter: Boolean = subRegions && regions.size == 1 && regions.head.length > 2
@@ -441,6 +462,30 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         withPageId.fold(cond)(pageId => sqls"($cond or s.page_id = $pageId)")
       }
     }
+
+    /** The comments filter's condition on a vote row ([[commentsIn]]): a file with a comment in
+      * the contest, a semi-join on comment's (contest_id, room) index (V101); and the file
+      * `withPageId` too, whatever its comments, as [[voteFilter]] keeps it. That file has comments
+      * unless its URL was typed with the toggle on, so the OR, which keeps MariaDB from the
+      * semi-join (a review of 2026-11-13, all the jurors' large view of a round of production's
+      * copy: a file's rank 63 ms with it, 2.4 ms without), is added only for a file without them ([[pageWithoutComments]]).
+      */
+    private def commentsFilter: Option[SQLSyntax] =
+      commentsIn.map { contestId =>
+        val commented = SelectionQuery.commented(contestId)
+        pageWithoutComments.fold(commented)(pageId => sqls"($commented or s.page_id = $pageId)")
+      }
+
+    /** The file `withPageId` if it has no comment in the contest ([[commentsIn]]): one read of
+      * comment's (contest_id, room) index, once per query.
+      */
+    private lazy val pageWithoutComments: Option[Long] =
+      for {
+        contestId <- commentsIn
+        pageId    <- withPageId
+        if sql"select 1 from comment c where c.contest_id = $contestId and c.room = $pageId limit 1"
+          .map(_.int(1)).single().isEmpty
+      } yield pageId
 
     /** The `rated` filter's condition on a vote row: rated, or unrated. Rated is a yes/no
       * round's yes, and a rated round's any vote, stars or a ✗ ([[grades]]).
@@ -485,6 +530,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
             else sqls"s.monument_id like $likeParam and ${SQLSyntax.createUnsafely(regionOf("s.monument_id"))} = $region"
           }
         },
+        commentsFilter,
         Option.when(withPage)(sqls"s.page_id is not null")
       ).flatten
 
@@ -559,6 +605,10 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       * column in every list's order and rank vocabulary (`RoundImageQuery.translate`).
       */
     def rateSum(grades: Boolean): String = if (grades) VoteSql.GradeSum else VoteSql.RateSum
+
+    /** A vote row's file has a comment in the contest: what [[SelectionQuery.commentsIn]] keeps. */
+    def commented(contestId: Long): SQLSyntax =
+      sqls"s.page_id in (select c.room from comment c where c.contest_id = $contestId)"
   }
 
 }

@@ -393,10 +393,37 @@
     return mark;
   }
 
+  /** The file's comments in the contest on its tile (gallery.scala.html's data-comments and
+    * -comments-label), as snippets/commentBadge.scala.html draws them on the other thumbnails: a
+    * speech bubble and the number, hidden from screen readers, which read the words ("3
+    * comments", in the page's plural form), also its tooltip; none for a file without them. */
+  function addComments(tile, item) {
+    var count = parseInt(item.comments, 10);
+    if (!(count > 0)) return null;
+    var label = item.commentsLabel || String(count);
+    var badge = document.createElement('span');
+    badge.className = 'badge wlx-tile-comments';
+    badge.title = label;
+    var icon = document.createElement('i');
+    icon.className = 'bi bi-chat-left-text-fill';
+    icon.setAttribute('aria-hidden', 'true');
+    var shown = document.createElement('span');
+    shown.setAttribute('aria-hidden', 'true');
+    shown.textContent = ' ' + count;
+    var text = document.createElement('span');
+    text.className = 'visually-hidden';
+    text.textContent = label;
+    badge.appendChild(icon);
+    badge.appendChild(shown);
+    badge.appendChild(text);
+    tile.appendChild(badge);
+    return badge;
+  }
+
   window.wlxTileVotes = {
     voteUrl: voteUrl, send: send, explain: explain, addVote: addVote, vote: vote, addStars: addStars,
     addListStars: addListStars, addTally: addTally, addVoteTime: addVoteTime,
-    voteTimeAfter: voteTimeAfter, addVoteMark: addVoteMark
+    voteTimeAfter: voteTimeAfter, addVoteMark: addVoteMark, addComments: addComments
   };
 
   // the by-rate list's stars, once the page is there (raty loaded only where it has them)

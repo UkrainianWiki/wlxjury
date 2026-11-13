@@ -18,6 +18,8 @@ access.denied.suggested.files=Ouvrir les fichiers d’un concours accessible à 
 access.denied.required=Cette page est réservée aux rôles suivants : {0}.
 access.denied.current.role=Votre rôle dans {0} : {1}.
 access.denied.inactive=Votre participation à ce concours a été désactivée.
+access.denied.round.stopped=Ce tour est arrêté : on ne peut plus commenter ses fichiers. Votre commentaire n''a pas été enregistré.
+access.denied.back.to.file=Retour au fichier
 access.denied.contact=Si vous avez besoin d’un accès, demandez à l’administrateur de votre concours.
 access.denied.reference=Référence : {0}, {1}
 password=Mot de passe
@@ -153,6 +155,14 @@ your.comment.here = Votre commentaire ici
 your.comment = Votre commentaire
 comments = Commentaires
 submit.comment = Envoyer un commentaire
+# the comments badge on thumbnails (its words by the language's plural form: views.Plural), the
+# list's toggle of only the files with comments, a comment's round in the large view
+comments.only = Seulement avec commentaires ({0})
+comments.count.one = {0} commentaire
+comments.count.few = {0} commentaires
+comments.count.many = {0} commentaires
+comments.count.other = {0} commentaires
+comment.round.other = Écrit au tour {0}
 media.type = Type de média
 files = Fichiers
 
