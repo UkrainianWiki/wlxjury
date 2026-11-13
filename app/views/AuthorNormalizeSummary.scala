@@ -21,6 +21,9 @@ object AuthorNormalizeSummary {
       "changed" -> st.changed,
       "uploader" -> st.fromUploader,
       "unresolved" -> st.unresolved,
+      "restored" -> st.restored,
+      "not.restored" -> st.notRestored,
+      "unchanged" -> st.unchanged,
       "skipped" -> st.skipped
     ).filter(_._2 > 0).map { case (key, n) => messages(s"authors.normalize.$key", n) }
     messages("authors.normalize.result", job.id.toString, date(job.finishedAt.getOrElse(job.createdAt)),

@@ -198,6 +198,9 @@ authors.normalize.clean = rien à modifier
 authors.normalize.changed = {0,choice,1#1 auteur modifié|1<{0,number,integer} auteurs modifiés}
 authors.normalize.uploader = {0,choice,1#dont 1 remplacé par le téléverseur d''origine|1<dont {0,number,integer} remplacés par le téléverseur d''origine}
 authors.normalize.unresolved = {0,choice,1#dont 1 laissé sans auteur (aucun trouvé)|1<dont {0,number,integer} laissés sans auteur (aucun trouvé)}
+authors.normalize.restored = {0,choice,1#dont 1 rétabli depuis Commons (compte enregistré en points d''interrogation)|1<dont {0,number,integer} rétablis depuis Commons (comptes enregistrés en points d''interrogation)}
+authors.normalize.not.restored = {0,choice,1#1 compte en points d''interrogation laissé tel quel (Commons ne nomme aucun auteur)|1<{0,number,integer} comptes en points d''interrogation laissés tels quels (Commons ne nomme aucun auteur)}
+authors.normalize.unchanged = {0,choice,1#1 déjà tel qu''un import l''enregistre|1<{0,number,integer} déjà tels qu''un import les enregistre}
 authors.normalize.skipped = {0,choice,1#1 ignoré (modifié entre-temps par un import)|1<{0,number,integer} ignorés (modifiés entre-temps par un import)}
 contest = Concours
 

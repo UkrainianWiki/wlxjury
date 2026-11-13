@@ -37,10 +37,14 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
   - **Normalize stored authors**, a root-only button on the rounds list: a background job
     (`author_normalize`) stores each such author as the account an import stores today, keyed by
     page id (never by value: `images.author` is `utf8mb4_general_ci`). A link's target account
-    (`[[User:Petro_Hrushko|Petro]]` → `Petro Hrushko`); a credit template's linked user; for a
-    template that links to nobody (`{{MO}}`), the original uploader, none for a deleted file or a
-    bot; none for an unknown author. Chunked, cancellable and resumable; a second run changes
-    nothing. Admin guide: "Normalizing stored authors".
+    (`[[User:Petro_Hrushko|Petro]]` → `Petro Hrushko`); a credit template's linked user (the four
+    on production all link to one: `{{MO}}` → `Максим Огородник`); for a template that links to
+    nobody, the original uploader, none for a deleted file or a bot; none for an unknown author.
+    Accounts an old import's encoding loss stored as question marks (`[[User:???????? ????????|…]]`:
+    38 values, 3,706 files on the production copy, none deleted) are read again from the file's
+    page text on Commons; one Commons names no author for is left as it is, never stored as
+    question marks. Chunked, cancellable and resumable; a second run changes nothing. Admin guide:
+    "Normalizing stored authors".
   - The large views, their JSON and the file list's author column show any value still stored
     with markup as its account (`StoredAuthors.shown`), as plain text. Authors stay visible to
     organizers, admins and root only.
@@ -58,7 +62,9 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
   parsing (`{{own}} by [[w:Museum]]`) falls back to the original uploader, as a credit template
   that links to nobody does. `FileAuthorSpec` and `RoundFileListSpec` check every write path;
   `AuthorNormalizeSpec` the job (chunking, idempotency, two values equal under the collation,
-  Cancel and Retry).
+  question-mark accounts restored or left, Cancel and Retry). The job's first step counts the
+  files with markup in one scan of `images` (about 10 s on production) on the fetch lane, and its
+  few Commons requests may overlap an import's: the fetch lane has no limit shared across kinds.
 
 ## 26.11.4 (2026-11-13)
 

@@ -811,11 +811,15 @@ contest, as a background job:
   the file's original uploader, as an import does. A file deleted on Commons, or uploaded by a
   bot, then has no author.
 - An unknown author (`{{Unknown|author}}`) becomes no author.
+- An account that an old import stored as question marks (`[[User:???????? ????????|…]]`, its
+  letters lost) is read again from the file's page on Commons. If Commons names no author for it
+  (a file deleted there), it is left as it is.
 
 The job shows its progress under the buttons, with **Cancel**, and **Retry** if it fails. When
 it is done, the line shows how many authors it changed, how many got the uploader, how many were
-left without an author, and how many were skipped because an import changed them meanwhile. It
-can be run again: a second run finds nothing to change.
+left without an author, how many question-mark accounts it restored from Commons or left, and
+how many were skipped because an import changed them meanwhile. It can be run again: a second
+run finds nothing to change.
 
 After it, files whose author is a contest member are found as conflicts of interest on the
 round form and the conflicts pages. Rounds already distributed keep their files: to leave the

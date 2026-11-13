@@ -18,6 +18,14 @@ class StoredAuthorsSpec extends Specification {
     }
   }
 
+  "isMangled" should {
+
+    "tell an account an encoding loss turned into question marks" in {
+      Seq("???????? ????????", "?????", "? ?", "Ab??cd").map(StoredAuthors.isMangled) must contain(beTrue).forall
+      Seq("Who?", "Liliia2022", "Петро Грушко", "").map(StoredAuthors.isMangled) must contain(beFalse).forall
+    }
+  }
+
   "author" should {
 
     "read a stored value as an import reads the page's author" in {

@@ -186,6 +186,9 @@ authors.normalize.clean = змінювати нічого
 authors.normalize.changed = змінено авторів: {0}
 authors.normalize.uploader = з них взято першого завантажувача: {0}
 authors.normalize.unresolved = з них без автора (не знайдено): {0}
+authors.normalize.restored = з них відновлено з Commons (обліковий запис, збережений знаками питання): {0}
+authors.normalize.not.restored = облікових записів зі знаків питання залишено як є (Commons не називає автора): {0}
+authors.normalize.unchanged = уже такі, як після імпорту: {0}
 authors.normalize.skipped = пропущено (тим часом змінено імпортом): {0}
 contest = Конкурс
 

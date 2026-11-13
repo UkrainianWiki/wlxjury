@@ -18,9 +18,19 @@ object StoredAuthors {
   /** Whether the stored value is wiki markup, not an account name. */
   def hasMarkup(value: String): Boolean = MarkupParts.exists(value.contains)
 
-  /** [[hasMarkup]] in SQL, of the `images` column `author` (no index: a scan). */
+  /** [[hasMarkup]] in SQL, of the `images` column `author` (no index: a scan): compared
+    * case-sensitively, as [[hasMarkup]] does (the column is `utf8mb4_general_ci`, where
+    * `[HTTP` would match `[http`).
+    */
   def markupSql(author: SQLSyntax): SQLSyntax =
-    sqls"(${sqls.joinWithOr(MarkupParts.map(part => sqls"$author LIKE ${"%" + part + "%"}"): _*)})"
+    sqls"(${sqls.joinWithOr(MarkupParts.map(part => sqls"$author LIKE BINARY ${"%" + part + "%"}"): _*)})"
+
+  /** An account an old import's encoding loss turned into question marks
+    * (`[[User:???????? ????????|…]]`): `??` in it, or nothing but `?` and spaces. Not a name
+    * to store: Commons still has the real one.
+    */
+  def isMangled(name: String): Boolean =
+    name.contains("??") || (name.contains('?') && name.forall(c => c == '?' || c.isWhitespace))
 
   /** `Автор = Я` ("me", uk.wikipedia's `{{Зображення}}`): the uploader, as scalawiki reads it. */
   private val SelfAuthors = Set("Я", "я")

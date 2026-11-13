@@ -19,8 +19,14 @@ import javax.inject.{Inject, Singleton}
   *                    links to nobody, or markup that names nobody readable
   * @param unresolved  of [[changed]], none (NULL): an unknown author, or the uploader looked
   *                    up but not found (a file deleted on Commons) or a bot
-  * @param skipped     left as they were: already as an import stores them, or changed by an
-  *                    import between the step's read and its write
+  * @param restored    of [[changed]], accounts an old import's encoding loss had turned into
+  *                    question marks ([[StoredAuthors.isMangled]]), read again from the file's
+  *                    page text on Commons
+  * @param notRestored such accounts left as they were: Commons has no page text (a deleted
+  *                    file) or names no author for them; never stored as question marks
+  * @param unchanged   already as an import stores them (nothing to write)
+  * @param skipped     left as they were: changed by an import between the step's read and its
+  *                    write
   * @param templates   the credit templates that link to nobody (their files got the uploader)
   */
 final case class AuthorNormalizeState(
@@ -31,15 +37,39 @@ final case class AuthorNormalizeState(
     fromUploader: Long = 0L,
     unresolved: Long = 0L,
     skipped: Long = 0L,
-    templates: Seq[String] = Nil
+    templates: Seq[String] = Nil,
+    restored: Long = 0L,
+    notRestored: Long = 0L,
+    unchanged: Long = 0L
 )
 
 object AuthorNormalizeState {
   implicit val format: OFormat[AuthorNormalizeState] = Json.using[Json.WithDefaultValues].format[AuthorNormalizeState]
 }
 
-/** One file's author as stored, and as the job stores it. */
-final case class AuthorFix(pageId: Long, stored: String, author: Option[String], how: ImageText.Resolved)
+/** One file's author as stored, and as the job stores it (`author`; nothing written if
+  * `outcome` is [[AuthorFix.NotRestored]]).
+  */
+final case class AuthorFix(
+    pageId: Long,
+    stored: String,
+    author: Option[String],
+    how: ImageText.Resolved,
+    outcome: AuthorFix.Outcome = AuthorFix.Normalized
+)
+
+object AuthorFix {
+  sealed trait Outcome
+
+  /** Resolved from the stored value. */
+  case object Normalized extends Outcome
+
+  /** A mangled account ([[StoredAuthors.isMangled]]) resolved from the page text on Commons. */
+  case object Restored extends Outcome
+
+  /** A mangled account Commons gave no author for: left as it is. */
+  case object NotRestored extends Outcome
+}
 
 /** What one fetch of an `author_normalize` job got: the files with an author with markup
   * after the cursor, up to the next cursor, each with the author an import would store.
@@ -59,7 +89,10 @@ final case class AuthorChunk(fixes: Seq[AuthorFix], nextCursor: Long, last: Bool
   *     names; a credit template's user (one Commons request for the window's templates);
   *     the original uploader for a template that links to nobody (a request per
   *     [[CommonsSource.AuthorBatch]] such files), none for a file deleted on Commons, a bot's
-  *     upload or an unknown author;
+  *     upload or an unknown author. An account that an old import's encoding loss turned into
+  *     question marks ([[StoredAuthors.isMangled]]) is read again from the file's page text
+  *     (a request per [[CommonsSource.maxIdsPerRequest]] such files), as an import reads it;
+  *     without a page text or an author there, the stored value is left as it is;
   *  2. written in one transaction: the files' rows locked by page id, and each author that
   *     is still what the fetch read written by page id (`images.author` is
   *     `utf8mb4_general_ci`: a write by value would also change `[[User:ABC|x]]` for
@@ -67,6 +100,10 @@ final case class AuthorChunk(fixes: Seq[AuthorFix], nextCursor: Long, last: Bool
   *
   * Nothing caches authors: conflicts of interest ([[db.scalikejdbc.CoiMembers]]) read them
   * when asked, and match these files from the next read on.
+  *
+  * The first fetch counts the files with markup for the progress: one scan of `images`
+  * (about 10 s for a million files) on the fetch lane. The fetch lane has no shared Commons
+  * limit across kinds: this job's few requests may overlap a `commons_image_import`'s.
   */
 @Singleton
 class AuthorNormalizeHandler(source: CommonsSource, scanRows: Int, chunkRows: Int)
@@ -105,17 +142,42 @@ class AuthorNormalizeHandler(source: CommonsSource, scanRows: Int, chunkRows: In
         .map(rs => rs.long(1) -> rs.string(2)).list()
       (rows, windowEnd, total)
     }
+    def named(ref: ImageText.Author) = ref match {
+      case ImageText.Author.Named(name) => ImageText.storedAuthor(name)
+      case _                            => None
+    }
     val parsed = rows.map { case (pageId, stored) =>
       val ref = StoredAuthors.author(stored)
-      val author = ref match {
-        case ImageText.Author.Named(name) => ImageText.storedAuthor(name)
-        case _                            => None
-      }
-      Image(pageId, "", author = author) -> Some(ref)
+      (pageId, stored, ref, named(ref))
     }
-    val storedById = rows.toMap
-    val fixes = ImageText.resolvedAuthors(parsed, source).map { case (image, how) =>
-      AuthorFix(image.pageId, storedById(image.pageId), image.author, how)
+    val mangled = parsed.collect { case (pageId, _, _, Some(a)) if StoredAuthors.isMangled(a) => pageId }
+    // their page text, read by page id as an import reads it; none for a deleted file
+    val texts: Map[Long, String] =
+      if (mangled.isEmpty) Map.empty
+      else {
+        val perRequest = source.maxIdsPerRequest
+        mangled.grouped(perRequest).flatMap(ids => source.files(ids, info = false, text = true))
+          .flatMap(page => page.id.zip(page.text)).toMap
+      }
+    val mangledSet = mangled.toSet
+    val inputs = parsed.flatMap { case (pageId, _, ref, author) =>
+      if (mangledSet(pageId))
+        texts.get(pageId).map { text =>
+          val fromText = ImageText.author(text)
+          Image(pageId, "", author = named(fromText)) -> Some(fromText)
+        }
+      else Some(Image(pageId, "", author = author) -> Some(ref))
+    }
+    val resolved = ImageText.resolvedAuthors(inputs, source).map { case (image, how) => image.pageId -> (image.author, how) }.toMap
+    val fixes = parsed.map { case (pageId, stored, _, _) =>
+      resolved.get(pageId) match {
+        case Some((author, how)) if !mangledSet(pageId) => AuthorFix(pageId, stored, author, how)
+        case Some((Some(author), how)) if !StoredAuthors.isMangled(author) =>
+          AuthorFix(pageId, stored, Some(author), how, AuthorFix.Restored)
+        case other =>
+          AuthorFix(pageId, stored, Some(stored), other.fold[ImageText.Resolved](ImageText.Resolved.AsRead)(_._2),
+            AuthorFix.NotRestored)
+      }
     }
     val full = rows.size == chunkRows
     AuthorChunk(
@@ -131,7 +193,9 @@ class AuthorNormalizeHandler(source: CommonsSource, scanRows: Int, chunkRows: In
   def write(job: Job, chunk: AuthorChunk, ctx: StepContext): StepResult = {
     implicit val session: DBSession = ctx.session
     val st = stateOf(job)
-    val toWrite = chunk.fixes.filterNot(f => f.author.contains(f.stored)).sortBy(_.pageId)
+    val (left, toResolve) = chunk.fixes.partition(_.outcome == AuthorFix.NotRestored)
+    val (unchanged, changes) = toResolve.partition(f => f.author.contains(f.stored))
+    val toWrite = changes.sortBy(_.pageId)
     // the rows locked in page id order, their authors compared exactly (not in the column's
     // collation): one an import wrote since the fetch is left as it is
     val current =
@@ -143,7 +207,7 @@ class AuthorNormalizeHandler(source: CommonsSource, scanRows: Int, chunkRows: In
     if (written.nonEmpty)
       sql"UPDATE images SET author = ? WHERE page_id = ?".batch(written.map(f => Seq(f.author, f.pageId)): _*).apply()
     val unresolvedTemplates = written.collect {
-      case AuthorFix(_, _, _, ImageText.Resolved.Uploader(Some(template))) => template
+      case AuthorFix(_, _, _, ImageText.Resolved.Uploader(Some(template)), _) => template
     }
     val next = st.copy(
       cursor = chunk.nextCursor,
@@ -152,12 +216,17 @@ class AuthorNormalizeHandler(source: CommonsSource, scanRows: Int, chunkRows: In
       changed = st.changed + written.size,
       fromUploader = st.fromUploader + written.count(f => f.author.isDefined && f.how.isInstanceOf[ImageText.Resolved.Uploader]),
       unresolved = st.unresolved + written.count(_.author.isEmpty),
-      skipped = st.skipped + (chunk.fixes.size - written.size),
-      templates = (st.templates ++ unresolvedTemplates).distinct.take(MaxTemplates)
+      skipped = st.skipped + (toWrite.size - written.size),
+      templates = (st.templates ++ unresolvedTemplates).distinct.take(MaxTemplates),
+      restored = st.restored + written.count(_.outcome == AuthorFix.Restored),
+      notRestored = st.notRestored + left.size,
+      unchanged = st.unchanged + unchanged.size
     )
     if (chunk.last) {
       logger.info(s"author_normalize job ${job.id}: ${next.read} authors with markup read, ${next.changed} changed " +
-        s"(${next.fromUploader} to the uploader, ${next.unresolved} to none), ${next.skipped} left as they were" +
+        s"(${next.fromUploader} to the uploader, ${next.unresolved} to none, ${next.restored} restored from Commons), " +
+        s"${next.notRestored} mangled ones Commons gave no author for, ${next.unchanged} unchanged, " +
+        s"${next.skipped} changed by an import meanwhile" +
         (if (next.templates.nonEmpty) s"; credit templates that link to nobody: ${next.templates.mkString(", ")}" else ""))
       StepResult.Done(Json.toJsObject(next), progress(next))
     } else StepResult.Continue(Json.toJsObject(next), progress(next))

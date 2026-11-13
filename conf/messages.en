@@ -196,6 +196,9 @@ authors.normalize.clean = nothing to change
 authors.normalize.changed = {0,choice,1#1 author changed|1<{0,number,integer} authors changed}
 authors.normalize.uploader = {0,choice,1#1 of them set to the original uploader|1<{0,number,integer} of them set to the original uploader}
 authors.normalize.unresolved = {0,choice,1#1 of them left without an author (none found)|1<{0,number,integer} of them left without an author (none found)}
+authors.normalize.restored = {0,choice,1#1 of them restored from Commons (an account stored as question marks)|1<{0,number,integer} of them restored from Commons (accounts stored as question marks)}
+authors.normalize.not.restored = {0,choice,1#1 account stored as question marks left as it was (Commons names no author)|1<{0,number,integer} accounts stored as question marks left as they were (Commons names no author)}
+authors.normalize.unchanged = {0,choice,1#1 already as an import stores it|1<{0,number,integer} already as an import stores them}
 authors.normalize.skipped = {0,choice,1#1 skipped (changed by an import meanwhile)|1<{0,number,integer} skipped (changed by an import meanwhile)}
 contest = Contest
 

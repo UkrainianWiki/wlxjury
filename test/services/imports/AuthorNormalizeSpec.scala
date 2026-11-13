@@ -38,7 +38,11 @@ class AuthorNormalizeSpec extends Specification with TestDb with BeforeAll with 
     9L -> Some("{{unknown|author}}"),                // nobody
     10L -> Some("{{own}} by [[w:Museum]]"),          // no user: the uploader, a bot here: none
     11L -> Some("[[User:Liliia2022|Liliia2022]]"),
-    12L -> Some("Liliia2022")
+    12L -> Some("Liliia2022"),
+    13L -> Some("[[User:???????? ????????|Петро]]"), // an encoding loss: read again from Commons
+    14L -> Some("[[User:???? ????|x]]"),             // the same, deleted on Commons: left as it is
+    15L -> Some("[[User:?????|x]]"),                 // its page names no author: the uploader
+    16L -> Some("[HTTPS://example.com Site]")        // not markup ([http is): not read
   )
 
   private val expected: Map[Long, Option[String]] = Map(
@@ -53,7 +57,11 @@ class AuthorNormalizeSpec extends Specification with TestDb with BeforeAll with 
     9L -> None,
     10L -> None,
     11L -> Some("Liliia2022"),
-    12L -> Some("Liliia2022")
+    12L -> Some("Liliia2022"),
+    13L -> Some("Real Name"),
+    14L -> Some("[[User:???? ????|x]]"),
+    15L -> Some("Uploader15"),
+    16L -> Some("[HTTPS://example.com Site]")
   )
 
   /** Commons: the credit templates' pages, and the files still there with their uploaders
@@ -62,7 +70,9 @@ class AuthorNormalizeSpec extends Specification with TestDb with BeforeAll with 
   private class Commons extends FakeCommonsSource(
         Seq(
           FakeFile(image(7L, None), uploaders = Seq("Retoucher", "Original Uploader")),
-          FakeFile(image(10L, None), uploaders = Seq("MuseumUploadBot"))
+          FakeFile(image(10L, None), uploaders = Seq("MuseumUploadBot")),
+          FakeFile(image(13L, None), text = Some("{{Information|description=d|author=[[User:Real_Name|Real]]}}")),
+          FakeFile(image(15L, None), text = Some("{{Information|description=d}}"), uploaders = Seq("Uploader15"))
         ),
         templates = Map(
           "SergiyBobokPhotos" -> "Photo by [[User:Sergiy Bobok|Sergiy Bobok]]",
@@ -106,7 +116,7 @@ class AuthorNormalizeSpec extends Specification with TestDb with BeforeAll with 
 
   private def setUp(): Unit = {
     imageDao.batchInsert(stored.map { case (id, author) => image(id, author) })
-    DB.autoCommit(implicit s => sql"UPDATE images SET deleted_at = NOW(3) WHERE page_id = 8".update(): Unit)
+    DB.autoCommit(implicit s => sql"UPDATE images SET deleted_at = NOW(3) WHERE page_id IN (8, 14)".update(): Unit)
   }
 
   private def authors: Map[Long, Option[String]] = DB.readOnly { implicit s =>
@@ -127,12 +137,14 @@ class AuthorNormalizeSpec extends Specification with TestDb with BeforeAll with 
       val st = AuthorNormalizeHandler.stateOf(job)
       (job.status === JobStatus.Done) and
         (authors === expected) and
-        (withMarkup === 0L) and
+        // the question-mark account Commons names nobody for is left as it was
+        (withMarkup === 1L) and
         (handler.fetches.get must beGreaterThan(3)) and
-        (st.total === Some(9L)) and (st.read === 9L) and (st.changed === 9L) and
-        (st.fromUploader === 1L) and (st.unresolved === 3L) and (st.skipped === 0L) and
+        (st.total === Some(12L)) and (st.read === 12L) and (st.changed === 11L) and
+        (st.fromUploader === 2L) and (st.unresolved === 3L) and (st.restored === 2L) and
+        (st.notRestored === 1L) and (st.unchanged === 0L) and (st.skipped === 0L) and
         (st.templates === Seq("MO")) and
-        (job.progressDone === Some(9L)) and (job.progressTotal === Some(9L))
+        (job.progressDone === Some(12L)) and (job.progressTotal === Some(12L))
     }
 
     "change nothing when run again, nor ask Commons" in {
@@ -142,8 +154,10 @@ class AuthorNormalizeSpec extends Specification with TestDb with BeforeAll with 
       val calls = commons.authorCalls.get
       val again = run(scheduler(new Handler(commons)))
       val st = AuthorNormalizeHandler.stateOf(again)
+      // only the account Commons can't restore is read again, and left again
       (again.status === JobStatus.Done) and (authors === expected) and
-        (st.total === Some(0L)) and (st.read === 0L) and (st.changed === 0L) and
+        (st.total === Some(1L)) and (st.read === 1L) and (st.changed === 0L) and (st.notRestored === 1L) and
+        (st.skipped === 0L) and (st.unchanged === 0L) and
         (commons.authorCalls.get === calls)
     }
 
@@ -152,7 +166,7 @@ class AuthorNormalizeSpec extends Specification with TestDb with BeforeAll with 
       val handler = new Handler(new Commons, beforeWrite = n =>
         if (n == 1) DB.autoCommit(implicit s => sql"UPDATE images SET author = 'Reimported' WHERE page_id = 1".update(): Unit))
       val st = AuthorNormalizeHandler.stateOf(run(scheduler(handler)))
-      (authors === expected.updated(1L, Some("Reimported"))) and (st.skipped === 1L) and (st.changed === 8L)
+      (authors === expected.updated(1L, Some("Reimported"))) and (st.skipped === 1L) and (st.changed === 10L) and (st.unchanged === 0L)
     }
 
     "resume where it failed on Retry, and finish" in {
@@ -167,7 +181,7 @@ class AuthorNormalizeSpec extends Specification with TestDb with BeforeAll with 
       (failed.status === JobStatus.Failed) and
         (partly(1L) === Some("AbC")) and (partly(5L) === Some("{{SergiyBobokPhotos}}")) and
         (retried.status === JobStatus.Done) and (authors === expected) and
-        (AuthorNormalizeHandler.stateOf(retried).changed === 9L)
+        (AuthorNormalizeHandler.stateOf(retried).changed === 11L)
     }
 
     "stop when cancelled, keeping what its steps wrote; a new run finishes" in {
