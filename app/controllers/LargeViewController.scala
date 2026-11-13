@@ -34,7 +34,7 @@ class LargeViewController @Inject() (
   def large(asUserId: Long, pageId: Long, region: String = "all", roundId: Long): EssentialAction =
     noStore(withAuth() { sessionUser => implicit request =>
       val maybeRound =
-        if (roundId == 0) Round.activeRounds(sessionUser).headOption
+        if (roundId == 0) JurorContests.firstOpenRound(sessionUser)
         else Round.findById(roundId)
       // a round of another of the user's contests opens in that contest
       val user = maybeRound.fold(sessionUser)(r => Secured.inContest(sessionUser, r.contestId))
@@ -42,8 +42,11 @@ class LargeViewController @Inject() (
     })
 
   def largeCurrentUser(pageId: Long, region: String = "all"): EssentialAction =
-    noStore(withAuth() { user => implicit request =>
-      show(pageId, user, user.getId, region, 0, Round.activeRounds(user).headOption)
+    noStore(withAuth() { sessionUser => implicit request =>
+      // as round 0 in [[large]]: the juror's open round, in another of their contests if need be
+      val maybeRound = JurorContests.firstOpenRound(sessionUser)
+      val user = maybeRound.fold(sessionUser)(r => Secured.inContest(sessionUser, r.contestId))
+      Secured.switchingContest(sessionUser, user)(show(pageId, user, user.getId, region, 0, maybeRound))
     })
 
   /** A vote in the large view, going on in its list ([[RoundList.voteUrl]]): to the file after
@@ -115,7 +118,7 @@ class LargeViewController @Inject() (
         // no such round, or no active one: a page saying so, not a server error
         render {
           case Accepts.Html() =>
-            if (roundId == 0) Ok(views.html.errorPage(Some(user), "error.title", "no.round.yet"))
+            if (roundId == 0) JurorContests.noRoundPage(user)
             else NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found"))
           case Accepts.Json() =>
             NotFound(Json.obj("error" -> (if (roundId == 0) "no_round" else "round_not_found")))

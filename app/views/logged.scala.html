@@ -1,30 +1,29 @@
-@import db.scalikejdbc.ContestJuryJdbc
-@import scalikejdbc.sqls
 @(user: db.scalikejdbc.User, backHere: Boolean = true)(implicit messages: Messages, request: RequestHeader)
 
 @if(user != null) {
     <ul class="navbar-nav">
-        @defining(user.userContests.filter(_.active)) { memberships =>
-        @if(memberships.size > 1) {
-        @defining(ContestJuryJdbc.findAllBy(sqls.in(ContestJuryJdbc.defaultAlias.id, memberships.map(_.contestId)))) { contests =>
+        @* the contests to switch to, computed once (JurorContests.switcherEntries): a juror-only
+           membership without a round open to the user (last year's) is left out, the current
+           contest always shown; nothing with one entry *@
+        @defining(controllers.JurorContests.switcherEntries(user)) { entries =>
+        @if(entries.nonEmpty) {
         <li class="nav-item dropdown">
             <a href="#" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" role="button" aria-expanded="false" title="@Messages("contest.switch")">
                 <i class="bi bi-shuffle" aria-hidden="true"></i>
-                @contests.find(_.id == user.contestId).fold(Messages("contest.switch"))(_.fullName)
+                @entries.find(e => user.contestId.contains(e._1.contestId)).fold(Messages("contest.switch"))(_._2.fullName)
             </a>
             <ul class="dropdown-menu dropdown-menu-end">
-                @for(uc <- memberships; contest <- contests.find(_.id.contains(uc.contestId))) {
+                @for((uc, contest) <- entries) {
                     <li>
                         @* a POST with the CSRF token: a link could switch it from another site *@
                         <form method="post" action="@routes.UserController.switchContest(uc.contestId)" class="navbar-menu-form">
                             @csrfField()
-                            <button type="submit" class="dropdown-item@if(user.contestId.contains(uc.contestId)){ active}">@contest.fullName (@uc.roles.map(r => Messages("role." + r)).mkString(", "))</button>
+                            <button type="submit" class="dropdown-item@if(user.contestId.contains(uc.contestId)){ active}"@if(user.contestId.contains(uc.contestId)){ aria-current="true"}>@contest.fullName (@uc.roles.map(r => Messages("role." + r)).mkString(", "))</button>
                         </form>
                     </li>
                 }
             </ul>
         </li>
-        }
         }
         }
         @* the colour mode: the current one's icon, opening light, dark and auto. A POST with the
@@ -60,8 +59,31 @@
                 <i class="bi bi-person-fill" aria-hidden="true"></i><span class="visually-hidden">@user.fullname</span>
             </a>
             <ul class="dropdown-menu dropdown-menu-end">
+                @* who is signed in (one person may have an account per contest or year): the signed-in
+                   account's own name, role in the current contest (root: root), then wiki login and sign-in
+                   email; never the contest. Text, not a menu item: Bootstrap's arrow keys move between
+                   .dropdown-item only, so they skip it; screen readers read it as the list's first item *@
                 <li>
-                    <a class="dropdown-item" href="@routes.UserController.editUser(user.getId)">
+                    <div class="dropdown-item-text navbar-account" id="navbar-account">
+                        <div class="small text-body-secondary">@Messages("signed.in.as")</div>
+                        <div class="fw-semibold text-break">@user.fullname</div>
+                        @* the role first, then which login (an admin's suggestion) *@
+                        @defining((if (user.isRoot || user.hasRole(db.scalikejdbc.User.ROOT_ROLE)) Seq(db.scalikejdbc.User.ROOT_ROLE) else Nil) ++ user.contestRole.toSeq) { roles =>
+                            @if(roles.nonEmpty) {
+                                <div class="d-flex align-items-baseline gap-1 navbar-account-role"><i class="bi bi-person-badge" aria-hidden="true"></i><span class="text-break"><span class="visually-hidden">@Messages("role"):</span> @roles.map(r => Messages("role." + r)).mkString(", ")</span></div>
+                            }
+                        }
+                        @for(wiki <- user.wikiAccount.filter(_.trim.nonEmpty)) {
+                            <div class="d-flex align-items-baseline gap-1 navbar-account-wiki"><i class="bi bi-wikipedia" aria-hidden="true"></i><span class="text-break"><span class="visually-hidden">@Messages("wiki.account"):</span> @wiki</span></div>
+                        }
+                        @if(user.email.trim.nonEmpty) {
+                            <div class="d-flex align-items-baseline gap-1 navbar-account-email"><i class="bi bi-envelope" aria-hidden="true"></i><span class="text-break"><span class="visually-hidden">@Messages("email"):</span> @user.email</span></div>
+                        }
+                    </div>
+                </li>
+                <li><hr class="dropdown-divider"></li>
+                <li>
+                    <a class="dropdown-item" href="@routes.UserController.editUser(user.getId, None, controllers.UserController.profileLinkReturnTo(request, backHere))">
                         <i class="bi bi-person" aria-hidden="true"></i> @Messages("profile")
                     </a>
                 </li>

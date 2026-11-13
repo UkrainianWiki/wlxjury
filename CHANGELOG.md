@@ -27,6 +27,16 @@ with `.N` for an extra deploy in the same month (`26.11.1`), and release heading
 
 The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 2026-11-11.
 
+**Fixes**
+
+- **Ukrainian:** a round that is not active shows «Ні» (no) in the rounds list's Active column, not «Немає» (absent).
+
+## 26.11.2 (2026-11-12)
+
+Deployed 2026-11-12, build `26.11.2-5fee540412f4` (release commit `5fee5404` on `release/26.11.2`),
+schema V96 (migration V96: `account_change`, `account_token.unsent`, `users.email_set_by_admin_at`;
+111 ms on the production copy), from `26.11.1`. PRs #292-#295. Deploy record: roadmap, "26.11.2 deploy record".
+
 **Features**
 
 - **Admins fix jurors' emails** (the maintainer's decision of 2026-11-12): an admin who may edit
@@ -46,12 +56,45 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   log). An account that can sign in (a password, Google or Wikimedia) whose address an admin set
   is invited only by who may set its password (not a fellow admin); a stale edit page doesn't
   revert an address changed meanwhile.
+- **Who is signed in:** the user menu starts with the signed-in account (one person may have an
+  account per contest or year): its name, wiki login, sign-in email and role in the current
+  contest (root: Root), as text that the menu's arrow keys skip; long values wrap on a phone.
 
 **Fixes**
 
 - **Profile:** the password change form asks for the current password first, then the new one.
 - **Account mails:** the email-change confirmation says what it is about (the WLX Jury account,
   the site, asked from the account's profile); the invitation without a contest names who invites.
+- **Users:** the edit page no longer has the **Sort** field (root only; the maintainer's decision
+  of 2026-11-12). The users list and the round form's jurors are in the order the accounts were
+  added (account id), which every account without a sort value already had (a round's
+  distribution already went by account id). `users.sort` stays in the database, no longer read
+  or written.
+- **Addresses ending in `/`:** a page address with a trailing slash that the site doesn't have,
+  e.g. `/auth/` (typed or pasted), was the "page not found" page; it now redirects (302) to the
+  address without the slash, the query kept (signed out, the page then asks to sign in as usual).
+  Only within the site: an address that would lead elsewhere (`//host/`, encoded slashes or
+  backslashes) stays a 404, as does a form sent to such an address.
+- **Users page:** in the add-person row the role select and the add button sat at the top of the
+  row, level with the field labels, not with the inputs (since the Bootstrap 5 templates hid the
+  role's label). The role has its label again and the button the label's space, so both are level
+  with the inputs, also when an error shows under a field.
+- **Profile:** saving one's own profile goes back to the page it was opened from (the user menu's
+  **Profile** link carries it; kept when a save is refused, and on the profile when the save has
+  a notice to show, e.g. an email change's link sent). Only a page of the site, never the profile
+  itself, sign-out or a contest switch; otherwise the save goes where it did before.
+- **Jurors with last year's membership:** the contest menu no longer lists a contest where the
+  person is only a juror and no round is open to them (the current contest always shows; an
+  organizer or admin keeps all theirs), so with one contest left there is no menu. For a juror, the
+  start page (and a gallery or large view without a round) opens a round of their latest newer
+  contest (a higher contest id) when the current one has none, and the session goes on there;
+  never an older one, whose final round usually stays open. "No round configured yet" no longer
+  links to the start page, which showed it again: it has **Logout** and the person's other
+  contests to switch to (last year's open round among them).
+- **Gallery order:** a juror's Unrated, Selected and Rejected tabs no longer offer **By my rating**:
+  every file there has the same rating, so the order menu's place says **In file order** as plain
+  text. The order chosen on the other tabs is kept in the tabs' links (and the remembered order is
+  unchanged), so going back to **All** shows it again.
 
 **Development**
 

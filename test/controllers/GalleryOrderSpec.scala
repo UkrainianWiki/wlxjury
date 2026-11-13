@@ -137,7 +137,78 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         html must contain(s"""href="$base?filter=rated&sort=file">Rated (1)</a>""")
         // the unrated tab is the page's
         html must contain(s"""<a class="nav-link active" aria-current="page" href="$base?filter=unrated&sort=file">""")
-        html must contain(s"""href="$base?filter=unrated&sort=rate"""")
+        // no choice of order on the unrated tab, where every file has the same (no) rate; the
+        // all files tab has it
+        html must not(contain(s"""href="$base?filter=unrated&sort=rate""""))
+        page(gallery(f), f).replace("&amp;", "&") must contain(s"""href="$base?sort=rate"""")
+      }
+    }
+
+    "have no By my rating on tabs of one rate, but In file order as text, and keep it for the other tabs" in {
+      testDbApp { implicit app =>
+        val f = fixture(Round.binaryRound)
+        // selected: 5, 2 and 12 (file order 2, 5, 12); rejected: 3
+        Seq(4, 1, 11).foreach(i => VoteJdbc.rate(f.pageIds(i), f.juror.getId, f.round.getId, 1))
+        VoteJdbc.rate(f.pageIds(2), f.juror.getId, f.round.getId, -1)
+        def html(query: String) = page(gallery(f, query), f).replace("&amp;", "&")
+        def hasRateOrder(h: String) = h.contains("By my rating")
+        // the plain "In file order" in the menu's place, not a menu
+        def fixedOrder(h: String) = {
+          val label = org.jsoup.Jsoup.parse(h).select("nav span.gallery-order-fixed")
+          label.size == 1 && label.text == "In file order" &&
+            !label.parents.eachAttr("class").toString.contains("dropdown") &&
+            (0 until label.parents.size).forall(i => !Set("a", "button").contains(label.parents.get(i).tagName))
+        }
+        val base = s"/gallery/round/${f.round.getId}/user/${f.juror.getId}/page/1"
+
+        // all files by rate: the selected first, the option shown and current
+        val all = html("?sort=rate")
+        val selectedFirst = Seq(1, 4, 11).map(f.pageIds)
+        // the selected tab from there: its link keeps the order; no option, file order
+        val selectedLink = s"$base?filter=selected&sort=rate"
+        val selected = html("?filter=selected&sort=rate")
+        // the all files tab from the selected one: by rate again, the option current
+        val allLink = s"$base?sort=rate"
+        val back = html("?sort=rate")
+
+        (hasRateOrder(all) must beTrue) and
+          (tiles(all).take(3) === selectedFirst.toList) and
+          (all must contain(s"""href="$selectedLink">Selected (3)</a>""")) and
+          (hasRateOrder(selected) must beFalse) and
+          (fixedOrder(selected) must beTrue) and (fixedOrder(all) must beFalse) and
+          (fixedOrder(html("?filter=rejected&sort=rate")) must beTrue) and
+          (fixedOrder(html("?filter=unrated")) must beTrue) and
+          (tiles(selected) === selectedFirst.toList) and
+          (selected must contain(s"""href="$allLink">All (20)</a>""")) and
+          (hasRateOrder(html("?filter=rejected&sort=rate")) must beFalse) and
+          (hasRateOrder(html("?filter=unrated")) must beFalse) and
+          (back must contain(s"""<a class="dropdown-item active" aria-current="true" href="$base?sort=rate">""")) and
+          (tiles(back).take(3) === selectedFirst.toList) and
+          // the remembered order stays by rate: visiting a tab of one rate doesn't change it
+          (cookies(get(gallery(f, "?filter=selected&sort=rate"), f, Cookie(RoundList.SortCookie, "rate")))
+            .get(RoundList.SortCookie) must beNone)
+      }
+    }
+
+    "keep By my rating on a rated round's all and rated files, not its unrated ones, and carry it" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        VoteJdbc.rate(f.pageIds(9), f.juror.getId, f.round.getId, 5)
+        val base = s"/gallery/round/${f.round.getId}/user/${f.juror.getId}/page/1"
+        val unrated = page(gallery(f, "?filter=unrated&sort=rate"), f).replace("&amp;", "&")
+        val back = page(gallery(f, "?sort=rate"), f).replace("&amp;", "&")
+        (page(gallery(f), f) must contain("By my rating")) and
+          (page(gallery(f, "?filter=rated"), f) must contain("By my rating")) and
+          (unrated must not(contain("By my rating"))) and
+          (unrated must contain("""<span class="navbar-text d-block px-2 gallery-order-fixed">In file order</span>""")) and
+          (page(gallery(f, "?filter=rated"), f) must not(contain("gallery-order-fixed"))) and
+          (back must not(contain("gallery-order-fixed"))) and
+          // file order there (the rated file is not in it), the order kept for the other tabs
+          (tiles(unrated).take(3) === f.pageIds.filterNot(_ == f.pageIds(9)).take(3).toList) and
+          (unrated must contain(s"""href="$base?sort=rate">All (20)</a>""")) and
+          (unrated must contain(s"""href="$base?filter=rated&sort=rate">Rated (1)</a>""")) and
+          (back must contain(s"""<a class="dropdown-item active" aria-current="true" href="$base?sort=rate">""")) and
+          (tiles(back).head === f.pageIds(9))
       }
     }
 

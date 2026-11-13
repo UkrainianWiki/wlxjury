@@ -98,7 +98,7 @@ GET         /admin/importusers                                                  
 POST        /admin/importusers                                                      @controllers.UserController.importUsers(contestId: Option[Long] ?= None)
 GET         /admin/greeting                                                         @controllers.UserController.editGreeting(contestId: Option[Long] ?= None)
 POST        /admin/greeting                                                         @controllers.UserController.saveGreeting(contestId: Option[Long] ?= None)
-GET         /users/edit/:id                                                         @controllers.UserController.editUser(id: Long, contestId: Option[Long] ?= None)
+GET         /users/edit/:id                                                         @controllers.UserController.editUser(id: Long, contestId: Option[Long] ?= None, returnTo: Option[String] ?= None)
 POST        /users/save                                                             @controllers.UserController.saveUser()
 # root: mails the account a link that sets a new password (P7)
 POST        /users/resetpasswd/:id                                                  @controllers.UserController.resetPassword(id: Long)
@@ -178,3 +178,8 @@ GET         /thumb_urls/:contestId                                              
 #GET         /largeRound/:round/:region/:pageid                    controllers.Gallery.largeRound2(region: String, pageid:Int, round:Int)
 #GET         /selectRound/:round/:region/:pageId                  controllers.Gallery.selectRound2(region: String, pageId:Long, round:Int)
 #GET         /unselectRound/:round/:region/:pageId                controllers.Gallery.unselectRound2(region: String, pageId:Long, round:Int)
+
+# Last: a GET (or HEAD) to a path ending in "/" that no route above takes, e.g. /auth/, is
+# redirected (302) to it without the trailing slashes, the query kept; never off the site
+# (TrailingSlashController). Other methods with a trailing slash stay a 404.
+GET         /*path/                                                                 @controllers.TrailingSlashController.untrail(path: String)

@@ -22,6 +22,7 @@ access.denied.contact=Si vous avez besoin d’un accès, demandez à l’adminis
 access.denied.reference=Référence : {0}, {1}
 password=Mot de passe
 profile = Profil
+signed.in.as = Connecté en tant que
 
 users = Utilisateurs
 rounds = Tours
@@ -131,6 +132,8 @@ down.key = Descendre
 format.boolean=
 
 no.round.yet=Aucun tour configuré pour le moment. Veuillez attendre que l''administrateur du concours configure l''outil.
+no.round.yet.title = Pas encore de tour
+no.round.yet.other.contests = Vos autres concours :
 
 
 edit.user = Modifier l''utilisateur
@@ -475,7 +478,6 @@ coi.round.started = Le tour {0} est démarré.
 
 close = Fermer
 signin.repeat.your.password = Répétez votre mot de passe
-sort = Tri
 theme = Thème
 theme.light = Clair
 theme.dark = Sombre

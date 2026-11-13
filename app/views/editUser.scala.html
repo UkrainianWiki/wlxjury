@@ -9,7 +9,8 @@
         signsInWithWikimedia: Option[String] = None,
         maySetPassword: Boolean = false,
         notice: Option[String] = None,
-        changes: Seq[services.AccountChangeLog.Row] = Nil
+        changes: Seq[services.AccountChangeLog.Row] = Nil,
+        returnTo: Option[String] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @import helper._
@@ -44,6 +45,10 @@
 
             @form(routes.UserController.saveUser(), Symbol("class") -> "form-vertical") {
                 @helper.CSRF.formField
+                @* the page the own profile was opened from: the save goes back there *@
+                @for(back <- returnTo) {
+                    <input type="hidden" name="returnTo" value="@back">
+                }
 
                 @flash.get("account-notice").map { msg =>
                     <div class="alert alert-info" role="status">@msg</div>
@@ -182,10 +187,6 @@
                         }
                     }
 
-                    @if(user.hasRole(User.ROOT_ROLE)) {
-                        @bs.text(editUserForm("sort"), Symbol("_label") -> Messages("sort"), Symbol("placeholder") -> Messages("sort"))
-                    }
-
                     @* optional, with this save's entries in the account change log *@
                     @if(othersAccount) {
                         @bs.text(editUserForm("comment"), Symbol("_label") -> Messages("account.change.comment.field"),
@@ -197,7 +198,11 @@
 
                 <div class="form-actions">
                     @snippets.submit("save")
-                    @if(user.hasAnyRole(User.ADMIN_ROLES)) {
+                    @* own profile opened from a page: Cancel goes back there, as a save does (returnTo is
+                       UserController.profileReturnTo's output: a checked local path) *@
+                    @if(returnTo.nonEmpty) {
+                        <a href="@returnTo.get" class="btn btn-outline-secondary">@Messages("cancel")</a>
+                    } else if(user.hasAnyRole(User.ADMIN_ROLES)) {
                         <a href="@routes.UserController.users(contestId)" class="btn btn-outline-secondary">@Messages("cancel")</a>
                     } else {
                         <a href="@routes.LoginController.index" class="btn btn-outline-secondary">@Messages("cancel")</a>
