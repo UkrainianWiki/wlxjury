@@ -64,6 +64,13 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
 
 **Fixes**
 
+- **View menu stuck on «By rate»** (reported on 26.11.5; developed 2026-11-13,
+  `stack/134-view-menu-state`): an organizer's **Gallery** of all the jurors' votes
+  (`/gallery/round/R/user/0/...`) showed the by-rate view, so the view menu showed **By rate** as
+  chosen and its **Gallery** item went back to the same page, in any order; broken since the
+  gallery's list rework (cf56da73, 26.11). The gallery path is now always the gallery, also for
+  all the jurors (their by-rate view stays at `/byrate/...`), and the order (`sort=`) stays apart
+  from the view.
 - **Authors shown as wiki markup** (developed 2026-11-13): a file imported before authors were
   resolved kept its author as wikitext, so organizers saw e.g. «Автор: [[User:Liliia2022|Liliia2022]]»
   in the large views and the round file list (on the production copy: 160,492 of 1,029,265 files,

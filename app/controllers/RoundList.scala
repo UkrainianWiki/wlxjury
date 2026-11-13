@@ -195,9 +195,6 @@ object GalleryView {
     */
   def of(request: RequestHeader): GalleryView =
     request.getQueryString("module").flatMap(parse).filter(Set(Gallery, ByRate, Comments)).getOrElse(Gallery)
-
-  /** A round gallery path's view: all the jurors' votes together (`user/0`) only by rate. */
-  def ofPath(asUserId: Long): GalleryView = if (asUserId == 0) ByRate else Gallery
 }
 
 /** Which comments the comments report ([[GalleryView.comments]]) lists its files by and shows:
@@ -836,7 +833,7 @@ object RoundList {
   ): RoundList = {
     // the comments report is the organisers' (GalleryController refuses its pages to others): a
     // large view's `module` naming it is the gallery for anyone else
-    val shown = if (view.comments && !viewer.canViewOrgInfo(round)) GalleryView.ofPath(asUserId) else view
+    val shown = if (view.comments && !viewer.canViewOrgInfo(round)) GalleryView.Gallery else view
     val list = RoundList(
       round,
       asUserId,
