@@ -239,7 +239,9 @@ object RoundImageQuery {
   def of(q: SelectionQuery, binary: Boolean, rankColumns: Seq[String] = Nil): Option[RoundImageQuery] = {
     val order = q.order.map { case (c, dir) => translate(c, q.grades).map(_ -> dir) }
     for {
-      roundId <- q.roundId if q.userId.isEmpty && q.keyset.isEmpty && (q.grouped || q.groupWithDetails)
+      // the comments filter is the votes' alone: round_image has no comments
+      roundId <- q.roundId if q.userId.isEmpty && q.keyset.isEmpty && q.commentsIn.isEmpty &&
+        (q.grouped || q.groupWithDetails)
       filter <- fileFilter(q.rate, q.rated, binary)
       if order.forall(_.isDefined) && rankColumns.forall(translate(_, q.grades).isDefined)
     } yield RoundImageQuery(roundId, order.flatten, filter, q.withPageId, q.regions, q.subRegions, q.limit, q.grades)

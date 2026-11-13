@@ -9,12 +9,14 @@
         pager: Pager,
         rounds: Seq[Round],
         regionMenu: Option[RegionMenu],
-        rates: RateDistribution)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+        rates: RateDistribution,
+        commented: Option[Int] = None,
+        commentCounts: Map[Long, Int] = Map.empty)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 @import java.net.URLEncoder
 
     @main("gallery", user, list.asUserId, Some(list.round), rounds, gallery = true, Some(list),
-        pagerNav(pager, list.pageUrl), rates = rates, filters = views.html.regionMenu(regionMenu),
+        pagerNav(pager, list.pageUrl), rates = rates, filters = views.html.regionMenu(regionMenu), commented = commented,
         head = play.twirl.api.HtmlFormat.fill(List(snippets.galleryScripts(),
             snippets.tileVoteScripts(views.TileStars.round(user, list.asUserId, Some(list.round)).nonEmpty)))) {
 
@@ -62,6 +64,12 @@
                         data-approvals="@file.approvals"
                         data-rejections="@file.rejections"
                         data-tally="@Messages("binary.tally", file.approvals, file.rejections)"
+                        }
+                        @* the file's comments in the contest, as its large view shows them (tile-votes.js
+                           addComments): their number and what a screen reader reads *@
+                        @for(n <- commentCounts.get(file.pageId).filter(_ > 0)) {
+                        data-comments="@n"
+                        data-comments-label="@views.CommentCount.label(n)"
                         }
                         >
                     }

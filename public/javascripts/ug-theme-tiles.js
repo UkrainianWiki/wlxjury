@@ -145,6 +145,8 @@ function UGTheme_tiles(){
 				//wlx_view_votes: an organiser's view of a juror's votes)
 				if(g_options.wlx_view_votes)
 					wlxTileVotes.addVoteMark(this, g_objTileDesign.getItemByTile(jQuery(this)), g_options.wlx_view_votes);
+				//wlxjury: the file's comments, after the vote mark, whose corner it then goes below
+				wlxTileVotes.addComments(this, g_objTileDesign.getItemByTile(jQuery(this)));
 			});
 		}
 	}
