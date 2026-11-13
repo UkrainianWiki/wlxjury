@@ -11,11 +11,13 @@ import scala.util.Using
 /** V85 stores vote's rate descending in the juror gallery's index on MariaDB 10.8+, so the page
   * order (rate DESC, monument_id ASC, page_id ASC) is read from the index with no sort. Before
   * 10.8 (production's 10.6 until the server move) the key would silently be ascending: there
-  * V85 changes nothing and warns, and its ALTER is run again after the move.
+  * V85 changes nothing and warns. V99 adds `voted_at` as the index's last column (the vote-time
+  * orders read only the index), keeping its name, and on 10.8+ does V85's swap too: after the
+  * move it is V99 that runs again.
   *
   * The examples follow the test server (`-Dwlxjury.test.mariadb-image`): the default 10.6
-  * checks the no-op, 10.11 the swap. The re-run example also checks the start's backstop,
-  * [[Migrations.galleryIndexLeftAscending]].
+  * checks the no-op, 10.11 the swap. The re-run examples also check the start's backstop,
+  * [[Migrations.galleryIndexState]].
   */
 class VoteGalleryIndexSpec extends Specification with TestDb with BeforeAll with BeforeEach with AfterAll {
 
@@ -52,6 +54,9 @@ class VoteGalleryIndexSpec extends Specification with TestDb with BeforeAll with
   private def index(name: String, rate: String) = List(
     (name, "jury_id", "A"), (name, "round_id", "A"), (name, "rate", rate), (name, "monument_id", "A"), (name, "page_id", "A"))
 
+  /** The index since V99: voted_at last. */
+  private def indexV99(name: String, rate: String) = index(name, rate) :+ ((name, "voted_at", "A"))
+
   /** A scratch vote table (wlxjury.vote's columns and other indexes) with these gallery indexes,
     * as ALTER TABLE clauses, instead of the test database's. */
   private def scratchVote(indexes: String*): Unit = Using.resource(root("")) { c =>
@@ -65,13 +70,30 @@ class VoteGalleryIndexSpec extends Specification with TestDb with BeforeAll with
   }
 
   private def runV85(c: Connection): Seq[String] = MigrationScript.run(c, "V85__Vote_gallery_index_rate_desc.sql")
+  private def runV99(c: Connection): Seq[String] = MigrationScript.run(c, "V99__Vote_gallery_index_voted_at.sql")
+
+  private def state: Migrations.GalleryIndexState =
+    Migrations.galleryIndexState(url(scratch), "root", SharedTestDb.password)
+
+  /** The ALTER TABLE statements the session has run so far (EXECUTE IMMEDIATE's included). */
+  private def alters(c: Connection): Long =
+    Using.resource(c.createStatement())(st => Using.resource(st.executeQuery("SHOW SESSION STATUS LIKE 'Com_alter_table'")) { rs =>
+      rs.next(); rs.getLong(2)
+    })
+
+  private val oldIndex   = s"ADD INDEX $ascending (jury_id, round_id, rate, monument_id, page_id)"
+  private val oldIndexV99 = s"ADD INDEX $ascending (jury_id, round_id, rate, monument_id, page_id, voted_at)"
+  private val newIndex   = s"ADD INDEX $descending (jury_id, round_id, rate DESC, monument_id, page_id)"
+  private val newIndexV99 = s"ADD INDEX $descending (jury_id, round_id, rate DESC, monument_id, page_id, voted_at)"
 
   "V85" should {
 
-    "leave the gallery index as the server can store it" in {
+    "leave the gallery index as the server can store it, with V99's voted_at last" in {
       val columns = Using.resource(root("wlxjury"))(galleryIndexes(_, "wlxjury"))
-      if (SharedTestDb.descendingIndexKeys) columns === index(descending, "D")
-      else columns === index(ascending, "A")
+      val flagged = Migrations.galleryIndexState(SharedTestDb.jdbcUrl, "root", SharedTestDb.password)
+      (flagged === Migrations.GalleryIndexState(leftAscending = false, withoutVotedAt = false)) and
+        (if (SharedTestDb.descendingIndexKeys) columns === indexV99(descending, "D")
+         else columns === indexV99(ascending, "A"))
     }
 
     "be run again after the server move, and only then change the index" in {
@@ -98,7 +120,6 @@ class VoteGalleryIndexSpec extends Specification with TestDb with BeforeAll with
     "on 10.8+, finish a part-way state and rebuild a descending-named index that is ascending" in {
       if (!SharedTestDb.descendingIndexKeys) skipped("needs MariaDB 10.8+ (-Dwlxjury.test.mariadb-image)")
       def leftAscending = Migrations.galleryIndexLeftAscending(url(scratch), "root", SharedTestDb.password)
-      val oldIndex = s"ADD INDEX $ascending (jury_id, round_id, rate, monument_id, page_id)"
       val states = Seq(
         // the new index descending, the old one still there
         "both" -> Seq(s"ADD INDEX $descending (jury_id, round_id, rate DESC, monument_id, page_id)", oldIndex),
@@ -146,6 +167,139 @@ class VoteGalleryIndexSpec extends Specification with TestDb with BeforeAll with
         (rows === rows.sortBy { case (rate, monumentId, pageId) => (-rate, monumentId, pageId) })
       if (SharedTestDb.descendingIndexKeys) ordered and (extra must not(contain("filesort")))
       else ordered and (extra must contain("filesort"))
+    }
+  }
+
+  "V99" should {
+
+    "add voted_at to production's ascending index, and change nothing when run again" in {
+      // a vote table as production's 10.6 has it before V99: V82's ascending index
+      scratchVote(oldIndex)
+      Using.resource(root(scratch)) { c =>
+        val before = state
+        val altersBefore = alters(c)
+        val warnings = runV99(c).filter(_.startsWith("V99"))
+        val altered = alters(c) - altersBefore
+        val first = galleryIndexes(c, scratch)
+        val after = state
+        val altersAgain = alters(c)
+        val again = runV99(c)
+        val alteredAgain = alters(c) - altersAgain
+        (before.withoutVotedAt must beTrue) and (after.withoutVotedAt must beFalse) and
+          (altered === 1L) and (alteredAgain === 0L) and (galleryIndexes(c, scratch) === first) and
+          (after.leftAscending must beFalse) and
+          (if (SharedTestDb.descendingIndexKeys)
+             // 10.8+: V85's swap as well, the descending index alone
+             (before.leftAscending must beTrue) and (first === indexV99(descending, "D")) and
+               (warnings must beEmpty) and (again must beEmpty)
+           else
+             (first === indexV99(ascending, "A")) and (again === warnings) and
+               (warnings must haveSize(1)) and (warnings.head must contain("needs MariaDB 10.8+")))
+      }
+    }
+
+    "add voted_at to V85's descending-named index, under its name" in {
+      // after V85 on 10.8+ (on 10.6 DESC is parsed and ignored: the descending name, rate ascending)
+      scratchVote(newIndex)
+      Using.resource(root(scratch)) { c =>
+        val before = state
+        runV99(c)
+        val first = galleryIndexes(c, scratch)
+        val altersAgain = alters(c)
+        runV99(c)
+        val rate = if (SharedTestDb.descendingIndexKeys) "D" else "A"
+        (before.withoutVotedAt must beTrue) and (state.withoutVotedAt must beFalse) and
+          (state.leftAscending must beFalse) and (first === indexV99(descending, rate)) and
+          (alters(c) - altersAgain === 0L) and (galleryIndexes(c, scratch) === first)
+      }
+    }
+
+    "run nothing where the index already has voted_at last" in {
+      val done = if (SharedTestDb.descendingIndexKeys) newIndexV99 else oldIndexV99
+      scratchVote(done)
+      Using.resource(root(scratch)) { c =>
+        val first = galleryIndexes(c, scratch)
+        val altersBefore = alters(c)
+        runV99(c)
+        (alters(c) - altersBefore === 0L) and (galleryIndexes(c, scratch) === first) and
+          (state === Migrations.GalleryIndexState(leftAscending = false, withoutVotedAt = false))
+      }
+    }
+
+    "run nothing where neither gallery index exists" in {
+      scratchVote("ADD INDEX vote_other_idx (round_id)")
+      Using.resource(root(scratch)) { c =>
+        val altersBefore = alters(c)
+        val warnings = runV99(c)
+        (alters(c) - altersBefore === 0L) and (galleryIndexes(c, scratch) must beEmpty) and (warnings must beEmpty)
+      }
+    }
+
+    "on 10.8+, end with the descending index with voted_at alone, from every state, and repair V85 run again" in {
+      if (!SharedTestDb.descendingIndexKeys) skipped("needs MariaDB 10.8+ (-Dwlxjury.test.mariadb-image)")
+      val states = Seq(
+        // V99 ran on 10.6, then the server move: the re-run
+        "ascending with voted_at" -> Seq(oldIndexV99),
+        // the target and the old index still there
+        "target and old" -> Seq(newIndexV99, oldIndex),
+        // V85 swapped part-way, V99 not yet
+        "descending and old" -> Seq(newIndex, oldIndex),
+        // the descending-named index built before 10.8 (a dump of a 10.6 database after V99)
+        "ascending new with voted_at" -> Seq(s"ADD INDEX $descending (jury_id, round_id, rate, monument_id, page_id, voted_at)"),
+        "ascending new and old with voted_at" ->
+          Seq(s"ADD INDEX $descending (jury_id, round_id, rate, monument_id, page_id)", oldIndexV99))
+      foreach(states) { case (name, indexes) =>
+        scratchVote(indexes: _*)
+        Using.resource(root(scratch)) { c =>
+          val flaggedBefore = state
+          val warnings = runV99(c)
+          val after = galleryIndexes(c, scratch)
+          val altersAgain = alters(c)
+          val again = runV99(c)
+          (flaggedBefore aka s"$name: flagged before" must not(beEqualTo(Migrations.GalleryIndexState(false, false)))) and
+            (after aka s"$name: the indexes after" must_== indexV99(descending, "D")) and
+            (state aka s"$name: flagged after" must_== Migrations.GalleryIndexState(false, false)) and
+            ((warnings ++ again) aka s"$name: warnings" must beEmpty) and
+            ((alters(c) - altersAgain) aka s"$name: ALTERs of a second run" must_== 0L)
+        }
+      }
+      // V85 run again after V99 (the old instructions): it leaves the target alone, but from the
+      // ascending index with voted_at it builds its own without; the start flags it, V99 repairs it
+      scratchVote(newIndexV99)
+      val targetKept = Using.resource(root(scratch)) { c => runV85(c); galleryIndexes(c, scratch) }
+      scratchVote(oldIndexV99)
+      Using.resource(root(scratch)) { c =>
+        runV85(c)
+        val afterV85 = galleryIndexes(c, scratch)
+        val flagged = state
+        runV99(c)
+        (targetKept === indexV99(descending, "D")) and (afterV85 === index(descending, "D")) and
+          (flagged === Migrations.GalleryIndexState(leftAscending = false, withoutVotedAt = true)) and
+          (galleryIndexes(c, scratch) === indexV99(descending, "D")) and
+          (state === Migrations.GalleryIndexState(false, false))
+      }
+    }
+
+    "give a vote-time order's page from the index alone" in {
+      insertImagesFor(1L to 40L: _*)
+      DB.autoCommit { implicit s =>
+        (1L to 40L).foreach { pageId =>
+          val monumentId = f"${pageId % 3}%02d-101-${pageId}%04d"
+          val votedAt = if (pageId % 4 == 0) "NULL" else s"'2026-11-${10 + pageId % 3} 12:00:${pageId % 60}.000'"
+          SQL(s"""INSERT INTO vote (jury_id, round_id, page_id, rate, monument_id, voted_at)
+                  VALUES (1, 1, $pageId, ${pageId % 3}, '$monumentId', $votedAt)""").update.apply()
+        }
+      }
+      val gallery = SharedTestDb.voteGalleryIndex
+      val extra = DB.readOnly { implicit s =>
+        // the deferred join's inner query in sort=latest-vote (RoundList.ListOrder.LatestVote)
+        val page = s"SELECT s.id, s.page_id FROM vote s FORCE INDEX ($gallery) " +
+          "WHERE s.jury_id = 1 AND s.round_id = 1 AND s.page_id IS NOT NULL " +
+          "ORDER BY (s.rate = 0), COALESCE(UNIX_TIMESTAMP(s.voted_at), 0) DESC, s.monument_id, s.page_id LIMIT 15"
+        SQL(s"EXPLAIN $page").map(_.stringOpt("Extra").getOrElse("")).list.apply().mkString
+      }
+      // a covering read ("Using index"), not "Using index condition" with row reads
+      extra must beMatching("(?s).*Using index(;.*|$)")
     }
   }
 }

@@ -115,38 +115,63 @@ object Migrations {
           throw new PendingMigrations(pending.map(m => s"${Option(m.getVersion).getOrElse("R")} (${m.getScript})"))
         if (settings.validateOnStart) fw.validate()
       }
-      warnIfGalleryIndexAscending(url, user, password)
+      warnIfGalleryIndexOutdated(url, user, password)
     }
 
   private val logger = play.api.Logger(getClass)
 
-  /** Whether the server stores descending index keys (MariaDB 10.8+) while vote's gallery index
-    * still has `rate` ascending: V85 ran before 10.8, and its ALTER wasn't run again after the
-    * move (docs/deployment.md, "MariaDB 10.11: V85's gallery index"). False when there is no
-    * `vote` table yet.
+  /** The juror gallery index's names (V82's, V85's with rate descending) and its columns since
+    * V99, in order.
     */
-  def galleryIndexLeftAscending(url: String, user: String, password: String): Boolean =
+  val GalleryIndexes: Seq[String] = Seq("vote_jury_round_rate_mon_page_idx", "vote_jury_round_ratedesc_mon_page_idx")
+  val GalleryIndexColumns: String = "jury_id,round_id,rate,monument_id,page_id,voted_at"
+
+  /** vote's gallery index as the start finds it: whether the server stores descending index keys
+    * (MariaDB 10.8+) while a gallery index still has `rate` ascending (V85 and V99 ran before
+    * 10.8, and V99 wasn't run again after the move), and whether a gallery index lacks V99's
+    * trailing `voted_at` (V99's statement undone, e.g. by V85 run again by hand after V99). Both
+    * false when there is no `vote` table or gallery index yet.
+    */
+  final case class GalleryIndexState(leftAscending: Boolean, withoutVotedAt: Boolean)
+
+  def galleryIndexState(url: String, user: String, password: String): GalleryIndexState =
     scala.util.Using.resource(java.sql.DriverManager.getConnection(url, user, password)) { c =>
       scala.util.Using.resource(c.createStatement()) { st =>
+        val names = GalleryIndexes.map(n => s"'$n'").mkString(", ")
         scala.util.Using.resource(st.executeQuery(
-          """SELECT VERSION(), (SELECT COUNT(*) FROM information_schema.STATISTICS
-               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vote' AND COLUMN_NAME = 'rate'
-                 AND INDEX_NAME IN ('vote_jury_round_rate_mon_page_idx', 'vote_jury_round_ratedesc_mon_page_idx')
-                 AND COLLATION = 'A')""")) { rs =>
+          s"""SELECT VERSION(),
+                (SELECT COUNT(*) FROM information_schema.STATISTICS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vote' AND COLUMN_NAME = 'rate'
+                   AND INDEX_NAME IN ($names) AND COLLATION = 'A'),
+                (SELECT COUNT(*) FROM (SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) AS cols
+                   FROM information_schema.STATISTICS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vote' AND INDEX_NAME IN ($names)
+                   GROUP BY INDEX_NAME) g WHERE g.cols <> '$GalleryIndexColumns')""")) { rs =>
           rs.next()
           val version = rs.getString(1).split("[.-]").take(2).map(_.toInt)
-          version(0) * 1000 + version(1) >= 10008 && rs.getInt(2) > 0
+          GalleryIndexState(
+            leftAscending = version(0) * 1000 + version(1) >= 10008 && rs.getInt(2) > 0,
+            withoutVotedAt = rs.getInt(3) > 0)
         }
       }
     }
 
-  /** The start's backstop for V85's re-run: a WARN, never a failed start. */
-  private def warnIfGalleryIndexAscending(url: String, user: String, password: String): Unit =
-    scala.util.Try(galleryIndexLeftAscending(url, user, password)) match {
-      case scala.util.Success(true) =>
-        logger.warn("vote's gallery index has rate ascending on a server with descending index keys: " +
-          "run V85's ALTER again (docs/deployment.md, \"MariaDB 10.11: V85's gallery index\")")
-      case scala.util.Success(false) => ()
+  /** [[galleryIndexState]]'s `leftAscending`: run V99 again (docs/deployment.md, "MariaDB 10.11:
+    * the vote gallery index (V85, V99)").
+    */
+  def galleryIndexLeftAscending(url: String, user: String, password: String): Boolean =
+    galleryIndexState(url, user, password).leftAscending
+
+  /** The start's backstop for V99's re-run: a WARN, never a failed start. */
+  private def warnIfGalleryIndexOutdated(url: String, user: String, password: String): Unit =
+    scala.util.Try(galleryIndexState(url, user, password)) match {
+      case scala.util.Success(state) =>
+        val problems = Seq(
+          state.leftAscending -> "has rate ascending on a server with descending index keys",
+          state.withoutVotedAt -> "lacks voted_at as its last column").collect { case (true, p) => p }
+        if (problems.nonEmpty)
+          logger.warn(s"vote's gallery index ${problems.mkString(" and ")}: run V99 again " +
+            "(docs/deployment.md, \"MariaDB 10.11: the vote gallery index (V85, V99)\")")
       case scala.util.Failure(e) => logger.warn(s"Could not check vote's gallery index: ${e.getClass.getSimpleName}")
     }
 }

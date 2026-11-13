@@ -89,13 +89,21 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   job is queued or running, and lists each one (id, kind, contest, status); `--allow-running-jobs`
   deploys anyway with a warning (the jobs resume after the restart). A `job` table it cannot read
   stops the deployment too. This replaces the manual check before each deploy.
+- **V99:** `vote.voted_at` added as the juror gallery index's last column, the index keeping its name
+  (`vote_jury_round_rate_mon_page_idx (jury_id, round_id, rate, monument_id, page_id, voted_at)` on 10.6;
+  on MariaDB 10.8+ V85's `vote_jury_round_ratedesc_mon_page_idx` with `rate DESC`, V85's swap included), online
+  (`INPLACE`, `LOCK = NONE`, ~12.6 s on production's 3.35M votes), rerunnable from every state it reads. The
+  vote-time orders read only the index: 2–4x faster on production's copy (worst page 1 82 → 26 ms, large view
+  step 243 → 80 ms), as fast as file order; vote writes cost the same. After the move to 10.11 it is V99's
+  script that runs again, not V85's (docs/deployment.md); the start warns also when a gallery index lacks
+  `voted_at` last (`Migrations.galleryIndexState`).
 - **V98:** `users.password` nullable (`VARCHAR(255) NULL DEFAULT NULL`, `ALGORITHM = INPLACE, LOCK = NONE`),
   only where it is still `NOT NULL` (production's, applied there by hand on 2026-11-12); a no-op on fresh databases.
   `scripts/schema_parity.py` compares a database's columns with a freshly migrated one's and flags a column `NOT
   NULL` only in the target, for the release rehearsal on the production copy (Release checklist).
 - **V97:** `vote.voted_at` and `vote_aside.voted_at`, `TIMESTAMP(3) NULL DEFAULT NULL` (no implicit
   default or ON UPDATE under any `explicit_defaults_for_timestamp`), added `ALGORITHM = INSTANT`;
-  no index (the orders sort by expressions). Existing rows stay NULL (a log backfill may fill them later). Set by `VoteJdbc.rateIn` and
+  no index (the orders sort by expressions; V99 adds it to the gallery index). Existing rows stay NULL (a log backfill may fill them later). Set by `VoteJdbc.rateIn` and
   `CriteriaRate.updateRateIn` (`VoteSql.votedAt`), and by `VoteJdbc.create` / `batchInsert` for a
   rated row; moved with the vote between `vote` and `vote_aside`. Read as
   `UNIX_TIMESTAMP(voted_at)` (`VoteJdbc.votedAtEpoch`), and a given time written by

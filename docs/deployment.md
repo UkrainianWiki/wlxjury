@@ -430,18 +430,24 @@ For one account, use "End sessions" instead. To rotate:
    bring back the rotated key. After any restore, check that `runtime.env` holds the current key
    (compare it on the server, e.g. with `sha256sum` of the line, without printing it).
 
-### MariaDB 10.11: V85's gallery index
+### MariaDB 10.11: the vote gallery index (V85, V99)
 
 V85 (`V85__Vote_gallery_index_rate_desc.sql`) stores `vote.rate` descending in the juror
-gallery's index. Only MariaDB 10.8 and later can do that. The plan is
+gallery's index. Only MariaDB 10.8 and later can do that. V99
+(`V99__Vote_gallery_index_voted_at.sql`) adds `vote.voted_at` as the index's last column, for
+the vote-time orders, and on 10.8+ also does V85's change. The plan is
 `docs/plans/2026-10-19-mariadb-10.11.md`.
 
-**On production's 10.6**, every deploy that applies V85 logs this warning:
-`WARN … DB: V85: vote gallery index left ascending (needs MariaDB 10.8+); run its ALTER again after the server move`.
-This is expected. V85 changes nothing on 10.6 and is recorded as applied.
+**On production's 10.6**, the deploys that apply V85 and V99 log these warnings:
+`WARN … DB: V85: vote gallery index left ascending (needs MariaDB 10.8+); run its ALTER again after the server move`
+and `WARN … DB: V99: vote gallery index has voted_at, rate left ascending (needs MariaDB 10.8+); run V99 again after the server move`.
+This is expected. V85 changes nothing on 10.6; V99 adds `voted_at` to the ascending index,
+keeping its name `vote_jury_round_rate_mon_page_idx`. Both are recorded as applied.
 
 **After the move to 10.11 (Ubuntu 24.04)**, by dump and restore or by in-place upgrade, check the
-index in the app's database:
+index in the app's database. **Run V99 again, not V85**: V85's script builds the index without
+`voted_at` (it can't be changed: Flyway checks its checksum), while V99's script does V85's
+change and keeps `voted_at`.
 
 1. Connect as the release tool does. The database is `WLXJURY_DB` in
    `/etc/wlxjury-runtime/runtime.env` (`wlxjury` in the example), and the host is its
@@ -460,57 +466,65 @@ index in the app's database:
    Then check that this is the app's server, as the release tool does: `SELECT @@port;` gives
    the app's port (3306 for `localhost`).
 
-2. Run the check:
+2. Run the check (each gallery index, its `rate` direction and its columns):
 
    ```sql
-   SELECT INDEX_NAME, COLLATION FROM information_schema.STATISTICS
-   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vote' AND COLUMN_NAME = 'rate'
-     AND INDEX_NAME IN ('vote_jury_round_rate_mon_page_idx', 'vote_jury_round_ratedesc_mon_page_idx');
+   SELECT INDEX_NAME,
+     MAX(IF(COLUMN_NAME = 'rate', COLLATION, NULL)) AS rate_dir,
+     GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) AS cols
+   FROM information_schema.STATISTICS
+   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vote'
+     AND INDEX_NAME IN ('vote_jury_round_rate_mon_page_idx', 'vote_jury_round_ratedesc_mon_page_idx')
+   GROUP BY INDEX_NAME;
    ```
 
-3. Read the result:
+3. Read the result (`…,voted_at` is `jury_id,round_id,rate,monument_id,page_id,voted_at`):
 
 | Result | Meaning | Action |
 |---|---|---|
-| one row: `vote_jury_round_ratedesc_mon_page_idx`, `D` | done | none |
-| one row: `vote_jury_round_rate_mon_page_idx`, `A` | V85 ran on 10.6 | run V85 again (below) |
-| two rows: `…ratedesc…` `D` and `…rate_mon…` `A` | part-way: the old index is still there | run V85 again; it drops the old index |
-| `…ratedesc…` with `A` (with or without a `…rate_mon…` row) | the descending-named index was built before 10.8, e.g. from a dump of a 10.11 database restored on 10.6 | run V85 again; it rebuilds the index descending |
-| no row | neither gallery index exists | stop and investigate; V85 doesn't create one from nothing |
+| one row: `vote_jury_round_ratedesc_mon_page_idx`, `D`, `…,voted_at` | done | none |
+| one row: `vote_jury_round_rate_mon_page_idx`, `A`, `…,voted_at` | V85 and V99 ran on 10.6 | run V99 again (below) |
+| `…ratedesc…` `D` `…,voted_at` and a `…rate_mon…` row | part-way: the old index is still there | run V99 again; it drops the old index |
+| `…ratedesc…` with `A` (with or without a `…rate_mon…` row) | the descending-named index was built before 10.8, e.g. from a dump of a 10.11 database restored on 10.6 | run V99 again; it rebuilds the index descending |
+| any row whose `cols` doesn't end in `voted_at` | V99's index undone (e.g. V85 run again by hand after V99) | run V99 again; it rebuilds the index with `voted_at` |
+| no row | neither gallery index exists | stop and investigate; V99 doesn't create one from nothing |
 
-**To run V85 again**, run the script itself in that session. It ships in the release at
-`/opt/wlxjury/current/conf/db/migration/default/V85__Vote_gallery_index_rate_desc.sql`
+**To run V99 again**, run the script itself in that session. It ships in the release at
+`/opt/wlxjury/current/conf/db/migration/default/V99__Vote_gallery_index_voted_at.sql`
 (`release_root` in `deployment.json`, then the release's `conf/`), with the connection options of
 step 1 (here production's `localhost`; for another host, its `--host`, `--port` and
 `--protocol=TCP`):
 
 ```bash
-sudo mariadb --defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf --host=localhost --protocol=SOCKET wlxjury \
-  < /opt/wlxjury/current/conf/db/migration/default/V85__Vote_gallery_index_rate_desc.sql
+sudo mariadb --defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf --host=localhost --protocol=SOCKET wlxjury   < /opt/wlxjury/current/conf/db/migration/default/V99__Vote_gallery_index_voted_at.sql
 ```
 
 The script reads the state above and runs only the `ALTER` that state needs, then
 `ANALYZE TABLE vote`. Where the index is already done it runs nothing. Running it is therefore
-the same as running that `ALTER` by hand. For the common case, only the old index, the `ALTER` is:
+the same as running that `ALTER` by hand. For the common case, the ascending index with
+`voted_at`, the `ALTER` is:
 
 ```sql
 ALTER TABLE vote
-  ADD INDEX vote_jury_round_ratedesc_mon_page_idx (jury_id, round_id, rate DESC, monument_id, page_id),
   DROP INDEX vote_jury_round_rate_mon_page_idx,
+  ADD INDEX vote_jury_round_ratedesc_mon_page_idx (jury_id, round_id, rate DESC, monument_id, page_id, voted_at),
   ALGORITHM = INPLACE, LOCK = NONE;
 ANALYZE TABLE vote;
 ```
 
-It runs online and took about 11 s on 3M rows; measure it on the rehearsal copy. Then repeat the
-check. Don't add a row to `flyway_schema_history`.
+It runs online; V85's swap took about 11 s on 3M rows, V99's on 10.6 about 12.6 s on 3.35M rows;
+measure it on the rehearsal copy. Then repeat the check. Don't add a row to
+`flyway_schema_history`. (Running V85's script after V99 is harmless where the index is done, but
+from the ascending index it builds the descending one without `voted_at`; run V99 again then.)
 
-**The app reminds you.** On a 10.8+ server where a gallery index still has `rate` ascending,
-every start logs:
-`vote's gallery index has rate ascending on a server with descending index keys: run V85's ALTER again`.
+**The app reminds you.** Every start logs a warning while a gallery index has `rate` ascending on
+a 10.8+ server, or lacks `voted_at` as its last column:
+`vote's gallery index has rate ascending on a server with descending index keys: run V99 again`
+(or `… lacks voted_at as its last column: run V99 again`).
 
 **After every restore on 10.11, check again.** A backup taken before the re-run (on 10.6, or on
-10.11 before V85 ran again) brings back the ascending index when restored, whether with
-`wlxjury-release restore` or a manual import. Repeat the check, and run V85 again if needed.
+10.11 before V99 ran again) brings back the ascending index when restored, whether with
+`wlxjury-release restore` or a manual import. Repeat the check, and run V99 again if needed.
 
 ### One app instance
 
