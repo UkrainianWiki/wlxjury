@@ -1,8 +1,9 @@
 """Shared helpers for the review tools: gh, the repository, paths, the stack order.
 
 Python 3.8+, stdlib only. gh is taken from --gh, else the GH environment variable, else `gh` on
-PATH. State and inputs live under target/review/ (ignored by git) unless a flag says otherwise;
-every state file can be rebuilt from GitHub (README.md).
+PATH. Inputs and outputs live under target/review/ (ignored by git) unless a flag says otherwise;
+the CodeRabbit loop keeps its files in loop_dir(), outside the checkout. Every state file can be
+rebuilt from GitHub (README.md).
 """
 import json
 import os
@@ -19,6 +20,18 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 OURS = "ukwikidev"
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_DIR = ROOT / "target" / "review"
+GH_TIMEOUT = 300  # seconds for one gh call: a hung gh would otherwise block the loop for good
+
+
+def loop_dir():
+    """The CodeRabbit loop's folder (state, log, queue, lock, stop flag, installed scripts):
+    $WLX_REVIEW_DIR, else %LOCALAPPDATA%/wlxjury-review (~/.local/state/wlxjury-review elsewhere).
+    Outside every checkout, so removing a worktree or `sbt clean` loses nothing."""
+    env = os.environ.get("WLX_REVIEW_DIR")
+    if env:
+        return pathlib.Path(env)
+    base = os.environ.get("LOCALAPPDATA") or str(pathlib.Path.home() / ".local" / "state")
+    return pathlib.Path(base) / "wlxjury-review"
 
 
 def add_common_args(ap):
@@ -61,19 +74,31 @@ def is_transient(err):
 class GitHub:
     """Thin wrapper over `gh api`. Reads retry network errors; writes never retry blindly."""
 
-    def __init__(self, gh, repo, log=print):
-        self.gh, self.repo, self.log = gh, repo, log
+    def __init__(self, gh, repo, log=print, stop_check=None):
+        """stop_check: called before each retry wait; it raises to end the retries (--stop)."""
+        self.gh, self.repo, self.log, self.stop_check = gh, repo, log, stop_check
 
     def run(self, *args, write=False):
         for attempt in range(20):
-            # no console window per call when started without one (the scheduled task)
-            out = subprocess.run([self.gh, *args], capture_output=True, creationflags=NO_WINDOW)
-            if out.returncode == 0:
-                return out.stdout.decode("utf-8")
-            err = out.stderr.decode("utf-8", "replace").strip()
-            if write or not is_transient(err):
-                raise RuntimeError(f"gh {' '.join(args[:3])}: {err[:300]}")
-            self.log(f"network error, retrying in 30 s ({attempt + 1}/20)")
+            try:
+                # no console window per call when started without one (the scheduled task)
+                out = subprocess.run([self.gh, *args], capture_output=True, creationflags=NO_WINDOW,
+                                     timeout=GH_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                # run() has killed it. A write may or may not have gone through: never repeated
+                # here (the loop's next pass finds a posted comment and waits for it)
+                if write:
+                    raise RuntimeError(f"gh {' '.join(args[:3])}: timed out after {GH_TIMEOUT} s")
+                err = f"timed out after {GH_TIMEOUT} s"
+            else:
+                if out.returncode == 0:
+                    return out.stdout.decode("utf-8")
+                err = out.stderr.decode("utf-8", "replace").strip()
+                if write or not is_transient(err):
+                    raise RuntimeError(f"gh {' '.join(args[:3])}: {err[:300]}")
+            if self.stop_check:
+                self.stop_check()
+            self.log(f"network error ({err[:80]}), retrying in 30 s ({attempt + 1}/20)")
             time.sleep(30)
         raise RuntimeError(f"gh {' '.join(args[:3])}: network still failing")
 
@@ -126,32 +151,40 @@ def stack_order(pulls, base="master", prefix="stack/"):
 
 def read_json(path, default):
     """The file's JSON, or `default` if it is missing. A file cut short (a power loss while it was
-    written by an older version) is kept as <name>.corrupt and `default` returned: the review
-    state files can be rebuilt from GitHub."""
+    written by an older version) is kept as <name>.corrupt (.corrupt.1, … if that exists) and
+    `default` returned: the review state files can be rebuilt from GitHub."""
     path = pathlib.Path(path)
     if not path.exists():
         return default
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except ValueError:
-        path.replace(path.with_name(path.name + ".corrupt"))
+        aside, k = path.with_name(path.name + ".corrupt"), 0
+        while aside.exists():
+            k += 1
+            aside = path.with_name(f"{path.name}.corrupt.{k}")
+        path.replace(aside)
         return default
 
 
 def write_json(path, data):
-    """Writes a temporary file and renames it over `path`, so a power loss leaves the old or the
-    new file, never half of one. Windows refuses the rename while a reader has the file open:
-    tried again for up to 5 s."""
+    """Writes a temporary file (a name of its own per process and call), flushes it to disk and
+    renames it over `path`, so a power loss leaves the old or the new file, never half of one.
+    Windows refuses the rename while a reader has the file open: tried again for up to 5 s."""
     path = pathlib.Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{time.monotonic_ns()}.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(json.dumps(data, indent=1, ensure_ascii=False))
+        f.flush()
+        os.fsync(f.fileno())
     for attempt in range(50):
         try:
             os.replace(tmp, path)
             return
         except PermissionError:
             if attempt == 49:
+                tmp.unlink()
                 raise
             time.sleep(0.1)
 
@@ -163,8 +196,7 @@ class Lock:
     def __init__(self, path):
         self.path, self.f = pathlib.Path(path), None
 
-    def acquire(self):
-        """True if this process now holds the lock, False if another holder has it."""
+    def try_once(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         f = open(self.path, "a+")
         try:
@@ -180,6 +212,17 @@ class Lock:
             return False
         self.f = f
         return True
+
+    def acquire(self, wait=0.0):
+        """True if this process now holds the lock, False if another holder still has it after
+        `wait` seconds (tried every 0.1 s: a --status probe holds it for a moment)."""
+        end = time.monotonic() + wait
+        while True:
+            if self.try_once():
+                return True
+            if time.monotonic() >= end:
+                return False
+            time.sleep(0.1)
 
     def release(self):
         if self.f is None:
@@ -200,7 +243,24 @@ class Lock:
 def lock_held(path):
     """Whether another process holds the lock at `path` (e.g. the loop is running)."""
     lock = Lock(path)
-    if lock.acquire():
+    if lock.try_once():
         lock.release()
         return False
     return True
+
+
+def update_json(path, change, default):
+    """Read-modify-write of a JSON file shared by processes (the loop and the --triaged /
+    --queue-add / --resume commands): re-read under <path>.lock, `change(data)` edits it in place,
+    written whole. Returns the data written."""
+    path = pathlib.Path(path)
+    lock = Lock(path.with_name(path.name + ".lock"))
+    if not lock.acquire(wait=30):
+        raise RuntimeError(f"{path}: still locked after 30 s")
+    try:
+        data = read_json(path, default)
+        change(data)
+        write_json(path, data)
+        return data
+    finally:
+        lock.release()

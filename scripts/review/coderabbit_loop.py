@@ -48,8 +48,9 @@ Waits, never exits (a pass goes on with the next PR where a PR has to wait):
   - "Review rate limited." (no time stated): wait LIMIT_SPACING (50 min) and ask again, without a
     limit on the retries; "available in N minutes" / "Please wait **N minutes and S seconds**":
     wait that long plus 2 minutes, however long that is;
-  - no reply to the command in 30 minutes, or no review 3 hours after the request: the PR is
-    deferred and asked again later (30 min, doubling to 6 h), and the pass goes on;
+  - no reply to the command in 30 minutes, or no review 3 hours after the request (45 minutes
+    when asked again): the PR is deferred and asked again later (30 min, doubling to 6 h), and
+    the pass goes on;
   - an unexpected answer: deferred 6 h; a quota or plan message: the PR is deferred and the whole
     loop pauses --quota-pause (6 h), then goes on;
   - GitHub or network errors (a read already retries 10 min): the pass restarts after 1, 2, 4 …
@@ -57,6 +58,20 @@ Waits, never exits (a pass goes on with the next PR where a PR has to wait):
   - the times above are wall-clock and checked every minute, so a laptop that slept through a
     wait goes on at once on waking; the 30-min and 3-h answer timeouts count awake time only.
 Only `--stop` (or Ctrl+C) ends watch mode. A second copy exits at once (--dir/loop.lock).
+
+Limits on what it posts (so a reworded or broken CodeRabbit can't make it post all day):
+  - a PR deferred PR_CAP (3) times is parked: put in the triage queue, never asked again until
+    `--unpark N`;
+  - no usable answer (no reply, no review, an unexpected answer, a quota message) on BREAKER (3)
+    different PRs in a row trips the circuit breaker; so does a reply saying reviews are paused
+    or not allowed (HALT). Halted, it posts nothing until `--resume` (flagged in --status; a
+    --batch/--once run exits 5);
+  - at most --posts-per-day (60) `@coderabbitai` comments per UTC day, limit retries included
+    (about 2 per review at ~26 reviews a day); past it, it waits for the next day.
+
+Times compared with GitHub's (a request and its replies, reviews) are GitHub's: the request's time
+is the posted comment's created_at, a settled PR's is the review's submitted_at or the summary's
+edit.
 
 Only CodeRabbit's replies to a command count: issue comments created after the request that carry
 `<!-- This is an auto-generated reply by CodeRabbit -->` and either the
@@ -76,6 +91,14 @@ request is stale if that post recorded another head, else if a finished request'
 after it covers another `sourceCommitId`, else if it is older than the head commit's committer
 date (the commits API).
 
+A PR settled before diffs were recorded (the old state, or found reviewed or skipped on GitHub)
+takes its current diff as reviewed and is never asked for on a guess; if its head moved after that
+review (the review's commit_id, the summary's covered commit or our post's head differs from the
+head), it is listed in --dir/check.json ("check by hand" in --status; `--checked N` clears it).
+
+Files live in --dir (default %LOCALAPPDATA%/wlxjury-review, outside every checkout); `--post`
+copies the old target/review state of this checkout there once, `--migrate-from DIR` another.
+
 --self-test checks the reply and summary matching against sample comments, and the loop against a
 simulated CodeRabbit (no GitHub, no sleeping), and exits.
 """
@@ -86,17 +109,19 @@ import json
 import os
 import re
 import pathlib
+import shutil
 import sys
 import time
 import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))  # -I leaves the script's folder out
 from common import (DEFAULT_DIR, OURS, GitHub, Lock, add_common_args, gh_path, is_auth, lock_held,  # noqa: E402
-                    read_json, stack_order, write_json)
+                    loop_dir, read_json, stack_order, update_json, write_json)
 
 POLL = 60
 NO_ANSWER = 30 * 60          # no reply to the command at all in this long (awake): defer the PR
 MAX_WAIT = 3 * 3600          # no review this long (awake) after the request: defer the PR
+REASK_WAIT = 45 * 60         # the same, for a request asked again after a deferral
 LIMIT_SPACING = 50 * 60      # "Review rate limited." states no time: wait this long, then ask again
 LIMIT_RETRIES = 4            # after this many refusals in a row the log says so (and it goes on)
 FINISHED_GRACE = 5 * 60      # "Review finished" but no review object yet: wait this long for it
@@ -106,6 +131,15 @@ QUOTA_PAUSE = 6 * 3600       # a quota or plan message: the whole loop pauses th
 AUTH_PAUSE = 3600            # gh not signed in: pause this long, then try again
 ERROR_FIRST, ERROR_MAX = 60, 30 * 60  # GitHub/network errors: restart the pass after these
 IDLE = 30 * 60               # watch: between passes with nothing to do
+PR_CAP = 3                   # deferrals (no answer, unexpected, quota) of one PR before it is parked
+BREAKER = 3                  # bad outcomes on this many different PRs in a row: halt until --resume
+POSTS_PER_DAY = 60           # our `@coderabbitai` comments per UTC day (limit retries included)
+# CodeRabbit refusing to review at all (not a rate limit): halt and flag, never ask again by itself.
+# Read on the reply without its blockquotes (the boilerplate note says "…when automatic reviews
+# are paused").
+HALT = (r"reviews? (are |is |have been |has been )?(paused|disabled)|paused (the )?reviews?|"
+        r"not (enabled|authori[sz]ed|available) (for|on) this (repo|repository|organi[sz]ation)|"
+        r"(subscription|trial) (has )?(expired|ended)|no (active )?seat")
 
 SUMMARY_MARKER = "<!-- This is an auto-generated comment: summarize by coderabbit.ai -->"
 REPLY_MARKER = "<!-- This is an auto-generated reply by CodeRabbit -->"
@@ -117,6 +151,7 @@ CLEAN = "clean"              # reviewed at the head with 0 comments: only the su
 NOTHING_NEW = "nothing new"  # a re-review after a diff change that ended without a review
 # outcomes after which a PR needs nothing until its own diff changes
 SETTLED = ("reviewed", CLEAN, NO_REVIEW, "skipped", NOTHING_NEW)
+PARKED = "parked"            # asked PR_CAP times without a usable answer: not asked again (--unpark)
 
 
 class Stop(Exception):
@@ -143,7 +178,8 @@ def diff_fingerprint(files):
     """A PR's own diff (`pulls/N/files`: the diff against the merge base with its base branch) as
     a short hash of each file's name, status and +/- lines. Context lines and hunk positions are
     left out, so a change elsewhere in a file (merged in from the base) does not count; a file
-    with no patch (binary, too large) counts by its blob sha."""
+    with no patch (binary, too large) counts by its blob sha, so a merge of the base that changes
+    such a file counts as a change too (accepted: rare, and costs one review)."""
     h = hashlib.sha256()
     for f in sorted(files, key=lambda f: f["filename"]):
         h.update(f"{f['filename']}\0{f.get('status')}\0{f.get('previous_filename') or ''}\n".encode("utf-8"))
@@ -176,8 +212,9 @@ def command_replies(comments, since):
 
 
 def classify(body):
-    """What a reply to our command says: 'limit', 'quota', 'skip', 'finished', 'processing',
-    'full' (refused as already reviewed: ask for a full review) or 'unexpected'.
+    """What a reply to our command says: 'halt' (reviews paused or not allowed: stop asking),
+    'limit', 'quota', 'skip', 'finished', 'processing', 'full' (refused as already reviewed: ask
+    for a full review) or 'unexpected'.
 
     The boilerplate note on every command reply ("> Note: CodeRabbit is an incremental review
     system and does not re-review already reviewed commits …") is a blockquote: 'finished',
@@ -186,6 +223,8 @@ def classify(body):
     t = text(body)
     t = re.sub(r"> ?Note: CodeRabbit is an incremental review system.*?(paused\.|$)", "", t, flags=re.I).strip()
     main = text(re.sub(r"(?m)^[ \t]*>.*$", "", body or ""))
+    if re.search(HALT, main, re.I):
+        return "halt"
     if re.search(r"monthly|plan quota|upgrade your plan|quota", t, re.I):
         return "quota"
     if re.search(r"rate limited|rate limit exceeded|review limit reached|available in \W*\d+ ?minute|please wait", t, re.I):
@@ -267,23 +306,45 @@ def reviewed_summary(comments):
 
 class Loop:
     def __init__(self, hub, state_path, dry, clock=None, logger=None, folder=None, rereview=True,
-                 quota_pause=QUOTA_PAUSE):
-        """`folder` (--dir) holds the triage queue, the status file and the stop file; None in the
-        self-test (the queue is kept in memory)."""
+                 quota_pause=QUOTA_PAUSE, posts_per_day=POSTS_PER_DAY):
+        """`folder` (--dir) holds the triage queue, the check list, the control file (circuit
+        breaker, post budget, unpark requests), the status file and the stop file; None in the
+        self-test (all kept in memory)."""
         self.hub, self.state_path, self.dry, self.folder = hub, state_path, dry, folder
-        self.rereview, self.quota_pause = rereview, quota_pause
+        self.rereview, self.quota_pause, self.posts_per_day = rereview, quota_pause, posts_per_day
         self.state = read_json(state_path, {}) if state_path else {}
-        self.queue = read_json(folder / "triage-queue.json", {}) if folder else {}
+        self.mem = {"triage-queue.json": {}, "loop-control.json": {}, "check.json": {}}
         self.now = clock.now if clock else now
         self.sleep = clock.sleep if clock else time.sleep
         self.log = logger or log
         self.st = {}
         self.paused_until = None
+        if hasattr(hub, "stop_check"):
+            hub.stop_check = self.check_stop  # gh's read retries end on --stop too
 
     # -- files -----------------------------------------------------------------------------
     def save(self):
         if not self.dry and self.state_path:
             write_json(self.state_path, self.state)
+
+    def shared(self, name, change=None):
+        """A JSON file other commands change too (--triaged, --queue-add, --checked, --resume,
+        --unpark): re-read under its lock before every change. In memory without a folder or in a
+        dry run."""
+        if self.folder and not self.dry:
+            if change is None:
+                return read_json(self.folder / name, {})
+            return update_json(self.folder / name, change, {})
+        if change:
+            change(self.mem[name])
+        return self.mem[name]
+
+    @property
+    def queue(self):
+        return self.shared("triage-queue.json")
+
+    def control(self, change=None):
+        return self.shared("loop-control.json", change)
 
     def status(self, **kw):
         """What the loop is doing, for --status (--dir/loop-status.json)."""
@@ -307,12 +368,66 @@ class Loop:
             self.sleep(min(left, POLL))
 
     def enqueue(self, n, kind, review_id=None, inline=None):
-        """A review with comments to triage (--status lists the queue, --triaged clears it)."""
-        q = self.queue.setdefault(str(n), {"pr": n, "reviews": []})
-        q["reviews"].append({"kind": kind, "review_id": review_id, "inline": inline, "at": iso(self.now())})
-        q["triaged"] = False
-        if not self.dry and self.folder:
-            write_json(self.folder / "triage-queue.json", self.queue)
+        """A review with comments to triage, or a parked PR (--status lists the queue, --triaged
+        clears it)."""
+        def add(queue):
+            q = queue.setdefault(str(n), {"pr": n, "reviews": []})
+            q["reviews"].append({"kind": kind, "review_id": review_id, "inline": inline, "at": iso(self.now())})
+            q["triaged"] = False
+        self.shared("triage-queue.json", add)
+
+    def flag_check(self, n, why):
+        """A PR to look at by hand (--status lists them, --checked clears them): its head moved
+        after a review recorded before diffs were, so pushes since may be unreviewed. Never asked
+        for automatically."""
+        self.shared("check.json", lambda d: d.__setitem__(str(n), {"pr": n, "why": why, "at": iso(self.now())}))
+        self.log(f"#{n}: to check by hand: {why}")
+
+    # -- repost limits ---------------------------------------------------------------------
+    def halted(self):
+        """The circuit breaker's record if it is tripped (cleared only by --resume), else None."""
+        return self.control().get("breaker")
+
+    def trip(self, reason):
+        self.control(lambda c: c.update(breaker={"at": iso(self.now()), "reason": reason}, streak=[]))
+        self.log(f"HALTED: {reason}; nothing is posted until `coderabbit_loop.py --resume`")
+        self.status(phase="halted (needs --resume)", until=None, halted=reason)
+
+    def good(self):
+        """CodeRabbit answered normally (a review, a clean or skipped one, a limit): the streak of
+        bad outcomes starts again."""
+        if self.control().get("streak"):
+            self.control(lambda c: c.update(streak=[]))
+
+    def bad(self, n, why):
+        """No answer, an unexpected one or a quota message on PR n: after BREAKER different PRs in
+        a row, the whole loop halts (something is wrong beyond one PR)."""
+        streak = self.control(lambda c: c.update(streak=(c.get("streak") or []) + [n]))["streak"]
+        if len(set(streak)) >= BREAKER:
+            self.trip(f"{len(set(streak))} PRs in a row without a usable answer "
+                      f"({', '.join(f'#{x}' for x in sorted(set(streak)))}; last: {why})")
+            return True
+        return False
+
+    def spend_post(self, n):
+        """Counts one post against the daily budget (UTC day), first waiting for the next day if
+        it is used up."""
+        while True:
+            day = f"{self.now():%Y-%m-%d}"
+            used = (self.control().get("posts") or {}).get(day, 0)
+            if used < self.posts_per_day:
+                break
+            tomorrow = datetime.datetime.combine(self.now().date() + datetime.timedelta(days=1),
+                                                 datetime.time(0, 5), tzinfo=datetime.timezone.utc)
+            self.log(f"#{n}: the post budget ({self.posts_per_day} a day) is used, waiting until {tomorrow:%Y-%m-%d %H:%M}Z")
+            self.status(phase="post budget used", pr=n, until=iso(tomorrow))
+            self.sleep_until(tomorrow)
+
+        def count(c):
+            posts = {k: v for k, v in (c.get("posts") or {}).items() if k >= f"{self.now() - datetime.timedelta(days=7):%Y-%m-%d}"}
+            posts[day] = posts.get(day, 0) + 1
+            c["posts"] = posts
+        self.control(count)
 
     # -- GitHub ----------------------------------------------------------------------------
     def reviews_after(self, n, since):
@@ -333,17 +448,28 @@ class Loop:
         request older than it was about an earlier head."""
         return ts(self.hub.get(f"commits/{sha}")["commit"]["committer"]["date"])
 
+    def posted_at(self, out):
+        """GitHub's created_at of the comment `gh pr comment` just posted (it prints the comment's
+        URL), so replies are compared on GitHub's clock; our clock minus 10 s if that fails."""
+        m = re.search(r"issuecomment-(\d+)", out or "")
+        if m:
+            try:
+                return ts(self.hub.get(f"issues/comments/{m.group(1)}")["created_at"])
+            except (RuntimeError, KeyError, ValueError):
+                pass
+        return self.now() - datetime.timedelta(seconds=10)
+
     def stale(self, e, req, comments, sha):
         """Why our latest request `req` was about an older head than `sha`, or None. In order:
-          - the state's latest post (the same request: posted within 2 minutes of it) recorded
-            another head: catches a commit made earlier and pushed after the request;
+          - the state's record of that post names a head: stale if it is another one, never if it
+            is this one (then nothing else is asked);
           - the summary comment, edited after the request, covers a `sourceCommitId` other than
             the head (works without state);
           - the request is older than the head commit's committer date (works without state)."""
         asked = req[0]
         post = self.post_for(e, asked)
-        if post.get("head") and post["head"] != sha:
-            return f"the state recorded head {post['head'][:8]} for it"
+        if post.get("head"):
+            return None if post["head"] == sha else f"the state recorded head {post['head'][:8]} for it"
         finished = req[2] is not None and classify(req[2]["body"]) == "finished"
         for c in (reversed(rabbit(comments)) if finished else []):
             # only once finished: a "Currently processing" edit keeps the old coverage
@@ -361,7 +487,7 @@ class Loop:
     def post_for(e, asked):
         """The state's record of our post made at `asked` (within 2 minutes), or {}."""
         post = (e.get("posts") or [{}])[-1]
-        if post.get("at") and abs((ts(post["at"]) - asked).total_seconds()) <= 120:
+        if asked is not None and post.get("at") and abs((ts(post["at"]) - asked).total_seconds()) <= 120:
             return post
         return {}
 
@@ -377,12 +503,12 @@ class Loop:
         replies = command_replies(comments, asked)
         return asked, request_command(ours[-1]["body"]), (replies[-1] if replies else None)
 
-    def wait_answer(self, n, since):
-        """Wait for CodeRabbit's answer to the request posted at `since`: ('review', id, count),
-        ('reply', kind, body) for a limit/quota/skip/full/unexpected reply, ('timeout', why), or,
-        for "Review finished" with no review FINISHED_GRACE after that edit: ('clean',) if the
-        summary comment was edited after `since` to say it reviewed the PR's head (0 comments),
-        else ('finished',).
+    def wait_answer(self, n, since, max_wait=MAX_WAIT):
+        """Wait for CodeRabbit's answer to the request posted at `since` (GitHub's time):
+        ('review', id, count, submitted_at), ('reply', kind, body) for a halt/limit/quota/skip/
+        full/unexpected reply, ('timeout', why), or, for "Review finished" with no review
+        FINISHED_GRACE after that edit: ('clean', edited) if the summary comment was edited after
+        `since` to say it reviewed the PR's head (0 comments), else ('finished',).
 
         The timeouts count awake time: wall-clock time since the request, plus at most 3 polls
         per poll, so a laptop asleep for hours does not time a running review out on waking."""
@@ -390,8 +516,8 @@ class Loop:
         awake = max(0.0, (self.now() - since).total_seconds())
         prev = self.now()
         while True:
-            if awake >= MAX_WAIT:
-                return ("timeout", "no review 3 hours after the request")
+            if awake >= max_wait:
+                return ("timeout", f"no review {max_wait // 60} minutes after the request")
             self.check_stop()
             self.sleep(POLL)
             t = self.now()
@@ -399,11 +525,11 @@ class Loop:
             prev = t
             reviews = self.reviews_after(n, since)
             if reviews:
-                return ("review", reviews[-1]["id"], self.inline_after(n, since))
+                return ("review", reviews[-1]["id"], self.inline_after(n, since), ts(reviews[-1]["submitted_at"]))
             comments = self.hub.get_all(f"issues/{n}/comments")
             replies = command_replies(comments, since)
             if not replies:
-                if awake >= NO_ANSWER:
+                if awake >= min(NO_ANSWER, max_wait):
                     return ("timeout", "no reply to the command in 30 minutes")
                 continue
             body = replies[-1]["body"]
@@ -413,47 +539,95 @@ class Loop:
             if kind == "finished":
                 if self.now() >= edited(replies[-1]) + datetime.timedelta(seconds=FINISHED_GRACE):
                     s = clean_summary(comments, self.head(n))
-                    return ("clean",) if s and edited(s) > since else ("finished",)
+                    return ("clean", edited(s)) if s and edited(s) > since else ("finished",)
                 continue
             return ("reply", kind, body)
 
     # -- outcomes --------------------------------------------------------------------------
-    def settle(self, n, e, outcome, post=None, **extra):
+    def settle(self, n, e, outcome, post=None, at=None, **extra):
         """Records a final outcome and the diff it is about: the one recorded with our post when
-        there is one, else the current diff. The PR needs nothing more until that diff changes."""
+        there is one, else the current diff. The PR needs nothing more until that diff changes.
+        `at` (GitHub's time of the answer: the review's submitted_at, the summary's edit) is
+        where a later re-review starts looking; our clock if not given."""
         post = post or {}
         fp, head = post.get("fp"), post.get("head")
         if not fp:
             fp, head = self.fingerprint(n), self.head(n)
         for k in ("retry_at", "defer_req", "defer_command", "timeouts", "rereview_after"):
             e.pop(k, None)
-        e.update(outcome=outcome, reviewed_fp=fp, fp_head=head, reviewed_at=iso(self.now()), **extra)
+        e.update(outcome=outcome, reviewed_fp=fp, fp_head=head, reviewed_at=iso(at or self.now()), **extra)
         self.save()
+        if outcome != NO_REVIEW:
+            self.good()
+
+    def adopt(self, n, e, sha, ref, outcome, **extra):
+        """A PR reviewed before diffs were recorded (old state, or rebuilt from GitHub): its current
+        diff counts as reviewed, nothing is posted. If its head moved after that review (`ref`, the
+        reviewed or requested commit, is not the head), pushes since may be unreviewed: flagged for
+        a check by hand, not requested on a guess."""
+        self.settle(n, e, outcome, post={"fp": self.fingerprint(n), "head": sha}, **extra)
+        if ref and ref != sha:
+            self.flag_check(n, f"{outcome} at {ref[:8]}, head now {sha[:8]}: pushes since may be unreviewed")
 
     def defer(self, n, e, asked, command, why, wait, outcome):
-        """The PR is asked again (the same command) `wait` seconds from now; the pass goes on."""
+        """The PR is asked again (the same command) `wait` seconds from now and the pass goes on;
+        after PR_CAP deferrals it is parked instead. Counts toward the circuit breaker."""
         k = e.get("timeouts", 0) + 1
         at = self.now() + datetime.timedelta(seconds=wait)
-        e.update(outcome=outcome, timeouts=k, defer_req=iso(asked), retry_at=iso(at), defer_command=command)
-        self.save()
-        self.log(f"#{n}: {why}; asking again after {at:%Y-%m-%d %H:%M}Z (deferral {k}), going on with the next PR")
-        return "defer"
+        e.update(outcome=outcome, timeouts=k, defer_req=iso(asked), retry_at=iso(at), defer_command=command,
+                 message=why[:600])
+        if k >= PR_CAP:
+            e.update(outcome=PARKED, parked_why=why[:600])
+            for key in ("retry_at",):
+                e.pop(key, None)
+            self.save()
+            self.enqueue(n, f"parked after {k} tries: {why[:200]}")
+            self.log(f"#{n}: {why}; parked after {k} tries (not asked again; --unpark {n} after a look)")
+        else:
+            self.save()
+            self.log(f"#{n}: {why}; asking again after {at:%Y-%m-%d %H:%M}Z (deferral {k}), going on with the next PR")
+        return "halt" if self.bad(n, why) else "defer"
 
     # -- one PR ----------------------------------------------------------------------------
     def one(self, n):
         """Returns 'done' (a new review, full or not, or a clean one with 0 comments), 'skip'
-        (nothing to do: reviewed at this diff, or skipped by CodeRabbit), 'none' (no review
+        (nothing to do: reviewed at this diff, parked, or skipped by CodeRabbit), 'none' (no review
         available, or nothing new on a re-review), 'defer' (no answer or an unexpected one: asked
-        again later), 'pause' (a quota message: the loop pauses until self.paused_until), or 0 in
-        a dry run when the next step would post or wait."""
+        again later), 'pause' (a quota message: the loop pauses until self.paused_until), 'halt'
+        (the circuit breaker tripped: nothing more until --resume), or 0 in a dry run when the
+        next step would post or wait."""
         e = self.state.setdefault(str(n), {"pr": n, "posts": []})
+        if self.halted():
+            return "halt"
+        unpark = self.control().get("unpark") or []
+        if n in unpark:
+            for k in ("timeouts", "parked_why"):
+                e.pop(k, None)
+            e.update(outcome="unparked", retry_at=iso(self.now()))  # due now: the request is posted again
+            self.save()
+            self.control(lambda c: c.update(unpark=[x for x in (c.get("unpark") or []) if x != n]))
+            self.log(f"#{n}: unparked, asking again")
+        if e.get("outcome") == PARKED:
+            if self.dry:
+                self.log(f"#{n}: parked ({e.get('parked_why', '')[:80]}), skipping")
+            return "skip"
         pr = self.hub.get(f"pulls/{n}")
         if pr.get("state", "open") != "open":
             if self.dry:
                 self.log(f"#{n}: {pr.get('state')}, skipping")
             return "skip"
         sha = pr["head"]["sha"]
-        if e.get("outcome") in SETTLED and e.get("reviewed_fp"):
+        if e.get("outcome") in SETTLED and not e.get("reviewed_fp"):
+            # settled by the loop before diffs were recorded: never asked again on a guess
+            post = (e.get("posts") or [{}])[-1]
+            ref = post.get("head")
+            if e["outcome"] == "reviewed":
+                reviews = self.reviews_after(n, None)
+                ref = (reviews[-1].get("commit_id") if reviews else None) or ref
+            self.adopt(n, e, sha, ref, e["outcome"])
+            self.log(f"#{n}: {e['outcome']} before diffs were recorded, taking this diff as reviewed")
+            return "skip"
+        if e.get("outcome") in SETTLED:
             if not self.rereview or sha == e.get("fp_head"):
                 if self.dry:
                     self.log(f"#{n}: {e['outcome']} at this diff, skipping")
@@ -478,19 +652,17 @@ class Loop:
         if new and (after is not None or asked_before):
             # our request was answered while the loop was not watching
             since = post_at or after
-            return self.reviewed_now(n, e, ("review", new[-1]["id"], self.inline_after(n, since)), post,
-                                     rereview=after is not None)
+            return self.reviewed_now(n, e, ("review", new[-1]["id"], self.inline_after(n, since),
+                                            ts(new[-1]["submitted_at"])), post, rereview=after is not None)
         if reviews and after is None and not asked_before:
-            # reviewed before diffs were recorded (or by hand): this diff counts as reviewed; `at`
-            # is now, so a later re-review ignores every request made before
-            self.settle(n, e, "reviewed", post={"fp": self.fingerprint(n), "head": sha},
-                        note="has a CodeRabbit review on GitHub")
+            # reviewed before diffs were recorded (or by hand): this diff counts as reviewed
+            self.adopt(n, e, sha, reviews[-1].get("commit_id"), "reviewed", note="has a CodeRabbit review on GitHub")
             self.log(f"#{n}: has a CodeRabbit review, skipping")
             return "skip"
         comments = self.hub.get_all(f"issues/{n}/comments")
         s = clean_summary(comments, sha)
         if s and (after is None or edited(s) > after):
-            self.settle(n, e, CLEAN, post={"fp": self.fingerprint(n), "head": sha}, inline=0,
+            self.settle(n, e, CLEAN, post={"fp": self.fingerprint(n), "head": sha}, at=edited(s), inline=0,
                         note="reviewed, 0 comments (clean): the summary on GitHub covers the head")
             self.log(f"#{n}: reviewed at its head with 0 comments (clean), skipping")
             return "skip"
@@ -500,46 +672,51 @@ class Loop:
             if s and (req is None or (req[2] is not None and classify(req[2]["body"]) == "finished"
                                       and edited(s) >= req[0])):
                 # a clean review of an earlier head, before diffs were recorded
-                self.settle(n, e, CLEAN, post={"fp": self.fingerprint(n), "head": sha}, inline=0,
-                            note="reviewed, 0 comments (clean) at an earlier head, before diffs were recorded")
+                self.adopt(n, e, sha, (coverage(s["body"]) or {}).get("coveredCommitId"), CLEAN, inline=0,
+                           note="reviewed, 0 comments (clean) at an earlier head, before diffs were recorded")
                 self.log(f"#{n}: reviewed with 0 comments (clean) at an earlier head, taking this diff as reviewed")
                 return "skip"
         if req:
             why = self.stale(e, req, comments, sha)
+            if why and after is None and req[2] is not None and classify(req[2]["body"]) == "skip":
+                # skipped (too large) at an older head: not asked again on a guess
+                self.adopt(n, e, sha, self.post_for(e, req[0]).get("head") or "an older head", "skipped",
+                           message=text(req[2]["body"])[:600])
+                self.log(f"#{n}: skipped by CodeRabbit at an older head, taking this diff as skipped")
+                return "skip"
             if why:
                 # a request about an older head says nothing about this one: start again with `review`
                 self.log(f"#{n}: our {req[1]} at {req[0]:%Y-%m-%d %H:%M:%S} was about an older head than "
                          f"{sha[:8]} ({why}), treating the PR as never requested")
                 req = None
-                if e.get("outcome") in SETTLED:
-                    e.update(outcome="new head"); self.save()
         retries, pause, command, ans, asked = 0, 0, REVIEW, None, None
         if req and e.get("defer_req") and req[0] <= ts(e["defer_req"]) + datetime.timedelta(seconds=120) \
-                and (req[2] is None or classify(req[2]["body"]) in ("processing", "quota", "unexpected")):
-            # deferred: ask again once its time has come
-            if self.now() < ts(e["retry_at"]):
+                and (req[2] is None or classify(req[2]["body"]) in ("processing", "quota", "unexpected", "halt")):
+            # deferred (or halted and resumed): ask again once its time has come
+            if e.get("retry_at") and self.now() < ts(e["retry_at"]):
                 self.log(f"#{n}: deferred ({e.get('outcome')}), asking again after {e['retry_at']}")
                 return "defer" if not self.dry else "skip"
             command, req = req[1], None
             self.log(f"#{n}: deferral over, asking again")
+        max_wait = REASK_WAIT if e.get("timeouts") else MAX_WAIT
         if req:
             asked, command, reply = req
             kind = classify(reply["body"]) if reply else "processing"
             if kind == "finished" and self.now() >= edited(reply) + datetime.timedelta(seconds=FINISHED_GRACE):
                 ans = ("finished",)  # not clean: a clean summary at the head was skipped above
-            elif kind in ("full", "quota", "unexpected"):
+            elif kind in ("full", "quota", "unexpected", "halt"):
                 ans = ("reply", kind, reply["body"])
             elif kind in ("processing", "finished"):
                 state = "no reply yet" if not reply else text(reply["body"])[:60]
                 if self.dry:
-                    if self.now() - asked >= datetime.timedelta(seconds=MAX_WAIT):
+                    if self.now() - asked >= datetime.timedelta(seconds=max_wait):
                         self.log(f"#{n}: our {command} at {asked:%Y-%m-%d %H:%M} got no review ({state}); "
                                  f"would defer it and ask again")
                         return "defer"
                     self.log(f"#{n}: would wait: our {command} at {asked:%H:%M:%S} is still processing ({state})")
                     return 0
                 self.log(f"#{n}: our {command} at {asked:%H:%M:%S} is still processing, waiting for it")
-                ans = self.wait_answer(n, asked)  # handled below like the answer to a new post
+                ans = self.wait_answer(n, asked, max_wait)  # handled below like the answer to a new post
             elif kind == "limit":
                 retries = 1
                 pause = max(0, (ts(reply["created_at"]) + datetime.timedelta(seconds=limit_wait(reply["body"])) - self.now()).total_seconds())
@@ -548,7 +725,7 @@ class Loop:
                     self.log(f"#{n}: limit reply at {ts(reply['created_at']):%H:%M:%S}; would post {command} at {at:%H:%M:%S}")
                     return 0
             elif kind == "skip":
-                self.settle(n, e, "skipped", post=self.post_for(e, asked), message=text(reply["body"])[:600])
+                self.settle(n, e, "skipped", post=self.post_for(e, asked), at=edited(reply), message=text(reply["body"])[:600])
                 self.log(f"#{n}: skipped by CodeRabbit: {text(reply['body'])[:120]}")
                 return "skip"
         if ans is None and self.dry:
@@ -564,22 +741,29 @@ class Loop:
                     self.status(phase="rate limited", pr=n, until=iso(until))
                     self.sleep_until(until)
                     pause = 0
+                if self.halted():
+                    return "halt"
+                self.spend_post(n)
+                pr = self.hub.get(f"pulls/{n}")  # still open? (it may have been merged meanwhile)
+                if pr.get("state", "open") != "open":
+                    self.log(f"#{n}: {pr.get('state')} meanwhile, not posting")
+                    return "skip"
+                head = pr["head"]["sha"]
                 fp = self.fingerprint(n) if self.rereview else None
-                head = self.head(n)
-                self.hub.comment(n, command)
-                # GitHub's clock may lag ours by a few seconds; the reply comes later than that
-                asked = self.now() - datetime.timedelta(seconds=10)
-                e.setdefault("posts", []).append({"command": command, "at": iso(self.now()), "head": head, "fp": fp})
+                out = self.hub.comment(n, command)
+                asked = self.posted_at(out)
+                e.setdefault("posts", []).append({"command": command, "at": iso(asked), "head": head, "fp": fp})
                 e["outcome"] = "pending"
                 self.save()
                 self.log(f"#{n}: posted {command}")
-                ans = self.wait_answer(n, asked)
+                ans = self.wait_answer(n, asked, max_wait)
             ans, answer = None, ans
             post = self.post_for(e, asked)
             if answer[0] == "review":
                 return self.reviewed_now(n, e, answer, post, rereview=after is not None)
             if answer[0] == "clean":
-                self.settle(n, e, CLEAN, post=post, inline=0, note="reviewed, 0 comments (clean): the summary covers the head")
+                self.settle(n, e, CLEAN, post=post, at=answer[1], inline=0,
+                            note="reviewed, 0 comments (clean): the summary covers the head")
                 self.log(f"#{n}: reviewed, 0 comments (clean): CodeRabbit found nothing, nothing to triage")
                 return "done"
             if answer[0] == "timeout":
@@ -606,6 +790,7 @@ class Loop:
             msg = text(body)
             e["message"] = msg[:600]
             if kind == "limit":
+                self.good()
                 retries += 1
                 pause = limit_wait(body)
                 continue
@@ -613,14 +798,20 @@ class Loop:
                 self.settle(n, e, "skipped", post=post, message=msg[:600])
                 self.log(f"#{n}: skipped: {msg[:120]}")
                 return "skip"
+            if kind == "halt":
+                e.update(outcome="halted", defer_req=iso(asked), defer_command=command)
+                e.pop("retry_at", None)
+                self.save()
+                self.trip(f"#{n}: CodeRabbit refuses reviews: {msg[:200]}")
+                return "halt"
             if kind == "quota":
-                self.defer(n, e, asked, command, f"a quota or plan message ({msg[:160]})", self.quota_pause, "quota")
+                r = self.defer(n, e, asked, command, f"a quota or plan message ({msg[:160]})", self.quota_pause, "quota")
                 self.paused_until = self.now() + datetime.timedelta(seconds=self.quota_pause)
-                return "pause"
+                return "halt" if r == "halt" else "pause"
             return self.defer(n, e, asked, command, f"unexpected answer ({msg[:200]})", UNEXPECTED_RETRY, "unexpected")
 
     def reviewed_now(self, n, e, ans, post, rereview=False):
-        self.settle(n, e, "reviewed", post=post, review_id=ans[1], inline=ans[2])
+        self.settle(n, e, "reviewed", post=post, at=ans[3], review_id=ans[1], inline=ans[2])
         self.enqueue(n, "re-review" if rereview else "review", ans[1], ans[2])
         self.log(f"#{n}: reviewed, {ans[2]} inline comments{' (re-review)' if rereview else ''}; queued for triage")
         return "done"
@@ -724,7 +915,11 @@ def self_test():
     #   limit      "Review rate limited." at 7 s;  silent   no reply at all.
     #   limit@N    "Review rate limited. Next review available in N minutes." at 7 s;
     #   quota      a monthly quota message at 7 s;
-    #   late@N     no reply to the command, a review N s after the request (CodeRabbit was slow).
+    #   late@N     no reply to the command, a review N s after the request (CodeRabbit was slow);
+    #   stuck      "Review triggered." at 7 s and nothing more;
+    #   paused     "Reviews are paused for this repository." at 7 s;
+    #   skipped    "Review skipped: 110 files exceed the limit of 100." at 7 s.
+    # GitHub's timestamps are the simulated clock plus `skew` (GitHub's clock behind ours if < 0).
     def fmt(t):
         return f"{t:%Y-%m-%dT%H:%M:%SZ}"
 
@@ -748,6 +943,8 @@ def self_test():
             self.diffs = {}   # pr -> the +line of its one-file diff (default "v1")
             self.failures = 0  # the next this many reads raise like a dropped network after gh's retries
             self.reads = 0
+            self.skew = datetime.timedelta(0)
+            self.cids = {}    # posted comment id -> its created_at
 
         def add(self, path, item, start, end=None):
             entry = [start, end, path, item]
@@ -775,6 +972,9 @@ def self_test():
             m = re.match(r"pulls/(\d+)$", path)
             if m:
                 return {"head": {"sha": self.heads.get(int(m.group(1)), head)}}
+            m = re.match(r"issues/comments/(\d+)$", path)
+            if m:
+                return {"created_at": self.cids[int(m.group(1))]}
             sha = path.split("/")[-1]
             return {"commit": {"committer": {"date": fmt(self.dates[sha])}}}
 
@@ -796,58 +996,72 @@ def self_test():
             created = "2026-11-03T08:58:04Z"
             body = summary_at(sha) if marker else SUMMARY_MARKER + "\nReview skipped: base branch is not the default."
             self.summaries[n] = self.add(f"issues/{n}/comments", {"user": bot, "body": body,
-                                         "created_at": created, "updated_at": fmt(at)}, at)
+                                         "created_at": created, "updated_at": fmt(at + self.skew)}, at)
 
         def answer(self, n, body, at, outcome):
             def sec(s):
                 return at + datetime.timedelta(seconds=s)
+
+            def g(s):  # GitHub's timestamp s seconds after the request
+                return fmt(sec(s) + self.skew)
             path = f"issues/{n}/comments"
-            self.add(path, {"user": us, "body": body, "created_at": fmt(at), "updated_at": fmt(at)}, at)
+            self.add(path, {"user": us, "body": body, "created_at": g(0), "updated_at": g(0)}, at)
             if outcome == "silent":
+                return
+            lines = {"paused": ("Action not completed", "Reviews are paused for this repository."),
+                     "skipped": ("Action not completed", "Review skipped: 110 files exceed the limit of 100."),
+                     "stuck": ("Action performed", "Review triggered.")}
+            if outcome in lines:
+                self.add(path, {"user": bot, "body": reply(*lines[outcome]), "created_at": g(7), "updated_at": g(7)}, sec(7))
                 return
             m = re.match(r"(limit|quota)@?(\d*)$", outcome)
             if m and outcome != "limit":
                 line = ("You have used your monthly review quota. Upgrade your plan to continue."
                         if m.group(1) == "quota" else f"Review rate limited. Next review available in {m.group(2)} minutes.")
                 body = reply("Action not completed", line)
-                self.add(path, {"user": bot, "body": body, "created_at": fmt(sec(7)), "updated_at": fmt(sec(7))}, sec(7))
+                self.add(path, {"user": bot, "body": body, "created_at": g(7), "updated_at": g(7)}, sec(7))
                 return
             m = re.match(r"late@(\d+)$", outcome)
             if m:
                 rv = sec(int(m.group(1)))
-                self.add(f"pulls/{n}/reviews", {"user": bot, "id": 900 + n + len(self.items), "submitted_at": fmt(rv)}, rv)
-                self.add(f"pulls/{n}/comments", {"user": bot, "created_at": fmt(rv)}, rv)
+                self.add(f"pulls/{n}/reviews", {"user": bot, "id": 900 + n + len(self.items), "submitted_at": fmt(rv + self.skew)}, rv)
+                self.add(f"pulls/{n}/comments", {"user": bot, "created_at": fmt(rv + self.skew)}, rv)
                 return
             if outcome == "limit":
-                self.add(path, {"user": bot, "body": limited, "created_at": fmt(sec(7)), "updated_at": fmt(sec(7))}, sec(7))
+                self.add(path, {"user": bot, "body": limited, "created_at": g(7), "updated_at": g(7)}, sec(7))
                 return
-            self.add(path, {"user": bot, "body": triggered, "created_at": fmt(sec(7)), "updated_at": fmt(sec(7))},
+            self.add(path, {"user": bot, "body": triggered, "created_at": g(7), "updated_at": g(7)},
                      sec(7), sec(600))
-            self.add(path, {"user": bot, "body": finished, "created_at": fmt(sec(7)), "updated_at": fmt(sec(600))},
+            self.add(path, {"user": bot, "body": finished, "created_at": g(7), "updated_at": g(600)},
                      sec(600))
             if outcome.startswith("clean"):
                 self.summary(n, self.heads.get(n, head), sec(596))
             m = re.search(r"review(?:@(\d+))?$", outcome)
             if m:
                 rv = sec(590) if m.group(1) is None else sec(600 + int(m.group(1)))
-                self.add(f"pulls/{n}/reviews", {"user": bot, "id": 900 + n + len(self.items), "submitted_at": fmt(rv)}, rv)
-                self.add(f"pulls/{n}/comments", {"user": bot, "created_at": fmt(rv)}, rv)
+                self.add(f"pulls/{n}/reviews", {"user": bot, "id": 900 + n + len(self.items), "submitted_at": fmt(rv + self.skew),
+                                                "commit_id": self.heads.get(n, head)}, rv)
+                self.add(f"pulls/{n}/comments", {"user": bot, "created_at": fmt(rv + self.skew)}, rv)
 
         def comment(self, n, body):
             self.posted.append((n, body))
             outs = self.script.get(n) or []
             self.answer(n, body, self.clock.t, outs.pop(0) if outs else "finished")
+            cid = 5000 + len(self.cids)
+            self.cids[cid] = fmt(self.clock.t + self.skew)
+            return f"https://github.com/o/r/pull/{n}#issuecomment-{cid}\n"
 
     box = []
 
     def case(script=None, earlier=(), dry=False, last=1, batch=5, pushes=None, state=None, setup=None, passes=None,
-             between=None, folder=None, rereview=True):
+             between=None, folder=None, rereview=True, posts_per_day=POSTS_PER_DAY, skew=0):
         """earlier: (pr, command, seconds ago, outcome) requests already on GitHub (the state is
         rebuilt from them); pushes: {pr: seconds ago} new head commits after them. Every PR starts
         with a summary comment without a coverage marker. passes: run watch mode for that many
         passes instead of one --batch pass; between(hub, clock, loop) runs at each idle sleep."""
         clock = Clock()
         hub = Rabbit(clock, script or {})
+        hub.skew = datetime.timedelta(seconds=skew)
         for pr in range(1, last + 1):
             hub.summary(pr, "a79c09613e71867f369019f6dc428c5634b5c0ea", clock.t - datetime.timedelta(days=7), marker=False)
         for pr, command, ago, outcome in earlier:
@@ -857,7 +1071,8 @@ def self_test():
         if setup:
             setup(hub, clock)
         lines = []
-        loop = Loop(hub, None, dry, clock=clock, logger=lines.append, folder=folder, rereview=rereview)
+        loop = Loop(hub, None, dry, clock=clock, logger=lines.append, folder=folder, rereview=rereview,
+                    posts_per_day=posts_per_day)
         loop.state = state(clock) if state else {}
         box[:] = [loop, hub, clock]
         if passes:
@@ -1103,6 +1318,78 @@ def self_test():
               (code, posted, lines[-1], read_json(folder / "loop-status.json", {}).get("phase"),
                sorted(read_json(folder / "triage-queue.json", {}))),
               (0, [(1, REVIEW)], "stop requested (--resume clears it), exiting", "stopped", ["1"]))
+
+    # --- repost limits, halts, clocks, migration flags, shared files (review of 3881109b) ---
+    check("classify: reviews paused is a halt", classify(reply("Action not completed", "Reviews are paused for this repository.")),
+          "halt")
+    check("classify: the note's 'automatic reviews are paused' is not a halt", classify(triggered), "processing")
+    code, posted, outcomes, lines = case(last=3, script={1: ["silent"], 2: ["silent"], 3: ["silent"]}, batch=None)
+    check("breaker: no answer on 3 different PRs in a row halts everything (exit 5 in a manual run)",
+          (code, posted, logged(lines, "HALTED: 3 PRs in a row"), box[0].halted() is not None),
+          (5, [(1, REVIEW), (2, REVIEW), (3, REVIEW)], True, True))
+    code, posted, outcomes, lines = case(last=4, script={1: ["silent"], 2: ["review"], 3: ["silent"], 4: ["silent"]},
+                                         batch=None)
+    check("breaker: a normal answer in between starts the count again", (code, len(posted), box[0].halted()), (0, 4, None))
+    code, posted, outcomes, lines = case(last=3, script={1: ["silent"], 2: ["silent"], 3: ["silent"]}, passes=3)
+    check("breaker: watch mode halts too (the self-test returns 5; a real loop waits for --resume)",
+          (code, len(posted)), (5, 3))
+    code, posted, outcomes, lines = case({1: ["silent"] * 5}, passes=5)
+    check("per-PR cap: parked after 3 tries without an answer, queued for a look, not asked again",
+          (len(posted), outcomes, [r["kind"][:20] for r in box[0].queue["1"]["reviews"]], box[0].halted()),
+          (3, {"1": PARKED}, ["parked after 3 tries"], None))
+    loop = box[0]
+    loop.control(lambda c: c.update(unpark=[1]))
+    box[1].script[1] = ["review"]
+    check("per-PR cap: --unpark asks again", (run(loop, [1]), box[1].posted[-1], loop.state["1"]["outcome"]),
+          (0, (1, REVIEW), "reviewed"))
+    code, posted, outcomes, lines = case({1: ["stuck", "stuck", "review"]}, passes=4)
+    check("re-ask: a review triggered but never delivered waits 3 h the first time, 45 min after a deferral",
+          (len(posted), outcomes["1"], [x.split(": ")[1].split(";")[0] for x in lines if "minutes after the request" in x]),
+          (3, "reviewed", ["no review 180 minutes after the request", "no review 45 minutes after the request"]))
+    code, posted, outcomes, lines = case({n: ["review"] for n in (1, 2, 3)}, last=3, passes=1, posts_per_day=2)
+    check("budget: past the daily post budget it waits for the next UTC day",
+          (len(posted), logged(lines, "post budget (2 a day) is used"), box[2].t.day), (3, True, 11))
+    code, posted, outcomes, lines = case({1: ["paused", "review"]}, batch=None)
+    check("halt: 'Reviews paused' halts at once, nothing more posted", (code, posted, outcomes), (5, [(1, REVIEW)], {"1": "halted"}))
+    loop = box[0]
+    loop.control(lambda c: c.update(breaker=None))
+    check("halt: after --resume the same request is asked again", (run(loop, [1]), len(box[1].posted), loop.state["1"]["outcome"]),
+          (0, 2, "reviewed"))
+    code, posted, outcomes, lines = case({1: ["limit", "review"]}, skew=-90)
+    check("clock: GitHub 90 s behind: the limit reply 7 s after the post is still seen (post time from GitHub)",
+          (code, posted, outcomes, logged(lines, "limit, waiting"), box[0].state["1"]["posts"][0]["at"]),
+          (0, [(1, REVIEW)] * 2, {"1": "reviewed"}, True, "2026-11-10T04:35:21Z"))
+    code, posted, outcomes, lines = case({1: ["review"]}, skew=120)
+    check("clock: GitHub 2 min ahead: the review is found", (posted, outcomes), ([(1, REVIEW)], {"1": "reviewed"}))
+    code, posted, outcomes, _ = case({1: ["review"]}, earlier=[(1, REVIEW, 7200, "finished")], pushes={1: 9000},
+                                     state=posted_at(head), setup=lambda hub, clock: hub.push(1, 9000) or hub.heads.update({1: head}))
+    check("stale: the state's post names this head: the request counts, the committer date is not consulted",
+          (posted, outcomes), ([(1, FULL)], {"1": "reviewed"}))
+
+    def legacy(outcome):
+        return lambda clock: {"1": {"pr": 1, "outcome": outcome, "posts": [
+            {"command": REVIEW, "at": fmt(clock.t - datetime.timedelta(days=2)), "head": head}]}}
+    for outcome in ("reviewed", "skipped", CLEAN):
+        code, posted, outcomes, lines = case({1: ["review"]}, earlier=[(1, REVIEW, 2 * 86400, "review")],
+                                             pushes={1: 3600}, state=legacy(outcome))
+        check(f"migration: {outcome} before diffs, head moved since: not posted, listed to check by hand",
+              (posted, outcomes, sorted(box[0].shared("check.json"))), ([], {"1": outcome}, ["1"]))
+    code, posted, outcomes, lines = case({1: ["review"]}, earlier=[(1, REVIEW, 2 * 86400, "review")], state=legacy("reviewed"))
+    check("migration: reviewed before diffs at the current head: nothing to check",
+          (posted, box[0].shared("check.json")), ([], {}))
+    code, posted, outcomes, lines = case(earlier=[(1, REVIEW, 7200, "skipped")], pushes={1: 3600})
+    check("migration: skipped (too large) at an older head, no state: not asked again on a guess",
+          (posted, outcomes, sorted(box[0].shared("check.json"))), ([], {"1": "skipped"}, ["1"]))
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = pathlib.Path(tmp)
+        code, posted, outcomes, lines = case({1: ["review"]}, folder=folder)
+        mark_queue(folder, [2], False, out=lambda x: None)  # --queue-add from another process
+        box[0].enqueue(3, "review", 7, 1)
+        mark_queue(folder, [1], True, out=lambda x: None)    # --triaged
+        q = read_json(folder / "triage-queue.json", {})
+        check("queue: the loop and --queue-add/--triaged don't lose each other's entries",
+              ({k: v.get("triaged") for k, v in q.items()}, sorted(p.name for p in folder.glob("*.tmp"))),
+              ({"1": True, "2": False, "3": False}, []))
     bad = [x for x in checks if not x[1]]
     for name, ok, g, w in checks:
         print(f"{'ok  ' if ok else 'FAIL'} {name}" + ("" if ok else f": got {g!r}, want {w!r}"))
@@ -1125,22 +1412,29 @@ def discover(hub, first=None, last=None):
 
 def run(loop, prs, batch=None):
     """One pass over `prs` in order; stops after `batch` new reviews (full ones included; a PR
-    with no review available is not counted), at a quota message (4), or in a dry run at the first
-    PR it would post on or wait for (0)."""
+    with no review available is not counted), at a quota message (4), when halted (5), on --stop
+    (0), or in a dry run at the first PR it would post on or wait for (0)."""
     done = 0
-    for n in prs:
-        r = loop.one(n)
-        if r in ("skip", "none", "defer"):
-            continue
-        if r == "pause":
-            loop.log(f"a quota or plan message: stopping (watch mode would pause until {loop.paused_until:%Y-%m-%d %H:%M}Z)")
-            return 4
-        if r != "done":
-            return r
-        done += 1
-        if batch and done >= batch:
-            loop.log(f"{done} reviews done, handing back for triage")
-            return 0
+    try:
+        for n in prs:
+            r = loop.one(n)
+            if r in ("skip", "none", "defer"):
+                continue
+            if r == "pause":
+                loop.log(f"a quota or plan message: stopping (watch mode would pause until {loop.paused_until:%Y-%m-%d %H:%M}Z)")
+                return 4
+            if r == "halt":
+                loop.log(f"halted: {(loop.halted() or {}).get('reason')}; `--resume` clears it")
+                return 5
+            if r != "done":
+                return r
+            done += 1
+            if batch and done >= batch:
+                loop.log(f"{done} reviews done, handing back for triage")
+                return 0
+    except Stop:
+        loop.log("stop requested (--resume clears it), exiting")
+        return 0
     loop.log("all PRs done")
     return 0
 
@@ -1149,10 +1443,22 @@ def watch(loop, prs, idle=IDLE, auth_pause=AUTH_PAUSE, passes=None):
     """Passes over `prs()` (called each pass: new PRs join) until --stop, `passes` (the self-test)
     or Ctrl+C. Between passes it idles `idle` seconds, less if a deferred PR is due sooner. An
     error (GitHub, the network after the reads' own retries, anything unexpected) restarts the
-    pass after 1, 2, 4 … 30 minutes; gh not signed in after `auth_pause`."""
+    pass after 1, 2, 4 … 30 minutes; gh not signed in after `auth_pause`. While the circuit
+    breaker is tripped it posts nothing and checks every minute for --resume (the self-test
+    returns 5 instead)."""
     errors, count = 0, 0
     while True:
         try:
+            if loop.halted():
+                reason = loop.halted().get("reason")
+                if passes:
+                    loop.log(f"halted: {reason}")
+                    return 5
+                loop.status(phase="halted (needs --resume)", pr=None, until=None, halted=reason)
+                while loop.halted():
+                    loop.sleep_until(loop.now() + datetime.timedelta(seconds=POLL))
+                loop.log("resumed (--resume cleared the halt)")
+                loop.status(halted=None)
             if loop.paused_until and loop.now() < loop.paused_until:
                 loop.log(f"paused until {loop.paused_until:%Y-%m-%d %H:%M}Z (a quota or plan message)")
                 loop.status(phase="paused (quota or plan message)", pr=None, until=iso(loop.paused_until))
@@ -1169,9 +1475,11 @@ def watch(loop, prs, idle=IDLE, auth_pause=AUTH_PAUSE, passes=None):
                 if r == "pause":
                     loop.status(paused_until=iso(loop.paused_until))
                     break
+                if r == "halt":
+                    break
             errors = 0
             count += 1
-            if "pause" in outcomes:
+            if "pause" in outcomes or "halt" in outcomes:
                 continue
             due = [ts(e["retry_at"]) for e in loop.state.values() if isinstance(e, dict) and e.get("retry_at")
                    and (not todo or e.get("pr") in todo)]
@@ -1192,7 +1500,7 @@ def watch(loop, prs, idle=IDLE, auth_pause=AUTH_PAUSE, passes=None):
             wait = auth_pause if is_auth(ex) else min(ERROR_FIRST * 2 ** (errors - 1), ERROR_MAX)
             until = loop.now() + datetime.timedelta(seconds=wait)
             where = traceback.extract_tb(ex.__traceback__)[-1]
-            loop.log(f"error ({type(ex).__name__} at line {where.lineno}): {str(ex)[:300]}; "
+            loop.log(f"error ({type(ex).__name__} at {pathlib.Path(where.filename).name}:{where.lineno}): {str(ex)[:300]}; "
                      f"{'gh is not signed in; ' if is_auth(ex) else ''}trying again at {until:%H:%M}Z")
             loop.status(phase="error", until=iso(until), error=f"{iso(loop.now())}: {str(ex)[:300]}")
             if passes and errors > 20:
@@ -1205,17 +1513,45 @@ def watch(loop, prs, idle=IDLE, auth_pause=AUTH_PAUSE, passes=None):
                 return 0
 
 
-def folder_of(a):
-    return pathlib.Path(a.dir).resolve()
+MIGRATED = ("requests.json", "triage-queue.json", "loop.args", "loop.log")
+
+
+def migrate(folder, source, out=print):
+    """Copies the loop's files from an older folder (a checkout's target/review) into `folder`,
+    once: only if `folder` has no requests.json yet. Returns whether it copied."""
+    source = pathlib.Path(source)
+    if (folder / "requests.json").exists() or not (source / "requests.json").exists():
+        return False
+    folder.mkdir(parents=True, exist_ok=True)
+    copied = []
+    for name in MIGRATED:
+        if (source / name).exists() and not (folder / name).exists():
+            shutil.copy2(source / name, folder / name)
+            copied.append(name)
+    (folder / "migrated-from.txt").write_text(f"{source}\n{iso(now())}\n{', '.join(copied)}\n", encoding="utf-8")
+    out(f"copied {', '.join(copied)} from {source} to {folder} (the old folder is left as it was)")
+    return True
+
+
+def running_line(folder):
+    st = read_json(folder / "loop-status.json", {})
+    if lock_held(folder / "loop.lock"):
+        return True, f"a loop is running in {folder} (pid {st.get('pid')}, started {st.get('started')})"
+    return False, f"no loop holds the lock in {folder}"
 
 
 def print_status(folder, out=print):
-    """Whether the loop runs, what it does, the deferred PRs and the triage queue."""
+    """Whether the loop runs, what it does, the halt, the budget, the deferred and parked PRs, the
+    PRs to check by hand and the triage queue."""
     st = read_json(folder / "loop-status.json", {})
-    running = lock_held(folder / "loop.lock")
+    running, line = running_line(folder)
     stop = (folder / "loop.stop").exists()
-    out(f"loop: {'running' if running else 'not running'}" + (f" (pid {st.get('pid')}, started {st.get('started')})" if running else "")
-        + ("; STOP requested: `--resume` clears it" if stop else ""))
+    out(f"loop: {'running' if running else 'not running'}: {line}" + ("; STOP requested: `--resume` clears it" if stop else ""))
+    control = read_json(folder / "loop-control.json", {})
+    if control.get("breaker"):
+        out(f"HALTED since {control['breaker']['at']}: {control['breaker']['reason']} (`--resume` clears it)")
+    if control.get("unpark"):
+        out("unpark requested: " + ", ".join(f"#{n}" for n in control["unpark"]))
     if st:
         what = st.get("phase", "?") + (f" on #{st['pr']}" if st.get("pr") else "")
         if st.get("until"):
@@ -1226,19 +1562,28 @@ def print_status(folder, out=print):
                          ("error", "last error")):
             if st.get(k):
                 out(f"  {label}: {st[k]}")
+    posts = control.get("posts") or {}
+    out(f"posts today (UTC): {posts.get(f'{now():%Y-%m-%d}', 0)}" + (f"; earlier: {', '.join(f'{k} {v}' for k, v in sorted(posts.items())[-4:-1])}" if len(posts) > 1 else ""))
     state = read_json(folder / "requests.json", {})
-    deferred = sorted((int(k), e) for k, e in state.items() if isinstance(e, dict) and e.get("retry_at"))
-    for n, e in deferred:
+    for n, e in sorted((int(k), e) for k, e in state.items() if isinstance(e, dict) and e.get("retry_at")):
         out(f"deferred: #{n} {e.get('outcome')} (x{e.get('timeouts', 1)}), asking again after {e['retry_at']}")
-    open_ = sorted(int(k) for k, e in state.items() if isinstance(e, dict) and e.get("outcome") in ("pending", "waiting", "changed"))
+    parked = sorted(int(k) for k, e in state.items() if isinstance(e, dict) and e.get("outcome") == PARKED)
+    for n in parked:
+        out(f"parked: #{n}: {state[str(n)].get('parked_why', '')[:160]} (`--unpark {n}` asks again)")
+    open_ = sorted(int(k) for k, e in state.items() if isinstance(e, dict) and e.get("outcome") in ("pending", "waiting", "changed", "halted"))
     if open_:
         out("in progress: " + ", ".join(f"#{n} {state[str(n)]['outcome']}" for n in open_))
+    check = read_json(folder / "check.json", {})
+    if check:
+        out(f"check by hand ({len(check)}; `--checked N…` clears):")
+        for n, c in sorted((int(k), c) for k, c in check.items()):
+            out(f"  #{n}: {c['why']}")
     queue = read_json(folder / "triage-queue.json", {})
     todo = sorted((int(k), q) for k, q in queue.items() if not q.get("triaged"))
     out(f"triage queue: {len(todo)} PR(s)" + ("" if todo else " (empty)"))
     for n, q in todo:
         rv = q["reviews"][-1]
-        more = f", {len(q['reviews'])} reviews" if len(q["reviews"]) > 1 else ""
+        more = f", {len(q['reviews'])} entries" if len(q["reviews"]) > 1 else ""
         out(f"  #{n}: {rv['kind']} at {rv['at']}" + (f", {rv['inline']} inline comments" if rv.get("inline") is not None else "") + more)
     log_path = folder / "loop.log"
     if log_path.exists():
@@ -1249,19 +1594,18 @@ def print_status(folder, out=print):
     return 0
 
 
-def mark_queue(folder, prs, triaged):
-    path = folder / "triage-queue.json"
-    queue = read_json(path, {})
-    for n in prs:
-        q = queue.setdefault(str(n), {"pr": n, "reviews": []})
-        if triaged:
-            q["triaged"] = True
-            q["triaged_at"] = iso(now())
-        else:
-            q["reviews"].append({"kind": "added by hand", "review_id": None, "inline": None, "at": iso(now())})
-            q["triaged"] = False
-    write_json(path, queue)
-    print(("marked triaged: " if triaged else "queued: ") + ", ".join(f"#{n}" for n in prs))
+def mark_queue(folder, prs, triaged, out=print):
+    def change(queue):
+        for n in prs:
+            q = queue.setdefault(str(n), {"pr": n, "reviews": []})
+            if triaged:
+                q["triaged"] = True
+                q["triaged_at"] = iso(now())
+            else:
+                q["reviews"].append({"kind": "added by hand", "review_id": None, "inline": None, "at": iso(now())})
+                q["triaged"] = False
+    update_json(folder / "triage-queue.json", change, {})
+    out(("marked triaged: " if triaged else "queued: ") + ", ".join(f"#{n}" for n in prs))
     return 0
 
 
@@ -1274,50 +1618,79 @@ def main():
     ap.add_argument("--last", type=int, help="last PR number (default: the top of the stack, read every pass)")
     ap.add_argument("--batch", type=int, help="one pass, stopping after this many new reviews (manual use)")
     ap.add_argument("--once", action="store_true", help="one pass, then exit")
-    ap.add_argument("--dir", default=os.environ.get("WLX_REVIEW_DIR") or str(DEFAULT_DIR),
+    ap.add_argument("--dir", default=str(loop_dir()),
                     help="state, log, queue, status, lock and stop files (default: $WLX_REVIEW_DIR, else %(default)s)")
     ap.add_argument("--state", help="progress file (default: DIR/requests.json)")
+    ap.add_argument("--migrate-from", metavar="OLD_DIR",
+                    help=f"copy {', '.join(MIGRATED)} from an older folder into --dir if it has no state yet, and exit")
     ap.add_argument("--idle", type=int, default=IDLE // 60, help="watch: minutes between passes (default %(default)s)")
     ap.add_argument("--quota-pause", type=int, default=QUOTA_PAUSE // 3600, help="hours to pause on a quota message (default %(default)s)")
     ap.add_argument("--auth-pause", type=int, default=AUTH_PAUSE // 60, help="minutes to pause when gh is not signed in (default %(default)s)")
+    ap.add_argument("--posts-per-day", type=int, default=POSTS_PER_DAY,
+                    help="most `@coderabbitai` comments per UTC day, limit retries included (default %(default)s)")
     ap.add_argument("--no-rereview", action="store_true", help="never re-request a reviewed PR whose own diff changed")
     ap.add_argument("--post", "--write", dest="post", action="store_true", help="post requests to GitHub; without it, only print the next action")
     ap.add_argument("--dry-run", action="store_true", help="the default: print the next action, post nothing")
-    ap.add_argument("--status", action="store_true", help="print whether the loop runs, what it waits for and the triage queue")
+    ap.add_argument("--status", action="store_true", help="print whether the loop runs, what it waits for, the halt, the budget and the queues")
     ap.add_argument("--stop", action="store_true", help="ask a running loop to exit (within a minute) and keep the scheduled task from starting it")
-    ap.add_argument("--resume", action="store_true", help="clear --stop (loop_task.py launch then starts it)")
+    ap.add_argument("--resume", action="store_true", help="clear --stop and a halt (loop_task.py launch then starts it)")
+    ap.add_argument("--unpark", type=int, nargs="+", metavar="N", help="ask parked PRs again")
     ap.add_argument("--triaged", type=int, nargs="+", metavar="N", help="mark these PRs' reviews as triaged")
     ap.add_argument("--queue-add", type=int, nargs="+", metavar="N", help="put these PRs in the triage queue")
+    ap.add_argument("--checked", type=int, nargs="+", metavar="N", help="clear these PRs from the check-by-hand list")
     ap.add_argument("--self-test", action="store_true", help="check the reply matching and the loop on a simulated CodeRabbit, and exit")
     a = ap.parse_args()
     if a.self_test:
         return self_test()
     folder = folder_of(a)
+    if a.migrate_from:
+        if not migrate(folder, folder_of(argparse.Namespace(dir=a.migrate_from))):
+            print(f"nothing copied: {folder} has a requests.json already, or {a.migrate_from} has none")
+        return 0
     if a.status:
         return print_status(folder)
     if a.stop:
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "loop.stop").write_text(iso(now()) + "\n", encoding="utf-8")
-        print(f"stop requested ({folder / 'loop.stop'}); a running loop exits within a minute")
+        running, line = running_line(folder)
+        print(f"stop flag set ({folder / 'loop.stop'}); {line}" +
+              ("; it exits within a minute" if running else "; the flag keeps the scheduled task from starting one"))
         return 0
     if a.resume:
-        (folder / "loop.stop").unlink() if (folder / "loop.stop").exists() else None
-        print("stop cleared")
+        stop = folder / "loop.stop"
+        had_stop = stop.exists()
+        if had_stop:
+            stop.unlink()
+        breaker = update_json(folder / "loop-control.json", lambda c: c.update(breaker=None, streak=[]), {}) if folder.exists() else {}
+        running, line = running_line(folder)
+        print(f"{'stop flag cleared' if had_stop else 'no stop flag'}; halt cleared; {line}"
+              + ("" if running else "; `loop_task.py launch` starts it"))
+        return 0
+    if a.unpark:
+        update_json(folder / "loop-control.json",
+                    lambda c: c.update(unpark=sorted(set(c.get("unpark") or []) | set(a.unpark))), {})
+        print("unpark requested: " + ", ".join(f"#{n}" for n in a.unpark) + " (the loop asks them again on its next pass)")
         return 0
     if a.triaged or a.queue_add:
         return mark_queue(folder, a.triaged or a.queue_add, bool(a.triaged))
+    if a.checked:
+        update_json(folder / "check.json", lambda d: [d.pop(str(n), None) for n in a.checked], {})
+        print("cleared from the check list: " + ", ".join(f"#{n}" for n in a.checked))
+        return 0
     if a.post and a.dry_run:
         ap.error("--post and --dry-run contradict each other")
+    if a.post and DEFAULT_DIR.resolve() != folder:
+        migrate(folder, DEFAULT_DIR, out=log)  # this checkout's target/review, the old default
     hub = GitHub(gh_path(a.gh), a.repo, log)
     loop = Loop(hub, a.state or folder / "requests.json", not a.post, folder=folder, rereview=not a.no_rereview,
-                quota_pause=a.quota_pause * 3600)
+                quota_pause=a.quota_pause * 3600, posts_per_day=a.posts_per_day)
 
     def prs():
         return discover(hub, a.first, a.last)
     if not a.post:
         return run(loop, prs())
     lock = Lock(folder / "loop.lock")
-    if not lock.acquire():
+    if not lock.acquire(wait=5):  # a --status probe holds it for a moment
         st = read_json(folder / "loop-status.json", {})
         log(f"already running (pid {st.get('pid')}), exiting")
         return 0
@@ -1331,7 +1704,8 @@ def main():
         if old.get("paused_until") and ts(old["paused_until"]) > now():
             loop.paused_until = ts(old["paused_until"])
         mode = loop.st["mode"]
-        log(f"started ({mode}, pid {os.getpid()}, PRs {a.first or 'stack bottom'}..{a.last or 'stack top'}, dir {folder})")
+        log(f"started ({mode}, pid {os.getpid()}, PRs {a.first or 'stack bottom'}..{a.last or 'stack top'}, "
+            f"{a.posts_per_day} posts a day at most, dir {folder})")
         if mode != "watch":
             code = run(loop, prs(), a.batch)
             loop.status(phase=f"exited ({code})", pr=None, until=None)
@@ -1339,6 +1713,10 @@ def main():
         return watch(loop, prs, idle=a.idle * 60, auth_pause=a.auth_pause * 60)
     finally:
         lock.release()
+
+
+def folder_of(a):
+    return pathlib.Path(a.dir).resolve()
 
 
 if __name__ == "__main__":
