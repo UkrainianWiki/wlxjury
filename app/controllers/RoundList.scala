@@ -590,11 +590,15 @@ final case class RoundList(
 
   def withViewer(asUserId: Long): RoundList = copy(asUserId = asUserId)
 
-  /** The list in another view; out of the comments report, by rate instead of by the latest
-    * comment, which only it has.
+  /** The list in another view; into the comments report by the latest comment, its default
+    * ([[RoundList.defaultOrder]]); out of it, by rate instead of by the latest comment, which
+    * only it has. Between the report and its CSV the order stays.
     */
   def withView(view: GalleryView): RoundList =
-    copy(view = view, order = if (order == ListOrder.LatestComment && !view.comments) ListOrder.ByRate else order)
+    copy(view = view, order =
+      if (view.comments && !this.view.comments) ListOrder.LatestComment
+      else if (order == ListOrder.LatestComment && !view.comments) ListOrder.ByRate
+      else order)
 
   /** The list read from `round_image`'s counts where it can be (`roundImage.read`, P2b). */
   def withCountsRead(on: Boolean): RoundList = copy(countsRead = on)
@@ -863,12 +867,14 @@ object RoundList {
   def landing(round: Round, juror: User)(implicit request: RequestHeader): RoundList =
     RoundList(round, juror.getId, order = defaultOrder(juror, juror.getId, GalleryView.Gallery))
 
-  /** A list's order when its URL names none: in a juror's own gallery the one they last
-    * chose ([[SortCookie]]), else file order, which a vote doesn't change; by rate for the
-    * others, the organisers' and the results.
+  /** A list's order when its URL names none: in the comments report (its page, CSV and large
+    * views) the latest comment first; in a juror's own gallery the one they last chose
+    * ([[SortCookie]]), else file order, which a vote doesn't change; by rate for the others,
+    * the organisers' and the results.
     */
   def defaultOrder(viewer: User, asUserId: Long, view: GalleryView)(implicit request: RequestHeader): ListOrder =
-    if (ownGallery(viewer, asUserId, view))
+    if (view.comments) ListOrder.LatestComment
+    else if (ownGallery(viewer, asUserId, view))
       request.cookies.get(SortCookie).flatMap(c => ListOrder.parse(c.value)).getOrElse(ListOrder.FileOrder)
     else ListOrder.ByRate
 

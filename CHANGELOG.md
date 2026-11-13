@@ -53,8 +53,9 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
   juror's vote, a rated round's stars), and each comment with its author, time and, from another
   round, that round's name; texts keep their line breaks and are never HTML. A switch **This
   round** (the default) / **All rounds of the contest** chooses the comments: a file is listed if it
-  has one of them. Its order menu has the list's own orders and **Latest comment first** (by the
-  newest comment of that choice). **Comments CSV** has a row per comment (file, page id, Commons
+  has one of them. Its order menu has **Latest comment first** (by the newest comment of that
+  choice; the default, also when opened from the view menu or the round's statistics, the CSV and
+  the large view included) and the list's own orders. **Comments CSV** has a row per comment (file, page id, Commons
   URL, author, time in UTC, round, text), every cell formula-safe. The juror, vote filter, region
   and pager work as in the other views.
 - A comment on a stopped round's file is refused on the server too, for admins, organizers and

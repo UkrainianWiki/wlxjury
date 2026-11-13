@@ -130,9 +130,11 @@ list:
 - **This round** (the default) or **All rounds of the contest**: which comments the report shows.
   A file is listed when it has at least one comment of that choice; **All rounds of the contest**
   shows every comment its large view shows.
-- The order: the view's own (for **All** jurors the yes/no orders or by rating, and file order;
-  for one juror that juror's orders), or **Latest comment first**, by the newest comment of the
-  choice above.
+- The order: **Latest comment first** (the default), by the newest comment of the choice above,
+  or the view's own (for **All** jurors the yes/no orders or by rating, and file order; for one
+  juror that juror's orders). The report opens in it from the view menu and the round's
+  statistics; the order chosen in the report is kept by its pages, the CSV and the large view's
+  previous and next, and leaving the report for another view goes back to by rating.
 - **Comments CSV**: a spreadsheet with one row per comment of the report, in its order: the file,
   its page id and Commons link, the author, the time (UTC), the round and the text.
 
