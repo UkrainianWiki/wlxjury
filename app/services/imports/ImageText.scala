@@ -102,24 +102,50 @@ object ImageText {
       .sortBy(_._1.pageId)
 
   /** See [[imagesWithAuthors]]: the images with what their text said of their author. */
-  def withAuthors(images: Seq[(Image, Option[Author])], source: CommonsSource): Seq[Image] = {
+  def withAuthors(images: Seq[(Image, Option[Author])], source: CommonsSource): Seq[Image] =
+    resolvedAuthors(images, source).map(_._1)
+
+  /** How [[resolvedAuthors]] got a file's author. */
+  sealed trait Resolved
+
+  object Resolved {
+
+    /** As the text names it: a user, a plain name, nobody; or the stored one (no text). */
+    case object AsRead extends Resolved
+
+    /** The user the credit template links to. */
+    final case class Credited(template: String) extends Resolved
+
+    /** The original uploader, never a bot (None if none): the text names no author, or `Я`,
+      * or a credit template that links to nobody (`template`), or markup that names nobody
+      * readable ([[StoredAuthors.hasMarkup]]: it is never stored).
+      */
+    final case class Uploader(template: Option[String]) extends Resolved
+  }
+
+  /** [[withAuthors]], with how each author was resolved. */
+  def resolvedAuthors(images: Seq[(Image, Option[Author])], source: CommonsSource): Seq[(Image, Resolved)] = {
     def templateName(name: String) = name.replace('_', ' ').trim.capitalize
     def creditTemplate(image: Image) = image.author.flatMap(SImage.creditTemplate).map(templateName)
     val templates = images.flatMap { case (image, _) => creditTemplate(image) }.distinct
     val users = if (templates.isEmpty) Map.empty[String, String] else source.creditTemplateUsers(templates)
-    val credited = images.map { case (image, ref) =>
-      creditTemplate(image).fold(image -> ref) { template =>
-        users.get(template).fold[(Image, Option[Author])](image.copy(author = None) -> Some(Author.Uploader)) { user =>
-          image.copy(author = storedAuthor(user)) -> ref
-        }
+    val credited: Seq[(Image, Resolved)] = images.map { case (image, ref) =>
+      creditTemplate(image) match {
+        case Some(template) =>
+          users.get(template).fold[(Image, Resolved)](image.copy(author = None) -> Resolved.Uploader(Some(template))) {
+            user => image.copy(author = storedAuthor(user)) -> Resolved.Credited(template)
+          }
+        case None if ref.contains(Author.Uploader) || image.author.exists(StoredAuthors.hasMarkup) =>
+          image.copy(author = None) -> Resolved.Uploader(None)
+        case None => image -> Resolved.AsRead
       }
     }
-    val unauthored = credited.collect { case (image, Some(Author.Uploader)) => image.pageId }
+    val unauthored = credited.collect { case (image, _: Resolved.Uploader) => image.pageId }
     val uploaders = if (unauthored.isEmpty) Map.empty[Long, String] else source.originalUploaders(unauthored)
     credited.map {
-      case (image, Some(Author.Uploader)) =>
-        image.copy(author = uploaders.get(image.pageId).flatMap(SImage.authorFromUploader).flatMap(storedAuthor))
-      case (image, _) => image
+      case (image, how: Resolved.Uploader) =>
+        image.copy(author = uploaders.get(image.pageId).flatMap(SImage.authorFromUploader).flatMap(storedAuthor)) -> how
+      case other => other
     }
   }
 

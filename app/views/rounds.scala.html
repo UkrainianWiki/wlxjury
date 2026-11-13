@@ -12,7 +12,8 @@
         selectRoundForm: Form[SelectRound],
         round: Option[Round],
         contest: ContestJury,
-        imageCheckJob: Option[services.jobs.Job] = None
+        imageCheckJob: Option[services.jobs.Job] = None,
+        authorNormalizeJob: Option[services.jobs.Job] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
     @mainAdmin("rounds", adminUser, adminUser.getId,
@@ -90,11 +91,19 @@
                         <input type="hidden" name="returnTo" value="@routes.RoundController.rounds(contest.id).url">
                         <button type="submit" class="btn btn-outline-secondary">@Messages("round.images.check.all")</button>
                     </form>
+                    <form method="post" action="@routes.AuthorNormalizeController.start()" class="d-inline">
+                        @csrfField()
+                        <input type="hidden" name="returnTo" value="@routes.RoundController.rounds(contest.id).url">
+                        <button type="submit" class="btn btn-outline-secondary" title="@Messages("authors.normalize.help")">@Messages("authors.normalize")</button>
+                    </form>
                 }
 
             </div>
             @for(job <- imageCheckJob if adminUser.isRoot) {
                 @snippets.imageCheckStatus(job, req.uri)
+            }
+            @for(job <- authorNormalizeJob if adminUser.isRoot) {
+                @snippets.authorNormalizeStatus(job, req.uri)
             }
 
         </div>

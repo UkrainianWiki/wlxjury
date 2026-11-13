@@ -57,7 +57,9 @@ class RoundController @Inject() (
               rounds.find(_.id == contest.currentRound),
               contest,
               // root's all-rounds check: not shown to a contest's admins
-              Option.when(user.isRoot)(JobJdbc.latestByDedupeKey(RoundImageCheckHandler.AllDedupeKey)).flatten
+              Option.when(user.isRoot)(JobJdbc.latestByDedupeKey(RoundImageCheckHandler.AllDedupeKey)).flatten,
+              // and root's author normalization
+              Option.when(user.isRoot)(JobJdbc.latestByDedupeKey(services.imports.AuthorNormalizeHandler.DedupeKey)).flatten
             )
           )
         }

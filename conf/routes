@@ -128,6 +128,8 @@ POST        /admin/criteria                                                     
 # round_image_check jobs (round images against their votes): a round's, by its contest's admins; every round's, by root
 POST        /admin/rounds/:id/check-images                                          @controllers.RoundImageCheckController.checkRound(id: Long)
 POST        /admin/round-images/check                                               @controllers.RoundImageCheckController.checkAll()
+# author_normalize job (stored wikitext authors to their accounts): root only
+POST        /admin/authors/normalize                                                @controllers.AuthorNormalizeController.start()
 # a round's conflicts of interest (P1b): the page for its admins and organizers; disqualify and requalify for its admins
 GET         /admin/rounds/:id/conflicts                                             @controllers.RoundConflictsController.page(id: Long)
 POST        /admin/rounds/:id/conflicts/disqualify                                  @controllers.RoundConflictsController.disqualify(id: Long)

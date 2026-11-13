@@ -4,7 +4,7 @@ import db.scalikejdbc._
 import org.intracer.wmua.{ContestJury, Image}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
-import scalikejdbc.DB
+import scalikejdbc._
 import services.imports.{DeletedFiles, FakeCommonsSource, FakeFile, ImportSource}
 import services.jobs.{JobJdbc, JobStatus}
 import services.{RoundService, TestRoundServices}
@@ -80,6 +80,21 @@ class RoundFileListSpec extends Specification with TestDb with BeforeAll with Be
       st.missingTitles === Seq("File:Missing.jpg")
       RoundDistributionHandler.titlesOf(job) === ImportSource.titles(list)
       RoundDistributionHandler.listOnly(job) must beTrue
+    }
+
+    // the write guard of the list's path (ImageText.imagesWithAuthors, ImageService.withStoredText)
+    "store the listed files' authors as accounts, never wiki markup, a stored file's too" in {
+      val (contest, jurors) = setUp()
+      DB.autoCommit { implicit s => sql"UPDATE images SET author = '[[User:Old_Import|x]]' WHERE page_id = 3".update(): Unit }
+      val commons = new FakeCommonsSource(Seq(
+        FakeFile(image(3), text = Some("{{Information|author=[[User:Old_Import|x]]}}")),
+        FakeFile(onCommons, text = Some("{{Information|author={{own}} by [[w:Museum]]}}"), uploaders = Seq("Uploader100"))))
+      val svc = TestRoundServices.roundService(TestRoundServices.handler(commons = commons))
+      val round = svc.createNewRound(newRound(contest), jurors.map(_.getId))
+      svc.distributeNewFiles(round.getId, titles = Seq("File:Image 3.jpg", onCommons.title), newFiles = false)
+      (pageIds(round.getId) === Set(3L, 100L)) and
+        (ImageJdbc.findById(3L).flatMap(_.author) === Some("Old Import")) and
+        (ImageJdbc.findById(100L).flatMap(_.author) === Some("Uploader100"))
     }
 
     "skip the listed files in the round already" in {
