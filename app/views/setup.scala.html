@@ -21,7 +21,7 @@
         @bs.text(setupForm("login"), Symbol("_label") -> Messages("email"), Symbol("autocomplete") -> "email")
         @bs.password(setupForm("password"), Symbol("_label") -> Messages("new.password"), Symbol("autocomplete") -> "new-password")
         @bs.password(setupForm("repeat.password"), Symbol("_label") -> Messages("signin.repeat.your.password"), Symbol("autocomplete") -> "new-password")
-        @helper.CSRF.formField
+        @csrfField()
 
         <div class="d-grid mb-3">
             <button id="submit" type="submit" class="btn btn-lg btn-primary">@Messages("setup.submit")</button>

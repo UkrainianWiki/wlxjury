@@ -28,7 +28,7 @@
         }
 
         @bs.form(routes.ImageController.importImages(contest.getId), Symbol("id") -> "import-images") {
-            @helper.CSRF.formField
+            @csrfField()
 
             <h2 class="h4">@Messages("files.source")</h2>
 
@@ -65,7 +65,7 @@
         <h2 class="h4">@Messages("local.image.cache")</h2>
         <div id="cache-status" data-cache-status-url="@routes.ImageController.imageCacheStatus(contest.getId)"></div>
         <form method="post" action="@routes.ImageController.startImageCache(contest.getId)">
-            @helper.CSRF.formField
+            @csrfField()
             <button type="submit" class="btn btn-outline-secondary">@Messages("download.images.locally")</button>
         </form>
 
