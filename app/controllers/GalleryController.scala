@@ -192,9 +192,18 @@ class GalleryController @Inject() (
     // the region menu, whose regions are read when it is opened (regions)
     lazy val menu = regionMenu(list, contest)
 
-    // the viewer's own tabs: the counts above when the list is their own
-    lazy val rates = counts.filter(_ => user.id.contains(asUserId)).fold(galleryService.rateDistribution(user, round))(c =>
-      new RateDistribution(c.rates))
+    // the viewer's own tabs: the counts above when the list is their own, of all their files
+    // also with the comments toggle on (the toggle tells how many of them have comments)
+    lazy val rates = (if (list.comments) list.withComments(false).jurorCounts() else counts)
+      .filter(_ => user.id.contains(asUserId)).fold(galleryService.rateDistribution(user, round))(c =>
+        new RateDistribution(c.rates))
+
+    // the comments toggle's number: the list's files with comments, the list's own total when on
+    lazy val commented = Some(if (list.comments) pager.count else list.commentedCount())
+
+    // the page's files' comments in the contest, for their badges (one grouped query)
+    def commentCounts(files: Seq[ImageWithRating]): Map[Long, Int] =
+      CommentJdbc.countsByRoom(round.contestId, files.map(_.pageId))
 
     lazy val jurors =
       if (user.canViewOrgInfo(round) && asUserId == 0) User.findByRoundSelection(round.getId)
@@ -202,7 +211,8 @@ class GalleryController @Inject() (
 
     list.view match {
       case GalleryView.Gallery if round.isBinary =>
-        Ok(RequestTiming.render(views.html.gallery(user, list, files, pager, rounds, menu, rates)))
+        Ok(RequestTiming.render(views.html.gallery(user, list, files, pager, rounds, menu, rates, commented,
+          commentCounts(files))))
 
       case GalleryView.Csv =>
         val name = "WLXJury_Round_" + round.description
@@ -215,7 +225,7 @@ class GalleryController @Inject() (
         val showAuthor = user.canViewOrgInfo(round) && files.exists(_.image.author.nonEmpty)
         val criteria = criteriaResults(list, files)
         Ok(views.html.fileList(user, withCriteria(list, criteria), asUser, files, ranks(files), jurors, rounds, menu, pager,
-          "wiki", useTable, rates, showAuthor, criteria))
+          "wiki", useTable, rates, showAuthor, criteria, commented))
 
       case GalleryView.Gallery | GalleryView.ByRate =>
         // a criteria round's stars are per criterion, and its files' criteria averages: read
@@ -224,7 +234,7 @@ class GalleryController @Inject() (
         // the by-rate gallery's ranks among all the list's files, as a file list's; none in file
         // order, which they would not follow (RoundList.ranked)
         Ok(RequestTiming.render(views.html.galleryByRate(user, withCriteria(list, criteria), files, pager, rounds, menu,
-          rates, ranks(files), criteria)))
+          rates, ranks(files), criteria, commented, commentCounts(files))))
     }
   }
 

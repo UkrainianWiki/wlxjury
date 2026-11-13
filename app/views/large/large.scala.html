@@ -12,7 +12,9 @@
         comments: Seq[Comment],
         votes: Seq[(Vote, User)],
         criteria: Seq[(org.intracer.wmua.Criterion, Double)] = Nil,
-        jurorCriteria: org.intracer.wmua.JurorCriteria = org.intracer.wmua.JurorCriteria.empty)(
+        jurorCriteria: org.intracer.wmua.JurorCriteria = org.intracer.wmua.JurorCriteria.empty,
+        commentCounts: Map[Long, Int] = Map.empty,
+        commentRounds: Map[Long, String] = Map.empty)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 
     @defining(list.round) { round =>
@@ -40,7 +42,7 @@
                         @fullSizeUrl(image, round)
                         @juryStat(votes, list, jurorCriteria)
                     }
-                    @thumbsBar(list, hood)
+                    @thumbsBar(list, hood, commentCounts)
                     @* the sections' stored states, before the column is painted (large-sections.js): the one
                        inline script besides the layout's theme script. Chrome paints frames before
                        DOMContentLoaded (scripts/ui_checks.py saw them), so a restore then would show the
@@ -73,7 +75,7 @@
                          }
                     </a>
 
-                    @commentsView(hood.file.pageId, list, comments)
+                    @commentsView(hood.file.pageId, list, comments, commentRounds)
 
                 </div>
         </div>

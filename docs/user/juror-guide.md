@@ -191,6 +191,19 @@ The bar at the top has tabs for your own files in the round, each with a count:
 
 **Unrated** is the quickest way to see what is left to do.
 
+### Files with comments
+
+A file that has comments shows a speech bubble with their number in its corner, for example
+💬 3, in the gallery and in the large view's **Next files**. It counts the comments that the
+file's large view shows: those written in any round of the contest. A screen reader reads it
+as "3 comments".
+
+Next to the tabs, **Only with comments (N)** shows only your files that have comments. It works
+with the tabs: on **Selected** it shows your selected files with comments, and N is how many of
+the tab's files have them. The large view's previous and next then go through these files only,
+and your votes keep you in this list. Press it again to see all your files. On a narrow screen
+it is a speech bubble icon; point at it to see its name.
+
 ### Sorting your files
 
 The sort menu next to the tabs has **In file order**, **By my rating**, **Newest votes first**
@@ -371,6 +384,10 @@ Under the image in the large view is **Comments**. Type in **Your comment here**
 **Submit comment**.
 
 <img src="images/juror-large-view-comments.png" alt="The comment box under the image, with the button Submit comment" width="664">
+
+Each comment shows its author and when it was written, in your own time zone (older comments
+may have no time). A comment written in another round of the contest has that round's name
+beside it.
 
 Comments are not private. The contest's admins and organizers, and the other jurors who open
 this file in the contest, see your comment, with your name. You can comment only while the round

@@ -55,13 +55,33 @@ class CommentAuthorizationSpec extends PlaySpecification with PlayTestDb {
     Fixture(a, b, round, image, juror, member, both, jurorB, organizer, admin, root)
   }
 
-  private def comment(app: Application, as: User, f: Fixture, sessionContest: Option[Long] = None): Future[Result] = {
+  private def comment(app: Application, as: User, f: Fixture, sessionContest: Option[Long] = None,
+                      script: Boolean = false): Future[Result] = {
     val url = routes.ImageDiscussionController
       .addComment(f.image.pageId, "all", Some(f.round.getId), None).url
     route(app, FakeRequest(POST, url)
       .withSession(Seq(Secured.UserName -> as.email) ++ sessionContest.map(Secured.CurrentContestId -> _.toString): _*)
+      .withHeaders((if (script) Seq("X-Requested-With" -> "XMLHttpRequest") else Nil): _*)
       .withFormUrlEncodedBody("id" -> "0", "text" -> s"by ${as.fullname}")
       .withCSRFToken).get
+  }
+
+  /** `f`'s result and the denials ([[Secured.logDenial]]) logged on security.authz meanwhile. */
+  private def withAuthzLog[T](f: => T): (T, Seq[String]) = {
+    val logger = org.slf4j.LoggerFactory.getLogger("security.authz").asInstanceOf[ch.qos.logback.classic.Logger]
+    val appender = new ch.qos.logback.core.read.ListAppender[ch.qos.logback.classic.spi.ILoggingEvent]
+    appender.start()
+    logger.addAppender(appender)
+    try {
+      val result = f
+      import scala.jdk.CollectionConverters._
+      (result, appender.list.asScala.toSeq.map(_.getFormattedMessage))
+    } finally logger.detachAppender(appender)
+  }
+
+  private def stop(f: Fixture): Fixture = {
+    Round.setActive(f.round.getId, active = false)
+    f.copy(round = Round.findById(f.round.getId).get)
   }
 
   private def commented(as: User): Boolean = CommentJdbc.findAll().exists(_.userId == as.getId)
@@ -101,6 +121,50 @@ class CommentAuthorizationSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         status(comment(app, f.jurorB, f)) === FORBIDDEN
         commented(f.jurorB) must beFalse
+      }
+    }
+
+    "be refused on a stopped round to its staff, with the denial's page and reference, and as JSON" in {
+      testDbApp { app =>
+        val f = stop(fixture())
+        f.round.active must beFalse
+        forall(Seq(f.organizer, f.admin, f.root)) { viewer =>
+          val page = comment(app, viewer, f)
+          status(page) === FORBIDDEN
+          contentAsString(page) must contain("This round is stopped")
+          val (json, log) = withAuthzLog {
+            val result = comment(app, viewer, f, script = true)
+            status(result)
+            result
+          }
+          status(json) === FORBIDDEN
+          (contentAsJson(json) \ "error").as[String] === "forbidden"
+          val reference = (contentAsJson(json) \ "reference").as[String]
+          reference must not(beEmpty)
+          // logged with the round, the reason and the reference the user sees
+          log.count(line => line.contains("round_stopped") && line.contains(reference) &&
+            line.contains(s"round:${f.round.getId}")) === 1
+          commented(viewer) must beFalse
+        }
+      }
+    }
+
+    "be refused on a stopped round to its juror" in {
+      testDbApp { app =>
+        val f = stop(fixture())
+        status(comment(app, f.juror, f)) === FORBIDDEN
+        commented(f.juror) must beFalse
+      }
+    }
+
+    "still be added on an open round, by its juror and staff alike" in {
+      testDbApp { app =>
+        val f = fixture()
+        f.round.active must beTrue
+        forall(Seq(f.juror, f.organizer)) { viewer =>
+          status(comment(app, viewer, f)) === SEE_OTHER
+          commented(viewer) must beTrue
+        }
       }
     }
 

@@ -38,7 +38,11 @@
         <h1 class="h4">@Messages("access.denied.title")</h1>
         <p>@Messages("access.denied.account", user.emailLo)</p>
         <p>@Messages("access.denied.explanation")</p>
-        @if(requiredRoles.nonEmpty) {
+        @* a comment on a stopped round's file (ImageDiscussionController.RoundStopped): the roles are
+           there, the round is closed *@
+        @if(denial.reason.contains("round_stopped")) {
+            <p>@Messages("access.denied.round.stopped")</p>
+        } else if (requiredRoles.nonEmpty) {
             <p>@Messages("access.denied.required", roleNames(requiredRoles))</p>
         }
         @for(contest <- currentContest.filter(_ => (user.contestRoles - User.NO_ROLE).nonEmpty)) {

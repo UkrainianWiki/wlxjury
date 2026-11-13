@@ -25,7 +25,9 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
 
   /** Comments on a file of a round, as its large view shows them: for those who may view
     * the round ([[GalleryService.mayViewRound]]) and the file in it, in the round's
-    * contest ([[Secured.inContest]]); the session's contest is not switched (a POST).
+    * contest ([[Secured.inContest]]); the session's contest is not switched (a POST). Only
+    * while the round is open (`active`), as the large view offers the form: a stopped round's
+    * is refused to everyone, staff included ([[ImageDiscussionController.RoundStopped]]).
     */
   def addComment(pageId: Long,
                  region: String = "all",
@@ -41,7 +43,12 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
           val user = Secured.inContest(sessionUser, targetRound.contestId)
           if (!mayComment(user, targetRound, pageId, commenterRoles))
             onUnAuthorized(user, request, Secured.Denial.round(targetRound, commenterRoles))
-          else addCommentTo(user, targetRound, pageId, region)
+          else if (!targetRound.active) {
+            val denial = Secured.Denial.round(targetRound, commenterRoles)
+              .copy(reason = Some(ImageDiscussionController.RoundStopped))
+            if (Secured.isScriptRequest(request)) onUnAuthorizedJson(user, request, denial)
+            else onUnAuthorized(user, request, denial)
+          } else addCommentTo(user, targetRound, pageId, region)
         }
   }
 
@@ -79,4 +86,10 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
     )
   }
 
+}
+
+object ImageDiscussionController {
+
+  /** The denial reason of a comment on a stopped round's file ([[Secured.Denial]]). */
+  val RoundStopped = "round_stopped"
 }

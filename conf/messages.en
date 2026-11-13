@@ -18,6 +18,7 @@ access.denied.suggested.files=Open contest files available to this account
 access.denied.required=This page is for: {0}.
 access.denied.current.role=Your role in {0}: {1}.
 access.denied.inactive=Your membership in this contest has been deactivated.
+access.denied.round.stopped=This round is stopped: comments can no longer be added to its files.
 access.denied.contact=If you need access, ask your contest admin.
 access.denied.reference=Reference: {0}, {1}
 password=Password
@@ -151,6 +152,14 @@ your.comment.here = Your comment here
 your.comment = Your comment
 comments = Comments
 submit.comment = Submit comment
+# the comments badge on thumbnails (its words by the language's plural form: views.Plural), the
+# list's toggle of only the files with comments, a comment's round in the large view
+comments.only = Only with comments ({0})
+comments.count.one = {0} comment
+comments.count.few = {0} comments
+comments.count.many = {0} comments
+comments.count.other = {0} comments
+comment.round.other = Written in round {0}
 
 media.type = Media Type
 files = Files

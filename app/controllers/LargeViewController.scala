@@ -183,6 +183,13 @@ class LargeViewController @Inject() (
     val monument = hood.file.image.monumentId.flatMap(id => if (id.trim.nonEmpty) MonumentJdbc.find(id) else None)
 
     val comments = CommentJdbc.findBySubjectAndContest(pageId, round.contestId)
+    // the names of the other rounds the comments were written in, for their badges
+    lazy val otherRounds = comments.map(_.roundId).filter(_ != round.getId).distinct
+    lazy val commentRounds =
+      if (otherRounds.isEmpty) Map.empty[Long, String]
+      else Round.findByIds(round.contestId, otherRounds).map(r => r.getId -> r.description).toMap
+    // the comments of the files the strip shows, for their badges (one grouped query)
+    lazy val commentCounts = CommentJdbc.countsByRoom(round.contestId, hood.following.map(_.pageId))
 
     render {
       case Accepts.Html() =>
@@ -196,7 +203,9 @@ class LargeViewController @Inject() (
               comments,
               votes,
               criteria,
-              jurorCriteria
+              jurorCriteria,
+              commentCounts,
+              commentRounds
             )
           )
         )
