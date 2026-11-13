@@ -90,7 +90,8 @@ class WikiLinksSpec extends Specification {
       doc.select("script, img, b, i").size === 0
       doc.select("a").eachAttr("href").toArray.toSeq === Seq(
         "https://uk.wikipedia.org/wiki/%D0%9A%D0%B8%D1%97%D0%B2",
-        "https://uk.wikipedia.org/wiki/%D0%A6%D0%B5%D1%80%D0%BA%D0%B2%D0%B0")
+        "https://uk.wikipedia.org/wiki/%D0%A6%D0%B5%D1%80%D0%BA%D0%B2%D0%B0",
+        "/monuments/id/01-001") // the monument's page
       doc.text must contain("<script>x()</script>")
       html must not(contain("z()"))
     }

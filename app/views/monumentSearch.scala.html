@@ -1,0 +1,21 @@
+@import db.scalikejdbc.User
+@(user: User, notFound: Option[String])(implicit flash: Flash, messages: Messages, request: RequestHeader)
+
+@* The monuments' entry (MonumentController.list): a monument's page by its id. Replaces the old
+   table of the first 20 monuments, which nothing linked. *@
+@main("monument.search.title", user) {
+    <div class="container mt-3" id="monument-search">
+        <h1 class="h4">@Messages("monument.search.title")</h1>
+        <form method="get" action="@routes.MonumentController.list()" class="d-flex gap-2 align-items-end" role="search">
+            <div>
+                <label for="monument-id" class="form-label">@Messages("monument.search.label")</label>
+                <input id="monument-id" name="id" type="text" class="form-control" placeholder="68-104-0222"
+                       value="@notFound.getOrElse("")" required>
+            </div>
+            <button type="submit" class="btn btn-primary">@Messages("monument.search.submit")</button>
+        </form>
+        @for(id <- notFound) {
+            <p class="text-danger mt-2" id="monument-not-found">@Messages("monument.search.not.found", id)</p>
+        }
+    </div>
+}

@@ -305,6 +305,22 @@ one. Click a heading to show or hide its section; the tool remembers which are o
 
 Videos play in the large view.
 
+### The monument's page
+
+In a monuments contest, the monument's box in **File details** ends with a link, **Monument**
+and its id. It opens the monument's page:
+
+- its name, place, year and type, as its Wikipedia list has them;
+- links to its row in the list on Wikipedia, its category on Commons and its Wikidata item,
+  where the list has them;
+- **Files**: how many of the contest's files show this monument, linked to those files, and
+  how many of them are yours in the round you came from (**yours**). Other jurors' files and
+  votes are never counted for you.
+
+The contest's files the link opens are all the contest's photos of the monument, not only
+yours, in a read-only gallery: no votes, no authors, and no files deleted on Commons. Remove the
+**Monument** chip to see all the contest's files.
+
 <img src="images/juror-large-view-yes-no.png" alt="The large view of a yes/no round" width="820">
 
 <img src="images/juror-large-view-rated.png" alt="The large view of a rated round" width="820">
@@ -398,7 +414,8 @@ is open.
 ### Your own votes only
 
 You see only your own votes. Other jurors' votes, the files' authors and the contest's
-statistics are for the organizers.
+statistics are for the organizers. The contest's files, which a monument's page links, show you
+the files without their authors or votes.
 
 The tool doesn't show you who made a file, but judging isn't anonymous: the file's page on
 Commons, which the large view links to, names its author.

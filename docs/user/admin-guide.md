@@ -40,7 +40,7 @@ A role belongs to a membership: one account, one contest.
 
 | Role | What it can do |
 |---|---|
-| **Juror** | Votes in the rounds it is a juror of. |
+| **Juror** | Votes in the rounds it is a juror of. Can open the contest's files from a [monument's page](organizer-guide.md#o-monuments), without the deleted files or any author. |
 | **Organizer** | Reads the statistics, the results of all jurors, the contest's files and the conflicts page, and may comment on the files of an open round. Changes nothing else. |
 | **Admin** | Everything an organizer does, and manages the contest: its people, rounds and files. |
 | **Board**, **Audit committee**, **Staff** | No access to the contest's pages. These roles record that a person belongs to the contest, so that their own photos count as [conflicts of interest](organizer-guide.md#o-conflicts). |
@@ -698,7 +698,10 @@ takes a Commons category or a page, or a pasted list of files in **Or image list
 files** adds them.
 Imports only add: no file is removed, and all the contest's rounds choose from these files.
 
-For monuments contests **Update monuments** refreshes the files' monument ids. Where the tool's
+For monuments contests **Update monuments** refreshes the files' monument ids, and for Ukrainian
+contests reads the monument lists on Wikipedia: each monument's name, place, Commons category
+and Wikidata item, which the [monument's page](organizer-guide.md#o-monuments) shows. Monuments
+read before the Wikidata items were stored get theirs the next time it runs. Where the tool's
 operators have set up a local image cache, **Download images locally** fills it. These run as
 background jobs, with their progress.
 

@@ -44,6 +44,12 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
     Fixture(contest, admin, organizer, juror, open, finished)
   }
 
+  /** A juror of another contest, never of the fixture's. */
+  private def otherContestJuror(): User = {
+    val other = createContests(30).head
+    userDao.create(User("stranger", "stranger@example.com", None, Set("jury"), contestId = other.id))
+  }
+
   /** Adds files to the contest's category. */
   private def addFiles(contest: ContestJury, files: Seq[Image]): Unit = {
     imageDao.batchInsert(files)
@@ -368,9 +374,12 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         val countries = s"/contest/${f.contest.getId}/files/countries"
         status(script(regions, Some(f.organizer))) === OK
         status(script(countries, Some(f.admin))) === OK
-        // a juror may not see the contest's files, nor their regions
-        status(script(regions, Some(f.juror))) === FORBIDDEN
-        status(script(countries, Some(f.juror))) === FORBIDDEN
+        // the contest's juror may (their page: decision D9); a juror of another contest may not
+        status(script(regions, Some(f.juror))) === OK
+        status(script(countries, Some(f.juror))) === OK
+        val stranger = otherContestJuror()
+        status(script(regions, Some(stranger))) === FORBIDDEN
+        status(script(countries, Some(stranger))) === FORBIDDEN
         status(script(regions, None)) === UNAUTHORIZED
         val gone = script(s"$regions?round=999999", Some(f.admin))
         status(gone) === NOT_FOUND
@@ -461,12 +470,12 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "refuse a juror, and a round of another contest" in {
+    "refuse a juror of another contest, and a round of another contest" in {
       testDbApp { implicit app =>
         val f = fixture()
         val other = roundDao.create(Round(None, 1, None, createContests(20).head.getId, createdAt = now, active = true)).getId
 
-        val juror = route(app, FakeRequest(GET, s"/contest/${f.contest.getId}/files").withSession(Secured.UserName -> f.juror.email)).get
+        val juror = route(app, FakeRequest(GET, s"/contest/${f.contest.getId}/files").withSession(Secured.UserName -> otherContestJuror().email)).get
         status(juror) === FORBIDDEN
 
         val otherRound = route(app,
@@ -599,7 +608,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "go to the files page for a file not in the list, and refuse a juror" in {
+    "go to the files page for a file not in the list, and refuse a juror of another contest" in {
       testDbApp { implicit app =>
         val f = fixture()
         val files = s"/contest/${f.contest.getId}/files"
@@ -608,7 +617,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         status(notDeleted) === SEE_OTHER
         redirectLocation(notDeleted) must beSome(s"$files?deleted=true")
 
-        val juror = route(app, FakeRequest(GET, s"$files/1").withSession(Secured.UserName -> f.juror.email)).get
+        val juror = route(app, FakeRequest(GET, s"$files/1").withSession(Secured.UserName -> otherContestJuror().email)).get
         status(juror) === FORBIDDEN
       }
     }

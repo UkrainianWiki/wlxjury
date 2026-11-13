@@ -64,7 +64,7 @@
                         @if(user.canViewAuthors(view.contest.getId)) {
                             @authorInfo(image, view.contest.getId)
                         }
-                        @monumentInfo(image, monument)
+                        @monumentInfo(image, monument, view.contest.id)
 
                         <div class="file-title large-line">
                             <a href="@Global.commonsPageUrl(image)" target="_blank" rel="noopener">@image.title</a>

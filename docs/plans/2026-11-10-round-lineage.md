@@ -11,7 +11,7 @@
   - Q-02-nofop was a real step;
   - manual archive and delete instead of heuristics.
 - **v5:** the maintainer's decisions on all 18 open questions (§9 is now "Decisions"):
-  - no archive flag: P3's `round.status` comes forward into V102, and `cancelled` is the hidden
+  - no archive flag: P3's `round.status` comes forward into V103, and `cancelled` is the hidden
     state (decision 5);
   - provenance by round type: shown in a pre-screening round, hidden in a jury round the viewer
     votes in (decision 11);
@@ -21,7 +21,7 @@
     planned (decision 18);
   - WLE prefix nominations are checked before phase 1 (decision 3).
 - **v5, after review** (2026-11-11): provenance loads on demand (decision 10+); the maintainer's
-  R1–R3 (decision 11's reading, Reinstate, phase 3b); status writers, locks and V102's DDL fixed
+  R1–R3 (decision 11's reading, Reinstate, phase 3b); status writers, locks and V103's DDL fixed
   (§2.6). See "Review".
 
 See "Review" at the end.
@@ -72,7 +72,7 @@ Track the rounds' lineage:
   (decision 3).
 - **Storage.** The read-only map and provenance need no new table. One `Round.findByContest`
   (≤100 rows) builds the graph in memory.
-- **One migration, V102, in phase 1** with the map:
+- **One migration, V103, in phase 1** with the map:
   - `round.status`, P3's column, with its backfill, and `status_changed_at` / `status_changed_by`;
   - the manual track label, `round.track`;
   - `round.created_at` without `ON UPDATE` (§1.4, decision 17).
@@ -139,7 +139,7 @@ writes them.
 - **A track:** derived (§2.3), or a manual label (decision 4).
 - **A purpose:** the multi-role `round_type` (V97), plus names *(inf.)*.
 - **A lifecycle state** ("finished", "cancelled"): not stored. P3's `round.status` (`draft | paused
-  | active | finalized | cancelled`) comes forward into V102 (§2.6, decision 5); phase 1 writes only
+  | active | finalized | cancelled`) comes forward into V103 (§2.6, decision 5); phase 1 writes only
   `cancelled` and the backfill's values.
 
 ### 1.3 In memory per contest: confirmed
@@ -194,8 +194,8 @@ V86 gives servers without it the same definition: on 10.10+ it *adds* `ON UPDATE
 **Consequences:**
 - Positions and "created before" use **`id`**.
 - `created_at` is shown nowhere as a creation time.
-- V102's setters write `created_at = created_at`.
-- Decision 17 drops `ON UPDATE` in V102.
+- V103's setters write `created_at = created_at`.
+- Decision 17 drops `ON UPDATE` in V103.
 
 ---
 
@@ -373,7 +373,7 @@ either in R's track, or in the track R's region subset came from, or left out by
 
 **Labels** are truncated by character count, without font metrics.
 
-**Manual label** (V102, phase 1; decision 4):
+**Manual label** (V103, phase 1; decision 4):
 - it names the round's track and is inherited by its later rounds without one;
 - identical labels share a track;
 - "Main" puts the track in the Main group.
@@ -418,7 +418,7 @@ real side branches such as Q-02-nofop, so it is dropped.
 
 ### 2.5 Phasing of the view
 
-- **Phase 1:** `RoundLineage`, the tables, V102 (`round.status` and its backfill, the track label,
+- **Phase 1:** `RoundLineage`, the tables, V103 (`round.status` and its backfill, the track label,
   `created_at`), Cancel and Reinstate, hiding and the toggles, the manual label.
 - **Phase 1c:** menus grouped by track, after multi-role.
 - **Phase 4:** SVG lines, optional.
@@ -434,7 +434,7 @@ real side branches such as Q-02-nofop, so it is dropped.
 **`round.status`, brought forward from P3** (decision 5). P3 defines `draft | paused | active |
 finalized | cancelled`, NULL until a backfill, with `active` and `distributing` kept written in
 step so that `Round.openToJurors`, `activeRounds` and `openCond` keep working
-(`2026-11-02-round-images-two-step.md:148-161`). V102 adds the column and its backfill now.
+(`2026-11-02-round-images-two-step.md:148-161`). V103 adds the column and its backfill now.
 `cancelled` is the hidden state. There is no separate archive flag.
 
 **The states in step with the flags.** P3's table (`:154-159`) has no row for a stopped round, and
@@ -476,7 +476,7 @@ app callers; phase 1 deletes them instead of keeping them in step. If Gatling's
 Readers of the status take a NULL one from the flags, by the table's rule (`draft` if
 `distributing`, `active` if open, else `paused`).
 
-**The backfill**, in V102, from `active`, `distributing`, the freeze columns and the round's latest
+**The backfill**, in V103, from `active`, `distributing`, the freeze columns and the round's latest
 creation job (as `JobJdbc.latestBySubjects` reads it):
 
 | Today | `status` |
@@ -488,8 +488,8 @@ creation job (as `JobJdbc.latestBySubjects` reads it):
 
 - A round with `distributing = 1` and no creation job *(inf.: none expected)* becomes `draft`.
 - For WLM UA 2025 every round becomes `paused`: none is active or distributing (§10.1).
-- **After a rollback** to a pre-V102 binary, rounds it creates have a NULL status, which readers
-  derive from the flags, and its starts and stops leave the status stale. Before the V102 binary
+- **After a rollback** to a pre-V103 binary, rounds it creates have a NULL status, which readers
+  derive from the flags, and its starts and stops leave the status stale. Before the V103 binary
   is deployed again, the maintainer reruns the backfill's UPDATE, kept verbatim in the
   migration's comment and in the release's rollback notes. It leaves `cancelled` rows alone, so a
   rerun is safe.
@@ -503,15 +503,15 @@ need log reading.
 
 **P3 afterwards** adds its own transitions and readers, the review page and the status-gated
 writers (`round-images-two-step.md:505-516`). Its "`round.status` and its backfill" work item is
-done by V102. Two points P3 has to take on, recorded here only (decision 18c: P3's file isn't
+done by V103. Two points P3 has to take on, recorded here only (decision 18c: P3's file isn't
 changed now):
 - **"Before first activation"** is told by `distributing = 1`, since `paused` also covers stopped
   rounds with `distributing = 0`;
 - **P3's paused-gated review and Distribute** (`:505-508`) must not apply to finished rounds,
   i.e. `paused` with `distributing = 0`.
 
-**V102, in phase 1** (decisions 4, 5, 17): one migration. "V102" is the roadmap's next free number
-today (renumbered from V99 on 2026-11-13, when V99 went to the vote gallery index's `voted_at`, then from V100 the same day, when V100 went to dropping vote's four single-column indexes, then from V101 the same day, when V101 went to comment's `(contest_id, room)` index); the number is assigned at merge, per the roadmap's migration-number rule
+**V103, in phase 1** (decisions 4, 5, 17): one migration. "V103" is the roadmap's next free number
+today (renumbered from V99 on 2026-11-13, when V99 went to the vote gallery index's `voted_at`, then from V100 the same day, when V100 went to dropping vote's four single-column indexes, then from V101 the same day, when V101 went to comment's `(contest_id, room)` index, then from V102 the same day, when V102 went to `monument.wikidata`); the number is assigned at merge, per the roadmap's migration-number rule
 (`2026-11-02-roadmap.md:463-474`: "Assigned at merge time … Renumber on merge if two collide"),
 and doesn't depend on V96–V98 landing first. Its statements follow V95's pattern
 (`V95__Round_exclude_rounds.sql:20-26`), where `ALGORITHM=INSTANT` with a CHECK fails rather than
@@ -760,10 +760,10 @@ options' `data-*`, read by `round-form.js`.
 |---|---|---|
 | Multi-role, V97/V98 | `round_type`; U22 (rounds page); navbar §5 (`:360`); decision 11 reads the round type | Type as a badge. Phase 1c lands after U22 and the navbar changes. The Cancel button on the rounds list is rebased on U22. Before V97, provenance treats every round as a jury round |
 | Combined votes, V96 | D9's descendant walk (`:152-161`); D9 is a default-on checkbox an admin can untick (`:110`) | One `RoundLineage.descendants`; leave-out edges excluded |
-| Round images P3 | `round.status` (`:148-161`); "Why is this image here"; filters editable while paused (`:296-318`); disqualify with a reason; §11 item 8 | V102 brings `round.status` and its backfill forward (§2.6). P3 then adds its own transitions and readers; `finalized` stays with Montage parity. P3's table lacks a stopped round (`paused`, `distributing = 0`, `active = 0`), which §2.6 adds: P3 must tell "before first activation" by `distributing = 1`, and its paused-gated review and Distribute (`:505-508`) must not apply to finished rounds. Provenance is the "why" page's rounds part. `updateFilters` calls `wouldCreateCycle`. §11 item 8 (jurors added to an existing round) belongs to P3, with the Montage gaps (decision 18). P3's file isn't changed now |
+| Round images P3 | `round.status` (`:148-161`); "Why is this image here"; filters editable while paused (`:296-318`); disqualify with a reason; §11 item 8 | V103 brings `round.status` and its backfill forward (§2.6). P3 then adds its own transitions and readers; `finalized` stays with Montage parity. P3's table lacks a stopped round (`paused`, `distributing = 0`, `active = 0`), which §2.6 adds: P3 must tell "before first activation" by `distributing = 1`, and its paused-gated review and Distribute (`:505-508`) must not apply to finished rounds. Provenance is the "why" page's rounds part. `updateFilters` calls `wouldCreateCycle`. §11 item 8 (jurors added to an existing round) belongs to P3, with the Montage gaps (decision 18). P3's file isn't changed now |
 | Montage parity | lifecycle (item 9, `:69`); jury changes (items 12–13, `:103`) | Phase 1's `cancelled` is the first part of item 9; `finalized`, which locks votes, stays there. Jury changes reach the app through P3 (§11 item 8) |
 | Import top of another contest | the first cross-contest edge | Text "from contest C, round R" |
-| Roadmap numbers | V102 next free (V99: the vote gallery index's `voted_at`; V100: vote's four single-column indexes dropped; V101: comment's `(contest_id, room)` index) | Assigned at merge, renumbered on collision; not tied to V96–V98 landing first |
+| Roadmap numbers | V103 next free (V99: the vote gallery index's `voted_at`; V100: vote's four single-column indexes dropped; V101: comment's `(contest_id, room)` index; V102: `monument.wikidata`) | Assigned at merge, renumbered on collision; not tied to V96–V98 landing first |
 
 ---
 
@@ -792,7 +792,7 @@ S ≈ ½ day, M ≈ 1–2 days, L ≈ 3+ days of agent work, each with review an
 | Phase | Content | Size |
 |---|---|---|
 | 0 | **Done** for WLM UA 2025 (§10). **Before phase 1** (decision 3): repeat on a WLE Ukraine rounds export, with rule 2 (prefix nominations) added to the script. The maintainer provides the export (agents don't query production) | S |
-| 1 | **Entry condition:** phase 0's WLE check done, and any rule 2 fix written into §2.3. **The map:** `RoundLineage` (Kahn, cycles, ghosts, rule v4, Main and feeder order, sub-rows, positions by id, backtracks, quiet, `inputSummary` in 4 languages); the map's two tables, read-only for organizers; entry links. **Unit spec with a synthetic fixture:** quality + quantity → Main → two regional rounds, one of them a V95 backtrack, plus a nomination, a cancelled test root and a failed creation. **V102** (V95's statement pattern): `round.status` with INSTANT, its CHECK apart, the backfill (a spec per backfill row, rerun safe), `status_changed_at` / `_by`, the track column, `created_at` in its own statement, `FlywayUpgradeSpec`, `MigrationNamingSpec`. **Status in step** in `Round.create`, the creation enqueue, `completeCreation`, `setActiveGuarded` and `release(close)` (only where `distributing = 0` and not `cancelled`, with a spec); `Round.setActive(id, …)` and `setInactiveAllInContest` deleted; readers derive a NULL status; `FixtureVersion` bumped if Gatling's `load` writes the status. **Cancel and Reinstate** (rounds list and map, guards under the round lock, Reinstate to `draft` or `paused`, "Creation incomplete", the admin's id through `JobScheduler.cancel`, audit); the refused start in `setActiveGuarded`'s UPDATE and the status check in `enqueueOrFail`; the `JobHandler.retryRefusal` hook in `JobScheduler.retry` (`job.retry.round.cancelled`), and `distributeNewFiles` / `submit` mapping that refusal instead of "already running"; the hidden places and both toggles; the label setter with a form spec. Negative specs (juror, non-member, organizer without admin actions, root 404, pre-screener after V97, Cancel of an open or busy round, start, "Distribute new files", resubmit and Retry of a cancelled round); view spec; screenshots in both themes | L (7–9 d) |
+| 1 | **Entry condition:** phase 0's WLE check done, and any rule 2 fix written into §2.3. **The map:** `RoundLineage` (Kahn, cycles, ghosts, rule v4, Main and feeder order, sub-rows, positions by id, backtracks, quiet, `inputSummary` in 4 languages); the map's two tables, read-only for organizers; entry links. **Unit spec with a synthetic fixture:** quality + quantity → Main → two regional rounds, one of them a V95 backtrack, plus a nomination, a cancelled test root and a failed creation. **V103** (V95's statement pattern): `round.status` with INSTANT, its CHECK apart, the backfill (a spec per backfill row, rerun safe), `status_changed_at` / `_by`, the track column, `created_at` in its own statement, `FlywayUpgradeSpec`, `MigrationNamingSpec`. **Status in step** in `Round.create`, the creation enqueue, `completeCreation`, `setActiveGuarded` and `release(close)` (only where `distributing = 0` and not `cancelled`, with a spec); `Round.setActive(id, …)` and `setInactiveAllInContest` deleted; readers derive a NULL status; `FixtureVersion` bumped if Gatling's `load` writes the status. **Cancel and Reinstate** (rounds list and map, guards under the round lock, Reinstate to `draft` or `paused`, "Creation incomplete", the admin's id through `JobScheduler.cancel`, audit); the refused start in `setActiveGuarded`'s UPDATE and the status check in `enqueueOrFail`; the `JobHandler.retryRefusal` hook in `JobScheduler.retry` (`job.retry.round.cancelled`), and `distributeNewFiles` / `submit` mapping that refusal instead of "already running"; the hidden places and both toggles; the label setter with a form spec. Negative specs (juror, non-member, organizer without admin actions, root 404, pre-screener after V97, Cancel of an open or busy round, start, "Distribute new files", resubmit and Retry of a cancelled round); view spec; screenshots in both themes | L (7–9 d) |
 | 1c | Stats pager and navbar grouped by track, after multi-role | S–M |
 | 2 | Provenance in both large views, loaded on demand (decision 10+): the collapsed control, the separate GET with `Secured.inContest` and its refusals by round type (decision 11, R1) and negative specs, `LargeViewControllerSpec` asserting no provenance query on render, vote, keyboard navigation or preload, the paired `GalleryLatencyBenchmark` pilot; 2b the file-list column | M–L (2.5–3.5 d) |
 | 3 | Form help and warnings (M); **delete** (M: guards in the transaction, cascade spec and a `round_user` spec without the FK, `MAX(number) + 1` numbering, confirmation page, audit, negative specs) | M–L (3–4 d) |
@@ -805,7 +805,7 @@ S ≈ ½ day, M ≈ 1–2 days, L ≈ 3+ days of agent work, each with review an
 - phases 1–3b: **15–21.5 agent days**, the sum of the phase ranges (1c counted as ½–2 d);
 - phase 4: 3–4 d, only if needed.
 
-**Phase 1 is larger than v3's** because V102 and Cancel move into it, and a day larger than v4's
+**Phase 1 is larger than v3's** because V103 and Cancel move into it, and a day larger than v4's
 for the status writes in step and the backfill specs. A 2025-style contest (61 rounds, 11 of them
 tests) reads badly until its trials are cancelled. **Phase 2 grows by about half a day** for the
 on-demand endpoint, its specs and the benchmark (decision 10+). **Phase 3 is smaller** than v4's:
@@ -861,7 +861,7 @@ hard-coded.
 **Condition (maintainer):** WLE's prefix nominations (rule 2) are verified on a WLE Ukraine rounds
 export **before phase 1 starts** (§8, phase 0). If rule 2 proves wrong, §2.3 is corrected first.
 
-**4. The manual track label: in V102, edited any time. As recommended.** `round.track`, phase 1:
+**4. The manual track label: in V103, edited any time. As recommended.** `round.track`, phase 1:
 - the label names the track and is inherited by later rounds without one;
 - identical labels share a track;
 - "Main" joins the Main group;
@@ -876,7 +876,7 @@ stored field says they are the main competition.
 `archived_at` / `archived_by`. The maintainer asked to keep hiding in step with the states already
 planned: "why status is not enough?". So:
 - **P3's `round.status`** (`draft | paused | active | finalized | cancelled`) comes forward into
-  V102 with its backfill: being created → `draft`, stopped → `paused`, open → `active`, a creation
+  V103 with its backfill: being created → `draft`, stopped → `paused`, open → `active`, a creation
   job the admin cancelled → `cancelled`. A failed creation stays `draft` (decision 7 refines the
   backfill). `active` and `distributing` stay written in step, as P3 plans.
 - **`cancelled` is the hidden state.** Admins **Cancel** a round that is quiet, not open and not
@@ -1025,13 +1025,13 @@ changes (`navbar.scala.html:22-28, 131-139`). Phase 0's 61 rounds become 13 trac
 rounds plus a regions group: Quality has 15, and 11 once its tests are cancelled. It reuses the
 map's computation at no query cost, and jurors' menus don't change.
 
-**17. Drop `ON UPDATE` from `round.created_at` in V102: as recommended.** The column is redefined as
-`TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`, without `ON UPDATE`, in V102.
+**17. Drop `ON UPDATE` from `round.created_at` in V103: as recommended.** The column is redefined as
+`TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`, without `ON UPDATE`, in V103.
 
 Today every start, stop, freeze, release, completed creation and CoI flag change overwrites the
 creation time. Only `updateRound` and `RoundCounts` remember to write `created_at = created_at`, and
 every new writer must remember too, or silently break it. Phase 0 shows the result: 6 of 43 edges
-point backwards in time. Dropping the clause makes the column mean what its name says from V102 on.
+point backwards in time. Dropping the clause makes the column mean what its name says from V103 on.
 Old values stay wrong and the map keeps ordering by id, but new rounds keep a true creation time.
 
 The cost:
@@ -1094,7 +1094,7 @@ CSV isn't copied anywhere):
 | Named "[test]" / "[Test]" | 11 |
 | Ratings | 36 yes/no; 25 rated (1–5 … 1–20) |
 | Filters used | selected by (29), min score (10), regions (16 all, 1 subset), media type; no top-N, monuments or Mpx |
-| States | none active or distributing; `deleted_at` NULL on all. V102's backfill would make all 61 `paused` (§2.6) |
+| States | none active or distributing; `deleted_at` NULL on all. V103's backfill would make all 61 `paused` (§2.6) |
 | Round numbers | exactly 1–61 in id order (§10.5) |
 
 ### 10.2 The grid as the phase-1 table renders it (nothing cancelled)
@@ -1229,7 +1229,7 @@ maintainer confirmed it with the statuses below (decision 18); no other 2025 ste
   branch (§10.3, §11 item 5).
 - *Hide, archive and delete by hand:*
   - archiving is manual, from the rounds list and the map;
-  - V102 and archiving move into phase 1;
+  - V103 and archiving move into phase 1;
   - hints become "none" (decision 8);
   - a narrow delete is added (decision 9);
   - §10.5 checks for deleted rounds.
@@ -1247,7 +1247,7 @@ maintainer confirmed it with the statuses below (decision 18); no other 2025 ste
 4. `created_at`:
    - verified that V86 adds `ON UPDATE` on 10.10+ and production already had it;
    - the writers that overwrite and that preserve it are listed;
-   - V102's setters preserve it;
+   - V103's setters preserve it;
    - decision 17 added;
    - bulk-update note corrected (only 09:37:12 is one statement).
 5. Rule details:
@@ -1264,7 +1264,7 @@ maintainer confirmed it with the statuses below (decision 18); no other 2025 ste
 
 **v5 (the maintainer's decisions, 2026-11-10/11; reviewed below).** The v4 notes above are kept as
 written, "archive" included; v5 replaces archiving with Cancel.
-- Decision 5 changed: no `archived_at` / `archived_by`. P3's `round.status` comes forward into V102
+- Decision 5 changed: no `archived_at` / `archived_by`. P3's `round.status` comes forward into V103
   with its backfill and `status_changed_at` / `_by`; `cancelled` is the hidden state; Cancel and
   Reinstate replace archive and unarchive (short answer, §1.2, §2.1, §2.3–§2.6, §5–§8, §10, §11).
 - Decision 7 refines the backfill: a failed creation stays `draft`.
@@ -1298,7 +1298,7 @@ applied.
    rounds. Recorded here only (§2.6, §6; decision 18c).
 5. Locks: Cancel checks after `FOR UPDATE`; start refused in `setActiveGuarded`'s UPDATE;
    `enqueueOrFail` and `onRetry` check the status under the round lock.
-6. V102's DDL follows V95: INSTANT columns, the CHECK apart, `created_at` in its own statement
+6. V103's DDL follows V95: INSTANT columns, the CHECK apart, `created_at` in its own statement
    (`MigrationNamingSpec:36`); after a rollback the maintainer reruns the backfill, and readers
    derive a NULL status from the flags.
 7. Phase 3b (R3): a separate `reject_rounds` column, `prevRejectedBy` / `prevRejectedMode`
