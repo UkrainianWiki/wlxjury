@@ -108,6 +108,16 @@ at an icon to see its name.
 You can see a juror's votes only for a juror of that round. Choosing another person's page
 shows the tool's "not found" page.
 
+<a id="o-comments-filter"></a>
+**Files with comments:** **Only with comments (N)**, next to the vote filter, shows only the
+files with comments in the view you are on: a single juror's files, or all of them for **All**.
+It works with the vote filter (for example the selected files with comments), the region, the
+order and every view, the CSV included, and N is how many files of the current view have
+comments. The large view then moves through those files only. Below about 1700 pixels it is a
+speech bubble icon. In the gallery, the by-rate gallery and the large view's **Next files**, a
+file with comments shows a speech bubble with their number. Both count the comments the file's
+large view shows: from any round of the contest, by anyone.
+
 In a single juror's **Gallery** each file shows that juror's vote, read-only: in a yes/no round a
 green or red frame with a thumb, in a rated round the juror's stars (or ✗).
 
@@ -166,10 +176,14 @@ of every criterion. The view takes no votes. The keys that move between files wo
 [juror guide](juror-guide.md#keyboard-shortcuts-in-the-large-view).
 
 **Comments:** while the round is open, the view has a comment box under the file, as the
-jurors' large view has: type your comment and press **Submit comment**. Comments are not
+jurors' large view has: type your comment and press **Submit comment**. Each comment shows its
+author and time (in your time zone; some older comments have none), and the round's name if it
+was written in another round of the contest. Only admins, organizers and root see that round
+name; jurors see the comment without it. Comments are not
 private: whoever opens the file's large view in the contest sees them, with your name: its
 admins and organizers, and the jurors who have the file. When the round is stopped, the file's
-comments are still shown, but no new ones can be added.
+comments are still shown, but no new ones can be added: the tool refuses a comment on a stopped
+round's file, also one sent from a page opened before the round was stopped.
 
 <a id="o-csv"></a>
 ### The CSV

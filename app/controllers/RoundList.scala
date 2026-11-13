@@ -175,7 +175,8 @@ object GalleryView {
 }
 
 /** The list of a round's files a viewer is in: whose votes (a juror's, or all together with
-  * `asUserId` 0), the region, the filter by votes, the order, and the view. It has the list's
+  * `asUserId` 0), the region, the filter by votes, only the files with comments or all, the
+  * order, and the view. It has the list's
   * query and every URL into the list — its pages, a file's place in it, a file's large view
   * and a vote there — so a link keeps all of the list or none of it.
   *
@@ -189,6 +190,9 @@ final case class RoundList(
     filter: VoteFilter = VoteFilter.All,
     order: ListOrder = ListOrder.ByRate,
     view: GalleryView = GalleryView.Gallery,
+    // only the files with a comment in the round's contest (the toggle "Only with comments", a
+    // URL's `comments=1`): with any filter, as the file's large view shows its comments
+    comments: Boolean = false,
     // `roundImage.read` (P2b): all the jurors' list from round_image's counts ([[countsQuery]])
     countsRead: Boolean = false,
     // which source this request's statements read, shared by the list's copies ([[CountsSession]])
@@ -285,7 +289,8 @@ final case class RoundList(
       tally = true,
       // a rated round's sums are of grades, a ✗ as 0, and its rated votes any vote
       grades = !round.isBinary,
-      subRegions = round.specialNomination.contains("Віа Регіа")
+      subRegions = round.specialNomination.contains("Віа Регіа"),
+      commentsIn = Option.when(comments)(round.contestId)
     )
 
   /** The list over `round_image`'s counts ([[RoundImageQuery]]), if it may be read from them:
@@ -294,7 +299,7 @@ final case class RoundList(
     * statement's counts are the votes' is proved per statement ([[fromCounts]]).
     */
   def countsQuery: Option[RoundImageQuery] =
-    if (!countsRead || asUserId != 0 || countsSession.fellBack(roundId)) None
+    if (!countsRead || asUserId != 0 || comments || countsSession.fellBack(roundId)) None
     else RoundImageQuery.of(query, round.isBinary, rankKey.columns.map(_._1))
 
   /** Whether this request's statements so far were read from the counts, none fallen back. */
@@ -467,6 +472,18 @@ final case class RoundList(
 
   def withFilter(filter: VoteFilter): RoundList = copy(filter = filter)
 
+  /** The list of only the files with comments, or of all of them. */
+  def withComments(on: Boolean): RoundList = copy(comments = on)
+
+  /** The number of files the list has with comments, with the toggle on or off: what the toggle
+    * would list. A juror's from their counts with comments (one scan of their rows), all the
+    * jurors' from a count of the list with comments.
+    */
+  def commentedCount(): Int = {
+    val on = withComments(true)
+    on.jurorCounts().fold(on.count())(_.total(filter, region))
+  }
+
   def withOrder(order: ListOrder): RoundList = copy(order = order)
 
   /** The list in a region, or all of them ("all"). */
@@ -494,12 +511,13 @@ final case class RoundList(
     if (asUserId == 0 || asUserId == viewerId || jurorOfRound) withRound(round)
     else withRound(round).withViewer(0).withOrder(ListOrder.ByRate)
 
-  /** The list's query string: its view (`module`, for a large view's way back), filter and
-    * order.
+  /** The list's query string: its view (`module`, for a large view's way back), filter, the
+    * comments toggle and order.
     */
   private def params(module: Boolean): Seq[(String, String)] =
     Option.when(module && view != GalleryView.Gallery)("module" -> view.name).toSeq ++
-      Option.when(filter != VoteFilter.All)("filter" -> filter.param).toSeq :+
+      Option.when(filter != VoteFilter.All)("filter" -> filter.param).toSeq ++
+      Option.when(comments)(RoundList.CommentsParam -> "1").toSeq :+
       ("sort" -> order.param)
 
   private def withParams(path: String, params: Seq[(String, String)]): String =
@@ -551,9 +569,12 @@ final case class RoundList(
     withParams(routes.GalleryController.regions(asUserId, regionParam, roundId).url,
       Option.when(view != GalleryView.Gallery)("module" -> view.name).toSeq ++ params(module = false))
 
-  /** A comment on the file in its large view, going back to it in this list. */
+  /** A comment on the file in its large view, going back to it in this list: whose votes
+    * (`user`, as the large view's path has them) with the rest of its parameters.
+    */
   def commentUrl(pageId: Long): String =
-    withParams(routes.ImageDiscussionController.addComment(pageId, regionParam, Some(roundId)).url, params(module = true))
+    withParams(routes.ImageDiscussionController.addComment(pageId, regionParam, Some(roundId), None, Some(asUserId)).url,
+      params(module = true))
 }
 
 /** Which source one request's statements of all the jurors' list read (P2b), per round:
@@ -680,9 +701,13 @@ object RoundList {
     */
   val BinarySortCookie = "binarySort"
 
+  /** A list URL's parameter for only the files with comments: `comments=1`. */
+  val CommentsParam = "comments"
+
   /** The list a request is for: the round, whose votes, the region from its path ("all" or
     * [[GroupedRegion]] for all of them); the view
-    * from its path or, for a large view, its `module`; the filter and order from its query,
+    * from its path or, for a large view, its `module`; the filter, the comments toggle
+    * ([[CommentsParam]]) and order from its query,
     * the filter all files if the round's kind hasn't it, the order [[defaultOrder]] if it
     * names none. All the jurors' votes on a yes/no round by rate (or by vote time, a juror's
     * order) are in the binary order last chosen ([[BinarySortCookie]]), else the default; on a
@@ -697,7 +722,8 @@ object RoundList {
       Some(region).filterNot(r => r == "all" || r == GroupedRegion),
       VoteFilter.of(request).in(round),
       requestedOrder.getOrElse(defaultOrder(viewer, asUserId, view)),
-      view
+      view,
+      comments = request.getQueryString(CommentsParam).contains("1")
     )
     list.order match {
       case ListOrder.ByRate if list.aggregateBinary => list.withOrder(ListOrder.Binary(rememberedBinary))

@@ -121,7 +121,7 @@ class RoundListSpec extends Specification {
       list.voteUrl(105, 4, Some(2L)) ===
         "/large/round/7/region/80/pageid/105/select/4?module=byrate&filter=unrated&sort=rate&criteria=2"
       list.votePrefix(105) + 4 + list.voteQuery() === list.voteUrl(105, 4)
-      list.commentUrl(105) === "/comment/region/80/pageid/105?round=7&module=byrate&filter=unrated&sort=rate"
+      list.commentUrl(105) === "/comment/region/80/pageid/105?round=7&user=3&module=byrate&filter=unrated&sort=rate"
     }
 
     "leave out the defaults: the gallery, all files and all regions" in {

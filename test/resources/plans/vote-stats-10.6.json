@@ -1,0 +1,89 @@
+{
+  "server" : "10.6",
+  "serverVersion" : "10.6.22-MariaDB-ubu2004",
+  "taken" : "2026-11-13",
+  "seed" : "images=40000 corner=4x15000+20000 filler=25x40000/7",
+  "samplePages" : 65535,
+  "seededRows" : 1080000,
+  "productionRows" : 3345551,
+  "clusteredIndexSize" : 4904,
+  "indexes" : {
+    "PRIMARY" : {
+      "n_diff_pfx01" : 1080000,
+      "n_leaf_pages" : 4865,
+      "size" : 4904
+    },
+    "vote_jury_id_idx" : {
+      "n_diff_pfx01" : 8,
+      "n_diff_pfx02" : 1080000,
+      "n_leaf_pages" : 1164,
+      "size" : 1379
+    },
+    "vote_jury_round_rate_mon_page_idx" : {
+      "n_diff_pfx01" : 8,
+      "n_diff_pfx02" : 30,
+      "n_diff_pfx03" : 101,
+      "n_diff_pfx04" : 1080000,
+      "n_diff_pfx05" : 1080000,
+      "n_diff_pfx06" : 1080000,
+      "n_diff_pfx07" : 1080000,
+      "n_leaf_pages" : 3429,
+      "size" : 3757
+    },
+    "vote_page_id_idx" : {
+      "n_diff_pfx01" : 40000,
+      "n_diff_pfx02" : 1080000,
+      "n_leaf_pages" : 1496,
+      "size" : 1764
+    },
+    "vote_page_jury_round_uidx" : {
+      "n_diff_pfx01" : 40000,
+      "n_diff_pfx02" : 315000,
+      "n_diff_pfx03" : 1080000,
+      "n_leaf_pages" : 2499,
+      "size" : 2793
+    },
+    "vote_rate_idx" : {
+      "n_diff_pfx01" : 6,
+      "n_diff_pfx02" : 1080000,
+      "n_leaf_pages" : 1164,
+      "size" : 1379
+    },
+    "vote_round_idx" : {
+      "n_diff_pfx01" : 30,
+      "n_diff_pfx02" : 1080000,
+      "n_leaf_pages" : 1231,
+      "size" : 1443
+    },
+    "vote_round_jury_rate_idx" : {
+      "n_diff_pfx01" : 30,
+      "n_diff_pfx02" : 30,
+      "n_diff_pfx03" : 101,
+      "n_diff_pfx04" : 1080000,
+      "n_leaf_pages" : 1762,
+      "size" : 2021
+    },
+    "vote_round_monument_id_idx" : {
+      "n_diff_pfx01" : 30,
+      "n_diff_pfx02" : 1080000,
+      "n_diff_pfx03" : 1080000,
+      "n_leaf_pages" : 2098,
+      "size" : 2406
+    },
+    "vote_round_page_rate_idx" : {
+      "n_diff_pfx01" : 30,
+      "n_diff_pfx02" : 1080000,
+      "n_diff_pfx03" : 1080000,
+      "n_diff_pfx04" : 1080000,
+      "n_leaf_pages" : 2031,
+      "size" : 2342
+    },
+    "vote_round_rate_idx" : {
+      "n_diff_pfx01" : 30,
+      "n_diff_pfx02" : 101,
+      "n_diff_pfx03" : 1080000,
+      "n_leaf_pages" : 1496,
+      "size" : 1764
+    }
+  }
+}

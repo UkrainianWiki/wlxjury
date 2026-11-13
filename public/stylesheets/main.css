@@ -94,8 +94,13 @@ img.cropped {
     padding: .5rem .75rem;
     background: var(--bs-secondary-bg);
     color: var(--bs-body-color);
-    white-space: pre-line;
 }
+/* a comment's author, time and (another round's) round above its text; the text keeps its own
+   line breaks */
+.large-comments .wlx-comment-meta { color: var(--bs-secondary-color); }
+.large-comments .wlx-comment-meta strong { color: var(--bs-body-color); }
+.large-comments .wlx-comment-round { font-weight: normal; }
+.large-comments .wlx-comment-body { white-space: pre-line; }
 
 .imageComment {
     resize: vertical;
@@ -403,6 +408,40 @@ a:has(> .btn) { text-decoration: none; }
     background-color: rgba(var(--bs-body-bg-rgb), .85);
     font-weight: normal;
     pointer-events: none;
+}
+
+/* a file's comments in its contest on its thumbnail (snippets.commentBadge: the by-rate
+   gallery, the large view's strip; tile-votes.js addComments: the gallery's tiles): a speech
+   bubble and the number at the top right, on the page's colours over the photo, under the tile's
+   click; below one juror's read-only vote mark, which has that corner on an organiser's tiles */
+li.gallerybox .wlx-comment-badge, .ug-thumb-wrapper.ug-tile .wlx-tile-comments {
+    position: absolute;
+    right: 6px;
+    top: 6px;
+    z-index: 6;
+    color: var(--bs-body-color);
+    background-color: rgba(var(--bs-body-bg-rgb), .85);
+    font-weight: normal;
+    pointer-events: none;
+}
+.ug-thumb-wrapper.ug-tile .wlx-tile-vote-mark ~ .wlx-tile-comments { top: 34px; }
+
+/* the navbar's toggle of a round's list, only the files with comments (navbar.scala.html): a
+   speech bubble and its text, pressed when on; below 992 px the bubble alone, its text read by
+   screen readers and shown as its tooltip (as the results bar's compact links) */
+.wlx-comments-toggle.active { font-weight: 600; }
+@media (max-width: 991.98px) {
+    .wlx-comments-toggle .wlx-nav-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
 }
 
 /* The organisers' bar of a round's results (navbar.scala.html wlx-nav-results): below 1700 px
