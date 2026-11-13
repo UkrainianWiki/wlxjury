@@ -50,7 +50,8 @@
         @if(criteria.nonEmpty) {
             @criteriaAverages(criteria.of(file.pageId))
         }
-        @* in an order by vote time, the time of the juror's vote *@
+        @* in an order by vote time, the time of the juror's vote: kept up to date by an
+           in-page vote (tile-votes.js listVoteTimeAfter, the same markup) *@
         @if(list.showsVoteTimes && file.rate != 0) {
         <div class="wlx-vote-time-line small">@snippets.voteTime(file.votes.headOption.flatMap(_.votedAt))</div>
         }
@@ -68,7 +69,8 @@
             @large.voteMoved(list)
 
             @* a changed rate keeps the file's place and rank until a reload orders the list again:
-               said once above it, and on the file (tile-votes.js) *@
+               said once above it, and on the file (tile-votes.js); in an order by vote time
+               (data-vote-times) a vote's time follows it under the rate at once *@
             @if(starsRound.nonEmpty) {
             <p class="wlx-byrate-hint small text-body-secondary mb-2" role="status" hidden>
                 <i class="bi bi-info-circle" aria-hidden="true"></i> @Messages("byrate.changed.hint")</p>
@@ -79,7 +81,7 @@
             }
             @for(r <- starsRound) {
             <div class="row" @voteTexts() data-stars-number="@{r.rates.id / r.starUnits}"
-                data-stars-half="@{r.starUnits == 2}" data-stars-worst="@{r.takesWorstMark}" data-changed-title="@Messages("byrate.changed.title")">
+                data-stars-half="@{r.starUnits == 2}" data-stars-worst="@{r.takesWorstMark}" data-changed-title="@Messages("byrate.changed.title")"@if(list.showsVoteTimes) { data-vote-times="true"}>
             }
 
                 <ul class="gallery mw-gallery-traditional">
