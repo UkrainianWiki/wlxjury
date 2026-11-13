@@ -59,14 +59,15 @@
                     @sortHead(Column.Name, "author")
                     @sortHead(Column.Files, "files")
                     @if(page.binaryVotes) {
-                        @sortHead(Column.Selected, "selected")
-                        @sortHead(Column.Unrated, "unrated")
-                        @sortHead(Column.Rejected, "rejected")
+                        @sortHead(Column.Approved, "authors.approved")
+                        @sortHead(Column.RejectedByAll, "authors.rejected.all")
+                        @sortHead(Column.NotVoted, "authors.not.voted")
+                        @sortHead(Column.Approval, "authors.approval.rate")
                     }
                     @if(page.ratedVotes) {
                         @sortHead(Column.Rated, "rated")
                         @if(page.showsWorst) {
-                            @sortHead(Column.Rejected, "authors.worst")
+                            @sortHead(Column.Worst, "authors.worst")
                         }
                         @sortHead(Column.Average, "authors.average")
                     }
@@ -79,14 +80,15 @@
                     <td>@for(author <- row.author) {@snippets.authorLinks(author, page.contest.getId)}</td>
                     <td class="author-files-count">@row.files</td>
                     @if(page.binaryVotes) {
-                        <td class="author-selected">@ofFiles(row.selected, row.files)</td>
-                        <td class="author-unrated">@ofFiles(row.unrated, row.files)</td>
-                        <td class="author-rejected">@ofFiles(row.rejected, row.files)</td>
+                        <td class="author-approved">@ofFiles(row.approved, row.files)</td>
+                        <td class="author-rejected-all">@ofFiles(row.rejectedByAll, row.files)</td>
+                        <td class="author-not-voted">@ofFiles(row.notVoted, row.files)</td>
+                        <td class="author-approval">@row.approvalRate.fold("—")(AuthorsPage.percent(_, messages.lang.locale))</td>
                     }
                     @if(page.ratedVotes) {
                         <td class="author-rated">@ofFiles(row.rated, row.files)</td>
                         @if(page.showsWorst) {
-                            <td class="author-worst">@ofFiles(row.rejected, row.files)</td>
+                            <td class="author-worst">@ofFiles(row.worst, row.files)</td>
                         }
                         <td class="author-average">@page.stars(row).fold("—")(s => org.intracer.wmua.Formatter.fmt.format(s))</td>
                     }

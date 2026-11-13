@@ -34,7 +34,7 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
   /** Contest A's category: 1 and 5 (deleted on Commons) by "Ivan", 2 by "ivan", 3 by "Iván",
     * 4 by [[Petro]] (the organizer's wiki account `петро_Грушко`, normalized: a conflict of
     * interest), 6 by nobody, 7 by
-    * "O'Brien". Its yes/no round: 1 approved and rejected, 2 rejected, 3 unrated, 4 approved
+    * "O'Brien". Its yes/no round: 1 one yes and two no, 2 rejected, 3 unrated, 4 approved
     * twice, 6 unrated, 7 rejected and unrated. Its rated round (5 stars, over the rated votes):
     * 1 rated 4 and 2, 2 unrated, 4 a ✗, 7 rated 2 and unrated. Its criteria round (10 stars, 2
     * criteria): 1 rated 10 + 10 by one juror and only partly by the other, 4 rated 8 + 6 and
@@ -53,6 +53,7 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
     val organizer = user("Org", "organizer", Some(a), Some("петро_Грушко"))
     val juror = user("Juror", "jury", Some(a))
     val juror2 = user("Juror2", "jury", Some(a))
+    val juror3 = user("Juror3", "jury", Some(a))
     val otherOrganizer = user("OrgB", "organizer", Some(b))
     val root = user("Root", "root", None)
     val authors = Seq(1L -> Some("Ivan"), 2L -> Some("ivan"), 3L -> Some("Iván"), 4L -> Some(Petro), 5L -> Some("Ivan"),
@@ -77,7 +78,8 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
       r.addUsers(Seq(juror, juror2).map(j => RoundUser(r.getId, j.getId, "jury", active = true))))
     def votes(round: Round, rates: (Long, User, Int)*): Unit =
       selectionDao.batchInsert(rates.map { case (id, j, rate) => Vote(img(id), j, round, rate) })
-    votes(binary, (1L, juror, 1), (1L, juror2, -1), (2L, juror, -1), (3L, juror, 0), (4L, juror, 1), (4L, juror2, 1),
+    binary.addUsers(Seq(RoundUser(binary.getId, juror3.getId, "jury", active = true)))
+    votes(binary, (1L, juror, 1), (1L, juror2, -1), (1L, juror3, -1), (2L, juror, -1), (3L, juror, 0), (4L, juror, 1), (4L, juror2, 1),
       (6L, juror, 0), (7L, juror, -1), (7L, juror2, 0))
     votes(rated, (1L, juror, 4), (1L, juror2, 2), (2L, juror, 0), (4L, juror, -1), (7L, juror, 2), (7L, juror2, 0))
     votes(criteria, (1L, juror, 0), (1L, juror2, 0), (4L, juror, 0), (4L, juror2, 0))
@@ -277,29 +279,64 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "count a yes/no round's votes per author as its statistics page does" in {
+    "count each of a yes/no round's files once, by one outcome, with the authors' approval rates" in {
       testDbApp { app =>
         val f = fixture()
         val (_, page) = get(app, f.organizer, authorsUrl(f, Some(f.binary)))
         val doc = Jsoup.parse(page)
         val byAuthor = rows(page).toMap
         (doc.selectFirst("#authors-summary").text === "Round Yes-no: 5 authors, 6 files; most by one author: 1 (16.7%)") and
-          // files, selected, unrated, rejected
-          (byAuthor("Ivan") === Seq("1", "1 (100.0%)", "0 (0.0%)", "1 (100.0%)")) and
-          (byAuthor("ivan") === Seq("1", "0 (0.0%)", "0 (0.0%)", "1 (100.0%)")) and
-          (byAuthor("Iván") === Seq("1", "0 (0.0%)", "1 (100.0%)", "0 (0.0%)")) and
-          (byAuthor(Petro) === Seq("1", "1 (100.0%)", "0 (0.0%)", "0 (0.0%)")) and
-          (byAuthor("O'Brien") === Seq("1", "0 (0.0%)", "1 (100.0%)", "1 (100.0%)")) and
-          (doc.select("#authors-table th").asScala.map(_.text).toSeq ===
-            Seq("N", "Author", "Files", "Selected", "Unrated", "Rejected"))
+          // files, approved, rejected by all, not voted yet, approval rate
+          // 1 yes and 2 no: approved, a third of the votes yes
+          (byAuthor("Ivan") === Seq("1", "1 (100.0%)", "0 (0.0%)", "0 (0.0%)", "33.3%")) and
+          (byAuthor("ivan") === Seq("1", "0 (0.0%)", "1 (100.0%)", "0 (0.0%)", "0.0%")) and
+          // only a vote yet to come: not voted, no rate
+          (byAuthor("Iván") === Seq("1", "0 (0.0%)", "0 (0.0%)", "1 (100.0%)", "—")) and
+          // unanimous
+          (byAuthor(Petro) === Seq("1", "1 (100.0%)", "0 (0.0%)", "0 (0.0%)", "100.0%")) and
+          // a no and a vote yet to come: rejected by everyone who voted
+          (byAuthor("O'Brien") === Seq("1", "0 (0.0%)", "1 (100.0%)", "0 (0.0%)", "0.0%")) and
+          (heads(page) === Seq("N", "Author", "Files", "Approved", "Rejected by all", "Not voted yet", "Approval rate"))
       }
     }
 
-    "sort a round's vote column by the authors' shares, ties by name" in {
+    "add up an author's outcomes to their files, a file assigned to nobody not voted" in {
+      testDbApp { app =>
+        val f = fixture()
+        // Ivan's deleted file 5 in the round without a vote row: assigned to nobody
+        DB.autoCommit { implicit s =>
+          sql"INSERT INTO round_image (round_id, page_id, status) VALUES (${f.binary.getId}, 5, 'in')".update()
+        }
+        val (_, page) = get(app, f.organizer, authorsUrl(f, Some(f.binary)))
+        val cells = rows(page).toMap.apply("Ivan")
+        def count(cell: String) = cell.takeWhile(_ != ' ').toInt
+        (cells === Seq("2", "1 (50.0%)", "0 (0.0%)", "1 (50.0%)", "33.3%")) and
+          (foreach(rows(page)) { case (_, c) => c.slice(1, 4).map(count).sum === c.head.toInt })
+      }
+    }
+
+    "sort a round's outcome column by the authors' shares, ties by name" in {
       testDbApp { app =>
         val f = fixture()
         val (_, page) = get(app, f.organizer, authorsUrl(f, Some(f.binary), Some("-rejected")))
-        rows(page).map(_._1) === Seq("ivan", "Ivan", "O'Brien", "Iván", Petro)
+        rows(page).map(_._1) === Seq("ivan", "O'Brien", "Ivan", "Iván", Petro)
+      }
+    }
+
+    "sort by the approval rate, the systematically rejected first, without a rate last either way" in {
+      testDbApp { app =>
+        val f = fixture()
+        val (_, up) = get(app, f.organizer, authorsUrl(f, Some(f.binary), Some("approval")))
+        val (_, down) = get(app, f.organizer, authorsUrl(f, Some(f.binary), Some("-approval")))
+        (rows(up).map(_._1) === Seq("ivan", "O'Brien", "Ivan", Petro, "Iván")) and
+          (rows(down).map(_._1) === Seq(Petro, "Ivan", "ivan", "O'Brien", "Iván"))
+      }
+    }
+
+    "write the approval rate in the language's number format" in {
+      testDbApp { app =>
+        val f = fixture()
+        rows(get(app, f.organizer, authorsUrl(f, Some(f.binary)), lang = "uk")._2).toMap.apply("Ivan").last === "33,3%"
       }
     }
 

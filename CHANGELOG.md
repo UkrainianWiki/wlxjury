@@ -57,9 +57,12 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
   round's statistics) has the contest's or a round's authors, told apart the same way, with
   their numbers of files, a line on how diverse they are ("Round 2: 87 authors, 482 files; most
   by one author: 41 (8.5%)") and, once the round has votes, over all its jurors: a yes/no round's
-  selected, unrated and rejected files per author, as its statistics count them; a rated round's
-  rated files, files with a ✗ and average score in stars by the round's score rule (per
-  criterion in a criteria round); each with its share, every column sortable. Jurors see none of
+  files per author by one outcome each, adding up to their files (approved: at least one yes;
+  rejected by all: votes cast, no yes; not voted yet: no vote cast), and the author's approval
+  rate (yes among the yes and no votes cast on their files, "—" without any: sorted from the
+  lowest, the authors rejected the most come first); a rated round's rated files, files with a ✗
+  (where the round takes one or has one) and average score in stars by the round's score rule
+  (per criterion in a criteria round); counts with their shares, every column sortable. Jurors see none of
   it: no names, links, filter or list (403), and no author in the large view's JSON. On the
   production copy the list of WLM UA 2026 (32,531 files, 231 authors) reads in about 0.15 s and
   its round of 18,442 files in 0.2 s, with no new index. Organizer guide: "Authors", "The

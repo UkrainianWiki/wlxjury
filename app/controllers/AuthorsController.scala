@@ -74,7 +74,9 @@ final case class AuthorsPage(
   /** The most files of one author, and the share of all the files they are. */
   def largest: Option[(Int, Double)] = rows.map(_.files).maxOption.map(n => n -> share(n, files))
 
-  /** A yes/no round with votes: its columns selected, unrated and rejected. */
+  /** A yes/no round with votes: its columns approved, rejected by all, not voted and the
+    * approval rate.
+    */
   def binaryVotes: Boolean = round.exists(_.isBinary) && voted
 
   /** A rated round with votes: its columns rated, average, and ✗ where it [[showsWorst]]. */
@@ -83,10 +85,10 @@ final case class AuthorsPage(
   /** A rated round that takes a ✗ ([[Round.takesWorstMark]]), or has one (given before the
     * option was turned off): its ✗ column.
     */
-  def showsWorst: Boolean = ratedVotes && (round.exists(_.takesWorstMark) || rows.exists(_.rejected > 0))
+  def showsWorst: Boolean = ratedVotes && (round.exists(_.takesWorstMark) || rows.exists(_.worst > 0))
 
   /** Any of the round's files has a vote (not one yet to come). */
-  private def voted: Boolean = rows.exists(r => r.selected + r.rejected + r.rated > 0)
+  private def voted: Boolean = rows.exists(_.rated > 0)
 
   /** The average in stars of a row: per criterion in a criteria round, in stars of a half-star one. */
   def stars(row: AuthorStats.Row): Option[Double] =
@@ -123,20 +125,24 @@ object AuthorsPage {
   sealed abstract class Column(val param: String)
 
   object Column {
-    case object Name     extends Column("name")
-    case object Files    extends Column("files")
-    case object Selected extends Column("selected")
-    case object Unrated  extends Column("unrated")
-    case object Rejected extends Column("rejected")
-    case object Rated    extends Column("rated")
-    case object Average  extends Column("average")
+    case object Name          extends Column("name")
+    case object Files         extends Column("files")
+    case object Approved      extends Column("approved")
+    case object RejectedByAll extends Column("rejected")
+    case object NotVoted      extends Column("notvoted")
+    case object Approval      extends Column("approval")
+    case object Rated         extends Column("rated")
+    case object Worst         extends Column("worst")
+    case object Average       extends Column("average")
 
-    val all: Seq[Column] = Seq(Name, Files, Selected, Unrated, Rejected, Rated, Average)
+    val all: Seq[Column] = Seq(Name, Files, Approved, RejectedByAll, NotVoted, Approval, Rated, Worst, Average)
   }
 
   /** The list's order: a column, ascending or descending (`-` before the parameter). The vote
     * columns sort by the author's share of files (12 of 14 rejected before 30 of 100), then
-    * their number; the average by the stars, authors without one last; ties by name.
+    * their number; the approval rate and the average by their values, authors without one last
+    * either way (ascending, the approval rate shows the authors rejected the most first); ties
+    * by name.
     */
   final case class Sort(column: Column, descending: Boolean) {
 
@@ -154,23 +160,26 @@ object AuthorsPage {
         def compare(a: AuthorStats.Row, b: AuthorStats.Row): Int =
           collator.compare(a.author.getOrElse(""), b.author.getOrElse(""))
       }
+      def byValue(value: AuthorStats.Row => Option[Double]): Ordering[AuthorStats.Row] =
+        Ordering.by((r: AuthorStats.Row) => value(r).getOrElse(Double.NegativeInfinity))(Ordering.Double.TotalOrdering)
       def ofShare(count: AuthorStats.Row => Int): Ordering[AuthorStats.Row] =
         Ordering.by((r: AuthorStats.Row) => (share(count(r), r.files), count(r)))(
           Ordering.Tuple2(Ordering.Double.TotalOrdering, Ordering.Int))
       val key: Ordering[AuthorStats.Row] = column match {
         case Column.Name     => byName
         case Column.Files    => Ordering.by(_.files)
-        case Column.Selected => ofShare(_.selected)
-        case Column.Unrated  => ofShare(_.unrated)
-        case Column.Rejected => ofShare(_.rejected)
-        case Column.Rated    => ofShare(_.rated)
-        case Column.Average  =>
-          Ordering.by((r: AuthorStats.Row) => page.stars(r).getOrElse(Double.NegativeInfinity))(
-            Ordering.Double.TotalOrdering)
+        case Column.Approved      => ofShare(_.approved)
+        case Column.RejectedByAll => ofShare(_.rejectedByAll)
+        case Column.NotVoted      => ofShare(_.notVoted)
+        case Column.Rated         => ofShare(_.rated)
+        case Column.Worst         => ofShare(_.worst)
+        case Column.Approval      => byValue(_.approvalRate)
+        case Column.Average       => byValue(page.stars)
       }
       val ordered = if (descending) key.reverse else key
-      // ties by name, A-Z whichever way the column goes; without an average last either way
-      val missing: AuthorStats.Row => Boolean = r => column == Column.Average && r.average.isEmpty
+      // ties by name, A-Z whichever way the column goes; without a rate or an average last either way
+      val missing: AuthorStats.Row => Boolean = r =>
+        column == Column.Average && r.average.isEmpty || column == Column.Approval && r.approvalRate.isEmpty
       rows.sorted(Ordering.by(missing).orElse(ordered).orElse(byName))
     }
   }

@@ -14,12 +14,14 @@ import scalikejdbc._
   * contest files page's author filter tells them apart ([[ImageJdbc.categoryAuthorFiles]]).
   * Files without a stored author are one row of their own, `author` None.
   *
-  * A round's votes are counted as its statistics page counts them (aggregate over all its
-  * jurors, [[Round.imageCountsByRate]]): an author's file is selected if it has at least one
-  * approval, unrated if at least one vote is yet to come, rejected if at least one rejection
-  * (or ✗), so a file with votes of two kinds counts in both. A rated round's file is rated if
-  * at least one juror rated it (a ✗ is a rating, U5: a criteria vote only once every criterion
-  * is), and its score is its grades' sum (a ✗ as 0) over the jurors the round's
+  * A round's votes are counted over all its jurors. A yes/no round's file has one outcome of
+  * three (the maintainer's decision, 2026-11-13), so an author's three add up to their files:
+  * approved (at least one yes), rejected by everyone who voted (votes cast, no yes), or not
+  * voted yet (no vote cast: only votes yet to come, or no vote row at all, a file in the round
+  * not assigned to anyone). Beside them the author's yes and no votes, for their approval rate
+  * (yes / (yes + no) of the votes cast on their files, whatever the jurors per file). A rated
+  * round's file is rated if at least one juror rated it (a ✗ is a rating, U5: a criteria vote
+  * only once every criterion is), and its score is its grades' sum (a ✗ as 0) over the jurors the round's
   * [[AverageRule]] divides by: its rated votes, or every vote row (`Assigned`); a `Sum` round's
   * file over its rated votes, as its stars are drawn (`ImageWithRating.starRate`).
   *
@@ -30,19 +32,29 @@ import scalikejdbc._
   */
 object AuthorStats {
 
-  /** An author's files (`author` None: the files without one), and in a round, of them: those
-    * selected, unrated and rejected (a yes/no round's), and rated, with a ✗ (`rejected`) and
-    * their average score in stored units, per file (a rated round's; None if none is rated).
+  /** An author's files (`author` None: the files without one), and in a round, of them: a
+    * yes/no round's approved, rejected by all who voted and not voted yet (exclusive: they add
+    * up to `files`), with the yes and no votes cast on them; a rated round's rated, with a ✗
+    * (`worst`), and their average score in stored units, per file (None if none is rated).
     */
   final case class Row(
       author: Option[String],
       files: Int,
-      selected: Int = 0,
-      unrated: Int = 0,
-      rejected: Int = 0,
+      approved: Int = 0,
+      rejectedByAll: Int = 0,
+      notVoted: Int = 0,
+      yes: Int = 0,
+      no: Int = 0,
       rated: Int = 0,
+      worst: Int = 0,
       average: Option[Double] = None
-  )
+  ) {
+
+    /** The share of yes among the yes and no votes cast on the author's files, in percent; None
+      * without any.
+      */
+    def approvalRate: Option[Double] = Option.when(yes + no > 0)(yes * 100.0 / (yes + no))
+  }
 
   /** The category's files by author. */
   def ofCategory(categoryId: Long)(implicit session: DBSession = AutoSession): Seq[Row] =
@@ -61,19 +73,20 @@ object AuthorStats {
       case AverageRule.Assigned => sqls"t.n"
       case _                    => sqls"t.voted"
     }
-    sql"""SELECT MIN(i.author), COUNT(*), COALESCE(SUM(t.a > 0), 0), COALESCE(SUM(t.u > 0), 0),
-                 COALESCE(SUM(t.r > 0), 0), COALESCE(SUM(t.voted > 0), 0),
+    sql"""SELECT MIN(i.author), COUNT(*), COALESCE(SUM(t.a > 0), 0), COALESCE(SUM(t.voted > 0 AND t.a = 0), 0),
+                 COUNT(*) - COALESCE(SUM(t.voted > 0), 0), COALESCE(SUM(t.a), 0), COALESCE(SUM(t.r), 0),
+                 COALESCE(SUM(t.voted > 0), 0), COALESCE(SUM(t.r > 0), 0),
                  AVG(CASE WHEN t.voted > 0 THEN t.sm / $denominator END)
           FROM round_image ri STRAIGHT_JOIN images i ON i.page_id = ri.page_id
-          LEFT JOIN (SELECT s.page_id, SUM(${VoteSql.positive()}) a, SUM(${VoteSql.unrated()}) u,
+          LEFT JOIN (SELECT s.page_id, SUM(${VoteSql.positive()}) a,
                             SUM(${VoteSql.rejected()}) r, SUM(${VoteSql.voted()}) voted, SUM(${VoteSql.grade()}) sm,
                             COUNT(*) n
                      FROM vote s WHERE s.round_id = $roundId GROUP BY s.page_id) t ON t.page_id = ri.page_id
           WHERE ri.round_id = $roundId AND ri.status = ${RoundImageJdbc.Status.In}
           GROUP BY BINARY i.author"""
       .map(rs =>
-        Row(rs.stringOpt(1), rs.int(2), rs.int(3), rs.int(4), rs.int(5), rs.int(6),
-          rs.bigDecimalOpt(7).map(_.doubleValue))
+        Row(rs.stringOpt(1), rs.int(2), rs.int(3), rs.int(4), rs.int(5), rs.int(6), rs.int(7), rs.int(8), rs.int(9),
+          rs.bigDecimalOpt(10).map(_.doubleValue))
       )
       .list()
   }

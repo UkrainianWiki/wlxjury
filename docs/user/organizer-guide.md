@@ -249,10 +249,18 @@ The buttons above the list choose the whole contest or one of its rounds. A roun
 only the files in that round. Once the round has votes, it also counts them per author, over
 all its jurors:
 
-- a yes/no round: **Selected**, **Unrated** and **Rejected**, each with its share of the author's
-  files. As in the round's statistics, a file with at least one approval is selected, one with a
-  vote still to come is unrated, one with at least one rejection is rejected; so a file with
-  votes of two kinds counts in both;
+- a yes/no round: each file counts once, so the three columns add up to the author's files,
+  each with its share of them:
+  - **Approved**: at least one juror said yes;
+  - **Rejected by all**: votes were cast, none of them yes;
+  - **Not voted yet**: no vote cast, whether its jurors haven't voted yet or nobody is assigned
+    the file.
+
+  **Approval rate** is the share of yes among all the yes and no votes cast on the author's
+  files: a file with 1 yes and 2 no counts as approved, and gives an approval rate of 33%. It
+  compares authors whatever the number of jurors per file; it is "—" for an author without a
+  cast vote. Sorted from the lowest, it shows first the authors the jurors reject the most
+  ("—" stays last);
 - a rated round: **Rated** (files with at least one rating), **✗ (worst mark)** (files with at
   least one worst mark, in a round that takes the worst mark or has one) and **Average**, the average score of the
   author's rated files in stars, as the round scores a file (see the admin guide's [The file
