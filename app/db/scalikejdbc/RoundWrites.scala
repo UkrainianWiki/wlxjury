@@ -78,11 +78,13 @@ object RoundWrites {
   def recordRounds(roundIds: Iterable[Long])(implicit session: DBSession): Unit =
     heldOf(session).foreach(_.rounds ++= roundIds)
 
-  /** Locks the rounds for update, in id order, and records them. Refused in an auto-commit
-    * session (`DB.autoCommit`), before anything is written: its lock would end with the
-    * statement, while the writes after it would run without the round's mutex. (The vote
-    * inserts, [[VoteJdbc.create]] and `batchInsert`, take a transaction of their own there,
-    * [[RoundImageJdbc.inTransaction]].)
+  /** Locks the rounds for update, in id order, and records them. Refused in a session of its own
+    * connection in auto-commit mode (`DB.autoCommit`), before anything is written: its lock would
+    * end with the statement, while the writes after it would run without the round's mutex. (The
+    * vote inserts, [[VoteJdbc.create]] and `batchInsert`, take a transaction of their own there,
+    * [[RoundImageJdbc.inTransaction]].) An auto session (`AutoSession`) is not refused here: it
+    * runs the `FOR UPDATE` on a borrowed connection and records nothing, so the structural write
+    * after it is refused by [[requireRounds]] / [[requireFiles]].
     */
   def lock(roundIds: Seq[Long])(implicit session: DBSession): Unit =
     if (roundIds.nonEmpty) {

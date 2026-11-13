@@ -91,6 +91,12 @@ class RoundWritesGuardSpec extends Specification with TestDb with BeforeAll with
           (RoundImageInvariants.violations(round) must beEmpty)
       }
     }
+    "not give a read-only session's vote insert a transaction elsewhere: it fails, writing nothing" in {
+      val (round, juror) = setUp()
+      imageDao.batchInsert(Seq(Image(2L, "File:Image2.jpg", None, None, 640, 480, Some("07-101-0002"))))
+      (DB.readOnly(implicit s => selectionDao.create(2L, rate = 0, juryId = juror, roundId = round)) must
+        throwA[Exception]) and (votes(round) === 1) and (RoundImageJdbc.find(round, 2L) must beNone)
+    }
     "not count a lock that ended with its statement for a structural write" in {
       val (round, _) = setUp()
       // as the round locks outside RoundWrites record theirs (Round.isOpen, RoundConflicts)
