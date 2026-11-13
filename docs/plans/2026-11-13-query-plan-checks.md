@@ -1,8 +1,8 @@
 # Query plan checks: statements captured from the code, plans checked in CI and at release (v3)
 
-**Status:** proposal, 2026-11-13. Nothing is built. Two pilots ran (§3): one on the Gatling
-fixture (v1), one of a seeded spec database (option D, v2). Decisions for the maintainer: §8, one
-per item.
+**Status:** decided, 2026-11-13: the maintainer took all 11 decisions (§8), each as recommended
+except 9 (10.11), which is C: 10.6 only until the server move is scheduled. P1 is next. Two
+pilots ran (§3): one on the Gatling fixture (v1), one of a seeded spec database (option D, v2).
 
 **Revisions:**
 - **v1** (af4d4c64): capture from the browser flows on the fixture, a history corner with an
@@ -26,6 +26,10 @@ per item.
   - the seed size is measured on CI in P1;
   - a snapshot per server version;
   - P1 +0.5 day.
+- **Decisions** (2026-11-13): §8 records the maintainer's choice for each item. Decision 9 = C
+  moves the 10.11 work out of this plan: QueryPlanSpec skips (with its reason) on ci.yml's 10.11
+  leg, and the 10.11 snapshot and one deliberate run are a step of the server-move plan
+  ([MariaDB 10.11](2026-10-19-mariadb-10.11.md), "Moving production").
 
 ## 1. Problem
 
@@ -208,7 +212,7 @@ counts as **unbound** (the case doesn't fit), not as a pass.
 | Option | For | Against |
 |---|---|---|
 | (a) CI on the Gatling fixture (capture from the browser flows) | what pages really run, every page the browser tests open | uniform data (§3.2); a corner there changes Gatling baselines and UI shots unless isolated; `browser.yml` runs 3 engines and no 10.11 leg |
-| **(D) a spec in `sbt test`** (ci.yml), in its own forked JVM and container, that seeds only the corner and filler, injects the snapshot, calls the real services and DAOs for the corner's juror, captures in-JVM, EXPLAINs and asserts, canary included | deterministic (§3.4), no shared fixture to disturb, 10.6 on every PR and 10.11 weekly; reaches the job paths | covers the scenarios the spec calls (the SQL is the code's, the call list is hand-kept); the seeded statistics are trustworthy only for constant-bound single-table vote access; seed time on CI unmeasured |
+| **(D) a spec in `sbt test`** (ci.yml), in its own forked JVM and container, that seeds only the corner and filler, injects the snapshot, calls the real services and DAOs for the corner's juror, captures in-JVM, EXPLAINs and asserts, canary included | deterministic (§3.4), no shared fixture to disturb, 10.6 on every PR (10.11 at the server move, decision 9); reaches the job paths | covers the scenarios the spec calls (the SQL is the code's, the call list is hand-kept); the seeded statistics are trustworthy only for constant-bound single-table vote access; seed time on CI unmeasured |
 | (b) release-time on the rehearsal's production copy | the real data and statistics: the only place V100's problem was seen | once per release; late (but before deploy) |
 
 ### 4.3 What to assert, and identities
@@ -307,8 +311,9 @@ the release agent attaches the report to the release notes.
 
 **D first, then the release check, then the browser capture.**
 
-1. **P1, the D spec** (`test/db/QueryPlanSpec`, in `sbt test`, so 10.6 on every PR and 10.11
-   weekly and on master), **in its own forked JVM and its own container**:
+1. **P1, the D spec** (`test/db/QueryPlanSpec`, in `sbt test`, so 10.6 on every PR; on ci.yml's
+   10.11 leg it skips with an explicit reason until the server move, decision 9), **in its own
+   forked JVM and its own container**:
    - an sbt `testGrouping` gives it a JVM of its own. In that JVM it starts its own MariaDB
      container with production-like settings (a 256M buffer pool, the datadir on disk rather
      than the shared 1 GB tmpfs) and `--innodb-stats-auto-recalc=0` from the start, and makes it
@@ -346,8 +351,8 @@ the release agent attaches the report to the release notes.
 4. **Timings:** never in CI. `plans.py time` is the local and release-time tool.
 
 Why D first: it is the only option that reproduced the failure deterministically from a fresh
-database in about a minute (§3.4, measured locally). It runs where 10.11 is already tested,
-and the 10.11 move is next. It disturbs no shared fixture or shared test DB. What it gives up:
+database in about a minute (§3.4, measured locally). It runs on every PR, and its 10.11 run joins the
+server move (decision 9). It disturbs no shared fixture or shared test DB. What it gives up:
 - coverage of page composition, which P3 adds back;
 - trust in its plans beyond constant-bound vote access, which comes from the release check, or
   from D once production's index statistics are its target (decision 3).
@@ -356,7 +361,7 @@ and the 10.11 move is next. It disturbs no shared fixture or shared test DB. Wha
 
 | Phase | Content | Effort (incl. one review and fix cycle) |
 |---|---|---|
-| P1 | `StatementCapture` (explicit context, caller identity, literal folding, failure listener) + `QueryPlanSpec` in its own JVM and container (seed, snapshot with coverage and plausibility checks, scenarios, R1 and narrowed R3, canary, distribution last) + the snapshot command; seed timing on CI; on 10.6, then once on 10.11 | 3–3.5 days |
+| P1 | `StatementCapture` (explicit context, caller identity, literal folding, failure listener) + `QueryPlanSpec` in its own JVM and container (seed, snapshot with coverage and plausibility checks, scenarios, R1 and narrowed R3, canary, distribution last) + the snapshot command; seed timing on CI; 10.6 only, skipped with its reason on 10.11 (decision 9) | 3–3.5 days |
 | P2 | `scripts/perf/plans.py` (render, bind, explain, rules R1–R4, report) + `test_plans.py`; prodcopy profile; runbook row; first run at the next release's rehearsal; `ExplainQueries.scala` retired | 2–2.5 days |
 | P2b | `variants` and paired `time` ported from bench2 (deferred out of P1/P2) | 0.5–1 day |
 | P3 (optional) | Browser capture (chromium), baseline TSV + diff, job summary | 1.5–2 days |
@@ -387,44 +392,55 @@ require. P1 alone catches V100's class of regression on every PR.
   small rated rounds, round_image sizes; images and round_image statistics not yet injected) are
   caught only at release (P2).
 
-## 8. Open decisions
+## 8. Decisions (taken 2026-11-13)
 
-1. **P1: the D spec or the browser capture.** Recommendation: the D spec (§5). The browser
-   capture comes later and is optional.
-2. **Seed size.** Recommendation: decided by P1's measurement on CI. It is the smallest seed
-   (~0.5M or ~1M, inserted before or after the secondary indexes) whose canary fires with real
-   statistics; 0.2M is too small (the gallery plan then depends on the statistics, §3.4).
-3. **Statistics source.** Recommendation, in two steps:
-   - P1: the seeded data's own high-sample snapshot, scaled by one factor to production's size,
-     with the coverage and plausibility checks. It is trusted only for R1, the canary and R3 on
-     constant-bound single-table vote access;
+The maintainer decided every item on 2026-11-13. Each entry gives the choice and what it means;
+A is the recommendation as v3 wrote it.
+
+1. **P1: the D spec or the browser capture.** Decided 2026-11-13: **A**. P1 is the D spec
+   (`QueryPlanSpec`, §5); the browser capture is the optional later P3.
+2. **Seed size.** Decided 2026-11-13: **A**. P1 measures ~0.5M against ~1M filler rows, inserted
+   before against after the secondary indexes, and keeps the smallest seed whose canary still
+   fires with real statistics; 0.2M is too small (the gallery plan then depends on the
+   statistics, §3.4). The size is one constant, adjusted after the first CI run.
+3. **Statistics source.** Decided 2026-11-13: **A**, in two steps:
+   - P1: the seeded data's own high-sample snapshot, scaled by one factor to production's size
+     (`n_rows` 3,345,551), with the coverage and plausibility checks. It is trusted only for R1,
+     the canary and R3 on constant-bound single-table vote access;
    - P2: production's own `vote` (and later `images`, `round_image`) index statistics, read with
      read-only SELECTs from the rehearsal copy and committed as the target profile; D's R3 then
      widens to joins.
 
    Mixing seeded `rec_per_key` with production's `n_rows` is not used for anything wider.
-4. **D's database.** Recommendation: its own forked JVM (sbt `testGrouping`) with its own
-   container (production-like pool, auto-recalc off from the start), thrown away afterwards.
-   The shared test DB doesn't fit (1 GB tmpfs, 128M pool). The alternative is a container the
-   spec starts in the shared JVM, with `SharedTestDb.reregisterDefault()` afterwards; it is
-   fragile if the spec fails half-way.
-5. **Capture mechanism.** Recommendation: the listener in the tests (A), with context and caller
-   identity; the server's general log (B) only if the release check later needs statements no
-   scenario runs.
-6. **Fail or warn.** Recommendation: in D, R1, R3 and the canary fail from day one; the browser
-   baseline (P3) warns for ~2 weeks of runs, then fails. Results go to the job summary, read by
-   the PR's author and the merging agent.
-7. **What is committed.** Recommendation: the statistics snapshot, `rules.yaml` and (P3) the
-   baseline TSV. Captured catalogs with sample values are CI artifacts.
-8. **Release check cadence.** Recommendation: every release (≈1–2 min on the rehearsal copy,
-   read-only), in the release checklist like schema parity.
-9. **10.11.** Recommendation: D on ci.yml's 10.11 leg (weekly and master) with per-server
-   expected keys, and one deliberate D run on 10.11 before the server move; no 10.11 leg in
-   `browser.yml`. That run decides between re-injecting the 10.6 snapshot and a snapshot per
-   server; the recommendation is one per server, since the statistics tables' contents may
-   differ.
-10. **Timings.** Recommendation: never in CI; `plans.py time` SELECT-only, locally and at release
-    when a plan changed.
-11. **The scratchpad scripts and `ExplainQueries.scala`.** Recommendation: `plans.py` absorbs
-    them; `ExplainQueries.scala` is deleted in P2; the scratchpad scripts are not copied into
-    the repo as they are (hard-coded SQL and a secrets path).
+4. **D's database.** Decided 2026-11-13: **A**. Its own forked JVM (sbt `testGrouping`) with its
+   own container (production-like buffer pool, datadir on disk, `--innodb-stats-auto-recalc=0`
+   from the start), thrown away afterwards. Not chosen: a container the spec starts in the
+   shared JVM with `SharedTestDb.reregisterDefault()` afterwards (fragile if the spec fails
+   half-way).
+5. **Capture mechanism.** Decided 2026-11-13: **A**. A test-only ScalikeJDBC listener with an
+   explicit context (`StatementCapture.within(scenario)`); a statement outside any context is
+   recorded as "no context". The server's general log (B) only if the release check later needs
+   statements no scenario runs.
+6. **Fail or warn.** Decided 2026-11-13: **A**. In D, R1, R3 and the canary fail from day one;
+   the browser baseline (P3, if built) warns for ~2 weeks of runs, then fails. Results go to the
+   CI job summary, read by the PR's author and the merging agent.
+7. **What is committed.** Decided 2026-11-13: **A**. The statistics snapshot, `rules.yaml` and
+   (P3) the baseline TSV are committed; captured catalogs with sample values are CI artifacts.
+8. **Release check cadence.** Decided 2026-11-13: **A**. Every release, read-only on the
+   rehearsal copy (≈1–2 min), as a release-checklist row next to schema parity.
+9. **10.11.** Decided 2026-11-13: **C**, 10.6 only for now:
+   - no 10.11 snapshot and no 10.11 run until the server move is scheduled;
+   - on ci.yml's 10.11 leg (weekly and master) `QueryPlanSpec` **skips with an explicit reason**
+     (the server version and this decision), never passes silently;
+   - when the move is scheduled, a 10.11 snapshot and one deliberate `QueryPlanSpec` run on
+     10.11 become a step of the move plan ([MariaDB 10.11](2026-10-19-mariadb-10.11.md), "Moving
+     production"). That run decides the per-server expected keys; the snapshot is per server,
+     since the statistics tables' contents may differ.
+
+   Not chosen: A (D on the 10.11 leg now with per-server keys, one deliberate run before the
+   move).
+10. **Timings.** Decided 2026-11-13: **A**. Never in CI; `plans.py time` is SELECT-only, refuses
+    a target not marked disposable, and runs locally (and at release when a plan changed).
+11. **The scratchpad scripts and `ExplainQueries.scala`.** Decided 2026-11-13: **A**.
+    `scripts/perf/plans.py` absorbs the scratchpad scripts (not copied in as they are: hard-coded
+    SQL and a secrets path); `test/gatling/setup/ExplainQueries.scala` is deleted in P2.
