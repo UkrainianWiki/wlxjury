@@ -13,6 +13,7 @@ import http.server
 import json
 import os
 from pathlib import Path
+import pty
 import shutil
 import socket
 import stat
@@ -330,9 +331,31 @@ class ReleaseScriptTest(unittest.TestCase):
         return archive, hashlib.sha256(archive.read_bytes()).hexdigest()
 
     def release(self, *args, cwd=None):
+        """Without a terminal, as from a script: a restore that needs confirmation needs --yes."""
         return subprocess.run(['bash', str(SCRIPT), '--config', str(self.config)] + [str(arg) for arg in args],
-                              env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120,
-                              cwd=None if cwd is None else str(cwd))
+                              env=self.env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              text=True, timeout=120, cwd=None if cwd is None else str(cwd))
+
+    def release_in_terminal(self, *args, answer):
+        """With a terminal on stdin, as an operator runs it: ANSWER is the line typed."""
+        controller, terminal = pty.openpty()
+        try:
+            process = subprocess.Popen(['bash', str(SCRIPT), '--config', str(self.config)] + [str(arg) for arg in args],
+                                       env=self.env, stdin=terminal, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                       text=True)
+            os.close(terminal)
+            terminal = None
+            os.write(controller, (answer + '\n').encode())
+            stdout, stderr = process.communicate(timeout=120)
+        finally:
+            if terminal is not None:
+                os.close(terminal)
+            os.close(controller)
+        return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
+
+    def assertNextCommand(self, output, prose, command):
+        """The output ends with PROSE and then COMMAND, alone on the last line: nothing to copy after it."""
+        self.assertTrue(output.endswith('%s\n  %s\n' % (prose, command)), output)
 
     def systemctl(self, *args):
         return subprocess.run([str(self.base / 'bin' / 'systemctl')] + list(args), env=self.env).returncode
@@ -388,7 +411,12 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertEqual(self.milestones(operation), ['started', 'backup-complete', 'migration-may-start', 'ready'])
         release = self.root / 'releases' / ('26.11-test-' + sha[:12])
         self.assertEqual((self.root / 'current').resolve(), release)
-        self.assertIn('wlxjury-release reopen ' + operation.name, result.stdout)
+        # Short, and the next command last: no back-out command anywhere to copy by mistake.
+        self.assertNextCommand(result.stdout, '26.11-test is ready under maintenance (schema 60, backup taken).\n'
+                               'Smoke-test http://127.0.0.1:%d/ locally, then reopen:' % self.app_port,
+                               'sudo wlxjury-release reopen')
+        self.assertNotIn('restore', result.stdout)
+        self.assertEqual((release / '.wlxjury-zip-sha256').read_text(), sha + '\n')
         # Migrated while closed: maintenance on, restarts held, the writers still stopped.
         self.assertEqual(self.sql('SELECT MAX(version) FROM flyway_schema_history'), '60')
         self.assertTrue(self.flag.exists())
@@ -421,6 +449,8 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertFalse(self.active('backup.service'))
         self.assertEqual(self.milestones(operation)[-2:], ['traffic-may-resume', 'complete'])
         self.assertIn('Milestone: complete', (operation / 'operation.log').read_text())
+        self.assertTrue(reopened.stdout.endswith('Traffic resumed with 26.11-test-%s; %s is complete.\n'
+                                                 % (sha[:12], operation.name)), reopened.stdout)
 
     def test_a_release_without_migrations_skips_the_backup_and_restore_only_switches_back(self):
         archive, sha = self.release_zip(schema='53', build='0.13-same')
@@ -433,12 +463,23 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertTrue((operation / 'config.tgz').is_file())
         release = self.root / 'releases' / ('0.13-same-' + sha[:12])
         self.assertEqual((self.root / 'current').resolve(), release)
+        self.assertNextCommand(result.stdout, '0.13-same is ready under maintenance (schema 53, backup skipped).\n'
+                               'Smoke-test http://127.0.0.1:%d/ locally, then reopen:' % self.app_port,
+                               'sudo wlxjury-release reopen')
         self.assertSucceeded(self.release('reopen', operation.name))
         self.sql("INSERT INTO votes VALUES (3, 'vote after reopening')")
 
-        # Nothing to lose: no data-loss decision, no rescue dump, and the vote stays.
-        restored = self.release('restore', operation.name)
+        # Nothing to lose: no data-loss decision, no rescue dump, and the vote stays. It undoes a
+        # deployment that became ready, so even named it needs confirmation: --yes without a terminal.
+        unconfirmed = self.release('restore', operation.name)
+        self.assertEqual(unconfirmed.returncode, 1)
+        self.assertIn('became ready, so a restore undoes a good deployment and needs confirmation', unconfirmed.stderr)
+        self.assertEqual(self.milestones(operation)[-1], 'complete')
+        self.assertFalse(self.flag.exists())
+        restored = self.release('restore', operation.name, '--yes')
         self.assertSucceeded(restored)
+        self.assertNextCommand(restored.stdout, 'Switched back to legacy-0.12-v53 under maintenance; the database was kept.\n'
+                               'Check it locally, then reopen:', 'sudo wlxjury-release reopen')
         self.assertEqual(self.milestones(operation)[-1], 'release-restored')
         self.assertEqual(list(operation.glob('*.sql.gz*')), [])
         self.assertEqual((self.root / 'current').resolve(), self.old)
@@ -463,6 +504,89 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertFalse(self.flag.exists())
         self.assertTrue(self.active(SERVICE))
 
+    def test_a_ready_deployment_is_restored_only_once_confirmed_and_its_zip_can_be_deployed_again(self):
+        # Production, 26.11.6: after a good deploy, the last command printed (then the back-out line)
+        # was pasted, which restored the release; the same ZIP then could not be deployed again.
+        archive, sha = self.release_zip(schema='53', build='0.13-same')
+        self.assertSucceeded(self.release('deploy', archive, sha))
+        operation = self.operation()
+        release = self.root / 'releases' / ('0.13-same-' + sha[:12])
+        # Without a terminal and without --yes: refused before anything changes.
+        refused = self.release('restore')
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn('%s became ready, so a restore undoes a good deployment and needs confirmation: run it in a'
+                      ' terminal and type RESTORE, or add --yes; nothing was changed' % operation.name, refused.stderr)
+        self.assertNotIn('stopped (exit', refused.stderr)
+        self.assertEqual(self.milestones(operation)[-1], 'ready')
+        self.assertEqual((self.root / 'current').resolve(), release)
+        self.assertTrue(self.active(SERVICE))
+        # In a terminal: anything but RESTORE changes nothing.
+        declined = self.release_in_terminal('restore', answer='yes')
+        self.assertEqual(declined.returncode, 1)
+        self.assertIn('Type RESTORE to switch back to legacy-0.12-v53 (the database stays as it is): ', declined.stdout)
+        self.assertIn('not confirmed; nothing was changed', declined.stderr)
+        self.assertEqual(self.milestones(operation)[-1], 'ready')
+        self.assertEqual((self.root / 'current').resolve(), release)
+        confirmed = self.release_in_terminal('restore', answer='RESTORE')
+        self.assertSucceeded(confirmed)
+        self.assertEqual(self.milestones(operation)[-1], 'release-restored')
+        self.assertEqual((self.root / 'current').resolve(), self.old)
+        self.assertSucceeded(self.release('reopen'))
+
+        # The restored release is not current: the same ZIP deploys again, into a fresh unpack of
+        # the same folder, so a file changed there never runs.
+        (release / 'lib' / 'app.jar').write_text('changed by hand')
+        again = self.release('deploy', archive, sha)
+        self.assertSucceeded(again)
+        self.assertIn('Prepared %s again from this ZIP (a restored release, not current)' % release, again.stdout)
+        self.assertEqual((self.root / 'current').resolve(), release)
+        self.assertEqual((release / 'lib' / 'app.jar').read_text(), 'jar')
+        self.assertEqual((release / '.wlxjury-zip-sha256').read_text(), sha + '\n')
+        self.assertEqual(self.release_names(), ['0.13-same-' + sha[:12], 'legacy-0.12-v53'])
+        self.assertEqual([path.name for path in (self.root / 'releases').iterdir() if path.name.startswith('.')], [])
+        self.assertEqual(len([path for path in self.backups.iterdir() if path.is_dir()]), 2)
+
+    def test_a_release_folder_is_reused_only_from_the_same_zip_and_never_while_current(self):
+        archive, sha = self.release_zip(schema='53', build='0.13-same')
+        self.assertSucceeded(self.release('deploy', archive, sha))
+        first = self.operation()
+        release = self.root / 'releases' / ('0.13-same-' + sha[:12])
+        self.assertSucceeded(self.release('reopen'))
+        # Current: already deployed, refused before anything changes.
+        current = self.release('deploy', archive, sha)
+        self.assertEqual(current.returncode, 1)
+        self.assertIn('0.13-same from this ZIP is already deployed: %s is the current release; nothing was changed'
+                      % release, current.stderr)
+        self.assertEqual(self.operation(), first)
+        self.assertFalse(self.flag.exists())
+        self.assertSucceeded(self.release('restore', first.name, '--yes'))
+        self.assertSucceeded(self.release('reopen'))
+        operations = sorted(path for path in self.backups.iterdir() if path.is_dir())
+
+        # A folder whose marker names another ZIP, or that has none and no operation recorded
+        # this ZIP for it: refused before anything changes.
+        marker = release / '.wlxjury-zip-sha256'
+        marker.write_text('0' * 64 + '\n')
+        record = first / 'record'
+        recorded = record.read_text()
+        for prepare in (lambda: None,
+                        lambda: (marker.unlink(), record.write_text(recorded.replace(sha, '0' * 64)))):
+            prepare()
+            refused = self.release('deploy', archive, sha)
+            self.assertEqual(refused.returncode, 1)
+            self.assertIn("%s exists and was not unpacked from this ZIP (or that can't be told); never overwrite a"
+                          " release; nothing was changed" % release, refused.stderr)
+            self.assertNotIn('Prepared', refused.stdout)
+            self.assertEqual(sorted(path for path in self.backups.iterdir() if path.is_dir()), operations)
+            self.assertEqual((self.root / 'current').resolve(), self.old)
+            self.assertFalse(self.flag.exists())
+            self.assertTrue(self.active(SERVICE))
+        # A folder from before the marker (as production's 26.11.6): its operation's record vouches for it.
+        record.write_text(recorded)
+        self.assertSucceeded(self.release('deploy', archive, sha))
+        self.assertEqual((self.root / 'current').resolve(), release)
+        self.assertEqual(marker.read_text(), sha + '\n')
+
     def test_backup_flag_dumps_a_release_without_migrations(self):
         archive, sha = self.release_zip(schema='53', build='0.13-same')
         self.assertSucceeded(self.release('deploy', archive, sha, '--backup'))
@@ -477,7 +601,8 @@ class ReleaseScriptTest(unittest.TestCase):
         result = self.release('deploy', archive, sha)
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn('readiness deadline exceeded', result.stderr)
-        self.assertIn('follow the runbook for the last milestone', result.stderr)
+        self.assertTrue(result.stderr.endswith('maintenance is never cleared automatically. For the state and the next'
+                                               ' command:\n  sudo wlxjury-release status\n'), result.stderr)
         operation = self.operation()
         self.assertEqual(self.milestones(operation)[-1], 'migration-may-start')
         self.assertTrue(self.flag.exists())
@@ -586,7 +711,7 @@ class ReleaseScriptTest(unittest.TestCase):
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.addCleanup(other.kill)
         self.wait_for_session("USER = 'root' AND INFO LIKE 'SELECT SLEEP%'")
-        busy = self.release('restore', operation.name, '--accept-data-loss')
+        busy = self.release('restore', operation.name, '--accept-data-loss', '--yes')
         self.assertEqual(busy.returncode, 1)
         self.assertIn('other sessions use the database', busy.stderr)
         self.assertEqual(list(operation.glob('before-restore-*')), [])
@@ -604,7 +729,7 @@ class ReleaseScriptTest(unittest.TestCase):
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.addCleanup(leftover.kill)
         self.wait_for_session("USER = 'app' AND INFO LIKE 'SELECT SLEEP%'")
-        self.assertSucceeded(self.release('restore', operation.name, '--accept-data-loss'))
+        self.assertSucceeded(self.release('restore', operation.name, '--yes', '--accept-data-loss'))
         self.assertIsNotNone(leftover.wait(timeout=10))
         rescues = sorted(operation.glob('before-restore-*.sql.gz'))
         self.assertEqual(len(rescues), 1)
@@ -616,14 +741,14 @@ class ReleaseScriptTest(unittest.TestCase):
         # Restoring again without reopening: nothing was written since the import,
         # so no new rescue dump, and the first one, which alone holds the vote, is kept.
         first = rescues[0].read_bytes()
-        self.assertSucceeded(self.release('restore', operation.name, '--accept-data-loss'))
+        self.assertSucceeded(self.release('restore', operation.name, '--accept-data-loss', '--yes'))
         self.assertEqual(sorted(operation.glob('before-restore-*.sql.gz')), rescues)
         self.assertEqual(rescues[0].read_bytes(), first)
         # After reopening again, new writes get a new rescue dump beside the first.
         self.assertSucceeded(self.release('reopen', operation.name))
         self.sql("INSERT INTO votes VALUES (4, 'vote after reopening again')")
         time.sleep(1.1)
-        self.assertSucceeded(self.release('restore', operation.name, '--accept-data-loss'))
+        self.assertSucceeded(self.release('restore', operation.name, '--accept-data-loss', '--yes'))
         latest = sorted(set(operation.glob('before-restore-*.sql.gz')) - set(rescues))
         self.assertEqual(len(latest), 1)
         with gzip.open(str(latest[0]), 'rt', encoding='utf-8') as rescue:
@@ -651,7 +776,7 @@ class ReleaseScriptTest(unittest.TestCase):
         original = (operation / 'database.sql.gz').read_bytes()
         # The import drops the database and then fails before recreating it.
         self.write_dump(operation, b'DROP DATABASE IF EXISTS jury; NOT SQL;\n')
-        failed = self.release('restore', operation.name, '--accept-data-loss')
+        failed = self.release('restore', operation.name, '--accept-data-loss', '--yes')
         self.assertEqual(failed.returncode, 1)
         self.assertIn('the import failed', failed.stderr)
         self.assertEqual(self.sql_server("SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = 'jury'"), '0')
@@ -660,6 +785,10 @@ class ReleaseScriptTest(unittest.TestCase):
         (operation / 'database.sql.gz').write_bytes(original)
         subprocess.run(['bash', '-c', 'sha256sum database.sql.gz > database.sql.gz.sha256'],
                        cwd=str(operation), check=True)
+        status = self.release('status')
+        self.assertNextCommand(status.stdout, 'Fix what stopped it (%s/operation.log), then rerun restore:' % operation.name,
+                               'sudo wlxjury-release restore %s --accept-data-loss' % operation.name)
+        # Rerunning an unfinished restore is the recovery: confirmed once, it needs no --yes again.
         self.assertSucceeded(self.release('restore', operation.name, '--accept-data-loss'))
         rescues = list(operation.glob('before-restore-*.sql.gz'))
         self.assertEqual(len(rescues), 1)
@@ -845,6 +974,11 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertTrue(self.flag.exists())
         (operation / 'milestones').write_text(saved)
         # Runbook, "no migration-may-start" with the app still running: reopen.
+        status = self.release('status')
+        self.assertIn('Operation %s (legacy-0.12-v53 -> 26.11-test-%s): stopped before the migration' % (operation.name, sha[:12]),
+                      status.stdout)
+        self.assertNextCommand(status.stdout, 'If the app is stopped, start it (sudo systemctl start %s); then reopen:'
+                               % SERVICE, 'sudo wlxjury-release reopen')
         self.assertSucceeded(self.release('reopen', operation.name))
         self.assertFalse(self.flag.exists())
         self.assertEqual((self.root / 'current').resolve(), self.old)
@@ -864,10 +998,18 @@ class ReleaseScriptTest(unittest.TestCase):
         # but restore picks nothing without maintenance on.
         status = self.release('status')
         self.assertSucceeded(status)
-        self.assertIn('Maintenance: off\n', status.stdout)
-        self.assertIn('Open operation: %s\n' % operation.name, status.stdout)
-        self.assertIn('  state: reopen did not finish: traffic may be open\n'
-                      'Next:\n  fix the URL reopen reported, then: sudo wlxjury-release reopen\n', status.stdout)
+        self.assertEqual(status.stdout,
+                         'Maintenance off. Current release: 26.11-test (schema 60).\n'
+                         'Operation %s (legacy-0.12-v53 -> 26.11-test-%s): reopen did not finish: traffic may be open.\n'
+                         'Fix the URL reopen reported, then rerun reopen:\n'
+                         '  sudo wlxjury-release reopen\n' % (operation.name, sha[:12]))
+        # Backing out is only in the verbose form, named (traffic is open), and before the command.
+        verbose = self.release('status', '--verbose')
+        self.assertIn('  to back out, only after a reconciliation decision, as it loses every write since reopening\n'
+                      '  (docs/deployment.md, "Recovery runbook"; asks to type RESTORE):'
+                      ' sudo wlxjury-release restore %s --accept-data-loss\n' % operation.name, verbose.stdout)
+        self.assertNextCommand(verbose.stdout, 'Next:\nFix the URL reopen reported, then rerun reopen:',
+                               'sudo wlxjury-release reopen')
         unpicked = self.release('restore')
         self.assertEqual(unpicked.returncode, 1)
         self.assertIn('maintenance is off, so restore picks no operation; nothing was changed', unpicked.stderr)
@@ -889,40 +1031,58 @@ class ReleaseScriptTest(unittest.TestCase):
     def test_status_and_reopen_without_a_name_follow_the_one_open_operation(self):
         status = self.release('status')
         self.assertSucceeded(status)
-        self.assertIn('Maintenance: off\n', status.stdout)
-        self.assertIn('Current release: %s (build legacy-0.12-v53, schema 53)\n' % self.old, status.stdout)
-        self.assertIn('Database schema: 53\n', status.stdout)
-        self.assertIn('Open operation: none\nNext:\n  to deploy: sudo wlxjury-release deploy [RELEASE.zip] SHA256\n',
-                      status.stdout)
-        self.assertNotIn('Lock', status.stdout)
+        self.assertEqual(status.stdout, 'Maintenance off. Current release: legacy-0.12-v53 (schema 53).\n'
+                                        'To deploy:\n'
+                                        '  sudo wlxjury-release deploy [RELEASE.zip] SHA256\n')
+        verbose = self.release('status', '--verbose')
+        self.assertSucceeded(verbose)
+        self.assertIn('Maintenance: off\n', verbose.stdout)
+        self.assertIn('Current release: %s (build legacy-0.12-v53, schema 53)\n' % self.old, verbose.stdout)
+        self.assertIn('Database schema: 53\n', verbose.stdout)
+        self.assertIn('Open operation: none\n', verbose.stdout)
+        self.assertNextCommand(verbose.stdout, 'Next:\nTo deploy:', 'sudo wlxjury-release deploy [RELEASE.zip] SHA256')
+        self.assertNotIn('Lock', verbose.stdout)
         archive, sha = self.release_zip()
         deployed = self.release('deploy', archive, sha)
         self.assertSucceeded(deployed)
         operation = self.operation()
-        self.assertIn('then run:\n  sudo wlxjury-release reopen\n', deployed.stdout)
-        self.assertIn('or name it: sudo wlxjury-release reopen %s\n' % operation.name, deployed.stdout)
+        self.assertNextCommand(deployed.stdout, 'Smoke-test http://127.0.0.1:%d/ locally, then reopen:' % self.app_port,
+                               'sudo wlxjury-release reopen')
         log = (operation / 'operation.log').read_text()
 
+        # Ready: the short form has no back-out command at all; the next command is the last line.
         status = self.release('status')
         self.assertSucceeded(status)
-        self.assertIn('Maintenance: ON (%s)\n' % self.flag, status.stdout)
-        self.assertIn('Database schema: 60\n', status.stdout)
+        self.assertEqual(status.stdout,
+                         'Maintenance ON. Current release: 26.11-test (schema 60).\n'
+                         'Operation %s (legacy-0.12-v53 -> 26.11-test-%s): migrated and ready under maintenance.\n'
+                         'Smoke-test http://127.0.0.1:%d/ locally, then reopen:\n'
+                         '  sudo wlxjury-release reopen\n' % (operation.name, sha[:12], self.app_port))
+        verbose = self.release('status', '--verbose')
+        self.assertSucceeded(verbose)
+        self.assertIn('Maintenance: ON (%s)\n' % self.flag, verbose.stdout)
+        self.assertIn('Database schema: 60\n', verbose.stdout)
         self.assertIn('Open operation: %s\n'
                       '  releases: legacy-0.12-v53 -> 26.11-test-%s\n'
                       '  milestones: started backup-complete migration-may-start ready\n'
                       '  state: migrated and ready under maintenance\n'
-                      'Next:\n'
-                      '  smoke-test http://127.0.0.1:%d/ locally, then: sudo wlxjury-release reopen\n'
-                      '  or, to back out: sudo wlxjury-release restore\n'
-                      % (operation.name, sha[:12], self.app_port), status.stdout)
+                      'Other commands:\n'
+                      '  the same, by name: sudo wlxjury-release reopen %s\n'
+                      '  to back out (asks to type RESTORE): sudo wlxjury-release restore\n'
+                      % (operation.name, sha[:12], operation.name), verbose.stdout)
+        self.assertNextCommand(verbose.stdout, 'Next:\nSmoke-test http://127.0.0.1:%d/ locally, then reopen:' % self.app_port,
+                               'sudo wlxjury-release reopen')
         with (self.root / 'deployment.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             locked = self.release('status')  # Status never takes the lock, and says it is held.
+            locked_verbose = self.release('status', '--verbose')
         self.assertSucceeded(locked)
-        self.assertIn('Lock: held: an operation (wlxjury-release or wlxjury-deploy) is running now', locked.stdout)
-        self.assertIn('Next:\n  an operation is running: wait for it to finish, then run sudo wlxjury-release status again\n',
-                      locked.stdout)
-        self.assertNotIn('smoke-test', locked.stdout)
+        self.assertIn('An operation is running now: the deployment lock is held, so this may change.\n', locked.stdout)
+        self.assertNextCommand(locked.stdout, 'Wait for the running operation to finish, then:', 'sudo wlxjury-release status')
+        self.assertNotIn('Smoke-test', locked.stdout)
+        self.assertIn('Lock: held: an operation (wlxjury-release or wlxjury-deploy) is running now', locked_verbose.stdout)
+        self.assertNextCommand(locked_verbose.stdout, 'Wait for the running operation to finish, then:',
+                               'sudo wlxjury-release status')
         # Status changed nothing: no milestone, no log line.
         self.assertEqual(self.milestones(operation)[-1], 'ready')
         self.assertEqual((operation / 'operation.log').read_text(), log)
@@ -936,11 +1096,18 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertFalse(self.flag.exists())
         self.assertTrue(self.active('backup.timer'))
 
-        # Nothing open: status names the last operation and how to back it out; nothing is picked.
+        # Nothing open: status names the last operation; only --verbose says how to back it out,
+        # before the next command. Nothing is picked.
         status = self.release('status')
-        self.assertIn('Open operation: none\nLast operation: %s: complete\n' % operation.name, status.stdout)
-        self.assertIn('only after a reconciliation decision', status.stdout)
-        self.assertIn('sudo wlxjury-release restore %s --accept-data-loss\n' % operation.name, status.stdout)
+        self.assertEqual(status.stdout, 'Maintenance off. Current release: 26.11-test (schema 60).\n'
+                                        'Last operation %s: complete.\n'
+                                        'To deploy:\n'
+                                        '  sudo wlxjury-release deploy [RELEASE.zip] SHA256\n' % operation.name)
+        verbose = self.release('status', '--verbose')
+        self.assertIn('Open operation: none\nLast operation: %s: complete\n' % operation.name, verbose.stdout)
+        self.assertIn('only after a reconciliation decision', verbose.stdout)
+        self.assertIn('sudo wlxjury-release restore %s --accept-data-loss\n' % operation.name, verbose.stdout)
+        self.assertNextCommand(verbose.stdout, 'Next:\nTo deploy:', 'sudo wlxjury-release deploy [RELEASE.zip] SHA256')
         for command in ('reopen', 'restore'):
             refused = self.release(command)
             self.assertEqual(refused.returncode, 1)
@@ -955,26 +1122,30 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertTrue(self.active(SERVICE))
         self.assertEqual(self.release('reopen', '').returncode, 2)  # Usage error, not "pick one".
         self.assertEqual(self.release('status', 'extra').returncode, 2)
+        self.assertEqual(self.release('restore', operation.name, '--yes', '--yes').returncode, 2)
+        self.assertEqual(self.release('restore', '').returncode, 2)
 
     def test_restore_without_a_name_backs_out_the_one_open_operation_under_maintenance(self):
         operation = self.failed_deployment()
+        # The documented recovery is the next command here, and needs no confirmation.
         status = self.release('status')
-        self.assertIn('  state: a migration may have run, and the release never became ready\n'
-                      'Next:\n  sudo wlxjury-release restore  (or a forward fix; never just start the previous release)\n'
-                      '  then, once checked locally: sudo wlxjury-release reopen\n', status.stdout)
+        self.assertIn('a migration may have run, and the release never became ready.\n', status.stdout)
+        self.assertNextCommand(status.stdout, 'Restore the pre-deployment database and release (or fix forward;'
+                               ' never just start the previous release):', 'sudo wlxjury-release restore')
         restored = self.release('restore')
         self.assertSucceeded(restored)
         self.assertIn('Operation %s: picked as the current operation' % operation.name, restored.stdout)
-        self.assertIn('then run:\n  sudo wlxjury-release reopen\n', restored.stdout)
+        self.assertNextCommand(restored.stdout, 'Restored the pre-deployment database and legacy-0.12-v53 under maintenance.\n'
+                               'Check it locally, then reopen:', 'sudo wlxjury-release reopen')
         self.assertEqual(self.milestones(operation)[-2:], ['restoring', 'database-restored'])
         status = self.release('status')
-        self.assertIn('  state: backed out to the previous release under maintenance (database-restored)\n'
-                      'Next:\n  check it locally, then: sudo wlxjury-release reopen\n', status.stdout)
+        self.assertIn('backed out to the previous release under maintenance (database-restored).\n', status.stdout)
+        self.assertNextCommand(status.stdout, 'Check it locally, then reopen:', 'sudo wlxjury-release reopen')
         self.assertSucceeded(self.release('reopen'))
         self.assertOriginalDatabase()
         self.assertFalse(self.flag.exists())
         # Backed out: current is no longer the candidate, so status offers no restore.
-        status = self.release('status')
+        status = self.release('status', '--verbose')
         self.assertIn('Last operation: %s: complete\n' % operation.name, status.stdout)
         self.assertNotIn('to back out', status.stdout)
 
@@ -1003,17 +1174,31 @@ class ReleaseScriptTest(unittest.TestCase):
                       % (operations[0].name, operations[2].name), refused.stderr)
         status = self.release('status')
         self.assertSucceeded(status)
-        self.assertIn('Open operation: none\nLast operation: %s: complete\n' % operations[2].name, status.stdout)
+        self.assertIn('Last operation %s: complete.\n' % operations[2].name, status.stdout)
+        self.assertIn('Stale operation %s: migrated and ready under maintenance; a later operation, %s, followed it.\n'
+                      % (operations[0].name, operations[2].name), status.stdout)
+        self.assertIn('Maintenance is on, but no operation is the current one: find out what turned it on', status.stdout)
+        self.assertNextCommand(status.stdout, 'For the details:', 'sudo wlxjury-release status --verbose')
+        verbose = self.release('status', '--verbose')
+        self.assertIn('Open operation: none\nLast operation: %s: complete\n' % operations[2].name, verbose.stdout)
         self.assertIn('Stale open operation: %s: migrated and ready under maintenance\n'
                       '  stale: a later operation, %s, followed it; never picked without its name\n'
-                      % (operations[0].name, operations[2].name), status.stdout)
-        self.assertIn('  maintenance is on, but no operation is the current one: find out what turned it on', status.stdout)
-        self.assertNotIn('to deploy', status.stdout)  # deploy would refuse under maintenance.
-        self.assertNotIn('to back out', status.stdout)
-        self.assertIn('  stale operations are never picked', status.stdout)
-        self.assertNotIn('restore %s' % operations[0].name, status.stdout)
-        self.assertNotIn('wlxjury-release reopen', status.stdout.split('Next:')[1])
-        self.assertNotIn('sudo wlxjury-release restore\n', status.stdout)
+                      % (operations[0].name, operations[2].name), verbose.stdout)
+        self.assertTrue(verbose.stdout.endswith('remove %s only knowingly, once the app is ready and nothing is migrating'
+                                                ' or restoring (docs/deployment.md, "Recovery runbook").\n' % self.flag),
+                        verbose.stdout)
+        for output in (status.stdout, verbose.stdout):
+            self.assertNotIn('deploy [', output)  # deploy would refuse under maintenance.
+            self.assertNotIn('to back out', output)
+            self.assertNotIn('restore %s' % operations[0].name, output)
+            self.assertNotIn('wlxjury-release reopen', output)
+            self.assertNotIn('sudo wlxjury-release restore', output)
+        # With maintenance off, stale operations are named and deploy is the next command.
+        self.flag.unlink()
+        status = self.release('status')
+        self.assertIn('Stale operations are never picked: investigate each', status.stdout)
+        self.assertNextCommand(status.stdout, 'To deploy:', 'sudo wlxjury-release deploy [RELEASE.zip] SHA256')
+        self.flag.touch()
         # Named, a restore of it is refused too: its dump would replace operations 2 and 3.
         named = self.release('restore', operations[0].name)
         self.assertEqual(named.returncode, 1)
@@ -1041,10 +1226,10 @@ class ReleaseScriptTest(unittest.TestCase):
         # With current its candidate it is picked; the older open one stays stale beside it.
         self.select(self.root / 'releases' / 'r3')
         status = self.release('status')
-        self.assertIn('Open operation: %s\n' % operations[2].name, status.stdout)
-        self.assertIn('Next:\n  smoke-test http://127.0.0.1:%d/ locally, then: sudo wlxjury-release reopen\n'
-                      % self.app_port, status.stdout)
-        self.assertIn('Stale open operation: %s' % operations[0].name, status.stdout)
+        self.assertIn('Operation %s (r2 -> r3): migrated and ready under maintenance.\n' % operations[2].name, status.stdout)
+        self.assertIn('Stale operation %s' % operations[0].name, status.stdout)
+        self.assertNextCommand(status.stdout, 'Smoke-test http://127.0.0.1:%d/ locally, then reopen:' % self.app_port,
+                               'sudo wlxjury-release reopen')
         picked = self.release('reopen')  # Picked, then refused: the fake r3 is not running.
         self.assertEqual(picked.returncode, 1)
         self.assertIn('Operation %s: picked as the current operation' % operations[2].name, picked.stdout)
@@ -1056,11 +1241,14 @@ class ReleaseScriptTest(unittest.TestCase):
         cutover_record = {'id': cutover.name, 'phase': 'ready', 'previous': str(self.old), 'candidate': str(self.old)}
         (cutover / 'deployment.json').write_text(json.dumps(cutover_record))
         self.assertNothingPicked([operations[0]], ['ready'])
-        self.assertIn('stale: a later operation, %s, followed it' % cutover.name, self.release('status').stdout)
+        self.assertIn('stale: a later operation, %s, followed it' % cutover.name, self.release('status', '--verbose').stdout)
         # A damaged current operation is picked, then refused as unknown.
         shutil.rmtree(str(cutover))
         (operations[2] / 'milestones').unlink()
-        self.assertIn('  state: unknown: the milestones are missing or damaged\n', self.release('status').stdout)
+        status = self.release('status')
+        self.assertIn('unknown: the milestones are missing or damaged.\n', status.stdout)
+        self.assertTrue(status.stdout.endswith('Keep maintenance on; inspect current, the Flyway history and %s/operation.log'
+                                               ' (docs/deployment.md, "Recovery runbook").\n' % operations[2]), status.stdout)
         unknown = self.release('reopen')
         self.assertEqual(unknown.returncode, 1)
         self.assertIn('state is unknown', unknown.stderr)

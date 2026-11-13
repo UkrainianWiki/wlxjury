@@ -203,27 +203,55 @@ sudo wlxjury-release reopen                   # the current operation
 sudo wlxjury-release status                   # at any moment: what is open, and the next command
 ```
 
+**The last line is the command to run.** `deploy`, `restore` and `status` end with the one command to run next (where there is one), alone and indented on the last line, with a line of prose before it; nothing follows it, so copying "the last command" is always right. They print no back-out command after a success: on 2026-11-13 (26.11.6) the line `deploy` printed after `reopen`, `To back out instead: sudo wlxjury-release restore`, was copied as "the last command" and restored a good deployment. A deployment that became ready now ends with:
+
+```text
+26.11.6 is ready under maintenance (schema 101, backup skipped).
+Smoke-test http://127.0.0.1:9000/ locally, then reopen:
+  sudo wlxjury-release reopen
+```
+
 The usage, which `wlxjury-release` prints for a wrong command:
 
 ```text
 usage: wlxjury-release [--config FILE] COMMAND
-  status                                  what is open, and the next command to run
+  status [--verbose]                      what is open, and the one command to run next
   deploy [RELEASE.zip] SHA256 [--backup] [--allow-running-jobs]
                                           SHA256: all 64 hex characters, or at least the first 16;
                                           without RELEASE.zip, the wlxjury-*.zip here with that hash
   reopen [OPERATION]                      default: the current operation (status names it)
-  restore [OPERATION]                     default: the current operation, under maintenance only
-  restore OPERATION --accept-data-loss    after traffic resumed: always named
+  restore [OPERATION] [--yes]             default: the current operation, under maintenance only;
+                                          after ready it asks to type RESTORE (--yes: no terminal)
+  restore OPERATION --accept-data-loss [--yes]
+                                          after traffic resumed: always named
   prune [--dry-run]
 ```
 
 **The hash.** It proves that the ZIP on the server is exactly the one that was built and reviewed, so it must come by another channel than the upload (the build's message), never from a file next to the ZIP. `deploy` takes all 64 hex characters, or a prefix of at least 16 (upper or lower case), and compares it with the ZIP's whole SHA-256, which it then records and uses as before (`zip_sha256` in `record`, the release folder's suffix). 16 hex characters are 64 bits: a wrong, truncated or stale ZIP never matches, and making another ZIP match a given prefix would take about 2^64 hashes. 12 characters (48 bits, about 2^48 hashes, hours on a few GPUs) would be enough against accidents but not against someone who can replace the upload. Without `RELEASE.zip`, `deploy` hashes every `wlxjury-*.zip` in the current directory and takes the one whose hash starts with the given prefix; with none it refuses and lists each ZIP with the start of its hash. `sudo` keeps the current directory, so run it where the ZIP was uploaded, or name the ZIP: `sudo wlxjury-release deploy ~/wlxjury-26.11.zip SHA256`.
 
-**The operation.** Each deployment is an operation, a folder `/var/backups/wlxjury/UTC_TIMESTAMP-BUILD`. Without a name, `reopen` and `restore` act on the **current** operation: the newest operation folder of either tool (`wlxjury-deploy`'s cutover folders count), if it is `wlxjury-release`'s, not `complete` (a damaged one included), and `/opt/wlxjury/current` is its previous or candidate release. They print `Operation NAME: picked as the current operation`, also into its log, and pick it under the lock, so no other operation can start in between. Any other open operation is **stale**: left open (for example after maintenance was removed by hand) and followed by a later operation, or with `current` pointing elsewhere. A stale operation is never picked: with no current operation they refuse, change nothing, and list the open ones with their state and why each is stale. Investigate before naming one. `restore` picks the current operation only while maintenance is on: with traffic open, a restore decides about live data, so name the operation. `restore OPERATION --accept-data-loss` (a restore after `traffic-may-resume`) always needs the name: it is a decision about one deployment's later writes, taken from the runbook, not from the last command typed. The name is printed by `deploy` and by `status`; there is no `latest` and no prefix form, which could name a finished operation by mistake.
+**The operation.** Each deployment is an operation, a folder `/var/backups/wlxjury/UTC_TIMESTAMP-BUILD`. Without a name, `reopen` and `restore` act on the **current** operation: the newest operation folder of either tool (`wlxjury-deploy`'s cutover folders count), if it is `wlxjury-release`'s, not `complete` (a damaged one included), and `/opt/wlxjury/current` is its previous or candidate release. They print `Operation NAME: picked as the current operation`, also into its log, and pick it under the lock, so no other operation can start in between. Any other open operation is **stale**: left open (for example after maintenance was removed by hand) and followed by a later operation, or with `current` pointing elsewhere. A stale operation is never picked: with no current operation they refuse, change nothing, and list the open ones with their state and why each is stale. Investigate before naming one. `restore` picks the current operation only while maintenance is on: with traffic open, a restore decides about live data, so name the operation. `restore OPERATION --accept-data-loss` (a restore after `traffic-may-resume`) always needs the name: it is a decision about one deployment's later writes, taken from the runbook, not from the last command typed. The name is printed by `deploy` (`Operation PATH: PREVIOUS -> RELEASE`) and by `status`; there is no `latest` and no prefix form, which could name a finished operation by mistake.
+
+**Confirming a restore.** A `restore` of an operation that reached `ready`, named or not, undoes a deployment that worked, which is never the next step the tool prints: it asks `Type RESTORE to switch back to PREVIOUS (what happens to the database):` and changes nothing unless the answer is exactly `RESTORE`. Without a terminal on stdin (a script, a pipe) it refuses unless `--yes` is given. It asks after its own checks (the backup, the schema, free space, `--accept-data-loss`), just before maintenance goes on, so a refusal never follows a typed confirmation. The recovery restores stay one command, as the runbook gives them: after `migration-may-start` without `ready` (the release never became ready) and the rerun of a restore that did not finish (`restoring` or a `rescue` milestone as the last restore milestone), which was confirmed when it started. Naming the operation is no confirmation: `status --verbose` prints the named back-out command, so a pasted named command is as likely an accident as an unnamed one.
 
 A named `restore` also refuses, before anything changes, when `current` is neither the operation's previous nor its candidate release, as `reopen` does: a later deployment or a change by hand followed it, and its dump (or its previous release) would replace newer data and releases. No recovery needs that: an interrupted restore or a migration interrupted before `ready` leaves `current` at one of the two. If such a backup is really wanted, import it by hand.
 
-`status` changes nothing and never takes the lock: it reads `/proc/locks` (device and inode of `deployment.lock`) to see whether the lock is held, so it can't make a concurrent `deploy`, `reopen` or `restore` fail. It works in a second `tmux` pane while an operation runs; it then says the lock is held, and its next step is to wait for the operation and run `status` again. Otherwise it prints maintenance on or off, the current release with its build and schema, the database's schema, the current operation with its releases, milestones and state, and the exact next commands for that state, as the [recovery runbook](#recovery-runbook) gives them. It lists each stale open operation, with why it is stale, and suggests no command for it. With no current operation and maintenance on, it offers no `deploy` (which would refuse) and no back-out: it says to find out what turned maintenance on (`wlxjury-deploy`, a stale operation, someone by hand), finish that first, and remove the flag only knowingly. With no current operation and maintenance off, it names the last finished operation and, while that is the newest of all and its candidate is still the current release, the command that would back it out (with `--accept-data-loss` and the warning, if it took a dump). Run on the host, as the tool always is: in a container's PID namespace `/proc/locks` hides locks whose owner isn't visible there.
+`status` changes nothing and never takes the lock: it reads `/proc/locks` (device and inode of `deployment.lock`) to see whether the lock is held, so it can't make a concurrent `deploy`, `reopen` or `restore` fail. It prints a few lines: maintenance on or off with the current release's build and schema (and the database's schema only when it differs or can't be read), the current operation with its releases and state (or the last finished one), one line per stale open operation with why it is stale, and then the next step for that state, as the [recovery runbook](#recovery-runbook) gives it, ending with its one command. For example, with nothing open:
+
+```text
+Maintenance off. Current release: 26.11.6 (schema 101).
+Last operation 20261113T101500Z-26.11.6: complete.
+To deploy:
+  sudo wlxjury-release deploy [RELEASE.zip] SHA256
+```
+
+It works in a second `tmux` pane while an operation runs; it then says the lock is held, and its next command is `status` again, once the operation finishes. A stale operation gets no command. With no current operation and maintenance on, it offers no `deploy` (which would refuse) and no back-out: it says to find out what turned maintenance on (`wlxjury-deploy`, a stale operation, someone by hand), finish that first, and remove the flag only knowingly, and its command is `status --verbose`.
+
+`status --verbose` adds, before the same next step: the maintenance flag's path, the current release's path, the database's schema, each operation's releases and milestones, and under `Other commands` the named form of the next command and how to back out. A deployment that became ready (and one whose `reopen` did not finish) gets its `restore` command there, marked as asking to type `RESTORE`; with no current operation and maintenance off, the last finished operation gets it while it is the newest of all and its candidate is still the current release, with `--accept-data-loss` and the warning if it took a dump. Run on the host, as the tool always is: in a container's PID namespace `/proc/locks` hides locks whose owner isn't visible there.
+
+**Deploying a release folder again.** `deploy` unpacks each release into `releases/BUILD-HASH12` (the first 12 hex characters of the ZIP's SHA-256) and writes the ZIP's whole SHA-256 into it as `.wlxjury-zip-sha256`. If that folder exists already:
+- it is the current release: `deploy` refuses (`BUILD from this ZIP is already deployed`), and never overwrites it;
+- it is not current and was unpacked from this same ZIP (its `.wlxjury-zip-sha256`, or for a folder from before the marker an operation's `record` naming it as `candidate` with this `zip_sha256`), as after a deployment that was restored: `deploy` replaces it with the fresh unpack it has just verified, so what runs is exactly the ZIP even if a file there was changed, and prints `Prepared … again from this ZIP`;
+- anything else (another ZIP's marker, or nothing that ties it to this ZIP): `deploy` refuses before anything changes. Remove the folder by hand only once no operation needs it (`prune --dry-run` lists what it keeps).
 
 A release with new migrations always gets a database backup. A release without them (its `schemaVersion` equals the database's) skips the dump, which shortens the outage, and records `backup-skipped`; add `--backup` to take one anyway. Backing out such a deployment only switches the release back, keeping the database and every write made since.
 
@@ -246,27 +274,27 @@ It unpacks the release into a new root-owned folder under `/opt/wlxjury/releases
 5. dumps the database with `--databases --add-drop-database --lock-tables`, unless the backup is skipped, then checks the dump and saves its checksum and a config snapshot;
 6. flushes them and rechecks free space;
 7. switches `/opt/wlxjury/current`, starts the app, and waits until `/health/ready` reports the new build;
-8. prints the next command, `sudo wlxjury-release reopen`, with the operation's name for the named form. `status` prints it again.
+8. prints the release, its schema and whether the backup was taken or skipped, and, last, the next command, `sudo wlxjury-release reopen`. `status` prints it again; `status --verbose` also has the named form and how to back out.
 
 `reopen` requires:
 - intact milestones and no unfinished restore;
 - that `current` is the operation's candidate release, or its previous release after a finished restore (`database-restored` or `release-restored`);
 - the release to be ready.
 
-It then records `traffic-may-resume`, restores automatic restarts, removes maintenance, checks every URL reaches the app, and restarts the writer units that were running before the deployment. If a URL fails, fix routing and run `reopen` again. Once it records `complete`, it [prunes](#retention-old-releases-and-dumps) old releases and dumps; if only that prune fails, `reopen` prints `PRUNE FAILED after a successful reopen` and exits 3, with the operation `complete`.
+It then records `traffic-may-resume`, restores automatic restarts, removes maintenance, checks every URL reaches the app, and restarts the writer units that were running before the deployment. If a URL fails, fix routing and run `reopen` again. Once it records `complete`, it [prunes](#retention-old-releases-and-dumps) old releases and dumps and ends with `Traffic resumed with RELEASE; OPERATION is complete.`; if only that prune fails, `reopen` prints `PRUNE FAILED after a successful reopen` and exits 3, with the operation `complete`.
 
 `deploy` also refuses, before anything changes, while [the image cache folder](#the-image-cache-folder) is not owned by the service user or is group- or world-writable.
 
 `restore OPERATION` (or `restore` under maintenance, for the current operation) backs out a deployment, holding the lock throughout and stopping at the first failure:
 1. It refuses an operation without a complete backup, refuses one whose previous and candidate releases are both other than `current`, refuses after `traffic-may-resume` without `--accept-data-loss`, refuses a backup of a database other than the one `runtime.env` now names, and refuses when the dump was pruned.
-2. It verifies the backup's checksum and gzip integrity before changing anything, and checks free space: `restore_minimum_free_bytes` (or `minimum_free_bytes`), plus the database's size when a rescue dump is needed.
+2. It verifies the backup's checksum and gzip integrity before changing anything, and checks free space: `restore_minimum_free_bytes` (or `minimum_free_bytes`), plus the database's size when a rescue dump is needed. For an operation that reached `ready`, it then asks to [confirm](#routine-deployment-after-the-cutover) (`RESTORE`, or `--yes`).
 3. It enables and checks maintenance, turns off automatic restarts, and stops every writer unit and the app.
 4. It ends the app account's leftover sessions, waiting up to `session_end_timeout_seconds` for a killed `ALTER` to roll back, and refuses while any other session uses the database.
 5. If writes may have happened since the last import attempt (`traffic-may-resume` after any earlier `restoring`), it saves the current database as a new `before-restore-UTC_TIMESTAMP.sql.gz`, checked, with its checksum, and flushed, and records its name as a `rescue` milestone. Earlier rescue dumps are never replaced. A retry after an unfinished import takes no new rescue dump: the database is partly restored or even dropped, and the earlier rescue dump already holds those writes.
 6. It rechecks the free-space reserve, records `restoring` and imports the backup; a failure on either side of the import stops it.
 7. It checks that the database has the previous release's schema and no failed migration, switches `current` back, records `database-restored`, starts the previous release and waits until it is ready.
 
-After `backup-skipped`, `restore OPERATION` imports nothing and needs no `--accept-data-loss`: it checks that the database still has the previous release's schema with no failed migration (refusing if a later deployment migrated it), enables and checks maintenance, turns off automatic restarts, stops the writers and the app, switches `current` back, records `release-restored`, starts the previous release and waits until it is ready.
+After `backup-skipped`, `restore OPERATION` imports nothing and needs no `--accept-data-loss`: it checks that the database still has the previous release's schema with no failed migration (refusing if a later deployment migrated it), asks to confirm as above, enables and checks maintenance, turns off automatic restarts, stops the writers and the app, switches `current` back, records `release-restored`, starts the previous release and waits until it is ready.
 
 It never restores config: if the release changed config, restore `config.tgz` by hand before reopening.
 
@@ -585,7 +613,7 @@ at once, are disabled).
 
 ### Recovery runbook
 
-Maintenance is never cleared automatically. Start with `sudo wlxjury-release status`: it names the current operation, its last milestone and state, and prints the next command of the section below that fits it, and it lists stale open operations. For detail, read `OPERATION/milestones`, `record` and `operation.log` (`OPERATION` is `/var/backups/wlxjury/NAME`), then use the section for the last milestone. `previous` and `candidate` in `record` name the releases. For the current operation, the commands below work without `OPERATION`; `restore` only while maintenance is on, and `--accept-data-loss` always needs it. A stale operation always needs its name, and `restore` refuses it once `current` is neither of its releases.
+Maintenance is never cleared automatically. A command that stops ends with `sudo wlxjury-release status`; start there: it names the current operation and its state, lists stale open operations, and ends with the next command of the section below that fits it (`status --verbose` adds the milestones, the named forms and how to back out). For detail, read `OPERATION/milestones`, `record` and `operation.log` (`OPERATION` is `/var/backups/wlxjury/NAME`), then use the section for the last milestone. `previous` and `candidate` in `record` name the releases. For the current operation, the commands below work without `OPERATION`; `restore` only while maintenance is on, and `--accept-data-loss` always needs it. A stale operation always needs its name, and `restore` refuses it once `current` is neither of its releases.
 
 | Milestones | Meaning |
 |---|---|
@@ -603,18 +631,20 @@ Maintenance is never cleared automatically. Start with `sudo wlxjury-release sta
 **From `migration-may-start` until reopening**, including a failed smoke test after `ready`: never just restart the previous release, since its readiness cannot show a half-applied migration. Prefer a forward fix if one is ready; otherwise:
 
 ```bash
-sudo wlxjury-release restore          # or: restore OPERATION
+sudo wlxjury-release restore          # or: restore OPERATION; after ready it asks to type RESTORE
 # Check the previous release locally (a legacy release answers /auth, not /health/ready). Then:
 sudo wlxjury-release reopen           # or: reopen OPERATION
 ```
 
-**After `restoring` without `database-restored`:** fix what stopped the restore (for example a leftover session, or space), then rerun `restore`. `reopen` refuses until a restore finishes.
+`status` names `restore` as the next command only where it is the recovery (`migration-may-start` without `ready`, an unfinished restore). After a failed smoke test the next command it shows stays `reopen`: backing out is a decision, so take the command from `status --verbose` or this runbook, and confirm it.
 
-**After `backup-skipped`**, at any later milestone: `sudo wlxjury-release restore OPERATION`, then `reopen`. No data is lost, so this needs no decision. Once traffic is open, name the operation (`status` prints the command while its release is current).
+**After `restoring` without `database-restored`:** fix what stopped the restore (for example a leftover session, or space), then rerun `restore` (with `--accept-data-loss` if it was a restore after reopening); it asks no confirmation again. `reopen` refuses until a restore finishes.
+
+**After `backup-skipped`**, at any later milestone: `sudo wlxjury-release restore OPERATION`, then `reopen`. No data is lost, so this needs no data-loss decision, but it asks to type `RESTORE` (or `--yes`). Once traffic is open, name the operation (`status --verbose` prints the command while its release is current). To deploy the same ZIP again afterwards, run `deploy` as usual: the restored release folder is replaced by a fresh unpack.
 
 **`reopen` exited 3 with `PRUNE FAILED after a successful reopen`:** the deployment is `complete` and traffic is open; nothing was pruned. Don't rerun `reopen`: fix the cause it printed, then run `sudo wlxjury-release prune --dry-run` and `sudo wlxjury-release prune`.
 
-**After `traffic-may-resume`:** if only `reopen` failed, fix the reported URL and rerun it. Otherwise, prefer a forward fix. Restoring now loses later votes, comments and jobs, and needs an explicit decision and a plan for reconciling them from the rescue dump. If that is the decision, name the operation (`status` prints the command while its release is the current one; `restore --accept-data-loss` alone is refused):
+**After `traffic-may-resume`:** if only `reopen` failed, fix the reported URL and rerun it. Otherwise, prefer a forward fix. Restoring now loses later votes, comments and jobs, and needs an explicit decision and a plan for reconciling them from the rescue dump. If that is the decision, name the operation (`status --verbose` prints the command while its release is the current one; `restore --accept-data-loss` alone is refused); it asks to type `RESTORE` too:
 
 ```bash
 sudo wlxjury-release restore OPERATION --accept-data-loss
@@ -792,13 +822,16 @@ docker run --rm --mount type=bind,source="$PWD",target=/s,readonly koalaman/shel
 Python 3.8 is the oldest supported version. The restore image is self-contained: Ubuntu 22.04's MariaDB 10.6 (`--build-arg UBUNTU=24.04` for a newer distribution's 10.11), OpenJDK 17, Python 3, `curl`, `unzip` and `monit`. Its packaged-release test runs the ZIP from `sbt dist`, checks that it carries no server setup files and that readiness refuses a forwarded request. `test_release_script` runs `wlxjury-release.sh` unmodified against a real MariaDB, with stand-ins only for systemd (a `systemctl` stub that starts and stops the selected release's launcher) and Apache (a fake proxy that honors the maintenance flag). It covers:
 - deploying and reopening, including a timer that starts its job during the maintenance checks;
 - a release without migrations: no dump by default (or one with `--backup`), and a `restore` that only switches the release back, keeping later writes, but refuses once a later migration ran;
+- the final lines of `deploy`, `restore`, `reopen` and `status` in each state: the next command last and alone, no back-out command in the short `status` or after `deploy`, back-out commands only in `status --verbose` and before the next command;
+- confirming a restore of an operation that reached `ready`, named or not: refused without a terminal and without `--yes`, refused for any answer but `RESTORE`, done once typed; the recoveries (after `migration-may-start`, the rerun of an unfinished restore) without confirmation;
+- deploying the ZIP of a restored release again (the production case of 26.11.6): the folder replaced by a fresh unpack, also for a folder from before the marker that an operation's record vouches for; refused for the current release, for another ZIP's marker and for a folder nothing ties to the ZIP;
 - refusals that leave everything unchanged, including an unreachable database endpoint;
 - queued or running background jobs refusing the deployment before anything changes, `--allow-running-jobs` deploying with a warning (and either option order), finished, failed and cancelled jobs ignored, and an unreadable `job` table refusing it;
 - a vhost without the maintenance page, and a lost milestones file;
 - rerunning `reopen` after a routing failure, without the name, while `restore` without one refuses with traffic open;
 - `reopen` and `restore` without a name: picking the current operation and logging it; refusing, changing nothing, with none open, with only a stale one (followed by later finished deployments, with maintenance on), with the newest open but `current` elsewhere, and with a newer `wlxjury-deploy` folder; the current operation picked beside an older stale one; an unnamed `--accept-data-loss`; a damaged current operation picked and then refused as unknown;
 - a named `restore` of a stale operation, with or without a dump, refused while `current` is neither of its releases;
-- `status`: maintenance, the current release, the schema, the current operation's releases, milestones, state and next commands, stale operations without commands, a held lock (and waiting as the next step), the last operation and its back-out command, none after it was backed out; changing nothing;
+- `status`: the short form and `--verbose` (maintenance, the current release, the schema, the current operation's releases, milestones, state, named forms and back-out), stale operations without commands, a held lock (and `status` again as the next command), the last operation and, verbose only, its back-out command, none after it was backed out; changing nothing;
 - the hash: a prefix of 16 or more hex characters (either case) accepted and the whole hash recorded; shorter, longer, non-hex and mismatching ones refused before anything changes; the ZIP found by its hash in the current directory, refused when none matches (listing the ZIPs there) and when several do (listing those); a ZIP swapped after its check still deploys the checked one;
 - `restore` after an interrupted migration, refusing the previous release until the restore finishes;
 - a damaged backup, an import that fails part-way, and its rerun; an import that fails just after dropping the database, and its retry without a new rescue dump;
