@@ -15,7 +15,7 @@
 #   wlxjury-release [--config FILE] reopen [OPERATION]
 #   wlxjury-release [--config FILE] restore [OPERATION] [--yes]
 #   wlxjury-release [--config FILE] restore OPERATION --accept-data-loss [--yes]
-#   wlxjury-release [--config FILE] prune [--dry-run]
+#   wlxjury-release [--config FILE] prune [--dry-run] [--verbose]
 #
 # SHA256 is the ZIP's hash as sent with the build, through another channel than
 # the upload: all 64 hex characters, or at least the first 16 (64 bits), checked
@@ -61,6 +61,7 @@ staging=''
 active_jobs=''
 locked=''
 confirmed=no
+prune_verbose=no
 
 usage() {  # usage [PROBLEM]
   if [ $# -gt 0 ]; then echo "wlxjury-release: $*" >&2; fi
@@ -75,7 +76,7 @@ usage: wlxjury-release [--config FILE] COMMAND
                                           after ready it asks to type RESTORE (--yes: no terminal)
   restore OPERATION --accept-data-loss [--yes]
                                           after traffic resumed: always named
-  prune [--dry-run]
+  prune [--dry-run] [--verbose]           --verbose: also what is kept, and why
 USAGE
   exit 2
 }
@@ -426,7 +427,7 @@ unpacked_from() {  # unpacked_from DIR SHA256: the release folder DIR was unpack
 
 deploy() {
   local zip=$1 sha=${2,,} backup=$3 allow_jobs=$4 top manifest build want have release previous unit sum size free
-  local replace
+  local replace kept
   local -a entries active=() config_files
   # The hash comes with the build, by another channel than the ZIP. A prefix is checked against the
   # ZIP's whole hash; 16 hex characters (64 bits) leave no practical way to make another ZIP match.
@@ -510,7 +511,12 @@ deploy() {
     # Not current, so nothing runs it; what will run is exactly the verified ZIP.
     mv -T "$release" "$staging/replaced"
     if ! mv -T "$top" "$release"; then
-      mv -T "$staging/replaced" "$release"
+      if ! mv -T "$staging/replaced" "$release"; then
+        kept=$staging/replaced
+        staging=''  # on_exit must not delete it.
+        die "cannot replace $release, nor put it back: it is now $kept; move it back by hand" \
+            "(mv -T $kept $release); nothing else was changed"
+      fi
       die "cannot replace $release; it was kept; nothing was changed"
     fi
     rm -rf "$staging/replaced"
@@ -631,6 +637,18 @@ require_current() {  # A restore only ever backs out the deployment the current 
     die "the current release $(readlink -f "$ROOT/current") is neither the previous nor the candidate release of" \
         "$(basename "$op"): a later deployment or a change by hand followed it, and backing it out would replace" \
         "newer data and releases; nothing was changed (docs/deployment.md, \"Recovery runbook\")"
+  # A release folder can be deployed again (a restored one, from the same ZIP): then a later operation
+  # deployed the current release, and only that one may back it out.
+  local LC_ALL=C dir current candidate
+  current=$(realpath -e -- "$ROOT/current")
+  for dir in "$BACKUPS"/*; do  # Both tools name operation folders by UTC start time.
+    if [ ! -d "$dir" ] || [ -L "$dir" ] || [[ ! $(basename "$dir") > $(basename "$op") ]]; then continue; fi
+    candidate=$(operation_releases "$dir" 2>/dev/null | sed -n 2p) || candidate=''
+    if [ -n "$candidate" ] && [ "$(realpath -m -- "$candidate")" = "$current" ]; then
+      die "a later operation, $(basename "$dir"), deployed the current release $current again: back out that one," \
+          "not $(basename "$op"); nothing was changed (docs/deployment.md, \"Recovery runbook\")"
+    fi
+  done
 }
 
 restore_release() {  # A deployment without migrations: the database stays, the release goes back.
@@ -662,7 +680,9 @@ restore_release() {  # A deployment without migrations: the database stays, the 
 needs_confirmation() {  # The operation became ready, and this is not the rerun of an unfinished restore.
   local last
   reached ready || return 1
-  last=$(grep -xE 'restoring|rescue .*|database-restored|release-restored' "$op/milestones" | tail -n 1 || true)
+  # Unfinished only while no reopen followed it: traffic-may-resume after a rescue dump means asking again.
+  last=$(grep -xE 'restoring|rescue .*|database-restored|release-restored|traffic-may-resume' "$op/milestones" |
+         tail -n 1 || true)
   case $last in restoring | rescue\ *) return 1 ;; esac
 }
 
@@ -823,6 +843,10 @@ remove() {  # remove yes|no PATH LABEL [MORE...]: delete PATH and MORE, or say i
   echo "Deleted $label ($size)"
 }
 
+kept() {  # kept LINE: why something stays, printed only by prune --verbose
+  if [ "$prune_verbose" = yes ]; then echo "$1"; fi
+}
+
 prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention rules let go
   local apply=$1 keep_releases keep_dumps keep_days current current_op=-1 dir name path dump why
   local i order=0 kept=0 count=0 now mtime paths previous
@@ -912,7 +936,7 @@ prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention 
       drop_dumps+=("$dir")
       continue
     fi
-    echo "Keep dump $(basename "$dir")/database.sql.gz: $why"
+    kept "Keep dump $(basename "$dir")/database.sql.gz: $why"
     previous=$(record_of "$dir" previous)
     name=$(release_name "$previous")
     if [ ! -d "$ROOT/releases/$name" ]; then
@@ -944,11 +968,11 @@ prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention 
   # them, and a release something else keeps stays beyond that count too.
   for name in "${names[@]}"; do
     if [ -n "${keep[$name]:-}" ]; then
-      echo "Keep release $name: ${keep[$name]}"
+      kept "Keep release $name: ${keep[$name]}"
       if [ "$name" != "$current" ]; then kept=$((kept + 1)); fi
     elif [ "$kept" -lt "$keep_releases" ]; then
       kept=$((kept + 1))
-      echo "Keep release $name: one of the $keep_releases used most recently besides the current one"
+      kept "Keep release $name: one of the $keep_releases used most recently besides the current one"
     else
       drop_releases+=("$name")
     fi
@@ -970,7 +994,7 @@ prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention 
       echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) database.sql.gz pruned by wlxjury-release prune" >> "$dir/operation.log"
     fi
   done
-  echo "Rescue dumps (before-restore-*) and the cutover's records are never pruned; the long-term backup is separate."
+  kept "Rescue dumps (before-restore-*) and the cutover's records are never pruned; the long-term backup is separate."
 }
 
 # The current operation, stale ones, their state and the next command: for reopen and restore
@@ -1238,10 +1262,16 @@ case ${1:-} in
     else usage
     fi ;;
   prune)
-    if [ $# = 1 ]; then prune yes
-    elif [ $# = 2 ] && [ "$2" = --dry-run ]; then prune no
-    else usage
-    fi ;;
+    shift
+    apply=yes
+    for option in "$@"; do  # Each option at most once, in any order.
+      case $option in
+        --dry-run) [ "$apply" = yes ] || usage; apply=no ;;
+        --verbose) [ "$prune_verbose" = no ] || usage; prune_verbose=yes ;;
+        *) usage ;;
+      esac
+    done
+    prune "$apply" ;;
   deploy)
     shift
     backup=no allow_jobs=no

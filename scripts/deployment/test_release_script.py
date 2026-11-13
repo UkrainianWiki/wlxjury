@@ -586,6 +586,53 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertSucceeded(self.release('deploy', archive, sha))
         self.assertEqual((self.root / 'current').resolve(), release)
         self.assertEqual(marker.read_text(), sha + '\n')
+        second, = [path for path in self.backups.iterdir() if path.is_dir() and path not in operations]
+        # The current release is first's candidate again, but second deployed it: a named restore
+        # of first is refused, as it would back out second's deployment with first's record.
+        stale = self.release('restore', first.name, '--yes')
+        self.assertEqual(stale.returncode, 1)
+        self.assertIn('a later operation, %s, deployed the current release %s again: back out that one, not %s;'
+                      ' nothing was changed' % (second.name, release, first.name), stale.stderr)
+        self.assertEqual(self.milestones(first)[-1], 'complete')
+        self.assertEqual(self.milestones(second)[-1], 'ready')
+        self.assertEqual((self.root / 'current').resolve(), release)
+        self.assertSucceeded(self.release('restore', '--yes'))  # The current operation, second.
+        self.assertEqual(self.milestones(second)[-1], 'release-restored')
+
+    def test_a_failed_replacement_of_a_restored_release_puts_it_back(self):
+        archive, sha = self.release_zip(schema='53', build='0.13-same')
+        self.assertSucceeded(self.release('deploy', archive, sha))
+        release = self.root / 'releases' / ('0.13-same-' + sha[:12])
+        self.assertSucceeded(self.release('restore', '--yes'))
+        self.assertSucceeded(self.release('reopen'))
+        operations = sorted(path for path in self.backups.iterdir() if path.is_dir())
+        (release / 'lib' / 'app.jar').write_text('the restored folder')
+        # mv fails for the fresh unpack (MV_FAIL=unpacked), and also for putting the old folder back (both).
+        stub = self.base / 'bin' / 'mv'
+        stub.write_text('#!/bin/sh\ncase "$MV_FAIL:$*" in\n'
+                        '  unpacked:*/unpacked/* | both:*/unpacked/* | both:*/replaced\\ *) exit 1 ;;\n'
+                        'esac\nexec /bin/mv "$@"\n')
+        stub.chmod(0o755)
+        self.env['MV_FAIL'] = 'unpacked'
+        failed = self.release('deploy', archive, sha)
+        self.assertEqual(failed.returncode, 1)
+        self.assertIn('cannot replace %s; it was kept; nothing was changed' % release, failed.stderr)
+        self.assertEqual((release / 'lib' / 'app.jar').read_text(), 'the restored folder')
+        self.assertEqual(self.release_names(), ['0.13-same-' + sha[:12], 'legacy-0.12-v53'])
+        self.assertEqual(sorted(path for path in self.backups.iterdir() if path.is_dir()), operations)
+        self.assertEqual((self.root / 'current').resolve(), self.old)
+        self.assertFalse(self.flag.exists())
+        # Neither rename works: the old folder stays in the staging folder, named in the message.
+        self.env['MV_FAIL'] = 'both'
+        stuck = self.release('deploy', archive, sha)
+        self.assertEqual(stuck.returncode, 1)
+        self.assertIn('cannot replace %s, nor put it back: it is now ' % release, stuck.stderr)
+        self.assertFalse(release.exists())
+        kept, = (self.root / 'releases').glob('.staging.*/replaced')
+        self.assertIn('move it back by hand (mv -T %s %s); nothing else was changed' % (kept, release), stuck.stderr)
+        self.assertEqual((kept / 'lib' / 'app.jar').read_text(), 'the restored folder')
+        self.assertEqual(sorted(path for path in self.backups.iterdir() if path.is_dir()), operations)
+        self.assertFalse(self.flag.exists())
 
     def test_backup_flag_dumps_a_release_without_migrations(self):
         archive, sha = self.release_zip(schema='53', build='0.13-same')
@@ -797,6 +844,22 @@ class ReleaseScriptTest(unittest.TestCase):
             self.assertIn('vote after reopening', rescue.read())
         self.assertSucceeded(self.release('reopen', operation.name))
         self.assertOriginalDatabase()
+
+    def test_a_reopen_after_an_unfinished_restore_makes_the_next_restore_ask_again(self):
+        operation = self.reopened_deployment()
+        # A restore stopped right after its rescue dump (before "restoring"), and reopen then resumed
+        # traffic: the next restore is a new decision, not the rerun of an unfinished one.
+        with (operation / 'milestones').open('a') as milestones:
+            milestones.write('rescue before-restore-20990101T000000Z.sql.gz\n')
+        self.assertSucceeded(self.release('reopen', operation.name))
+        self.assertEqual(self.milestones_lines(operation)[-3:],
+                         ['rescue before-restore-20990101T000000Z.sql.gz', 'traffic-may-resume', 'complete'])
+        refused = self.release('restore', operation.name, '--accept-data-loss')
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn('became ready, so a restore undoes a good deployment and needs confirmation', refused.stderr)
+        self.assertEqual(self.milestones_lines(operation)[-1], 'complete')
+        self.assertFalse(self.flag.exists())
+        self.assertEqual(list(operation.glob('before-restore-*')), [])
 
     def sql_server(self, query):
         return subprocess.run(self.client() + ['-e', query], check=True, stdout=subprocess.PIPE, text=True).stdout.strip()
@@ -1450,8 +1513,17 @@ class ReleaseScriptTest(unittest.TestCase):
         # kept dump switches back to.
         self.assertEqual(self.release_names(), sorted(['r2', 'r3', 'r4', new]))
         self.assertIn('Deleted release r1', reopened.stdout)
-        self.assertIn('Keep release r4: restore of the kept dump %s' % operation.name, reopened.stdout)
-        self.assertIn('Keep release r2: restore of the kept dump %s' % operations[2].name, reopened.stdout)
+        # reopen prints only the deletions and its final line; prune --verbose says what stays and why.
+        self.assertNotIn('Keep ', reopened.stdout)
+        self.assertNotIn('Rescue dumps', reopened.stdout)
+        self.assertTrue(reopened.stdout.endswith('Traffic resumed with %s; %s is complete.\n' % (new, operation.name)),
+                        reopened.stdout)
+        kept = self.release('prune', '--dry-run', '--verbose')
+        self.assertSucceeded(kept)
+        self.assertIn('Keep release r4: restore of the kept dump %s' % operation.name, kept.stdout)
+        self.assertIn('Keep release r2: restore of the kept dump %s' % operations[2].name, kept.stdout)
+        self.assertIn('Rescue dumps (before-restore-*) and the cutover', kept.stdout)
+        self.assertNotIn('elete', kept.stdout)
         # The newest three dumps stay (this operation's, r4's and r3's); the older ones go with
         # their checksums, and their operation folders stay.
         self.assertTrue((operation / 'database.sql.gz').exists())
@@ -1489,8 +1561,12 @@ class ReleaseScriptTest(unittest.TestCase):
         for args in (('prune', '--dry-run'), ('prune',)):
             result = self.release(*args)
             self.assertSucceeded(result)
-            self.assertNotIn('elete', result.stdout)
-            self.assertIn('Keep release legacy-0.12-v53', result.stdout)
+            self.assertEqual(result.stdout, '')
+            verbose = self.release(*(args + ('--verbose',)))
+            self.assertSucceeded(verbose)
+            self.assertNotIn('elete', verbose.stdout)
+            self.assertIn('Keep release legacy-0.12-v53', verbose.stdout)
+        self.assertEqual(self.release('prune', '--verbose', '--dry-run', '--verbose').returncode, 2)
         self.assertEqual(self.release_names(), ['legacy-0.12-v53', 'r1'])
         self.assertEqual(self.dumps(operations), [True])
         self.assertFalse((self.backups / 'prune.log').exists())
@@ -1506,7 +1582,7 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertSucceeded(dry)
         self.assertEqual(len(self.release_names()), 11)
         self.assertEqual(self.dumps(operations), [True] * 8)
-        pruned = self.release('prune')
+        pruned = self.release('prune', '--verbose')
         self.assertSucceeded(pruned)
         # The dry run listed exactly what the real run deleted, unfinished unpacks included.
         would = sorted(line.replace('Would delete ', '', 1) for line in dry.stdout.splitlines()
@@ -1707,7 +1783,7 @@ class ReleaseScriptTest(unittest.TestCase):
         # The stat stub fails for the oldest dump: its age is unknown, so it stays, with legacy.
         os.rename(str(operations[0]), str(operations[0]) + '-statfail')
         self.write_config(keep_previous_releases='01', keep_backup_dumps='01')
-        pruned = self.release('prune')
+        pruned = self.release('prune', '--verbose')
         self.assertSucceeded(pruned)
         self.assertIn("its age can't be read", pruned.stdout)
         self.assertTrue((Path(str(operations[0]) + '-statfail') / 'database.sql.gz').exists())
