@@ -10,8 +10,8 @@ import play.filters.csrf.{CSRF, CSRFConfig, CSRFFilter}
 import javax.inject.{Inject, Provider, Singleton}
 
 /** Play's CSRF module (`play.filters.csrf.CSRFModule`, which `application.conf` disables in
-  * its favour), the same bindings with one change in what the filter checks
-  * ([[ApiCsrfConfigProvider]]). The filter stays `play.filters.csrf.CSRFFilter`.
+  * its favour), the same bindings with two changes, in what the filter checks and when it
+  * creates a token ([[ApiCsrfConfigProvider]]). The filter stays `play.filters.csrf.CSRFFilter`.
   */
 class CsrfModule extends Module {
   def bindings(environment: Environment, configuration: Configuration): Seq[Binding[_]] =
@@ -28,6 +28,17 @@ class CsrfModule extends Module {
   * token and without the session ([[ApiAuth.bearerWithoutSession]]): a tool's, which has no
   * CSRF token to send and no session a forged request could use. Any request with the session
   * cookie is checked as before, a Bearer header or not.
+  *
+  * A request the filter doesn't check (GET, HEAD, OPTIONS) gets a token if it has none, whatever its
+  * Accept header: Play creates one by default only for a request that accepts HTML, but every
+  * page renders HTML, and its forms (the sign-in form, the navbar's sign-out) need the token. A
+  * client sending `Accept: application/json` or `text/plain` got a 500 from the sign-in page
+  * (26.11.3). The token reaches the session only when a page renders it or the body is streamed
+  * (Play's filter keeps an unrendered one out of an HttpOnly session only for a Strict body): a
+  * JSON answer still sets no cookie, a streamed one not cacheable by a shared cache (an image
+  * proxy's file, a CSV or TXT export, a dev-mode asset) may. Negligible: a browser's requests
+  * got a token before too (a wildcard Accept accepts HTML), and a signed-in session lacks one
+  * only between the sign-in and its first page.
   */
 @Singleton
 class ApiCsrfConfigProvider @Inject() (configuration: Configuration, httpConfiguration: HttpConfiguration)
@@ -35,8 +46,10 @@ class ApiCsrfConfigProvider @Inject() (configuration: Configuration, httpConfigu
   lazy val get: CSRFConfig = {
     val configured = CSRFConfig.fromConfiguration(configuration)
     val sessionCookieName = httpConfiguration.session.cookieName
-    configured.copy(shouldProtect = request =>
-      configured.shouldProtect(request) && !ApiAuth.bearerWithoutSession(request, sessionCookieName)
+    configured.copy(
+      shouldProtect = request =>
+        configured.shouldProtect(request) && !ApiAuth.bearerWithoutSession(request, sessionCookieName),
+      createIfNotFound = request => !configured.checkMethod(request.method)
     )
   }
 }

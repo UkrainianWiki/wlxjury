@@ -28,7 +28,7 @@
         <input type="hidden" name="token" value="@setPasswordForm("token").value">
         @bs.password(setPasswordForm("password"), Symbol("_label") -> Messages("new.password"), Symbol("autocomplete") -> "new-password")
         @bs.password(setPasswordForm("repeat.password"), Symbol("_label") -> Messages("signin.repeat.your.password"), Symbol("autocomplete") -> "new-password")
-        @helper.CSRF.formField
+        @csrfField()
 
         <div class="d-grid mb-3">
             <button id="submit" type="submit" class="btn btn-lg btn-primary">@Messages("invitation.submit")</button>
