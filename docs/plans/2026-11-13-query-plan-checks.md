@@ -1,4 +1,4 @@
-# Query plan checks: statements captured from the code, plans checked in CI and at release (v2)
+# Query plan checks: statements captured from the code, plans checked in CI and at release (v3)
 
 **Status:** proposal, 2026-11-13. Nothing is built. Two pilots ran (§3): one on the Gatling
 fixture (v1), one of a seeded spec database (option D, v2). Decisions for the maintainer: §8, one
@@ -13,6 +13,19 @@ per item.
   own juror and contest; caller identities without line numbers; R2 tied to a request or scenario
   context, R4 defined; rebinding of inlined literals; capture blind spots; `plans.py time`
   SELECT-only; the effort re-estimated with the review cycles.
+- **v3**, after the follow-up review:
+  - D runs in its own forked JVM and container, not in the shared test DB (whose tmpfs and
+    buffer pool don't fit 1M votes);
+  - the seeded snapshot is trusted only for constant-bound single-table vote access (R1, the
+    canary, a narrowed R3); production's own index statistics are the target for anything
+    wider;
+  - the snapshot gets plausibility and coverage checks;
+  - R4 counts handler reads instead of `r_rows`;
+  - R2's context is set explicitly per scenario, and "no context" is recorded as such;
+  - the distribution runs last and only feeds the statement inventory;
+  - the seed size is measured on CI in P1;
+  - a snapshot per server version;
+  - P1 +0.5 day.
 
 ## 1. Problem
 
@@ -137,6 +150,15 @@ juror of round 9105 (20k files); then 25 other rounds × 40k with 7 other jurors
   concern holds where the data is not rebuilt identically: on the fixture after
   UiShotsServer's URL update, and with a different sample. Hence a committed snapshot, injected
   and read back.
+- **What the pilot environment was:** local, a 512M buffer pool, a minimal schema (`images` and
+  `vote` only, `vote`'s FK to `images`). CI's test container has a 128M pool, a 1 GB tmpfs
+  datadir and the full schema. The 45–62 s seed time is not CI's; P1 measures it there.
+- **At 1.08M the gallery query takes the intersect with any statistics;** there the snapshot's
+  job is the scale (`n_rows`), which brings the count query to the intersect too.
+- **The snapshot as taken has anomalies:** `n_leaf_pages = 1` for every secondary index
+  against `size` 1,315–4,531 pages; the per-index sizes were left unscaled while the table's
+  sizes were scaled ×3.1. A snapshot taken right after a bulk insert needs plausibility checks
+  (§4.3).
 - **The index statistics matter**, not only `n_rows`. On the 0.2M seed, the high-sample
   snapshot moves the gallery query back to the gallery index, while `n_rows` alone gives the
   intersect. A check that injects only `n_rows` could pass or fail depending on what the sample
@@ -156,7 +178,7 @@ juror of round 9105 (20k files); then 25 other rounds × 40k with 7 other jurors
 
 | Option | How | For | Against |
 |---|---|---|---|
-| **A. ScalikeJDBC listener in the tests** | a test-only `StatementCapture`: every completed statement's template (with `?`), typed bound values, the caller (§4.3) and a **context**: the request's route from `RequestTiming`'s thread-local in a Play app, or a scenario name the spec sets ("juror gallery", "distribution") | caller and context give stable names | only the JVM it's installed in; the blind spots below |
+| **A. ScalikeJDBC listener in the tests** | a test-only `StatementCapture`: every completed statement's template (with `?`), typed bound values, the caller (§4.3) and a **context**: a thread-local of the capture's own, set by an explicit `StatementCapture.within(scenario) { … }` around each scenario in D, and around each request in a Play app (a filter of its own; `RequestTiming`'s thread-local is set only while `RequestTimingFilter` runs). A Future hop or background work (`RoundCounts.roundsToRecount` in the shared app) has no context and is recorded as **"no context"**, never given a global "current scenario" | caller and context give stable names | only the JVM it's installed in; the blind spots below |
 | B. Server-side log | `general_log` (or `performance_schema.events_statements_history_long`) while flows run, normalized in Python | any client: the packaged app on the rehearsal, Gatling's external target | no caller, no context; never on production |
 | C. Hand catalog (today) | — | full control of cases | drifts; incomplete |
 
@@ -166,7 +188,10 @@ juror of round 9105 (20k files); then 25 other rounds × 40k with 7 other jurors
 - failed statements go to `queryFailureListener`, not the completion listener: capture both;
 - raw JDBC outside ScalikeJDBC is not seen (Flyway, a few maintenance paths);
 - what no flow runs: the distribution, round creation and admin writes are not reached by the
-  browser flows. D's spec calls them directly (`RoundDistributionHandler` on a seeded round);
+  browser flows. D's spec can call `RoundDistributionHandler` on a small seeded round, last, with
+  a fake Commons source. Its value is the statement inventory for P2's production-copy check,
+  not a plan guarantee: `images` and `round_image` aren't injected, only R1 applies to its vote
+  subqueries, and it writes vote rows after the injection;
 - in a Play app, the capture file is written and flushed by a stop hook before the container
   stops (UiShotsServer stops the server, then the container).
 
@@ -183,7 +208,7 @@ counts as **unbound** (the case doesn't fit), not as a pass.
 | Option | For | Against |
 |---|---|---|
 | (a) CI on the Gatling fixture (capture from the browser flows) | what pages really run, every page the browser tests open | uniform data (§3.2); a corner there changes Gatling baselines and UI shots unless isolated; `browser.yml` runs 3 engines and no 10.11 leg |
-| **(D) a spec in `sbt test`** (ci.yml) that seeds only the corner and filler, injects the snapshot, calls the real services and DAOs for the corner's juror, captures in-JVM, EXPLAINs and asserts, canary included | deterministic (§3.4), no shared fixture to disturb, 10.6 on every PR and 10.11 weekly; reaches the distribution and admin writes | covers the scenarios the spec calls (the SQL is the code's, the call list is hand-kept); ~1–1.5 min of seeding per run |
+| **(D) a spec in `sbt test`** (ci.yml), in its own forked JVM and container, that seeds only the corner and filler, injects the snapshot, calls the real services and DAOs for the corner's juror, captures in-JVM, EXPLAINs and asserts, canary included | deterministic (§3.4), no shared fixture to disturb, 10.6 on every PR and 10.11 weekly; reaches the job paths | covers the scenarios the spec calls (the SQL is the code's, the call list is hand-kept); the seeded statistics are trustworthy only for constant-bound single-table vote access; seed time on CI unmeasured |
 | (b) release-time on the rehearsal's production copy | the real data and statistics: the only place V100's problem was seen | once per release; late (but before deploy) |
 
 ### 4.3 What to assert, and identities
@@ -210,23 +235,43 @@ missing shape fails only for the **named groups** (R3's list); others are listed
      chunked scans, which run in a job context and so aren't juror ones).
    - R3: for named groups, the expected key. The juror gallery's inner query uses the gallery
      index; `VoteJdbc.byUser` the gallery index; a round's counts `vote_round_*`. Keys can differ
-     per server version (10.6, 10.11).
-   - R4 (production copy only): rows examined, from `ANALYZE FORMAT=JSON` of **SELECTs only**.
-     For a statement bound to (juror, round), `vote`'s `r_rows` must be ≤ 2 × that juror's votes
-     in the round (counted by the harness) + 100. That catches the intersect's read-everything
-     pattern, which the estimate (487 for 20,501) hides.
+     per server version (10.6, 10.11). **In D, R3 covers only constant-bound single-table
+     access to `vote`** (`col = const` on the leading columns, no join order, no non-constant
+     `ref`, no `IN` list longer than `eq_range_index_dive_limit`). The seeded snapshot (8 jurors,
+     30 rounds, scaled to 3.35M rows: `rec_per_key` for `jury_id` ≈ 419k) is inconsistent with
+     production for anything that falls back on `rec_per_key`. Joins and wider statements are
+     R3's at the production copy, or in D once production's own index statistics are the
+     injected target (decision 3).
+   - R4 (production copy only): rows **read**, not rows returned. `r_rows` of an intersect is
+     counted after the intersection (~20,501 for r759) and would pass. So the harness reads the
+     session's `Handler_read_key` + `Handler_read_next` (+ `_prev`, `_rnd_next`) before and after
+     running each **SELECT** (`FLUSH STATUS` / `SHOW SESSION STATUS`, as
+     `RegionCountBenchmark` does). For a statement bound to (juror, round) the delta must be
+     ≤ 2 × that juror's votes in the round (counted by the harness) + 1,000. An intersect reads
+     both indexes' ranges (the round's and all the juror's votes) and fails it.
 2. **Baseline diff** (the browser capture, later): per shape × case, the table, access type,
    key and Extra flags (filesort, temporary, intersect/union), as a committed TSV, with no row
    estimates. Changes print as regression (to ALL, to index_merge, a key lost, filesort or
    temporary added) or improvement. A regression fails unless the same PR updates the baseline
    (`plans.py check --update-baseline`; the TSV diff is reviewed like code).
-3. **Stability:** the MariaDB image pinned to the patch version (as CI does); a **complete
-   committed statistics snapshot** (`innodb_table_stats` + `innodb_index_stats` of the checked
-   tables, high sample, `n_rows` scaled), injected after the last `ANALYZE` and read back before
-   EXPLAIN. Auto-recalc is off: `--innodb-stats-auto-recalc=0` on a container of its own, or
-   `STATS_AUTO_RECALC=0` on the tables in the shared test DB, restored afterwards. A writer that
-   touches >10% of a table, such as UiShotsServer's image URL update, otherwise queues a recalc
-   that overwrites the injection. `optimizer_switch` at defaults and printed in the report.
+3. **Stability:**
+   - the MariaDB image is pinned to the patch version (as CI does);
+   - a **complete committed statistics snapshot** (`innodb_table_stats` + `innodb_index_stats`
+     of the checked tables, high sample, scaled), injected after the last `ANALYZE` and read back
+     **right before each EXPLAIN batch**;
+   - auto-recalc is off from before the seed: `--innodb-stats-auto-recalc=0` on D's own
+     container. A writer that touches >10% of a table, such as UiShotsServer's image URL update,
+     otherwise queues a recalc that overwrites the injection;
+   - `optimizer_switch` at defaults and printed in the report.
+
+   The snapshot is checked when it is taken and when it is injected:
+   - **coverage:** it holds exactly the current index set of each table plus the canary's
+     indexes, taken with those present. The injection UPDATEs rows, so a missing index would
+     silently keep its sampled statistics;
+   - **plausibility:** `n_leaf_pages ≤ size`, `n_leaf_pages > 1` for a non-empty index (the
+     pilot's snapshot had 1, §3.4), `n_diff_pfxNN ≤ n_rows` and non-decreasing in NN;
+   - **one scaling factor** for `n_rows`, the table's page sizes and every index's `size` and
+     `n_leaf_pages`.
 
 ### 4.4 Timings and the harness
 
@@ -263,19 +308,30 @@ the release agent attaches the report to the release notes.
 **D first, then the release check, then the browser capture.**
 
 1. **P1, the D spec** (`test/db/QueryPlanSpec`, in `sbt test`, so 10.6 on every PR and 10.11
-   weekly and on master):
-   - seeds a dedicated contest: the corner's juror (an account of its own, not a fixture
-     juror), 4 past rounds and the single-juror round, plus ~1M rows of filler;
-   - injects the committed snapshot, with `STATS_AUTO_RECALC=0` on the tables;
-   - calls the real services and DAOs as that juror under named scenarios: gallery (every
-     order, first and last page, region), large view, vote, counts, `RoundDistributionHandler`
-     on a seeded round;
-   - captures in-JVM with A, EXPLAINs every vote statement captured, asserts R1 and R3;
-   - runs the canary in the same spec: V100's four indexes re-added, then `ANALYZE`, injection
-     and read-back; the named shapes must show the intersect; then the indexes are dropped again;
-   - restores everything in `finally`: the indexes, `STATS_AUTO_RECALC=DEFAULT`, `ANALYZE`,
-     `truncateAll`. The other specs share the DB, which works because sbt runs a forked JVM's
-     specs one after another.
+   weekly and on master), **in its own forked JVM and its own container**:
+   - an sbt `testGrouping` gives it a JVM of its own. In that JVM it starts its own MariaDB
+     container with production-like settings (a 256M buffer pool, the datadir on disk rather
+     than the shared 1 GB tmpfs) and `--innodb-stats-auto-recalc=0` from the start, and makes it
+     the default pool. The shared test DB (`SharedTestDb.forTests`: 1 GB tmpfs, 128M pool) can't
+     hold 1M votes with the canary's indexes, the insert's undo, `images` and `round_image`
+     beside `sbt -Xmx2g` on a runner;
+   - migrates the real schema, then seeds a dedicated contest: the corner's juror (an account of
+     its own, not a fixture juror), 4 past rounds and the single-juror round, ~1M rows of filler,
+     with the rows `round`, `round_user` and `users` need;
+   - injects the committed snapshot and reads it back before each EXPLAIN batch;
+   - calls the real services and DAOs as that juror, each scenario inside
+     `StatementCapture.within(name)`: gallery (every order, first and last page, region), large
+     view, vote, counts;
+   - EXPLAINs every vote statement captured and asserts R1, and R3 on constant-bound
+     single-table vote access;
+   - runs the canary: V100's four indexes re-added, then `ANALYZE`, injection and read-back; the
+     named shapes must show the intersect;
+   - last, `RoundDistributionHandler` on a small seeded round (a fake Commons source), for the
+     statement inventory and R1 only;
+   - the container is thrown away with the JVM, so there is nothing to restore;
+   - P1 measures the seed on CI: ~1M rows against ~0.5M, and inserting before the secondary
+     indexes are built (a sorted build) against inserting with them. It keeps the smallest seed
+     whose canary still fires with real statistics.
 2. **P2, the harness and the release check:**
    - `scripts/perf/plans.py`: render, bind, EXPLAIN, rules, report, then `variants` and `time`;
    - `profiles/prodcopy.sql`, R1–R4 on the rehearsal copy after the release's migrations, run on
@@ -290,27 +346,30 @@ the release agent attaches the report to the release notes.
 4. **Timings:** never in CI. `plans.py time` is the local and release-time tool.
 
 Why D first: it is the only option that reproduced the failure deterministically from a fresh
-database in under a minute (§3.4). It runs where 10.11 is already tested, and the 10.11 move is
-next. It disturbs no shared fixture, and it reaches the job and admin paths the browser flows
-don't. What it gives up is coverage of page composition; P3 adds that back.
+database in about a minute (§3.4, measured locally). It runs where 10.11 is already tested,
+and the 10.11 move is next. It disturbs no shared fixture or shared test DB. What it gives up:
+- coverage of page composition, which P3 adds back;
+- trust in its plans beyond constant-bound vote access, which comes from the release check, or
+  from D once production's index statistics are its target (decision 3).
 
 ## 6. Phases and effort
 
 | Phase | Content | Effort (incl. one review and fix cycle) |
 |---|---|---|
-| P1 | `StatementCapture` (context, caller identity, literal folding, failure listener) + `QueryPlanSpec` (seed, snapshot, scenarios, R1/R3, canary, cleanup) + the snapshot command; on 10.6, then once on 10.11 | 2.5–3 days |
+| P1 | `StatementCapture` (explicit context, caller identity, literal folding, failure listener) + `QueryPlanSpec` in its own JVM and container (seed, snapshot with coverage and plausibility checks, scenarios, R1 and narrowed R3, canary, distribution last) + the snapshot command; seed timing on CI; on 10.6, then once on 10.11 | 3–3.5 days |
 | P2 | `scripts/perf/plans.py` (render, bind, explain, rules R1–R4, report) + `test_plans.py`; prodcopy profile; runbook row; first run at the next release's rehearsal; `ExplainQueries.scala` retired | 2–2.5 days |
 | P2b | `variants` and paired `time` ported from bench2 (deferred out of P1/P2) | 0.5–1 day |
 | P3 (optional) | Browser capture (chromium), baseline TSV + diff, job summary | 1.5–2 days |
 
-About **6–8 days** with P3, **4.5–6.5** without, each phase reviewed as the repository's rules
+About **6.5–8.5 days** with P3, **5–7** without, each phase reviewed as the repository's rules
 require. P1 alone catches V100's class of regression on every PR.
 
 ## 7. Cost
 
-- **CI minutes:** P1 adds ~1–1.5 min to each `ci.yml` leg. Seeding 1.08M rows took 45–62 s in a
-  fresh container with 10 indexes (V100's 6 should be quicker), plus the canary's ALTER and two
-  `ANALYZE` runs. P3 adds ~1–2 min to the chromium browser leg.
+- **CI minutes:** P1 adds an estimated ~1.5–2.5 min to each `ci.yml` leg: a second container
+  start, the migrations, the seed, the canary's ALTER and two `ANALYZE` runs. It is unmeasured
+  on CI: locally, with a 512M pool and a minimal schema, 1.08M rows took 45–62 s. P1 measures
+  it and picks the seed size. P3 adds ~1–2 min to the chromium browser leg.
 - **Maintenance:**
   - a deliberate query change that changes an expected key edits `rules.yaml` in the same PR;
   - a new scenario when a page or job is added;
@@ -332,15 +391,23 @@ require. P1 alone catches V100's class of regression on every PR.
 
 1. **P1: the D spec or the browser capture.** Recommendation: the D spec (§5). The browser
    capture comes later and is optional.
-2. **Seed size.** Recommendation: ~1M rows (45–62 s, intersect even with real statistics), not
-   0.2M (21–24 s, but the gallery plan then depends on the statistics, §3.4).
-3. **Statistics source.** Recommendation: a high-sample snapshot of the seeded data with
-   production's `n_rows`, committed and regenerated by one command. Production's own `vote`
-   index statistics (read-only SELECTs on the rehearsal copy) are the alternative, worth
-   comparing once P2 exists.
-4. **D's database.** Recommendation: the shared test DB, with `STATS_AUTO_RECALC=0` on the
-   tables and a full restore in `finally`, checked by a cleanup assertion. A schema of its own
-   would need a second pool, and the services use the default one.
+2. **Seed size.** Recommendation: decided by P1's measurement on CI. It is the smallest seed
+   (~0.5M or ~1M, inserted before or after the secondary indexes) whose canary fires with real
+   statistics; 0.2M is too small (the gallery plan then depends on the statistics, §3.4).
+3. **Statistics source.** Recommendation, in two steps:
+   - P1: the seeded data's own high-sample snapshot, scaled by one factor to production's size,
+     with the coverage and plausibility checks. It is trusted only for R1, the canary and R3 on
+     constant-bound single-table vote access;
+   - P2: production's own `vote` (and later `images`, `round_image`) index statistics, read with
+     read-only SELECTs from the rehearsal copy and committed as the target profile; D's R3 then
+     widens to joins.
+
+   Mixing seeded `rec_per_key` with production's `n_rows` is not used for anything wider.
+4. **D's database.** Recommendation: its own forked JVM (sbt `testGrouping`) with its own
+   container (production-like pool, auto-recalc off from the start), thrown away afterwards.
+   The shared test DB doesn't fit (1 GB tmpfs, 128M pool). The alternative is a container the
+   spec starts in the shared JVM, with `SharedTestDb.reregisterDefault()` afterwards; it is
+   fragile if the spec fails half-way.
 5. **Capture mechanism.** Recommendation: the listener in the tests (A), with context and caller
    identity; the server's general log (B) only if the release check later needs statements no
    scenario runs.
@@ -353,7 +420,9 @@ require. P1 alone catches V100's class of regression on every PR.
    read-only), in the release checklist like schema parity.
 9. **10.11.** Recommendation: D on ci.yml's 10.11 leg (weekly and master) with per-server
    expected keys, and one deliberate D run on 10.11 before the server move; no 10.11 leg in
-   `browser.yml`.
+   `browser.yml`. That run decides between re-injecting the 10.6 snapshot and a snapshot per
+   server; the recommendation is one per server, since the statistics tables' contents may
+   differ.
 10. **Timings.** Recommendation: never in CI; `plans.py time` SELECT-only, locally and at release
     when a plan changed.
 11. **The scratchpad scripts and `ExplainQueries.scala`.** Recommendation: `plans.py` absorbs
