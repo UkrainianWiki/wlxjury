@@ -163,6 +163,20 @@ comments.count.few = {0} commentaires
 comments.count.many = {0} commentaires
 comments.count.other = {0} commentaires
 comment.round.other = Écrit au tour {0}
+# le rapport des commentaires pour les organisateurs (une vue de la liste d'un tour, GalleryView.Comments)
+comments.report.scope = Quels commentaires
+comments.report.scope.round = De ce tour
+comments.report.scope.contest = De tous les tours du concours
+comments.report.order = Ordre
+sort.latest-comment = Commentaire le plus récent d''abord
+comments.report.csv = CSV des commentaires
+comments.report.files.one = {0} fichier
+comments.report.files.few = {0} fichiers
+comments.report.files.many = {0} fichiers
+comments.report.files.other = {0} fichiers
+comments.report.empty.round = Aucun fichier de cette liste n''a de commentaire écrit dans ce tour.
+comments.report.empty.contest = Aucun fichier de cette liste n''a de commentaire dans ce concours.
+comments.report.link = Commentaires sur les fichiers du tour
 media.type = Type de média
 files = Fichiers
 

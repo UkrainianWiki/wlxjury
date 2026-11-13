@@ -73,9 +73,10 @@
    (the selected with comments, ...), and with the number of the list's files with comments in
    the tab, region and view shown (`commented`, given by a round's list page only). Pressed
    (aria-current) when on. Only narrows what the viewer may see: a juror's own files, the
-   organisers' views of a juror's or all the jurors' votes *@
+   organisers' views of a juror's or all the jurors' votes. Not in the comments report, which has
+   only such files (GalleryView.comments) *@
 @commentsToggle(l: RoundList) = {
-    @for(n <- commented if list.isDefined) {
+    @for(n <- commented if list.isDefined && !l.view.comments) {
     <li class="nav-item">
         <a class="nav-link wlx-comments-toggle@if(l.comments) { active}" @if(l.comments) {aria-current="true" }href="@l.withComments(!l.comments).pageUrl(1)" title="@Messages("comments.only", n)"><i class="bi bi-chat-left-text" aria-hidden="true"></i> <span class="wlx-nav-label">@Messages("comments.only", n)</span></a>
     </li>
@@ -125,9 +126,10 @@
 }
 
 @* The order of all the jurors' votes on a yes/no round's files together, remembered for the
-   next list of them (RoundList.BinarySortCookie) *@
+   next list of them (RoundList.BinarySortCookie); the comments report has its own order menu,
+   with these and the latest comment first *@
 @binaryOrderMenu(l: RoundList) = {
-    @if(l.aggregateBinary) {
+    @if(l.aggregateBinary && !l.view.comments) {
     @(new UiSelectionDto[ListOrder](
         (order: ListOrder) => Call("GET", l.withOrder(order).pageUrl(1)),
         l.order,
@@ -235,7 +237,8 @@
                                 GalleryView.Gallery -> SelectionItem("gallery", Some("bi bi-grid-3x3-gap-fill")),
                                 GalleryView.ByRate -> SelectionItem("byrate", Some("bi bi-bar-chart-fill")),
                                 GalleryView.FileList -> SelectionItem("file.list", Some("bi bi-list-ul")),
-                                GalleryView.Csv -> SelectionItem("csv", Some("bi bi-filetype-csv"))
+                                GalleryView.Csv -> SelectionItem("csv", Some("bi bi-filetype-csv")),
+                                GalleryView.Comments -> SelectionItem("comments", Some("bi bi-chat-left-text"))
                             )
                         ).toDropDown(iconOnly = true))
                     }

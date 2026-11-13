@@ -151,6 +151,20 @@ comments.count.few = {0} коментарі
 comments.count.many = {0} коментарів
 comments.count.other = {0} коментаря
 comment.round.other = Написано в раунді {0}
+# звіт організаторів про коментарі (вигляд списку раунду, GalleryView.Comments)
+comments.report.scope = Які коментарі
+comments.report.scope.round = Цього раунду
+comments.report.scope.contest = Усіх раундів конкурсу
+comments.report.order = Порядок
+sort.latest-comment = Спершу нові коментарі
+comments.report.csv = CSV коментарів
+comments.report.files.one = {0} файл
+comments.report.files.few = {0} файли
+comments.report.files.many = {0} файлів
+comments.report.files.other = {0} файлу
+comments.report.empty.round = Жоден файл цього списку не має коментарів, написаних у цьому раунді.
+comments.report.empty.contest = Жоден файл цього списку не має коментарів у цьому конкурсі.
+comments.report.link = Коментарі до файлів раунду
 
 media.type = Тип файлів
 files = Файли

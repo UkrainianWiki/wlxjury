@@ -140,19 +140,35 @@ object ListOrder {
     override def messageKey: String = order.messageKey
   }
 
+  /** The comments report's files by their latest comment in its scope ([[CommentScope]]), the
+    * latest first; then in file order. Its column needs the round's contest and the scope, so a
+    * list gives it ([[RoundList.orderColumns]], `SelectionQuery.latestComment`); only the
+    * comments report ([[GalleryView.comments]]) has it, another view's list is by rate instead.
+    */
+  case object LatestComment extends ListOrder("latest-comment", Nil)
+
   // lazy: LatestVote and OldestVote read UnratedLast and VoteTime, so either initialised first
   // initialises ListOrder, whose eager list would then hold it as null
-  lazy val all: Seq[ListOrder] = Seq(FileOrder, ByRate, LatestVote, OldestVote) ++ BinaryOrder.all.map(Binary)
+  lazy val all: Seq[ListOrder] =
+    Seq(FileOrder, ByRate, LatestVote, OldestVote, LatestComment) ++ BinaryOrder.all.map(Binary)
 
   def parse(param: String): Option[ListOrder] = all.find(_.param == param)
 }
 
 /** How a list is shown: as a gallery (a binary round's tiles to vote on, a rated round's
-  * thumbnails with their stars), by rate, as a file list, or as CSV.
+  * thumbnails with their stars), by rate, as a file list, as CSV, or as the organisers'
+  * comments report (its page and its CSV).
   *
   * @param name its path's first segment (`/gallery/...`), and a large view URL's `module`
   */
-sealed abstract class GalleryView(val name: String)
+sealed abstract class GalleryView(val name: String) {
+
+  /** The comments report ([[GalleryView.Comments]], [[GalleryView.CommentsCsv]]): only the files
+    * with comments in its scope ([[CommentScope]]), with them; for those who may view the
+    * round's organiser info (`User.canViewOrgInfo`) only.
+    */
+  def comments: Boolean = false
+}
 
 object GalleryView {
   case object Gallery extends GalleryView("gallery")
@@ -160,18 +176,48 @@ object GalleryView {
   case object FileList extends GalleryView("filelist")
   case object Csv extends GalleryView("csv")
 
-  val all: Seq[GalleryView] = Seq(Gallery, ByRate, FileList, Csv)
+  /** The comments report: each file with comments, its thumbnail, result and comments. */
+  case object Comments extends GalleryView("comments") {
+    override def comments: Boolean = true
+  }
+
+  /** The comments report's comments as CSV, one row each ([[controllers.Csv.commentRows]]). */
+  case object CommentsCsv extends GalleryView("comments-csv") {
+    override def comments: Boolean = true
+  }
+
+  val all: Seq[GalleryView] = Seq(Gallery, ByRate, FileList, Csv, Comments, CommentsCsv)
 
   def parse(name: String): Option[GalleryView] = all.find(_.name == name)
 
   /** The view a large view goes back to: a request's `module`, the gallery if none. Only a
-    * gallery or by rate lists files one by one.
+    * gallery, by rate or the comments report lists files one by one.
     */
   def of(request: RequestHeader): GalleryView =
-    request.getQueryString("module").flatMap(parse).filter(Set(Gallery, ByRate)).getOrElse(Gallery)
+    request.getQueryString("module").flatMap(parse).filter(Set(Gallery, ByRate, Comments)).getOrElse(Gallery)
 
   /** A round gallery path's view: all the jurors' votes together (`user/0`) only by rate. */
   def ofPath(asUserId: Long): GalleryView = if (asUserId == 0) ByRate else Gallery
+}
+
+/** Which comments the comments report ([[GalleryView.comments]]) lists its files by and shows:
+  * those written in the round ([[CommentScope.ThisRound]], the default), or all the contest's on
+  * the file, as its large view shows them ([[CommentScope.AllRounds]]). A file is in the report
+  * if it has at least one comment in the scope.
+  *
+  * @param param its value of a list URL's `scope`
+  */
+sealed abstract class CommentScope(val param: String)
+
+object CommentScope {
+  case object ThisRound extends CommentScope("round")
+  case object AllRounds extends CommentScope("contest")
+
+  val all: Seq[CommentScope] = Seq(ThisRound, AllRounds)
+
+  /** A request's `scope`, this round's if none or unknown. */
+  def of(request: RequestHeader): CommentScope =
+    request.getQueryString(RoundList.ScopeParam).flatMap(p => all.find(_.param == p)).getOrElse(ThisRound)
 }
 
 /** The list of a round's files a viewer is in: whose votes (a juror's, or all together with
@@ -193,6 +239,8 @@ final case class RoundList(
     // only the files with a comment in the round's contest (the toggle "Only with comments", a
     // URL's `comments=1`): with any filter, as the file's large view shows its comments
     comments: Boolean = false,
+    // the comments report's scope ([[CommentScope]]): only in that view ([[GalleryView.comments]])
+    commentScope: CommentScope = CommentScope.ThisRound,
     // `roundImage.read` (P2b): all the jurors' list from round_image's counts ([[countsQuery]])
     countsRead: Boolean = false,
     // which source this request's statements read, shared by the list's copies ([[CountsSession]])
@@ -203,6 +251,16 @@ final case class RoundList(
 
   /** The region of a URL's path: "all" for all of them. */
   def regionParam: String = region.getOrElse("all")
+
+  /** Only the files with comments: the toggle's ([[comments]]), or the comments report's,
+    * whose files are those it shows the comments of.
+    */
+  def commentsOnly: Boolean = comments || view.comments
+
+  /** The round whose comments alone the comments report has ([[CommentScope.ThisRound]]); None
+    * for all the contest's, and outside the report, whose toggle is the contest's.
+    */
+  def commentsRound: Option[Long] = Option.when(view.comments && commentScope == CommentScope.ThisRound)(roundId)
 
   /** Files with their jurors' votes, one row each (file list, CSV). */
   private def withDetails: Boolean = view == GalleryView.FileList || view == GalleryView.Csv
@@ -246,7 +304,9 @@ final case class RoundList(
     * theirs has one vote).
     */
   private def orderColumns: Seq[(String, Int)] =
-    if (withDetails) rankKey.columns ++ (if (round.isBinary) Seq("s.page_id" -> 1) else ListOrder.FileOrder.columns)
+    if (order == ListOrder.LatestComment && view.comments)
+      (SelectionQuery.latestComment(round.contestId, commentsRound) -> -1) +: ListOrder.FileOrder.columns
+    else if (withDetails) rankKey.columns ++ (if (round.isBinary) Seq("s.page_id" -> 1) else ListOrder.FileOrder.columns)
     else if (aggregateBinary && order != ListOrder.FileOrder) ListOrder.Binary(binaryOrder).columns
     // all the jurors' votes on a rated round by rate: by the average under the round's rule, as
     // its ranks and a file list are ([[rankKey]]), then in file order; by vote time is a
@@ -254,8 +314,9 @@ final case class RoundList(
     else if (asUserId == 0 && !round.isBinary && (order == ListOrder.ByRate || order.byVoteTime))
       rankKey.columns ++ ListOrder.FileOrder.columns
     else order match {
-      case ListOrder.Binary(_) => ListOrder.ByRate.columns
-      case o                   => o.columns
+      // the latest comment first is the comments report's (a list built without it: by rate)
+      case ListOrder.Binary(_) | ListOrder.LatestComment => ListOrder.ByRate.columns
+      case o                                            => o.columns
     }
 
   /** Whether the list's files show their votes' times ([[org.intracer.wmua.Vote.votedAt]]): one
@@ -268,8 +329,13 @@ final case class RoundList(
   /** Whether a large view of the list shows its file's vote time: one juror's votes, in any order. */
   def showsVoteTime: Boolean = asUserId != 0
 
-  /** Files to a page: a file list's are rows of a table. */
-  def pageSize: Int = if (view == GalleryView.FileList) RoundList.FileListPageSize else Pager.pageSize
+  /** Files to a page: a file list's are rows of a table; the comments report's files have all
+    * their comments under them.
+    */
+  def pageSize: Int =
+    if (view == GalleryView.FileList) RoundList.FileListPageSize
+    else if (view.comments) RoundList.CommentsPageSize
+    else Pager.pageSize
 
   def query: SelectionQuery =
     SelectionQuery(
@@ -290,7 +356,8 @@ final case class RoundList(
       // a rated round's sums are of grades, a ✗ as 0, and its rated votes any vote
       grades = !round.isBinary,
       subRegions = round.specialNomination.contains("Віа Регіа"),
-      commentsIn = Option.when(comments)(round.contestId)
+      commentsIn = Option.when(commentsOnly)(round.contestId),
+      commentsRound = commentsRound
     )
 
   /** The list over `round_image`'s counts ([[RoundImageQuery]]), if it may be read from them:
@@ -299,7 +366,7 @@ final case class RoundList(
     * statement's counts are the votes' is proved per statement ([[fromCounts]]).
     */
   def countsQuery: Option[RoundImageQuery] =
-    if (!countsRead || asUserId != 0 || comments || countsSession.fellBack(roundId)) None
+    if (!countsRead || asUserId != 0 || commentsOnly || countsSession.fellBack(roundId)) None
     else RoundImageQuery.of(query, round.isBinary, rankKey.columns.map(_._1))
 
   /** Whether this request's statements so far were read from the counts, none fallen back. */
@@ -486,12 +553,51 @@ final case class RoundList(
 
   def withOrder(order: ListOrder): RoundList = copy(order = order)
 
+  /** The comments report's list in the scope. */
+  def withScope(scope: CommentScope): RoundList = copy(commentScope = scope)
+
+  /** The list of all its files, whatever their comments: without the toggle, a comments report
+    * as the gallery ([[withView]]).
+    */
+  def allFiles: RoundList = withComments(false).withView(if (view.comments) GalleryView.Gallery else view)
+
+  /** The orders the comments report offers: the list's own (a juror's as their order menu has
+    * them; all the jurors' votes on a yes/no round in a [[BinaryOrder]], on a rated round by
+    * rate, either in file order too), and by the latest comment ([[ListOrder.LatestComment]]).
+    */
+  def commentOrderChoices: Seq[ListOrder] = {
+    val own =
+      if (aggregateBinary) BinaryOrder.all.map(ListOrder.Binary) :+ ListOrder.FileOrder
+      else if (asUserId == 0) Seq(ListOrder.ByRate, ListOrder.FileOrder)
+      else orderChoices
+    own :+ ListOrder.LatestComment
+  }
+
+  /** The comments report's order as its menu shows it: one it hasn't is the first it has. */
+  def shownCommentOrder: ListOrder =
+    if (commentOrderChoices.contains(order)) order else commentOrderChoices.head
+
+  /** The comments on the list's files that the comments filter keeps them by, of all its
+    * pages: the comments report's total ([[SelectionQuery.commentCount]]).
+    */
+  def commentCount(): Int = query.commentCount()
+
+  /** The comments of the files of a page of the comments report, in its scope, each file's in
+    * the order written.
+    */
+  def commentsOf(files: Seq[ImageWithRating]): Map[Long, Seq[org.intracer.wmua.Comment]] =
+    org.intracer.wmua.CommentJdbc.findByRooms(round.contestId, files.map(_.pageId), commentsRound).groupBy(_.room)
+
   /** The list in a region, or all of them ("all"). */
   def withRegion(region: String): RoundList = copy(region = Some(region).filter(_ != "all"))
 
   def withViewer(asUserId: Long): RoundList = copy(asUserId = asUserId)
 
-  def withView(view: GalleryView): RoundList = copy(view = view)
+  /** The list in another view; out of the comments report, by rate instead of by the latest
+    * comment, which only it has.
+    */
+  def withView(view: GalleryView): RoundList =
+    copy(view = view, order = if (order == ListOrder.LatestComment && !view.comments) ListOrder.ByRate else order)
 
   /** The list read from `round_image`'s counts where it can be (`roundImage.read`, P2b). */
   def withCountsRead(on: Boolean): RoundList = copy(countsRead = on)
@@ -517,7 +623,9 @@ final case class RoundList(
   private def params(module: Boolean): Seq[(String, String)] =
     Option.when(module && view != GalleryView.Gallery)("module" -> view.name).toSeq ++
       Option.when(filter != VoteFilter.All)("filter" -> filter.param).toSeq ++
-      Option.when(comments)(RoundList.CommentsParam -> "1").toSeq :+
+      Option.when(comments)(RoundList.CommentsParam -> "1").toSeq ++
+      Option.when(view.comments && commentScope != CommentScope.ThisRound)(RoundList.ScopeParam -> commentScope.param)
+        .toSeq :+
       ("sort" -> order.param)
 
   private def withParams(path: String, params: Seq[(String, String)]): String =
@@ -533,6 +641,8 @@ final case class RoundList(
       case GalleryView.ByRate   => routes.GalleryController.byRate(asUserId, page, regionParam, roundId)
       case GalleryView.FileList => routes.GalleryController.fileList(asUserId, page, regionParam, roundId)
       case GalleryView.Csv      => routes.GalleryController.query(view.name, Some(asUserId), page, regionParam, roundId)
+      case GalleryView.Comments => routes.GalleryController.comments(asUserId, page, regionParam, roundId)
+      case GalleryView.CommentsCsv => routes.GalleryController.commentsCsv(asUserId, regionParam, roundId)
     }
     withParams(path.url, params(module = false))
   }
@@ -541,6 +651,8 @@ final case class RoundList(
   def atUrl(pageId: Long): String = {
     val path = view match {
       case GalleryView.ByRate => routes.GalleryController.byRateAt(asUserId, pageId, regionParam, roundId)
+      case GalleryView.Comments | GalleryView.CommentsCsv =>
+        routes.GalleryController.commentsAt(asUserId, pageId, regionParam, roundId)
       case _                  => routes.GalleryController.listAtId(asUserId, pageId, regionParam, roundId)
     }
     withParams(path.url, params(module = false)) + "#" + pageId
@@ -704,6 +816,12 @@ object RoundList {
   /** A list URL's parameter for only the files with comments: `comments=1`. */
   val CommentsParam = "comments"
 
+  /** A comments report URL's parameter of its scope ([[CommentScope]]): `scope=contest`. */
+  val ScopeParam = "scope"
+
+  /** The comments report's files to a page: a round's busiest had 1,542 comments on 321 files. */
+  val CommentsPageSize = 20
+
   /** The list a request is for: the round, whose votes, the region from its path ("all" or
     * [[GroupedRegion]] for all of them); the view
     * from its path or, for a large view, its `module`; the filter, the comments toggle
@@ -716,14 +834,20 @@ object RoundList {
   def of(round: Round, viewer: User, asUserId: Long, region: String, view: GalleryView)(implicit
       request: RequestHeader
   ): RoundList = {
+    // the comments report is the organisers' (GalleryController refuses its pages to others): a
+    // large view's `module` naming it is the gallery for anyone else
+    val shown = if (view.comments && !viewer.canViewOrgInfo(round)) GalleryView.ofPath(asUserId) else view
     val list = RoundList(
       round,
       asUserId,
       Some(region).filterNot(r => r == "all" || r == GroupedRegion),
       VoteFilter.of(request).in(round),
-      requestedOrder.getOrElse(defaultOrder(viewer, asUserId, view)),
-      view,
-      comments = request.getQueryString(CommentsParam).contains("1")
+      // by the latest comment only in the comments report
+      requestedOrder.filter(o => o != ListOrder.LatestComment || shown.comments)
+        .getOrElse(defaultOrder(viewer, asUserId, shown)),
+      shown,
+      comments = request.getQueryString(CommentsParam).contains("1"),
+      commentScope = CommentScope.of(request)
     )
     list.order match {
       case ListOrder.ByRate if list.aggregateBinary => list.withOrder(ListOrder.Binary(rememberedBinary))

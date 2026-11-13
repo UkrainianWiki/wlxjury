@@ -134,6 +134,13 @@ object ImageJdbc extends CRUDMapper[Image]
         .map(rs => ImageJdbc(i)(rs)).list()
     }
 
+  /** The stored images among `pageIds`, deleted on Commons or not, by page id. */
+  def findByPageIds(pageIds: Seq[Long])(implicit session: DBSession = AutoSession): Map[Long, Image] =
+    if (pageIds.isEmpty) Map.empty
+    else
+      sql"""SELECT ${i.result.*} FROM images i WHERE i.page_id IN (${pageIds.distinct})"""
+        .map(rs => ImageJdbc(i)(rs)).list().map(image => image.pageId -> image).toMap
+
   /** The stored images among `pageIds`, each with whether it is in the category. */
   def findWithCategoryLink(pageIds: Seq[Long], categoryId: Long)(implicit session: DBSession): Seq[(Image, Boolean)] =
     if (pageIds.isEmpty) Nil
