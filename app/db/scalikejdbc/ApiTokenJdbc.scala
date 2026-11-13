@@ -27,11 +27,14 @@ final case class ApiToken(
   def usable: Boolean = !revoked && !expired
 }
 
-/** The `api_token` table. Times come from the database clock (NOW(3)), as [[services.jobs.JobJdbc]]'s. */
+/** The `api_token` table. Times come from the database clock (NOW(3)), as [[services.jobs.JobJdbc]]'s,
+  * and are read as instants whatever the JVM's and the session's zones ([[DbTime]]).
+  */
 object ApiTokenJdbc {
 
   private val columns =
-    sqls"""id, user_id, name, prefix, created_at, expires_at, last_used_at, revoked_at,
+    sqls"""id, user_id, name, prefix, ${DbTime.epoch("created_at")}, ${DbTime.epoch("expires_at")},
+           ${DbTime.epoch("last_used_at")}, ${DbTime.epoch("revoked_at")},
            (expires_at IS NOT NULL AND expires_at <= NOW(3)) AS expired"""
 
   private def extract(rs: WrappedResultSet): ApiToken =
@@ -40,10 +43,10 @@ object ApiTokenJdbc {
       userId = rs.long("user_id"),
       name = rs.string("name"),
       prefix = rs.string("prefix"),
-      createdAt = rs.timestamp("created_at").toInstant,
-      expiresAt = rs.timestampOpt("expires_at").map(_.toInstant),
-      lastUsedAt = rs.timestampOpt("last_used_at").map(_.toInstant),
-      revokedAt = rs.timestampOpt("revoked_at").map(_.toInstant),
+      createdAt = DbTime.instant(rs, "created_at"),
+      expiresAt = DbTime.instantOpt(rs, "expires_at"),
+      lastUsedAt = DbTime.instantOpt(rs, "last_used_at"),
+      revokedAt = DbTime.instantOpt(rs, "revoked_at"),
       expired = rs.boolean("expired")
     )
 

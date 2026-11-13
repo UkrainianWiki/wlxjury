@@ -716,12 +716,12 @@ object ImageJdbc extends CRUDMapper[Image]
       country: Option[CountryFilter] = None
   )(implicit session: DBSession = AutoSession): Seq[StoredFile] =
     (if (deletedOnly)
-       sql"""SELECT ${i.result.*}, i.deleted_at AS file_deleted_at
+       sql"""SELECT ${i.result.*}, UNIX_TIMESTAMP(i.deleted_at) AS file_deleted_at
              ${deletedFiles(FileList.Category(categoryId, deletedOnly, country))} ${inRegion(Some(sqls"i"), region)}
              ORDER BY $LatestDeletedFirst LIMIT $limit OFFSET $offset"""
      else {
        val r = region.map(_ => sqls"r")
-       sql"""SELECT ${i.result.*}, i.deleted_at AS file_deleted_at
+       sql"""SELECT ${i.result.*}, UNIX_TIMESTAMP(i.deleted_at) AS file_deleted_at
              FROM (SELECT m.page_id FROM ${categoryMembers(categoryId, r, country)} ${inRegion(r, region)}
                    ORDER BY m.page_id LIMIT $limit OFFSET $offset) cm
              JOIN images i ON i.page_id = cm.page_id
@@ -738,7 +738,7 @@ object ImageJdbc extends CRUDMapper[Image]
   def roundDeletedFiles(roundId: Long, limit: Int, offset: Int, region: Option[String] = None)(implicit
       session: DBSession = AutoSession
   ): Seq[StoredFile] =
-    sql"""SELECT ${i.result.*}, i.deleted_at AS file_deleted_at
+    sql"""SELECT ${i.result.*}, UNIX_TIMESTAMP(i.deleted_at) AS file_deleted_at
           ${deletedFiles(FileList.RoundDeleted(roundId))} ${inRegion(Some(sqls"i"), region)}
           ORDER BY $LatestDeletedFirst LIMIT $limit OFFSET $offset"""
       .map(storedFile)
@@ -813,7 +813,8 @@ object ImageJdbc extends CRUDMapper[Image]
   private val LatestDeletedFirst = sqls"i.deleted_at DESC, i.page_id"
 
   private def storedFile(rs: WrappedResultSet): StoredFile =
-    StoredFile(ImageJdbc(i)(rs), rs.zonedDateTimeOpt("file_deleted_at"))
+    // the instant whatever the JVM's and the session's zones, shown in the JVM's (DbTime)
+    StoredFile(ImageJdbc(i)(rs), rs.bigDecimalOpt("file_deleted_at").map(s => DbTime.local(DbTime.fromEpochSeconds(s))))
 
   def findByMonumentId(monumentId: String): List[Image] =
     where("monumentId" -> monumentId)

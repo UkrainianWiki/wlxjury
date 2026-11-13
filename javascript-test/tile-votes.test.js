@@ -280,17 +280,27 @@ describe("a binary round's tile", () => {
 });
 
 /** The by-rate list as galleryByRate renders it for the juror: files rated `rates`, ranked in
- * that order, each with its static stars, and the hidden hint above the list. */
-function byRateList(rates, options = { number: 5, half: false }) {
+ * that order, each with its static stars, and the hidden hint above the list. In an order by
+ * vote time (`times`: each file's vote time, "" for a rated file without one), the list's
+ * data-vote-times and a rated file's time line under its rate. */
+function byRateList(rates, options = { number: 5, half: false }, times = null) {
+    const timeLine = (rate, i) => {
+        if (!times || !rate) return "";
+        const at = times[i];
+        return '<div class="wlx-vote-time-line small">' + (at
+            ? '<time class="wlx-vote-time" datetime="' + at + '">' + at + '</time>'
+            : '<span class="wlx-vote-time-none text-body-secondary">Time not recorded</span>') + '</div>';
+    };
     const files = rates.map((rate, i) =>
         '<li class="gallerybox" id="' + (201 + i) + '"><div class="rank-line"> <b>' + (i + 1) + '.</b>' +
         '<span class="rate-stars"><span class="wlx-byrate-stars" data-round-id="2" data-page-id="' + (201 + i) +
         '" data-rate="' + rate + '"><i class="bi bi-star wlx-star"></i></span>' +
-        '<span class="wlx-rate-text">' + rate + '</span></span></div></li>').join("");
+        '<span class="wlx-rate-text">' + rate + '</span></span></div>' + timeLine(rate, i) + '</li>').join("");
     document.body.innerHTML =
         '<p class="wlx-byrate-hint" hidden>Changed rates are re-sorted when the page is reloaded</p>' +
         '<div class="row" data-csrf-token="token-1" data-vote-closed="Closed." data-stars-number="' + options.number +
-        '" data-stars-half="' + options.half + '" data-changed-title="Rate changed">' +
+        '" data-stars-half="' + options.half + '" data-changed-title="Rate changed"' +
+        (times ? ' data-vote-times="true"' : '') + '>' +
         '<ul class="gallery">' + files + '</ul></div>';
     addListStars(document.querySelector("[data-stars-number]"));
     return Array.from(document.querySelectorAll("li.gallerybox"));
@@ -390,6 +400,79 @@ describe("the juror's by-rate list", () => {
         expect(boxes[0].classList.contains("wlx-rate-changed")).toBe(false);
         expect(hint().hidden).toBe(true);
         expect(window.alert).toHaveBeenCalledWith("Closed.");
+    });
+});
+
+// The juror's by-rate list in an order by vote time (data-vote-times): a stored vote's time follows
+// it under the file's rate as on the gallery's tiles, without a reload (listVoteTimeAfter): now for
+// a changed vote, added for a file unrated at load, gone when cleared, kept for the same vote and on
+// a failed one; nothing in another order.
+describe("the juror's by-rate list's vote times", () => {
+    afterEach(() => { delete window.wlxVoteTime; });
+
+    const line = box => box.querySelector(".wlx-vote-time-line");
+    const timeOf = box => line(box) && line(box).querySelector("time.wlx-vote-time");
+
+    test("show now after a changed vote, formatted, in place of the time at load", () => {
+        window.wlxVoteTime = { format: (iso, lang, zone, now, year) => `formatted ${iso}${year ? " year" : ""}` };
+        const boxes = byRateList([3, 2], undefined, ["2026-01-02T03:04:05.678Z", "2026-01-03T03:04:05.678Z"]);
+        const start = Date.now();
+        star(listStars(boxes[0]), 5).trigger("click");
+        // not before it is stored
+        expect(timeOf(boxes[0]).getAttribute("datetime")).toBe("2026-01-02T03:04:05.678Z");
+        requests[0].answer.resolve("success");
+        const iso = timeOf(boxes[0]).getAttribute("datetime");
+        expect(Date.parse(iso)).toBeGreaterThanOrEqual(start - 1000);
+        expect(timeOf(boxes[0]).textContent).toBe("formatted " + iso);
+        expect(timeOf(boxes[0]).title).toBe("formatted " + iso + " year");
+        expect(boxes[0].querySelectorAll(".wlx-vote-time-line")).toHaveLength(1);
+        // the other file's stays
+        expect(timeOf(boxes[1]).getAttribute("datetime")).toBe("2026-01-03T03:04:05.678Z");
+    });
+
+    test("add the time for a file unrated at load, after its rate, and replace 'not recorded'", () => {
+        const boxes = byRateList([0, 4], undefined, ["", ""]);
+        expect(line(boxes[0])).toBeNull();
+        star(listStars(boxes[0]), 2).trigger("click");
+        requests[0].answer.resolve("success");
+        expect(timeOf(boxes[0])).not.toBeNull();
+        expect(boxes[0].lastElementChild).toBe(line(boxes[0]));
+        expect(line(boxes[0]).classList.contains("small")).toBe(true);
+
+        expect(line(boxes[1]).textContent).toBe("Time not recorded");
+        star(listStars(boxes[1]), 1).trigger("click");
+        requests[1].answer.resolve("success");
+        expect(timeOf(boxes[1])).not.toBeNull();
+        expect(line(boxes[1]).querySelector(".wlx-vote-time-none")).toBeNull();
+    });
+
+    test("go when the vote is cleared, and come back with the next vote", () => {
+        const boxes = byRateList([3], undefined, ["2026-01-02T03:04:05.678Z"]);
+        $(listStars(boxes[0])).find("i.raty-cancel").trigger("click");
+        requests[0].answer.resolve("success");
+        expect(line(boxes[0])).toBeNull();
+        star(listStars(boxes[0]), 4).trigger("click");
+        requests[1].answer.resolve("success");
+        expect(timeOf(boxes[0])).not.toBeNull();
+    });
+
+    test("stay for the same vote stored again, and on a failed vote", () => {
+        const boxes = byRateList([3], undefined, ["2026-01-02T03:04:05.678Z"]);
+        star(listStars(boxes[0]), 3).trigger("click");
+        requests[0].answer.resolve("success");
+        expect(timeOf(boxes[0]).getAttribute("datetime")).toBe("2026-01-02T03:04:05.678Z");
+        star(listStars(boxes[0]), 5).trigger("click");
+        requests[1].answer.reject({ status: 409, responseJSON: { error: "round_closed" } });
+        expect(timeOf(boxes[0]).getAttribute("datetime")).toBe("2026-01-02T03:04:05.678Z");
+    });
+
+    test("are not shown in another order", () => {
+        const boxes = byRateList([0, 3]);
+        star(listStars(boxes[0]), 2).trigger("click");
+        requests[0].answer.resolve("success");
+        star(listStars(boxes[1]), 5).trigger("click");
+        requests[1].answer.resolve("success");
+        boxes.forEach(b => expect(line(b)).toBeNull());
     });
 });
 

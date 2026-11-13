@@ -225,7 +225,9 @@
    * juror's rate in stored units, as ImageWithRating.rateString) and leaves the file where it
    * is, with its rank: the file marked changed (.wlx-rate-changed, titled with the list's
    * data-changed-title) unless back at its rate at load, and the hint above the list
-   * (.wlx-byrate-hint) shown from the first change on.
+   * (.wlx-byrate-hint) shown from the first change on. In an order by vote time (the list's
+   * data-vote-times), the file's vote time follows it as on the gallery's tiles
+   * ([[listVoteTimeAfter]]).
    */
   function addListStars(list) {
     var options = {
@@ -235,6 +237,7 @@
     };
     var hint = document.querySelector('.wlx-byrate-hint');
     var title = list.getAttribute('data-changed-title') || '';
+    var voteTimes = list.getAttribute('data-vote-times') === 'true';
     Array.prototype.forEach.call(list.querySelectorAll('.wlx-byrate-stars'), function (holder) {
       var box = holder.closest('.gallerybox') || holder;
       var text = box.querySelector('.wlx-rate-text');
@@ -244,9 +247,12 @@
         rate: holder.getAttribute('data-rate')
       };
       var atLoad = +item.rate || 0;
+      var stored = atLoad;
       holder.textContent = '';
       addStars(holder, item, options, function (rate) {
         var changed = rate !== atLoad;
+        if (voteTimes) listVoteTimeAfter(box, stored, rate);
+        stored = rate;
         // a worst mark as its icon, as galleryByRate.scala.html renders it
         if (text) {
           text.textContent = rate < 0 ? '' : String(rate);
@@ -263,6 +269,27 @@
         if (hint) hint.hidden = false;
       });
     });
+  }
+
+  /** After a stored vote from `before` to `rate` in the by-rate list (in an order by vote time),
+    * the time line under the file's rate in its box (`box`: galleryByRate.scala.html's
+    * .wlx-vote-time-line, there for a rated file at load): a changed vote's is now (the browser's
+    * clock, as [[voteTimeAfter]]), added if the file had none; a cleared vote has none; the same
+    * vote again keeps it, as the server does (VoteSql.votedAt). */
+  function listVoteTimeAfter(box, before, rate) {
+    if (rate === before) return;
+    var line = box.querySelector('.wlx-vote-time-line');
+    if (rate === 0) {
+      if (line) line.parentNode.removeChild(line);
+      return;
+    }
+    if (!line) {
+      line = document.createElement('div');
+      line.className = 'wlx-vote-time-line small';
+      box.appendChild(line);
+    }
+    line.textContent = '';
+    line.appendChild(timeElement(new Date().toISOString()));
   }
 
   /** All the jurors' votes on a binary round's file, on its tile in the organisers' gallery of
@@ -292,6 +319,23 @@
     return badge;
   }
 
+  /** A vote's time `iso` (ISO 8601 in UTC) as snippets/voteTime.scala.html renders it, a
+    * <time class="wlx-vote-time"> with it as its datetime, formatted in the viewer's time zone and
+    * the page's language (vote-time.js), with the year in its tooltip; the UTC value as its text
+    * without the formatter. */
+  function timeElement(iso) {
+    var time = document.createElement('time');
+    time.className = 'wlx-vote-time';
+    time.setAttribute('datetime', iso);
+    var lang = document.documentElement.getAttribute('lang') || undefined;
+    var format = window.wlxVoteTime ? window.wlxVoteTime.format : function () { return null; };
+    time.textContent = format(iso, lang) || iso;
+    // the tooltip: the same with the year, none without the formatter (no raw UTC value)
+    var full = format(iso, lang, undefined, undefined, true);
+    if (full) time.title = full;
+    return time;
+  }
+
   /** The time of the juror's vote on its tile, in an order by vote time (gallery.scala.html's
     * data-voted-at, ISO 8601 in UTC, on every tile then): formatted in the viewer's time zone and
     * the page's language (vote-time.js), or the text saying none was recorded (data-voted-none);
@@ -302,17 +346,7 @@
     var badge = document.createElement('span');
     badge.className = 'badge wlx-tile-time';
     if (item.votedAt) {
-      var time = document.createElement('time');
-      time.className = 'wlx-vote-time';
-      time.setAttribute('datetime', item.votedAt);
-      var lang = document.documentElement.getAttribute('lang') || undefined;
-      var format = window.wlxVoteTime ? window.wlxVoteTime.format : function () { return null; };
-      var text = format(item.votedAt, lang);
-      time.textContent = text || item.votedAt;
-      // the tooltip: the same with the year, none without the formatter (no raw UTC value)
-      var full = format(item.votedAt, lang, undefined, undefined, true);
-      if (full) time.title = full;
-      badge.appendChild(time);
+      badge.appendChild(timeElement(item.votedAt));
     } else {
       badge.classList.add('wlx-vote-time-none');
       badge.textContent = item.votedNone || '';
