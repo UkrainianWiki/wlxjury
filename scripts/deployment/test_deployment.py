@@ -978,6 +978,14 @@ class CredentialScanTest(unittest.TestCase):
         self.assertEqual(deploy.config_credentials('# API_KEY=old\nAPI_KEY=${X}\n', '.env'), ([], {1}))
         self.assertEqual(deploy.config_credentials('; secret.key = old\n', '.ini'), ([], {1}))
 
+    def test_only_an_expansion_is_kept_as_an_example(self):
+        # A value that merely starts with $ is a literal: dropped in a whole-line comment,
+        # refused in a trailing one.
+        self.assertEqual(deploy.config_credentials('# DB_PASSWORD=$ecretP4ss\n', '.env'), ([], {1}))
+        self.assertEqual(self.hocon('x = 1 # password=$abc123'), ([(1, 'password in a comment')], set()))
+        for text in ('# DB_PASSWORD=${DB_PASSWORD}', '# API_KEY=$API_KEY', '# TOKEN=$(openssl rand -hex 32),'):
+            self.assertEqual(self.hocon(text), ([], set()), text)
+
     def test_a_quoted_key_with_dots_is_one_segment(self):
         # Typesafe Config reads "legacyPasswords.retire" as one key, so its leaf names a password.
         self.assertEqual(self.hocon('wlxjury."legacyPasswords.retire" = "private"'),
@@ -988,6 +996,10 @@ class CredentialScanTest(unittest.TestCase):
         self.assertEqual(self.hocon('wlxjury.legacyPasswords.retire = "on"'), ([], set()))
         self.assertEqual(self.hocon('wlxjury."legacyPasswords".retire = "on"'), ([], set()))
         self.assertEqual(self.hocon('"pass"word = "joined"'), ([(1, 'password')], set()))
+        # A quoted leaf with dots: its last dot-part names a key or token as an unquoted leaf would.
+        self.assertEqual(self.hocon('stripe."api.key" = "sk_live_abc"'), ([(1, 'stripe.api.key')], set()))
+        self.assertEqual(self.hocon('oauth { "access.token" = "t0k" }'), ([(1, 'oauth.access.token')], set()))
+        self.assertEqual(self.hocon('"key.policy" = "strict"'), ([], set()))
 
     def test_booleans_and_durations_are_credentials_in_line_formats(self):
         # Exempt only in HOCON settings, where they are typed values: in a line format they can

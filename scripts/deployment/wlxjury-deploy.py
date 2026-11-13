@@ -213,10 +213,16 @@ def credential_name(name, comment=None):
 
 
 def credential_leaf(leaf, comment=None):
-    """Whether a leaf key names a credential; in a trailing comment, only by an old word."""
+    """Whether a leaf key names a credential; in a trailing comment, only by an old word.
+
+    A quoted leaf may hold dots ("api.key"): its last dot-part is tested too, as the leaf of
+    the same unquoted path would be."""
     if CREDENTIAL_ANYWHERE.search(leaf):
         return True
-    return comment != 'trailing' and bool(CREDENTIAL_SUFFIX.fullmatch(leaf) or CREDENTIAL_HUMP.fullmatch(leaf))
+    if comment == 'trailing':
+        return False
+    return any(CREDENTIAL_SUFFIX.fullmatch(part) or CREDENTIAL_HUMP.fullmatch(part)
+               for part in {leaf, leaf.split('.')[-1]})
 
 
 # A credential as a URL query parameter, such as "...?user=a&password=b".
@@ -231,6 +237,10 @@ SECRET_SETTING = re.compile(SETTING_NAME + r'\s*[=:]\s*(.*)', re.I)
 SPACED_SECRET_SETTING = re.compile(SETTING_NAME + r'(?:\s*[=:]\s*|\s+)(.*)', re.I)
 LINE_COMMENT = ('#', '//', ';', '!')
 SCANNED_CONFIG = ('.conf', '.ini', '.properties', '.cnf', '.env')
+# A comment's value that is an expansion, kept as an example: $(command), ${NAME} or an
+# environment variable's name ($API_KEY), with at most one trailing punctuation mark. Any other
+# value starting with $ ($ecretP4ss) is a literal.
+EXPANSION = re.compile(r'\$(?:\([^)]*\)|\{[^}]*\}|[A-Z_][A-Z0-9_]*)[,.;]?')
 
 
 def literal_secret(line, spaced=False, comment=None):
@@ -242,7 +252,7 @@ def literal_secret(line, spaced=False, comment=None):
     for match in (SPACED_SECRET_SETTING if spaced else SECRET_SETTING).finditer(line):
         value, name = match.group(2).strip(), match.group(1).strip('"')
         if (value and not value.startswith('${') and value not in ('""', "''", 'null')
-                and not (comment and value.startswith('$'))
+                and not (comment and EXPANSION.fullmatch(value))
                 and not (comment == 'trailing' and NOT_A_CREDENTIAL.fullmatch(value))
                 and credential_name(name, comment)):
             return name
