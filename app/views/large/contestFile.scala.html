@@ -60,7 +60,10 @@
                             </div>
                         }
 
-                        @authorInfo(image, user)
+                        @* authors only for those who may see them (all who may open the page, so far) *@
+                        @if(user.canViewAuthors(view.contest.getId)) {
+                            @authorInfo(image, view.contest.getId)
+                        }
                         @monumentInfo(image, monument)
 
                         <div class="file-title large-line">

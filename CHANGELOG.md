@@ -58,17 +58,40 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
   the large view included) and the list's own orders. **Comments CSV** has a row per comment
   (file, page id, Commons URL, author, time in UTC, round, text), every cell formula-safe. The
   juror, vote filter, region and pager work as in the other views.
+- **Authors for staff** (developed 2026-11-13, `stack/131-authors`): admins, organizers and root
+  see each file's author, as their Commons account, with two links: the name opens the contest
+  files page narrowed to that author's files, with a removable chip **Author: X (N) ×**, and a
+  small **Commons ↗** opens their user page on Commons. They are in the round's and the contest
+  files page's large views, the round file list's author column, and the contest files page's
+  **Conflicts of interest** tab, which now lists the people whose files they are. The filter
+  takes the author exactly as stored ("Ivan", "ivan" and "Iván" are three authors: a `BINARY`
+  comparison, as `images.author` is `utf8mb4_general_ci`) and keeps to the pages, the region and
+  country menus and the large view.
+  A new **Authors** list (the button on the contest files page, **Authors of this round** under a
+  round's statistics) has the contest's or a round's authors, told apart the same way, with
+  their numbers of files, a line on how diverse they are ("Round 2: 87 authors, 482 files; most
+  by one author: 41 (8.5%)") and, once the round has votes, over all its jurors: a yes/no round's
+  files per author by one outcome each, adding up to their files (approved: at least one yes;
+  rejected by all: votes cast, no yes; not voted yet: no vote cast), and the author's approval
+  rate (yes among the yes and no votes cast on their files, "—" without any: sorted from the
+  lowest, the authors rejected the most come first); a rated round's rated files, files with a ✗
+  (where the round takes one or has one) and average score in stars by the round's score rule
+  (per criterion in a criteria round); counts with their shares, every column sortable. Jurors see none of
+  it: no names, links, filter or list (403), and no author in the large view's JSON. On the
+  production copy the list of WLM UA 2026 (32,531 files, 231 authors) reads in about 0.15 s and
+  its round of 18,442 files in 0.2 s, with no new index. Organizer guide: "Authors", "The
+  authors list".
 - **Comments by one person** (the maintainer's request; developed 2026-11-13,
   `stack/136-comments-by-person`): in the comments report, after each comment's author, a funnel
   icon shows the report with only the files that person commented on in the report's scope
   (`commenter=<user id>`), and a pictures icon opens their gallery of the round the comment was
-  written in when they are a juror of it (pre-screeners included; not for organizers' comments).
-  The icons' words are in their tooltip and for screen readers; the name stays text. A chip
-  **Comments by Name ×** names the filter and removes it. Each file shows that person's comments,
-  the file's other comments folded under them; **Latest comment first** is by their latest, and
-  the counts, pages, CSV (their comments only) and the large view's previous and next follow it,
-  with the juror, vote filter, region, scope and order. Comments without an account stay without
-  links. Admins, organizers and root only, as the report: a juror's request with `commenter=` is
+  written in, only for a juror of that round (pre-screeners included). The icons' words are in
+  their tooltip and for screen readers; the name stays text. A chip **Comments by Name ×** names
+  the filter and removes it. Each file shows that person's comments, the file's other comments
+  folded under them; **Latest comment first** is by their latest, and the header's counts ("3
+  comments by Name"), pages, CSV (their comments only) and the large view's previous and next
+  follow it, with the juror, vote filter, region, scope and order. Comments without an account
+  stay without links. Admins, organizers and root only, as the report: a juror's request with `commenter=` is
   refused as the report is, and ignored in their own gallery and large view.
 - A comment on a stopped round's file is refused on the server too, for admins, organizers and
   root as for jurors: a 403 page saying the comment was not saved, with a link back to the file

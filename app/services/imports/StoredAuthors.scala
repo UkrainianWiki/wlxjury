@@ -66,6 +66,23 @@ object StoredAuthors {
         }
     }
 
+  /** The Commons account a stored author is, for a link to its user page: the value itself if
+    * it has no markup; the account a link names (`[[User:X|Y]]` → X), as an import stores it;
+    * none for a credit template (`{{SergiyBobokPhotos}}`, a template, not an account), for
+    * nobody, or for an empty value.
+    */
+  def account(stored: String): Option[String] = {
+    val value = stored.trim
+    if (value.isEmpty) None
+    else if (!hasMarkup(value)) Some(value)
+    else
+      author(value) match {
+        case ImageText.Author.Named(name) =>
+          ImageText.storedAuthor(name).filter(a => SImage.creditTemplate(a).isEmpty && !hasMarkup(a))
+        case _ => None
+      }
+  }
+
   /** Text without what is left of markup: brackets and braces. */
   private def plain(text: String): String =
     text.replaceAll("\\[\\[|\\]\\]|\\{\\{|\\}\\}|\\[(?:https?:)?//\\S*\\s*|\\]", "").trim

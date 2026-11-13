@@ -114,6 +114,7 @@ class MessagesCompletenessSpec extends Specification {
     Criterion.ShippedKeys,                                                 // V83's criteria, Criterion.name
     Seq("full", "exists").map("criteria.catalogue." + _),                  // CriterionJdbc.AddRefusal
     Plural.Forms.map("comments.count." + _),                               // CommentCount.label, by plural form
+    Seq("authors.count.", "authors.files.count.").flatMap(k => Plural.Forms.map(k + _)), // authors.scala.html
     Plural.Forms.map("comments.report.files." + _),                        // CommentCount.files, by plural form
     Seq(ListOrder.LatestComment.messageKey),                               // commentsReport's order menu
     Seq("round", "contest").flatMap(w => Seq(s"comments.report.scope.$w", s"comments.report.empty.$w",
