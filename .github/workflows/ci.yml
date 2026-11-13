@@ -57,6 +57,11 @@ jobs:
         working-directory: scripts
         run: python3 -B -m unittest -v test_schema_parity
 
+      # The browser statistics script's window and output (synthetic log lines). Standard library only.
+      - name: browser-stats tests
+        working-directory: scripts
+        run: python3 -B -m unittest -v test_browser_stats
+
       # The one-off vote time backfill (synthetic log lines only). Standard library only.
       - name: voted_at backfill tests
         working-directory: scripts/backfill
