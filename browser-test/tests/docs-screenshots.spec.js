@@ -272,27 +272,35 @@ test.describe('the guides\' screenshots', () => {
       await page.locator('#add-user-button').click();
       await page.waitForLoadState('networkidle');
     }
-    // an earlier run that added the address without an invitation: send it from the member's row
-    if (await page.locator('table.pending-invitations tr', { hasText: 'invitee@example.org' }).count() === 0) {
+    // the invitee's live invitation (one with its share-link button): an earlier run may have
+    // added the address without one, or left one expired or revoked; then send it again from
+    // the member's row
+    const liveInvitation = page.locator('table.pending-invitations tr', { hasText: 'invitee@example.org' })
+      .filter({ has: page.locator('button.share-link') });
+    if (await liveInvitation.count() === 0) {
       await page.getByRole('row', { name: /invitee@example\.org/ }).first()
         .getByRole('button', { name: 'Send the invitation again' }).click();
       await page.waitForLoadState('networkidle');
-      await page.goto(`/admin/users?contestId=${contest}`);
-      await expect(page.locator('table.pending-invitations tr', { hasText: 'invitee@example.org' })).toHaveCount(1);
     }
+    // the page afresh, whichever way it came: no message of the add or the resend above it
+    await page.goto(`/admin/users?contestId=${contest}`);
+    await page.waitForLoadState('networkidle');
+    await expect(liveInvitation).toHaveCount(1);
     // the top of the table (the fixture has 30 members)
     await top(page, path.join(OUT_DIR, 'admin-users.png'), await belowTableRow(page, 4));
-    // the add row at the bottom of the table (with the last member's row above it) and the
-    // roles' help under the table
+    // the add row at the bottom of the table (with the last member's row above it), the
+    // roles' help under the table and the "Send an invitation email" choice with its help
     const users = page.locator('table', { has: page.locator('#add-user-button') });
     const addRow = users.locator('tr', { has: page.locator('#add-user-button') });
     const lastMember = await users.locator('tbody tr', { hasNot: page.locator('#add-user-button') }).last().boundingBox();
     const roleHelp = await page.locator('#add-user-role-help').boundingBox();
-    expect(lastMember && await addRow.boundingBox() && roleHelp, "the add row and the roles' help are shown").toBeTruthy();
+    const sendHelp = await page.locator('#add-user-send-invitation_help').boundingBox();
+    expect(lastMember && await addRow.boundingBox() && roleHelp && sendHelp,
+      "the add row, the roles' help and the mail choice's help are shown").toBeTruthy();
     const addScrollY = await page.evaluate(() => window.scrollY);
     await page.screenshot({ path: path.join(OUT_DIR, 'admin-add-person.png'), fullPage: true,
       clip: { x: 0, y: lastMember.y + addScrollY - 2, width: VIEWPORT.width,
-        height: roleHelp.y + roleHelp.height - lastMember.y + 14 } });
+        height: sendHelp.y + sendHelp.height - lastMember.y + 14 } });
     const heading = await page.getByRole('heading', { name: 'Invitations', exact: true }).boundingBox();
     const table = await page.locator('table.pending-invitations').boundingBox();
     expect(heading && table, 'the Invitations heading and its table are shown').toBeTruthy();
