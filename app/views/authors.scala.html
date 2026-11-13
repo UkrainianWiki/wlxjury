@@ -1,0 +1,102 @@
+@import controllers.AuthorsPage
+@import controllers.AuthorsPage.Column
+@import db.scalikejdbc.User
+@(user: User, page: AuthorsPage)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+
+@* The contest's authors, or a round's, with their numbers of files and, in a round with votes,
+   their votes (AuthorsController): for the contest's admins, organizers and root only. Each
+   name links the contest files page narrowed to the author's files, beside their Commons user
+   page; each column head sorts by it (again: the other way). *@
+
+@sortHead(column: Column, key: String) = {
+    <th scope="col"@if(page.sort.column == column) { aria-sort="@if(page.sort.descending){descending}else{ascending}"}>
+        <a class="link-body-emphasis text-decoration-none" data-sort="@column.param" href="@page.sortUrl(column)">@Messages(key)@if(page.sort.column == column) {<i class="bi bi-caret-@if(page.sort.descending){down}else{up}-fill ms-1" aria-hidden="true"></i>}</a>
+    </th>
+}
+
+@* a count of the author's files, with its share of them: 12 (86%) *@
+@ofFiles(n: Int, files: Int) = {@n <span class="text-body-secondary small">(@AuthorsPage.percent(AuthorsPage.share(n, files), messages.lang.locale))</span>}
+
+@main("authors.list", user, contestId = page.contest.id) {
+    <div class="container-fluid mt-2" id="authors">
+        <h1 class="h4">@Messages("authors.list"): @page.contest.fullName</h1>
+
+        @* the contest, or one of its rounds *@
+        <nav aria-label="@Messages("authors.of")">
+            <ul class="pagination flex-wrap mb-2" id="authors-rounds">
+                <li class="page-item@if(page.round.isEmpty){ active}"><a class="page-link" href="@page.roundUrl(None)" @if(page.round.isEmpty){aria-current="page"}>@Messages("authors.whole.contest")</a></li>
+                @for(r <- page.rounds) {
+                    <li class="page-item@if(page.round.exists(_.id == r.id)){ active}"><a class="page-link" href="@page.roundUrl(Some(r))" @if(page.round.exists(_.id == r.id)){aria-current="page"}>@r.description</a></li>
+                }
+            </ul>
+        </nav>
+
+        @* how diverse the authors are: how many, of how many files, and the most of one author *@
+        <p id="authors-summary">
+            @Messages("authors.summary",
+                page.round.fold(Messages("contest"))(r => Messages("round") + " " + r.description),
+                Messages(s"authors.count.${views.Plural.form(page.authors, messages.lang.language)}", page.authors),
+                Messages(s"authors.files.count.${views.Plural.form(page.files, messages.lang.language)}", page.files))@for((n, share) <- page.largest) {; @Messages("authors.largest", n, AuthorsPage.percent(share, messages.lang.locale))}
+        </p>
+        @if(page.withoutAuthor > 0) {
+            <p id="authors-without" class="text-body-secondary">@Messages("authors.without", page.withoutAuthor)</p>
+        }
+        @if(page.round.exists(_.isBinary) && page.binaryVotes) {
+            <p class="text-body-secondary small" id="authors-votes-note">@Messages("authors.binary.note")</p>
+        }
+        @if(page.ratedVotes) {
+            <p class="text-body-secondary small" id="authors-rated-note">@Messages("authors.rated.note")</p>
+        }
+
+        @if(page.rows.isEmpty) {
+            <p class="text-body-secondary" id="authors-none">@Messages("authors.none")</p>
+        } else {
+        <div class="table-responsive">
+        <table class="table table-striped table-sm w-auto" id="authors-table">
+            <thead>
+                <tr>
+                    <th scope="col">@Messages("row.number")</th>
+                    @sortHead(Column.Name, "author")
+                    @sortHead(Column.Files, "files")
+                    @if(page.binaryVotes) {
+                        @sortHead(Column.Approved, "authors.approved")
+                        @sortHead(Column.RejectedByAll, "authors.rejected.all")
+                        @sortHead(Column.NotVoted, "authors.not.voted")
+                        @sortHead(Column.Approval, "authors.approval.rate")
+                    }
+                    @if(page.ratedVotes) {
+                        @sortHead(Column.Rated, "rated")
+                        @if(page.showsWorst) {
+                            @sortHead(Column.Worst, "authors.worst")
+                        }
+                        @sortHead(Column.Average, "authors.average")
+                    }
+                </tr>
+            </thead>
+            <tbody>
+            @for((row, index) <- page.rows.zipWithIndex) {
+                <tr class="author-row">
+                    <td>@{index + 1}</td>
+                    <td>@for(author <- row.author) {@snippets.authorLinks(author, page.contest.getId)}</td>
+                    <td class="author-files-count">@row.files</td>
+                    @if(page.binaryVotes) {
+                        <td class="author-approved">@ofFiles(row.approved, row.files)</td>
+                        <td class="author-rejected-all">@ofFiles(row.rejectedByAll, row.files)</td>
+                        <td class="author-not-voted">@ofFiles(row.notVoted, row.files)</td>
+                        <td class="author-approval">@row.approvalRate.fold("—")(AuthorsPage.percent(_, messages.lang.locale))</td>
+                    }
+                    @if(page.ratedVotes) {
+                        <td class="author-rated">@ofFiles(row.rated, row.files)</td>
+                        @if(page.showsWorst) {
+                            <td class="author-worst">@ofFiles(row.worst, row.files)</td>
+                        }
+                        <td class="author-average">@page.stars(row).fold("—")(s => org.intracer.wmua.Formatter.fmt.format(s))</td>
+                    }
+                </tr>
+            }
+            </tbody>
+        </table>
+        </div>
+        }
+    </div>
+}

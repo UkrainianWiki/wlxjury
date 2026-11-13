@@ -24,6 +24,7 @@ a different role in each contest. Roles are explained in the [admin guide](admin
 | Vote | on their own files | no | no |
 | Read the statistics, the results of all jurors, the file list and the CSV | no | yes | yes |
 | See the contest's files and the conflicts page | no | yes | yes |
+| See the files' authors and the authors list | no | yes | yes |
 | Comment on a file of an open round | their own files | any file of the round | any file of the round |
 | Read the [comments report](#o-comments-report) and its CSV | no | yes | yes |
 | Set up rounds and files, start and stop rounds, pause jurors, disqualify files, manage people | no | no | yes |
@@ -240,6 +241,61 @@ The **Import and cache** button next to the contest's name is only for admins, w
 files in with it, see [Importing the contest's files](admin-guide.md#a-import-files).
 
 <img src="images/organizer-contest-files.png" alt="The contest's files as an organizer sees them, with the three tabs and no import button" width="1280">
+
+<a id="o-authors"></a>
+### Authors
+
+Jurors never see who took a file. You, the admins and root see the author, as their Commons
+account, in these places:
+
+- the large view of a file, in a round and on the contest files page (**Author:**);
+- the **Author** column of a round's file list (of all the jurors' votes, and of one juror's in a
+  rated round);
+- the **Conflicts of interest** tab of the contest files page, which lists the people whose files
+  they are.
+
+Each author's name links to their files: the contest files page shows only that author's
+files, with a chip **Author: … (N)** above them, N being the number of files. The **×** on the
+chip shows all the files again. The pages, the region and country menus and the large view
+keep the author; the tabs show all the contest's files again. The small link **Commons ↗** beside a name opens the
+author's user page on Wikimedia Commons in a new tab.
+
+The filter takes the author exactly as stored: "Ivan", "ivan" and "Iván" are three different
+authors.
+
+<a id="o-authors-list"></a>
+### The authors list
+
+The **Authors** button next to the contest's name on the contest files page, and the link
+**Authors of this round** under a round's **Statistics**, open the authors list. It has each
+author of the contest's files, with the number of their files, linked as above. A line above
+the table says how many authors and files there are, and how many files the author with the
+most has, with their share, for example "Round 2: 87 authors, 482 files; most by one author: 41
+(8.5%)". Files without a stored author are counted below that line.
+
+The buttons above the list choose the whole contest or one of its rounds. A round's list counts
+only the files in that round. Once the round has votes, it also counts them per author, over
+all its jurors:
+
+- a yes/no round: each file counts once, so the three columns add up to the author's files,
+  each with its share of them:
+  - **Approved**: at least one juror said yes;
+  - **Rejected by all**: votes were cast, none of them yes;
+  - **Not voted yet**: no vote cast, whether its jurors haven't voted yet or nobody is assigned
+    the file.
+
+  **Approval rate** is the share of yes among all the yes and no votes cast on the author's
+  files: a file with 1 yes and 2 no counts as approved, and gives an approval rate of 33%. It
+  compares authors whatever the number of jurors per file; it is "—" for an author without a
+  cast vote. Sorted from the lowest, it shows first the authors the jurors reject the most
+  ("—" stays last);
+- a rated round: **Rated** (files with at least one rating), **✗ (worst mark)** (files with at
+  least one worst mark, in a round that takes the worst mark or has one) and **Average**, the average score of the
+  author's rated files in stars, as the round scores a file (see the admin guide's [The file
+  score](admin-guide.md#a-score-rule)). In a round with criteria, the average is per criterion.
+
+Click a column's heading to sort by it, and again to sort the other way. The vote columns sort
+by the share of the author's files, so 12 of 14 rejected comes before 30 of 100.
 
 ## Conflicts of interest
 

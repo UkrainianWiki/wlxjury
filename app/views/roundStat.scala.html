@@ -37,6 +37,11 @@
             <p id="round-conflicts-link"><a href="@routes.RoundConflictsController.page(round.getId)">@Messages("coi.round.link")</a></p>
         }
 
+        @* the round's authors with their files and votes, for those who may see authors *@
+        @if(user.canViewAuthors(round.contestId)) {
+            <p id="round-authors-link"><a href="@routes.AuthorsController.list(round.contestId, round.id)">@Messages("authors.round.link")</a></p>
+        }
+
         @* the round's files deleted on Commons: out of the table above while it is open *@
         @if(stat.deletedFiles > 0) {
             <div class="row" id="deleted-files">
