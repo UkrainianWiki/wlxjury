@@ -51,10 +51,11 @@ class VoteVotedAtMigrationSpec extends Specification with BeforeAll with AfterAl
 
   "V97" should {
 
-    "give vote and vote_aside a nullable voted_at without a default or ON UPDATE, and no index on it" in {
+    "give vote and vote_aside a nullable voted_at without a default or ON UPDATE, indexed only by V99" in {
       Using.resource(root("wlxjury")) { c =>
         (columns(c, "wlxjury", "voted_at") === nullable) and
-          (indexed(c, "wlxjury") must beEmpty) and
+          // V97 adds no index; V99 makes it the gallery index's last column
+          (indexed(c, "wlxjury") === List(SharedTestDb.voteGalleryIndex)) and
           // vote_aside takes vote's rows by SELECT *: the same columns in the same order
           (query(c, """SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY ORDINAL_POSITION) FROM information_schema.COLUMNS
                        WHERE TABLE_SCHEMA = 'wlxjury' AND TABLE_NAME = 'vote'""")(_.getString(1)) ===

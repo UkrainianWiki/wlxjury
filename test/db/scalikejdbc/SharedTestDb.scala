@@ -103,8 +103,8 @@ object SharedTestDb {
     */
   def descendingIndexKeys: Boolean = serverVersion._1 * 1000 + serverVersion._2 >= 10008
 
-  /** vote's index on (jury_id, round_id, rate, monument_id, page_id): V82's name, or V85's with
-    * rate descending.
+  /** vote's index on (jury_id, round_id, rate, monument_id, page_id, voted_at): V82's name, or
+    * V85's with rate descending; V99 added voted_at under either name.
     */
   def voteGalleryIndex: String =
     if (descendingIndexKeys) "vote_jury_round_ratedesc_mon_page_idx" else "vote_jury_round_rate_mon_page_idx"
