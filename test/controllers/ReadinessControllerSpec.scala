@@ -57,11 +57,14 @@ class ReadinessControllerSpec extends PlaySpecification with Mockito with AfterA
     }
     "hide driver exceptions and credentials when the database is unavailable" in {
       val check = mock[ReadinessCheck]
+      // the isolation check passes, so the request reaches the schema query that throws
+      check.isolation() returns "READ-COMMITTED"
       check.schemaVersion() throws new RuntimeException("password=private")
       val result = new ReadinessController(stubControllerComponents(), check, ec).ready.apply(FakeRequest())
       status(result) mustEqual SERVICE_UNAVAILABLE
       contentAsJson(result) mustEqual Json.obj("status" -> "unavailable")
       contentAsString(result) must not(contain("private"))
+      there was one(check).schemaVersion()
     }
     "answer only the server itself, without a DB query for anyone else" in {
       val check = mock[ReadinessCheck]
@@ -73,6 +76,7 @@ class ReadinessControllerSpec extends PlaySpecification with Mockito with AfterA
         contentAsString(result) must not(contain("schemaVersion"))
       }
       there was no(check).schemaVersion()
+      there was no(check).isolation()
     }
     "treat IPv4 and IPv6 loopback as local" in {
       Seq("127.0.0.1", "127.0.1.1", "::1", "0:0:0:0:0:0:0:1").map { address =>

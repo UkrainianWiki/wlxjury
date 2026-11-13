@@ -603,13 +603,20 @@ class UserController @Inject()(cc: ControllerComponents,
     }
   }
 
-  /** An admin's change of another account's email or wiki account: its Google and Wikimedia
-    * identities (or one provider's), which may have been linked by the old one, are unlinked.
+  /** Unlinks the account's Google and Wikimedia identities (or one provider's), which may have
+    * been linked by a former holder ([[resetPassword]]). With `endSessions`, the account's
+    * sessions end in the same transaction if any was unlinked: the new session version, if they
+    * ended.
     */
-  private def unlinkIdentities(userId: Long, provider: Option[String]): Unit = {
-    val unlinked = UserIdentityJdbc.deleteByUser(userId, provider)
+  private def unlinkIdentities(userId: Long, provider: Option[String], endSessions: Boolean = false): Option[Int] = {
+    val (unlinked, version) = scalikejdbc.DB.localTx { implicit s =>
+      val unlinked = UserIdentityJdbc.deleteByUser(userId, provider)
+      (unlinked, if (endSessions && unlinked > 0) User.endSessionsIn(userId) else None)
+    }
     if (unlinked > 0)
-      play.api.Logger("security.account").info(s"oauth_unlinked_by_admin accountId=$userId count=$unlinked")
+      play.api.Logger("security.account").info(s"oauth_unlinked_by_admin accountId=$userId count=$unlinked" +
+        (if (endSessions) s" sessionsEnded=${version.isDefined}" else ""))
+    version
   }
 
   /** 503 with the form: no turn to hash the password came in time. One's own profile (`own`) is
@@ -1072,13 +1079,18 @@ class UserController @Inject()(cc: ControllerComponents,
       User.findById(id).filter(_.deletedAt.isEmpty).fold[Result](
         NotFound(views.html.errorPage(Some(user), "error.title", "error.user.not.found"))
       ) { found =>
-        // B1: the account may be about to change hands; its holder re-links after accepting
-        unlinkIdentities(id, None)
-        val message =
-          if (found.emailLo.isEmpty) "password.link.no.email"
-          else if (userService.sendPasswordLink(user, found)) "password.link.sent"
-          else "password.link.not.sent"
-        Redirect(routes.UserController.editUser(id)).flashing("password-reset" -> Messages(message))
+        // B1: the account may be about to change hands. Once its link is mailed, its identities
+        // are unlinked (its holder re-links after accepting) and the sessions they may have
+        // signed in end with them. Without a mailed link nothing changes: an account without an
+        // email (a wiki-only one, whose identity is its only way in) or a failed mail keeps its
+        // sign-in methods, and root can try again.
+        val (message, version) =
+          if (found.emailLo.isEmpty) ("password.link.no.email", None)
+          else if (userService.sendPasswordLink(user, found)) ("password.link.sent", unlinkIdentities(id, None, endSessions = true))
+          else ("password.link.not.sent", None)
+        val result = Redirect(routes.UserController.editUser(id)).flashing("password-reset" -> Messages(message))
+        // root's own account: this session keeps the new version, as an own unlink's does
+        version.filter(_ => id == user.getId).fold(result)(v => result.addingToSession(Secured.AuthVersion -> v.toString))
       }
     }
 

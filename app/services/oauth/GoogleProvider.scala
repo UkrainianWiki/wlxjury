@@ -49,12 +49,15 @@ class GoogleProvider @Inject() (settings: OAuthSettings) extends OAuthProvider {
   private def fetch(): Future[OIDCProviderMetadata] =
     discovery.get().getOrElse {
       val promise = Promise[OIDCProviderMetadata]()
-      if (discovery.compareAndSet(None, Some(promise.future))) {
+      // one Some for both compareAndSets: they compare references, so a new Some(…) of the same
+      // future would never clear the failed fetch
+      val entry = Some(promise.future)
+      if (discovery.compareAndSet(None, entry)) {
         promise.completeWith(Future(blocking(
           OIDCProviderMetadata.resolve(new Issuer(settings.googleIssuer), settings.connectTimeoutMillis,
             settings.readTimeoutMillis)
         ))(ExecutionContext.global))
-        promise.future.failed.foreach(_ => discovery.compareAndSet(Some(promise.future), None))(ExecutionContext.parasitic)
+        promise.future.failed.foreach(_ => discovery.compareAndSet(entry, None))(ExecutionContext.parasitic)
         promise.future
       } else fetch()
     }

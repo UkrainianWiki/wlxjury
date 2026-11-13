@@ -66,7 +66,7 @@ class RoundConflictsAuthorizationSpec extends PlaySpecification with PlayTestDb 
   private def disqualify(r: Long) = s"/admin/rounds/$r/conflicts/disqualify"
   private def requalify(r: Long) = s"/admin/rounds/$r/conflicts/requalify"
 
-  private val both = Seq("pageId" -> "1", "pageId" -> "2")
+  private val both = Seq("pageId[]" -> "1", "pageId[]" -> "2")
   private val mistaken = "reason" -> RoundConflicts.RequalifyReason.MistakenMatch
 
   "a round's conflicts page [A-10]" should {
@@ -80,9 +80,10 @@ class RoundConflictsAuthorizationSpec extends PlaySpecification with PlayTestDb 
         (status(admin) === OK) and (contentAsString(admin) must contain("data-coi-match=\"1\"")) and
           (contentAsString(admin) must contain("Board member — board")) and
           (contentAsString(admin) must contain(disqualify(r))) and
+          (contentAsString(admin) must contain("name=\"pageId[]\"")) and
           (status(organizer) === OK) and (contentAsString(organizer) must contain("data-coi-match=\"2\"")) and
           (contentAsString(organizer) must not(contain(disqualify(r)))) and
-          (contentAsString(organizer) must not(contain("name=\"pageId\"")))
+          (contentAsString(organizer) must not(contain("name=\"pageId[]\"")))
       }
     }
 
@@ -129,7 +130,7 @@ class RoundConflictsAuthorizationSpec extends PlaySpecification with PlayTestDb 
           (flash(first).get("success") must beSome(contain("2"))) and
           (disqualified(round) === Seq(1L, 2L)) and (voted(round) === Set(3L)) and
           (contentAsString(get(app, "admin@example.com", page(r))) must contain("data-dq=\"1\"")) and {
-            val back = post(app, Some("root@example.com"), requalify(r), "pageId" -> "1", mistaken)
+            val back = post(app, Some("root@example.com"), requalify(r), "pageId[]" -> "1", mistaken)
             (status(back) === SEE_OTHER) and (disqualified(round) === Seq(2L)) and (voted(round) === Set(1L, 3L))
           } and
           (VoteJdbc.byRound(r).find(_.pageId == 1L).map(_.rate) === Some(1)) and
@@ -166,12 +167,12 @@ class RoundConflictsAuthorizationSpec extends PlaySpecification with PlayTestDb 
           route(app, FakeRequest(method, path).withFormUrlEncodedBody(body: _*)
             .withSession(Secured.UserName -> email, Secured.CurrentContestId -> current.toString).withCSRFToken).get
         val view = as("admin@example.com", 20L, GET, page(r))
-        val posted = as("admin@example.com", 20L, POST, disqualify(r), "pageId" -> "1")
+        val posted = as("admin@example.com", 20L, POST, disqualify(r), "pageId[]" -> "1")
         (status(view) === OK) and (status(posted) === SEE_OTHER) and
           (session(posted).get(Secured.CurrentContestId) must not(beSome(contestId.toString))) and
           (disqualified(round) === Seq(1L)) and
-          (status(as("juror@example.com", 20L, POST, disqualify(r), "pageId" -> "2")) === FORBIDDEN) and
-          (status(as("juror@example.com", contestId, POST, requalify(r), "pageId" -> "1", mistaken)) === FORBIDDEN) and
+          (status(as("juror@example.com", 20L, POST, disqualify(r), "pageId[]" -> "2")) === FORBIDDEN) and
+          (status(as("juror@example.com", contestId, POST, requalify(r), "pageId[]" -> "1", mistaken)) === FORBIDDEN) and
           (status(as("juror@example.com", 20L, GET, page(r))) === FORBIDDEN) and
           (disqualified(round) === Seq(1L)) and (other.contestId === 20L)
       }
@@ -206,11 +207,26 @@ class RoundConflictsAuthorizationSpec extends PlaySpecification with PlayTestDb 
         val (round, _) = setUp()
         val r = round.getId
         status(post(app, Some("admin@example.com"), disqualify(r), both: _*)) === SEE_OTHER
-        (flash(post(app, Some("admin@example.com"), requalify(r), "pageId" -> "1")).get("error") must beSome) and
-          (flash(post(app, Some("admin@example.com"), requalify(r), "pageId" -> "1", "reason" -> "because")).get("error") must
+        (flash(post(app, Some("admin@example.com"), requalify(r), "pageId[]" -> "1")).get("error") must beSome) and
+          (flash(post(app, Some("admin@example.com"), requalify(r), "pageId[]" -> "1", "reason" -> "because")).get("error") must
             beSome) and
           (flash(post(app, Some("admin@example.com"), disqualify(r))).get("error") must beSome) and
           (disqualified(round) === Seq(1L, 2L))
+      }
+    }
+
+    "refuse more files than MaxFiles whole (never cut), and a malformed id, writing nothing" in {
+      testDbApp { app =>
+        val (round, _) = setUp()
+        val r = round.getId
+        val tooMany = (1 to RoundConflictsController.MaxFiles + 1).map(p => "pageId[]" -> p.toString)
+        val refused = post(app, Some("admin@example.com"), disqualify(r), tooMany: _*)
+        val requalifyRefused = post(app, Some("admin@example.com"), requalify(r), tooMany :+ mistaken: _*)
+        val malformed = post(app, Some("admin@example.com"), disqualify(r), "pageId[]" -> "1", "pageId[]" -> "x")
+        (status(refused) === SEE_OTHER) and (flash(refused).get("error") must beSome(contain("More than"))) and
+          (flash(requalifyRefused).get("error") must beSome(contain("More than"))) and
+          (flash(malformed).get("error") must beSome) and (disqualified(round) must beEmpty) and
+          (voted(round) === Set(1L, 2L, 3L))
       }
     }
 
@@ -219,7 +235,7 @@ class RoundConflictsAuthorizationSpec extends PlaySpecification with PlayTestDb 
         val (round, _) = setUp()
         val r = round.getId
         status(post(app, Some("admin@example.com"), disqualify(r), both: _*)) === SEE_OTHER
-        status(post(app, Some("root@example.com"), requalify(r), "pageId" -> "1", mistaken)) === SEE_OTHER
+        status(post(app, Some("root@example.com"), requalify(r), "pageId[]" -> "1", mistaken)) === SEE_OTHER
         val events = RoundImageEventJdbc.byRound(r)
         def shows(body: String) =
           (body must contain("id=\"coi-history\"")) and
@@ -245,7 +261,7 @@ class RoundConflictsAuthorizationSpec extends PlaySpecification with PlayTestDb 
         val (round, _) = setUp()
         val r = round.getId
         val admin = User.findByEmail("admin@example.com").head
-        status(post(app, Some("admin@example.com"), disqualify(r), "pageId" -> "1")) === SEE_OTHER
+        status(post(app, Some("admin@example.com"), disqualify(r), "pageId[]" -> "1")) === SEE_OTHER
         def rows(body: String) = """(?s)data-event="\d+".*?</tr>""".r.findAllIn(body).toSeq
         val named = rows(contentAsString(get(app, "organizer@example.com", page(r))))
         DB.autoCommit(implicit s => sql"UPDATE users SET deleted_at = NOW() WHERE id = ${admin.getId}".update())
@@ -353,9 +369,9 @@ class RoundConflictsAuthorizationSpec extends PlaySpecification with PlayTestDb 
           (disqualified(round) must beEmpty) and
           (status(send(disqualify(r), both :+ ("csrfToken" -> sessionToken): _*)) === SEE_OTHER) and
           (disqualified(round) === Seq(1L, 2L)) and
-          (status(send(requalify(r), Seq("pageId" -> "1", mistaken): _*)) === FORBIDDEN) and
+          (status(send(requalify(r), Seq("pageId[]" -> "1", mistaken): _*)) === FORBIDDEN) and
           (disqualified(round) === Seq(1L, 2L)) and
-          (status(send(requalify(r), Seq("pageId" -> "1", mistaken, "csrfToken" -> sessionToken): _*)) === SEE_OTHER) and
+          (status(send(requalify(r), Seq("pageId[]" -> "1", mistaken, "csrfToken" -> sessionToken): _*)) === SEE_OTHER) and
           (disqualified(round) === Seq(2L))
       }
     }

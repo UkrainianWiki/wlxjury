@@ -484,6 +484,7 @@ coi.disqualify.frozen = Tour {0} : la distribution d''un tour suivant lit ses vo
 coi.action.open = Le tour {0} est ouvert à ses jurés : arrêtez-le d''abord pour disqualifier ou requalifier des fichiers.
 coi.requalified = Tour {1} : {0} fichiers requalifiés, avec leurs votes.
 coi.none.selected = Aucun fichier sélectionné.
+coi.too.many.selected = Plus de {0,number,#} fichiers sélectionnés : sélectionnez-en au plus {0,number,#} et recommencez pour les autres.
 coi.requalify.reason.missing = Choisissez pourquoi les fichiers sont requalifiés.
 coi.round.link = Conflits d''intérêts de ce tour
 coi.round.title = Conflits d''intérêts

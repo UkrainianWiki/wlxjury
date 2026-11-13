@@ -71,7 +71,7 @@
                     @for((pageId, title, member) <- review.matches) {
                         <tr data-coi-match="@pageId">
                             @if(mayEdit) {
-                                <td><input type="checkbox" class="form-check-input" name="pageId" value="@pageId" checked
+                                <td><input type="checkbox" class="form-check-input" name="pageId[]" value="@pageId" checked
                                            form="coi-disqualify" aria-label="@title"/></td>
                             }
                             <td>@title</td>
@@ -107,7 +107,7 @@
                     @for(file <- review.disqualified) {
                         <tr data-dq="@file.row.pageId" data-dq-ended="@file.matchNow.isEmpty">
                             @if(mayEdit) {
-                                <td><input type="checkbox" class="form-check-input" name="pageId" value="@file.row.pageId"
+                                <td><input type="checkbox" class="form-check-input" name="pageId[]" value="@file.row.pageId"
                                            form="coi-requalify" aria-label="@file.title"/></td>
                             }
                             <td>@file.title</td>
