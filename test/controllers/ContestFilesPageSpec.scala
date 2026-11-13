@@ -512,6 +512,18 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "show an older import's wikitext author as its account, a deleted file's too" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        addFiles(f.contest, Seq(image(3L, "Linked").copy(author = Some("[[User:Петро_Грушко|Петро]]"))))
+        DB.autoCommit { implicit s => sql"UPDATE images SET author = '[[User:Liliia2022|Liliia]]' WHERE page_id = 2".update() }
+        val (_, live) = get(s"/contest/${f.contest.getId}/files/3", f.organizer)
+        val (_, deleted) = get(s"/contest/${f.contest.getId}/files/2?deleted=true", f.organizer)
+        (live must contain("Петро Грушко")) and (live must not(contain("[[User:"))) and
+          (deleted must contain("Liliia2022")) and (deleted must not(contain("[[User:")))
+      }
+    }
+
     "go to the previous and next files of the list, by buttons and keys" in {
       testDbApp { implicit app =>
         val f = fixture()

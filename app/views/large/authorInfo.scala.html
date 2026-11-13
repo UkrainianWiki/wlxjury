@@ -1,6 +1,7 @@
 @(image: org.intracer.wmua.Image, user: db.scalikejdbc.User)(implicit messages: Messages)
-@if(image.author.nonEmpty) {
+@* The account, as plain text (StoredAuthors.shown): never an older import's raw wikitext. *@
+@for(author <- services.imports.StoredAuthors.shown(image.author)) {
     <div id="author" class="card card-body large-box">
-        @Messages("author"): @image.author.getOrElse("")
+        @Messages("author"): @author
     </div>
 }
