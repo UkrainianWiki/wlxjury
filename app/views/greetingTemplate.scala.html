@@ -43,7 +43,7 @@
                     )
 
                     @bs.checkbox(importUserForm("use"), Symbol("_label") -> Messages("send.greeting.to.new.users"))
-                    @helper.CSRF.formField
+                    @csrfField()
 
                     <div class="form-actions">
                         <input type="submit" class="btn btn-primary" value="@Messages("save")">

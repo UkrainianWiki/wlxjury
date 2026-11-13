@@ -27,7 +27,7 @@
         </ul>
         </div>
         @bs.form(routes.ContestController.importContests(), Symbol("id") -> "import-contests") {
-            @helper.CSRF.formField
+            @csrfField()
             @* a category or a list page: Commons' categories suggested once it starts with Category: *@
             @bs.text(importForm("source"), Symbol("placeholder") -> Messages("import.source.placeholder"), Symbol("_label") -> Messages("import.source"), Symbol("_help") -> "",
                 Symbol("data-category-suggest") -> "mixed")
@@ -63,7 +63,7 @@
 
                 @if(user.hasRole(User.ROOT_ROLE)) {
                     @form(routes.ContestController.saveContest(), Symbol("class") -> "form-vertical", Symbol("id") -> "add-contest") {
-                        @helper.CSRF.formField
+                        @csrfField()
                         <tr>
                             @if(editContestForm.hasGlobalErrors) {
                                 <p class="error">

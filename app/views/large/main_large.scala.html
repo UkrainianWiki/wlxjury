@@ -19,7 +19,7 @@
         @* the page's title, for screen readers *@
         <h1 class="visually-hidden">@Messages(list.view.name)</h1>
         @if(!readOnly) {
-            <form id="vote-form" method="post" class="d-none">@helper.CSRF.formField</form>
+            <form id="vote-form" method="post" class="d-none">@csrfField()</form>
         }
         @fileKeyboardNav(hood.index, hood.files.size, i => list.largeUrl(hood.files(i).pageId), list.atUrl(hood.file.pageId),
             keyboardNav(user, list, hood.file))
