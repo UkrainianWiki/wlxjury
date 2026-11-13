@@ -255,6 +255,101 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  "the comments report's default order" should {
+
+    "be the latest comment first when the URL names none: all the jurors' and one juror's, both scopes, the CSV too" in {
+      testDbApp { _ =>
+        val f = fixture()
+        def of(asUserId: Long, query: String, view: GalleryView = GalleryView.Comments) =
+          RoundList.of(f.round, f.organizer, asUserId, "all", view)(FakeRequest(GET, "/x" + query))
+        forall(for (who <- Seq(0L, f.juror1.getId); q <- Seq("", "?scope=round", "?scope=contest");
+                    v <- Seq(GalleryView.Comments, GalleryView.CommentsCsv)) yield (who, q, v)) { case (who, q, v) =>
+          (who, q, v, of(who, q, v).order) === ((who, q, v, ListOrder.LatestComment))
+        } and
+          // an explicit order stays; the other views keep theirs
+          (of(0, "?sort=file").order === ListOrder.FileOrder) and
+          (of(0, "?sort=approvals-only").order === ListOrder.Binary(BinaryOrder.ApprovalsOnly)) and
+          (of(f.juror1.getId, "?sort=oldest-vote").order === ListOrder.OldestVote) and
+          (of(0, "", GalleryView.ByRate).order must not(be_==(ListOrder.LatestComment))) and
+          // the large view opened from the report, and its neighbours: by the latest comment
+          (GalleryView.of(FakeRequest(GET, "/?module=comments")) === GalleryView.Comments) and
+          (of(0, "?module=comments").around(4).map(h => (h.files.map(_.pageId), h.position)) ===
+            Some((Seq(4L, 1L, 7L, 5L), 0)))
+      }
+    }
+
+    "show it chosen in the order menu, its rows and every link by it, and an explicit order kept" in {
+      testDbApp { app =>
+        val f = fixture()
+        val all = page(app, f.organizer, path(f, 0))
+        val juror = page(app, f.organizer, path(f, f.juror1.getId, "?scope=contest"))
+        val chosen = page(app, f.organizer, path(f, 0, "?sort=file"))
+        (rows(all) === Seq(4L, 1L, 7L, 5L)) and
+          (all.select("#comments-report-order .dropdown-toggle").text must contain("Latest comment first")) and
+          (all.select("#comments-report-order a.dropdown-item.active").text === "Latest comment first") and
+          (all.selectFirst("#comments-report-csv").attr("href") must contain("sort=latest-comment")) and
+          (all.selectFirst("h2 a").attr("href") must
+            startWith(s"/large/round/${f.round.getId}/user/0/pageid/4?module=comments&sort=latest-comment")) and
+          (rows(juror) === Seq(4L, 5L, 1L, 3L)) and
+          (juror.select("#comments-report-order a.dropdown-item.active").text === "Latest comment first") and
+          (rows(chosen) === Seq(1L, 5L, 4L, 7L)) and
+          (chosen.select("#comments-report-order a.dropdown-item.active").text must not(contain("Latest comment")))
+      }
+    }
+
+    "open from the view menu and the round statistics by the latest comment, and leave it by the list's order" in {
+      testDbApp { app =>
+        val f = fixture()
+        val r = f.round.getId
+        val gallery = page(app, f.organizer, s"/gallery/round/$r/user/0/page/1?sort=approvals-only")
+        val menuLink = gallery.selectFirst(s"a.dropdown-item[href^=/comments/round/$r/user/0/page/1]").attr("href")
+        val stat = page(app, f.organizer, s"/roundstat/$r")
+        val report = page(app, f.organizer, path(f, 0))
+        val back = report.selectFirst(s"a.dropdown-item[href^=/byrate/round/$r/user/0/page/1]").attr("href")
+        (menuLink must endWith("sort=latest-comment")) and
+          (stat.selectFirst("#round-comments-link a").attr("href") must endWith("sort=latest-comment")) and
+          (back must endWith("sort=rate"))
+      }
+    }
+
+    "be offered first in the order menu; an order it hasn't shows as the list's own first, not as it" in {
+      testDbApp { _ =>
+        val f = fixture()
+        (report(f).commentOrderChoices.head === ListOrder.LatestComment) and
+          (report(f, f.juror1.getId).commentOrderChoices.head === ListOrder.LatestComment) and
+          (report(f, order = ListOrder.LatestComment).shownCommentOrder === ListOrder.LatestComment) and
+          // all the jurors' votes on a yes/no round: a juror's order by vote time is none of theirs
+          (report(f, order = ListOrder.OldestVote).shownCommentOrder === ListOrder.Binary(BinaryOrder.all.head)) and
+          (report(f, order = ListOrder.FileOrder).shownCommentOrder === ListOrder.FileOrder)
+      }
+    }
+
+    "stay when the round menu opens all the jurors' votes in a round the juror is not a juror of" in {
+      testDbApp { _ =>
+        val f = fixture()
+        val juror = report(f, f.juror1.getId, order = ListOrder.OldestVote)
+        val other = juror.inRound(f.earlier, f.organizer.getId, jurorOfRound = false)
+        val gallery = juror.withView(GalleryView.Gallery).withOrder(ListOrder.OldestVote)
+          .inRound(f.earlier, f.organizer.getId, jurorOfRound = false)
+        ((other.asUserId, other.view, other.order) === ((0L, GalleryView.Comments, ListOrder.LatestComment))) and
+          (other.pageUrl(1) must endWith("sort=latest-comment")) and
+          ((gallery.asUserId, gallery.view, gallery.order) === ((0L, GalleryView.Gallery, ListOrder.ByRate))) and
+          // a juror of the round, or all the jurors' votes: the order stays
+          (juror.inRound(f.earlier, f.organizer.getId, jurorOfRound = true).order === ListOrder.OldestVote) and
+          (report(f, order = ListOrder.FileOrder).inRound(f.earlier, f.organizer.getId, jurorOfRound = false).order ===
+            ListOrder.FileOrder)
+      }
+    }
+
+    "make the large view without an order move among the report's files by the latest comment" in {
+      testDbApp { app =>
+        val f = fixture()
+        val doc = page(app, f.organizer, s"/large/round/${f.round.getId}/user/0/pageid/4?module=comments")
+        doc.select(s"a[href^='/large/round/${f.round.getId}/user/0/pageid/1?module=comments&sort=latest-comment']").size must be_>(0)
+      }
+    }
+  }
+
   "the comments report page" should {
 
     "show the organisers each file with its thumbnail, result and this round's comments" in {
@@ -280,9 +375,9 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
         scopes.map(_.hasClass("active")) === Seq(true, false)
         scopes.head.attr("aria-current") === "true"
         scopes(1).attr("href") must contain("scope=contest")
-        // the order menu: the binary orders and the latest comment
-        doc.select("#comments-report-order a.dropdown-item").asScala.map(_.attr("href")).last must contain(
-          "sort=latest-comment")
+        // the order menu: the latest comment first, then the binary orders and file order
+        doc.select("#comments-report-order a.dropdown-item").asScala.map(_.attr("href")).toList.map(h =>
+          h.substring(h.indexOf("sort=") + 5)) === List("latest-comment", "approvals", "difference", "approvals-only", "file")
         doc.selectFirst("#comments-report-csv").attr("href") must startWith(
           s"/comments/round/${f.round.getId}/user/0/region/all/csv")
         // no comments toggle: the report has only such files
@@ -327,12 +422,13 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
       testDbApp { app =>
         val f = fixture()
         val juror2 = page(app, f.organizer, path(f, f.juror2.getId))
-        rows(juror2) === Seq(5L, 7L)
+        // by the latest comment (by default): 7 (comment 4), then 5 (comment 1)
+        rows(juror2) === Seq(7L, 5L)
         // one juror's vote, not a tally: file 7 selected by juror 2
         juror2.getElementById("7").select(".wlx-comments-result .wlx-approvals").size === 0
         rows(page(app, f.organizer, path(f, 0, "?filter=selected&sort=file"))) === Seq(1L, 5L, 7L)
-        // by the binary order (approvals, then rejections) by default
-        rows(page(app, f.organizer, path(f, 0, "?filter=selected"))) === Seq(1L, 7L, 5L)
+        // by the binary order (approvals, then rejections) when chosen
+        rows(page(app, f.organizer, path(f, 0, "?filter=selected&sort=approvals"))) === Seq(1L, 7L, 5L)
         rows(page(app, f.organizer, s"/comments/round/${f.round.getId}/user/0/region/80/page/1?sort=file")) === Seq(4L, 7L)
         // the page with a file: a redirect to its page, scrolled to it
         val at = get(app, f.organizer, s"/comments/round/${f.round.getId}/user/0/region/all/pageid/7?sort=latest-comment")

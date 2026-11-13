@@ -28,7 +28,7 @@
         @* the comments report of all the jurors' votes on the round's files (GalleryView.Comments),
            for those who may view its organiser info, as the gallery's view menu offers it *@
         @if(user.canViewOrgInfo(round)) {
-            <p id="round-comments-link"><a href="@RoundList(round, 0, view = GalleryView.Comments).pageUrl(1)"><i class="bi bi-chat-left-text" aria-hidden="true"></i> @Messages("comments.report.link")</a></p>
+            <p id="round-comments-link"><a href="@RoundList(round, 0).withView(GalleryView.Comments).pageUrl(1)"><i class="bi bi-chat-left-text" aria-hidden="true"></i> @Messages("comments.report.link")</a></p>
         }
 
         @* the round's conflicts of interest, for its contest's admins and organizers: the

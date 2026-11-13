@@ -195,9 +195,6 @@ object GalleryView {
     */
   def of(request: RequestHeader): GalleryView =
     request.getQueryString("module").flatMap(parse).filter(Set(Gallery, ByRate, Comments)).getOrElse(Gallery)
-
-  /** A round gallery path's view: all the jurors' votes together (`user/0`) only by rate. */
-  def ofPath(asUserId: Long): GalleryView = if (asUserId == 0) ByRate else Gallery
 }
 
 /** Which comments the comments report ([[GalleryView.comments]]) lists its files by and shows:
@@ -561,21 +558,25 @@ final case class RoundList(
     */
   def allFiles: RoundList = withComments(false).withView(if (view.comments) GalleryView.Gallery else view)
 
-  /** The orders the comments report offers: the list's own (a juror's as their order menu has
-    * them; all the jurors' votes on a yes/no round in a [[BinaryOrder]], on a rated round by
-    * rate, either in file order too), and by the latest comment ([[ListOrder.LatestComment]]).
+  /** The list's own orders in the comments report: a juror's as their order menu has them; all
+    * the jurors' votes on a yes/no round in a [[BinaryOrder]], on a rated round by rate, either
+    * in file order too.
     */
-  def commentOrderChoices: Seq[ListOrder] = {
-    val own =
-      if (aggregateBinary) BinaryOrder.all.map(ListOrder.Binary) :+ ListOrder.FileOrder
-      else if (asUserId == 0) Seq(ListOrder.ByRate, ListOrder.FileOrder)
-      else orderChoices
-    own :+ ListOrder.LatestComment
-  }
+  private def ownCommentOrders: Seq[ListOrder] =
+    if (aggregateBinary) BinaryOrder.all.map(ListOrder.Binary) :+ ListOrder.FileOrder
+    else if (asUserId == 0) Seq(ListOrder.ByRate, ListOrder.FileOrder)
+    else orderChoices
 
-  /** The comments report's order as its menu shows it: one it hasn't is the first it has. */
+  /** The orders the comments report offers: by the latest comment ([[ListOrder.LatestComment]]),
+    * its default, then the list's own ([[ownCommentOrders]]).
+    */
+  def commentOrderChoices: Seq[ListOrder] = ListOrder.LatestComment +: ownCommentOrders
+
+  /** The comments report's order as its menu shows it: one it hasn't is the first of the list's
+    * own (as the list's query orders by it), not the latest comment.
+    */
   def shownCommentOrder: ListOrder =
-    if (commentOrderChoices.contains(order)) order else commentOrderChoices.head
+    if (commentOrderChoices.contains(order)) order else ownCommentOrders.head
 
   /** The comments on the list's files that the comments filter keeps them by, of all its
     * pages: the comments report's total ([[SelectionQuery.commentCount]]).
@@ -593,11 +594,15 @@ final case class RoundList(
 
   def withViewer(asUserId: Long): RoundList = copy(asUserId = asUserId)
 
-  /** The list in another view; out of the comments report, by rate instead of by the latest
-    * comment, which only it has.
+  /** The list in another view; into the comments report by the latest comment, its default
+    * ([[RoundList.defaultOrder]]); out of it, by rate instead of by the latest comment, which
+    * only it has. Between the report and its CSV the order stays.
     */
   def withView(view: GalleryView): RoundList =
-    copy(view = view, order = if (order == ListOrder.LatestComment && !view.comments) ListOrder.ByRate else order)
+    copy(view = view, order =
+      if (view.comments && !this.view.comments) ListOrder.LatestComment
+      else if (order == ListOrder.LatestComment && !view.comments) ListOrder.ByRate
+      else order)
 
   /** The list read from `round_image`'s counts where it can be (`roundImage.read`, P2b). */
   def withCountsRead(on: Boolean): RoundList = copy(countsRead = on)
@@ -610,12 +615,13 @@ final case class RoundList(
     * juror's only in a round they are a juror of (`jurorOfRound`, [[User.roundsJuredIn]]):
     * elsewhere the juror's list is refused ([[services.GalleryService.viewAs]]), so it is all the
     * jurors' votes there, as the juror menu's "all", in that list's default order (by rate, a
-    * yes/no round's in the binary order last chosen, [[RoundList.of]]): a juror's order by vote
-    * time isn't one of its, and a named binary order would be remembered as chosen.
+    * yes/no round's in the binary order last chosen, [[RoundList.of]]; in the comments report
+    * by the latest comment, its default): a juror's order by vote time isn't one of its, and a
+    * named binary order would be remembered as chosen.
     */
   def inRound(round: Round, viewerId: Long, jurorOfRound: Boolean): RoundList =
     if (asUserId == 0 || asUserId == viewerId || jurorOfRound) withRound(round)
-    else withRound(round).withViewer(0).withOrder(ListOrder.ByRate)
+    else withRound(round).withViewer(0).withOrder(if (view.comments) ListOrder.LatestComment else ListOrder.ByRate)
 
   /** The list's query string: its view (`module`, for a large view's way back), filter, the
     * comments toggle and order.
@@ -836,7 +842,7 @@ object RoundList {
   ): RoundList = {
     // the comments report is the organisers' (GalleryController refuses its pages to others): a
     // large view's `module` naming it is the gallery for anyone else
-    val shown = if (view.comments && !viewer.canViewOrgInfo(round)) GalleryView.ofPath(asUserId) else view
+    val shown = if (view.comments && !viewer.canViewOrgInfo(round)) GalleryView.Gallery else view
     val list = RoundList(
       round,
       asUserId,
@@ -866,12 +872,14 @@ object RoundList {
   def landing(round: Round, juror: User)(implicit request: RequestHeader): RoundList =
     RoundList(round, juror.getId, order = defaultOrder(juror, juror.getId, GalleryView.Gallery))
 
-  /** A list's order when its URL names none: in a juror's own gallery the one they last
-    * chose ([[SortCookie]]), else file order, which a vote doesn't change; by rate for the
-    * others, the organisers' and the results.
+  /** A list's order when its URL names none: in the comments report (its page, CSV and large
+    * views) the latest comment first; in a juror's own gallery the one they last chose
+    * ([[SortCookie]]), else file order, which a vote doesn't change; by rate for the others,
+    * the organisers' and the results.
     */
   def defaultOrder(viewer: User, asUserId: Long, view: GalleryView)(implicit request: RequestHeader): ListOrder =
-    if (ownGallery(viewer, asUserId, view))
+    if (view.comments) ListOrder.LatestComment
+    else if (ownGallery(viewer, asUserId, view))
       request.cookies.get(SortCookie).flatMap(c => ListOrder.parse(c.value)).getOrElse(ListOrder.FileOrder)
     else ListOrder.ByRate
 
