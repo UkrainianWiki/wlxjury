@@ -819,7 +819,8 @@ The job shows its progress under the buttons, with **Cancel**, and **Retry** if 
 it is done, the line shows how many authors it changed, how many got the uploader, how many were
 left without an author, how many question-mark accounts it restored from Commons or left, and
 how many were skipped because an import changed them meanwhile. It can be run again: a second
-run finds nothing to change.
+run changes nothing, apart from reading again any question-mark accounts Commons could not
+restore (it reports them as left again).
 
 After it, files whose author is a contest member are found as conflicts of interest on the
 round form and the conflicts pages. Rounds already distributed keep their files: to leave the
