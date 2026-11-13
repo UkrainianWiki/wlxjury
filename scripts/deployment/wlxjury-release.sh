@@ -10,17 +10,20 @@
 # docs/deployment.md says which command fits the operation's milestones, and
 # status prints it.
 #
-#   wlxjury-release [--config FILE] status
+#   wlxjury-release [--config FILE] status [--verbose]
 #   wlxjury-release [--config FILE] deploy [RELEASE.zip] SHA256 [--backup] [--allow-running-jobs]
 #   wlxjury-release [--config FILE] reopen [OPERATION]
-#   wlxjury-release [--config FILE] restore [OPERATION]
-#   wlxjury-release [--config FILE] restore OPERATION --accept-data-loss
-#   wlxjury-release [--config FILE] prune [--dry-run]
+#   wlxjury-release [--config FILE] restore [OPERATION] [--yes]
+#   wlxjury-release [--config FILE] restore OPERATION --accept-data-loss [--yes]
+#   wlxjury-release [--config FILE] prune [--dry-run] [--verbose]
 #
 # SHA256 is the ZIP's hash as sent with the build, through another channel than
 # the upload: all 64 hex characters, or at least the first 16 (64 bits), checked
 # against the ZIP's whole hash. Without RELEASE.zip, the ZIP is the one
-# wlxjury-*.zip in the current directory whose hash starts with SHA256.
+# wlxjury-*.zip in the current directory whose hash starts with SHA256. A release
+# folder is never overwritten while current; one that is not current and was
+# unpacked from the same ZIP (a deployment that was restored) is replaced by a
+# fresh unpack, and one from any other ZIP stops the deployment.
 #
 # Without OPERATION, reopen and restore act on the current operation and say
 # so: the newest operation folder of either tool, if it is this tool's, not
@@ -30,9 +33,16 @@
 # --accept-data-loss (a restore after traffic resumed) always needs the name. A
 # named restore refuses an operation whose releases are both other than current.
 #
-# status changes nothing and never takes the lock (it reads /proc/locks):
-# maintenance, the current release, the current operation with its state from
-# the milestones, stale ones, and the next command.
+# A restore that undoes a deployment which became ready (named or not) asks to
+# type RESTORE, or needs --yes without a terminal: after a good deployment a
+# restore is never the next step, so a pasted command must not run one. The
+# recovery restores (a migration that never became ready, an interrupted restore)
+# stay one command.
+#
+# status changes nothing and never takes the lock (it reads /proc/locks): a few
+# lines (maintenance, the current release, the open operation and its state from
+# the milestones, stale ones) and, last, the one command to run next. --verbose
+# adds the paths, milestones, named forms and how to back out, before that line.
 #
 # A successful reopen ends with prune: old release folders and old
 # pre-deployment dumps are deleted, keeping what a restore can still need
@@ -50,19 +60,23 @@ op=''
 staging=''
 active_jobs=''
 locked=''
+confirmed=no
+prune_verbose=no
 
 usage() {  # usage [PROBLEM]
   if [ $# -gt 0 ]; then echo "wlxjury-release: $*" >&2; fi
   cat >&2 <<'USAGE'
 usage: wlxjury-release [--config FILE] COMMAND
-  status                                  what is open, and the next command to run
+  status [--verbose]                      what is open, and the one command to run next
   deploy [RELEASE.zip] SHA256 [--backup] [--allow-running-jobs]
                                           SHA256: all 64 hex characters, or at least the first 16;
                                           without RELEASE.zip, the wlxjury-*.zip here with that hash
   reopen [OPERATION]                      default: the current operation (status names it)
-  restore [OPERATION]                     default: the current operation, under maintenance only
-  restore OPERATION --accept-data-loss    after traffic resumed: always named
-  prune [--dry-run]
+  restore [OPERATION] [--yes]             default: the current operation, under maintenance only;
+                                          after ready it asks to type RESTORE (--yes: no terminal)
+  restore OPERATION --accept-data-loss [--yes]
+                                          after traffic resumed: always named
+  prune [--dry-run] [--verbose]           --verbose: also what is kept, and why
 USAGE
   exit 2
 }
@@ -76,9 +90,9 @@ on_exit() {
   local status=$?
   [ -z "$staging" ] || rm -rf "$staging"
   if [ "$status" != 0 ] && [ -n "$op" ]; then
-    echo "wlxjury-release: stopped (exit $status). Maintenance is never cleared automatically;" \
-         "follow the runbook for the last milestone in $op/milestones" \
-         "(sudo wlxjury-release status prints it and the next command)." >&2
+    echo "wlxjury-release: stopped (exit $status); maintenance is never cleared automatically." \
+         "For the state and the next command:" >&2
+    echo "  sudo wlxjury-release status" >&2
   fi
 }
 trap on_exit EXIT
@@ -392,8 +406,28 @@ $(printf '  %s\n' "${matches[@]##*/}")"
   echo "ZIP: $zip"
 }
 
+ZIP_MARKER=.wlxjury-zip-sha256  # In each release folder deploy unpacks: the whole SHA-256 of its ZIP.
+
+unpacked_from() {  # unpacked_from DIR SHA256: the release folder DIR was unpacked from the ZIP with that hash
+  local dir=$1 record
+  if [ -e "$dir/$ZIP_MARKER" ]; then
+    [ "$(head -c 65 -- "$dir/$ZIP_MARKER")" = "$2" ]
+    return
+  fi
+  # A folder from before the marker: an operation that deployed it recorded its ZIP's hash.
+  for record in "$BACKUPS"/*/record; do
+    [ -f "$record" ] || continue
+    if [ "$(realpath -m -- "$(sed -n 's/^candidate=//p' "$record")")" = "$(realpath -m -- "$dir")" ] &&
+       [ "$(sed -n 's/^zip_sha256=//p' "$record")" = "$2" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 deploy() {
   local zip=$1 sha=${2,,} backup=$3 allow_jobs=$4 top manifest build want have release previous unit sum size free
+  local replace kept
   local -a entries active=() config_files
   # The hash comes with the build, by another channel than the ZIP. A prefix is checked against the
   # ZIP's whole hash; 16 hex characters (64 bits) leave no practical way to make another ZIP match.
@@ -440,7 +474,18 @@ deploy() {
   [[ $build =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$ ]] || die "invalid build identity in the ZIP"
   [[ $want =~ ^[0-9]+(\.[0-9]+)*$ ]] || die "invalid schema version in the ZIP"
   release=$ROOT/releases/$build-${sha:0:12}
-  [ ! -e "$release" ] || die "$release exists; never overwrite a release"
+  replace=''
+  if [ -e "$release" ] || [ -L "$release" ]; then
+    # Never the current release. One that is not current, unpacked from this very ZIP (a deployment
+    # that was restored), is replaced by this fresh unpack below; anything else stays as it is.
+    [ "$(realpath -m -- "$release")" != "$(readlink -f "$ROOT/current")" ] ||
+      die "$build from this ZIP is already deployed: $release is the current release; nothing was changed"
+    if [ -L "$release" ] || [ ! -d "$release" ] || ! unpacked_from "$release" "$sha"; then
+      die "$release exists and was not unpacked from this ZIP (or that can't be told); never overwrite a release;" \
+          "nothing was changed"
+    fi
+    replace=yes
+  fi
 
   check_endpoint
   [ "$(sql 'SELECT COUNT(*) FROM flyway_schema_history WHERE success = 0')" = 0 ] || die "the database has a failed migration"
@@ -458,9 +503,28 @@ deploy() {
   find "$top" -type d -exec chmod 755 {} +
   find "$top" -type f -exec chmod 644 {} +
   chmod 755 "$top"/bin/*
+  # Which ZIP the folder came from, for a later redeployment of it (unpacked_from).
+  printf '%s\n' "$sha" > "$top/$ZIP_MARKER"
+  chmod 644 "$top/$ZIP_MARKER"
   chown -R root:root "$top"
-  mv -T "$top" "$release"
-  echo "Prepared $release"
+  if [ -n "$replace" ]; then
+    # Not current, so nothing runs it; what will run is exactly the verified ZIP.
+    mv -T "$release" "$staging/replaced"
+    if ! mv -T "$top" "$release"; then
+      if ! mv -T "$staging/replaced" "$release"; then
+        kept=$staging/replaced
+        staging=''  # on_exit must not delete it.
+        die "cannot replace $release, nor put it back: it is now $kept; move it back by hand" \
+            "(mv -T $kept $release); nothing else was changed"
+      fi
+      die "cannot replace $release; it was kept; nothing was changed"
+    fi
+    rm -rf "$staging/replaced"
+    echo "Prepared $release again from this ZIP (a restored release, not current)"
+  else
+    mv -T "$top" "$release"
+    echo "Prepared $release"
+  fi
 
   op=$BACKUPS/$(date -u +%Y%m%dT%H%M%SZ)-$build
   mkdir -m 700 "$op"
@@ -498,10 +562,12 @@ deploy() {
   systemctl start "$SERVICE"  # Flyway migrates on start.
   wait_ready "$release"
   mark ready
-  echo "Ready under maintenance. Smoke-test http://127.0.0.1:$PORT/ locally, then run:"
+  # Short, and the one command to run next last: nothing to copy after it by mistake.
+  # status --verbose has the named forms and how to back out.
+  if [ "$backup" = yes ]; then backup='backup taken'; else backup='backup skipped'; fi
+  echo "$build is ready under maintenance (schema $want, $backup)."
+  echo "Smoke-test http://127.0.0.1:$PORT/ locally, then reopen:"
   echo "  sudo wlxjury-release reopen"
-  echo "It picks this operation; or name it: sudo wlxjury-release reopen $(basename "$op")"
-  echo "To back out instead: sudo wlxjury-release restore. To see this again: sudo wlxjury-release status"
 }
 
 picked() {  # picked NAME: says, into the log, which operation was picked when NAME is empty
@@ -545,7 +611,6 @@ reopen() {  # reopen NAME, or '' for the current operation
   writers=$(record_value writers)
   for unit in $writers; do systemctl start "$unit"; done
   mark complete
-  echo "Traffic resumed with $current."
   # Only now, with traffic back on a ready release, may old releases and dumps go. A failure
   # here leaves the deployment complete: exit 3, distinct from a failed operation (1).
   if ! (prune_old yes); then
@@ -556,6 +621,7 @@ reopen() {  # reopen NAME, or '' for the current operation
          "Do not rerun reopen; fix the cause above, then run wlxjury-release prune --dry-run and prune." >&2
     exit 3
   fi
+  echo "Traffic resumed with $(basename "$current"); $(basename "$op") is complete."
 }
 
 names_current() {  # names_current DIR: the current release is the operation's previous or candidate
@@ -571,6 +637,18 @@ require_current() {  # A restore only ever backs out the deployment the current 
     die "the current release $(readlink -f "$ROOT/current") is neither the previous nor the candidate release of" \
         "$(basename "$op"): a later deployment or a change by hand followed it, and backing it out would replace" \
         "newer data and releases; nothing was changed (docs/deployment.md, \"Recovery runbook\")"
+  # A release folder can be deployed again (a restored one, from the same ZIP): then a later operation
+  # deployed the current release, and only that one may back it out.
+  local LC_ALL=C dir current candidate
+  current=$(realpath -e -- "$ROOT/current")
+  for dir in "$BACKUPS"/*; do  # Both tools name operation folders by UTC start time.
+    if [ ! -d "$dir" ] || [ -L "$dir" ] || [[ ! $(basename "$dir") > $(basename "$op") ]]; then continue; fi
+    candidate=$(operation_releases "$dir" 2>/dev/null | sed -n 2p) || candidate=''
+    if [ -n "$candidate" ] && [ "$(realpath -m -- "$candidate")" = "$current" ]; then
+      die "a later operation, $(basename "$dir"), deployed the current release $current again: back out that one," \
+          "not $(basename "$op"); nothing was changed (docs/deployment.md, \"Recovery runbook\")"
+    fi
+  done
 }
 
 restore_release() {  # A deployment without migrations: the database stays, the release goes back.
@@ -586,6 +664,7 @@ restore_release() {  # A deployment without migrations: the database stays, the 
   if [ "$(sql 'SELECT COUNT(*) FROM flyway_schema_history WHERE success = 0')" != 0 ] || [ "$(schema)" != "$want" ]; then
     die "the database no longer has schema $want of $previous, and this operation has no backup; nothing was changed"
   fi
+  confirm_restore "the database stays as it is"
   enable_maintenance
   hold_restarts
   stop_writers
@@ -593,9 +672,36 @@ restore_release() {  # A deployment without migrations: the database stays, the 
   mark release-restored
   systemctl start "$SERVICE"
   wait_ready "$previous"
-  echo "Switched back to $previous under maintenance; the database was kept. Check it locally, then run:"
+  echo "Switched back to $(basename "$previous") under maintenance; the database was kept."
+  echo "Check it locally, then reopen:"
   echo "  sudo wlxjury-release reopen"
-  echo "It picks this operation; or name it: sudo wlxjury-release reopen $(basename "$op")"
+}
+
+needs_confirmation() {  # The operation became ready, and this is not the rerun of an unfinished restore.
+  local last
+  reached ready || return 1
+  # Unfinished only while no reopen followed it: traffic-may-resume after a rescue dump means asking again.
+  last=$(grep -xE 'restoring|rescue .*|database-restored|release-restored|traffic-may-resume' "$op/milestones" |
+         tail -n 1 || true)
+  case $last in restoring | rescue\ *) return 1 ;; esac
+}
+
+confirm_restore() {  # confirm_restore WHAT-HAPPENS-TO-THE-DATABASE, just before a restore changes anything
+  local answer previous name
+  if [ "$confirmed" = yes ] || ! needs_confirmation; then return 0; fi
+  name=$(basename "$op")
+  previous=$(basename "$(record_value previous)")
+  if [ ! -t 0 ]; then
+    op=''  # A refusal: nothing for the runbook.
+    die "$name became ready, so a restore undoes a good deployment and needs confirmation: run it in a terminal" \
+        "and type RESTORE, or add --yes; nothing was changed"
+  fi
+  printf 'Type RESTORE to switch back to %s (%s): ' "$previous" "$1"
+  read -r answer || answer=''
+  if [ "$answer" != RESTORE ]; then
+    op=''
+    die "not confirmed; nothing was changed"
+  fi
 }
 
 restore() {  # restore NAME|'' yes|no
@@ -606,7 +712,7 @@ restore() {  # restore NAME|'' yes|no
     name=$pick
     # Traffic may be open, and a restore then decides about live data: name it.
     [ -e "$FLAG" ] || die "maintenance is off, so restore picks no operation; nothing was changed." \
-                          "To back out $name anyway, name it (sudo wlxjury-release status shows the command)"
+                          "To back out $name anyway, name it (sudo wlxjury-release status --verbose shows the command)"
   fi
   open_operation "$name"
   picked "$1"
@@ -643,6 +749,11 @@ restore() {  # restore NAME|'' yes|no
     allowance=$(database_bytes)
   fi
   capacity $((RESTORE_MIN_FREE + allowance))
+  if [ -n "$rescue" ]; then
+    confirm_restore "the database is replaced by the dump taken before the deployment; writes since reopening go to a rescue dump"
+  else
+    confirm_restore "the database is replaced by the dump taken before the deployment"
+  fi
 
   enable_maintenance
   hold_restarts
@@ -664,9 +775,9 @@ restore() {  # restore NAME|'' yes|no
   mark database-restored
   systemctl start "$SERVICE"
   wait_ready "$previous"
-  echo "Restored the pre-deployment database and $previous under maintenance. Check it locally, then run:"
+  echo "Restored the pre-deployment database and $(basename "$previous") under maintenance."
+  echo "Check it locally, then reopen:"
   echo "  sudo wlxjury-release reopen"
-  echo "It picks this operation; or name it: sudo wlxjury-release reopen $(basename "$op")"
 }
 
 # Retention (docs/deployment.md, "Retention"). Each rule only ever keeps more: what a restore can
@@ -730,6 +841,10 @@ remove() {  # remove yes|no PATH LABEL [MORE...]: delete PATH and MORE, or say i
   rm -rf --one-file-system -- "$path" "$@" || die "could not delete $path; the rest was kept"
   printf '%s deleted %s (%s)\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$path" "$size" >> "$BACKUPS/prune.log"
   echo "Deleted $label ($size)"
+}
+
+kept() {  # kept LINE: why something stays, printed only by prune --verbose
+  if [ "$prune_verbose" = yes ]; then echo "$1"; fi
 }
 
 prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention rules let go
@@ -821,11 +936,11 @@ prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention 
       drop_dumps+=("$dir")
       continue
     fi
-    echo "Keep dump $(basename "$dir")/database.sql.gz: $why"
+    kept "Keep dump $(basename "$dir")/database.sql.gz: $why"
     previous=$(record_of "$dir" previous)
     name=$(release_name "$previous")
     if [ ! -d "$ROOT/releases/$name" ]; then
-      echo "Note: the previous release of $(basename "$dir") is gone, so its dump is for a manual import only"
+      kept "Note: the previous release of $(basename "$dir") is gone, so its dump is for a manual import only"
     elif [ -z "${keep[$name]:-}" ]; then
       keep[$name]="restore of the kept dump $(basename "$dir") switches back to it"
     fi
@@ -838,9 +953,9 @@ prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention 
     if [ ! -e "$dir" ] && [ ! -L "$dir" ]; then continue; fi
     name=$(basename "$dir")
     if [ -L "$dir" ]; then
-      echo "Skip $name: a symlink, never pruned"
+      kept "Skip $name: a symlink, never pruned"
     elif [ ! -d "$dir" ] || [ ! -f "$dir/wlxjury-build.json" ]; then
-      echo "Skip $name: not a release folder (no wlxjury-build.json), never pruned"
+      kept "Skip $name: not a release folder (no wlxjury-build.json), never pruned"
     else
       mtime=$(stat -c %Y -- "$dir" 2>/dev/null) || mtime=0
       lines+=("${last[$name]:-0}"$'\t'"$mtime"$'\t'"$name")
@@ -853,11 +968,11 @@ prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention 
   # them, and a release something else keeps stays beyond that count too.
   for name in "${names[@]}"; do
     if [ -n "${keep[$name]:-}" ]; then
-      echo "Keep release $name: ${keep[$name]}"
+      kept "Keep release $name: ${keep[$name]}"
       if [ "$name" != "$current" ]; then kept=$((kept + 1)); fi
     elif [ "$kept" -lt "$keep_releases" ]; then
       kept=$((kept + 1))
-      echo "Keep release $name: one of the $keep_releases used most recently besides the current one"
+      kept "Keep release $name: one of the $keep_releases used most recently besides the current one"
     else
       drop_releases+=("$name")
     fi
@@ -879,7 +994,7 @@ prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention 
       echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) database.sql.gz pruned by wlxjury-release prune" >> "$dir/operation.log"
     fi
   done
-  echo "Rescue dumps (before-restore-*) and the cutover's records are never pruned; the long-term backup is separate."
+  kept "Rescue dumps (before-restore-*) and the cutover's records are never pruned; the long-term backup is separate."
 }
 
 # The current operation, stale ones, their state and the next command: for reopen and restore
@@ -922,18 +1037,19 @@ stale_reason() {  # stale_reason DIR: why an open operation is not the current o
   fi
 }
 
-operation_state() {  # operation_state DIR only|named: sets state and next (commands, one per line)
+operation_state() {  # operation_state DIR only|named: sets state, and the next step: hint (prose), cmd (one command, or none)
   local dir=$1 name ref='' restore_ref last restore_cmd
   name=$(basename "$dir")
   # Unnamed only for the current operation; restore also needs maintenance on to pick it.
   if [ "$2" != only ]; then ref=" $name"; fi
   restore_ref=$ref
   if [ ! -e "$FLAG" ]; then restore_ref=" $name"; fi
-  state='' next=''
+  # backout: the restore that would undo a deployment that became ready; status --verbose only.
+  state='' hint='' cmd='' backout=''
   if [ ! -f "$dir/milestones" ] || [ "$(head -n 1 "$dir/milestones")" != started ]; then
     state='unknown: the milestones are missing or damaged'
-    next="keep maintenance on; inspect current, the Flyway history and $dir/operation.log"
-    next+=' (docs/deployment.md, "Recovery runbook")'
+    hint="Keep maintenance on; inspect current, the Flyway history and $dir/operation.log"
+    hint+=' (docs/deployment.md, "Recovery runbook").'
     return 0
   fi
   last=$(tail -n 1 "$dir/milestones")
@@ -945,27 +1061,33 @@ operation_state() {  # operation_state DIR only|named: sets state and next (comm
     complete) state='complete' ;;
     started | backup-complete | backup-skipped)
       state='stopped before the migration: the database was not migrated, current was not switched'
-      next="if the app is stopped: sudo systemctl start $SERVICE"$'\n'"then: sudo wlxjury-release reopen$ref" ;;
+      hint="If the app is stopped, start it (sudo systemctl start $SERVICE); then reopen:"
+      cmd="sudo wlxjury-release reopen$ref" ;;
     migration-may-start)
       state='a migration may have run, and the release never became ready'
-      next="$restore_cmd  (or a forward fix; never just start the previous release)"
-      next+=$'\n'"then, once checked locally: sudo wlxjury-release reopen$ref" ;;
+      hint='Restore the pre-deployment database and release (or fix forward; never just start the previous release):'
+      cmd=$restore_cmd ;;
     ready)
       state='migrated and ready under maintenance'
-      next="smoke-test http://127.0.0.1:$PORT/ locally, then: sudo wlxjury-release reopen$ref"
-      next+=$'\n'"or, to back out: $restore_cmd" ;;
+      hint="Smoke-test http://127.0.0.1:$PORT/ locally, then reopen:"
+      cmd="sudo wlxjury-release reopen$ref"
+      backout=$restore_cmd ;;
     traffic-may-resume)
       state='reopen did not finish: traffic may be open'
-      next="fix the URL reopen reported, then: sudo wlxjury-release reopen$ref" ;;
+      hint='Fix the URL reopen reported, then rerun reopen:'
+      cmd="sudo wlxjury-release reopen$ref"
+      backout=$restore_cmd ;;
     restoring | rescue\ *)
       state='a restore did not finish: the database may be partly imported'
-      next="fix what stopped it (operation.log), then: $restore_cmd" ;;
+      hint="Fix what stopped it ($name/operation.log), then rerun restore:"
+      cmd=$restore_cmd ;;
     database-restored | release-restored)
       state="backed out to the previous release under maintenance ($last)"
-      next="check it locally, then: sudo wlxjury-release reopen$ref" ;;
+      hint='Check it locally, then reopen:'
+      cmd="sudo wlxjury-release reopen$ref" ;;
     *)
       state="unknown last milestone: $last"
-      next='see docs/deployment.md, "Recovery runbook"' ;;
+      hint='Keep maintenance on; see docs/deployment.md, "Recovery runbook".' ;;
   esac
 }
 
@@ -985,11 +1107,6 @@ pick_operation() {  # pick_operation COMMAND: sets pick to the current operation
 ${list%$'\n'}"
 }
 
-describe_operation() {  # describe_operation DIR: its releases and milestones
-  echo "  releases: $(basename "$(record_of "$1" previous)") -> $(basename "$(record_of "$1" candidate)")"
-  if [ -f "$1/milestones" ]; then echo "  milestones: $(paste -sd ' ' "$1/milestones")"; fi
-}
-
 lock_held() {  # The deployment lock is held, from /proc/locks: status must never take it.
   # /proc/locks names the file as MAJOR:MINOR:INODE, major and minor in hex ("1: FLOCK  ADVISORY
   # WRITE 1234 08:01:INODE 0 EOF"); stat gives st_dev, which glibc's encoding splits as below. In a
@@ -1006,77 +1123,129 @@ lock_held() {  # The deployment lock is held, from /proc/locks: status must neve
   awk -v key="$key" '{ for (i = 1; i <= NF; i++) if ($i == key) found = 1 } END { exit !found }' /proc/locks
 }
 
-status() {
-  local current build want have dir last='' line name newest held='' pick_next=''
-  if [ -e "$FLAG" ]; then echo "Maintenance: ON ($FLAG)"; else echo "Maintenance: off"; fi
-  if lock_held; then
-    held=yes
-    echo "Lock: held: an operation (wlxjury-release or wlxjury-deploy) is running now, so this may change"
-  fi
+releases_of() {  # releases_of DIR: "PREVIOUS -> CANDIDATE", as folder names
+  echo "$(basename "$(record_of "$1" previous)") -> $(basename "$(record_of "$1" candidate)")"
+}
+
+backout_hint() {  # backout_hint COMMAND: how to back out, for status --verbose only, and never its last line
+  case $1 in
+    *--accept-data-loss)
+      echo "  to back out, only after a reconciliation decision, as it loses every write since reopening"
+      echo "  (docs/deployment.md, \"Recovery runbook\"; asks to type RESTORE): $1" ;;
+    *) echo "  to back out (asks to type RESTORE): $1" ;;
+  esac
+}
+
+# status prints a few lines and, last and alone, the one command to run next, so that copying "the
+# last command" is always right. Back-out commands appear only with --verbose, and before it.
+status() {  # status yes|no: verbose
+  local verbose=$1 current build want have dir last='' name newest held='' line
+  local pick_state='' pick_hint='' pick_cmd='' pick_backout=''
   current=$(readlink -f "$ROOT/current" 2>/dev/null || true)
   build=$(json "$current/wlxjury-build.json" build 2>/dev/null || true)
   want=$(json "$current/wlxjury-build.json" schemaVersion 2>/dev/null || true)
-  echo "Current release: ${current:-none} (build ${build:-unknown}, schema ${want:-unknown})"
-  have=$(schema 2>/dev/null) || have='unknown (cannot read it)'
-  echo "Database schema: ${have:-unknown}"
+  have=$(schema 2>/dev/null) || have=''
+  if lock_held; then held=yes; fi
   current_operation
   open_operations
   newest=$(newest_operation)
   if [ -n "$pick" ]; then
     operation_state "$BACKUPS/$pick" only
-    echo "Open operation: $pick"
-    describe_operation "$BACKUPS/$pick"
-    echo "  state: $state"
-    pick_next=$next  # The stale operations below set next too.
+    pick_state=$state pick_hint=$hint pick_cmd=$cmd pick_backout=$backout  # The stale ones below set them too.
   else
-    echo "Open operation: none"
-    # The last operation of this tool, if it is the newest of all and finished.
+    # The last operation of this tool, if it is finished.
     for dir in "$BACKUPS"/*; do
       if [ -d "$dir" ] && [ ! -L "$dir" ] && [ -f "$dir/record" ]; then last=$dir; fi
     done
-    if [ -n "$last" ] && ! operation_open "$last"; then
-      name=$(basename "$last")
-      echo "Last operation: $name: complete"
-      describe_operation "$last"
-    else
-      last=''
-    fi
+    if [ -n "$last" ] && operation_open "$last"; then last=''; fi
   fi
-  for dir in "${opened[@]}"; do
-    [ "$(basename "$dir")" != "$pick" ] || continue
-    operation_state "$dir" named
-    echo "Stale open operation: $(basename "$dir"): $state"
-    echo "  stale: $(stale_reason "$dir"); never picked without its name"
-    describe_operation "$dir"
-  done
-  echo "Next:"
-  if [ -n "$held" ]; then
-    echo "  an operation is running: wait for it to finish, then run sudo wlxjury-release status again"
-  elif [ -n "$pick" ]; then
-    while IFS= read -r line; do echo "  $line"; done <<< "$pick_next"
-  else
-    if [ "${#opened[@]}" != 0 ]; then
-      echo "  stale operations are never picked: investigate each (docs/deployment.md, \"Recovery runbook\");" \
-           "commands for one need its name"
-    fi
-    if [ -e "$FLAG" ]; then
-      # deploy refuses under maintenance, and backing out is no answer to a flag nobody explained.
-      echo "  maintenance is on, but no operation is the current one: find out what turned it on" \
-           "(wlxjury-deploy, a stale operation or someone by hand) and finish that first; remove $FLAG" \
-           "only knowingly, once the app is ready and nothing is migrating or restoring"
+
+  if [ "$verbose" = yes ]; then
+    if [ -e "$FLAG" ]; then echo "Maintenance: ON ($FLAG)"; else echo "Maintenance: off"; fi
+    if [ -n "$held" ]; then echo "Lock: held: an operation (wlxjury-release or wlxjury-deploy) is running now, so this may change"; fi
+    echo "Current release: ${current:-none} (build ${build:-unknown}, schema ${want:-unknown})"
+    echo "Database schema: ${have:-unknown (cannot read it)}"
+    if [ -n "$pick" ]; then
+      echo "Open operation: $pick"
+      echo "  releases: $(releases_of "$BACKUPS/$pick")"
+      if [ -f "$BACKUPS/$pick/milestones" ]; then echo "  milestones: $(paste -sd ' ' "$BACKUPS/$pick/milestones")"; fi
+      echo "  state: $pick_state"
     else
-      echo "  to deploy: sudo wlxjury-release deploy [RELEASE.zip] SHA256"
-    fi
-    # Backing out makes sense only for the newest operation, while its candidate is the current release.
-    if [ ! -e "$FLAG" ] && [ -n "$last" ] && [ "$last" = "$newest" ] && [ -n "$current" ] &&
-       [ "$(realpath -m -- "$(record_of "$last" candidate)" 2>/dev/null)" = "$current" ]; then
-      if grep -qx backup-skipped "$last/milestones" 2>/dev/null; then
-        echo "  to back out $name (switches the release back, keeps the data): sudo wlxjury-release restore $name"
-      elif [ -f "$last/database.sql.gz" ]; then
-        echo "  to back out $name, only after a reconciliation decision, as it loses every write since"
-        echo "  its reopen (docs/deployment.md, \"Recovery runbook\"): sudo wlxjury-release restore $name --accept-data-loss"
+      echo "Open operation: none"
+      if [ -n "$last" ]; then
+        echo "Last operation: $(basename "$last"): complete"
+        echo "  releases: $(releases_of "$last")"
+        echo "  milestones: $(paste -sd ' ' "$last/milestones")"
       fi
     fi
+    for dir in "${opened[@]}"; do
+      [ "$(basename "$dir")" != "$pick" ] || continue
+      operation_state "$dir" named
+      echo "Stale open operation: $(basename "$dir"): $state"
+      echo "  stale: $(stale_reason "$dir"); never picked without its name"
+      echo "  releases: $(releases_of "$dir")"
+      if [ -f "$dir/milestones" ]; then echo "  milestones: $(paste -sd ' ' "$dir/milestones")"; fi
+    done
+    echo "Other commands:"
+    if [ -n "$pick" ] && [ -n "$pick_cmd" ] && [[ $pick_cmd != *" $pick"* ]]; then
+      echo "  the same, by name: $pick_cmd $pick"
+    fi
+    if [ -n "$pick" ] && [ -n "$pick_backout" ]; then backout_hint "$pick_backout"; fi
+    # Backing out makes sense only for the newest operation, while its candidate is the current release.
+    if [ -z "$pick" ] && [ ! -e "$FLAG" ] && [ -n "$last" ] && [ "$last" = "$newest" ] && [ -n "$current" ] &&
+       [ "$(realpath -m -- "$(record_of "$last" candidate)" 2>/dev/null)" = "$current" ]; then
+      name=$(basename "$last")
+      if grep -qx backup-skipped "$last/milestones" 2>/dev/null; then
+        echo "  to back out $name (switches the release back, keeps the data; asks to type RESTORE):" \
+             "sudo wlxjury-release restore $name"
+      elif [ -f "$last/database.sql.gz" ]; then
+        backout_hint "sudo wlxjury-release restore $name --accept-data-loss"
+      fi
+    fi
+    echo "  every state and its commands: docs/deployment.md, \"Recovery runbook\""
+    echo "Next:"
+  else
+    if [ -e "$FLAG" ]; then line='Maintenance ON.'; else line='Maintenance off.'; fi
+    line+=" Current release: ${build:-${current:-none}} (schema ${want:-unknown})"
+    if [ -z "$have" ]; then line+=", database schema unknown"
+    elif [ "$have" != "$want" ]; then line+=", database at schema $have"
+    fi
+    echo "$line."
+    if [ -n "$held" ]; then echo "An operation is running now: the deployment lock is held, so this may change."; fi
+    if [ -n "$pick" ]; then
+      echo "Operation $pick ($(releases_of "$BACKUPS/$pick")): $pick_state."
+    elif [ -n "$last" ]; then
+      echo "Last operation $(basename "$last"): complete."
+    fi
+    for dir in "${opened[@]}"; do
+      [ "$(basename "$dir")" != "$pick" ] || continue
+      operation_state "$dir" named
+      echo "Stale operation $(basename "$dir"): $state; $(stale_reason "$dir")."
+    done
+  fi
+
+  if [ -n "$held" ]; then
+    echo "Wait for the running operation to finish, then:"
+    echo "  sudo wlxjury-release status"
+  elif [ -n "$pick" ]; then
+    echo "$pick_hint"
+    if [ -n "$pick_cmd" ]; then echo "  $pick_cmd"; fi
+  elif [ -e "$FLAG" ]; then
+    # deploy refuses under maintenance, and backing out is no answer to a flag nobody explained.
+    echo "Maintenance is on, but no operation is the current one: find out what turned it on (wlxjury-deploy," \
+         "a stale operation or someone by hand) and finish that first; remove $FLAG only knowingly, once the" \
+         "app is ready and nothing is migrating or restoring (docs/deployment.md, \"Recovery runbook\")."
+    if [ "$verbose" != yes ]; then
+      echo "For the details:"
+      echo "  sudo wlxjury-release status --verbose"
+    fi
+  else
+    if [ "${#opened[@]}" != 0 ]; then
+      echo "Stale operations are never picked: investigate each (docs/deployment.md, \"Recovery runbook\");" \
+           "commands for one need its name."
+    fi
+    echo "To deploy:"
+    echo "  sudo wlxjury-release deploy [RELEASE.zip] SHA256"
   fi
 }
 
@@ -1087,12 +1256,22 @@ prune() {
 }
 
 case ${1:-} in
-  status) [ $# = 1 ] || usage; status ;;
-  prune)
-    if [ $# = 1 ]; then prune yes
-    elif [ $# = 2 ] && [ "$2" = --dry-run ]; then prune no
+  status)
+    if [ $# = 1 ]; then status no
+    elif [ $# = 2 ] && [ "$2" = --verbose ]; then status yes
     else usage
     fi ;;
+  prune)
+    shift
+    apply=yes
+    for option in "$@"; do  # Each option at most once, in any order.
+      case $option in
+        --dry-run) [ "$apply" = yes ] || usage; apply=no ;;
+        --verbose) [ "$prune_verbose" = no ] || usage; prune_verbose=yes ;;
+        *) usage ;;
+      esac
+    done
+    prune "$apply" ;;
   deploy)
     shift
     backup=no allow_jobs=no
@@ -1116,13 +1295,24 @@ case ${1:-} in
     else usage
     fi ;;
   restore)
-    if [ $# = 1 ]; then restore '' no
-    elif [ $# = 2 ] && [ "$2" = --accept-data-loss ]; then
+    shift
+    accept=no name=''
+    if [ $# -gt 0 ] && [[ $1 != -* ]]; then  # [OPERATION], then each option at most once, in any order.
+      [ -n "$1" ] || usage
+      name=$1
+      shift
+    fi
+    for option in "$@"; do
+      case $option in
+        --accept-data-loss) [ "$accept" = no ] || usage; accept=yes ;;
+        --yes) [ "$confirmed" = no ] || usage; confirmed=yes ;;
+        *) usage ;;
+      esac
+    done
+    if [ "$accept" = yes ] && [ -z "$name" ]; then
       usage "--accept-data-loss restores over the writes made since reopening, so it needs the operation" \
-            "named: restore OPERATION --accept-data-loss (sudo wlxjury-release status shows the command)"
-    elif [ $# = 2 ] && [ -n "$2" ]; then restore "$2" no
-    elif [ $# = 3 ] && [ -n "$2" ] && [ "$3" = --accept-data-loss ]; then restore "$2" yes
-    else usage
-    fi ;;
+            "named: restore OPERATION --accept-data-loss (docs/deployment.md, \"Recovery runbook\")"
+    fi
+    restore "$name" "$accept" ;;
   *) usage ;;
 esac
