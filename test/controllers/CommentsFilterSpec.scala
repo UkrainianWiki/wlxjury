@@ -292,7 +292,7 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
 
   "the large view with the toggle" should {
 
-    "link its neighbours, strip, vote and comment with the toggle, and show the comments' author, time and round" in {
+    "link its neighbours, strip, vote and comment with the toggle, and show the comments' author and time" in {
       testDbApp { app =>
         val f = fixture()
         val doc = Jsoup.parse(contentAsString(
@@ -310,8 +310,40 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
         val comment = doc.selectFirst(".large-comments .msg")
         comment.selectFirst(".wlx-comment-meta strong").text === "Org"
         comment.selectFirst("time.wlx-comment-time").attr("datetime") === "2016-10-05T09:34:56Z"
-        comment.selectFirst(".wlx-comment-round").text must contain("Pre-screening")
         comment.selectFirst(".wlx-comment-body").text === "from the earlier round"
+      }
+    }
+
+    "show a juror a comment from another round with its author, time and text, never that round's name or id" in {
+      testDbApp { app =>
+        val f = fixture()
+        val path = s"/large/round/${f.round.getId}/user/${f.juror1.getId}/pageid/3"
+        val html = contentAsString(get(app, f.juror1, path))
+        val comment = Jsoup.parse(html).selectFirst(".large-comments .msg")
+        comment.selectFirst(".wlx-comment-meta strong").text === "Org"
+        comment.selectFirst("time.wlx-comment-time").attr("datetime") === "2016-10-05T09:34:56Z"
+        comment.selectFirst(".wlx-comment-body").text === "from the earlier round"
+        comment.select(".wlx-comment-round").size === 0
+        // the author and the time only: no round name, and no round id in its place
+        comment.selectFirst(".wlx-comment-meta").text === "Org · 2016-10-05T09:34:56Z"
+        html must not(contain("Pre-screening"))
+        html must not(contain("Written in round"))
+        // the large view's JSON has no comments at all
+        val json = contentAsString(route(app, FakeRequest(GET, path).withSession(Secured.UserName -> f.juror1.email)
+          .withHeaders("Accept" -> "application/json").withCSRFToken).get)
+        json must not(contain("Pre-screening"))
+        json must not(contain("from the earlier round"))
+      }
+    }
+
+    "show the organisers that round's name on its comments, in one juror's and all the jurors' large view" in {
+      testDbApp { app =>
+        val f = fixture()
+        forall(Seq(f.juror1.getId, 0L)) { asUserId =>
+          val doc = Jsoup.parse(contentAsString(
+            get(app, f.organizer, s"/large/round/${f.round.getId}/user/$asUserId/pageid/3")))
+          doc.selectFirst(".large-comments .wlx-comment-round").text must contain("Pre-screening")
+        }
       }
     }
 

@@ -234,8 +234,10 @@ class LargeViewController @Inject() (
 object LargeViewController {
 
   /** Whether the large view names the round a comment from another round of the contest was
-    * written in (its badge): to everyone who sees the comments, for now. The one place that
-    * decides it (a round a juror isn't in may be named there: under review, 2026-11-13).
+    * written in (its badge): only to those who see the round's organiser info (admins,
+    * organizers, root; [[User.canViewOrgInfo]]), the maintainer's decision of 2026-11-13. A juror
+    * would otherwise learn of rounds they aren't in and of the file's way through them, which
+    * round lineage keeps from jurors (decision 11). Jurors see the comment itself.
     */
-  def showsCommentRounds(user: User, round: Round): Boolean = true
+  def showsCommentRounds(user: User, round: Round): Boolean = user.canViewOrgInfo(round)
 }

@@ -178,7 +178,8 @@ of every criterion. The view takes no votes. The keys that move between files wo
 **Comments:** while the round is open, the view has a comment box under the file, as the
 jurors' large view has: type your comment and press **Submit comment**. Each comment shows its
 author and time (in your time zone; some older comments have none), and the round's name if it
-was written in another round of the contest. Comments are not
+was written in another round of the contest. Only admins, organizers and root see that round
+name; jurors see the comment without it. Comments are not
 private: whoever opens the file's large view in the contest sees them, with your name: its
 admins and organizers, and the jurors who have the file. When the round is stopped, the file's
 comments are still shown, but no new ones can be added: the tool refuses a comment on a stopped

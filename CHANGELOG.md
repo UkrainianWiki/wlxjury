@@ -42,7 +42,8 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
   they already have; it never shows a file the viewer couldn't see. Both count the comments a
   file's large view shows: any round's of the contest, any author's. The large view's comments
   now show their author, time (in the viewer's time zone and language; none where the stored time
-  can't be read) and, for a comment from another round, that round's name.
+  can't be read) and, for a comment from another round, that round's name (to admins, organizers
+  and root only: jurors see the comment without it).
 - A comment on a stopped round's file is refused on the server too, for admins, organizers and
   root as for jurors: a 403 page saying the comment was not saved, with a link back to the file
   (or JSON) and its reference, logged on `security.authz` with the reason `round_stopped`. The

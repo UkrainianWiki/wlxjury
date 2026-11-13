@@ -386,8 +386,8 @@ Under the image in the large view is **Comments**. Type in **Your comment here**
 <img src="images/juror-large-view-comments.png" alt="The comment box under the image, with the button Submit comment" width="664">
 
 Each comment shows its author and when it was written, in your own time zone (older comments
-may have no time). A comment written in another round of the contest has that round's name
-beside it.
+may have no time). Comments from the contest's other rounds are shown too, without the round's
+name.
 
 Comments are not private. The contest's admins and organizers, and the other jurors who open
 this file in the contest, see your comment, with your name. You can comment only while the round
