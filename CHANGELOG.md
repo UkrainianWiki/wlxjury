@@ -49,6 +49,33 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
   (or JSON) and its reference, logged on `security.authz` with the reason `round_stopped`. The
   form was already hidden there.
 
+**Fixes**
+
+- **Authors shown as wiki markup** (developed 2026-11-13): a file imported before authors were
+  resolved kept its author as wikitext, so organizers saw e.g. «Автор: [[User:Liliia2022|Liliia2022]]»
+  in the large views and the round file list (on the production copy: 160,492 of 1,029,265 files,
+  among them every file of WLM UA 2025 and all 8 deleted files of WLM UA 2026). Fixed two ways:
+  - **Normalize stored authors**, a root-only button on the rounds list: a background job
+    (`author_normalize`) stores each such author as the account an import stores today, keyed by
+    page id (never by value: `images.author` is `utf8mb4_general_ci`). A link's target account
+    (`[[User:Petro_Hrushko|Petro]]` → `Petro Hrushko`); a credit template's linked user (the four
+    on production all link to one: `{{MO}}` → `Максим Огородник`); for a template that links to
+    nobody, the original uploader, none for a deleted file or a bot; none for an unknown author.
+    Accounts an old import's encoding loss stored as question marks (`[[User:???????? ????????|…]]`:
+    38 values, 3,706 files on the production copy, none deleted) are read again from the file's
+    page text on Commons; one Commons names no author for is left as it is, never stored as
+    question marks. Chunked, cancellable and resumable; a second run changes nothing. Admin guide:
+    "Normalizing stored authors".
+  - The large views, their JSON and the file list's author column show any value still stored
+    with markup as its account (`StoredAuthors.shown`), as plain text. Authors stay visible to
+    organizers, admins and root only.
+- **Conflicts of interest after the job:** once the job has run, files by contest members that
+  were stored with wikitext authors match as conflicts of interest (`CoiMembers`' `author IN (…)`
+  prefilter now finds them): the round form's counts, the conflicts pages and the next
+  distributions, "Distribute new files" included. Nothing caches these matches, so nothing needs
+  a refresh; rounds already distributed keep their files until an admin disqualifies the new
+  matches on the round's conflicts page.
+
 **Development**
 
 - V101: index `comment_contest_room_idx` on `comment (contest_id, room)`, which also takes over
@@ -56,6 +83,14 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
   upgraded schema equals a fresh one), online and rerunnable,
   for the toggle's semi-join, the badges' one grouped query per page and the large view's
   comments. Round lineage's planned `round.status` moves from V101 to V102.
+- **Author write guard:** `ImageText.resolvedAuthors` (behind `withAuthors`, used by the import,
+  its refresh and a round's file list) never stores markup: an author that is still markup after
+  parsing (`{{own}} by [[w:Museum]]`) falls back to the original uploader, as a credit template
+  that links to nobody does. `FileAuthorSpec` and `RoundFileListSpec` check every write path;
+  `AuthorNormalizeSpec` the job (chunking, idempotency, two values equal under the collation,
+  question-mark accounts restored or left, Cancel and Retry). The job's first step counts the
+  files with markup in one scan of `images` (about 10 s on production) on the fetch lane, and its
+  few Commons requests may overlap an import's: the fetch lane has no limit shared across kinds.
 
 ## 26.11.4 (2026-11-13)
 

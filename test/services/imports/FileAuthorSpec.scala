@@ -4,6 +4,7 @@ import db.scalikejdbc.{ImageJdbc, SharedTestDb, TestDb}
 import org.intracer.wmua.{ContestJury, Image}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
+import scalikejdbc._
 import services.TestImportServices
 
 /** The author an import stores (`images.author`), as scalawiki determines it: the user the
@@ -124,6 +125,33 @@ class FileAuthorSpec extends Specification with TestDb with BeforeAll with Befor
       // file 2 comes back without its text: it keeps what is stored
       importFiles(contest(), new FakeCommonsSource(Seq(file(1, info("[[User:Ilya|Ilya]]")), FakeFile(image(2)))))
       authors === Map(1L -> Some("Ilya"), 2L -> Some("Kept"))
+    }
+
+    // the write guard: no import or refresh stores wiki markup (StoredAuthors.hasMarkup)
+    "never store wiki markup as an author, on an import or a refresh with the page's text" in {
+      val c = contest()
+      val pages = Seq(
+        file(1, info("[[User:Петро_Грушко|Петро]]")),
+        file(2, info("{{SergiyBobokPhotos}}")),
+        file(3, info("{{MO}}"), "Original"),
+        file(4, info("{{own}} by [[w:Museum]]"), "Uploader4"),
+        file(5, info("[https://example.com Some Site]")),
+        file(6, info("{{lang|en|Some Name}}")),
+        file(7, info("{{unknown|author}}"), "Uploader7")
+      )
+      val commons = new FakeCommonsSource(pages,
+        templates = Map("SergiyBobokPhotos" -> "[[User:Sergiy Bobok|Sergiy Bobok]]", "MO" -> "A museum"))
+      val expected = Map(1L -> Some("Петро Грушко"), 2L -> Some("Sergiy Bobok"), 3L -> Some("Original"),
+        4L -> Some("Uploader4"), 5L -> Some("Some Site"), 6L -> Some("Some Name"), 7L -> None)
+      importFiles(c, commons)
+      val imported = authors
+      // stored by an older import as wikitext, then refreshed with the page's text
+      DB.autoCommit { implicit s =>
+        sql"UPDATE images SET author = CONCAT('[[User:', page_id, '|x]]')".update(): Unit
+      }
+      importFiles(c, commons)
+      (imported === expected) and (authors === expected) and
+        (authors.values.flatten.filter(StoredAuthors.hasMarkup) must beEmpty)
     }
 
     "keep at most 255 characters of an author" in {
