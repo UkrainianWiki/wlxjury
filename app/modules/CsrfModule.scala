@@ -33,8 +33,12 @@ class CsrfModule extends Module {
   * Accept header: Play creates one by default only for a request that accepts HTML, but every
   * page renders HTML, and its forms (the sign-in form, the navbar's sign-out) need the token. A
   * client sending `Accept: application/json` or `text/plain` got a 500 from the sign-in page
-  * (26.11.3). The token reaches the session only when a page renders it (Play's filter keeps an
-  * unrendered one out of an HttpOnly session), so a JSON answer still sets no cookie.
+  * (26.11.3). The token reaches the session only when a page renders it or the body is streamed
+  * (Play's filter keeps an unrendered one out of an HttpOnly session only for a Strict body): a
+  * JSON answer still sets no cookie, a streamed one not cacheable by a shared cache (an image
+  * proxy's file, a CSV or TXT export, a dev-mode asset) may. Negligible: a browser's requests
+  * got a token before too (a wildcard Accept accepts HTML), and a signed-in session lacks one
+  * only between the sign-in and its first page.
   */
 @Singleton
 class ApiCsrfConfigProvider @Inject() (configuration: Configuration, httpConfiguration: HttpConfiguration)

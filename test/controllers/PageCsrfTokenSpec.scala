@@ -113,12 +113,30 @@ class PageCsrfTokenSpec extends PlaySpecification with PlayTestDb with AccountTe
 
   "the templates" should {
     "render the token only through csrfField, never Play's helper that throws without one" in {
-      // helper.CSRF.formField and CSRF.getToken(...).get fail with a 500 on a request without a
-      // token; csrfField renders it if there is one (and the filter gives every GET one)
-      val Throwing = """helper\.CSRF\.formField|helper\.CSRF\.getToken|CSRF\.getToken(\([^)]*\))?\.get\b""".r
       SourceScan.hits(SourceScan.files("app", ".scala", ".html"), Throwing) must beEmpty
     }
+
+    "have a source guard that sees the throwing forms and passes the safe ones" in {
+      forall(Seq(
+        "@helper.CSRF.formField", "@CSRF.formField", "@helper.CSRF(routes.X.y())", "@helper.CSRF (call)",
+        "helper.CSRF.getToken", "CSRF.getToken.get.value", "CSRF.getToken(request).get",
+        "CSRF.getToken(request).getOrElse(throw new IllegalStateException)",
+        "CSRF.getToken.getOrElse( sys.error(\"none\"))"
+      )) { code => Throwing.findFirstIn(code) aka code must beSome }
+      forall(Seq(
+        "@csrfField()", "@for(token <- play.filters.csrf.CSRF.getToken(request)) {<input/>}",
+        "@play.filters.csrf.CSRF.getToken.fold(\"\")(_.value)", "CSRF.getToken(request).map(_.value)",
+        "CSRF.getToken.getOrElse(fallback)"
+      )) { code => Throwing.findFirstIn(code) aka code must beNone }
+    }
   }
+
+  /** Play's form-field helpers, which throw without a token (a 500), wherever `helper._` is
+    * imported or not, and a token taken out of its Option by force. */
+  private val Throwing =
+    ("""\bCSRF\.formField\b|helper\.CSRF\s*\(|helper\.CSRF\.getToken\b|""" +
+      """CSRF\.getToken(\([^)]*\))?\.(get\b|getOrElse\s*\(\s*(throw\b|sys\.error\b))""").r
+
 
   "a signed-in page with forms, for a client that doesn't ask for HTML and has no token yet" should {
     "render with the token, never a 500" in {
