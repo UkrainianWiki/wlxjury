@@ -51,7 +51,9 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
 
 **Development**
 
-- V101: index `comment_contest_room_idx` on `comment (contest_id, room)`, online and rerunnable,
+- V101: index `comment_contest_room_idx` on `comment (contest_id, room)`, which also takes over
+  the foreign key from the single-column `contest_id` index (dropped where a dump kept it, so an
+  upgraded schema equals a fresh one), online and rerunnable,
   for the toggle's semi-join, the badges' one grouped query per page and the large view's
   comments. Round lineage's planned `round.status` moves from V101 to V102.
 
