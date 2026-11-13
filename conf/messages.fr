@@ -185,6 +185,7 @@ comments.report.link = Commentaires sur les fichiers du tour
 comments.report.commenter = Commentaires de {0}
 comments.report.commenter.account = compte n° {0}
 comments.report.commenter.remove = Afficher les commentaires de tous
+comments.report.count.commenter = {0} de {1}
 comments.report.author.filter = Seulement les commentaires de {0}
 comments.report.author.gallery = Galerie du juré {0} dans le tour {1}
 comments.report.others.one = {0} autre commentaire sur ce fichier

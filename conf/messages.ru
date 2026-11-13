@@ -494,6 +494,7 @@ comments.report.link = Комментарии к файлам раунда
 comments.report.commenter = Комментарии: {0}
 comments.report.commenter.account = учётная запись №{0}
 comments.report.commenter.remove = Показать комментарии всех
+comments.report.count.commenter = {0}, автор: {1}
 comments.report.author.filter = Только комментарии: {0}
 comments.report.author.gallery = Галерея члена жюри {0} в раунде {1}
 comments.report.others.one = Ещё {0} комментарий к этому файлу

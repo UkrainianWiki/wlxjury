@@ -124,8 +124,8 @@ img.cropped {
 .wlx-comments-main h2 { overflow-wrap: anywhere; }
 .wlx-comments-report .wlx-comment-other-round { border-left: 3px solid var(--bs-secondary-color); }
 /* a comment author's icon links in the report (its filter by them, their gallery of the round):
-   muted beside the name, a 24 px target (WCAG 2.5.8), the theme's focus ring; their words are in
-   title and aria-label */
+   muted beside the name, a 24 px target (WCAG 2.5.8), an outline when focused (kept in forced
+   colours, unlike a shadow); their words are in title and aria-label */
 .wlx-comments-report .wlx-comment-author-link {
     display: inline-flex;
     align-items: center;
@@ -140,10 +140,7 @@ img.cropped {
 }
 .wlx-comments-report .wlx-comment-author-link:hover { color: var(--bs-link-hover-color); background: var(--bs-tertiary-bg); }
 .wlx-comments-report .wlx-comment-author-link:focus-visible,
-.wlx-commenter-chip-remove:focus-visible {
-    outline: 0;
-    box-shadow: 0 0 0 .25rem rgba(var(--bs-primary-rgb), .5);
-}
+.wlx-commenter-chip-remove:focus-visible { outline: 2px solid var(--bs-focus-ring-color); outline-offset: 1px; }
 /* the filter by author: a chip with its name and a link removing it; the file's other comments
    folded under theirs */
 .wlx-commenter-chip {

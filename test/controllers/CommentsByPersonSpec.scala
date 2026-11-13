@@ -268,7 +268,7 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
         val doc = page(app, f.organizer, path(f, 0, s"?scope=contest&filter=selected&commenter=${f.juror1.getId}"))
         // the selected files (1, 2, 5, 7) with a comment of juror 1's
         rows(doc) === Seq(7L, 1L, 5L)
-        doc.selectFirst("#comments-report-count").text === "· 3 files, 3 comments"
+        doc.selectFirst("#comments-report-count").text === "· 3 files, 3 comments by Juror 1"
         val chip = doc.selectFirst("#comments-report-commenter")
         chip.ownText.trim === "Comments by Juror 1"
         val remove = chip.selectFirst("a.wlx-commenter-chip-remove")
@@ -317,6 +317,7 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         val doc = page(app, f.organizer, path(f, 0, s"?commenter=${f.juror1.getId}"), "Accept-Language" -> "uk")
         doc.selectFirst("#comments-report-commenter").ownText.trim === "Коментарі: Juror 1"
+        doc.selectFirst("#comments-report-count").text === "· 3 файли, 3 коментарі, автор: Juror 1"
         doc.selectFirst("a.wlx-commenter-chip-remove").attr("aria-label") === "Показати коментарі всіх"
         val msg = msgOf(doc, "j2 on seven")
         links(msg).map(l => (l._3, l._4, l._5)) === Seq(
@@ -338,6 +339,14 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
         val unknown = page(app, f.organizer, path(f, 0, s"?scope=contest&commenter=${f.organizer.getId + 1000}"))
         unknown.selectFirst("#comments-report-commenter").ownText.trim === s"Comments by account #${f.organizer.getId + 1000}"
         unknown.selectFirst("#comments-report-empty").text must contain("in this contest")
+        // a real account of contest B, whose comments are all B's: not named from the users table
+        val other = userDao.create(User("Other Person", "other@example.com", None, Set("jury"),
+          contestId = Some(f.roundB.contestId)))
+        CommentJdbc.create(other.getId, "Other Person", f.roundB.getId, Some(f.roundB.contestId), 2, "only in B")
+        val html = contentAsString(get(app, f.organizer, path(f, 0, s"?scope=contest&commenter=${other.getId}")))
+        Jsoup.parse(html).selectFirst("#comments-report-commenter").ownText.trim === s"Comments by account #${other.getId}"
+        html must not(contain("Other Person"))
+        html must not(contain("only in B"))
       }
     }
 

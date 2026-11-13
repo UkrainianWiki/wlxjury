@@ -149,8 +149,8 @@ them (**N other comments on this file**, click to open). **Latest comment first*
 person's latest comment; the counts, the pages, the **Comments CSV** (only their comments) and the
 large view's previous and next follow it, together with the juror, vote filter, region and order.
 The pictures icon (**Gallery of juror Name in round …**) opens that person's gallery of the round
-the comment was written in, with their votes; it is shown only when they are a juror of that round
-(also a pre-screener of an earlier round), not for an organizer's comments. Old comments without
+the comment was written in, with their votes; it is shown only for a juror of that round (a
+pre-screener's comment in an earlier round links their gallery there). Old comments without
 an account have no icons. Hover over an icon to see what it does; screen readers read the same
 text.
 

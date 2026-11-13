@@ -173,6 +173,7 @@ comments.report.link = Коментарі до файлів раунду
 comments.report.commenter = Коментарі: {0}
 comments.report.commenter.account = обліковий запис №{0}
 comments.report.commenter.remove = Показати коментарі всіх
+comments.report.count.commenter = {0}, автор: {1}
 comments.report.author.filter = Лише коментарі: {0}
 comments.report.author.gallery = Галерея члена журі {0} у раунді {1}
 comments.report.others.one = Ще {0} коментар до цього файлу
