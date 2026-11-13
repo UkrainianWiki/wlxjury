@@ -150,6 +150,17 @@ class GalleryByRateViewSpec extends PlaySpecification {
       checkTiles(doc.outerHtml, files.size)
     }
 
+    "say that a vote's time follows it only in the juror's own list by vote time (tile-votes.js)" in {
+      import controllers.ListOrder
+      def votesList(order: ListOrder) = Jsoup.parse(contentAsString(views.html.galleryByRate(
+        juror, RoundList(round, juror.getId, order = order, view = GalleryView.ByRate), files, Pager(1, files.size), Nil,
+        None, new RateDistribution(Map.empty), ranks))).selectFirst("[data-stars-number]")
+      (votesList(ListOrder.LatestVote).attr("data-vote-times") === "true") and
+        (votesList(ListOrder.OldestVote).attr("data-vote-times") === "true") and
+        (votesList(ListOrder.ByRate).hasAttr("data-vote-times") must beFalse) and
+        (votesList(ListOrder.FileOrder).hasAttr("data-vote-times") must beFalse)
+    }
+
     "show a rated round's result to an organiser as stars and the rate, without a tally" in {
       // grouped rows as all the jurors' list of a rated round has them: their rates' sum and
       // their rated votes (the rule's denominator), no tally drawn
