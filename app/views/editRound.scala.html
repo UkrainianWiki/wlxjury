@@ -15,7 +15,8 @@
         distributionJob: Option[services.jobs.Job] = None,
         coi: Option[controllers.CoiCounts] = None,
         criteria: Seq[org.intracer.wmua.Criterion] = Nil,
-        scoreRuleWarning: Option[controllers.RoundController.ScoreRuleWarning] = None
+        scoreRuleWarning: Option[controllers.RoundController.ScoreRuleWarning] = None,
+        imageCheckJob: Option[services.jobs.Job] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @implicitLayout = @{ bs.Layout.horizontal("col-md-4", "col-md-8") }
@@ -235,5 +236,8 @@
                 @helper.CSRF.formField
                 <button type="submit" class="btn btn-outline-secondary">@Messages("round.images.check")</button>
               </form>
+              @for(job <- imageCheckJob) {
+                @snippets.imageCheckStatus(job, req.uri)
+              }
             }
 }
