@@ -81,6 +81,27 @@ class RoundWritesGuardSpec extends Specification with TestDb with BeforeAll with
     }
   }
 
+  "an auto-commit session (DB.autoCommit)" should {
+    "be refused by the round lock, and give a vote's insert a transaction of its own" in {
+      val (round, juror) = setUp()
+      imageDao.batchInsert(Seq(Image(2L, "File:Image2.jpg", None, None, 640, 480, Some("07-101-0002"))))
+      (DB.autoCommit(implicit s => RoundWrites.lock(Seq(round))) must throwA[IllegalStateException]("auto-commit")) and {
+        DB.autoCommit(implicit s => selectionDao.create(2L, rate = 0, juryId = juror, roundId = round))
+        (votes(round) === 2) and (RoundImageJdbc.find(round, 2L).map(_.status) === Some("in")) and
+          (RoundImageInvariants.violations(round) must beEmpty)
+      }
+    }
+    "not count a lock that ended with its statement for a structural write" in {
+      val (round, _) = setUp()
+      // as the round locks outside RoundWrites record theirs (Round.isOpen, RoundConflicts)
+      (DB.autoCommit { implicit s =>
+        sql"SELECT id FROM round WHERE id = $round FOR UPDATE".map(_.long(1)).single()
+        RoundWrites.recordRounds(Seq(round))
+        VoteJdbc.deleteVotes(sqls"v.round_id = $round")
+      } must throwA[IllegalStateException]("outside a transaction")) and (votes(round) === 1)
+    }
+  }
+
   "disqualifying and requalifying (P1b)" should {
     "fail without the round's lock, and write nothing" in {
       val (round, _) = setUp()

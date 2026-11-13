@@ -42,10 +42,24 @@ object RoundWrites {
   private def open(c: Connection): Boolean =
     c != null && scala.util.Try(!c.isClosed).getOrElse(false)
 
+  /** The session's transaction's connection: none for an auto session, or for a session in
+    * auto-commit mode (`DB.autoCommit`), whose `FOR UPDATE` lock ends with its statement.
+    */
   private def connectionOf(session: DBSession): Option[Connection] =
     session match {
       case _: AutoSession | _: NamedAutoSession | ReadOnlyAutoSession | _: ReadOnlyNamedAutoSession => None
-      case s => Option(s.connection)
+      case s => Option(s.connection).filterNot(autoCommit)
+    }
+
+  private def autoCommit(c: Connection): Boolean = scala.util.Try(c.getAutoCommit).getOrElse(true)
+
+  /** Whether `session` is a session of its own connection in auto-commit mode (`DB.autoCommit`),
+    * not an auto session: a transaction of its own is needed for a structural write.
+    */
+  private[scalikejdbc] def inAutoCommitMode(session: DBSession): Boolean =
+    session match {
+      case _: AutoSession | _: NamedAutoSession | ReadOnlyAutoSession | _: ReadOnlyNamedAutoSession => false
+      case s => Option(s.connection).exists(autoCommit)
     }
 
   private def heldOf(session: DBSession): Option[Held] =
@@ -64,9 +78,15 @@ object RoundWrites {
   def recordRounds(roundIds: Iterable[Long])(implicit session: DBSession): Unit =
     heldOf(session).foreach(_.rounds ++= roundIds)
 
-  /** Locks the rounds for update, in id order, and records them. */
+  /** Locks the rounds for update, in id order, and records them. Refused in an auto-commit
+    * session (`DB.autoCommit`), before anything is written: its lock would end with the
+    * statement, while the writes after it would run without the round's mutex. (The vote
+    * inserts, [[VoteJdbc.create]] and `batchInsert`, take a transaction of their own there,
+    * [[RoundImageJdbc.inTransaction]].)
+    */
   def lock(roundIds: Seq[Long])(implicit session: DBSession): Unit =
     if (roundIds.nonEmpty) {
+      if (inAutoCommitMode(session)) refuse("in an auto-commit session")
       val ids = roundIds.distinct.sorted
       sql"SELECT id FROM round WHERE id IN ($ids) ORDER BY id FOR UPDATE".map(_.long(1)).list()
       recordRounds(ids)
