@@ -104,7 +104,8 @@
       * first with a BOM: the file's title, page id and page on Commons, the comment's author,
       * time (UTC, ISO 8601; its stored text if that can't be read, [[org.intracer.wmua.Comment.parseTime]]),
       * round (its name, its id if not found) and text. Its files as the report lists them: the
-      * list's (juror, filter, region, order) with comments in its scope ([[CommentScope]]), their
+      * list's (juror, filter, region, order) with comments in its scope ([[CommentScope]]; with the
+      * filter by author, [[RoundList.commentsBy]], only that account's comments, files and rows), their
       * page ids read at once, then their files and comments a [[Chunk]] of files at a time on
       * `ec` as the rows are sent; each file's comments in the order written. Every cell through
       * [[cell]] ([[writeRow]]): an author's name or a text can't be a formula; a text's line
@@ -117,7 +118,7 @@
         Source.fromIterator(() => pageIds.grouped(chunk))
           .mapAsync(1)(ids => Future {
             (ids, ImageJdbc.findByPageIds(ids),
-              CommentJdbc.findByRooms(list.round.contestId, ids, list.commentsRound).groupBy(_.room))
+              CommentJdbc.findByRooms(list.round.contestId, ids, list.commentsRound, list.commentsBy).groupBy(_.room))
           })
           .mapConcat { case (ids, images, comments) =>
             for {

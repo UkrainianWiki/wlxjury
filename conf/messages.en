@@ -182,6 +182,22 @@ comments.report.files.other = {0} files
 comments.report.empty.round = No file in this list has a comment written in this round.
 comments.report.empty.contest = No file in this list has a comment in this contest.
 comments.report.link = Comments on the round''s files
+# the report's filter by author (RoundList.commenter): its chip and the chip's remove link, the
+# name of an account without a comment in the contest, the header's count of their comments; a comment author's icon links (their words
+# are the links' title and aria-label: {0} the author, {1} the round); the file's other comments,
+# folded (by the language's plural form); the empty report
+comments.report.commenter = Comments by {0}
+comments.report.commenter.account = account #{0}
+comments.report.commenter.remove = Show everyone''s comments
+comments.report.count.commenter = {0} by {1}
+comments.report.author.filter = Only the comments by {0}
+comments.report.author.gallery = Gallery of juror {0} in round {1}
+comments.report.others.one = {0} other comment on this file
+comments.report.others.few = {0} other comments on this file
+comments.report.others.many = {0} other comments on this file
+comments.report.others.other = {0} other comments on this file
+comments.report.empty.commenter.round = No file in this list has a comment by {0} written in this round.
+comments.report.empty.commenter.contest = No file in this list has a comment by {0} in this contest.
 
 media.type = Media Type
 files = Files

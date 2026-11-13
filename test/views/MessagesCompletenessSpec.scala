@@ -117,7 +117,9 @@ class MessagesCompletenessSpec extends Specification {
     Seq("authors.count.", "authors.files.count.").flatMap(k => Plural.Forms.map(k + _)), // authors.scala.html
     Plural.Forms.map("comments.report.files." + _),                        // CommentCount.files, by plural form
     Seq(ListOrder.LatestComment.messageKey),                               // commentsReport's order menu
-    Seq("round", "contest").flatMap(w => Seq(s"comments.report.scope.$w", s"comments.report.empty.$w")) // commentsReport
+    Seq("round", "contest").flatMap(w => Seq(s"comments.report.scope.$w", s"comments.report.empty.$w",
+      s"comments.report.empty.commenter.$w")),                             // commentsReport, by scope
+    Plural.Forms.map("comments.report.others." + _)                        // commentsReport's folded comments
   ).flatten
 
   /** Texts in a key's place that are shown as they are, not keys, each with its reason. */

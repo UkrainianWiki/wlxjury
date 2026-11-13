@@ -253,8 +253,11 @@ class GalleryController @Inject() (
           else Round.findByIds(round.contestId, otherRounds).map(r => r.getId -> r.description).toMap
         // a criteria round's results drawn per criterion, as by rate: the round with its number
         // of criteria (withCriteria), else a 3-criteria 4/4/4 vote would be 12 stars
+        // the filter by author's name, from their comments in the contest ([[CommentJdbc.authorName]])
+        val commenter = list.commentsBy.map(id => id -> CommentJdbc.authorName(round.contestId, id))
         Ok(RequestTiming.render(views.html.commentsReport(user, withCriteria(list, criteriaResults(list, files)), files,
-          pager, rounds, menu, rates, comments, roundNames, list.commentCount())))
+          pager, rounds, menu, rates, comments, roundNames, list.commentCount(), commenter,
+          jurorGalleries(comments.values.flatten.toSeq, rounds))))
 
       case GalleryView.CommentsCsv =>
         csvStream(Csv.commentRows(list)(blocking), "WLXJury_Round_" + round.description + "_comments")
@@ -275,6 +278,20 @@ class GalleryController @Inject() (
         Ok(RequestTiming.render(views.html.galleryByRate(user, withCriteria(list, criteria), files, pager, rounds, menu,
           rates, ranks(files), criteria, commented, commentCounts(files))))
     }
+  }
+
+  /** Of the comments' authors, by the rounds they were written in, those whose one-juror gallery
+    * of that round the comments report links ((round id, user id)): a juror of the round
+    * ([[User.roundsJuredIn]], as the galleries' juror menu and [[GalleryService.viewAs]] decide it)
+    * in a round the viewer may see (`rounds`, [[GalleryService.viewerRounds]]); never a comment
+    * without an account (`user_id` 0). One query per author on the page.
+    */
+  private def jurorGalleries(comments: Seq[org.intracer.wmua.Comment], rounds: Seq[Round]): Set[(Long, Long)] = {
+    val visible = rounds.flatMap(_.id).toSet
+    comments.filter(c => c.userId > 0 && visible.contains(c.roundId))
+      .groupMap(_.userId)(_.roundId).toSeq
+      .flatMap { case (userId, roundIds) => User.roundsJuredIn(userId, roundIds.distinct).map(_ -> userId) }
+      .toSet
   }
 
   /** A criteria round's results of a page of its list's files: the averages of the list's
