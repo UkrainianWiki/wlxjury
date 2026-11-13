@@ -3,7 +3,7 @@ package controllers
 import db.scalikejdbc._
 import org.apache.pekko.stream.Materializer
 import org.intracer.wmua._
-import play.api.libs.json.Json
+import play.api.libs.json.{JsArray, JsObject, JsValue, Json}
 import play.api.mvc.RequestHeader
 import play.api.test.CSRFTokenHelper._
 import play.api.test.{FakeRequest, Helpers, PlaySpecification}
@@ -73,6 +73,18 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
 
   private def mkJson(elems: String*) = Json.parse(elems.mkString("[", ",", "]"))
 
+  /** The large view's JSON without its votes' times (V97: a rated vote's is when it was voted,
+    * VoteVotedAtSpec), each rated vote checked to have one and each unrated none.
+    */
+  private def untimed(json: JsValue): JsValue = {
+    val votes = json.as[Seq[JsObject]].flatMap(f => (f \ "selection").as[Seq[JsObject]])
+    votes.foreach { v =>
+      require((v \ "votedAt").toOption.isDefined == ((v \ "rate").as[Int] != 0), s"the vote time of $v")
+    }
+    JsArray(json.as[Seq[JsObject]].map(f =>
+      f + ("selection" -> JsArray((f \ "selection").as[Seq[JsObject]].map(_ - "votedAt")))))
+  }
+
   "get 1 unrated image" in {
     testDbApp { app =>
       implicit val materializer: Materializer = app.materializer
@@ -86,7 +98,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.head.pageId}?rate=0"))
 
       status(result) mustEqual OK
-      contentAsJson(result) mustEqual mkJson(imageJson(0))
+      untimed(contentAsJson(result)) mustEqual mkJson(imageJson(0))
     }
   }
 
@@ -103,7 +115,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.head.pageId}?module=byrate"))
 
       status(result) mustEqual OK
-      contentAsJson(result) mustEqual mkJson(imageJson(0, rate = 5))
+      untimed(contentAsJson(result)) mustEqual mkJson(imageJson(0, rate = 5))
     }
   }
 
@@ -121,7 +133,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         .run()
 
       status(result) mustEqual OK
-      contentAsJson(result) mustEqual mkJson(imageJson(0), imageJson(1))
+      untimed(contentAsJson(result)) mustEqual mkJson(imageJson(0), imageJson(1))
     }
   }
 
@@ -140,7 +152,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         .run()
 
       status(result) mustEqual OK
-      contentAsJson(result) mustEqual mkJson(imageJson(1, rate = 5), imageJson(0, rate = 3))
+      untimed(contentAsJson(result)) mustEqual mkJson(imageJson(1, rate = 5), imageJson(0, rate = 3))
     }
   }
 
@@ -159,7 +171,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         .run()
 
       status(result) mustEqual OK
-      contentAsJson(result) mustEqual mkJson(imageJson(0))
+      untimed(contentAsJson(result)) mustEqual mkJson(imageJson(0))
     }
   }
 
@@ -178,7 +190,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         .run()
 
       status(result) mustEqual OK
-      contentAsJson(result) mustEqual mkJson(imageJson(1))
+      untimed(contentAsJson(result)) mustEqual mkJson(imageJson(1))
     }
   }
 
@@ -197,7 +209,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         .run()
 
       status(result) mustEqual OK
-      contentAsJson(result) mustEqual mkJson(imageJson(0, rate = 5), imageJson(1, rate = 0))
+      untimed(contentAsJson(result)) mustEqual mkJson(imageJson(0, rate = 5), imageJson(1, rate = 0))
     }
   }
 
@@ -216,7 +228,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         .run()
 
       status(result) mustEqual OK
-      contentAsJson(result) mustEqual mkJson(imageJson(1, rate = 5), imageJson(0, rate = 0))
+      untimed(contentAsJson(result)) mustEqual mkJson(imageJson(1, rate = 5), imageJson(0, rate = 0))
     }
   }
 

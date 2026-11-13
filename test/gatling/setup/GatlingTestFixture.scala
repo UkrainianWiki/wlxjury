@@ -10,6 +10,27 @@ import scalikejdbc._
 import java.net.ServerSocket
 import scala.util.Random
 
+/** Stops the fixture's app (its job scheduler and recount timer: jobs.mode and roundCounts.mode
+  * background), server and container, once, if [[GatlingTestFixture]] started them. Apart from
+  * it, so that a spec's afterAll stops the fixture without starting it (the fixture object starts
+  * all of it when first touched).
+  *
+  * Why: the app outlived GatlingSmokeSpec for the whole JVM, and once the spec gave the shared
+  * test database's pool back to ScalikeJDBC (SharedTestDb.reregisterDefault), its scheduler,
+  * polling every 2 s through that default pool, claimed the queued jobs without an owner that
+  * later specs insert to stand for another instance's (ExcludeRoundsSpec's).
+  */
+object GatlingFixtureLifecycle {
+  private var stopper: Option[() => Unit] = None
+
+  private[setup] def register(stop: () => Unit): Unit = synchronized { stopper = Some(stop) }
+
+  def stop(): Unit = synchronized {
+    stopper.foreach(_())
+    stopper = None
+  }
+}
+
 object GatlingTestFixture {
 
   private var localApplication: Option[_root_.play.api.Application] = None
@@ -79,9 +100,13 @@ object GatlingTestFixture {
     server.start()
     choosePool(app)
 
-    Runtime.getRuntime.addShutdownHook(new Thread(() => {
-      try server.stop() finally container.stop()
-    }))
+    // the app first (its stop hooks stop the job scheduler and the recount timer), then the
+    // server and the container; once, from a spec (GatlingFixtureLifecycle) or at the JVM's exit
+    GatlingFixtureLifecycle.register { () =>
+      try scala.concurrent.Await.result(app.stop(), scala.concurrent.duration.Duration(60, "s"))
+      finally try server.stop() finally container.stop()
+    }
+    Runtime.getRuntime.addShutdownHook(new Thread(() => GatlingFixtureLifecycle.stop()))
 
     val cacheKey = GatlingDbCache.cacheKey(GatlingConfig)
 

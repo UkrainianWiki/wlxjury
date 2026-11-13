@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{Round, RoundCounts, User}
+import db.scalikejdbc.{Round, RoundCounts, User, VoteSql}
 import db.scalikejdbc.rewrite.{ImageDbNew, RoundImageQuery}
 import db.scalikejdbc.rewrite.ImageDbNew.{Limit, SelectionQuery}
 import org.intracer.wmua.{BinaryOrder, ImageWithRating, Vote}
@@ -90,7 +90,16 @@ object VoteFilter {
   * @param param   its value of a list URL's `sort`
   * @param columns its ORDER BY columns and directions (1 ascending, -1 descending)
   */
-sealed abstract class ListOrder(val param: String, val columns: Seq[(String, Int)])
+sealed abstract class ListOrder(val param: String, val columns: Seq[(String, Int)]) {
+
+  /** Its label in an order menu: `sort.<param>`, a binary order's own. */
+  def messageKey: String = s"sort.$param"
+
+  /** By when the juror last voted on the files ([[ListOrder.LatestVote]], [[ListOrder.OldestVote]]):
+    * a juror's own list's; all the jurors' votes together are by rate instead.
+    */
+  def byVoteTime: Boolean = false
+}
 
 object ListOrder {
 
@@ -100,12 +109,40 @@ object ListOrder {
   /** The highest rated first; files of a rate in file order. */
   case object ByRate extends ListOrder("rate", Seq("rate" -> -1, "s.monument_id" -> 1, "s.page_id" -> 1))
 
+  /** A juror's unrated files after the rated (0, then 1), in either order by time. */
+  val UnratedLast: String = s"(${VoteSql.unrated().value})"
+
+  /** A vote's time (`vote.voted_at`, V97) as a number, exact to the millisecond and
+    * independent of the session's time zone; 0 for a vote without one (rated before V97, or
+    * unrated), before any real time: an untimed rated vote is older than every timed one. Never
+    * NULL, as the large view's places in the order (`ImageDbNew.Keyset`) need.
+    */
+  val VoteTime: String = "COALESCE(UNIX_TIMESTAMP(s.voted_at), 0)"
+
+  /** A juror's files by when they last changed their rate, the latest first; the untimed rated
+    * after the timed, the unrated last; files of the same time in file order, so pages are stable.
+    */
+  case object LatestVote
+      extends ListOrder("latest-vote", Seq(UnratedLast -> 1, VoteTime -> -1) ++ FileOrder.columns) {
+    override def byVoteTime: Boolean = true
+  }
+
+  /** As [[LatestVote]], the oldest first: the untimed rated first, the unrated still last. */
+  case object OldestVote
+      extends ListOrder("oldest-vote", Seq(UnratedLast -> 1, VoteTime -> 1) ++ FileOrder.columns) {
+    override def byVoteTime: Boolean = true
+  }
+
   /** A yes/no round's files by all the jurors' votes together, ties by page id: a list of
     * them all ([[RoundList.aggregateBinary]]); by rate in any other list.
     */
-  final case class Binary(order: BinaryOrder) extends ListOrder(order.param, order.columns :+ ("s.page_id" -> 1))
+  final case class Binary(order: BinaryOrder) extends ListOrder(order.param, order.columns :+ ("s.page_id" -> 1)) {
+    override def messageKey: String = order.messageKey
+  }
 
-  val all: Seq[ListOrder] = Seq(FileOrder, ByRate) ++ BinaryOrder.all.map(Binary)
+  // lazy: LatestVote and OldestVote read UnratedLast and VoteTime, so either initialised first
+  // initialises ListOrder, whose eager list would then hold it as null
+  lazy val all: Seq[ListOrder] = Seq(FileOrder, ByRate, LatestVote, OldestVote) ++ BinaryOrder.all.map(Binary)
 
   def parse(param: String): Option[ListOrder] = all.find(_.param == param)
 }
@@ -173,6 +210,21 @@ final case class RoundList(
     */
   def oneRate: Boolean = asUserId != 0 && filter.rate.isDefined
 
+  /** The orders a juror's own list offers (the navbar's order menu): file order, by their rating
+    * and by when they rated, the latest or the oldest first; on a tab of one rate (a yes/no round's
+    * selected or rejected) not by rating, which is file order there ([[oneRate]]); on the unrated
+    * tab file order alone: no file in it has a rating or a vote time.
+    */
+  def orderChoices: Seq[ListOrder] =
+    if (filter == VoteFilter.Unrated) Seq(ListOrder.FileOrder)
+    else if (oneRate) Seq(ListOrder.FileOrder, ListOrder.LatestVote, ListOrder.OldestVote)
+    else Seq(ListOrder.FileOrder, ListOrder.ByRate, ListOrder.LatestVote, ListOrder.OldestVote)
+
+  /** The list's order as its order menu shows it: an order the menu hasn't is the file order it
+    * gives there (by rate on a tab of one rate, any order on the unrated tab).
+    */
+  def shownOrder: ListOrder = if (orderChoices.contains(order)) order else ListOrder.FileOrder
+
   /** All the jurors' votes on a yes/no round's files together: ordered by a [[BinaryOrder]]. */
   def aggregateBinary: Boolean = asUserId == 0 && round.isBinary
 
@@ -193,12 +245,24 @@ final case class RoundList(
     if (withDetails) rankKey.columns ++ (if (round.isBinary) Seq("s.page_id" -> 1) else ListOrder.FileOrder.columns)
     else if (aggregateBinary && order != ListOrder.FileOrder) ListOrder.Binary(binaryOrder).columns
     // all the jurors' votes on a rated round by rate: by the average under the round's rule, as
-    // its ranks and a file list are ([[rankKey]]), then in file order
-    else if (asUserId == 0 && !round.isBinary && order == ListOrder.ByRate) rankKey.columns ++ ListOrder.FileOrder.columns
+    // its ranks and a file list are ([[rankKey]]), then in file order; by vote time is a
+    // juror's own list's order, by rate for all the jurors' votes
+    else if (asUserId == 0 && !round.isBinary && (order == ListOrder.ByRate || order.byVoteTime))
+      rankKey.columns ++ ListOrder.FileOrder.columns
     else order match {
       case ListOrder.Binary(_) => ListOrder.ByRate.columns
       case o                   => o.columns
     }
+
+  /** Whether the list's files show their votes' times ([[org.intracer.wmua.Vote.votedAt]]): one
+    * juror's votes (the viewer's own, or as the organisers view them; never all the jurors' votes
+    * together) in an order by vote time. The large view shows the time of one juror's vote in any
+    * order ([[showsVoteTime]]).
+    */
+  def showsVoteTimes: Boolean = asUserId != 0 && order.byVoteTime
+
+  /** Whether a large view of the list shows its file's vote time: one juror's votes, in any order. */
+  def showsVoteTime: Boolean = asUserId != 0
 
   /** Files to a page: a file list's are rows of a table. */
   def pageSize: Int = if (view == GalleryView.FileList) RoundList.FileListPageSize else Pager.pageSize
@@ -299,9 +363,11 @@ final case class RoundList(
     read(Limit(Some(pager.pageSize), Some(pager.offset)))
 
   /** Whether a page of the list shows its files' ranks among all of them: a file list, or the
-    * by-rate gallery in any order but file order, which the ranks would not follow.
+    * by-rate gallery in any order but file order or by vote time, which the ranks would not
+    * follow.
     */
-  def ranked: Boolean = view == GalleryView.FileList || (view == GalleryView.ByRate && order != ListOrder.FileOrder)
+  def ranked: Boolean =
+    view == GalleryView.FileList || (view == GalleryView.ByRate && order != ListOrder.FileOrder && !order.byVoteTime)
 
   /** The number of the list's files of each value of its [[rankKey]], in its order: what a
     * page's [[ranks]] are counted from, and the list's total (their sum, which [[count]] has
@@ -606,9 +672,9 @@ object RoundList {
     * [[GroupedRegion]] for all of them); the view
     * from its path or, for a large view, its `module`; the filter and order from its query,
     * the filter all files if the round's kind hasn't it, the order [[defaultOrder]] if it
-    * names none. All the jurors' votes on a yes/no round by rate are in the binary order
-    * last chosen ([[BinarySortCookie]]), else the default; any other list's binary order is
-    * by rate.
+    * names none. All the jurors' votes on a yes/no round by rate (or by vote time, a juror's
+    * order) are in the binary order last chosen ([[BinarySortCookie]]), else the default; on a
+    * rated round by vote time is by rate; any other list's binary order is by rate.
     */
   def of(round: Round, viewer: User, asUserId: Long, region: String, view: GalleryView)(implicit
       request: RequestHeader
@@ -623,6 +689,9 @@ object RoundList {
     )
     list.order match {
       case ListOrder.ByRate if list.aggregateBinary => list.withOrder(ListOrder.Binary(rememberedBinary))
+      // by vote time is a juror's list's: all the jurors' votes by rate
+      case o if o.byVoteTime && asUserId == 0 =>
+        list.withOrder(if (list.aggregateBinary) ListOrder.Binary(rememberedBinary) else ListOrder.ByRate)
       case ListOrder.Binary(_) if !list.aggregateBinary => list.withOrder(ListOrder.ByRate)
       case _ => list
     }

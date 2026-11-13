@@ -19894,6 +19894,10 @@ function UniteGalleryMain(){
 				objItem.approvals = objChild.attr("data-approvals");
 				objItem.rejections = objChild.attr("data-rejections");
 				objItem.tally = objChild.attr("data-tally");
+				//wlxjury: the time of the juror's vote in an order by vote time (tile-votes.js
+				//addVoteTime): ISO 8601, "" with the text for a vote without one
+				objItem.votedAt = objChild.attr("data-voted-at");
+				objItem.votedNone = objChild.attr("data-voted-none");
 
 				//always set thumb image to object
 				objItem.objThumbImage = objChild;

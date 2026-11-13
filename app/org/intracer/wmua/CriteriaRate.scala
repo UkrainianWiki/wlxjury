@@ -72,7 +72,9 @@ object CriteriaRate extends SQLSyntaxSupport[CriteriaRate] {
           .map(rs => rs.long(1) -> rs.int(2)).list().toMap
         val ofRound = criteria.map(id => rates.getOrElse(id, 0))
         val total = if (ofRound.forall(_ > 0)) ofRound.sum else 0
-        sql"UPDATE vote SET rate = $total WHERE id = $voteId".update()
+        // its vote time changes with the total (V97): a criterion rated again to its rate, or
+        // a partly rated vote's criterion (its total stays 0), keeps it
+        sql"UPDATE vote SET rate = $total, voted_at = ${VoteSql.votedAt(before, total)} WHERE id = $voteId".update()
         // the file's counts follow vote.rate only (P2a): marked dirty, last, if it changed
         if (total != before) db.scalikejdbc.RoundCounts.markFile(roundId, pageId)
         true

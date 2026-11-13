@@ -91,10 +91,12 @@
   function vote(tile, item, rate) {
     if (isBusy(tile)) return null;
     busy(tile, true);
+    var before = +item.rate || 0;
     return send(item, rate).done(function () {
       busy(tile, false);
       item.rate = rate;
       showVote(tile, rate);
+      voteTimeAfter(tile, item, before, rate);
     }).fail(function (jqXHR) {
       busy(tile, false);
       explain(jqXHR);
@@ -155,8 +157,10 @@
       busy(el, true);
       send(item, rate).done(function () {
         busy(el, false);
+        var before = storedRate;
         storedRate = rate;
         item.rate = rate;
+        voteTimeAfter(tile, item, before, rate);
         tile.setAttribute('data-rate', rate);
         if (voted) voted(rate);
       }).fail(function (jqXHR) {
@@ -288,9 +292,77 @@
     return badge;
   }
 
+  /** The time of the juror's vote on its tile, in an order by vote time (gallery.scala.html's
+    * data-voted-at, ISO 8601 in UTC, on every tile then): formatted in the viewer's time zone and
+    * the page's language (vote-time.js), or the text saying none was recorded (data-voted-none);
+    * none for an unrated file, or a tile in another order (no data-voted-at). */
+  function addVoteTime(tile, item) {
+    if (item.votedAt === undefined || item.votedAt === null) return null;
+    if (!(+item.rate) || (!item.votedAt && !item.votedNone)) return null;
+    var badge = document.createElement('span');
+    badge.className = 'badge wlx-tile-time';
+    if (item.votedAt) {
+      var time = document.createElement('time');
+      time.className = 'wlx-vote-time';
+      time.setAttribute('datetime', item.votedAt);
+      var lang = document.documentElement.getAttribute('lang') || undefined;
+      var format = window.wlxVoteTime ? window.wlxVoteTime.format : function () { return null; };
+      var text = format(item.votedAt, lang);
+      time.textContent = text || item.votedAt;
+      // the tooltip: the same with the year, none without the formatter (no raw UTC value)
+      var full = format(item.votedAt, lang, undefined, undefined, true);
+      if (full) time.title = full;
+      badge.appendChild(time);
+    } else {
+      badge.classList.add('wlx-vote-time-none');
+      badge.textContent = item.votedNone || '';
+    }
+    tile.appendChild(badge);
+    return badge;
+  }
+
+  /** After a stored vote from `before` to `rate`, the tile's vote time, in an order by vote time
+    * (item.votedAt set): a changed vote's is now (the browser's clock: the server's time is a
+    * moment earlier, and the next load shows it), a cleared vote has none; the same vote again
+    * keeps it, as the server does (VoteSql.votedAt). */
+  function voteTimeAfter(tile, item, before, rate) {
+    if (item.votedAt === undefined || item.votedAt === null || rate === before) return;
+    item.votedAt = rate === 0 ? '' : new Date().toISOString();
+    var old = tile.querySelector('.wlx-tile-time');
+    if (old) old.parentNode.removeChild(old);
+    addVoteTime(tile, item);
+  }
+
+  /** One juror's vote on a binary round's tile, read-only (no thumbs, no clicks: the viewer
+    * doesn't vote for them), where the page shows it (gallery-init.js wlx_view_votes, `view`):
+    * the frame of the juror's own tiles and a thumb badge named by the page (data-vote-selected /
+    * -rejected); nothing for an unrated file. */
+  function addVoteMark(tile, item, view) {
+    if (!view || !view.binary) return null;
+    var rate = +item.rate || 0;
+    showVote(tile, rate);
+    if (!rate) return null;
+    var holder = document.querySelector('[data-csrf-token]');
+    var name = (holder && holder.getAttribute(rate > 0 ? 'data-vote-selected' : 'data-vote-rejected')) || '';
+    var mark = document.createElement('span');
+    mark.className = 'badge wlx-tile-vote-mark ' + (rate > 0 ? 'wlx-vote-selected' : 'wlx-vote-rejected');
+    mark.title = name;
+    var thumb = document.createElement('i');
+    thumb.className = 'bi ' + (rate > 0 ? 'bi-hand-thumbs-up-fill' : 'bi-hand-thumbs-down-fill');
+    thumb.setAttribute('aria-hidden', 'true');
+    var text = document.createElement('span');
+    text.className = 'visually-hidden';
+    text.textContent = name;
+    mark.appendChild(thumb);
+    mark.appendChild(text);
+    tile.appendChild(mark);
+    return mark;
+  }
+
   window.wlxTileVotes = {
     voteUrl: voteUrl, send: send, explain: explain, addVote: addVote, vote: vote, addStars: addStars,
-    addListStars: addListStars, addTally: addTally
+    addListStars: addListStars, addTally: addTally, addVoteTime: addVoteTime,
+    voteTimeAfter: voteTimeAfter, addVoteMark: addVoteMark
   };
 
   // the by-rate list's stars, once the page is there (raty loaded only where it has them)

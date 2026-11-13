@@ -20,7 +20,7 @@ require("../public/javascripts/large-rate.js");
 const { voteErrorMessage, voteErrorTexts } = require("../public/javascripts/vote-errors.js");
 window.voteErrorMessage = voteErrorMessage;
 window.voteErrorTexts = voteErrorTexts;
-const { addStars, addVote, vote, addListStars, addTally } = require("../public/javascripts/tile-votes.js");
+const { addStars, addVote, vote, addListStars, addTally, addVoteTime, addVoteMark } = require("../public/javascripts/tile-votes.js");
 
 let requests; // the votes sent: { options, answer (a Deferred) }
 
@@ -410,5 +410,130 @@ describe("a tile's approvals and rejections", () => {
     test("add nothing to a tile without them, as a juror's own", () => {
         expect(addTally(tile(), { rate: "1" })).toBeNull();
         expect(tile().querySelector(".wlx-tile-tally")).toBeNull();
+    });
+});
+
+// The time of the juror's vote on a tile in an order by vote time (addVoteTime): a <time> with the
+// UTC value, formatted by vote-time.js where loaded; the text for a vote without a time; nothing
+// for an unrated file or a tile without the attribute (any other order). After a stored vote in
+// the tile (voteTimeAfter): a changed vote's time is now, a cleared vote's badge goes, the same
+// vote again keeps its time.
+describe("a tile's vote time", () => {
+    afterEach(() => { delete window.wlxVoteTime; });
+
+    const badge = () => tile().querySelector(".wlx-tile-time");
+
+    test("shows the time formatted, the UTC value as its datetime", () => {
+        window.wlxVoteTime = { format: (iso, lang, zone, now, year) => `formatted ${iso} ${lang || ""}${year ? " year" : ""}`.trim() };
+        document.documentElement.setAttribute("lang", "uk");
+        const shown = addVoteTime(tile(), { rate: "1", votedAt: "2026-11-12T14:05:00Z" });
+        const time = shown.querySelector("time.wlx-vote-time");
+        expect(badge()).toBe(shown);
+        expect(time.getAttribute("datetime")).toBe("2026-11-12T14:05:00Z");
+        expect(time.textContent).toBe("formatted 2026-11-12T14:05:00Z uk");
+        expect(time.title).toBe("formatted 2026-11-12T14:05:00Z uk year");
+    });
+
+    test("keeps the UTC value without the formatter", () => {
+        const shown = addVoteTime(tile(), { rate: "3", votedAt: "2026-11-12T14:05:00Z" });
+        expect(shown.querySelector("time").textContent).toBe("2026-11-12T14:05:00Z");
+        expect(shown.querySelector("time").title).toBe("");
+    });
+
+    test("says no time was recorded for a vote without one", () => {
+        const shown = addVoteTime(tile(), { rate: "-1", votedAt: "", votedNone: "Time not recorded" });
+        expect(shown.querySelector("time")).toBeNull();
+        expect(shown.classList.contains("wlx-vote-time-none")).toBe(true);
+        expect(shown.textContent).toBe("Time not recorded");
+    });
+
+    test("adds nothing for an unrated file, or in another order", () => {
+        expect(addVoteTime(tile(), { rate: "0", votedAt: "" })).toBeNull();
+        expect(addVoteTime(tile(), { rate: "1" })).toBeNull();
+        expect(badge()).toBeNull();
+    });
+
+    test("follows a binary round's votes in the tile: now for a new or changed vote, gone when cleared", () => {
+        const item = binaryTile(0);
+        item.votedAt = "";
+        addVoteTime(tile(), item);
+        expect(badge()).toBeNull();
+
+        const start = Date.now();
+        vote(tile(), item, 1);
+        expect(badge()).toBeNull(); // not before it is stored
+        requests[0].answer.resolve("success");
+        const first = badge().querySelector("time").getAttribute("datetime");
+        expect(Date.parse(first)).toBeGreaterThanOrEqual(start - 1000);
+        expect(item.votedAt).toBe(first);
+
+        vote(tile(), item, 0);
+        requests[1].answer.resolve("success");
+        expect(badge()).toBeNull();
+        expect(item.votedAt).toBe("");
+    });
+
+    test("keeps the time when the same vote is stored again, and on a failed vote", () => {
+        const item = binaryTile(1);
+        item.votedAt = "2026-01-02T03:04:05.678Z";
+        addVoteTime(tile(), item);
+        vote(tile(), item, 1);
+        requests[0].answer.resolve("success");
+        expect(badge().querySelector("time").getAttribute("datetime")).toBe("2026-01-02T03:04:05.678Z");
+        vote(tile(), item, -1);
+        requests[1].answer.reject({ status: 409, responseJSON: { error: "round_closed" } });
+        expect(badge().querySelector("time").getAttribute("datetime")).toBe("2026-01-02T03:04:05.678Z");
+    });
+
+    test("replaces 'not recorded' with now after a rated round's star vote", () => {
+        const { el, item } = stars(2);
+        item.votedAt = "";
+        item.votedNone = "Time not recorded";
+        addVoteTime(tile(), item);
+        expect(badge().textContent).toBe("Time not recorded");
+        star(el, 4).trigger("click");
+        requests[0].answer.resolve("success");
+        expect(badge().querySelector("time")).not.toBeNull();
+        expect(badge().classList.contains("wlx-vote-time-none")).toBe(false);
+    });
+
+    test("does nothing in another order", () => {
+        const item = binaryTile(0);
+        vote(tile(), item, 1);
+        requests[0].answer.resolve("success");
+        expect(badge()).toBeNull();
+        expect(item.votedAt).toBeUndefined();
+    });
+});
+
+// One juror's vote on a binary round's tile as an organiser views it (addVoteMark): read-only,
+// no thumbs to click; the frame and a thumb named by the page; nothing for an unrated file.
+describe("a tile's read-only vote", () => {
+    beforeEach(() => {
+        const holder = document.body.firstElementChild;
+        holder.setAttribute("data-vote-selected", "Selected");
+        holder.setAttribute("data-vote-rejected", "Rejected");
+    });
+
+    test.each([[1, "wlx-tile-selected", "bi-hand-thumbs-up-fill", "Selected"],
+               [-1, "wlx-tile-rejected", "bi-hand-thumbs-down-fill", "Rejected"]])(
+        "a binary round's %i: frame %s, its thumb and name", (rate, frame, icon, name) => {
+            const mark = addVoteMark(tile(), { rate: String(rate) }, { binary: true });
+            expect(tile().classList.contains(frame)).toBe(true);
+            expect(mark.querySelector("i." + icon)).not.toBeNull();
+            expect(mark.querySelector(".visually-hidden").textContent).toBe(name);
+            expect(mark.title).toBe(name);
+            // nothing to vote with
+            expect(tile().querySelectorAll("[role=button], .ug-tile-icon, a, button")).toHaveLength(0);
+        });
+
+    test("an unrated file in a binary round: no frame, no mark", () => {
+        expect(addVoteMark(tile(), { rate: "0" }, { binary: true })).toBeNull();
+        expect(tile().className).toBe("ug-tile");
+    });
+
+    test("none in a rated round (its by-rate list shows the stars)", () => {
+        expect(addVoteMark(tile(), { rate: "4" }, { binary: false })).toBeNull();
+        expect(tile().className).toBe("ug-tile");
     });
 });

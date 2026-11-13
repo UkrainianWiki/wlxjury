@@ -4,6 +4,7 @@ import db.scalikejdbc._
 import org.intracer.wmua._
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
+import scalikejdbc._
 
 /** A juror's large view reads a file's place from its row and a count of the rows ordered
   * before it, and its neighbours from that place ([[RoundList.position]], [[RoundList.around]],
@@ -41,6 +42,13 @@ class ListPositionSpec extends Specification with TestDb with BeforeAll with Bef
       Vote(page.toLong, user.getId, round.getId, possible(i % possible.size), monumentId = monuments(page))
     selectionDao.batchInsert((1 to 14).map(p => vote(juror, p, p * 5 + 1)) ++ (1 to 6).map(p => vote(other, p, p)) :+
       vote(other, 99, 1))
+    // vote times (V97) with ties a millisecond apart, and rated votes without one (voted before
+    // V97), for the orders by vote time
+    DB.autoCommit { implicit s =>
+      sql"""UPDATE vote SET voted_at = IF(rate = 0 OR page_id % 4 = 0, NULL,
+              TIMESTAMP '2026-11-01 10:00:00' + INTERVAL ((page_id % 3) * 1000) MICROSECOND)
+            WHERE round_id = ${round.getId}""".update()
+    }
     (round, juror, (1L to 14L) :+ 99L)
   }
 
