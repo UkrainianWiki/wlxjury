@@ -329,9 +329,10 @@ class ReleaseScriptTest(unittest.TestCase):
             bundle.writestr('wlxjury-26.11/wlxjury-build.json', json.dumps(manifest))
         return archive, hashlib.sha256(archive.read_bytes()).hexdigest()
 
-    def release(self, *args):
+    def release(self, *args, cwd=None):
         return subprocess.run(['bash', str(SCRIPT), '--config', str(self.config)] + [str(arg) for arg in args],
-                              env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
+                              env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120,
+                              cwd=None if cwd is None else str(cwd))
 
     def systemctl(self, *args):
         return subprocess.run([str(self.base / 'bin' / 'systemctl')] + list(args), env=self.env).returncode
@@ -859,8 +860,22 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertEqual(self.milestones(operation)[-1], 'traffic-may-resume')
         self.assertFalse(self.flag.exists())
         self.assertFalse(any(self.active(unit) for unit in WRITERS))
+        # The one open operation, with traffic open: status says to rerun reopen, which picks it,
+        # but restore picks nothing without maintenance on.
+        status = self.release('status')
+        self.assertSucceeded(status)
+        self.assertIn('Maintenance: off\n', status.stdout)
+        self.assertIn('Open operation: %s\n' % operation.name, status.stdout)
+        self.assertIn('  state: reopen did not finish: traffic may be open\n'
+                      'Next:\n  fix the URL reopen reported, then: sudo wlxjury-release reopen\n', status.stdout)
+        unpicked = self.release('restore')
+        self.assertEqual(unpicked.returncode, 1)
+        self.assertIn('maintenance is off, so restore picks no operation; nothing was changed', unpicked.stderr)
+        self.assertEqual(self.milestones(operation)[-1], 'traffic-may-resume')
         self.broken_routes.clear()
-        self.assertSucceeded(self.release('reopen', operation.name))
+        rerun = self.release('reopen')
+        self.assertSucceeded(rerun)
+        self.assertIn('Operation %s: picked as the current operation' % operation.name, rerun.stdout)
         self.assertEqual(self.milestones(operation)[-1], 'complete')
         self.assertTrue(all(self.active(unit) for unit in WRITERS))
 
@@ -868,6 +883,255 @@ class ReleaseScriptTest(unittest.TestCase):
         result = self.release('reopen', str(self.base))
         self.assertEqual(result.returncode, 1)
         self.assertIn('not an operation folder', result.stderr)
+
+    # Without a name: the one open operation; status; the hash as a prefix; the ZIP found by its hash.
+
+    def test_status_and_reopen_without_a_name_follow_the_one_open_operation(self):
+        status = self.release('status')
+        self.assertSucceeded(status)
+        self.assertIn('Maintenance: off\n', status.stdout)
+        self.assertIn('Current release: %s (build legacy-0.12-v53, schema 53)\n' % self.old, status.stdout)
+        self.assertIn('Database schema: 53\n', status.stdout)
+        self.assertIn('Open operation: none\nNext:\n  to deploy: sudo wlxjury-release deploy [RELEASE.zip] SHA256\n',
+                      status.stdout)
+        self.assertNotIn('Lock', status.stdout)
+        archive, sha = self.release_zip()
+        deployed = self.release('deploy', archive, sha)
+        self.assertSucceeded(deployed)
+        operation = self.operation()
+        self.assertIn('then run:\n  sudo wlxjury-release reopen\n', deployed.stdout)
+        self.assertIn('or name it: sudo wlxjury-release reopen %s\n' % operation.name, deployed.stdout)
+        log = (operation / 'operation.log').read_text()
+
+        status = self.release('status')
+        self.assertSucceeded(status)
+        self.assertIn('Maintenance: ON (%s)\n' % self.flag, status.stdout)
+        self.assertIn('Database schema: 60\n', status.stdout)
+        self.assertIn('Open operation: %s\n'
+                      '  releases: legacy-0.12-v53 -> 26.11-test-%s\n'
+                      '  milestones: started backup-complete migration-may-start ready\n'
+                      '  state: migrated and ready under maintenance\n'
+                      'Next:\n'
+                      '  smoke-test http://127.0.0.1:%d/ locally, then: sudo wlxjury-release reopen\n'
+                      '  or, to back out: sudo wlxjury-release restore\n'
+                      % (operation.name, sha[:12], self.app_port), status.stdout)
+        with (self.root / 'deployment.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            locked = self.release('status')  # Status never takes the lock, and says it is held.
+        self.assertSucceeded(locked)
+        self.assertIn('Lock: held: an operation (wlxjury-release or wlxjury-deploy) is running now', locked.stdout)
+        self.assertIn('Next:\n  an operation is running: wait for it to finish, then run sudo wlxjury-release status again\n',
+                      locked.stdout)
+        self.assertNotIn('smoke-test', locked.stdout)
+        # Status changed nothing: no milestone, no log line.
+        self.assertEqual(self.milestones(operation)[-1], 'ready')
+        self.assertEqual((operation / 'operation.log').read_text(), log)
+
+        reopened = self.release('reopen')
+        self.assertSucceeded(reopened)
+        picked = 'Operation %s: picked as the current operation (the newest, open, of the current release)\n' % operation.name
+        self.assertIn(picked, reopened.stdout)
+        self.assertIn(picked, (operation / 'operation.log').read_text())
+        self.assertEqual(self.milestones(operation)[-2:], ['traffic-may-resume', 'complete'])
+        self.assertFalse(self.flag.exists())
+        self.assertTrue(self.active('backup.timer'))
+
+        # Nothing open: status names the last operation and how to back it out; nothing is picked.
+        status = self.release('status')
+        self.assertIn('Open operation: none\nLast operation: %s: complete\n' % operation.name, status.stdout)
+        self.assertIn('only after a reconciliation decision', status.stdout)
+        self.assertIn('sudo wlxjury-release restore %s --accept-data-loss\n' % operation.name, status.stdout)
+        for command in ('reopen', 'restore'):
+            refused = self.release(command)
+            self.assertEqual(refused.returncode, 1)
+            self.assertIn('no operation is open, so %s has none to pick; nothing was changed' % command, refused.stderr)
+        # A restore over writes since reopening is never picked: the operation must be named.
+        unnamed = self.release('restore', '--accept-data-loss')
+        self.assertEqual(unnamed.returncode, 2)
+        self.assertIn('--accept-data-loss restores over the writes made since reopening, so it needs the operation named',
+                      unnamed.stderr)
+        self.assertEqual(self.milestones(operation)[-1], 'complete')
+        self.assertFalse(self.flag.exists())
+        self.assertTrue(self.active(SERVICE))
+        self.assertEqual(self.release('reopen', '').returncode, 2)  # Usage error, not "pick one".
+        self.assertEqual(self.release('status', 'extra').returncode, 2)
+
+    def test_restore_without_a_name_backs_out_the_one_open_operation_under_maintenance(self):
+        operation = self.failed_deployment()
+        status = self.release('status')
+        self.assertIn('  state: a migration may have run, and the release never became ready\n'
+                      'Next:\n  sudo wlxjury-release restore  (or a forward fix; never just start the previous release)\n'
+                      '  then, once checked locally: sudo wlxjury-release reopen\n', status.stdout)
+        restored = self.release('restore')
+        self.assertSucceeded(restored)
+        self.assertIn('Operation %s: picked as the current operation' % operation.name, restored.stdout)
+        self.assertIn('then run:\n  sudo wlxjury-release reopen\n', restored.stdout)
+        self.assertEqual(self.milestones(operation)[-2:], ['restoring', 'database-restored'])
+        status = self.release('status')
+        self.assertIn('  state: backed out to the previous release under maintenance (database-restored)\n'
+                      'Next:\n  check it locally, then: sudo wlxjury-release reopen\n', status.stdout)
+        self.assertSucceeded(self.release('reopen'))
+        self.assertOriginalDatabase()
+        self.assertFalse(self.flag.exists())
+        # Backed out: current is no longer the candidate, so status offers no restore.
+        status = self.release('status')
+        self.assertIn('Last operation: %s: complete\n' % operation.name, status.stdout)
+        self.assertNotIn('to back out', status.stdout)
+
+    def assertNothingPicked(self, operations, milestones):
+        """reopen and restore without a name refuse, touching no operation."""
+        for command in ('reopen', 'restore'):
+            refused = self.release(command)
+            self.assertEqual(refused.returncode, 1, refused.stdout)
+            self.assertIn('no open operation is the current one, so %s picks none; nothing was changed' % command,
+                          refused.stderr)
+            self.assertNotIn('picked', refused.stdout)
+        self.assertEqual([self.milestones(operation)[-1] for operation in operations], milestones)
+        self.assertEqual([(operation / 'operation.log').read_text() for operation in operations],
+                         [''] * len(operations))
+
+    def test_a_stale_open_operation_is_never_picked_nor_restored_over_a_later_deployment(self):
+        # Operation 1 was left open (its maintenance removed by hand); 2 and 3 deployed after it and
+        # finished. Maintenance is on again, for something else.
+        operations = self.history(3, open_operations=(1,))
+        self.select(self.root / 'releases' / 'r3')
+        self.flag.touch()
+        self.assertNothingPicked(operations, ['ready', 'complete', 'complete'])
+        refused = self.release('restore')
+        self.assertIn('These open operations are stale; investigate each', refused.stderr)
+        self.assertIn('  %s: migrated and ready under maintenance; stale: a later operation, %s, followed it'
+                      % (operations[0].name, operations[2].name), refused.stderr)
+        status = self.release('status')
+        self.assertSucceeded(status)
+        self.assertIn('Open operation: none\nLast operation: %s: complete\n' % operations[2].name, status.stdout)
+        self.assertIn('Stale open operation: %s: migrated and ready under maintenance\n'
+                      '  stale: a later operation, %s, followed it; never picked without its name\n'
+                      % (operations[0].name, operations[2].name), status.stdout)
+        self.assertIn('  maintenance is on, but no operation is the current one: find out what turned it on', status.stdout)
+        self.assertNotIn('to deploy', status.stdout)  # deploy would refuse under maintenance.
+        self.assertNotIn('to back out', status.stdout)
+        self.assertIn('  stale operations are never picked', status.stdout)
+        self.assertNotIn('restore %s' % operations[0].name, status.stdout)
+        self.assertNotIn('wlxjury-release reopen', status.stdout.split('Next:')[1])
+        self.assertNotIn('sudo wlxjury-release restore\n', status.stdout)
+        # Named, a restore of it is refused too: its dump would replace operations 2 and 3.
+        named = self.release('restore', operations[0].name)
+        self.assertEqual(named.returncode, 1)
+        self.assertIn('is neither the previous nor the candidate release of %s' % operations[0].name, named.stderr)
+        self.assertIn('nothing was changed', named.stderr)
+        self.assertEqual(self.milestones(operations[0])[-1], 'ready')
+        self.assertEqual((self.root / 'current').resolve(), self.root / 'releases' / 'r3')
+        self.assertEqual(self.sql('SELECT * FROM votes ORDER BY id'), self.original_votes)
+        self.assertTrue(self.active(SERVICE))
+        self.assertTrue(all(self.active(unit) for unit in WRITERS))
+        # So is one whose backup was skipped: switching back would drop the later releases.
+        (operations[0] / 'milestones').write_text('started\nbackup-skipped\nmigration-may-start\nready\n')
+        skipped = self.release('restore', operations[0].name)
+        self.assertEqual(skipped.returncode, 1)
+        self.assertIn('is neither the previous nor the candidate release', skipped.stderr)
+        self.assertEqual((self.root / 'current').resolve(), self.root / 'releases' / 'r3')
+
+    def test_only_the_newest_operation_of_the_current_release_is_picked(self):
+        # The newest operation is open but current is another release: stale too.
+        operations = self.history(3, open_operations=(1, 3))
+        self.flag.touch()
+        self.assertNothingPicked(operations, ['ready', 'complete', 'ready'])
+        self.assertIn('  %s: migrated and ready under maintenance; stale: the current release is neither its previous'
+                      ' nor its candidate release' % operations[2].name, self.release('reopen').stderr)
+        # With current its candidate it is picked; the older open one stays stale beside it.
+        self.select(self.root / 'releases' / 'r3')
+        status = self.release('status')
+        self.assertIn('Open operation: %s\n' % operations[2].name, status.stdout)
+        self.assertIn('Next:\n  smoke-test http://127.0.0.1:%d/ locally, then: sudo wlxjury-release reopen\n'
+                      % self.app_port, status.stdout)
+        self.assertIn('Stale open operation: %s' % operations[0].name, status.stdout)
+        picked = self.release('reopen')  # Picked, then refused: the fake r3 is not running.
+        self.assertEqual(picked.returncode, 1)
+        self.assertIn('Operation %s: picked as the current operation' % operations[2].name, picked.stdout)
+        self.assertIn('is not ready; maintenance stays on', picked.stderr)
+        self.assertEqual(self.milestones(operations[2])[-1], 'ready')
+        # A newer wlxjury-deploy folder makes it stale as well.
+        cutover = self.backups / '20990101T000000Z-abcdef12'
+        cutover.mkdir(mode=0o700)
+        cutover_record = {'id': cutover.name, 'phase': 'ready', 'previous': str(self.old), 'candidate': str(self.old)}
+        (cutover / 'deployment.json').write_text(json.dumps(cutover_record))
+        self.assertNothingPicked([operations[0]], ['ready'])
+        self.assertIn('stale: a later operation, %s, followed it' % cutover.name, self.release('status').stdout)
+        # A damaged current operation is picked, then refused as unknown.
+        shutil.rmtree(str(cutover))
+        (operations[2] / 'milestones').unlink()
+        self.assertIn('  state: unknown: the milestones are missing or damaged\n', self.release('status').stdout)
+        unknown = self.release('reopen')
+        self.assertEqual(unknown.returncode, 1)
+        self.assertIn('state is unknown', unknown.stderr)
+        self.assertTrue(self.flag.exists())
+
+    def test_a_sha256_prefix_of_16_hex_characters_or_more_is_checked_against_the_zip(self):
+        archive, sha = self.release_zip()
+        other = sha[:15] + ('1' if sha[15] == '0' else '0')
+        for given, text in ((sha[:15], 'all 64 hex characters, or at least the first 16'),
+                            ('g' * 16, 'all 64 hex characters, or at least the first 16'),
+                            (sha + '0', 'all 64 hex characters, or at least the first 16'),
+                            (other, 'ZIP checksum mismatch: %s has SHA-256 %s' % (archive, sha)),
+                            ('f' * 64, 'ZIP checksum mismatch')):
+            refused = self.release('deploy', archive, given)
+            self.assertEqual(refused.returncode, 1, given)
+            self.assertIn(text, refused.stderr)
+            self.assertUnchanged()
+        self.assertFalse(any(call.startswith('stop') for call in self.calls()))
+        # Upper case is the same hash.
+        deployed = self.release('deploy', archive, sha[:16].upper())
+        self.assertSucceeded(deployed)
+        self.assertIn("The ZIP's SHA-256 %s starts with the given %s\n" % (sha, sha[:16]), deployed.stdout)
+        operation = self.operation()
+        self.assertIn('zip_sha256=%s\n' % sha, (operation / 'record').read_text())
+        self.assertEqual((self.root / 'current').resolve(), self.root / 'releases' / ('26.11-test-' + sha[:12]))
+
+    def test_a_zip_swapped_after_its_check_is_not_what_is_deployed(self):
+        archive, sha = self.release_zip()
+        swapped, _ = self.release_zip(schema='61', build='26.11-swapped')
+        stub = self.base / 'bin' / 'zipinfo'
+        stub.write_text('#!/bin/sh\ncp "$SWAP_FROM" "$SWAP_TO"\nexec /usr/bin/zipinfo "$@"\n')
+        stub.chmod(0o755)
+        self.env.update(SWAP_FROM=str(swapped), SWAP_TO=str(archive))
+        deployed = self.release('deploy', archive, sha[:16])
+        self.assertSucceeded(deployed)
+        self.assertNotEqual(hashlib.sha256(archive.read_bytes()).hexdigest(), sha)  # It was swapped.
+        release = self.root / 'releases' / ('26.11-test-' + sha[:12])
+        self.assertEqual((self.root / 'current').resolve(), release)
+        self.assertEqual(json.loads((release / 'wlxjury-build.json').read_text())['build'], '26.11-test')
+        self.assertEqual(self.sql('SELECT MAX(version) FROM flyway_schema_history'), '60')
+        self.assertEqual(self.release_names(), ['26.11-test-' + sha[:12], 'legacy-0.12-v53'])
+
+    def test_deploy_without_the_zip_takes_the_one_here_with_that_hash(self):
+        self.release_zip(build='26.11-other')
+        archive, sha = self.release_zip()
+        missing = self.release('deploy', 'f' * 16, cwd=self.base)
+        self.assertEqual(missing.returncode, 1)
+        self.assertIn('no wlxjury-*.zip in %s has a SHA-256 starting %s; nothing was changed' % (self.base, 'f' * 16),
+                      missing.stderr)
+        self.assertIn('  wlxjury-26.11-test.zip: SHA-256 %s...\n' % sha[:16], missing.stderr)
+        self.assertIn('  wlxjury-26.11-other.zip: SHA-256 ', missing.stderr)
+        self.assertUnchanged()
+        elsewhere = self.release('deploy', sha[:16], cwd=self.root)
+        self.assertEqual(elsewhere.returncode, 1)
+        self.assertIn('(there is none)', elsewhere.stderr)
+        self.assertUnchanged()
+        self.assertEqual(self.release('deploy', sha[:16], archive, cwd=self.base).returncode, 1)  # Hash, then ZIP: refused.
+        self.assertUnchanged()
+        twin = self.base / 'wlxjury-twin.zip'
+        shutil.copy(str(archive), str(twin))
+        several = self.release('deploy', sha[:16], cwd=self.base)
+        self.assertEqual(several.returncode, 1)
+        self.assertIn('several ZIPs in %s have a SHA-256 starting %s; name one; nothing was changed:\n'
+                      '  wlxjury-26.11-test.zip\n  wlxjury-twin.zip' % (self.base, sha[:16]), several.stderr)
+        self.assertUnchanged()
+        twin.unlink()
+        deployed = self.release('deploy', sha[:16], '--backup', cwd=self.base)
+        self.assertSucceeded(deployed)
+        self.assertIn('ZIP: %s\n' % archive, deployed.stdout)
+        self.assertEqual((self.root / 'current').resolve(), self.root / 'releases' / ('26.11-test-' + sha[:12]))
+        self.assertEqual(self.milestones(self.operation())[-1], 'ready')
 
     # The image cache folder: deploy refuses before anything changes.
 
