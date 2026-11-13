@@ -61,6 +61,8 @@ class VoteRowLockSpec extends Specification {
           |val l = sql"INSERT IGNORE INTO vote (page_id, jury_id, round_id) VALUES (?, ?, ?)"
           |val m = sql"INSERT INTO vote (page_id, jury_id, round_id, rate) VALUES (?, ?, ?, ?)"
           |val n = sql"REPLACE INTO vote_aside SELECT s.* FROM vote s WHERE s.round_id = $r"
+          |val o = sql"UPDATE vote v JOIN round r ON r.id = $roundId SET v.rate = $rate WHERE v.page_id = $p AND v.jury_id = $j"
+          |val q = sql"UPDATE vote AS v JOIN round r ON r.id = v.round_id SET v.rate = $rate WHERE v.id = $id AND v.page_id = $p AND v.jury_id = $j"
           |""".stripMargin.replace("\\\"", "\"")
       VoteRowLockSpec.byUniqueKey(code).map(_.trim.take(20)) === Seq(
         "UPDATE vote SET rate",
@@ -69,7 +71,8 @@ class VoteRowLockSpec extends Specification {
         "DELETE FROM vote WHE",
         "INSERT INTO vote (pa",
         "REPLACE INTO vote_as",
-        "INSERT IGNORE INTO v")
+        "INSERT IGNORE INTO v",
+        "UPDATE vote v JOIN r")
     }
   }
 }
@@ -82,7 +85,18 @@ object VoteRowLockSpec {
   private val Bound = """\s*=\s*(?:\$|\?)"""
   private val PageId = ("""(?i)(?<![\w])(?:\w+\.)?page_id""" + Bound).r
   private val JuryId = ("""(?i)(?<![\w])(?:\w+\.)?jury_id(?:""" + Bound + """|\s+IN\s*\()""").r
-  private val ById = ("""(?i)(?<![\w])(?:\w+\.)?id""" + Bound).r
+  // the vote table and its alias (`FROM vote v`, `UPDATE vote_aside AS d`), if it has one
+  private val VoteAlias = ("""(?i)\b(?:FROM|UPDATE|JOIN|INTO)\s+(vote|vote_aside)\b(?:\s+(?:AS\s+)?""" +
+    """(?!(?:SET|WHERE|JOIN|ON|LEFT|RIGHT|INNER|CROSS|STRAIGHT_JOIN|USING|FOR|LOCK|ORDER|GROUP|LIMIT|SELECT|VALUES)\b)(\w+))?""").r
+
+  /** An id predicate on the vote row itself: `id`, or the vote table's or its alias's `id`, not a
+    * joined table's (`r.id = $roundId` selects a round, not the vote).
+    */
+  private def byVoteId(sql: String): Boolean = {
+    val names = VoteAlias.findAllMatchIn(sql).flatMap(m => Seq(m.group(1)) ++ Option(m.group(2))).toSet
+    val qualified = names.map(java.util.regex.Pattern.quote).mkString("|")
+    ("""(?i)(?<![\w.])(?:(?:""" + qualified + """)\.)?id""" + Bound).r.findFirstIn(sql).isDefined
+  }
   // a one-row upsert: INSERT … ON DUPLICATE KEY / INSERT IGNORE / REPLACE with VALUES, naming
   // the key's columns (an INSERT … SELECT is a structural writer's, under its round lock)
   private val Upsert = """(?i)^\s*(?:INSERT\s+IGNORE\s+INTO|INSERT\s+INTO|REPLACE\s+INTO)\s+(?:vote|vote_aside)\b""".r
@@ -109,6 +123,6 @@ object VoteRowLockSpec {
     literals(code).filter { sql =>
       upsertByKey(sql) || (
         VoteTable.findFirstIn(sql).isDefined && LocksOrWrites.findFirstIn(sql).isDefined &&
-          PageId.findFirstIn(sql).isDefined && JuryId.findFirstIn(sql).isDefined && ById.findFirstIn(sql).isEmpty)
+          PageId.findFirstIn(sql).isDefined && JuryId.findFirstIn(sql).isDefined && !byVoteId(sql))
     }
 }

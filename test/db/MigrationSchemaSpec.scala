@@ -138,6 +138,24 @@ class MigrationSchemaSpec extends Specification {
         "d: utf8mb4 charset (table options)",
         "tmp_e: wrong (index)")
     }
+
+    "read a qualified table name and ALTER TABLE IF EXISTS" in {
+      val sql =
+        """CREATE TABLE db.t (id INT NOT NULL, KEY t_id_idx (id), KEY wrong (id)) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+          |ALTER TABLE IF EXISTS t ADD CONSTRAINT t_id_chk CHECK (id > 0), ADD KEY t_x (id);
+          |ALTER TABLE `db`.`u` ADD INDEX u_id_idx (id);
+          |CREATE INDEX u_x_idx ON db.u (id);""".stripMargin
+      problems(sql).map(_.toString) === Seq("t: wrong (index)", "t: t_x (index)")
+    }
+
+    "not read a comment's or a default's text as DDL" in {
+      val sql =
+        """CREATE TABLE t (id INT NOT NULL, kind VARCHAR(9) NOT NULL DEFAULT 'UNIQUE', PRIMARY KEY (id))
+          |  ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='UNIQUE';
+          |CREATE TABLE m (id INT NOT NULL COMMENT 'CHECK (x)', PRIMARY KEY (id)) ENGINE=MyISAM
+          |  COMMENT='ENGINE=InnoDB DEFAULT CHARSET=utf8mb4';""".stripMargin
+      problems(sql).map(_.toString) === Seq("m: InnoDB engine (table options)", "m: utf8mb4 charset (table options)")
+    }
   }
 }
 
@@ -162,15 +180,17 @@ object MigrationSchemaSpec {
     "renamed index" -> Seq("_idx", "_uidx"))
 
   private val Id = """`?(\w+)`?"""
+  // a table, perhaps qualified by its database (db.t): the last name is the table's
+  private val TableId = """(?:`?\w+`?\s*\.\s*)?""" + Id
   // groups: 1 CREATE (else ALTER), 2 TEMPORARY, 3 the table
   private val TableContext = ("""(?i)\b(?:(CREATE)\s+(?:OR\s+REPLACE\s+)?(TEMPORARY\s+)?TABLE(?:\s+IF\s+NOT\s+EXISTS)?|""" +
-    """ALTER\s+(?:ONLINE\s+)?(?:IGNORE\s+)?TABLE)\s+""" + Id).r
+    """ALTER\s+(?:ONLINE\s+)?(?:IGNORE\s+)?TABLE(?:\s+IF\s+EXISTS)?)\s+""" + TableId).r
   // `KEY name (col`, `UNIQUE INDEX IF NOT EXISTS name (col`: a column list starts with a
   // letter, so a column named `key VARCHAR(100)` isn't one, nor `PRIMARY KEY (id)` (no name),
   // nor `CREATE INDEX name ON t (…)` (ON before the list: CreateIndex)
   private val KeyDef = ("""(?i)\b(UNIQUE\s+)?(?:KEY|INDEX)\s+(?:IF\s+NOT\s+EXISTS\s+)?""" + Id + """\s*\(\s*`?[a-z_]""").r
   private val CreateIndex = ("""(?i)\bCREATE\s+(?:OR\s+REPLACE\s+)?(UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?""" +
-    Id + """\s+ON\s+""" + Id).r
+    Id + """\s+ON\s+""" + TableId).r
   private val Constraint = ("""(?i)\bCONSTRAINT\s+""" + Id + """\s+(FOREIGN\s+KEY|CHECK|UNIQUE|PRIMARY)""").r
   private val Rename = ("""(?i)\bRENAME\s+(?:INDEX|KEY)\s+`?\w+`?\s+TO\s+""" + Id).r
 
@@ -211,6 +231,21 @@ object MigrationSchemaSpec {
     out.toString
   }
 
+  /** A string that is a value (`COMMENT 'x'`, `COMMENT = 'x'`, `DEFAULT 'x'`), not DDL. */
+  private val ValueLiteral = """(?i)\b(?:COMMENT|DEFAULT)\s*=?\s*(?=['"])""".r
+
+  /** The SQL with string values blanked (offsets kept): a table's or column's comment or
+    * default holds text, which the lint must not read as DDL (`COMMENT='UNIQUE'`,
+    * `COMMENT='ENGINE=InnoDB'`). Other literals stay: V85's dynamic DDL is in strings.
+    */
+  def blankValues(sql: String): String = {
+    val out = new StringBuilder(sql)
+    ValueLiteral.findAllMatchIn(sql).foreach { m =>
+      (m.end until literalEnd(sql, m.end)).foreach(k => if (out(k) != '\n') out(k) = ' ')
+    }
+    out.toString
+  }
+
   /** The end of the statement from `from`: its `;` outside string literals, or the end. */
   private def statementEnd(s: String, from: Int): Int = {
     var i = from
@@ -242,7 +277,7 @@ object MigrationSchemaSpec {
   /** The indexes and constraints the SQL names, each with the table of the `CREATE TABLE` or
     * `ALTER TABLE` it is in (dynamic SQL in string literals included: V85's `EXECUTE IMMEDIATE`).
     */
-  def names(sql: String): Seq[Named] = named(stripComments(sql)).map(_._2)
+  def names(sql: String): Seq[Named] = named(blankValues(stripComments(sql))).map(_._2)
 
   private def named(s: String): Seq[(Int, Named)] = {
     val ts = tables(s)
@@ -296,7 +331,7 @@ object MigrationSchemaSpec {
 
   /** Every problem, in the order they appear (a table's options at the end of its statement). */
   def problems(sql: String): Seq[Problem] = {
-    val s = stripComments(sql)
+    val s = blankValues(stripComments(sql))
     val badNames = named(s).filterNot { case (_, n) =>
       val name = n.name.toLowerCase
       name.startsWith(n.table.toLowerCase + "_") && Suffix(n.kind).exists(name.endsWith)
