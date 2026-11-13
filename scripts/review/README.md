@@ -16,7 +16,8 @@ its matching on sample data without GitHub.
 
 | Tool | Writes to GitHub | What it does |
 |---|---|---|
-| `coderabbit_loop.py` | comments `@coderabbitai review` (`full review` when that finished without a review and the summary does not show a clean review) | requests reviews in PR order, one at a time, waiting out the limits; stops after `--batch` reviews for triage |
+| `coderabbit_loop.py` | comments `@coderabbitai review` (`full review` when that finished without a review and the summary does not show a clean review) | requests reviews in stack order, one at a time, waiting out the limits; with `--post` it runs until stopped and queues reviews for triage (`--batch N` for one manual batch) |
+| `loop_task.py`, `loop-daemon.sh` | no | start the loop detached (`launch`), and register a Windows scheduled task that keeps it started |
 | `threads.py` | no | lists a PR's CodeRabbit threads, answered or open; `--save` keeps the raw JSON for triage |
 | `first_fix.py` | no | walks the stack's tips and prints where a problem's regex stops matching: the PR a class 1 reply cites |
 | `reply_bodies.py` | no | writes reply bodies from a JSON list (`pr`, `id`, `class`, `label`, `text`) and prints the record rows |
@@ -26,12 +27,13 @@ its matching on sample data without GitHub.
 ## State files can be rebuilt from GitHub
 
 `target/review/requests.json` (the loop's log) and `target/review/triage/replies.json` (posted
-replies) are not committed. Deleting them loses nothing:
+replies) are not committed. Deleting them loses almost nothing:
 
-- the loop skips every PR that has a CodeRabbit review or a clean summary at its head (see
-  below), and treats a PR whose latest `@coderabbitai` comment by `ukwikidev` has no answer yet
+- the loop skips every PR that has a CodeRabbit review or a summary marked "reviewed" (a clean
+  review, see below), taking its current diff as the reviewed one: what is lost is only a diff
+  change made before the file was deleted (that PR is not re-requested). It treats a PR whose latest `@coderabbitai` comment by `ukwikidev` has no answer yet
   as already requested: it waits instead of posting again, and handles the answer as for a new
-  request (a limit pauses and counts as a retry, no reply stops with exit 2). After a limit reply
+  request (a limit pauses and counts as a retry, no reply defers the PR). After a limit reply
   it waits out the spacing from that reply and posts the same command again. A latest
   `@coderabbitai review` that finished without a review (and not clean) gets
   `@coderabbitai full review`; a latest `@coderabbitai full review` that finished without one is
@@ -68,8 +70,9 @@ reply: its "Currently processing" edit means a review is running, and its text i
 (a finding may well mention rate limits). Only its coverage marker is read, for a clean review
 (below).
 
-The wait for one request ends 3 hours after it was posted at the latest; with no reply to the
-command at all after 30 minutes, the loop stops (exit 2).
+The wait for one request ends 3 hours (awake) after it was posted at the latest, and after 30
+minutes with no reply to the command at all: the PR is deferred and asked again later (see
+"Running the loop").
 
 ### "Review finished" with no review: clean, or a full review
 
@@ -109,13 +112,13 @@ available to the next one.
   > Note: CodeRabbit is an incremental review system and does not re-review already reviewed commits. …
   ```
 
-  The loop waits 50 minutes and asks again, up to 4 times; then it stops (exit 3) with a message
-  saying how many retries were refused. Start it again later. (The note about incremental reviews
+  The loop waits 50 minutes and asks again, as often as it takes (after 4 refusals in a row
+  the log says "still limited after N retries"). (The note about incremental reviews
   is on every command reply and means nothing on its own.)
 - **A stated time:** "Next included review available in N minutes" or "Please wait
   **N minutes and S seconds**" (bold or not) makes the loop wait that long plus 2 minutes and ask
-  again (it counts as a retry). A stated wait over 3 hours, or a monthly or plan quota message,
-  stops it.
+  again (it counts as a retry), however long the wait. A monthly or plan quota message pauses
+  the whole loop for `--quota-pause` hours (6) and defers that PR to then.
 - **Chat messages per hour:** each reply in a CodeRabbit thread may make it answer, and those
   answers count against an hourly limit; CodeRabbit then answers a command with "Rate Limit
   Exceeded … Please wait **7 minutes and 9 seconds**", handled as above. Post replies 5 s apart
@@ -123,28 +126,78 @@ available to the next one.
 
 ## Running the loop
 
-One PR at a time, with triage after each review (the user's choice, 2026-11-03). Run it in the
-background and keep its log:
+The loop runs on the orchestrator's laptop, in **watch mode**: started by a scheduled task, it
+requests reviews until it is stopped and never exits for triage, a limit or a network failure.
 
 ```bash
 export GH=/c/Users/ilya/tools/gh/bin/gh.exe
-mkdir -p target/review
 python -I scripts/review/coderabbit_loop.py --self-test
-python -I scripts/review/coderabbit_loop.py --first 194 --last 249 --batch 1          # what it would do
-python -I scripts/review/coderabbit_loop.py --first 194 --last 249 --batch 1 --post >> target/review/loop.log 2>&1
+python -I scripts/review/coderabbit_loop.py --first 218        # dry run: what it would do next
+python -I scripts/review/loop_task.py launch                    # start it now, detached, no window
+python -I scripts/review/coderabbit_loop.py --status            # running? waiting for what? the triage queue
+python -I scripts/review/coderabbit_loop.py --stop              # exit within a minute, and stay stopped
+python -I scripts/review/coderabbit_loop.py --resume            # allow starting again (then `launch`)
 ```
 
-Exit codes: 0 batch done (or all PRs done), 2 no reply to the command in 30 minutes or no review
-3 hours after the request, 3 still limited after the retries or a stated wait over 3 hours,
-4 an unexpected answer or a quota message (read the message in `requests.json` and the PR).
-"Review finished" without a review no longer stops it (see above).
+All files live in `--dir` (`$WLX_REVIEW_DIR`, else `target/review` of the checkout):
+`requests.json` (state), `loop.log` (appended), `triage-queue.json`, `loop-status.json`,
+`loop.lock` (held while it runs; the OS drops it when the process dies, so a crash or power loss
+never blocks a restart), `loop.stop` (`--stop`), `loop.args` (one line of extra arguments for
+`loop-daemon.sh`, e.g. `--first 218`), `loop-task.xml` (`register`).
 
-A gh **read** that fails on the network (`common.is_transient`: a dropped, reset or refused
-connection, `dial tcp` / `connectex` (Windows), a DNS failure, a timeout, EOF, a TLS handshake
-error, HTTP 502/503/504) is tried again every 30 s, 20 attempts in total; GitHub's answers
-(HTTP 4xx, including a rate limit) and HTTP 500 raise at once, and a **write** (a comment, a
-reply, an edit) never retries. `python -I -B -m unittest discover -s scripts/review` tests it
-(CI: deployment.yml, step "Review tools tests on Python 3.8").
+**What a pass does.** It lists the open PRs with `stack/…` head branches in stack order (from
+`--first` up to `--last` or the stack top, read again every pass), and for each PR in turn:
+
+- reviewed, clean, skipped or "no review available" at the PR's current **own diff**: nothing
+  (one read when the head did not move; the diff is fetched only when it did);
+- never reviewed: `@coderabbitai review`, waiting for the answer as described above;
+- reviewed, but its own diff changed since: `@coderabbitai review` (CodeRabbit reviews the new
+  commits; a full review is never asked for, since it would post every comment again; "finished"
+  without a review is recorded as `nothing new`).
+
+Then it idles 30 minutes (`--idle`), less when a deferred PR is due, and starts the next pass.
+
+**Own diff, not head sha.** The stack branches often get merges of their base: the head moves,
+the PR's diff does not, and re-reviewing all of them would use the review limit for nothing. So
+the loop records with each request a hash of the PR's files and their `+`/`-` lines
+(`pulls/N/files`, the diff against the merge base; context lines and hunk positions are left
+out) and asks again only when that hash differs from the one of the last review. A triage fix
+pushed to the PR changes it; a merge of the base, a stack rebuild that keeps the PR's changes, or
+a change below it in the stack does not. A PR reviewed before this was recorded (or with the state
+file lost) takes its current diff as the reviewed one. `--no-rereview` turns re-requests off.
+
+**Triage queue.** Every completed review with a review object (comments inline or in the body) is
+appended to `triage-queue.json` and listed by `--status`; clean reviews are not. After triage:
+`coderabbit_loop.py --triaged 225 227`. `--queue-add N…` puts PRs in by hand (e.g. older
+untriaged ones).
+
+**Nothing stops it but `--stop`.** Each of these is a wait, logged with the time it ends:
+
+| Event | What the loop does |
+|---|---|
+| rate limit, stated or not, any length | sleeps until then, asks again (no retry cap) |
+| no reply to the command in 30 min, no review 3 h after it | defers the PR (30 min, doubling to 6 h), goes on with the next |
+| unexpected answer | defers the PR 6 h |
+| quota or plan message | defers the PR and pauses the loop `--quota-pause` hours (6) |
+| network error | a read retries every 30 s for 10 min; then the pass restarts after 1, 2, 4 … 30 min |
+| other GitHub error (HTTP 4xx/500), a failed post | the pass restarts after 1, 2, 4 … 30 min; a post that did go through is found and waited for |
+| gh not signed in (HTTP 401) | the pass restarts after `--auth-pause` minutes (60) |
+| laptop asleep | waits end at wall-clock times checked every minute; the answer timeouts count awake time only |
+| process killed, power loss, reboot | the scheduled task starts it again within 30 min; it resumes from the state and GitHub |
+
+`--batch N` (one pass, stop after N reviews) and `--once` (one pass) remain for manual use, with
+the same waits; there a quota message ends the run with exit 4.
+
+### Scheduled task (Windows)
+
+`loop_task.py register --dir DIR` creates the task **"wlxjury CodeRabbit loop"** for the current
+user (no elevation, only while signed in): at logon and every 30 minutes (`--every`), missed runs
+started on waking, on battery too, it runs `pythonw.exe -I loop_task.py launch --dir DIR`, which
+starts `loop-daemon.sh` through Git Bash in a hidden console unless the loop runs (its lock) or
+was stopped. If Windows refuses the logon trigger without elevation, it registers the repeating
+trigger alone. `--print` writes the XML and prints the command without registering;
+`loop_task.py show` and `loop_task.py unregister`. The task runs `loop_task.py` from the checkout
+it was registered from: register from a checkout that stays.
 
 ## Triage after a review
 
@@ -161,7 +214,7 @@ reply, an edit) never retries. `python -I -B -m unittest discover -s scripts/rev
 3. Write the replies as JSON, run `reply_bodies.py replies.json --table`, review the bodies, and
    add the table rows and new entries to the triage document (orchestrator).
 4. `post_replies.py N` (lists what it would post), then `post_replies.py N --post`.
-5. Start the loop again for the next PR.
+5. `coderabbit_loop.py --triaged N` (the loop kept requesting reviews meanwhile).
 
 Edits to another agent's PR body, and to the triage document on `stack/series-doc`, go through
 the orchestrator or the user.

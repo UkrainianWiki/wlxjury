@@ -1,4 +1,6 @@
-"""Tests for common.py: which gh errors a read retries, and that writes never retry.
+"""Tests for common.py: which gh errors a read retries, that writes never retry, the state files
+(written whole or not at all) and the loop's lock; and for loop_task.py's quick exits and task XML.
+The loop's behaviour is in `coderabbit_loop.py --self-test` (a simulated CodeRabbit).
 
 Standard library only (Python 3.8+), no network: subprocess.run and time.sleep are patched.
 Run from scripts/review: python -B -m unittest -v test_common
@@ -6,12 +8,15 @@ Run from scripts/review: python -B -m unittest -v test_common
 import pathlib
 import subprocess
 import sys
+import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))  # -I leaves the script's folder out
 import common  # noqa: E402
-from common import GitHub, is_transient  # noqa: E402
+from common import GitHub, Lock, is_auth, is_transient, lock_held, read_json, write_json  # noqa: E402
+import loop_task  # noqa: E402
 
 WINDOWS_DROP = (
     'Get "https://api.github.com/repos/UkrainianWiki/wlxjury/issues/234/comments?per_page=100&page=1": '
@@ -109,6 +114,108 @@ class RunTest(unittest.TestCase):
         self.assertIsInstance(out, RuntimeError)
         self.assertIn("network still failing", str(out))
         self.assertEqual((run.call_count, sleep.call_count), (20, 20))
+
+
+class IsAuthTest(unittest.TestCase):
+    def test_auth_failures(self):
+        for err in ["gh: Bad credentials (HTTP 401)", "To get started with GitHub CLI, please run:  gh auth login",
+                    "gh: Requires authentication (HTTP 401)"]:
+            with self.subTest(err=err):
+                self.assertTrue(is_auth(err))
+
+    def test_other_errors(self):
+        for err in [NOT_FOUND, RATE_LIMIT, WINDOWS_DROP, "gh: Resource not accessible by integration (HTTP 403)"]:
+            with self.subTest(err=err):
+                self.assertFalse(is_auth(err))
+
+
+class JsonFilesTest(unittest.TestCase):
+    def test_write_then_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "sub" / "state.json"
+            write_json(path, {"1": {"outcome": "reviewed", "text": "Ukrainian: Київ"}})
+            write_json(path, {"2": {"outcome": "clean"}})
+            self.assertEqual(read_json(path, {}), {"2": {"outcome": "clean"}})
+            self.assertEqual(sorted(p.name for p in path.parent.iterdir()), ["state.json"])  # no .tmp left
+
+    def test_missing_is_the_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(read_json(pathlib.Path(tmp) / "none.json", {"d": 1}), {"d": 1})
+
+    def test_a_file_cut_short_is_kept_aside_and_the_default_returned(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "requests.json"
+            path.write_text('{"218": {"outcome": "cle', encoding="utf-8")
+            self.assertEqual(read_json(path, {}), {})
+            self.assertFalse(path.exists())
+            self.assertTrue((pathlib.Path(tmp) / "requests.json.corrupt").exists())
+
+
+class LockTest(unittest.TestCase):
+    def test_one_holder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "loop.lock"
+            self.assertFalse(lock_held(path))
+            first, second = Lock(path), Lock(path)
+            self.assertTrue(first.acquire())
+            try:
+                self.assertTrue(lock_held(path))
+                self.assertFalse(second.acquire())
+            finally:
+                first.release()
+            self.assertFalse(lock_held(path))
+            self.assertTrue(second.acquire())
+            second.release()
+
+
+class LoopTaskTest(unittest.TestCase):
+    def launch(self, folder):
+        out = []
+        with mock.patch.object(loop_task.subprocess, "Popen") as popen:
+            code = loop_task.launch(folder, out=out.append)
+        return code, out, popen
+
+    def test_launch_does_nothing_while_running(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            lock = Lock(folder / "loop.lock")
+            self.assertTrue(lock.acquire())
+            try:
+                code, out, popen = self.launch(folder)
+            finally:
+                lock.release()
+            self.assertEqual((code, out, popen.called), (0, ["running already"], False))
+
+    def test_launch_does_nothing_after_stop(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            (folder / "loop.stop").write_text("x")
+            code, out, popen = self.launch(folder)
+            self.assertEqual((code, popen.called), (0, False))
+            self.assertIn("stopped", out[0])
+
+    def test_launch_starts_the_daemon_with_the_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            code, out, popen = self.launch(folder)
+            self.assertEqual(code, 0)
+            cmd, kw = popen.call_args[0][0], popen.call_args[1]
+            self.assertTrue(cmd[1].endswith("loop-daemon.sh"))
+            self.assertEqual(kw["env"]["REVIEW_DIR"], folder.as_posix())
+
+    def test_task_xml(self):
+        for logon in (True, False):
+            with self.subTest(logon=logon):
+                xml = loop_task.task_xml(pathlib.Path("C:/x/target/review"), 30, logon)
+                root = ET.fromstring(xml.split("?>", 1)[1])
+                ns = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
+                self.assertEqual(root.find("t:Triggers/t:TimeTrigger/t:Repetition/t:Interval", ns).text, "PT30M")
+                self.assertEqual(root.find("t:Triggers/t:LogonTrigger", ns) is not None, logon)
+                settings = {e.tag.split("}")[1]: e.text for e in root.find("t:Settings", ns)}
+                self.assertEqual((settings["DisallowStartIfOnBatteries"], settings["StopIfGoingOnBatteries"],
+                                  settings["StartWhenAvailable"], settings["MultipleInstancesPolicy"]),
+                                 ("false", "false", "true", "IgnoreNew"))
+                self.assertIn("launch --dir", root.find("t:Actions/t:Exec/t:Arguments", ns).text)
 
 
 if __name__ == "__main__":
