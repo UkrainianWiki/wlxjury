@@ -1,4 +1,4 @@
-# Release provenance: CI-built releases and reproducible builds (v2)
+# Release provenance: CI-built releases and reproducible builds (v3)
 
 **Status:** plan, 2026-11-13, for the maintainer's decisions (§8). Nothing is implemented. Two
 plans: **A**, GitHub Actions builds the release ZIP from a tag and attests it, and the server's
@@ -20,6 +20,18 @@ Recommended order: A, then B (§7).
   - It also adds: pinning cosign and its trust root, the offline form taking the hash, the end of
     `release-train` (it can't merge into master), green CI as a precondition, protecting the
     scalawiki pin, building in a pinned container from A1, and the revised effort (§4, §8).
+- **v3**, after a follow-up review:
+  - Agent pushes after `intracer`'s approval no longer count: stale approvals are dismissed and the
+    last push needs approval, on master and on `release-train`.
+  - The required `CI ok` check must come from GitHub Actions.
+  - Build and attestation run in parallel with the suite, so a flaky test doesn't burn a version;
+    the server requires attempt 1 from the signed provenance.
+  - `release-train` ancestry stays accepted, for rollbacks.
+  - `publish` uses a short draft and checks the asset digests before publishing.
+  - Job listings are paged, and `TUF_ROOT` is confirmed in A3.
+  - `intracer` is named as the one person a release needs, with the hash form as the emergency
+    path.
+  - CODEOWNERS details are added, and the lint fix is recorded.
 
 ## 1. Today
 
@@ -45,7 +57,7 @@ ZIP was built from, or by what: it is the hash of a build on one PC.
 | F4 | **Releases are not built from master, and CI never tests the release commit.** `release/26.11.4` is not an ancestor of master. Master's ruleset covers deletion, force pushes, linear history and "PR required" with 0 approvals, but has **no required checks**. There is **no tag ruleset** and no GitHub Release; the only tags are `0.8`–`0.10`. CI doesn't run on `release/*` pushes. | rulesets API, git |
 | F5 | **`ukwikidev` (the agents' account) and `onca26` are repository admins**, as is `intracer`. Admins can edit rulesets and environments, so no protection holds against an admin account. | collaborators API |
 | F6 | **Local ZIPs may not contain the pinned scalawiki.** The jar in `~/.ivy2/local` dates from 2026-10-28; CI builds the pin `25951dbe` (pinned 2026-11-04). That commit is reachable only from scalawiki's unprotected `page-categories` branch. `.github/actions/scalawiki` always restores `actions/cache`. | file dates, action source |
-| F7 | **CI is red now.** Compatibility lint has failed on every stack run since about 10:33 UTC 2026-11-13. A release workflow that requires CI fails until that is fixed. | review |
+| F7 | **CI was red; the fix is pushed.** Compatibility lint failed on every stack run from about 10:33 UTC 2026-11-13. The fix is 71f2723c on `stack/112`, merged up to `stack/130-comments-report` (7b5e5f57, merged into this branch). A release workflow that requires CI needs that run green on the release commit. | review, git |
 | F8 | **What differs between two builds**, read from the 26.11.4 ZIP. The double-build experiment was skipped because the 26.11.5 suite held the sbt lock; it is B0. | |
 | | (a) Outer ZIP entries carry the build time. native-packager 1.13.0's `ZipHelper` refers to `SOURCE_DATE_EPOCH`, to be confirmed. | |
 | | (b) Entries are not sorted. | |
@@ -66,6 +78,7 @@ These are the claims for plan A as designed in §4, which assumes D4–D7 are ta
 | **Agent account `ukwikidev` misused** (token on the PC): tag, re-run, dispatch, an edited workflow, a draft or a publish | n/a (the PC builds anyway) | caught. It can't create, move or delete release tags. A re-run or dispatch doesn't attest. Its own branches' workflows sign as another identity. The server requires the tag's single push run, that run's `publish` job approved by `intracer`, and the commit on master or `release-train` | — | caught |
 | CI build compromised (action, runner, poisoned cache) | n/a | **not caught**: GitHub attests whatever it built; no caches narrows this | caught: CI's ZIP ≠ an independent rebuild | caught |
 | **Maintainer account `intracer` compromised** | not caught | not caught: it holds every approval. What remains is the public commit history, the Rekor log and hardware-key 2FA | not caught (the source is malicious) | not caught |
+| **`intracer` unavailable** (availability, not integrity) | anyone with the PC and sudo can release | **no release**: only `intracer` tags, approves PRs and approves `publish`. The emergency path is the hash form, `deploy ZIP SHA256`, with a locally built ZIP and no provenance claim (runbook) | — | same as A |
 | An outsider checking what runs | impossible | provenance: commit and run | rebuild and compare | both |
 
 ## 4. Plan A: CI-built releases
@@ -83,16 +96,28 @@ These are the claims for plan A as designed in §4, which assumes D4–D7 are ta
   and `release-train` holds merge commits. Once the stack lands on master, the release commits'
   content (versions, changelog headings) is replayed onto master by an ordinary PR. A last
   ruleset then makes `release-train` read-only (no updates, no deletion), and its tags keep its
-  commits. From then on, the server's ancestry check accepts master only.
+  commits. The server's ancestry check **keeps accepting `release-train`**, so a rollback to a
+  transition release (re-deploying its published ZIP) still verifies. A read-only branch can't
+  gain new commits, so this costs nothing.
 - **Repository rules (A0):**
   1. **`ukwikidev` goes from admin to write.** This is required: an admin can switch off any of
      the rules below. `onca26` is a separate decision (D5).
   2. **Release tag ruleset** on `refs/tags/[0-9]*`. Update and deletion are restricted with **no**
      bypass, so a tag is never moved or re-created. Creation is restricted, and its bypass actor
      is a team `release-managers` containing `intracer` only, not the admin role.
-  3. **Master and `release-train`:** a PR is required with an approving review from a code owner
-     (`CODEOWNERS`: `* @intracer`). A required check `CI ok` aggregates the jobs, so its name
-     doesn't change with a MariaDB patch in the matrix name (L7).
+  3. **Master and `release-train`:** a PR is required with an approving review from a code owner.
+     - `CODEOWNERS` with `* @intracer` is added in A0/A1 and must be on both branches, since the
+       file is read from the PR's base.
+     - `dismiss_stale_reviews_on_push: true` and `require_last_push_approval: true` (master has
+       both `false` today). `release-train` PRs are headed by agent-pushed `stack/*` branches,
+       and an agent push after `intracer`'s approval must need a new approval.
+     - A PR authored by `intracer` can't get a code-owner approval: GitHub doesn't count the
+       author's own review. Their release commits are authored by an agent, or wait for another
+       code owner.
+     - A required check `CI ok` aggregates CI's jobs, so its name doesn't change with a MariaDB
+       patch in the matrix name (L7). It is **pinned to the GitHub Actions app**
+       (`integration_id: 15368`), so a commit status named "CI ok" set through the Statuses API
+       by any writer can't satisfy it.
   4. **Environment `release`:** required reviewer `intracer`; administrators can't bypass it
      (`can_admins_bypass: false`); the deployment policy allows tags `[0-9]*` only. Self-review
      is **not** prevented: `intracer` both tags and approves, as separate deliberate steps.
@@ -108,8 +133,14 @@ It runs on `push` of tags `[0-9][0-9].[0-9]*`, with `contents: read` at the top.
    - the commit is reachable from master or `release-train`;
    - `project/scalawiki.sha` equals the commit of the protected scalawiki tag that names it (D18).
 2. **test**: `ci.yml` as a reusable workflow on this commit, which must pass (`CI ok`; D13). It
-   replaces the local full suite at the release boundary (D14).
-3. **build** (`id-token: write`, `attestations: write`), on a clean runner **inside the pinned
+   replaces the local full suite at the release boundary (D14). A flaky failure here is re-run
+   ("re-run failed jobs"). That doesn't touch the build, which ran in attempt 1.
+3. **build** runs **in parallel with guard and test**, not after them. Otherwise a flaky test
+   would force a re-run whose attempt 2 can't attest, and since tags can't be re-created, the
+   version would be burnt. A ZIP that guard or test later fails is still attested, but it is
+   never published (step 5 needs all of them), so the server refuses it.
+
+   It runs with `id-token: write` and `attestations: write`, on a clean runner **inside the pinned
    build container**. That is the Temurin 17 JDK image pinned by digest, so there is one JDK pin
    (L5, shared with B):
    - no caches; the scalawiki action gets a `cache: false` input (M6);
@@ -120,15 +151,24 @@ It runs on `push` of tags `[0-9][0-9].[0-9]*`, with `contents: read` at the top.
      `github.run_attempt == 1`**. Its bundle is saved as `wlxjury-$TAG.zip.sigstore.json`.
 
    Because a tag can't be re-created and a re-run is attempt 2 or later, **each tag has at most
-   one attested ZIP**: the one the rehearsal then verifies (M2, L1).
+   one attested ZIP**: the one the rehearsal then verifies (M2, L1). The server doesn't rely on
+   the workflow's condition alone: it reads the attempt from the signed provenance (§4.4).
+   A build that fails for an infrastructure reason in attempt 1 burns the number (D16).
 4. **package tests**:
    - `deployment.yml`'s release job (restore and `test_release_script`) on **this** ZIP;
    - the server's exact cosign command, with the shared pin (D11), on this bundle.
-5. **publish**, in environment `release` (`contents: write`). It waits for `intracer`'s approval
-   after the rehearsal, for up to 30 days.
+5. **publish**, in environment `release` (`contents: write`). It **needs guard, test, build and
+   package tests** to have succeeded, and waits for `intracer`'s approval after the rehearsal,
+   for up to 30 days.
    - It checks that the artifact's SHA-256 equals the attested subject.
-   - It creates the release with the ZIP, `.sha256` and `.sigstore.json`, then publishes it,
-     which makes it immutable.
+   - Immutable releases take their assets while the release is a draft, so it uploads to a short
+     draft. It reads the assets' digests back through the API, checks them against the
+     artifact (a writer could swap a draft asset in that window), and only then publishes.
+     Publishing makes the release immutable.
+   - A writer could create a release for the tag before `publish` runs, as a denial of service.
+     `publish` then fails and says so. The maintainer deletes that release (it isn't published,
+     or it holds no attested assets) and re-runs `publish`. The server's checks make this an
+     availability issue only.
    - Its summary shows the SHA-256. The runbook says to approve only if that matches the
      rehearsal record (M2).
 
@@ -147,7 +187,8 @@ If the rehearsal fails, the `publish` approval is rejected and the number is bur
 tag's attested ZIP never gets a successful `publish` job, so the server refuses it even if
 someone attaches it to a release by hand.
 
-There are no drafts: a draft can be read and edited by any writer (L4).
+The rehearsal uses no draft, because any writer can read and edit a draft (L4). The only draft is
+`publish`'s few seconds, and its digests are checked.
 
 ### 4.4 Release tool: `deploy VERSION [SHA256]`
 
@@ -173,12 +214,18 @@ Everything up to the maintenance flag changes nothing. **The lock is taken first
    - `--certificate-github-workflow-trigger push`
    - `--certificate-github-workflow-repository UkrainianWiki/wlxjury`
    - `TUF_ROOT=/var/lib/wlxjury-release/sigstore`, which is root-only and not sudo's `HOME` (M4).
-4. From the provenance (python3, JSON only): the commit, the run ID, and a GitHub-hosted runner.
+4. From the signed provenance (python3, JSON only):
+   - the commit;
+   - a GitHub-hosted runner;
+   - the run ID and attempt from `invocationId`, which **must end in `/attempts/1`**. This is
+     the server's own check of "one attested ZIP per tag".
 5. `GET …/actions/runs/{id}`: `event == push`, `path == .github/workflows/release.yml`,
-   `head_sha ==` the commit. `GET …/actions/runs/{id}/jobs?filter=all`: the job `publish`
-   concluded `success`. This is `intracer`'s post-rehearsal approval of this very build.
+   `head_sha ==` the commit. Then `GET …/actions/runs/{id}/jobs?filter=all&per_page=100`,
+   following the `Link` pages: the job `publish` concluded `success` in some attempt. This is
+   `intracer`'s post-rehearsal approval of this very build.
 6. `GET …/compare/master...{commit}`: `status` is `identical` or `behind`, meaning the commit is
-   on master. During the transition, `release-train` is also accepted.
+   on master. Otherwise the same check runs against `release-train`, which stays accepted after
+   the transition, for rollbacks (§4.1).
 7. The manifest's `version` is the tag, and `build` contains the commit's first 12 characters.
    If a hash was given, it matches.
 8. Then the existing path continues with the computed SHA-256. The record gains `source`, `tag`,
@@ -205,8 +252,8 @@ to the hash form silently.
 - A local HTTPS server with a test CA in the image's trust store stands in for the release host and the API (base URLs in `deployment.json`), so `--proto =https` stays on.
 - A stub at `/usr/local/bin/cosign` in the test image checks its arguments.
 - Cases: success and its record; the optional hash, matching and not; 404 or draft; unreachable;
-  rate-limited; verification failure; wrong ref or trigger; no successful `publish` job; a run
-  for another commit; a commit not on master or `release-train`; manifest mismatch; no room;
+  rate-limited; verification failure; wrong ref or trigger; a provenance with attempt 2; no
+  successful `publish` job (also when it is on a second page of jobs); a run for another commit; a commit not on master or `release-train`; manifest mismatch; no room;
   prune and deploy under the lock; the hash form unchanged.
 - shellcheck.
 - The real cosign runs in `release.yml`, step 4.
@@ -217,8 +264,14 @@ to the hash form silently.
   reviewed checkout. CI fails if the two differ.
 - A bump follows dependency practices: the release must be at least 14 days old, pinned by
   checksum, and land as a PR.
-- Sigstore's trust material is updated by cosign's TUF client in `TUF_ROOT`.
+- Sigstore's trust material is updated by cosign's TUF client in `TUF_ROOT`. A3 confirms that
+  the pinned cosign honours `TUF_ROOT`; cosign 3 uses sigstore-go's TUF client, which may not.
+  If it doesn't, the tool passes the location explicitly (cosign's trusted-root or TUF cache
+  option). Either way, nothing may land in `$HOME/.sigstore`.
 - The offline form needs no cosign.
+- **Emergency path.** If GitHub is down, or `intracer` is away, a release can only go out by the
+  hash form, `deploy ZIP SHA256`. It is a locally built or previously downloaded ZIP, and the
+  record notes `provenance=none`. The runbook names it as the emergency path, not a routine one.
 
 ### 4.5 Docs
 
@@ -235,10 +288,10 @@ to the hash form silently.
 
 | Phase | Work | Effort |
 |---|---|---|
-| A0 | Settings (maintainer): roles, the `release-managers` team, tag rulesets, CODEOWNERS and required `CI ok`, environment `release`, immutable releases, `release-train` | 1 h |
-| A1 | Fix the Compatibility lint (F7); the `CI ok` aggregate; `release.yml` in the pinned container; `workflow_call` for `ci.yml` and `deployment.yml`; the scalawiki `cache: false` input and its SHA in the manifest; a protected scalawiki tag and its guard; a dry run (`workflow_dispatch`: builds, doesn't attest or publish) | 2.5–3 d |
+| A0 | Settings (maintainer): roles; the `release-managers` team; tag rulesets; on master and `release-train`, code-owner review with stale-review dismissal and last-push approval, and `CI ok` pinned to GitHub Actions; environment `release`; immutable releases; `release-train` | 1 h |
+| A1 | `CODEOWNERS` (`* @intracer`) on master and `release-train`; the `CI ok` aggregate; `release.yml` (build in parallel with guard and test, `publish` after all of them, draft digests checked) in the pinned container; `workflow_call` for `ci.yml` and `deployment.yml`; the scalawiki `cache: false` input and its SHA in the manifest; a protected scalawiki tag and its guard; a dry run (`workflow_dispatch`: builds, doesn't attest or publish) | 2.5–3 d |
 | A2 | `deploy VERSION [SHA]`: API checks, cosign, record, tests, shellcheck | 2.5–3 d |
-| A3 | `cosign.pin`, the infra playbook, `TUF_ROOT`; a verify of a real bundle on the server (maintainer's sudo) | 0.5–1 d |
+| A3 | `cosign.pin`, the infra playbook; confirm that the pinned cosign honours `TUF_ROOT` (else pass the location explicitly; nothing in `$HOME/.sigstore`); a verify of a real bundle on the server (maintainer's sudo) | 0.5–1 d |
 | A4 | Docs, runbook, practices | 0.5–1 d |
 | A5 | First CI release: `deploy VERSION SHA16` with the rehearsal's hash as a cross-check | with the release |
 
@@ -264,8 +317,9 @@ server keeps checking only A's evidence.
 
 ## 6. Precondition
 
-CI has to be green (F7). `release.yml` requires `CI ok` on the release commit, so a release is
-impossible while Compatibility lint fails. A1 fixes it first.
+CI has to be green on the release commit (F7): `release.yml` requires `CI ok`. The Compatibility
+lint fix is pushed (71f2723c on `stack/112`, merged up to `stack/130-comments-report` at
+7b5e5f57). What remains is to confirm a green run on the stack's top before the first CI release.
 
 ## 7. Recommendation
 
@@ -275,18 +329,21 @@ impossible while Compatibility lint fails. A1 fixes it first.
    that itself.
 2. **B** afterwards, starting with B0. It is the only check against a compromised CI build, and
    it lets anyone verify a release.
-3. **Hardware-key 2FA for `intracer`**: the one account both plans have to trust.
+3. **Hardware-key 2FA for `intracer`**: the one account both plans have to trust. `intracer` is
+   also the one person a release needs (§3); the hash form is the documented emergency path.
 
 ## 8. Decisions for the maintainer
 
 One per item; the recommended option comes first.
 
 1. **Release source.** Tags on master commits. Until the stack merges: a protected
-   `release-train` fed by PRs with `intracer`'s code-owner approval. Alternatives: keep cutting
+   `release-train` fed by PRs. Both branches require `intracer`'s code-owner approval, with stale
+   reviews dismissed, last-push approval, and `CI ok` pinned to GitHub Actions. Alternatives: keep cutting
    `release/26.11.N` from the stack as a dated exception (unprotected history: weak), or no CI
    releases until the stack merges.
 2. **End of `release-train`.** When the stack lands, replay the release commits onto master by
-   PR and make `release-train` read-only (tags keep its commits). Alternatives: a one-off ruleset
+   PR and make `release-train` read-only (tags keep its commits). The server keeps accepting its
+   ancestry, for rollbacks. Alternatives: a one-off ruleset
    bypass to merge it (it breaks master's linear history), or keep `release-train` as the release
    branch for good (then master is never the release source).
 3. **Tag name.** `26.11.6`, exactly what `deploy` takes. Alternative: `v26.11.6`.
@@ -298,14 +355,17 @@ One per item; the recommended option comes first.
    must also be in the `release` environment (D7's second gate).
 7. **Approval gates.** One gate: `publish`, approved after the rehearsal, and checked by the
    server (that run's `publish` succeeded). With tags by `intracer` only (D6) and attestation only
-   on push attempt 1, an unapproved build can only follow `intracer`'s own tag push. Alternative:
-   two gates, build and publish; required if D6 lets agents tag.
+   on push attempt 1, an unapproved build can only follow `intracer`'s own tag push. Build runs in
+   parallel with guard and test, and `publish` needs all of them, so a flaky test is re-run
+   without burning the version. Alternative: two gates, build and publish; required if D6 lets
+   agents tag.
 8. **Rehearsed ZIP = deployed ZIP.** One attestation per tag, checked by the server, plus the
    SHA-256 in `publish`'s summary checked against the rehearsal record before approving.
    `deploy VERSION [SHA]` takes an optional hash. Alternative: the hash is required (back to
    pasting it).
 9. **Where the ZIP lives.** The run's artifact (30 days) for the rehearsal, and the published
-   immutable release for the server. No drafts.
+   immutable release for the server. The only draft is `publish`'s few seconds, with its asset
+   digests checked before publishing.
 10. **Visibility.** Stay public: attestations and API reads need no token, and the ZIP holds
     nothing private (F2). Private would need Enterprise Cloud and a root-only fine-grained token.
 11. **Server verifier and its updates.** cosign at `/usr/local/bin/cosign` from one shared
@@ -315,7 +375,8 @@ One per item; the recommended option comes first.
 12. **Offline deploys.** Only the hash form (`deploy ZIP SHA256`) is offline, with no provenance
     claim. Alternative: an offline bundle check with a maintained `trusted_root.json` plus a
     required hash; it still can't check publication or the `publish` job.
-13. **Green CI first.** Fix Compatibility lint, then require the whole `CI ok`. Alternative:
+13. **Green CI first.** Require the whole `CI ok`. The lint fix is pushed (71f2723c, merged up
+    to 7b5e5f57); confirm a green run before the first CI release. Alternative:
     require only the suite's steps (the release would then skip the lint, story and
     query-plan gates).
 14. **Full suite at the release boundary.** CI's run on the tagged commit replaces the local
@@ -324,7 +385,8 @@ One per item; the recommended option comes first.
     the tag. Alternative: derive it from the tag (a rebuild needs the same override, and the
     commit says SNAPSHOT).
 16. **Failed rehearsal.** Reject `publish` and burn the number; the next is 26.11.7, and the
-    changelog notes it. (Re-tagging is impossible: tags can't be deleted.)
+    changelog notes it. The same applies to a build that fails in attempt 1 for an
+    infrastructure reason. (Re-tagging is impossible: tags can't be deleted.)
 17. **Caches in the release build.** None. Alternative: CI's caches (faster, and a cache
     poisoned from another ref would end up attested).
 18. **The scalawiki pin.** Tag the pinned commit in scalawiki (for example `wlxjury-25951dbe`)
@@ -337,3 +399,7 @@ One per item; the recommended option comes first.
 20. **Immutable releases.** Turn them on, and have the server require `immutable`.
 21. **Order.** A0, A1–A4, then B. Alternative: B first (verifiable builds, but the PC stays the
     builder until A).
+22. **`intracer` as the one person a release needs.** Accept it, and document the hash form
+    (`deploy ZIP SHA256`, no provenance) as the emergency path in the runbook. Alternative: a
+    second trusted person in `release-managers` and as a code owner (more availability, a second
+    account to protect).
