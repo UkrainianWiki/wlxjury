@@ -26,38 +26,10 @@ with `.N` for an extra deploy in the same month (`26.11.1`), and release heading
 ## Unreleased (developed, not yet deployed)
 
 The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything developed up to
-2026-11-13 before the entries below was deployed in `26.11.4`.
+2026-11-13 before the entries below was deployed in `26.11.6`.
 
 **Features**
 
-- **Files with comments** (asked for by a contest admin; developed 2026-11-13,
-  `stack/128-comments-badge-filter`): a file with comments shows a speech bubble with their number
-  on its gallery tile, its by-rate tile and in the large view's **Next files**, read by screen
-  readers as words ("3 comments", in the language's plural form). A toggle **Only with comments
-  (N)** beside the tabs (organizers: beside the vote filter) narrows the round's list to those
-  files, combined with any tab, region, order and view, the CSV included; N is the current tab's
-  number. The toggle is kept by every link of the list: its pages, the large view's previous and
-  next, votes and comments (a comment goes back to the list it was made in, also an organizer's
-  view of a juror's or of all the jurors' votes). Jurors get it on their own files, organizers and admins in every view
-  they already have; it never shows a file the viewer couldn't see. Both count the comments a
-  file's large view shows: any round's of the contest, any author's. The large view's comments
-  now show their author, time (in the viewer's time zone and language; none where the stored time
-  can't be read) and, for a comment from another round, that round's name (to admins, organizers
-  and root only: jurors see the comment without it).
-- **Comments report** (the admin's request, second part; developed 2026-11-13,
-  `stack/130-comments-report`): a fifth view of a round's list, **Comments** (in the view menu, and
-  linked from the round's statistics), for the contest's admins, organizers and root only (a juror
-  gets the 403 page, or JSON from a script, also for their own files). It lists the files with
-  comments, 20 to a page: a ~200 px thumbnail and the name linking to the large view (which then
-  moves among the report's files), the file's result in the round (all the jurors' tally or one
-  juror's vote, a rated round's stars), and each comment with its author, time and, from another
-  round, that round's name; texts keep their line breaks and are never HTML. A switch **This
-  round** (the default) / **All rounds of the contest** chooses the comments: a file is listed if it
-  has one of them. Its order menu has **Latest comment first** (by the newest comment of that
-  choice; the default, also when opened from the view menu or the round's statistics, the CSV and
-  the large view included) and the list's own orders. **Comments CSV** has a row per comment
-  (file, page id, Commons URL, author, time in UTC, round, text), every cell formula-safe. The
-  juror, vote filter, region and pager work as in the other views.
 - **Authors for staff** (developed 2026-11-13, `stack/131-authors`): admins, organizers and root
   see each file's author, as their Commons account, with two links: the name opens the contest
   files page narrowed to that author's files, with a removable chip **Author: X (N) ×**, and a
@@ -93,10 +65,31 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
   follow it, with the juror, vote filter, region, scope and order. Comments without an account
   stay without links. Admins, organizers and root only, as the report: a juror's request with `commenter=` is
   refused as the report is, and ignored in their own gallery and large view.
-- A comment on a stopped round's file is refused on the server too, for admins, organizers and
-  root as for jurors: a 403 page saying the comment was not saved, with a link back to the file
-  (or JSON) and its reference, logged on `security.authz` with the reason `round_stopped`. The
-  form was already hidden there.
+
+## 26.11.6 (2026-11-13)
+
+Deployed 2026-11-13, build `26.11.6-89b458d69a8f` (release commit `89b458d6` on `release/26.11.6`),
+schema V101 (no migrations; the release tool skipped the backup), from `26.11.5`. PRs #314-#317,
+and the CI lint fix pushed to #307's branch after `26.11.5`. Deploy record: roadmap, "26.11.6 deploy record".
+
+**Features**
+
+- **Access denied in another contest** (found on 26.11.5; developed 2026-11-13,
+  `stack/135-denial-contest-reason`): the 403 page of a page that belongs to a contest the account
+  has no active role in (never added, or deactivated) now says so first, lists the account's
+  contests with its role in each and says to ask an admin of that contest. That contest is not
+  named (a missing contest reads the same). Before, an admin of WLM 2025 Ukraine who opened a round
+  of another contest saw the roles the page is for ("Admin, Juror, Organizer, Root") beside "Your
+  role in WLM 2025 in Ukraine: Admin", which read as a contradiction. A page of another of the
+  account's contests gives the role there, not in the session's current contest. Root, pages of
+  no contest, the stopped round's page, the reference and the log line are unchanged.
+- **Comments report opens by the latest comment** (developed 2026-11-13,
+  `stack/134-view-menu-state`): with no order in its address, the report is ordered by **Latest
+  comment first**: its page and CSV, one juror's and all the jurors', either scope, and a large view
+  opened from it, whose previous and next follow the same list. Opening it from another view (the
+  view menu, the round's statistics) switches to that order; an order chosen in the report's menu
+  is kept, the CSV included, and leaving the report keeps it (by rate only from the latest
+  comment, which the other views don't have).
 
 **Fixes**
 
@@ -107,6 +100,104 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
   gallery's list rework (cf56da73, 26.11). The gallery path is now always the gallery, also for
   all the jurors (their by-rate view stays at `/byrate/...`), and the order (`sort=`) stays apart
   from the view.
+- **Access-denied page never a server error:** the page's roles are loaded with one query for the
+  account's contests (not one per membership) and not at all for a stopped round's page; if they or
+  the suggested destination can't be loaded, the page leaves them out, logged at WARN on
+  `security.authz` with the denial's reference (`denial_roles_unavailable`,
+  `denial_suggestion_unavailable`), instead of turning the 403 into a 500.
+- **Conflicts of interest, a large selection:** on a round's conflicts page, a selection of more
+  than 2,000 files (the page's limit) is refused whole with a message and nothing is written; it
+  was cut at 2,000 while reporting success. A malformed file id is refused instead of dropped. The
+  form's fields are bound as typed values (the checkboxes are `pageId[]`).
+
+**Development**
+
+- **CodeRabbit triage of #238–#248** (`stack/133-coderabbit-triage-1113`):
+  - CI: every `actions/checkout` keeps no token (`persist-credentials: false`), so the build code a
+    job runs can't read the job's token; the scalawiki package plan's token, from-source fallback
+    and tag check.
+  - The deployment's credential scanner (`wlxjury-deploy.py`, when it adopts a server's
+    configuration): a quoted HOCON key is one segment, dots included, and its leaf's last dot-part
+    is checked too; a whole-line comment is read like a setting, and in a comment only an
+    expansion (`$(...)`, `${...}`, `$NAME`) is exempt; booleans and durations are no longer exempt
+    in the line formats (`.cnf`, `.env`, `.properties`), where they can be the password.
+  - Write paths: `RoundWrites` refuses a round lock in auto-commit mode (its `FOR UPDATE` ends with
+    the statement), where the vote inserts take a transaction of their own, and a read-only
+    session's vote insert fails, writing nothing; `VoteJdbc.rate` finds and rates a vote row that
+    was replaced while the juror waited for its lock (a restore).
+  - OAuth (not offered on production yet): one's own unlink and its sessions' end commit in one
+    transaction; root's "reset password" unlinks the identities only once the link is mailed, and
+    ends the sessions with them; `GoogleProvider` fetches the discovery document again after a
+    failed fetch.
+  - The migration lint (`MigrationSchemaSpec`) reads qualified tables and `ALTER TABLE IF EXISTS`
+    and skips string values after `COMMENT` and `DEFAULT`; the vote-row lock scan
+    (`VoteRowLockSpec`) exempts only the vote row's own id.
+  - `scripts/browser-stats.py` counts the last 14 days (or the given number) by each request's
+    time and lists every major version; its tests run on CI. Docs: exact image tags' residual
+    risk, the local scalawiki pin, commit pathspecs, the theme fallback.
+- **Release provenance plan** (`docs/plans/2026-11-13-release-provenance.md`): CI-built releases
+  with a build provenance attestation that `wlxjury-release deploy VERSION` verifies with cosign,
+  then reproducible ZIPs. The maintainer's decision D1: releases are tags on master, through a
+  protected `release-train` branch until the stack merges. Not built yet: `26.11.6` followed the
+  old flow (a `release/26.11.6` branch from the stack, deployed by its ZIP's hash) as an explicit
+  temporary exception.
+- **CI's compatibility lint**, red since #295 (2026-11-12): a false positive on the account menu's
+  `width: max-content` (caniuse's partial support is about the `stretch` keyword); the rule is
+  disabled on that line with the reason (71f2723c, on `stack/125-login-csrf-token` after
+  `26.11.5`'s commit, merged up the stack).
+
+## 26.11.5 (2026-11-13)
+
+Deployed 2026-11-13, build `26.11.5-0a7c0cba764f` (release commit `0a7c0cba` on `release/26.11.5`),
+schema V101 (migration V101: comment's `(contest_id, room)` index, 140 ms on production), from
+`26.11.4`. PRs #307-#313; the first deploy with #308's release tool (installed on the server just
+before it). Deploy record: roadmap, "26.11.5 deploy record".
+
+**Features**
+
+- **Files with comments** (asked for by a contest admin; developed 2026-11-13,
+  `stack/128-comments-badge-filter`): a file with comments shows a speech bubble with their number
+  on its gallery tile, its by-rate tile and in the large view's **Next files**, read by screen
+  readers as words ("3 comments", in the language's plural form). A toggle **Only with comments
+  (N)** beside the tabs (organizers: beside the vote filter) narrows the round's list to those
+  files, combined with any tab, region, order and view, the CSV included; N is the current tab's
+  number. The toggle is kept by every link of the list: its pages, the large view's previous and
+  next, votes and comments (a comment goes back to the list it was made in, also an organizer's
+  view of a juror's or of all the jurors' votes). Jurors get it on their own files, organizers and admins in every view
+  they already have; it never shows a file the viewer couldn't see. Both count the comments a
+  file's large view shows: any round's of the contest, any author's. The large view's comments
+  now show their author, time (in the viewer's time zone and language; none where the stored time
+  can't be read) and, for a comment from another round, that round's name (to admins, organizers
+  and root only: jurors see the comment without it).
+- **Comments report** (the admin's request, second part; developed 2026-11-13,
+  `stack/130-comments-report`): a fifth view of a round's list, **Comments** (in the view menu, and
+  linked from the round's statistics), for the contest's admins, organizers and root only (a juror
+  gets the 403 page, or JSON from a script, also for their own files). It lists the files with
+  comments, 20 to a page: a ~200 px thumbnail and the name linking to the large view (which then
+  moves among the report's files), the file's result in the round (all the jurors' tally or one
+  juror's vote, a rated round's stars), and each comment with its author, time and, from another
+  round, that round's name; texts keep their line breaks and are never HTML. A switch **This
+  round** (the default) / **All rounds of the contest** chooses the comments: a file is listed if it
+  has one of them. Its order menu has the list's own orders and **Latest comment first** (by the
+  newest comment of that choice; the default since `26.11.6`). **Comments CSV** has a row per
+  comment (file, page id, Commons URL, author, time in UTC, round, text), every cell
+  formula-safe. The juror, vote filter, region and pager work as in the other views.
+- A comment on a stopped round's file is refused on the server too, for admins, organizers and
+  root as for jurors: a 403 page saying the comment was not saved, with a link back to the file
+  (or JSON) and its reference, logged on `security.authz` with the reason `round_stopped`. The
+  form was already hidden there.
+
+**Fixes**
+
+- **Sign-in page for clients that don't ask for HTML** (developed 2026-11-13,
+  `stack/125-login-csrf-token`): `GET /auth` with an `Accept` header without `text/html` (a
+  scanner's, 5 times on 2026-11-13) was a 500, "No CSRF token was generated for this request", and
+  signed-in pages with forms failed the same way for such a client. Browsers were not affected.
+  Every request the CSRF filter doesn't check (GET, HEAD, OPTIONS) now gets a token, which reaches
+  the session only when a page renders it (a JSON answer still sets no cookie), and every template
+  renders the field with `csrfField`, which leaves it out rather than failing. `PageCsrfTokenSpec`
+  covers the `Accept` headers, HEAD, the signed-in pages with forms, and guards the templates
+  against the throwing helper.
 - **Authors shown as wiki markup** (developed 2026-11-13): a file imported before authors were
   resolved kept its author as wikitext, so organizers saw e.g. «Автор: [[User:Liliia2022|Liliia2022]]»
   in the large views and the round file list (on the production copy: 160,492 of 1,029,265 files,
@@ -125,6 +216,10 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
   - The large views, their JSON and the file list's author column show any value still stored
     with markup as its account (`StoredAuthors.shown`), as plain text. Authors stay visible to
     organizers, admins and root only.
+  - **On production** root ran the job after the deploy, the authors backed up first: 160,453
+    files changed, among them 3,667 question-mark accounts restored from Commons and 1 author taken
+    from the first uploader, and 39 left as they were, the same as in the rehearsal on the
+    production copy (3 min 39 s there).
 - **Conflicts of interest after the job:** once the job has run, files by contest members that
   were stored with wikitext authors match as conflicts of interest (`CoiMembers`' `author IN (…)`
   prefilter now finds them): the round form's counts, the conflicts pages and the next
@@ -136,8 +231,8 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
 
 - V101: index `comment_contest_room_idx` on `comment (contest_id, room)`, which also takes over
   the foreign key from the single-column `contest_id` index (dropped where a dump kept it, so an
-  upgraded schema equals a fresh one), online and rerunnable,
-  for the toggle's semi-join, the badges' one grouped query per page and the large view's
+  upgraded schema equals a fresh one), online and rerunnable (140 ms on production, 218 ms on the
+  copy), for the toggle's semi-join, the badges' one grouped query per page and the large view's
   comments. Round lineage's planned `round.status` moves from V101 to V102.
 - **Author write guard:** `ImageText.resolvedAuthors` (behind `withAuthors`, used by the import,
   its refresh and a round's file list) never stores markup: an author that is still markup after
@@ -147,6 +242,25 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
   question-mark accounts restored or left, Cancel and Retry). The job's first step counts the
   files with markup in one scan of `images` (about 10 s on production) on the fetch lane, and its
   few Commons requests may overlap an import's: the fetch lane has no limit shared across kinds.
+- **Deployment tool** (`stack/124-release-tool-defaults`; installed on the server on 2026-11-13,
+  before this deploy, which it ran: `sudo wlxjury-release deploy f42926d333d35ce4`, the dump
+  taken by the tool): `wlxjury-release status` shows maintenance, the current release and schema,
+  the open operation with its milestones, and the exact next commands (read-only, no lock; it says
+  when the lock is held). `reopen` and `restore` without a name act on the current operation (the
+  newest, this tool's, not complete, with the current release one of its two) and refuse a stale
+  one, listing it with the reason. `deploy` takes the hash's first 16 or more hex characters,
+  checked against the ZIP's whole SHA-256 (still recorded), finds the one `wlxjury-*.zip` in the
+  folder whose hash matches when no ZIP is named, and hashes, lists and unpacks only a root-only
+  copy of the ZIP (after checking there is room for it), deleted once unpacked. Every refusal stays.
+- **Query plan checks** (plan `docs/plans/2026-11-13-query-plan-checks.md`, the maintainer's 11
+  decisions; P1 built in `stack/127-query-plan-spec`): `QueryPlanSpec` (`testOnly
+  plans.QueryPlanSpec`), in a forked JVM and MariaDB 10.6 container of its own, seeds a corner
+  shaped like production's (about 1M votes) with a committed statistics snapshot, captures the
+  statements of the juror scenarios and a round's distribution from the code, and checks their
+  plans: no index-merge intersection on `vote` (R1), the named statements' keys (R3), and a canary
+  that adds V100's dropped indexes back and must see the intersection. CI's 10.6 leg fails when the
+  spec is missing or skipped; the 10.11 leg skips it (decision 9). The rehearsal's plan check on
+  the production copy found 0 intersect plans.
 
 ## 26.11.4 (2026-11-13)
 
