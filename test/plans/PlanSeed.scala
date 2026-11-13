@@ -116,6 +116,11 @@ object PlanSeed {
     filler.zipWithIndex.foreach { case (r, k) =>
       votes(fillerJurors(k % FillerJurors).getId, r.getId, s"i.page_id <= $FillerRoundFiles", "i.page_id % 3")
     }
+    // comments on one corner file in a hundred, in the corner's contest (the gallery's comment
+    // toggle and badges, stack/128)
+    execute(c, s"""INSERT INTO comment (user_id, username, round_id, contest_id, room, body, created_at)
+      SELECT ${juror.getId}, 'Corner juror', ${corner.getId}, ${contest.getId}, seq, 'A comment', '2026-05-01T00:00:00+02:00'
+      FROM seq_${Images - CornerFiles + 100}_to_${Images}_step_100""")
     val inserted = seconds(t0)
 
     val t1 = System.nanoTime()

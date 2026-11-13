@@ -32,7 +32,11 @@ object PlanScenarios {
       val counts = l.jurorCounts()
       val total = counts.map(_.total(l.filter, l.region)).getOrElse(l.count())
       val first = Pager(1, total, l.pageSize)
-      l.files(first)
+      // the tabs' counts of all the juror's files, and the comments toggle's number
+      if (l.comments) l.withComments(false).jurorCounts() else l.commentedCount()
+      val files = l.files(first)
+      // the page's comment badges
+      CommentJdbc.countsByRoom(corner.contestId, files.map(_.pageId))
       if (first.pages > 1) l.files(Pager(first.pages, total, l.pageSize))
     }
 
@@ -45,12 +49,21 @@ object PlanScenarios {
       name
     }
 
+    // the toggle "Only with comments" (stack/128): the juror's files with a comment in the contest
+    val withComments = orders.map { order =>
+      val name = s"gallery ${order.param} with comments"
+      within(name)(page(list(order).withComments(true)))
+      name
+    }
+
     val more = Seq(
       "gallery region" -> (() => page(list(ListOrder.FileOrder, region = Some("07")))),
       "gallery at a file" -> (() => { list(ListOrder.ByRate).position(corner.pageId); () }),
       "large view" -> (() => {
-        list(ListOrder.FileOrder).around(corner.pageId)
+        val hood = list(ListOrder.FileOrder).around(corner.pageId)
         list(ListOrder.LatestVote).around(corner.pageId)
+        // the strip's comment badges
+        hood.foreach(h => CommentJdbc.countsByRoom(corner.contestId, h.following.map(_.pageId)))
         VoteJdbc.findBy(corner.pageId, jurorId, corner.roundId)
         CommentJdbc.findBySubjectAndContest(corner.pageId, corner.contestId)
         MonumentJdbc.find(f"${corner.pageId % 27 + 1}%02d-101-${corner.pageId}%05d")
@@ -79,7 +92,7 @@ object PlanScenarios {
       })
     ).map { case (name, run) => within(name)(run()); name }
 
-    galleries ++ more
+    galleries ++ withComments ++ more
   }
 
   val DistributionScenario = "distribution"
