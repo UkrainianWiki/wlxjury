@@ -538,7 +538,8 @@ class GalleryController @Inject() (
     val authorFiles = chosenAuthor.map { a =>
       contest.flatMap(_.categoryId).fold(Seq.empty[Long])(ImageJdbc.categoryAuthorFiles(_, a))
     }
-    val coiFiles = Option.when(coi && maybeRound.isEmpty) {
+    // the people of the conflicts of interest name the files' authors: only for those who see them
+    val coiFiles = Option.when(coi && maybeRound.isEmpty && user.canViewAuthors(contestId)) {
       contest.flatMap(_.categoryId).fold(Map.empty[Long, CoiMembers.Member])(
         CoiMembers.files(_, CoiMembers.forContest(contestId)))
     }

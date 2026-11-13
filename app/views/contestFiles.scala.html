@@ -61,9 +61,9 @@
                     <a id="author-filter-remove" class="link-light text-decoration-none ms-1" href="@view.withoutAuthorUrl"
                        title="@Messages("author.filter.remove")" aria-label="@Messages("author.filter.remove")">&times;</a>
                 </span>
-                @for(name <- services.imports.StoredAuthors.shown(Some(author))) {
-                    <a class="author-commons small ms-2" href="@views.WikiLinks.commonsUserUrl(name)" target="_blank" rel="noopener"
-                       title="@Messages("author.commons.title", name)">@Messages("author.commons")</a>
+                @for(account <- services.imports.StoredAuthors.account(author)) {
+                    <a class="author-commons small ms-2" href="@views.WikiLinks.commonsUserUrl(account)" target="_blank" rel="noopener"
+                       title="@Messages("author.commons.title", account)">@Messages("author.commons")</a>
                 }
             </div>
         }
@@ -73,7 +73,9 @@
         @if(view.coi && view.coiPeople.nonEmpty && user.canViewAuthors(view.contest.getId)) {
             <ul id="coi-people" class="list-unstyled mb-2">
             @for((member, files) <- view.coiPeople) {
-                <li>@snippets.authorLinks(member.account, view.contest.getId) — @member.role (@files)</li>
+                @* the account as the files are matched (CoiMembers.normalize), never the wiki
+                   account as entered: the author filter compares byte for byte *@
+                <li>@snippets.authorLinks(db.scalikejdbc.CoiMembers.normalize(member.account), view.contest.getId) — @member.role (@files)</li>
             }
             </ul>
         }
@@ -95,6 +97,8 @@
                 data-width="@file.image.width"
                 data-height="@file.image.height"
                 data-description="<b>@play.twirl.api.HtmlFormat.escape(file.image.title).body</b>@for(m <- view.coiFiles.flatMap(_.get(file.image.pageId))) {<br>@play.twirl.api.HtmlFormat.escape(m.describe).body}"
+                @* the people of the conflicts of interest: coiFiles is only built for those who may
+                   see authors (GalleryController.contestFilesView, User.canViewAuthors) *@
                 @for(m <- view.coiFiles.flatMap(_.get(file.image.pageId))) {
                     data-coi="@m.describe"
                 }

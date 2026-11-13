@@ -15,7 +15,7 @@
 }
 
 @* a count of the author's files, with its share of them: 12 (86%) *@
-@ofFiles(n: Int, files: Int) = {@n <span class="text-body-secondary small">(@AuthorsPage.percent(AuthorsPage.share(n, files)))</span>}
+@ofFiles(n: Int, files: Int) = {@n <span class="text-body-secondary small">(@AuthorsPage.percent(AuthorsPage.share(n, files), messages.lang.locale))</span>}
 
 @main("authors.list", user, contestId = page.contest.id) {
     <div class="container-fluid mt-2" id="authors">
@@ -35,8 +35,8 @@
         <p id="authors-summary">
             @Messages("authors.summary",
                 page.round.fold(Messages("contest"))(r => Messages("round") + " " + r.description),
-                Messages(s"authors.count.${views.Plural.form(page.rows.size, messages.lang.language)}", page.rows.size),
-                Messages(s"authors.files.count.${views.Plural.form(page.files, messages.lang.language)}", page.files))@for((n, share) <- page.largest) {; @Messages("authors.largest", n, AuthorsPage.percent(share))}
+                Messages(s"authors.count.${views.Plural.form(page.authors, messages.lang.language)}", page.authors),
+                Messages(s"authors.files.count.${views.Plural.form(page.files, messages.lang.language)}", page.files))@for((n, share) <- page.largest) {; @Messages("authors.largest", n, AuthorsPage.percent(share, messages.lang.locale))}
         </p>
         @if(page.withoutAuthor > 0) {
             <p id="authors-without" class="text-body-secondary">@Messages("authors.without", page.withoutAuthor)</p>

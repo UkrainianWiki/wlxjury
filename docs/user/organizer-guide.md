@@ -221,7 +221,8 @@ Jurors never see who took a file. You, the admins and root see the author, as th
 account, in these places:
 
 - the large view of a file, in a round and on the contest files page (**Author:**);
-- the **Author** column of a round's file list (all jurors' votes);
+- the **Author** column of a round's file list (of all the jurors' votes, and of one juror's in a
+  rated round);
 - the **Conflicts of interest** tab of the contest files page, which lists the people whose files
   they are.
 
@@ -253,7 +254,7 @@ all its jurors:
   vote still to come is unrated, one with at least one rejection is rejected; so a file with
   votes of two kinds counts in both;
 - a rated round: **Rated** (files with at least one rating), **✗ (worst mark)** (files with at
-  least one worst mark, in a round that can have them) and **Average**, the average score of the
+  least one worst mark, in a round that takes the worst mark or has one) and **Average**, the average score of the
   author's rated files in stars, as the round scores a file (see the admin guide's [The file
   score](admin-guide.md#a-score-rule)). In a round with criteria, the average is per criterion.
 

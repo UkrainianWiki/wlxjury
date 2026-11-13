@@ -1,6 +1,7 @@
 package views
 
 import org.specs2.mutable.Specification
+import services.imports.StoredAuthors
 
 /** An author's Commons user page ([[WikiLinks.commonsUserUrl]]): `User:` and the name as
   * MediaWiki normalizes it, URL-encoded so that no character of the name changes the URL.
@@ -27,6 +28,14 @@ class CommonsUserUrlSpec extends Specification {
     "encode Cyrillic as UTF-8" in {
       WikiLinks.commonsUserUrl("Петро Грушко") ===
         prefix + "%D0%9F%D0%B5%D1%82%D1%80%D0%BE_%D0%93%D1%80%D1%83%D1%88%D0%BA%D0%BE"
+    }
+
+    "link an account only: a stored link's account, never a credit template" in {
+      (StoredAuthors.account("Petro Hrushko") === Some("Petro Hrushko")) and
+        (StoredAuthors.account("[[User:Петро_Грушко|Петро]]") === Some("Петро Грушко")) and
+        (StoredAuthors.account("{{SergiyBobokPhotos}}") === None) and
+        (StoredAuthors.account("{{unknown|author}}") === None) and
+        (StoredAuthors.account("  ") === None)
     }
 
     "capitalize the first letter, as MediaWiki does, without a User: prefix of the name" in {

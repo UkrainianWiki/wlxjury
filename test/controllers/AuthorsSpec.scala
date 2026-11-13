@@ -32,7 +32,8 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
   private val Petro = "Петро Грушко"
 
   /** Contest A's category: 1 and 5 (deleted on Commons) by "Ivan", 2 by "ivan", 3 by "Iván",
-    * 4 by [[Petro]] (the organizer's wiki account: a conflict of interest), 6 by nobody, 7 by
+    * 4 by [[Petro]] (the organizer's wiki account `петро_Грушко`, normalized: a conflict of
+    * interest), 6 by nobody, 7 by
     * "O'Brien". Its yes/no round: 1 approved and rejected, 2 rejected, 3 unrated, 4 approved
     * twice, 6 unrated, 7 rejected and unrated. Its rated round (5 stars, over the rated votes):
     * 1 rated 4 and 2, 2 unrated, 4 a ✗, 7 rated 2 and unrated. Its criteria round (10 stars, 2
@@ -48,7 +49,8 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
       userDao.create(User(name, s"${name.toLowerCase}@example.com", None, Set(role), contestId = contest.flatMap(_.id),
         wikiAccount = account))
     val admin = user("Admin", "admin", Some(a))
-    val organizer = user("Org", "organizer", Some(a), Some(Petro))
+    // the wiki account as an admin may enter it: lowercase first letter, `_` for the space
+    val organizer = user("Org", "organizer", Some(a), Some("петро_Грушко"))
     val juror = user("Juror", "jury", Some(a))
     val juror2 = user("Juror2", "jury", Some(a))
     val otherOrganizer = user("OrgB", "organizer", Some(b))
@@ -91,14 +93,15 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
       otherOrganizer, root)
   }
 
-  private def request(app: Application, viewer: User, path: String, json: Boolean = false): Future[Result] =
+  private def request(app: Application, viewer: User, path: String, json: Boolean = false, lang: String = "en")
+      : Future[Result] =
     route(app, FakeRequest(GET, path)
       .withSession(Secured.UserName -> viewer.email, Secured.CurrentContestId -> viewer.contestId.fold("")(_.toString))
-      .withHeaders("Accept" -> (if (json) "application/json" else "text/html"), "Accept-Language" -> "en")
+      .withHeaders("Accept" -> (if (json) "application/json" else "text/html"), "Accept-Language" -> lang)
       .withCSRFToken).get
 
-  private def get(app: Application, viewer: User, path: String): (Int, String) = {
-    val result = request(app, viewer, path)
+  private def get(app: Application, viewer: User, path: String, lang: String = "en"): (Int, String) = {
+    val result = request(app, viewer, path, lang = lang)
     (status(result), contentAsString(result))
   }
 
@@ -112,12 +115,26 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
   private def tiles(page: String): List[Long] =
     """data-pageId="(\d+)"""".r.findAllMatchIn(page).map(_.group(1).toLong).toList
 
-  /** The authors' links of a page: (name, its files' URL, its Commons URL). */
+  /** The authors' links of a page: (name, its files' URL, its Commons URL; "" without one). */
   private def authorLinks(page: String): Seq[(String, String, String)] =
     Jsoup.parse(page).select(".author-links").asScala.toSeq.map { e =>
       (e.selectFirst("a.author-files").text, e.selectFirst("a.author-files").attr("href"),
-        e.selectFirst("a.author-commons").attr("href"))
+        Option(e.selectFirst("a.author-commons")).fold("")(_.attr("href")))
     }
+
+  /** Adds files to contest A's category. */
+  private def addFiles(f: Fixture, files: Seq[Image]): Unit = {
+    imageDao.batchInsert(files)
+    DB.localTx { implicit s =>
+      val categoryId = sql"SELECT category_id FROM contest_jury WHERE id = ${f.contest.getId}".map(_.long(1)).single().get
+      files.foreach(i => sql"INSERT INTO category_members (category_id, page_id) VALUES ($categoryId, ${i.pageId})".update())
+    }
+    RegionCountCache.clear()
+  }
+
+  /** The column heads of the authors list. */
+  private def heads(page: String): Seq[String] =
+    Jsoup.parse(page).select("#authors-table th").asScala.map(_.text).toSeq
 
   private def petroLink(f: Fixture) =
     (Petro, filesUrl(f, Some(Petro)), views.WikiLinks.commonsUserUrl(Petro))
@@ -144,7 +161,8 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
           (authorLinks(fileList).map(_._1) must contain(allOf("Ivan", "ivan", "Iván", "O'Brien"))) and
           (Jsoup.parse(coi).select("#coi-people .author-links").asScala.map(_.selectFirst("a.author-files").text) ===
             Seq(Petro)) and
-          (authorLinks(coi) === Seq(petroLink(f))) and (tiles(coi) === List(4L))
+          (authorLinks(coi) === Seq(petroLink(f))) and (tiles(coi) === List(4L)) and
+          (tiles(get(app, f.organizer, authorLinks(coi).head._2)._2) === List(4L))
       }
     }
 
@@ -299,8 +317,57 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
           (byAuthor("ivan") === Seq("1", "0 (0.0%)", "0 (0.0%)", "—")) and
           (rows(page).map(_._1) === Seq("Ivan", "O'Brien", Petro, "ivan")) and
           (rows(assigned).toMap.apply("O'Brien").last === "1.00") and
-          (Jsoup.parse(page).select("#authors-table th").asScala.map(_.text).toSeq ===
-            Seq("N", "Author", "Files", "Rated", "✗ (worst mark)", "Average"))
+          (heads(page) === Seq("N", "Author", "Files", "Rated", "✗ (worst mark)", "Average"))
+      }
+    }
+
+    "average an AverageRule.Sum round's files over their rated votes, as their stars are drawn" in {
+      testDbApp { app =>
+        val f = fixture()
+        Round.updateRound(f.rated.getId, f.rated.copy(averageRule = AverageRule.Sum))
+        val byAuthor = rows(get(app, f.organizer, authorsUrl(f, Some(f.rated)))._2).toMap
+        // Ivan's file: 4 + 2, a sum of 6, over its 2 rated votes
+        (byAuthor("Ivan").last === "3.00") and (byAuthor("O'Brien").last === "2.00")
+      }
+    }
+
+    "show the ✗ column only for a round that takes the worst mark or has one" in {
+      testDbApp { app =>
+        val f = fixture()
+        DB.autoCommit { implicit s =>
+          sql"UPDATE vote SET rate = 3 WHERE round_id = ${f.rated.getId} AND rate < 0".update()
+        }
+        val without = heads(get(app, f.organizer, authorsUrl(f, Some(f.rated)))._2)
+        Round.updateRound(f.rated.getId, f.rated.copy(worstMark = true))
+        val takes = heads(get(app, f.organizer, authorsUrl(f, Some(f.rated)))._2)
+        (without === Seq("N", "Author", "Files", "Rated", "Average")) and
+          (takes === Seq("N", "Author", "Files", "Rated", "✗ (worst mark)", "Average"))
+      }
+    }
+
+    "count values still stored as wiki markup by the names they show, a credit template without a Commons link" in {
+      testDbApp { app =>
+        val f = fixture()
+        addFiles(f, Seq(8L -> "[[User:Ivan|Ivan K]]", 9L -> "{{SergiyBobokPhotos}}", 10L -> "{{unknown|author}}").map {
+          case (id, author) => Image(id, s"File:F$id.jpg", None, None, 640, 480, author = Some(author))
+        })
+        val (_, page) = get(app, f.organizer, authorsUrl(f, sort = Some("name")))
+        val doc = Jsoup.parse(page)
+        val links = authorLinks(page)
+        (doc.selectFirst("#authors-summary").text === "Contest: 6 authors, 10 files; most by one author: 2 (20.0%)") and
+          (doc.selectFirst("#authors-without").text === "Files without a stored author: 2") and
+          (links must contain(("Ivan", filesUrl(f, Some("[[User:Ivan|Ivan K]]")),
+            "https://commons.wikimedia.org/wiki/User:Ivan"))) and
+          (links must contain(("SergiyBobokPhotos", filesUrl(f, Some("{{SergiyBobokPhotos}}")), ""))) and
+          (tiles(get(app, f.organizer, filesUrl(f, Some("{{SergiyBobokPhotos}}")))._2) === List(9L))
+      }
+    }
+
+    "write shares in the language's number format" in {
+      testDbApp { app =>
+        val f = fixture()
+        Jsoup.parse(get(app, f.organizer, authorsUrl(f), lang = "uk")._2).selectFirst("#authors-summary").text must
+          endWith("2 (28,6%)")
       }
     }
 

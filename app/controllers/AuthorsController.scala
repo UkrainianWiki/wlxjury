@@ -1,6 +1,7 @@
 package controllers
 
 import db.scalikejdbc.{AuthorStats, ContestJuryJdbc, Round, RoundCriterion, User}
+import services.imports.StoredAuthors
 import modules.BlockingExecutionContext
 import org.intracer.wmua.ContestJury
 import play.api.i18n.I18nSupport
@@ -65,6 +66,11 @@ final case class AuthorsPage(
   /** All the files listed: those of the authors and those without one. */
   val files: Int = rows.map(_.files).sum + withoutAuthor
 
+  /** The number of authors: their names as shown, so a value still stored as wiki markup
+    * (`[[User:X|Y]]`, before the author normalization job) and the account it names are one.
+    */
+  def authors: Int = rows.flatMap(_.author).flatMap(a => StoredAuthors.shown(Some(a))).distinct.size
+
   /** The most files of one author, and the share of all the files they are. */
   def largest: Option[(Int, Double)] = rows.map(_.files).maxOption.map(n => n -> share(n, files))
 
@@ -74,8 +80,10 @@ final case class AuthorsPage(
   /** A rated round with votes: its columns rated, average, and ✗ where it [[showsWorst]]. */
   def ratedVotes: Boolean = round.exists(_.isRated) && voted
 
-  /** A rated round that takes a ✗ (or has one): its ✗ column. */
-  def showsWorst: Boolean = ratedVotes && round.exists(_.rejects)
+  /** A rated round that takes a ✗ ([[Round.takesWorstMark]]), or has one (given before the
+    * option was turned off): its ✗ column.
+    */
+  def showsWorst: Boolean = ratedVotes && (round.exists(_.takesWorstMark) || rows.exists(_.rejected > 0))
 
   /** Any of the round's files has a vote (not one yet to come). */
   private def voted: Boolean = rows.exists(r => r.selected + r.rejected + r.rated > 0)
@@ -98,7 +106,8 @@ object AuthorsPage {
   def of(contest: ContestJury, round: Option[Round], rounds: Seq[Round], sort: Sort): AuthorsPage = {
     val all = round.fold(contest.categoryId.fold(Seq.empty[AuthorStats.Row])(AuthorStats.ofCategory(_)))(
       AuthorStats.ofRound(_))
-    val (named, none) = all.partition(_.author.exists(_.trim.nonEmpty))
+    // a value with markup that shows as nothing (`{{Unknown|author}}`) is no author either
+    val (named, none) = all.partition(r => StoredAuthors.shown(r.author).nonEmpty)
     val criteria = round.filter(_.hasCriteria).fold(1)(r => RoundCriterion.countOf(r.getId).max(1))
     val page = AuthorsPage(contest, round, rounds, Nil, none.map(_.files).sum, sort, criteria)
     page.copy(rows = sort.sorted(named, page))
@@ -107,8 +116,8 @@ object AuthorsPage {
   /** `n` of `of` in percent; 0 of none. */
   def share(n: Int, of: Int): Double = if (of == 0) 0.0 else n * 100.0 / of
 
-  /** A percentage with one decimal, as `8.5%`. */
-  def percent(value: Double): String = String.format(Locale.ROOT, "%.1f%%", Double.box(value))
+  /** A percentage with one decimal in the language's number format: `8.5%`, `8,5%`. */
+  def percent(value: Double, locale: Locale): String = String.format(locale, "%.1f%%", Double.box(value))
 
   /** A column of the list, by which it can be sorted, and its parameter. */
   sealed abstract class Column(val param: String)
