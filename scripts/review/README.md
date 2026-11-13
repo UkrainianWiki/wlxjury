@@ -142,7 +142,7 @@ python -I scripts/review/coderabbit_loop.py --first 218        # dry run: what i
 python -I scripts/review/loop_task.py register                  # install into $D/bin + scheduled task
 python -I "$D/bin/loop_task.py" launch                          # start it now, detached, no window
 python -I "$D/bin/coderabbit_loop.py" --status                  # running? waiting for what? halt, budget, queues
-python -I "$D/bin/coderabbit_loop.py" --stop                    # exit within a minute, and stay stopped
+python -I "$D/bin/coderabbit_loop.py" --stop                    # waits until it has exited; stays stopped
 python -I "$D/bin/coderabbit_loop.py" --resume                  # clear a stop and a halt (then `launch`)
 ```
 
@@ -213,6 +213,11 @@ hand (e.g. older untriaged ones).
 
 60 a day: about 2 posts per review (the first is usually rate limited) at ~26 reviews a day.
 
+The circuit breaker has **no time window**: it counts bad outcomes in a row, however far apart
+(three PRs without an answer over two days halt it just as three in an hour do), and only a
+usable answer (a review, a clean or skipped one, "no review available", a limit reply) starts the
+count again. A halt always needs `--resume`.
+
 `--batch N` (one pass, stop after N reviews) and `--once` (one pass) remain for manual use, with
 the same waits; there a quota message ends the run with exit 4, a halt with exit 5.
 
@@ -228,9 +233,19 @@ trigger alone. `--print` writes the XML and prints the command without installin
 registering; `loop_task.py show` and `loop_task.py unregister`.
 
 The task runs the installed copy, not a checkout: worktrees are removed after a merge and the
-followups tree changes with each stack rebuild. To update the loop, run `install` (or
-`register`) again from the checkout to use, then `--stop`, `--resume` and `launch` (a running
-loop keeps its code until it restarts).
+followups tree changes with each stack rebuild. To update the loop, from the checkout to use:
+
+```bash
+python -I "$D/bin/coderabbit_loop.py" --stop      # waits (up to 2 min, --stop-wait) until no loop runs
+python -I scripts/review/loop_task.py install     # or register; replaces each file by a rename
+python -I "$D/bin/coderabbit_loop.py" --resume
+python -I "$D/bin/loop_task.py" launch
+```
+
+`--stop` exits 1 if a loop still holds the lock after the wait (run it again, or look at
+`--status`). `install` writes each file to a temporary name in `bin/` and renames it over the old
+one, so a bash still running the old `loop-daemon.sh` keeps reading the old file; on Windows a
+file held open without delete sharing makes `install` refuse with "stop the loop first".
 
 ## Triage after a review
 

@@ -9,7 +9,8 @@ Modes (README.md, "Running the loop"):
                     the loop never stops for triage.
   --post --batch N  one pass, stopping after N completed reviews (manual use, as before);
   --post --once     one pass;
-  (no --post)       reads GitHub and prints what it would do next, then stops (--dry-run).
+  (no --post)       reads GitHub and prints what it would do next, then stops (--dry-run); it
+                    reads --dir's halt, post budget, unpark requests and queues, writes nothing.
   --status, --stop, --resume, --triaged N…, --queue-add N…: see main().
 
 Which PRs need a review:
@@ -314,6 +315,10 @@ class Loop:
         self.rereview, self.quota_pause, self.posts_per_day = rereview, quota_pause, posts_per_day
         self.state = read_json(state_path, {}) if state_path else {}
         self.mem = {"triage-queue.json": {}, "loop-control.json": {}, "check.json": {}}
+        if folder and dry:
+            # a dry run reads the real halt, budget, unpark requests and queues, and changes only
+            # its in-memory copy
+            self.mem = {name: read_json(folder / name, {}) for name in self.mem}
         self.now = clock.now if clock else now
         self.sleep = clock.sleep if clock else time.sleep
         self.log = logger or log
@@ -329,8 +334,8 @@ class Loop:
 
     def shared(self, name, change=None):
         """A JSON file other commands change too (--triaged, --queue-add, --checked, --resume,
-        --unpark): re-read under its lock before every change. In memory without a folder or in a
-        dry run."""
+        --unpark): re-read under its lock before every change. In memory without a folder; in a
+        dry run, a copy read from the folder at the start (nothing is written)."""
         if self.folder and not self.dry:
             if change is None:
                 return read_json(self.folder / name, {})
@@ -410,24 +415,25 @@ class Loop:
         return False
 
     def spend_post(self, n):
-        """Counts one post against the daily budget (UTC day), first waiting for the next day if
-        it is used up."""
-        while True:
-            day = f"{self.now():%Y-%m-%d}"
-            used = (self.control().get("posts") or {}).get(day, 0)
-            if used < self.posts_per_day:
-                break
+        """Counts one post against the daily budget (UTC day) and returns False; if the budget is
+        used up, waits for the next day instead, counts nothing and returns True (the caller looks
+        at the PR again, then calls this again)."""
+        day = f"{self.now():%Y-%m-%d}"
+        used = (self.control().get("posts") or {}).get(day, 0)
+        if used >= self.posts_per_day:
             tomorrow = datetime.datetime.combine(self.now().date() + datetime.timedelta(days=1),
                                                  datetime.time(0, 5), tzinfo=datetime.timezone.utc)
             self.log(f"#{n}: the post budget ({self.posts_per_day} a day) is used, waiting until {tomorrow:%Y-%m-%d %H:%M}Z")
             self.status(phase="post budget used", pr=n, until=iso(tomorrow))
             self.sleep_until(tomorrow)
+            return True
 
         def count(c):
             posts = {k: v for k, v in (c.get("posts") or {}).items() if k >= f"{self.now() - datetime.timedelta(days=7):%Y-%m-%d}"}
             posts[day] = posts.get(day, 0) + 1
             c["posts"] = posts
         self.control(count)
+        return False
 
     # -- GitHub ----------------------------------------------------------------------------
     def reviews_after(self, n, since):
@@ -743,11 +749,14 @@ class Loop:
                     pause = 0
                 if self.halted():
                     return "halt"
-                self.spend_post(n)
-                pr = self.hub.get(f"pulls/{n}")  # still open? (it may have been merged meanwhile)
-                if pr.get("state", "open") != "open":
-                    self.log(f"#{n}: {pr.get('state')} meanwhile, not posting")
-                    return "skip"
+                pr = None
+                while pr is None:
+                    pr = self.hub.get(f"pulls/{n}")  # still open? (it may have been merged meanwhile)
+                    if pr.get("state", "open") != "open":
+                        self.log(f"#{n}: {pr.get('state')} meanwhile, not posting")
+                        return "skip"
+                    if self.spend_post(n):
+                        pr = None  # waited for the next day: look again before posting
                 head = pr["head"]["sha"]
                 fp = self.fingerprint(n) if self.rereview else None
                 out = self.hub.comment(n, command)
@@ -945,6 +954,7 @@ def self_test():
             self.reads = 0
             self.skew = datetime.timedelta(0)
             self.cids = {}    # posted comment id -> its created_at
+            self.closed = set()  # PRs merged or closed
 
         def add(self, path, item, start, end=None):
             entry = [start, end, path, item]
@@ -971,7 +981,8 @@ def self_test():
             self.read()
             m = re.match(r"pulls/(\d+)$", path)
             if m:
-                return {"head": {"sha": self.heads.get(int(m.group(1)), head)}}
+                n = int(m.group(1))
+                return {"head": {"sha": self.heads.get(n, head)}, "state": "closed" if n in self.closed else "open"}
             m = re.match(r"issues/comments/(\d+)$", path)
             if m:
                 return {"created_at": self.cids[int(m.group(1))]}
@@ -1390,6 +1401,27 @@ def self_test():
         check("queue: the loop and --queue-add/--triaged don't lose each other's entries",
               ({k: v.get("triaged") for k, v in q.items()}, sorted(p.name for p in folder.glob("*.tmp"))),
               ({"1": True, "2": False, "3": False}, []))
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = pathlib.Path(tmp)
+        write_json(folder / "loop-control.json", {"breaker": {"at": "2026-11-10T00:00:00Z", "reason": "test"},
+                                                  "posts": {"2026-11-10": 3}})
+        code, posted, outcomes, lines = case({1: ["review"]}, dry=True, folder=folder, batch=None)
+        check("dry run: reads the real control file (a halt is reported, nothing changed on disk)",
+              (code, posted, logged(lines, "halted: test"), read_json(folder / "loop-control.json", {})["posts"]),
+              (5, [], True, {"2026-11-10": 3}))
+
+    def close_2_tomorrow(hub, clock):
+        sleep = clock.sleep
+
+        def s(sec):
+            sleep(sec)
+            if clock.t.day == 11:
+                hub.closed.add(2)
+        clock.sleep = s
+    code, posted, outcomes, lines = case({1: ["review"], 2: ["review"]}, last=2, posts_per_day=1, batch=None,
+                                         setup=close_2_tomorrow)
+    check("budget: a PR merged while waiting for the next day's budget is not posted on",
+          (code, posted, logged(lines, "#2: closed meanwhile, not posting")), (0, [(1, REVIEW)], True))
     bad = [x for x in checks if not x[1]]
     for name, ok, g, w in checks:
         print(f"{'ok  ' if ok else 'FAIL'} {name}" + ("" if ok else f": got {g!r}, want {w!r}"))
@@ -1540,6 +1572,30 @@ def running_line(folder):
     return False, f"no loop holds the lock in {folder}"
 
 
+def stop_loop(folder, wait=120, out=print, sleep=time.sleep):
+    """Sets the stop flag, then waits up to `wait` seconds until no loop holds the lock in
+    `folder` (a loop notices the flag within a minute: at its next poll, or between gh's read
+    retries). 0 once none runs, 1 if one still does."""
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "loop.stop").write_text(iso(now()) + "\n", encoding="utf-8")
+    running, line = running_line(folder)
+    out(f"stop flag set ({folder / 'loop.stop'}); {line}")
+    waited = 0
+    while running and waited < wait:
+        step = min(5, wait - waited)
+        sleep(step)
+        waited += step
+        running, _ = running_line(folder)
+        if running and waited % 15 == 0:
+            out(f"  still running after {waited} s ...")
+    if running:
+        out(f"the loop still holds the lock after {waited} s; run --status, or --stop again later")
+        return 1
+    out(f"no loop is running in {folder}" + (f" (it exited after {waited} s)" if waited else "")
+        + "; the flag keeps the scheduled task from starting one until --resume")
+    return 0
+
+
 def print_status(folder, out=print):
     """Whether the loop runs, what it does, the halt, the budget, the deferred and parked PRs, the
     PRs to check by hand and the triage queue."""
@@ -1632,7 +1688,10 @@ def main():
     ap.add_argument("--post", "--write", dest="post", action="store_true", help="post requests to GitHub; without it, only print the next action")
     ap.add_argument("--dry-run", action="store_true", help="the default: print the next action, post nothing")
     ap.add_argument("--status", action="store_true", help="print whether the loop runs, what it waits for, the halt, the budget and the queues")
-    ap.add_argument("--stop", action="store_true", help="ask a running loop to exit (within a minute) and keep the scheduled task from starting it")
+    ap.add_argument("--stop", action="store_true",
+                    help="ask a running loop to exit and keep the scheduled task from starting it; waits until it has exited")
+    ap.add_argument("--stop-wait", type=int, default=120, metavar="SECONDS",
+                    help="--stop: how long to wait for the loop to exit (default %(default)s)")
     ap.add_argument("--resume", action="store_true", help="clear --stop and a halt (loop_task.py launch then starts it)")
     ap.add_argument("--unpark", type=int, nargs="+", metavar="N", help="ask parked PRs again")
     ap.add_argument("--triaged", type=int, nargs="+", metavar="N", help="mark these PRs' reviews as triaged")
@@ -1650,12 +1709,7 @@ def main():
     if a.status:
         return print_status(folder)
     if a.stop:
-        folder.mkdir(parents=True, exist_ok=True)
-        (folder / "loop.stop").write_text(iso(now()) + "\n", encoding="utf-8")
-        running, line = running_line(folder)
-        print(f"stop flag set ({folder / 'loop.stop'}); {line}" +
-              ("; it exits within a minute" if running else "; the flag keeps the scheduled task from starting one"))
-        return 0
+        return stop_loop(folder, a.stop_wait)
     if a.resume:
         stop = folder / "loop.stop"
         had_stop = stop.exists()

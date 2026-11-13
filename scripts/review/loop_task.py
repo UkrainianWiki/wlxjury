@@ -30,6 +30,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import time
 from xml.sax.saxutils import escape
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))  # -I leaves the script's folder out
@@ -104,6 +105,25 @@ def version_of(src):
     return f"{head} {branch}{' + uncommitted changes' if dirty else ''} from {src}"
 
 
+def replace_file(path, data):
+    """Writes `data` to a temporary file next to `path` and renames it over `path`: a bash that is
+    running the old loop-daemon.sh keeps reading the old file (bash reads a script as it goes, so
+    rewriting it in place would change the lines it has not read yet). Windows refuses the rename
+    while a process has the file open without sharing deletes: tried again for 5 s, then the error
+    says to stop the loop first."""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_bytes(data)
+    for attempt in range(50):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == 49:
+                tmp.unlink()
+                raise SystemExit(f"{path} is in use: stop the loop first (coderabbit_loop.py --stop), then install again")
+            time.sleep(0.1)
+
+
 def install(folder, src=HERE, out=print):
     """Copies the loop's scripts into folder/bin; returns that folder."""
     bin_ = folder / "bin"
@@ -111,10 +131,10 @@ def install(folder, src=HERE, out=print):
         out(f"running from {bin_} already, nothing to copy")
         return bin_
     bin_.mkdir(parents=True, exist_ok=True)
-    for name in INSTALLED:
-        shutil.copy2(src / name, bin_ / name)
     version = version_of(src)
-    (bin_ / "VERSION").write_text(f"{version}\ninstalled {datetime.datetime.now():%Y-%m-%d %H:%M}\n", encoding="utf-8")
+    for name in INSTALLED:
+        replace_file(bin_ / name, (src / name).read_bytes())
+    replace_file(bin_ / "VERSION", f"{version}\ninstalled {datetime.datetime.now():%Y-%m-%d %H:%M}\n".encode("utf-8"))
     out(f"installed {', '.join(INSTALLED)} into {bin_} ({version})")
     return bin_
 

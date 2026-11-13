@@ -273,7 +273,7 @@ class LoopTaskTest(unittest.TestCase):
         calls, out = [], []
 
         def fake(*args):
-            calls.append(open(args[args.index("/XML") + 1], encoding="utf-16").read())
+            calls.append(pathlib.Path(args[args.index("/XML") + 1]).read_text(encoding="utf-16"))
             return (1, "FEHLER: Zugriff verweigert") if len(calls) == 1 else (0, "OK")
         with tempfile.TemporaryDirectory() as tmp:
             folder = pathlib.Path(tmp)
@@ -284,6 +284,23 @@ class LoopTaskTest(unittest.TestCase):
             self.assertEqual(sorted(x.name for x in (folder / "bin").iterdir()),
                              sorted(list(loop_task.INSTALLED) + ["VERSION"]))
             self.assertIn("without the logon trigger", out[-1])
+
+    def test_install_replaces_files_instead_of_rewriting_them(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            loop_task.install(folder, out=lambda x: None)
+            daemon = folder / "bin" / "loop-daemon.sh"
+            with open(daemon, "rb") as running:  # a bash still reading the old copy
+                old = running.read(40)
+                try:
+                    loop_task.install(folder, out=lambda x: None)
+                    replaced = True
+                except SystemExit:  # Windows without delete sharing: refused, the old file intact
+                    replaced = False
+                running.seek(0)
+                self.assertEqual(running.read(40), old)
+            self.assertEqual(sorted(p.name for p in (folder / "bin").iterdir() if p.name.endswith(".tmp")), [])
+            self.assertTrue(replaced or sys.platform == "win32")
 
     def test_register_reports_the_error_when_both_fail(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -306,6 +323,7 @@ class LoopCommandsTest(unittest.TestCase):
             code, out = self.loop(folder, "--stop")
             self.assertEqual(code, 0)
             self.assertIn("no loop holds the lock in", out)
+            self.assertIn("no loop is running in", out)
             self.assertIn("keeps the scheduled task from starting one", out)
             self.assertTrue((folder / "loop.stop").exists())
             code, out = self.loop(folder, "--status")
@@ -321,10 +339,29 @@ class LoopCommandsTest(unittest.TestCase):
             lock = Lock(folder / "loop.lock")
             self.assertTrue(lock.acquire())
             try:
-                code, out = self.loop(folder, "--stop")
+                code, out = self.loop(folder, "--stop", "--stop-wait", "2")
             finally:
                 lock.release()
             self.assertIn("a loop is running in", out)
+            self.assertIn("still holds the lock after 2 s", out)
+            self.assertEqual(code, 1)
+
+    def test_stop_waits_until_the_loop_has_exited(self):
+        import coderabbit_loop
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            lock = Lock(folder / "loop.lock")
+            self.assertTrue(lock.acquire())
+            out, slept = [], []
+
+            def sleep(s):  # the loop exits during the third wait
+                slept.append(s)
+                if len(slept) == 3:
+                    lock.release()
+            code = coderabbit_loop.stop_loop(folder, 120, out=out.append, sleep=sleep)
+            self.assertEqual((code, sum(slept)), (0, 15))
+            self.assertIn("a loop is running in", out[0])
+            self.assertIn("it exited after 15 s", out[-1])
 
     def test_migrate_copies_once(self):
         with tempfile.TemporaryDirectory() as old, tempfile.TemporaryDirectory() as new:
