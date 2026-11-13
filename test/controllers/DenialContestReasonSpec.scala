@@ -268,6 +268,32 @@ class DenialContestReasonSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "leave out the suggested destination, logged, if it can't be found: never a server error" in {
+      testDbApp { implicit app =>
+        val round = fixture()
+        val user = Secured.inCurrentContest(member("ann@example.com", 10L -> "admin"), None)
+        val controller = new Secured(app.injector.instanceOf[ControllerComponents]) {
+          override protected def suggestedAccess(user: User)(implicit request: play.api.mvc.RequestHeader) =
+            throw new IllegalStateException("database down")
+        }
+
+        val (result, log) = withAuthzLog(controller.onUnAuthorized(user, FakeRequest(GET, gallery(round)),
+          Secured.Denial.round(round, Secured.ViewerRoles)))
+        val html = contentAsString(Future.successful(result))
+
+        result.header.status === FORBIDDEN
+        // the rest of the page as before: the reason, the account's roles, signing out
+        html must contain("The requested page belongs to a contest in which this account has no role.")
+        html must contain("<li>Admin in “contest10 2010 in country10”</li>")
+        html must contain("Sign out and sign in with another account")
+        html must not(contain(routes.GalleryController.contestFiles(10).url))
+        html must not(contain("database down"))
+        val reference = "Reference: ([0-9a-f]{8})".r.findFirstMatchIn(html).map(_.group(1)).get
+        log.count(line => line.startsWith(s"denial_suggestion_unavailable ref=$reference ") &&
+          line.contains("error=\"java.lang.IllegalStateException\"") && !line.contains("database down")) === 1
+      }
+    }
+
     "not be loaded for a stopped round's page, which names no roles" in {
       testDbApp { implicit app =>
         val round = fixture()

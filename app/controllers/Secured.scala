@@ -48,7 +48,9 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
   def onUnAuthorized(user: User, request: RequestHeader, denial: Secured.Denial = Secured.Denial.empty,
       notice: Option[String] = None, back: Option[String] = None): Result = {
     val reference = Secured.logDenial(user, request, denial)
-    val suggestion = suggestedAccess(user)(request)
+    // a destination is a help, not the page: none if it can't be found (a database error)
+    val suggestion = Secured.orOnFailure[Option[Secured.AccessSuggestion]](
+      "denial_suggestion_unavailable", user, reference, None)(suggestedAccess(user)(request))
     val safeReturnTo = Secured.safeLocalPath(Option.when(request.method == "GET")(request.uri))
     val messages = cc.messagesApi.preferred(request)
     val reason = Secured.denialReason(user, denial)
@@ -105,7 +107,7 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
   /** A useful destination from an active membership, the current contest's first: the
     * contest's files if the user may view them, else a gallery of one of its active rounds.
     */
-  private def suggestedAccess(user: User)(implicit request: RequestHeader): Option[Secured.AccessSuggestion] = {
+  protected def suggestedAccess(user: User)(implicit request: RequestHeader): Option[Secured.AccessSuggestion] = {
     val memberships = user.userContests
       .filter(_.active)
       .sortBy(membership => if (user.contestId.contains(membership.contestId)) 0 else 1)
@@ -362,12 +364,19 @@ object Secured {
     */
   def deniedRolesOrUnknown(user: User, denial: Denial, reference: String,
       contestsByIds: Seq[Long] => Seq[ContestJury] = contestsByIds): DeniedRoles =
-    try deniedRoles(user, denial, contestsByIds)
+    orOnFailure("denial_roles_unavailable", user, reference, DeniedRoles.Unknown: DeniedRoles)(
+      deniedRoles(user, denial, contestsByIds))
+
+  /** `part` of a denial page, or `fallback` if it fails (a database error), logged at WARN on
+    * security.authz as `event` with the denial's reference and the exception's class (the
+    * exception attached, its message not in the line): a denial page is never a server error.
+    */
+  def orOnFailure[T](event: String, user: User, reference: String, fallback: T)(part: => T): T =
+    try part
     catch {
       case scala.util.control.NonFatal(e) =>
-        authzLogger.warn(s"denial_roles_unavailable ref=$reference accountId=${user.getId} " +
-          s"error=${logValue(e.getClass.getName)}", e)
-        DeniedRoles.Unknown
+        authzLogger.warn(s"$event ref=$reference accountId=${user.getId} error=${logValue(e.getClass.getName)}", e)
+        fallback
     }
 
   /** The contests of these ids, in one query. */
