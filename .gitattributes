@@ -11,12 +11,17 @@ bin/wlxjury-*.sh text eol=lf
 conf/systemd/** text eol=lf
 conf/wlxjury/** text eol=lf
 conf/apache/wlxjury-maintenance.conf text eol=lf
+# monit's check is a /bin/sh script (a CR breaks its shebang) and its control file is installed
+# from a checkout as it is (docs/deployment.md, "Monitoring with monit"); MonitCheckTest runs both.
+conf/monit/** text eol=lf
 
 # docker-compose's scripts run in Git Bash or on Linux, and run-dev.sh sources .env as shell: a
 # CR would end up in every value. .env.example is the template of that .env.
+# run-with-prod-dump.sh is a bash script for Git Bash or Linux too.
 scripts/docker/** text eol=lf
 .env.example text eol=lf
 run-dev.sh text eol=lf
+scripts/run-with-prod-dump.sh text eol=lf
 
 # Twirl renders a template's text as it is checked out. The inline scripts are allowed by their
 # SHA-256 in the content security policy (conf/application.conf), so every checkout, Windows
