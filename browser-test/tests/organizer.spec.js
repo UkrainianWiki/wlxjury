@@ -12,7 +12,7 @@ test.describe('an organizer', () => {
     await expect(page.getByRole('columnheader', { name: 'Selected' })).toBeVisible();
     await expect(page.getByRole('cell', { name: fixture.accounts.juror.login, exact: true })).toBeVisible();
     // the rounds' links: the current one marked
-    await expect(page.getByRole('link', { name: /Binary Round/ })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('link', { name: /Yes\/No Round/ })).toHaveAttribute('aria-current', 'page');
   });
 
   test('opens the rated round\'s files by rate, of all the jurors', { tag: '@O-02' }, async ({ page, fixture }) => {
@@ -33,9 +33,9 @@ test.describe('an admin', () => {
   test('opens a round\'s form from the rounds list, with its jurors\' table', { tag: '@A-02' }, async ({ page, fixture }) => {
     await page.goto(`/admin/rounds?contestId=${fixture.contestId}`);
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Contest');
-    await page.getByRole('row', { name: /Binary Round/ }).getByRole('link', { name: '1', exact: true }).click();
+    await page.getByRole('row', { name: /Yes\/No Round/ }).getByRole('link', { name: '1', exact: true }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Edit round' })).toBeVisible();
-    await expect(page.getByLabel('Round name (optional)')).toHaveValue('Binary Round');
+    await expect(page.getByLabel('Round name (optional)')).toHaveValue('Yes/No Round');
 
     // the jurors' panel loads its table when opened (round-form.js)
     const table = page.waitForResponse((r) => new URL(r.url()).pathname === `/roundstat/${fixture.roundBinaryId}/table`);
@@ -48,7 +48,7 @@ test.describe('an admin', () => {
     const form = `/admin/rounds/edit?id=${fixture.roundBinaryId}&contestId=${fixture.contestId}`;
     await page.goto(form);
     const name = page.getByLabel('Round name (optional)');
-    await expect(name).toHaveValue('Binary Round');
+    await expect(name).toHaveValue('Yes/No Round');
     await name.fill('Renamed and cancelled');
     const posts = [];
     page.on('request', (r) => { if (r.method() === 'POST') posts.push(r.url()); });
@@ -56,7 +56,7 @@ test.describe('an admin', () => {
     await expect(page).toHaveURL(/\/admin\/rounds/);
     expect(posts, 'Cancel saves nothing').toEqual([]);
     await page.goto(form);
-    await expect(page.getByLabel('Round name (optional)')).toHaveValue('Binary Round');
+    await expect(page.getByLabel('Round name (optional)')).toHaveValue('Yes/No Round');
   });
 
   test('opens the new round form, whose fields follow the choices', { tag: '@A-01' }, async ({ page, fixture }) => {

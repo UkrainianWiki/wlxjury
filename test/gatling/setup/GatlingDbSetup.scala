@@ -33,6 +33,10 @@ object GatlingDbSetup {
   val ContestYear = 2025
   val ContestCountry = "Ukraine"
 
+  /** The fixture's two rounds, found again by name in a restored dump (loadFromDb). */
+  val BinaryRoundName = "Yes/No Round"
+  val RatingRoundName = "Rating Round"
+
   /** The fixture contest's image category; every fixture image is in it. */
   val ImageCategory = "Category:Images from Wiki Loves Monuments 2025 in Ukraine"
 
@@ -50,13 +54,14 @@ object GatlingDbSetup {
     val contestId = contest.id.get
 
     val rounds = Round.findAllBy(sqls.eq(Round.defaultAlias.contestId, contestId))
-    val binaryRound = rounds.find(_.name.exists(_.contains("Binary")))
-      .getOrElse(throw new RuntimeException("Binary round not found"))
-    val ratingRound = rounds.find(_.name.exists(_.contains("Rating")))
+    val binaryRound = rounds.find(_.name.contains(BinaryRoundName))
+      .getOrElse(throw new RuntimeException(s"$BinaryRoundName not found: is the dump stale?"))
+    val ratingRound = rounds.find(_.name.contains(RatingRoundName))
       .getOrElse(throw new RuntimeException("Rating round not found"))
 
+    // in creation order, as load returns them (juror1 first; by email juror10 sorts before juror2)
     val jurors = User.loadJurors(contestId)
-      .sortBy(_.email)
+      .sortBy(_.id)
       .map { u =>
         val email = u.email
         val idx   = email.replaceAll("juror(\\d+)@.*", "$1")
@@ -173,9 +178,9 @@ object GatlingDbSetup {
                                   contestId = Some(contestId))
     val organizer   = (orgUser.id.get, orgEmail, orgPassword)
 
-    val binaryRound = Round.create(Round(id = None, number = 1, name = Some("Binary Round"),
+    val binaryRound = Round.create(Round(id = None, number = 1, name = Some(BinaryRoundName),
                                          contestId = contestId, rates = Round.binaryRound, active = true))
-    val ratingRound = Round.create(Round(id = None, number = 2, name = Some("Rating Round"),
+    val ratingRound = Round.create(Round(id = None, number = 2, name = Some(RatingRoundName),
                                          contestId = contestId,
                                          rates = Round.rateRounds.find(_.id == maxRate).getOrElse(Round.rateRounds.last),
                                          active = true))

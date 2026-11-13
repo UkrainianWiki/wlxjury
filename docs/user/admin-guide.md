@@ -87,7 +87,7 @@ At the bottom of the table, fill in the row: **Full name**, **Wiki account**, **
 under the table recalls which roles make the person's own photos conflicts of interest, and that
 **Board**, **Audit committee** and **Staff** give no access (see [Roles](#a-roles)).
 
-<img src="images/admin-add-person.png" alt="The add row at the bottom of the users table, with the text about the roles under it" width="1280">
+<img src="images/admin-add-person.png" alt="The add row at the bottom of the users table, with the text about the roles and the Send an invitation email checkbox under it" width="1280">
 
 - **Send an invitation email**, under the table, is unticked by default: nothing is mailed. The
   person then gets in with a [link to share](#a-share-link) that you pass on, or a password you
