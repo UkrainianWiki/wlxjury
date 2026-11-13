@@ -380,6 +380,9 @@ Test / javaOptions ++= Seq("integration", "docker.tests", "generate.baseline", "
 // JVM sbt's default grouping gives them, with the same fork options.
 Test / testGrouping := {
   val (plans, others) = (Test / definedTests).value.partition(_.name == "plans.QueryPlanSpec")
+  // all the defined specs, before testOnly's filter: a renamed or moved spec fails the build
+  // instead of landing in the default group, where it would skip
+  require(plans.nonEmpty, "QueryPlanSpec not found: update the query-plans group (build.sbt)")
   val options = (Test / forkOptions).value
   val ownJvm = options.withRunJVMOptions(options.runJVMOptions :+ "-Dwlxjury.query-plans.own-jvm=true")
   new Tests.Group("<default>", others, Tests.SubProcess(options)) +:

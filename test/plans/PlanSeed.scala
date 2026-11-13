@@ -62,7 +62,10 @@ object PlanSeed {
     def roundId: Long = round.getId
     /** A file of the corner round, in its middle (rebinding's page_id). */
     def pageId: Long = Images - CornerFiles / 2
-    /** For rebinding: an IN list's page ids are the corner round's files in page order. */
+    /** For rebinding: an IN list's page ids are the corner round's files in page order. A list
+      * longer than the round's [[CornerFiles]] files wraps around and repeats them (the
+      * application's lists are a page or a chunk, far shorter): still bound, fewer distinct values.
+      */
     def ids: PlanCheck.Ids = PlanCheck.Ids(jurorId, roundId, pageId, contestId, k => Images - CornerFiles + 1 + (k % CornerFiles))
   }
 

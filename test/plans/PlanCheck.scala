@@ -77,6 +77,8 @@ object PlanCheck {
       columns.lift(i).flatten.flatMap {
         case Placeholder(col, None) => ids.of(col)
         case Placeholder(col, Some(k)) if col.equalsIgnoreCase("page_id") => Some(ids.pages(k))
+        // other ids in an IN list (jurors, rounds) keep the sample's values: one corner value for
+        // each would turn the list into one value
         case _ => None
       }.getOrElse(p)
     }

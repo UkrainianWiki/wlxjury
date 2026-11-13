@@ -116,6 +116,17 @@ jobs:
           else
             echo "QueryPlanSpec wrote no report (sbt stopped before it ran)." >> "$GITHUB_STEP_SUMMARY"
           fi
+          # on production's 10.6 the spec must run: no report, or a skip (the spec moved out of
+          # its group, the group's property lost), fails this leg; 10.11 skips by decision 9
+          case "$MARIADB_IMAGE" in
+            mariadb:10.6*)
+              if [ ! -f target/query-plans/summary.md ] || grep -q '^\*\*Skipped:\*\*' target/query-plans/summary.md; then
+                echo "::error::QueryPlanSpec did not run on $MARIADB_IMAGE (no report, or skipped)"
+                exit 1
+              fi ;;
+          esac
+        env:
+          MARIADB_IMAGE: ${{ matrix.mariadb }}
 
       # The supported browsers (.browserslistrc) against our scripts' APIs and the CSS features
       # caniuse lists, in seconds and without a browser (UI practices §6.1a), with its self-test.
