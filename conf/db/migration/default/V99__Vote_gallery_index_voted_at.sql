@@ -36,8 +36,8 @@
 -- Flyway records V99 as failed (success = 0) and the next start refuses: delete that row (or run
 -- Flyway's repair) and start again; the script reads the state again.
 --
--- Before 10.8 it also warns ("DB: V99 ..." in Flyway's log): rate is left ascending, so after the
--- move this script must run once more, as V85 had to.
+-- Before 10.8 it also warns, after the ALTER ("DB: V99 ..." in Flyway's log): rate is left
+-- ascending, so after the move this script must run once more, as V85 had to.
 --
 -- vote_aside and vote_orphan keep their copies of the old index: nothing pages them (as V85).
 -- Undo (10.6): ALTER TABLE vote DROP INDEX vote_jury_round_rate_mon_page_idx,
@@ -85,11 +85,12 @@ END;
 
 SET @v99_sql = IF(@v99_alter IS NULL, NULL, CONCAT(@v99_alter_vote, @v99_alter, ', ALGORITHM = INPLACE, LOCK = NONE'));
 
+EXECUTE IMMEDIATE COALESCE(@v99_sql, 'DO 0');
+
+-- after the ALTER: only once the index has voted_at (a failed ALTER stops the script before this)
 EXECUTE IMMEDIATE IF(@v99_server < 10008 AND COALESCE(@v99_old, @v99_new) IS NOT NULL,
   'SIGNAL SQLSTATE ''01000'' SET MESSAGE_TEXT = ''V99: vote gallery index has voted_at, rate left ascending (needs MariaDB 10.8+); run V99 again after the server move''',
   'DO 0');
-
-EXECUTE IMMEDIATE COALESCE(@v99_sql, 'DO 0');
 
 EXECUTE IMMEDIATE IF(@v99_sql IS NULL, 'DO 0', 'ANALYZE TABLE vote');
 

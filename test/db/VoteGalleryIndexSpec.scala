@@ -214,6 +214,24 @@ class VoteGalleryIndexSpec extends Specification with TestDb with BeforeAll with
       }
     }
 
+    "with both gallery indexes, add voted_at to each before 10.8, keep the descending one alone on 10.8+" in {
+      // before 10.8 the descending-named index is stored ascending: two ascending indexes
+      scratchVote(newIndex, oldIndex)
+      Using.resource(root(scratch)) { c =>
+        val before = state
+        runV99(c)
+        val first = galleryIndexes(c, scratch)
+        val altersAgain = alters(c)
+        runV99(c)
+        (before.withoutVotedAt must beTrue) and (state.withoutVotedAt must beFalse) and
+          (state.leftAscending must beFalse) and
+          (alters(c) - altersAgain === 0L) and (galleryIndexes(c, scratch) === first) and
+          (if (SharedTestDb.descendingIndexKeys) first === indexV99(descending, "D")
+           // by index name (stable: each index's columns stay in order), whatever the collation's order
+           else first.sortBy(_._1) === (indexV99(ascending, "A") ++ indexV99(descending, "A")).sortBy(_._1))
+      }
+    }
+
     "run nothing where the index already has voted_at last" in {
       val done = if (SharedTestDb.descendingIndexKeys) newIndexV99 else oldIndexV99
       scratchVote(done)

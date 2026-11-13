@@ -496,7 +496,8 @@ step 1 (here production's `localhost`; for another host, its `--host`, `--port` 
 `--protocol=TCP`):
 
 ```bash
-sudo mariadb --defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf --host=localhost --protocol=SOCKET wlxjury   < /opt/wlxjury/current/conf/db/migration/default/V99__Vote_gallery_index_voted_at.sql
+sudo mariadb --defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf --host=localhost --protocol=SOCKET wlxjury \
+  < /opt/wlxjury/current/conf/db/migration/default/V99__Vote_gallery_index_voted_at.sql
 ```
 
 The script reads the state above and runs only the `ALTER` that state needs, then
@@ -513,7 +514,24 @@ ANALYZE TABLE vote;
 ```
 
 It runs online; V85's swap took about 11 s on 3M rows, V99's on 10.6 about 12.6 s on 3.35M rows;
-measure it on the rehearsal copy. Then repeat the check. Don't add a row to
+measure it on the rehearsal copy.
+
+**Run it with the app stopped** (maintenance on, or `sudo systemctl stop wlxjury`), as part of the
+move. The `ALTER` needs `vote`'s metadata lock briefly at its start and end; the script waits up to
+60 s for it, and while it waits behind a long transaction (a backup, a slow query) every new vote
+and gallery query on `vote` queues behind it. If the app must stay up, don't run the script: run
+the state's `ALTER` by hand with a short wait, e.g. for the common case
+
+```sql
+SET STATEMENT lock_wait_timeout = 5 FOR
+ALTER TABLE vote
+  DROP INDEX vote_jury_round_rate_mon_page_idx,
+  ADD INDEX vote_jury_round_ratedesc_mon_page_idx (jury_id, round_id, rate DESC, monument_id, page_id, voted_at),
+  ALGORITHM = INPLACE, LOCK = NONE;
+ANALYZE TABLE vote;
+```
+
+and if it fails with `Lock wait timeout exceeded` (nothing changed), retry a little later. Then repeat the check. Don't add a row to
 `flyway_schema_history`. (Running V85's script after V99 is harmless where the index is done, but
 from the ascending index it builds the descending one without `voted_at`; run V99 again then.)
 
