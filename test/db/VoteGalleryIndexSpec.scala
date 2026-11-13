@@ -15,6 +15,10 @@ import scala.util.Using
   * orders read only the index), keeping its name, and on 10.8+ does V85's swap too: after the
   * move it is V99 that runs again.
   *
+  * V100 drops vote's four single-column indexes (`vote_round_idx`, `vote_jury_id_idx`,
+  * `vote_rate_idx`, `vote_page_id_idx`): the round and juror ones' index-merge intersection was
+  * 10.6's choice over the gallery index. The page_id foreign key moves to the unique key.
+  *
   * The examples follow the test server (`-Dwlxjury.test.mariadb-image`): the default 10.6
   * checks the no-op, 10.11 the swap. The re-run examples also check the start's backstop,
   * [[Migrations.galleryIndexState]].
@@ -71,6 +75,18 @@ class VoteGalleryIndexSpec extends Specification with TestDb with BeforeAll with
 
   private def runV85(c: Connection): Seq[String] = MigrationScript.run(c, "V85__Vote_gallery_index_rate_desc.sql")
   private def runV99(c: Connection): Seq[String] = MigrationScript.run(c, "V99__Vote_gallery_index_voted_at.sql")
+  private def runV100(c: Connection): Seq[String] = MigrationScript.run(c, "V100__Vote_drop_single_column_indexes.sql")
+
+  /** Each index of a vote table with its first column: (index, column). */
+  private def leadingColumns(c: Connection, database: String): List[(String, String)] =
+    Using.resource(c.prepareStatement(
+      """SELECT INDEX_NAME, COLUMN_NAME FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'vote' AND SEQ_IN_INDEX = 1 ORDER BY INDEX_NAME""")) { st =>
+      st.setString(1, database)
+      Using.resource(st.executeQuery()) { rs =>
+        Iterator.continually(rs).takeWhile(_.next()).map(r => (r.getString(1), r.getString(2))).toList
+      }
+    }
 
   private def state: Migrations.GalleryIndexState =
     Migrations.galleryIndexState(url(scratch), "root", SharedTestDb.password)
@@ -318,6 +334,97 @@ class VoteGalleryIndexSpec extends Specification with TestDb with BeforeAll with
       }
       // a covering read ("Using index"), not "Using index condition" with row reads
       extra must beMatching("(?s).*Using index(;.*|$)")
+    }
+  }
+
+  "V100" should {
+
+    val singles = Set("vote_round_idx", "vote_jury_id_idx", "vote_rate_idx", "vote_page_id_idx")
+    // the gallery index as V99 leaves it on this server
+    def galleryDone = if (SharedTestDb.descendingIndexKeys) newIndexV99 else oldIndexV99
+
+    def leading(c: Connection, database: String, column: String) =
+      leadingColumns(c, database).collect { case (i, `column`) => i }
+
+    /** vote's foreign keys: (name, referenced table, delete rule). */
+    def foreignKeys(c: Connection, database: String): List[(String, String, String)] =
+      Using.resource(c.prepareStatement(
+        """SELECT CONSTRAINT_NAME, REFERENCED_TABLE_NAME, DELETE_RULE FROM information_schema.REFERENTIAL_CONSTRAINTS
+           WHERE CONSTRAINT_SCHEMA = ? AND TABLE_NAME = 'vote' ORDER BY CONSTRAINT_NAME""")) { st =>
+        st.setString(1, database)
+        Using.resource(st.executeQuery()) { rs =>
+          Iterator.continually(rs).takeWhile(_.next()).map(r => (r.getString(1), r.getString(2), r.getString(3))).toList
+        }
+      }
+
+    def execute(c: Connection, sql: String): Unit = Using.resource(c.createStatement())(_.execute(sql))
+
+    def count(c: Connection, sql: String): Long =
+      Using.resource(c.createStatement())(st => Using.resource(st.executeQuery(sql)) { rs => rs.next(); rs.getLong(1) })
+
+    /** The scratch vote table with production's foreign key to a scratch images table, served by
+      * vote_page_id_idx: the unique key (page_id first) is dropped while the foreign key is added
+      * and then added back, so V100 has to move the key. (Production's key is most likely on the unique
+      * key already, as V91 rebuilt the table; this is the harder state for V100.) */
+    def withImagesKey(): Unit = Using.resource(root(scratch)) { c =>
+      execute(c, "CREATE TABLE images LIKE wlxjury.images")
+      execute(c, "ALTER TABLE vote DROP INDEX vote_page_jury_round_uidx")
+      execute(c, "ALTER TABLE vote ADD CONSTRAINT vote_page_id_fk FOREIGN KEY (page_id) REFERENCES images (page_id) ON DELETE CASCADE")
+      execute(c, "ALTER TABLE vote ADD UNIQUE INDEX vote_page_jury_round_uidx (page_id, jury_id, round_id)")
+    }
+
+    "leave the migrated database without the four single-column indexes, the foreign key on page_id kept" in {
+      Using.resource(root("")) { c =>
+        val names = leadingColumns(c, "wlxjury").map(_._1).toSet
+        ((names intersect singles) must beEmpty) and
+          (Seq("round_id", "jury_id", "page_id").filter(leading(c, "wlxjury", _).isEmpty) must beEmpty) and
+          (foreignKeys(c, "wlxjury") === List(("vote_page_id_fk", "images", "CASCADE")))
+      }
+    }
+
+    "drop all four where they exist, keep the other indexes and the foreign key, and change nothing when run again" in {
+      // a vote table as production's has it before V100
+      scratchVote(galleryDone, "ADD INDEX vote_rate_idx (rate)", "ADD INDEX vote_round_idx (round_id)",
+        "ADD INDEX vote_jury_id_idx (jury_id)", "ADD INDEX vote_page_id_idx (page_id)")
+      withImagesKey()
+      Using.resource(root(scratch)) { c =>
+        val before = leadingColumns(c, scratch)
+        val gallery = galleryIndexes(c, scratch)
+        val altersBefore = alters(c)
+        val warnings = runV100(c)
+        val altered = alters(c) - altersBefore
+        val after = leadingColumns(c, scratch)
+        val altersAgain = alters(c)
+        runV100(c)
+        val alteredAgain = alters(c) - altersAgain
+        // the foreign key still works: an image's delete takes its votes, a vote needs its image
+        execute(c, "INSERT INTO images (page_id, title, width, height) VALUES (1, 'File:1.jpg', 1, 1), (2, 'File:2.jpg', 1, 1)")
+        execute(c, "INSERT INTO vote (jury_id, round_id, page_id, rate) VALUES (1, 1, 1, 0), (1, 1, 2, 1), (2, 1, 1, 1)")
+        execute(c, "DELETE FROM images WHERE page_id = 1")
+        val left = count(c, "SELECT COUNT(*) FROM vote")
+        val refused = execute(c, "INSERT INTO vote (jury_id, round_id, page_id, rate) VALUES (1, 1, 404, 0)") must
+          throwA[java.sql.SQLException](message = "foreign key constraint fails")
+        // the key now on the unique key: it can't be dropped (1553: needed in a foreign key constraint)
+        val moved = execute(c, "ALTER TABLE vote DROP INDEX vote_page_jury_round_uidx") must
+          throwA[java.sql.SQLException].like { case e: java.sql.SQLException => e.getErrorCode === 1553 }
+        ((before.map(_._1).toSet intersect singles) === singles) and (altered === 1L) and (warnings must beEmpty) and
+          (after === before.filterNot(i => singles(i._1))) and (galleryIndexes(c, scratch) === gallery) and
+          (Seq("round_id", "jury_id", "page_id").filter(leading(c, scratch, _).isEmpty) must beEmpty) and
+          (foreignKeys(c, scratch) === List(("vote_page_id_fk", "images", "CASCADE"))) and
+          (alteredAgain === 0L) and (leadingColumns(c, scratch) === after) and (left === 1L) and refused and moved
+      }
+    }
+
+    "drop those left where some are already gone" in {
+      scratchVote(galleryDone, "ADD INDEX vote_jury_id_idx (jury_id)", "ADD INDEX vote_page_id_idx (page_id)")
+      withImagesKey()
+      Using.resource(root(scratch)) { c =>
+        val altersBefore = alters(c)
+        runV100(c)
+        ((alters(c) - altersBefore) === 1L) and ((leadingColumns(c, scratch).map(_._1).toSet intersect singles) must beEmpty) and
+          (leading(c, scratch, "jury_id") must not(beEmpty)) and (leading(c, scratch, "page_id") must not(beEmpty)) and
+          (foreignKeys(c, scratch) === List(("vote_page_id_fk", "images", "CASCADE")))
+      }
     }
   }
 }

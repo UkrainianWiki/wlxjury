@@ -596,7 +596,8 @@ grouping index now starts `(round_id, status, …)`), so every vote read must ca
 predicate, as Montage's do (`Vote.status == ACTIVE_STATUS`, §5): about 60 statements here,
 and a forgotten one shows cancelled votes (a correctness hazard a guard spec would have to
 catch). The vote table's other indexes (`vote_round_idx`, `vote_page_id_idx`, the rate and
-monument indexes) would need the same treatment.
+monument indexes) would need the same treatment. (V100, 2026-11-13, has since dropped
+`vote_round_idx`, `vote_page_id_idx` and the rate index `vote_rate_idx`.)
 
 What it would remove: the moves between `vote` and `vote_aside` (W5's opening, W12–W14,
 `moveVotes`, P1b's disqualify): row copies across two tables with their gap and insert

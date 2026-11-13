@@ -660,7 +660,9 @@ every index of the renamed tables starts with its table's name.
 ### Rollback SQL after reopen (tested: forward + this gives back the pre-V82 schema exactly)
 
 Only with the app stopped and the previous release at V81. It reverses V82 in the opposite
-order: table names first, then the column, the foreign key, the index names.
+order: table names first, then the column, the foreign key, the index names. Valid only before
+V100, which dropped `vote`'s four single-column indexes (`vote_rate_idx`, `vote_round_idx`,
+`vote_jury_id_idx`, `vote_page_id_idx`) that the last statement renames.
 
 ```sql
 RENAME TABLE vote TO selection,
