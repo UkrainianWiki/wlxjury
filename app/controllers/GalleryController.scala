@@ -248,8 +248,10 @@ class GalleryController @Inject() (
         val roundNames =
           if (otherRounds.isEmpty) Map.empty[Long, String]
           else Round.findByIds(round.contestId, otherRounds).map(r => r.getId -> r.description).toMap
-        Ok(RequestTiming.render(views.html.commentsReport(user, list, files, pager, rounds, menu, rates, comments,
-          roundNames, list.commentCount())))
+        // a criteria round's results drawn per criterion, as by rate: the round with its number
+        // of criteria (withCriteria), else a 3-criteria 4/4/4 vote would be 12 stars
+        Ok(RequestTiming.render(views.html.commentsReport(user, withCriteria(list, criteriaResults(list, files)), files,
+          pager, rounds, menu, rates, comments, roundNames, list.commentCount())))
 
       case GalleryView.CommentsCsv =>
         csvStream(Csv.commentRows(list)(blocking), "WLXJury_Round_" + round.description + "_comments")

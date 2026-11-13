@@ -365,6 +365,75 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  "the comments report's results" should {
+
+    /** A rated round (5 stars) and a criteria round (10 stars, 2 criteria) of a contest, juror 1
+      * and juror 2 on files 1 and 2, each file with a comment in each round. Rated: file 1 4 and 2
+      * stars, file 2 5 and unrated. Criteria: file 1 8 + 6 by juror 1 (Σ 14, 7 a criterion) and
+      * 6 + 9 by juror 2; file 2 5 + 5 by juror 1.
+      */
+    def results() = {
+      val a = contestDao.create(None, "WLE", 2026, "Ukraine")
+      val rated = roundDao.create(Round(None, 1, Some("Rated"), contestId = a.getId, rates = Round.ratesById(5),
+        active = true))
+      val criteria = roundDao.create(Round(None, 2, Some("Criteria"), contestId = a.getId, rates = Round.ratesById(10),
+        active = true, criterionIds = Seq(1L, 2L)))
+      def user(name: String, role: String) =
+        userDao.create(User(name, s"${name.toLowerCase.replace(" ", "")}@example.com", None, Set(role), contestId = a.id))
+      val Seq(juror1, juror2) = Seq("Juror 1", "Juror 2").map(user(_, "jury"))
+      val organizer = user("Org", "organizer")
+      val images = (1L to 2L).map(id => Image(id, s"File:Image$id.jpg", None, None, 640, 480, Some(s"12-345-$id")))
+      imageDao.batchInsert(images)
+      for (r <- Seq(rated, criteria)) {
+        r.addUsers(Seq(juror1, juror2).map(j => RoundUser(r.getId, j.getId, "jury", active = true)))
+        images.foreach(i => CommentJdbc.create(1, "Org", r.getId, Some(a.getId), i.pageId, s"on ${i.pageId}"))
+      }
+      selectionDao.batchInsert(Seq(Vote(images(0), juror1, rated, 4), Vote(images(0), juror2, rated, 2),
+        Vote(images(1), juror1, rated, 5), Vote(images(1), juror2, rated, 0)) ++
+        (for (j <- Seq(juror1, juror2); i <- images) yield Vote(i, j, criteria, 0)))
+      def rate(image: Image, juror: User, rates: (Long, Int)*): Unit = {
+        val vote = VoteJdbc.findBy(image.pageId, juror.getId, criteria.getId).get
+        rates.foreach { case (criterion, r) => CriteriaRate.updateRate(vote.getId, criterion, r) must beTrue }
+      }
+      rate(images(0), juror1, 1L -> 8, 2L -> 6)
+      rate(images(0), juror2, 1L -> 6, 2L -> 9)
+      rate(images(1), juror1, 1L -> 5, 2L -> 5)
+      (rated, roundDao.findById(criteria.getId).get, juror1, organizer)
+    }
+
+    /** Each file's result in the report: its text and its stars' icons, by page id. */
+    def reportResults(doc: Document): Map[Long, (String, Seq[String])] =
+      doc.select("article.wlx-comments-row").asScala.map { row =>
+        val stars = row.selectFirst(".wlx-comments-result .rate-stars")
+        row.id.toLong -> (stars.text, stars.select("i.wlx-star").asScala.map(_.className).toSeq)
+      }.toMap
+
+    /** The same of the by-rate view, the reference. */
+    def byRateResults(doc: Document): Map[Long, (String, Seq[String])] =
+      doc.select("li.gallerybox").asScala.map { box =>
+        val stars = box.selectFirst(".rank-line .rate-stars")
+        box.id.toLong -> (stars.text, stars.select("i.wlx-star").asScala.map(_.className).toSeq)
+      }.toMap
+
+    "be the by-rate view's in a rated and a criteria round, of one juror and of all the jurors" in {
+      testDbApp { app =>
+        val (rated, criteria, juror1, organizer) = results()
+        forall(Seq(rated, criteria)) { round =>
+          forall(Seq(juror1.getId, 0L)) { asUserId =>
+            val report = reportResults(page(app, organizer, s"/comments/round/${round.getId}/user/$asUserId/page/1"))
+            val byRate = byRateResults(page(app, organizer, s"/byrate/round/${round.getId}/user/$asUserId/page/1"))
+            report.keySet === Set(1L, 2L)
+            report aka s"round ${round.description}, user $asUserId" must_== byRate.view.filterKeys(report.keySet).toMap
+          }
+        }
+        // juror 1's 8 + 6 of 10 stars in two criteria: 7 a criterion, Σ 14; never 14 stars
+        val one = reportResults(page(app, organizer, s"/comments/round/${criteria.getId}/user/${juror1.getId}/page/1"))(1L)
+        one._1 must contain("Σ 14")
+        one._1 must not(startWith("14"))
+      }
+    }
+  }
+
   "the comments report's access" should {
 
     "be refused to a juror, of their own files too, as a page or JSON, the CSV too" in {
