@@ -83,17 +83,18 @@ object RoundImageEventJdbc {
 
   /** The round's events, newest first, at most `limit`. */
   def byRound(roundId: Long, limit: Int = 500)(implicit session: DBSession = AutoSession): Seq[Event] =
-    sql"""SELECT id, round_id, page_id, action, code, prior_status, new_status, created_by, created_at
+    sql"""SELECT id, round_id, page_id, action, code, prior_status, new_status, created_by, UNIX_TIMESTAMP(created_at)
           FROM round_image_event WHERE round_id = $roundId ORDER BY id DESC LIMIT $limit"""
       .map(event).list()
 
   /** A file's events in the round, oldest first. */
   def ofFile(roundId: Long, pageId: Long)(implicit session: DBSession = AutoSession): Seq[Event] =
-    sql"""SELECT id, round_id, page_id, action, code, prior_status, new_status, created_by, created_at
+    sql"""SELECT id, round_id, page_id, action, code, prior_status, new_status, created_by, UNIX_TIMESTAMP(created_at)
           FROM round_image_event WHERE round_id = $roundId AND page_id = $pageId ORDER BY id"""
       .map(event).list()
 
   private def event(rs: WrappedResultSet): Event =
     Event(rs.long(1), rs.long(2), rs.long(3), rs.string(4), rs.string(5), rs.string(6), rs.stringOpt(7),
-      rs.longOpt(8), rs.zonedDateTime(9))
+      // the database clock's instant whatever the zones, shown in the JVM's (DbTime)
+      rs.longOpt(8), DbTime.local(DbTime.instantOpt(rs, 9).get))
 }

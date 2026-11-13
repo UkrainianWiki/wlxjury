@@ -16,7 +16,9 @@ class RawSqlSpec extends Specification {
       "the gallery query builder: structure, group, order and limit from enumerated options and numbers; values bound",
     "app/services/distribution/RoundDistributionHandler.scala" -> "an order from an enumerated set",
     "app/db/scalikejdbc/rewrite/RoundImageQuery.scala" ->
-      "the counts' list query (P2b): order and rank columns from a fixed vocabulary (translate), filters from fixed conditions; values and limits bound"
+      "the counts' list query (P2b): order and rank columns from a fixed vocabulary (translate), filters from fixed conditions; values and limits bound",
+    "app/db/scalikejdbc/DbTime.scala" ->
+      "UNIX_TIMESTAMP(column) AS <column>_epoch: a column name from code, checked against [a-z_]+(\\.[a-z_]+)?"
   )
 
   private val Digests: Map[String, String] = Map(

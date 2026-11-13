@@ -1,6 +1,6 @@
 package db.scalikejdbc
 
-import java.time.{Instant, ZoneOffset, ZonedDateTime}
+import java.time.{ZoneOffset, ZonedDateTime}
 import org.intracer.wmua.Vote
 import scalikejdbc._
 import scalikejdbc.orm.CRUDMapper
@@ -38,9 +38,7 @@ object VoteJdbc extends CRUDMapper[Vote] {
 
   /** The vote's time from [[votedAtEpoch]]'s column, an instant (in UTC) whatever the zones. */
   private def votedAt(rs: WrappedResultSet, c: ResultName[Vote]): Option[ZonedDateTime] =
-    rs.bigDecimalOpt(c.votedAt.value + "_ms").map { seconds =>
-      Instant.ofEpochMilli(seconds.movePointRight(3).longValueExact()).atZone(ZoneOffset.UTC)
-    }
+    rs.bigDecimalOpt(c.votedAt.value + "_ms").map(seconds => DbTime.fromEpochSeconds(seconds).atZone(ZoneOffset.UTC))
 
   override def extract(rs: WrappedResultSet, c: ResultName[Vote]): Vote = Vote(
     pageId     = rs.long(c.pageId),

@@ -1,5 +1,6 @@
 package services.jobs
 
+import db.scalikejdbc.DbTime
 import play.api.libs.json.{JsObject, Json}
 import scalikejdbc._
 
@@ -78,10 +79,11 @@ object JobJdbc {
   private val columns =
     sqls"""id, kind, contest_id, subject_type, subject_id, dedupe_key, status, params, state,
            progress_done, progress_total, progress_unit, error, attempts, created_by, owner,
-           created_at, started_at, updated_at, finished_at, heartbeat_at"""
+           ${DbTime.epoch("created_at")}, ${DbTime.epoch("started_at")}, ${DbTime.epoch("updated_at")},
+           ${DbTime.epoch("finished_at")}, ${DbTime.epoch("heartbeat_at")}"""
 
-  private def instant(rs: WrappedResultSet, col: String): Option[Instant] =
-    rs.timestampOpt(col).map(_.toInstant)
+  // the database clock's instants whatever the JVM's and the session's zones (DbTime)
+  private def instant(rs: WrappedResultSet, col: String): Option[Instant] = DbTime.instantOpt(rs, col)
 
   def extract(rs: WrappedResultSet): Job =
     Job(
@@ -101,7 +103,7 @@ object JobJdbc {
       attempts = rs.int("attempts"),
       createdBy = rs.longOpt("created_by"),
       owner = rs.stringOpt("owner"),
-      createdAt = rs.timestamp("created_at").toInstant,
+      createdAt = DbTime.instant(rs, "created_at"),
       startedAt = instant(rs, "started_at"),
       updatedAt = instant(rs, "updated_at"),
       finishedAt = instant(rs, "finished_at"),

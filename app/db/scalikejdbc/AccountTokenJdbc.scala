@@ -55,7 +55,9 @@ object AccountToken {
   final case class Revoked(at: Instant) extends Status("revoked")
 }
 
-/** The `account_token` table. Times come from the database clock (NOW(3)), as [[ApiTokenJdbc]]'s. */
+/** The `account_token` table. Times come from the database clock (NOW(3)), as [[ApiTokenJdbc]]'s, and
+  * are read as instants whatever the JVM's and the session's zones ([[DbTime]]).
+  */
 object AccountTokenJdbc {
 
   val Invitation = "invitation"
@@ -69,7 +71,8 @@ object AccountTokenJdbc {
   val SetsPassword: Seq[String] = Seq(Invitation, PasswordReset)
 
   private val columns =
-    sqls"""id, user_id, purpose, email, contest_id, role, created_by, created_at, expires_at, used_at, revoked_at,
+    sqls"""id, user_id, purpose, email, contest_id, role, created_by, ${DbTime.epoch("created_at")},
+           ${DbTime.epoch("expires_at")}, ${DbTime.epoch("used_at")}, ${DbTime.epoch("revoked_at")},
            (used_at IS NULL AND revoked_at IS NULL AND expires_at > NOW(3)) AS live, shared, unsent"""
 
   private def extract(rs: WrappedResultSet): AccountToken =
@@ -81,10 +84,10 @@ object AccountTokenJdbc {
       contestId = rs.longOpt("contest_id"),
       role = rs.stringOpt("role"),
       createdBy = rs.longOpt("created_by"),
-      createdAt = rs.timestamp("created_at").toInstant,
-      expiresAt = rs.timestamp("expires_at").toInstant,
-      usedAt = rs.timestampOpt("used_at").map(_.toInstant),
-      revokedAt = rs.timestampOpt("revoked_at").map(_.toInstant),
+      createdAt = DbTime.instant(rs, "created_at"),
+      expiresAt = DbTime.instant(rs, "expires_at"),
+      usedAt = DbTime.instantOpt(rs, "used_at"),
+      revokedAt = DbTime.instantOpt(rs, "revoked_at"),
       live = rs.boolean("live"),
       shared = rs.boolean("shared"),
       unsent = rs.boolean("unsent")

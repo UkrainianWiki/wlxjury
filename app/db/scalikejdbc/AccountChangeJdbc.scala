@@ -58,7 +58,7 @@ object AccountChangeJdbc {
   val CommentMaxLength = 500
 
   private val columns =
-    sqls"id, user_id, actor_id, contest_id, field, old_value, new_value, mail_sent, comment, created_at"
+    sqls"id, user_id, actor_id, contest_id, field, old_value, new_value, mail_sent, comment, ${DbTime.epoch("created_at")}"
 
   private def extract(rs: WrappedResultSet): AccountChange =
     AccountChange(
@@ -71,7 +71,7 @@ object AccountChangeJdbc {
       newValue = rs.stringOpt("new_value"),
       mailSent = rs.booleanOpt("mail_sent"),
       comment = rs.stringOpt("comment"),
-      createdAt = rs.timestamp("created_at").toInstant
+      createdAt = DbTime.instant(rs, "created_at")
     )
 
   private def cut(value: Option[String], max: Int): Option[String] =
