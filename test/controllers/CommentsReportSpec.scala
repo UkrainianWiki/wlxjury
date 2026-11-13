@@ -312,6 +312,56 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "open by the latest comment from every entry with a remembered yes/no order, and leave it by that order" in {
+      testDbApp { app =>
+        val f = fixture()
+        val r = f.round.getId
+        // choosing "approvals only" in all the jurors' gallery remembers it (RoundList.BinarySortCookie)
+        val chosen = get(app, f.organizer, s"/gallery/round/$r/user/0/page/1?sort=approvals-only")
+        status(chosen) must_== OK
+        val remembered = cookies(chosen).get(RoundList.BinarySortCookie).toSeq
+        def withRemembered(path: String): (Document, Option[String]) = {
+          val result = route(app, FakeRequest(GET, path).withSession(Secured.UserName -> f.organizer.email)
+            .withCookies(remembered: _*).withCSRFToken).get
+          status(result) aka path must_== OK
+          (Jsoup.parse(contentAsString(result)), cookies(result).get(RoundList.BinarySortCookie).map(_.value))
+        }
+        def href(doc: Document, css: String): String = Option(doc.selectFirst(css)).fold("")(_.attr("href"))
+        def sorts(doc: Document, css: String): List[String] =
+          doc.select(css).asScala.map(_.attr("href")).toList.map(h => h.substring(h.indexOf("sort=") + 5))
+        val (gallery, _) = withRemembered(s"/gallery/round/$r/user/0/page/1")
+        val (stat, _) = withRemembered(s"/roundstat/$r")
+        val entries = Seq(
+          "view menu" -> href(gallery, s"a.dropdown-item[href^=/comments/round/$r/user/0/page/1]"),
+          "round statistics" -> href(stat, "#round-comments-link a"),
+          "no order" -> path(f, 0))
+        (remembered.map(_.value) === Seq(BinaryOrder.ApprovalsOnly.param)) and
+          // the gallery without an order is in the remembered one
+          (sorts(gallery, "a.dropdown-item.active") must contain("approvals-only")) and
+          forall(entries) { case (entry, url) =>
+            val (doc, set) = withRemembered(url)
+            (entry, url, rows(doc), doc.select("#comments-report-order .dropdown-toggle").text,
+              sorts(doc, "#comments-report-order a.dropdown-item"),
+              sorts(doc, "#comments-report-order a.dropdown-item.active"), set) ===
+              ((entry, url, Seq(4L, 1L, 7L, 5L), "Order: Latest comment first",
+                List("latest-comment", "approvals", "difference", "approvals-only", "file"), List("latest-comment"), None))
+          } and
+          (entries.take(2).map(_._2) must contain(endWith("sort=latest-comment")).forall) and {
+            // leaving the report: the gallery's link by rate is in the remembered order again
+            val (report, _) = withRemembered(path(f, 0))
+            val back = href(report, s"a.dropdown-item[href^=/gallery/round/$r/user/0/page/1]")
+            val (left, set) = withRemembered(back)
+            (back must endWith("sort=rate")) and (set must beNone) and
+              (sorts(left, "a.dropdown-item.active") must contain("approvals-only")) and
+              (sorts(left, "a.dropdown-item.active") must not(contain("rate")))
+          } and {
+            // an order chosen in the report stays in it
+            val (own, _) = withRemembered(path(f, 0, "?sort=difference"))
+            sorts(own, "#comments-report-order a.dropdown-item.active") === List("difference")
+          }
+      }
+    }
+
     "be offered first in the order menu; an order it hasn't shows as the list's own first, not as it" in {
       testDbApp { _ =>
         val f = fixture()
