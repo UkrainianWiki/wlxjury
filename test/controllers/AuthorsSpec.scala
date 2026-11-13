@@ -328,7 +328,12 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         val (_, up) = get(app, f.organizer, authorsUrl(f, Some(f.binary), Some("approval")))
         val (_, down) = get(app, f.organizer, authorsUrl(f, Some(f.binary), Some("-approval")))
-        (rows(up).map(_._1) === Seq("ivan", "O'Brien", "Ivan", Petro, "Iván")) and
+        val (_, byFiles) = get(app, f.organizer, authorsUrl(f, Some(f.binary)))
+        val opened = Jsoup.parse(byFiles).selectFirst("th a[data-sort=approval]").attr("href")
+        // opened from another column: the lowest first, the authors without a rate still last
+        (opened === authorsUrl(f, Some(f.binary), Some("approval"))) and
+          (rows(get(app, f.organizer, opened)._2).map(_._1) === Seq("ivan", "O'Brien", "Ivan", Petro, "Iván")) and
+          (rows(up).map(_._1) === Seq("ivan", "O'Brien", "Ivan", Petro, "Iván")) and
           (rows(down).map(_._1) === Seq(Petro, "Ivan", "ivan", "O'Brien", "Iván"))
       }
     }

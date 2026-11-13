@@ -148,11 +148,13 @@ object AuthorsPage {
 
     def param: String = (if (descending) "-" else "") + column.param
 
-    /** Clicked on `other`: this column the other way; another column, a name A-Z, a number from
-      * the highest.
+    /** Clicked on `other`: this column the other way; another column, a name A-Z, the approval
+      * rate from the lowest (the authors rejected the most first), another number from the
+      * highest.
       */
     def toggled(other: Column): Sort =
-      if (other == column) copy(descending = !descending) else Sort(other, other != Column.Name)
+      if (other == column) copy(descending = !descending)
+      else Sort(other, other != Column.Name && other != Column.Approval)
 
     def sorted(rows: Seq[AuthorStats.Row], page: AuthorsPage): Seq[AuthorStats.Row] = {
       val collator = Collator.getInstance(Locale.ROOT)
