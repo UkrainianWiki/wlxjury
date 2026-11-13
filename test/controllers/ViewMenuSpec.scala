@@ -129,6 +129,29 @@ class ViewMenuSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "go from a file's place in the gallery to its page in the gallery, not by rate" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val r = f.binary.getId
+        val at = get(s"/gallery/round/$r/user/0/region/all/pageid/2?sort=approvals-only", f.organizer)
+        (status(at) === SEE_OTHER) and
+          (redirectLocation(at).get must startWith(s"/gallery/round/$r/user/0/page/1?sort=approvals-only")) and
+          (redirectLocation(at).get must endWith("#2"))
+      }
+    }
+
+    "show each file's tally of all the jurors' votes on its gallery tile" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val doc = page(s"/gallery/round/${f.binary.getId}/user/0/page/1?sort=file", f.organizer)
+        val tiles = doc.select("#gallery img[data-pageid]").asScala.toList
+        // juror 1 approves the even files, juror 2 the odd ones: one approval, one rejection each
+        (tiles.map(_.attr("data-pageid")) === List("1", "2", "3")) and
+          (tiles.map(t => (t.attr("data-approvals"), t.attr("data-rejections"))) === List.fill(3)(("1", "1"))) and
+          (tiles.map(_.attr("data-tally")) === List.fill(3)("1 approval, 1 rejection"))
+      }
+    }
+
     "show File list as chosen on the file list" in {
       testDbApp { implicit app =>
         val f = fixture()

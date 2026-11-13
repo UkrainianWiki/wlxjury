@@ -312,6 +312,35 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "be offered first in the order menu; an order it hasn't shows as the list's own first, not as it" in {
+      testDbApp { _ =>
+        val f = fixture()
+        (report(f).commentOrderChoices.head === ListOrder.LatestComment) and
+          (report(f, f.juror1.getId).commentOrderChoices.head === ListOrder.LatestComment) and
+          (report(f, order = ListOrder.LatestComment).shownCommentOrder === ListOrder.LatestComment) and
+          // all the jurors' votes on a yes/no round: a juror's order by vote time is none of theirs
+          (report(f, order = ListOrder.OldestVote).shownCommentOrder === ListOrder.Binary(BinaryOrder.all.head)) and
+          (report(f, order = ListOrder.FileOrder).shownCommentOrder === ListOrder.FileOrder)
+      }
+    }
+
+    "stay when the round menu opens all the jurors' votes in a round the juror is not a juror of" in {
+      testDbApp { _ =>
+        val f = fixture()
+        val juror = report(f, f.juror1.getId, order = ListOrder.OldestVote)
+        val other = juror.inRound(f.earlier, f.organizer.getId, jurorOfRound = false)
+        val gallery = juror.withView(GalleryView.Gallery).withOrder(ListOrder.OldestVote)
+          .inRound(f.earlier, f.organizer.getId, jurorOfRound = false)
+        ((other.asUserId, other.view, other.order) === ((0L, GalleryView.Comments, ListOrder.LatestComment))) and
+          (other.pageUrl(1) must endWith("sort=latest-comment")) and
+          ((gallery.asUserId, gallery.view, gallery.order) === ((0L, GalleryView.Gallery, ListOrder.ByRate))) and
+          // a juror of the round, or all the jurors' votes: the order stays
+          (juror.inRound(f.earlier, f.organizer.getId, jurorOfRound = true).order === ListOrder.OldestVote) and
+          (report(f, order = ListOrder.FileOrder).inRound(f.earlier, f.organizer.getId, jurorOfRound = false).order ===
+            ListOrder.FileOrder)
+      }
+    }
+
     "make the large view without an order move among the report's files by the latest comment" in {
       testDbApp { app =>
         val f = fixture()
@@ -346,9 +375,9 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
         scopes.map(_.hasClass("active")) === Seq(true, false)
         scopes.head.attr("aria-current") === "true"
         scopes(1).attr("href") must contain("scope=contest")
-        // the order menu: the binary orders and the latest comment
-        doc.select("#comments-report-order a.dropdown-item").asScala.map(_.attr("href")).last must contain(
-          "sort=latest-comment")
+        // the order menu: the latest comment first, then the binary orders and file order
+        doc.select("#comments-report-order a.dropdown-item").asScala.map(_.attr("href")).toList.map(h =>
+          h.substring(h.indexOf("sort=") + 5)) === List("latest-comment", "approvals", "difference", "approvals-only", "file")
         doc.selectFirst("#comments-report-csv").attr("href") must startWith(
           s"/comments/round/${f.round.getId}/user/0/region/all/csv")
         // no comments toggle: the report has only such files

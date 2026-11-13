@@ -558,21 +558,25 @@ final case class RoundList(
     */
   def allFiles: RoundList = withComments(false).withView(if (view.comments) GalleryView.Gallery else view)
 
-  /** The orders the comments report offers: the list's own (a juror's as their order menu has
-    * them; all the jurors' votes on a yes/no round in a [[BinaryOrder]], on a rated round by
-    * rate, either in file order too), and by the latest comment ([[ListOrder.LatestComment]]).
+  /** The list's own orders in the comments report: a juror's as their order menu has them; all
+    * the jurors' votes on a yes/no round in a [[BinaryOrder]], on a rated round by rate, either
+    * in file order too.
     */
-  def commentOrderChoices: Seq[ListOrder] = {
-    val own =
-      if (aggregateBinary) BinaryOrder.all.map(ListOrder.Binary) :+ ListOrder.FileOrder
-      else if (asUserId == 0) Seq(ListOrder.ByRate, ListOrder.FileOrder)
-      else orderChoices
-    own :+ ListOrder.LatestComment
-  }
+  private def ownCommentOrders: Seq[ListOrder] =
+    if (aggregateBinary) BinaryOrder.all.map(ListOrder.Binary) :+ ListOrder.FileOrder
+    else if (asUserId == 0) Seq(ListOrder.ByRate, ListOrder.FileOrder)
+    else orderChoices
 
-  /** The comments report's order as its menu shows it: one it hasn't is the first it has. */
+  /** The orders the comments report offers: by the latest comment ([[ListOrder.LatestComment]]),
+    * its default, then the list's own ([[ownCommentOrders]]).
+    */
+  def commentOrderChoices: Seq[ListOrder] = ListOrder.LatestComment +: ownCommentOrders
+
+  /** The comments report's order as its menu shows it: one it hasn't is the first of the list's
+    * own (as the list's query orders by it), not the latest comment.
+    */
   def shownCommentOrder: ListOrder =
-    if (commentOrderChoices.contains(order)) order else commentOrderChoices.head
+    if (commentOrderChoices.contains(order)) order else ownCommentOrders.head
 
   /** The comments on the list's files that the comments filter keeps them by, of all its
     * pages: the comments report's total ([[SelectionQuery.commentCount]]).
@@ -611,12 +615,13 @@ final case class RoundList(
     * juror's only in a round they are a juror of (`jurorOfRound`, [[User.roundsJuredIn]]):
     * elsewhere the juror's list is refused ([[services.GalleryService.viewAs]]), so it is all the
     * jurors' votes there, as the juror menu's "all", in that list's default order (by rate, a
-    * yes/no round's in the binary order last chosen, [[RoundList.of]]): a juror's order by vote
-    * time isn't one of its, and a named binary order would be remembered as chosen.
+    * yes/no round's in the binary order last chosen, [[RoundList.of]]; in the comments report
+    * by the latest comment, its default): a juror's order by vote time isn't one of its, and a
+    * named binary order would be remembered as chosen.
     */
   def inRound(round: Round, viewerId: Long, jurorOfRound: Boolean): RoundList =
     if (asUserId == 0 || asUserId == viewerId || jurorOfRound) withRound(round)
-    else withRound(round).withViewer(0).withOrder(ListOrder.ByRate)
+    else withRound(round).withViewer(0).withOrder(if (view.comments) ListOrder.LatestComment else ListOrder.ByRate)
 
   /** The list's query string: its view (`module`, for a large view's way back), filter, the
     * comments toggle and order.

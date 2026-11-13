@@ -134,7 +134,8 @@ list:
   or the view's own (for **All** jurors the yes/no orders or by rating, and file order; for one
   juror that juror's orders). The report opens in it from the view menu and the round's
   statistics; the order chosen in the report is kept by its pages, the CSV and the large view's
-  previous and next, and leaving the report for another view goes back to by rating.
+  previous and next. Leaving the report for another view keeps that order, except **Latest
+  comment first**, which goes back to by rating.
 - **Comments CSV**: a spreadsheet with one row per comment of the report, in its order: the file,
   its page id and Commons link, the author, the time (UTC), the round and the text.
 
@@ -144,7 +145,9 @@ jurors cannot, even for their own files. Comment authors' names and texts leave 
 CSV: share it only with the contest's team.
 
 In a single juror's **Gallery** each file shows that juror's vote, read-only: in a yes/no round a
-green or red frame with a thumb, in a rated round the juror's stars (or ✗).
+green or red frame with a thumb, in a rated round the juror's stars (or ✗). In the **Gallery** of
+**All** jurors' votes on a yes/no round each file shows its tally, approvals (✓) and rejections
+(✗), in the order chosen in the menu next to the views.
 
 A single juror's **Gallery** and **By rate** views have an order menu, by that juror's votes:
 **In file order**, **By rating**, **Newest votes first** and **Oldest votes first** (when the

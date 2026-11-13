@@ -55,9 +55,9 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
   round** (the default) / **All rounds of the contest** chooses the comments: a file is listed if it
   has one of them. Its order menu has **Latest comment first** (by the newest comment of that
   choice; the default, also when opened from the view menu or the round's statistics, the CSV and
-  the large view included) and the list's own orders. **Comments CSV** has a row per comment (file, page id, Commons
-  URL, author, time in UTC, round, text), every cell formula-safe. The juror, vote filter, region
-  and pager work as in the other views.
+  the large view included) and the list's own orders. **Comments CSV** has a row per comment
+  (file, page id, Commons URL, author, time in UTC, round, text), every cell formula-safe. The
+  juror, vote filter, region and pager work as in the other views.
 - A comment on a stopped round's file is refused on the server too, for admins, organizers and
   root as for jurors: a 403 page saying the comment was not saved, with a link back to the file
   (or JSON) and its reference, logged on `security.authz` with the reason `round_stopped`. The
