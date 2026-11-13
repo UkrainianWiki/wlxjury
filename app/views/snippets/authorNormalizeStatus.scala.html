@@ -1,0 +1,17 @@
+@import services.jobs.Job
+@(job: Job, returnTo: String)(implicit messages: Messages, req: RequestHeader)
+@* The latest author_normalize job, as the image check's: a done one as a one-line summary;
+   queued, running, failed or cancelled as the job's status (polled by job-status.js while
+   active, with Retry / Cancel) and a link to the job. *@
+<div class="author-normalize-status card card-body p-2 mt-2 mb-3">
+    @defining(if (job.isDone) views.AuthorNormalizeSummary.text(job) else None) { summary =>
+    @if(summary.isDefined) {
+        <span class="author-normalize-summary">@summary.get</span>
+    } else {
+        @Messages("authors.normalize.status", job.id.toString):
+        @snippets.jobStatus(job, returnTo)
+        <a href="@routes.JobController.status(job.id)">@Messages("round.images.check.job.link", job.id.toString)</a>
+        <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
+    }
+    }
+</div>

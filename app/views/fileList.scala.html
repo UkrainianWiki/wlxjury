@@ -111,7 +111,7 @@
 
                 @if(wrapInTable) {
                     @if(showAuthor) {
-                        <td> @file.image.author.getOrElse("") </td>
+                        <td> @services.imports.StoredAuthors.shown(file.image.author).getOrElse("") </td>
                     }
                 }
 

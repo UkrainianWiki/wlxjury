@@ -176,6 +176,17 @@ round.images.check.monument.fixed = виправлено ідентифікат�
 round.images.check.orphans = архівовано осиротілих оцінок за критеріями: {0}
 round.images.check.not.repaired = рядків із розбіжностями не виправлено (лише повідомлено): {0}
 round.images.check.skipped = пропущено раундів (триває розподіл): {0}
+authors.normalize = Нормалізувати збережених авторів
+authors.normalize.help = Для всіх конкурсів: зберегти обліковий запис Commons кожного автора файлу, якого давніший імпорт зберіг як вікірозмітку (посилання [[User:…|…]] або шаблон авторства)
+authors.normalize.queued = Нормалізацію авторів поставлено в чергу (завдання {0})
+authors.normalize.running = Нормалізація авторів уже в черзі або виконується (завдання {0})
+authors.normalize.status = Нормалізація авторів (завдання {0})
+authors.normalize.result = Нормалізація авторів (завдання {0}, {1}): {2}
+authors.normalize.clean = змінювати нічого
+authors.normalize.changed = змінено авторів: {0}
+authors.normalize.uploader = з них взято першого завантажувача: {0}
+authors.normalize.unresolved = з них без автора (не знайдено): {0}
+authors.normalize.skipped = пропущено (тим часом змінено імпортом): {0}
 contest = Конкурс
 
 mass.import = Масовий імпорт

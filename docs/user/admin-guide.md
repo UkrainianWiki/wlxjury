@@ -786,7 +786,38 @@ stopped.
   any account's API tokens.
 - Run **Check every round's images**, on the rounds list: it checks that every round's list of
   files matches its votes, and repairs any drift.
+- Run **Normalize stored authors**, on the rounds list, see [below](#a-normalize-authors).
 - Work in any contest without being a member of it.
 
 The first root account is made when the tool is first set up; that is in the [deployment
 guide](../deployment.md).
+
+<a id="a-normalize-authors"></a>
+### Normalizing stored authors
+
+Files imported by older versions of the tool may keep their author as wiki markup, such as
+`[[User:Petro_Hrushko|Petro]]` or a photographer's credit template like `{{SergiyBobokPhotos}}`.
+Files imported now keep the author's Commons account. The tool shows these old authors as their
+account. But conflicts of interest are found by the stored account, so such files aren't found
+as conflicts until their authors are normalized. A file deleted on Commons can't be imported
+again, so only this button can fix its author.
+
+**Normalize stored authors**, on the rounds list (root only), does it for the files of every
+contest, as a background job:
+
+- A link to a user page gives that account: `[[User:Petro_Hrushko|Petro]]` becomes
+  `Petro Hrushko`.
+- A credit template gives the account its page links to. A template that links to nobody gives
+  the file's original uploader, as an import does. A file deleted on Commons, or uploaded by a
+  bot, then has no author.
+- An unknown author (`{{Unknown|author}}`) becomes no author.
+
+The job shows its progress under the buttons, with **Cancel**, and **Retry** if it fails. When
+it is done, the line shows how many authors it changed, how many got the uploader, how many were
+left without an author, and how many were skipped because an import changed them meanwhile. It
+can be run again: a second run finds nothing to change.
+
+After it, files whose author is a contest member are found as conflicts of interest on the
+round form and the conflicts pages. Rounds already distributed keep their files: to leave the
+new conflicts out of a round, stop it and disqualify them on its [conflicts
+page](organizer-guide.md#o-conflicts-page).
