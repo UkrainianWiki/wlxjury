@@ -208,7 +208,11 @@ Before changing anything, `deploy` takes the lock and checks:
 - the manifest;
 - that `db-admin.cnf` reaches the app's database endpoint;
 - that the release is not older than the database and the database has no failed migration;
-- that no database event is enabled, and free space.
+- that no database event is enabled;
+- that no background job is queued or running (below);
+- free space.
+
+`deploy` refuses while a background job (a round distribution, an image check) is queued or running, lists each one with its id, kind, contest (`none` for a job without one) and status, and changes nothing. Wait for them to finish, or cancel them in the app (the Rounds or Edit round page, or `/admin/jobs/ID`), and run `deploy` again. To deploy anyway, add `--allow-running-jobs` (in either order with `--backup`): `deploy` prints a warning listing the jobs, also into `operation.log`, and continues. Stopping the app puts its running jobs back in the queue, and the new release continues every queued job from its last committed step once it is up (a job of an app that was killed waits until its lease expires). Finished, failed and cancelled jobs never stop a deployment, and a query that fails (no `job` table, no access) stops it rather than counting as "no jobs".
 
 It unpacks the release into a new root-owned folder under `/opt/wlxjury/releases`. Then it:
 1. creates the operation folder `/var/backups/wlxjury/UTC_TIMESTAMP-BUILD`, with `record`, `milestones` and `operation.log`;
@@ -695,6 +699,7 @@ Python 3.8 is the oldest supported version. The restore image is self-contained:
 - deploying and reopening, including a timer that starts its job during the maintenance checks;
 - a release without migrations: no dump by default (or one with `--backup`), and a `restore` that only switches the release back, keeping later writes, but refuses once a later migration ran;
 - refusals that leave everything unchanged, including an unreachable database endpoint;
+- queued or running background jobs refusing the deployment before anything changes, `--allow-running-jobs` deploying with a warning (and either option order), finished, failed and cancelled jobs ignored, and an unreadable `job` table refusing it;
 - a vhost without the maintenance page, and a lost milestones file;
 - rerunning `reopen` after a routing failure;
 - `restore` after an interrupted migration, refusing the previous release until the restore finishes;
