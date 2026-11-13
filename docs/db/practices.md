@@ -191,7 +191,9 @@ ids narrow, join the wide columns after (the deferred join).
 
 **3.3 No filesort on paged galleries.** The index's column order *and direction* match the
 ORDER BY: V85's `vote_jury_round_ratedesc_mon_page_idx (…, rate DESC, …)` on 10.8+ (10.6
-ignores `DESC`: the version-conditional DDL of §8.7, a startup WARN as backstop).
+ignores `DESC`: the version-conditional DDL of §8.7, a startup WARN as backstop). An order by
+expressions keeps its sort, but a covering index keeps it to index entries: V99 adds `voted_at`
+last to the same index for the vote-time orders (2–4x faster on production's copy).
 
 **3.4 Counts are cached or precomputed, not recounted per view.** `RoundImageCounts` (images
 per round) and `RegionCountCache` (a category's region counts) are invalidated *after*
@@ -464,8 +466,10 @@ and the background recompute fills the counts (round-images §16).
 **8.7 Version-conditional DDL.** When a server version changes the meaning (10.6 parses
 `DESC` in an index and ignores it), read `VERSION()` and `information_schema`, run the
 statement by `EXECUTE IMMEDIATE`, and warn (`SIGNAL SQLSTATE '01000'`) instead of failing on
-the old server (V85), with a startup check as backstop (`Migrations.galleryIndexLeftAscending`)
-and specs on both servers (`VoteGalleryIndexSpec`, `-Dwlxjury.test.mariadb-image`).
+the old server (V85), with a startup check as backstop (`Migrations.galleryIndexState`)
+and specs on both servers (`VoteGalleryIndexSpec`, `-Dwlxjury.test.mariadb-image`). A later
+migration that changes such an index repeats the logic for every state (V99 does V85's swap
+too), since an applied script can't change and its re-run would undo the later change.
 
 ## 9. Tests
 
