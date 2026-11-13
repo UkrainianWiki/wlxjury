@@ -528,10 +528,10 @@ ALTER TABLE vote
   DROP INDEX vote_jury_round_rate_mon_page_idx,
   ADD INDEX vote_jury_round_ratedesc_mon_page_idx (jury_id, round_id, rate DESC, monument_id, page_id, voted_at),
   ALGORITHM = INPLACE, LOCK = NONE;
-ANALYZE TABLE vote;
+SET STATEMENT lock_wait_timeout = 5 FOR ANALYZE TABLE vote;
 ```
 
-and if it fails with `Lock wait timeout exceeded` (nothing changed), retry a little later. Then repeat the check. Don't add a row to
+and if either fails with `Lock wait timeout exceeded` (nothing changed), retry it a little later. Then repeat the check. Don't add a row to
 `flyway_schema_history`. (Running V85's script after V99 is harmless where the index is done, but
 from the ascending index it builds the descending one without `voted_at`; run V99 again then.)
 
