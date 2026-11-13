@@ -58,6 +58,18 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
   the large view included) and the list's own orders. **Comments CSV** has a row per comment
   (file, page id, Commons URL, author, time in UTC, round, text), every cell formula-safe. The
   juror, vote filter, region and pager work as in the other views.
+- **Comments by one person** (the maintainer's request; developed 2026-11-13,
+  `stack/136-comments-by-person`): in the comments report, after each comment's author, a funnel
+  icon shows the report with only the files that person commented on in the report's scope
+  (`commenter=<user id>`), and a pictures icon opens their gallery of the round the comment was
+  written in when they are a juror of it (pre-screeners included; not for organizers' comments).
+  The icons' words are in their tooltip and for screen readers; the name stays text. A chip
+  **Comments by Name ×** names the filter and removes it. Each file shows that person's comments,
+  the file's other comments folded under them; **Latest comment first** is by their latest, and
+  the counts, pages, CSV (their comments only) and the large view's previous and next follow it,
+  with the juror, vote filter, region, scope and order. Comments without an account stay without
+  links. Admins, organizers and root only, as the report: a juror's request with `commenter=` is
+  refused as the report is, and ignored in their own gallery and large view.
 - A comment on a stopped round's file is refused on the server too, for admins, organizers and
   root as for jurors: a 403 page saying the comment was not saved, with a link back to the file
   (or JSON) and its reference, logged on `security.authz` with the reason `round_stopped`. The

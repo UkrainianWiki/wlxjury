@@ -123,6 +123,53 @@ img.cropped {
 .wlx-comments-main { flex: 1 1 auto; min-width: 0; max-width: 48rem; }
 .wlx-comments-main h2 { overflow-wrap: anywhere; }
 .wlx-comments-report .wlx-comment-other-round { border-left: 3px solid var(--bs-secondary-color); }
+/* a comment author's icon links in the report (its filter by them, their gallery of the round):
+   muted beside the name, a 24 px target (WCAG 2.5.8), the theme's focus ring; their words are in
+   title and aria-label */
+.wlx-comments-report .wlx-comment-author-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    min-height: 24px;
+    margin-left: .15rem;
+    vertical-align: middle;
+    border-radius: .25rem;
+    color: var(--bs-secondary-color);
+    text-decoration: none;
+}
+.wlx-comments-report .wlx-comment-author-link:hover { color: var(--bs-link-hover-color); background: var(--bs-tertiary-bg); }
+.wlx-comments-report .wlx-comment-author-link:focus-visible,
+.wlx-commenter-chip-remove:focus-visible {
+    outline: 0;
+    box-shadow: 0 0 0 .25rem rgba(var(--bs-primary-rgb), .5);
+}
+/* the filter by author: a chip with its name and a link removing it; the file's other comments
+   folded under theirs */
+.wlx-commenter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    font-weight: normal;
+    font-size: .875rem;
+    color: var(--bs-body-color);
+    background: var(--bs-secondary-bg);
+    border: 1px solid var(--bs-border-color);
+}
+.wlx-commenter-chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    min-height: 24px;
+    border-radius: 50%;
+    color: var(--bs-secondary-color);
+    text-decoration: none;
+    font-size: 1rem;
+    line-height: 1;
+}
+.wlx-commenter-chip-remove:hover { color: var(--bs-body-color); background: var(--bs-tertiary-bg); }
+.wlx-comments-others > summary { cursor: pointer; margin-bottom: .5rem; }
 @media (max-width: 575.98px) {
     .wlx-comments-row { flex-direction: column; }
     .wlx-comments-thumb, .wlx-comments-thumb img, .wlx-comments-thumb video { width: 100%; max-height: 240px; }

@@ -64,8 +64,15 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       // with [[commentsIn]], only the comments written in this round (the comments report's scope
       // "this round", controllers.CommentScope): a file is kept if one of them is on it
       commentsRound: Option[Long] = None,
+      // with [[commentsIn]], only the comments by this account (`comment.user_id`; the comments
+      // report's filter by its author, controllers.RoundList.commenter): a file is kept if one
+      // of its comments in the scope is theirs
+      commentsBy: Option[Long] = None,
       driver: String = "mysql"
   ) {
+
+    /** The conditions on a comment `c` (after its contest's) of [[commentsRound]] and [[commentsBy]]. */
+    private def commentScope: String = SelectionQuery.inRound(commentsRound, commentsBy)
 
     /** A grouped row's rate: the sum of the file's rates, or of a rated round's grades. */
     private def rateSum: String = SelectionQuery.rateSum(grades)
@@ -289,7 +296,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     def commentCount()(implicit session: DBSession = autoSession): Int =
       commentsIn.fold(0) { contestId =>
         val ids = copy(order = Nil, limit = None, withPageId = None, keyset = None).query(idOnly = true, noLimit = true)
-        val inRound = SQLSyntax.createUnsafely(SelectionQuery.inRound(commentsRound))
+        val inRound = SQLSyntax.createUnsafely(commentScope)
         sql"select count(*) from ($ids) t straight_join comment c on c.contest_id = $contestId and c.room = t.pi_on_i$inRound"
           .map(_.int(1)).single().getOrElse(0)
       }
@@ -444,7 +451,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     private def commentedJoin(pageId: String): String =
       commentsIn.fold("")(contestId =>
         s"LEFT JOIN (SELECT DISTINCT c.room FROM comment c WHERE c.contest_id = ${contestId.toLong}" +
-          s"${SelectionQuery.inRound(commentsRound)}) cm ON cm.room = $pageId")
+          s"$commentScope) cm ON cm.room = $pageId")
 
     /** A factor of a count's term: 1 for a commented file, else 0 ([[commentedJoin]]); "" without it. */
     private def commentedHit: String = commentsIn.fold("")(_ => " * (cm.room IS NOT NULL)")
@@ -492,7 +499,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       */
     private def commentsFilter: Option[SQLSyntax] =
       commentsIn.map { contestId =>
-        val commented = SelectionQuery.commented(contestId, commentsRound)
+        val commented = SelectionQuery.commented(contestId, commentsRound, commentsBy)
         pageWithoutComments.fold(commented)(pageId => sqls"($commented or s.page_id = $pageId)")
       }
 
@@ -504,7 +511,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         contestId <- commentsIn
         pageId    <- withPageId
         if sql"select 1 from comment c where c.contest_id = $contestId and c.room = $pageId${
-          SQLSyntax.createUnsafely(SelectionQuery.inRound(commentsRound))} limit 1"
+          SQLSyntax.createUnsafely(commentScope)} limit 1"
           .map(_.int(1)).single().isEmpty
       } yield pageId
 
@@ -627,25 +634,31 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       */
     def rateSum(grades: Boolean): String = if (grades) VoteSql.GradeSum else VoteSql.RateSum
 
-    /** A vote row's file has a comment in the contest (in the round `roundId`, if given): what
-      * [[SelectionQuery.commentsIn]] and [[SelectionQuery.commentsRound]] keep.
+    /** A vote row's file has a comment in the contest (in the round `roundId`, by the account
+      * `userId`, if given): what [[SelectionQuery.commentsIn]], [[SelectionQuery.commentsRound]]
+      * and [[SelectionQuery.commentsBy]] keep.
       */
-    def commented(contestId: Long, roundId: Option[Long] = None): SQLSyntax =
+    def commented(contestId: Long, roundId: Option[Long] = None, userId: Option[Long] = None): SQLSyntax =
       sqls"s.page_id in (select c.room from comment c where c.contest_id = $contestId${
-        SQLSyntax.createUnsafely(inRound(roundId))})"
+        SQLSyntax.createUnsafely(inRound(roundId, userId))})"
 
-    /** A condition on a comment `c` (after its contest's): written in the round, if one is given. */
-    def inRound(roundId: Option[Long]): String = roundId.fold("")(r => s" and c.round_id = ${r.toLong}")
+    /** Conditions on a comment `c` (after its contest's): written in the round, by the account
+      * (`user_id`), each if given. Both read on the rows comment's (contest_id, room) index
+      * (V101) finds: at most a contest's comments (~2,000 on production's copy).
+      */
+    def inRound(roundId: Option[Long], userId: Option[Long] = None): String =
+      roundId.fold("")(r => s" and c.round_id = ${r.toLong}") + userId.fold("")(u => s" and c.user_id = ${u.toLong}")
 
-    /** A file's (a vote row `s`'s) latest comment in the contest, in the round if one is given:
+    /** A file's (a vote row `s`'s) latest comment in the contest, in the round and by the account
+      * (`userId`, the comments report's filter by author) if given:
       * its id, which grows as comments are written (their stored times have mixed formats,
       * [[org.intracer.wmua.Comment.parseTime]]); 0 for none, so it is never NULL, as a large
       * view's place in the order needs ([[Keyset]]). An order column ([[controllers.ListOrder.LatestComment]]):
       * a read of comment's (contest_id, room) index (V101) per file.
       */
-    def latestComment(contestId: Long, roundId: Option[Long]): String =
+    def latestComment(contestId: Long, roundId: Option[Long], userId: Option[Long] = None): String =
       s"(SELECT COALESCE(MAX(c.id), 0) FROM comment c WHERE c.contest_id = ${contestId.toLong}" +
-        s" AND c.room = s.page_id${inRound(roundId)})"
+        s" AND c.room = s.page_id${inRound(roundId, userId)})"
   }
 
 }

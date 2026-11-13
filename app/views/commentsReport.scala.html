@@ -10,7 +10,9 @@
         rates: RateDistribution,
         comments: Map[Long, Seq[Comment]],
         roundNames: Map[Long, String],
-        commentTotal: Int)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+        commentTotal: Int,
+        commenter: Option[(Long, Option[String])] = None,
+        jurorGalleries: Set[(Long, Long)] = Set.empty)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 @* The organisers' comments report of a round's list (GalleryView.Comments; GalleryController
    refuses it to anyone who may not view the round's organiser info): the list's files with a
@@ -20,7 +22,40 @@
    jurors' tally or one juror's vote, a rated round's stars), then its comments in the scope in
    the order written (snippets.comment), another round's marked with its name. The list's juror,
    filter and region menus and pager are the navbar's; the scope, the order (the list's own and
-   the latest comment first) and the comments' CSV are above the rows *@
+   the latest comment first) and the comments' CSV are above the rows.
+
+   The filter by author (RoundList.commenter, `commenter=<user id>`; `commenter`: its id and the
+   name of their latest comment in the contest, None if they have none): only the files with a
+   comment by them in the scope, counted and ordered by theirs; a chip above the rows names them
+   and removes it. Each row then shows their comments, and the file's other comments in the scope
+   folded under them (a <details>, closed), each part in the order written. A comment's author
+   stays text, followed by icon links (authorLinks): the report filtered by them (any comment
+   with an account, user_id > 0; not theirs while it is) and their one-juror gallery of the round
+   the comment was written in (`jurorGalleries`, (round id, user id): a juror of it the viewer
+   may see, GalleryController.jurorGalleries). The icons say nothing: their title and aria-label
+   name the person (and the round) *@
+
+@* a comment's links by its author: icons, their words in title and aria-label *@
+@authorLinks(msg: Comment) = {
+    @if(msg.userId > 0 && !list.commentsBy.contains(msg.userId)) {
+        @defining(Messages("comments.report.author.filter", msg.username)) { label =>
+        <a class="wlx-comment-author-link wlx-comment-filter-link" href="@list.withCommenter(Some(msg.userId)).pageUrl(1)" title="@label" aria-label="@label"><i class="bi bi-funnel" aria-hidden="true"></i></a>
+        }
+    }
+    @if(msg.userId > 0 && jurorGalleries.contains(msg.roundId -> msg.userId)) {
+        @defining(Messages("comments.report.author.gallery", msg.username,
+            if (msg.roundId == list.roundId) list.round.description else roundNames.getOrElse(msg.roundId, msg.roundId.toString))) { label =>
+        <a class="wlx-comment-author-link wlx-comment-gallery-link" href="@routes.GalleryController.list(msg.userId, 1, "all", msg.roundId)" title="@label" aria-label="@label"><i class="bi bi-images" aria-hidden="true"></i></a>
+        }
+    }
+}
+
+@* the filter by author's name: their latest comment's, else their account's number *@
+@commenterName = @{ commenter.map { case (id, name) => name.getOrElse(Messages("comments.report.commenter.account", id.toString)) } }
+
+@comment(msg: Comment) = {
+    @snippets.comment(msg, Option.when(msg.roundId != list.roundId)(roundNames.getOrElse(msg.roundId, msg.roundId.toString)), authorLinks(msg))
+}
 
 @* a file's result in the round: as galleryByRate's, without ranks or stars to click *@
 @result(file: ImageWithRating) = {
@@ -71,11 +106,22 @@
                 </ul>
             </div>
 
+            @* the filter by author: its name, and a link without it *@
+            @for(name <- commenterName) {
+                <span class="badge rounded-pill wlx-commenter-chip" id="comments-report-commenter">@Messages("comments.report.commenter", name)
+                    @defining(Messages("comments.report.commenter.remove")) { label =>
+                    <a class="wlx-commenter-chip-remove" href="@list.withCommenter(None).pageUrl(1)" title="@label" aria-label="@label"><span aria-hidden="true">×</span></a>
+                    }
+                </span>
+            }
+
             <a class="btn btn-sm btn-outline-primary ms-auto" id="comments-report-csv" href="@list.withView(GalleryView.CommentsCsv).pageUrl(1)"><i class="bi bi-filetype-csv" aria-hidden="true"></i> @Messages("comments.report.csv")</a>
         </div>
 
         @if(files.isEmpty) {
-            <p class="text-body-secondary" id="comments-report-empty">@Messages(if (list.commentScope == CommentScope.ThisRound) "comments.report.empty.round" else "comments.report.empty.contest")</p>
+            @defining(if (list.commentScope == CommentScope.ThisRound) "round" else "contest") { scope =>
+            <p class="text-body-secondary" id="comments-report-empty">@commenterName.fold(Messages(s"comments.report.empty.$scope"))(name => Messages(s"comments.report.empty.commenter.$scope", name))</p>
+            }
         }
 
         @for(file <- files) {
@@ -93,8 +139,22 @@
                 <div class="wlx-comments-main">
                     <h2 class="h6 mb-1" id="file-title-@file.pageId"><a href="@list.largeUrl(file.pageId)">@file.title</a></h2>
                     <div class="small mb-2 wlx-comments-result">@result(file)</div>
-                    @for(msg <- comments.getOrElse(file.pageId, Nil)) {
-                        @snippets.comment(msg, Option.when(msg.roundId != round.getId)(roundNames.getOrElse(msg.roundId, msg.roundId.toString)))
+                    @defining(comments.getOrElse(file.pageId, Nil)) { all =>
+                    @if(list.commentsBy.isEmpty) {
+                        @for(msg <- all) { @comment(msg) }
+                    } else {
+                        @defining(all.partition(c => list.commentsBy.contains(c.userId))) { parts =>
+                        @defining(parts._2) { others =>
+                        @for(msg <- parts._1) { @comment(msg) }
+                        @if(others.nonEmpty) {
+                            <details class="wlx-comments-others">
+                                <summary class="small text-body-secondary">@Messages(s"comments.report.others.${views.Plural.form(others.size, messages.lang.language)}", others.size)</summary>
+                                @for(msg <- others) { @comment(msg) }
+                            </details>
+                        }
+                        }
+                        }
+                    }
                     }
                 </div>
             </article>

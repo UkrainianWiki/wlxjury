@@ -139,6 +139,21 @@ list:
 - **Comments CSV**: a spreadsheet with one row per comment of the report, in its order: the file,
   its page id and Commons link, the author, the time (UTC), the round and the text.
 
+<a id="o-comments-by-person"></a>
+**One person's comments:** after each comment's author are small icons. The funnel
+(its tooltip: **Only the comments by Name**) shows the report with only the files that
+person commented on, by their comments of the choice above (**This round** or **All rounds of the
+contest**). A chip **Comments by Name ×** above the list says so; **×** shows everyone's comments
+again. Each file then shows that person's comments, with the file's other comments folded under
+them (**N other comments on this file**, click to open). **Latest comment first** is then by that
+person's latest comment; the counts, the pages, the **Comments CSV** (only their comments) and the
+large view's previous and next follow it, together with the juror, vote filter, region and order.
+The pictures icon (**Gallery of juror Name in round …**) opens that person's gallery of the round
+the comment was written in, with their votes; it is shown only when they are a juror of that round
+(also a pre-screener of an earlier round), not for an organizer's comments. Old comments without
+an account have no icons. Hover over an icon to see what it does; screen readers read the same
+text.
+
 The juror, vote filter and region menus and the pager work as in the other views, the CSV
 included. Only admins and organizers of the contest (and root) can open the report and its CSV;
 jurors cannot, even for their own files. Comment authors' names and texts leave the tool in the
