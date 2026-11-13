@@ -998,6 +998,7 @@ class ReleaseScriptTest(unittest.TestCase):
         self.flag.touch()
         self.assertNothingPicked(operations, ['ready', 'complete', 'complete'])
         refused = self.release('restore')
+        self.assertIn('These open operations are stale; investigate each', refused.stderr)
         self.assertIn('  %s: migrated and ready under maintenance; stale: a later operation, %s, followed it'
                       % (operations[0].name, operations[2].name), refused.stderr)
         status = self.release('status')
@@ -1006,7 +1007,9 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertIn('Stale open operation: %s: migrated and ready under maintenance\n'
                       '  stale: a later operation, %s, followed it; never picked without its name\n'
                       % (operations[0].name, operations[2].name), status.stdout)
-        self.assertIn('Maintenance is on, but no operation is the current one', status.stdout)
+        self.assertIn('  maintenance is on, but no operation is the current one: find out what turned it on', status.stdout)
+        self.assertNotIn('to deploy', status.stdout)  # deploy would refuse under maintenance.
+        self.assertNotIn('to back out', status.stdout)
         self.assertIn('  stale operations are never picked', status.stdout)
         self.assertNotIn('restore %s' % operations[0].name, status.stdout)
         self.assertNotIn('wlxjury-release reopen', status.stdout.split('Next:')[1])

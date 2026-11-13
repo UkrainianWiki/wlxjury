@@ -393,7 +393,7 @@ $(printf '  %s\n' "${matches[@]##*/}")"
 }
 
 deploy() {
-  local zip=$1 sha=${2,,} backup=$3 allow_jobs=$4 top manifest build want have release previous unit sum
+  local zip=$1 sha=${2,,} backup=$3 allow_jobs=$4 top manifest build want have release previous unit sum size free
   local -a entries active=() config_files
   # The hash comes with the build, by another channel than the ZIP. A prefix is checked against the
   # ZIP's whole hash; 16 hex characters (64 bits) leave no practical way to make another ZIP match.
@@ -409,6 +409,10 @@ deploy() {
   # Everything up to the maintenance flag changes nothing: checks run on a staging copy. The ZIP
   # is copied into it first, and only that root-only copy is hashed and unpacked, so a ZIP in a
   # folder others can write to can't be swapped between the check and the unpacking.
+  size=$(stat -L -c %s -- "$zip") || die "cannot read $zip"
+  free=$(df --output=avail -B1 "$ROOT/releases" | tail -1 | tr -d ' ')
+  [ "$free" -ge $((MIN_FREE + size)) ] ||
+    die "less than $((MIN_FREE + size)) bytes (the reserve and the ZIP's copy) free at $ROOT/releases; nothing was changed"
   staging=$(mktemp -d "$ROOT/releases/.staging.XXXXXX")
   cp -- "$zip" "$staging/release.zip" || die "cannot copy $zip"
   sum=$(zip_sha256 "$staging/release.zip") || die "cannot read the copy of $zip"
@@ -421,6 +425,7 @@ deploy() {
   if grep -q '^l' "$staging/listing"; then die "ZIP contains symlinks"; fi
   mkdir "$staging/unpacked"
   unzip -q "$staging/release.zip" -d "$staging/unpacked"
+  rm -f "$staging/release.zip"  # Its space is the dump's.
   entries=("$staging/unpacked"/*)
   if [ "${#entries[@]}" != 1 ] || [ ! -d "${entries[0]}" ]; then
     die "ZIP must have one top-level directory"
@@ -975,8 +980,8 @@ pick_operation() {  # pick_operation COMMAND: sets pick to the current operation
     operation_state "$dir" named
     list+="  $(basename "$dir"): $state; stale: $(stale_reason "$dir")"$'\n'
   done
-  die "no open operation is the current one, so $1 picks none; nothing was changed. Open but stale," \
-      "left open by an earlier operation; investigate (docs/deployment.md, \"Recovery runbook\") before naming one:
+  die "no open operation is the current one, so $1 picks none; nothing was changed. These open operations" \
+      "are stale; investigate each (docs/deployment.md, \"Recovery runbook\") before naming one:
 ${list%$'\n'}"
 }
 
@@ -986,12 +991,19 @@ describe_operation() {  # describe_operation DIR: its releases and milestones
 }
 
 lock_held() {  # The deployment lock is held, from /proc/locks: status must never take it.
-  local inode
-  inode=$(stat -c %i "$ROOT/deployment.lock" 2>/dev/null) || return 1
+  # /proc/locks names the file as MAJOR:MINOR:INODE, major and minor in hex ("1: FLOCK  ADVISORY
+  # WRITE 1234 08:01:INODE 0 EOF"); stat gives st_dev, which glibc's encoding splits as below. In a
+  # PID namespace other than the host's (a container), /proc/locks hides locks whose owner isn't
+  # visible there, such as the one flock(1) takes for this script and then exits; on the host
+  # every lock shows.
+  local info dev inode key
+  info=$(stat -c '%d %i' "$ROOT/deployment.lock" 2>/dev/null) || return 1
+  dev=${info% *} inode=${info#* }
+  [[ $dev =~ ^[0-9]+$ && $inode =~ ^[0-9]+$ ]] || return 1
   [ -r /proc/locks ] || return 1
-  # Lines like "1: FLOCK  ADVISORY  WRITE 1234 08:01:INODE 0 EOF".
-  awk -v suffix=":$inode" '{ for (i = 1; i <= NF; i++) if (length($i) > length(suffix) &&
-         substr($i, length($i) - length(suffix) + 1) == suffix) found = 1 } END { exit !found }' /proc/locks
+  key=$(printf '%02x:%02x:%s' "$(( ((dev >> 8) & 0xfff) | ((dev >> 32) & ~0xfff) ))" \
+                              "$(( (dev & 0xff) | ((dev >> 12) & ~0xff) ))" "$inode")
+  awk -v key="$key" '{ for (i = 1; i <= NF; i++) if ($i == key) found = 1 } END { exit !found }' /proc/locks
 }
 
 status() {
@@ -1037,10 +1049,6 @@ status() {
     echo "  stale: $(stale_reason "$dir"); never picked without its name"
     describe_operation "$dir"
   done
-  if [ -z "$pick" ] && [ -e "$FLAG" ]; then
-    echo "Maintenance is on, but no operation is the current one: wlxjury-deploy, a stale operation or" \
-         "someone by hand turned it on. Find out which before removing $FLAG."
-  fi
   echo "Next:"
   if [ -n "$held" ]; then
     echo "  an operation is running: wait for it to finish, then run sudo wlxjury-release status again"
@@ -1051,9 +1059,16 @@ status() {
       echo "  stale operations are never picked: investigate each (docs/deployment.md, \"Recovery runbook\");" \
            "commands for one need its name"
     fi
-    echo "  to deploy: sudo wlxjury-release deploy [RELEASE.zip] SHA256"
+    if [ -e "$FLAG" ]; then
+      # deploy refuses under maintenance, and backing out is no answer to a flag nobody explained.
+      echo "  maintenance is on, but no operation is the current one: find out what turned it on" \
+           "(wlxjury-deploy, a stale operation or someone by hand) and finish that first; remove $FLAG" \
+           "only knowingly, once the app is ready and nothing is migrating or restoring"
+    else
+      echo "  to deploy: sudo wlxjury-release deploy [RELEASE.zip] SHA256"
+    fi
     # Backing out makes sense only for the newest operation, while its candidate is the current release.
-    if [ -n "$last" ] && [ "$last" = "$newest" ] && [ -n "$current" ] &&
+    if [ ! -e "$FLAG" ] && [ -n "$last" ] && [ "$last" = "$newest" ] && [ -n "$current" ] &&
        [ "$(realpath -m -- "$(record_of "$last" candidate)" 2>/dev/null)" = "$current" ]; then
       if grep -qx backup-skipped "$last/milestones" 2>/dev/null; then
         echo "  to back out $name (switches the release back, keeps the data): sudo wlxjury-release restore $name"
