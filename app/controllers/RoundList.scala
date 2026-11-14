@@ -156,8 +156,8 @@ object ListOrder {
 }
 
 /** How a list is shown: as a gallery (a binary round's tiles to vote on, a rated round's
-  * thumbnails with their stars), by rate, as a file list, as CSV, or as the organisers'
-  * comments report (its page and its CSV).
+  * thumbnails with their stars), by rate, as a file list, as CSV, or as the comments report
+  * (its page, the organisers' and a juror's of their own list, and its CSV, the organisers' only).
   *
   * @param name its path's first segment (`/gallery/...`), and a large view URL's `module`
   */
@@ -165,7 +165,8 @@ sealed abstract class GalleryView(val name: String) {
 
   /** The comments report ([[GalleryView.Comments]], [[GalleryView.CommentsCsv]]): only the files
     * with comments in its scope ([[CommentScope]]), with them; for those who may view the
-    * round's organiser info (`User.canViewOrgInfo`) only.
+    * round's organiser info (`User.canViewOrgInfo`), and its page for a juror's own list too
+    * (all the contest's comments, as their large view shows them; GalleryController).
     */
   def comments: Boolean = false
 }

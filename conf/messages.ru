@@ -489,7 +489,7 @@ comments.count.few = {0} комментария
 comments.count.many = {0} комментариев
 comments.count.other = {0} комментария
 comment.round.other = Написано в раунде {0}
-# отчёт организаторов о комментариях (вид списка раунда, GalleryView.Comments)
+# отчёт о комментариях (вид списка раунда, GalleryView.Comments; организаторов, а также собственного списка члена жюри)
 comments.report.scope = Какие комментарии
 comments.report.scope.round = Этого раунда
 comments.report.scope.contest = Всех раундов конкурса
