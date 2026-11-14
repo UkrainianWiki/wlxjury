@@ -11,7 +11,8 @@ import scala.util.Using
 
 /** One QueryPlanSpec run (docs/plans/2026-11-13-query-plan-checks.md, §5 P1), in order:
   *  1. its own container, every migration, the seed; ANALYZE;
-  *  2. the snapshot injected and read back; the juror scenarios captured;
+  *  2. the snapshot injected and read back; the juror scenarios captured, and the organizer's
+  *     round statistics (PlanScenarios.organizer);
   *  3. the snapshot injected again, every captured vote shape EXPLAINed rebound to the corner: R1, R3;
   *  4. the canary: V100's four indexes back, ANALYZE, the named shapes EXPLAINed with the real
   *     statistics (recorded: the seed size's measure), the snapshot injected and read back, the
@@ -90,7 +91,7 @@ final class QueryPlanRun(val rules: Rules, val server: String) {
       inject(c, "before the scenarios")
       StatementCapture.reset()
       StatementCapture.install()
-      scenarios = PlanScenarios.juror(corner)
+      scenarios = PlanScenarios.juror(corner) ++ PlanScenarios.organizer(corner)
     }
     val jurorShapes = voteShapes()
     timed("explain (V100)") {

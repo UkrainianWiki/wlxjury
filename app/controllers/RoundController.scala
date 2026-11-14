@@ -566,13 +566,43 @@ class RoundController @Inject() (
               onUnAuthorized(user, request, Secured.Denial.round(round, User.ADMIN_ROLES ++ User.ORG_COM_ROLES))
             } else {
               val stat = roundsService.getRoundStat(roundId, round, withDeletedFiles = true)
+              // the link to the comments report, with its header's numbers (one statement, inline)
+              val comments = org.intracer.wmua.CommentJdbc.roundCounts(round.contestId, round.getId)
 
-              Secured.switchingContest(sessionUser, user)(Ok(views.html.roundStat(user, round, stat)))
+              Secured.switchingContest(sessionUser, user)(Ok(views.html.roundStat(user, round, stat, comments)))
             }
           }
           .getOrElse {
             NotFound(views.html.errorPage(Some(sessionUser), "error.title", "error.round.not.found"))
           }
+    }
+
+  /** The counts of the round statistics page's links to the round's authors and its conflicts
+    * of interest ([[RoundStatLinks.counts]]), as JSON for the page's script (roundstat-counts.js):
+    * numbers only. Its JDBC (a grouped pass over the round's files, 0.1-0.6 s on 22-29k files)
+    * runs on the blocking pool; sent by script, it never switches the session's contest. The
+    * round is checked in its own contest ([[Secured.inContest]]), for each of the three links: a
+    * refusal of any refuses the whole request (JSON 403, logged), never a partial answer. No
+    * round: JSON 404.
+    */
+  def roundStatCounts(roundId: Long): EssentialAction =
+    withAuthJsonOn(blocking)() { sessionUser => implicit request =>
+      Round.findById(roundId).fold[Result](NotFound(Json.obj("error" -> "round_not_found"))) { round =>
+        val user = Secured.inContest(sessionUser, round.contestId)
+        if (!RoundStatLinks.mayView(user, round))
+          onUnAuthorizedJson(user, request, Secured.Denial.round(round, User.ADMIN_ROLES ++ User.ORG_COM_ROLES))
+        else {
+          val counts = RoundStatLinks.counts(round)
+          Ok(
+            Json.obj(
+              "authors" -> counts.authors,
+              "withoutAuthor" -> counts.withoutAuthor,
+              "conflicts" -> counts.conflicts,
+              "disqualified" -> counts.disqualified
+            ) ++ counts.history.fold(Json.obj())(n => Json.obj("history" -> n))
+          )
+        }
+      }
     }
 
   //  def byRate(roundId: Int) = withAuth({
