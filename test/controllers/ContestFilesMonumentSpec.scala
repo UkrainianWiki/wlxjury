@@ -9,8 +9,8 @@ import scalikejdbc._
 import services.imports.DeletedFiles
 
 /** The contest files page's monument filter (`monument=`, decision D8 of 2026-11-13), and the
-  * page as the contest's jurors get it (decision D9): the files not deleted on Commons, without
-  * tabs, deleted files, a round's, the conflicts of interest or any author.
+  * page refused to the contest's jurors (the maintainer's decision of 2026-11-14, reversing D9):
+  * they browse within their round, whose lists take the monument filter.
   */
 class ContestFilesMonumentSpec extends PlaySpecification with PlayTestDb {
 
@@ -63,12 +63,6 @@ class ContestFilesMonumentSpec extends PlaySpecification with PlayTestDb {
 
   private def script(path: String, user: User)(implicit app: Application) =
     route(app, request(path, user).withHeaders("X-Requested-With" -> "XMLHttpRequest")).get
-
-  /** The page without the request's own URL, which its forms and links keep to come back
-    * (`returnTo`): what a juror typed in it is no data of the page's.
-    */
-  private def shown(page: String): String =
-    page.replaceAll("""name="returnTo" value="[^"]*"""", "").replaceAll("""returnTo=[^"]*""", "")
 
   private def tiles(page: String): List[Long] =
     """data-pageId="(\d+)"""".r.findAllMatchIn(page).map(_.group(1).toLong).toList
@@ -130,99 +124,42 @@ class ContestFilesMonumentSpec extends PlaySpecification with PlayTestDb {
 
   "the contest files page for the contest's jurors" should {
 
-    "show the files not deleted on Commons, without tabs, deleted files or authors" in {
+    "refuse the contest's juror: page, large view, regions and countries" in {
       testDbApp { implicit app =>
         val f = fixture()
-        val (code, page) = get(f.base, f.juror)
-        code === OK
-        tiles(page) === List(1L, 3L, 4L, 5L, 6L)
-        page must contain("""<p id="file-count" class="mb-2">All files (5)</p>""")
-        page must not contain "file-tabs"
-        page must not contain "coi-tab"
-        page must not contain "Deleted on Commons"
-        page must not contain "authors-link"
-        page must not contain "import-files"
-        page must not contain "data-deleted"
-        page must not contain Author
-        page must not contain "HiddenOther"
-        // the region menu's counts leave the deleted file out, and name no author
-        val (counts, json) = regionCounts(page, f.juror)
-        counts === Map("07" -> 4, "14" -> 1)
-        json must not contain Author
-        // the organizers' counts are the deleted file's too
-        regionCounts(get(f.base, f.organizer)._2, f.organizer)._1 === Map("07" -> 5, "14" -> 1)
+        // the pages: the 403 page with its reference, no file of the contest named, and the
+        // suggestion of the juror's round's gallery; the session's contest not switched
+        Seq(f.base, s"${f.base}?monument=07-101-0001", s"${f.base}/1", s"${f.base}/1?monument=07-101-0001").map { path =>
+          val result = route(app, request(path, f.juror)).get
+          val page = contentAsString(result)
+          (path, status(result), page.contains("Reference"), tiles(page), (1 to 6).exists(n => page.contains(s"F$n.jpg")),
+            page.contains(s"/gallery/round/${f.round}/user/${f.juror.getId}/page/1"),
+            session(result).get(Secured.CurrentContestId))
+        } === Seq(f.base, s"${f.base}?monument=07-101-0001", s"${f.base}/1", s"${f.base}/1?monument=07-101-0001")
+          .map(path => (path, FORBIDDEN, true, Nil, false, true, None))
+        // the menus, a script's: JSON 403 with a reference, no region or file
+        Seq(s"${f.base}/regions", s"${f.base}/countries", s"${f.base}/regions?monument=07-101-0001").map { path =>
+          val result = script(path, f.juror)
+          (status(result), (contentAsJson(result) \ "error").asOpt[String], (contentAsJson(result) \ "reference").asOpt[String].nonEmpty,
+            contentAsString(result).contains("regions"))
+        } === Seq.fill(3)((FORBIDDEN, Some("forbidden"), true, false))
       }
     }
 
-    "ignore the deleted files, a round's, the conflicts of interest and an author for them" in {
+    "refuse a juror of several contests another of theirs, without switching the session's contest" in {
       testDbApp { implicit app =>
         val f = fixture()
-        Seq("deleted=true", s"round=${f.round}", "coi=true", s"author=$Author", s"author=$Author&coi=true&deleted=true")
-          .map { q =>
-            val (code, page) = get(s"${f.base}?$q", f.juror)
-            (q, code, tiles(page), shown(page).contains(Author), page.contains("author-filter"), page.contains("coi-people"))
-          } === Seq("deleted=true", s"round=${f.round}", "coi=true", s"author=$Author", s"author=$Author&coi=true&deleted=true")
-          .map(q => (q, OK, List(1L, 3L, 4L, 5L, 6L), false, false, false))
-        // no author in the menus' JSON either, whatever is asked
-        val regions = script(s"${f.base}/regions?author=$Author&coi=true", f.juror)
-        status(regions) === OK
-        contentAsString(regions) must not contain Author
-      }
-    }
-
-    "filter by monument for them, without the deleted files" in {
-      testDbApp { implicit app =>
-        val f = fixture()
-        val (code, page) = get(s"${f.base}?monument=07-101-0001&author=$Author", f.juror)
-        code === OK
-        tiles(page) === List(1L, 5L) // the author ignored, the deleted file left out
-        page must contain("Monument: 07-101-0001 (2)")
-        shown(page) must not contain Author
-      }
-    }
-
-    "open a file's large view without its author, with its monument's link; not a deleted file's" in {
-      testDbApp { implicit app =>
-        val f = fixture()
-        DB.autoCommit { implicit s =>
-          MonumentJdbc.batchInsert(Seq(org.scalawiki.wlx.dto.Monument(page = "Lists", id = "07-101-0001", name = "Castle")))
-        }
-        val (code, large) = get(s"${f.base}/1", f.juror)
-        code === OK
-        large must not contain Author
-        large must contain(s"""id="monument-page" href="/monuments/id/07-101-0001?contest=${f.contest.getId}"""")
-        // the deleted file's view goes to the list
-        val deleted = route(app, request(s"${f.base}/2", f.juror)).get
-        status(deleted) === SEE_OTHER
-        redirectLocation(deleted) must beSome(f.base)
-        // the next file skips it
-        large must contain(s"""href="${f.base}/3"""")
-        large must not contain s"""href="${f.base}/2""""
-      }
-    }
-
-    "count their regions from the category's cached counts, as a full count would, and page a region" in {
-      testDbApp { implicit app =>
-        val f = fixture()
-        val before = RegionCountCache.loads.get
-        val (_, page) = get(f.base, f.juror)
-        val (counts, _) = regionCounts(page, f.juror)
-        RegionCountCache.loads.get === before + 1 // the cache, read once, not a full count per menu
-        val categoryId = f.contest.categoryId.orElse(ContestJuryJdbc.findById(f.contest.getId).flatMap(_.categoryId)).get
-        counts === ImageJdbc.regionCounts(ImageJdbc.FileList.Category(categoryId, deletedOnly = false,
-          excluded = ImageJdbc.categoryDeletedIds(categoryId)))
-        counts === Map("07" -> 4, "14" -> 1)
-        val (_, region) = get(s"${f.base}?region=07", f.juror)
-        tiles(region) === List(1L, 3L, 4L, 5L)
-      }
-    }
-
-    "count their regions the same with the cache switched off" in {
-      implicit val cfg: Map[String, String] = Map("regions.countCache" -> "false")
-      testDbApp { implicit app =>
-        SharedTestDb.truncateAll() // a per-test app doesn't
-        val f = fixture()
-        regionCounts(get(f.base, f.juror)._2, f.juror)._1 === Map("07" -> 4, "14" -> 1)
+        val both = stranger() // a juror of contest 30, the session's
+        UserContestJdbc.createMembership(both.getId, f.contest.getId, "jury")
+        val result = route(app, request(f.base, both).withSession(Secured.UserName -> both.email,
+          Secured.CurrentContestId -> "30")).get
+        status(result) === FORBIDDEN
+        tiles(contentAsString(result)) === Nil
+        session(result).get(Secured.CurrentContestId) must not(beSome(f.contest.getId.toString))
+        val regions = route(app, request(s"${f.base}/regions", both).withSession(Secured.UserName -> both.email,
+          Secured.CurrentContestId -> "30").withHeaders("X-Requested-With" -> "XMLHttpRequest")).get
+        status(regions) === FORBIDDEN
+        session(regions).get(Secured.CurrentContestId) must not(beSome(f.contest.getId.toString))
       }
     }
 
@@ -239,24 +176,6 @@ class ContestFilesMonumentSpec extends PlaySpecification with PlayTestDb {
           Seq(status(route(app, request(f.base, u)).get), status(route(app, request(s"${f.base}/1", u)).get),
             status(script(s"${f.base}/regions", u)))
         } === Seq.fill(6)(FORBIDDEN)
-      }
-    }
-
-    "let a juror of several contests open another of theirs, switching the session's contest to it" in {
-      testDbApp { implicit app =>
-        val f = fixture()
-        val both = stranger() // a juror of contest 30, the session's
-        UserContestJdbc.createMembership(both.getId, f.contest.getId, "jury")
-        val result = route(app, request(f.base, both).withSession(Secured.UserName -> both.email,
-          Secured.CurrentContestId -> "30")).get
-        status(result) === OK
-        tiles(contentAsString(result)) === List(1L, 3L, 4L, 5L, 6L) // the juror's page: no deleted file
-        session(result).get(Secured.CurrentContestId) must beSome(f.contest.getId.toString)
-        // its menus, a script's request: allowed in that contest, the session left as it is
-        val regions = route(app, request(s"${f.base}/regions", both).withSession(Secured.UserName -> both.email,
-          Secured.CurrentContestId -> "30").withHeaders("X-Requested-With" -> "XMLHttpRequest")).get
-        status(regions) === OK
-        session(regions).get(Secured.CurrentContestId) must not(beSome(f.contest.getId.toString)) // still 30
       }
     }
 

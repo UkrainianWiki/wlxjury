@@ -5,14 +5,14 @@ import modules.BlockingExecutionContext
 import org.intracer.wmua.ContestJury
 import org.scalawiki.wlx.dto.Monument
 import play.api.i18n.I18nSupport
-import play.api.mvc.{ControllerComponents, EssentialAction}
+import play.api.mvc.{ControllerComponents, EssentialAction, RequestHeader}
 import services.GalleryService
 
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import javax.inject.Inject
 
-/** A monument's page (the maintainer's decisions D5-D9 of 2026-11-13), which a file's monument
+/** A monument's page (the maintainer's decisions D5-D8 of 2026-11-13), which a file's monument
   * card in the large views links: the monument as its Wikipedia list has it (name, place, id,
   * year, type), its list row, Commons category and Wikidata item, and, in the contest and round
   * the file was seen in, its files there as counts with links ([[MonumentPage.InContest]]).
@@ -51,36 +51,44 @@ class MonumentController @Inject() (
 
 object MonumentController {
 
+  /** The roles of a contest whose active members may see the monument's files there: those who
+    * see its galleries (its admins, organizers and jurors; root).
+    */
+  val ContextRoles: Set[String] = User.ADMIN_ROLES ++ User.ORG_COM_ROLES ++ User.JURY_ROLES
+
   /** The monument's files in the contest and the round, where `user` may see them:
     *
     *   - the contest (`contestId`, else the round's): only if the user is an active member of it
-    *     who may open its files page ([[User.mayOpenContestFiles]]: its admins, organizers and
-    *     jurors; root), checked as the user in that contest ([[Secured.inContest]]). Its files of
-    *     the monument as the files page lists them for the user: all of them for those who see
-    *     the organizers' page ([[User.canViewContestFiles]]), only those not deleted on Commons
-    *     for a juror;
+    *     with a role that sees its galleries ([[ContextRoles]]; root), checked as the user in that
+    *     contest ([[Secured.inContest]]). Its files of the monument only for those who may open the
+    *     contest files page ([[User.canViewContestFiles]]: its admins and organizers; root), which
+    *     it links; a juror browses within their round only (the maintainer's decision of
+    *     2026-11-14), so their contest count is None, not shown;
     *   - the round: only one of that contest the user may view ([[GalleryService.mayViewRound]]:
     *     a juror's own active rounds). Its files of the monument: those any juror has for those
     *     who see the round's organizer views ([[User.canViewOrgInfo]]), else only the user's own
-    *     ([[ImageJdbc.roundMonumentFileCount]]): never how many files others have.
+    *     ([[ImageJdbc.roundMonumentFileCount]]): never how many files others have. It links the
+    *     round's list with the monument: the viewer's own gallery for a juror
+    *     ([[RoundList.landing]]: their own id, never 0), all the jurors' votes for the others.
     *
     * None without a contest the user may see this way: the page shows no files then.
     */
   def context(user: User, monumentId: String, contestId: Option[Long], roundId: Option[Long],
-      galleryService: GalleryService): Option[MonumentPage.InContest] = {
+      galleryService: GalleryService)(implicit request: RequestHeader): Option[MonumentPage.InContest] = {
     val round = roundId.flatMap(Round.findById).filter(r => contestId.forall(_ == r.contestId))
     for {
       cid <- contestId.orElse(round.map(_.contestId))
       member = Secured.inContest(user, cid)
-      if member.mayOpenContestFiles(cid)
+      if member.hasContestRole(ContextRoles, Some(cid))
       contest <- ContestJuryJdbc.findById(cid)
     } yield {
-      val full = member.canViewContestFiles(cid)
-      val files = contest.categoryId.map(ImageJdbc.categoryMonumentFiles(_, monumentId, liveOnly = !full).size)
+      val files = Option.when(member.canViewContestFiles(cid))(
+        contest.categoryId.map(ImageJdbc.categoryMonumentFiles(_, monumentId).size)).flatten
       val inRound = round.filter(galleryService.mayViewRound(member, _)).map { r =>
         val own = !member.canViewOrgInfo(r)
+        val list = (if (own) RoundList.landing(r, member) else RoundList(r, 0)).withMonument(Some(monumentId))
         MonumentPage.InRound(r, ImageJdbc.roundMonumentFileCount(r.getId, monumentId, Option.when(own)(member.getId)),
-          own)
+          own, list.pageUrl(1))
       }
       MonumentPage.InContest(contest, files, inRound)
     }
@@ -115,8 +123,8 @@ final case class MonumentPage(monument: Monument, context: Option[MonumentPage.I
 
 object MonumentPage {
 
-  /** The monument's files in a contest: their number as the contest files page lists them for
-    * the user (None: the contest has no category), and in a round.
+  /** The monument's files in a contest: their number as the contest files page lists them (None:
+    * the contest has no category, or the user may not open that page, a juror), and in a round.
     */
   final case class InContest(contest: ContestJury, files: Option[Int], round: Option[InRound]) {
 
@@ -125,8 +133,10 @@ object MonumentPage {
       routes.GalleryController.contestFiles(contest.getId, monument = Some(monumentId)).url
   }
 
-  /** The monument's files in a round: those any juror has, or only the user's own (`own`). */
-  final case class InRound(round: Round, files: Int, own: Boolean)
+  /** The monument's files in a round: those any juror has, or only the user's own (`own`), and
+    * the round's list with only them for the user (`listUrl`).
+    */
+  final case class InRound(round: Round, files: Int, own: Boolean, listUrl: String)
 
   /** The host of the monument lists: uk.wikipedia, the only lists imported
     * ([[services.imports.MonumentListImportHandler]], Ukrainian contests only), as the monument

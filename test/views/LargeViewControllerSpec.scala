@@ -99,6 +99,34 @@ class LargeViewControllerSpec extends PlaySpecification {
         }
     }
 
+    "keep the monument filter in its keys' and stars' votes and moves, all by paths" in {
+      implicit val request = play.api.test.FakeRequest("GET", "/").withCSRFToken
+      implicit val messages = Helpers.stubMessagesApi().preferred(request)
+      implicit val flash: Flash = Flash()
+
+      val files = Seq(1L, 2L, 3L).map(id => ImageWithRating(Image(pageId = id, title = s"File:$id.jpg"), votes = Nil))
+      val round = Round(id = Some(1), number = 1, contestId = 1, active = true, rates = Round.ratesById(5))
+      val user = User("name", "email", id = Some(1), roles = Set("jury"), contestId = Some(1))
+      val list = RoundList(round, asUserId = 1, filter = VoteFilter.Unrated, order = ListOrder.FileOrder)
+        .withMonument(Some("07-101-0'01"))
+      val hood = Neighbourhood(files, 1, 1)
+      val doc = Jsoup.parse(contentAsString(views.html.large.main_large(user = user, list = list, readOnly = false,
+        hood = hood)(views.html.large.navigationButtons(user, list, hood, 0.0, readOnly = false))))
+      val stars = doc.getElementById("rate-image")
+      val keys = doc.getElementById("large-keys")
+      val monument = "monument=07-101-0%2701"
+      val urls = (keys.attributes.asScala.toSeq ++ stars.attributes.asScala.toSeq)
+        .filter(a => a.getKey.startsWith("data-key-") || a.getKey.startsWith("data-vote-key-"))
+        .map(_.getValue)
+      (stars.attr("data-vote-query") must_== s"?filter=unrated&$monument&sort=file") and
+        (keys.attr("data-vote-key-1") must startWith("/large/round/1/pageid/2/select/1?")) and
+        (keys.attr("data-vote-key-1") must contain(monument)) and
+        (urls must not(beEmpty)) and
+        (urls.filterNot(u => u.startsWith("/") && !u.startsWith("//")) must beEmpty) and
+        // the moves to the files before and after keep the filter
+        (doc.select("[data-nav=up], [data-nav=down]").asScala.map(_.attr("href")).forall(_.contains(monument)) must beTrue)
+    }
+
     "keep the binary order of all the jurors' votes in its links" in {
       implicit val request = play.api.test.FakeRequest("GET", "/").withCSRFToken
       implicit val messages = Helpers.stubMessagesApi().preferred(request)

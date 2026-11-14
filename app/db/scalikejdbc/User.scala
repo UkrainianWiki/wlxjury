@@ -113,19 +113,11 @@ case class User(
       hasRole(User.ROOT_ROLE)
 
   /** Whether the user may browse the contest's files, those deleted on Commons too
-    * ([[controllers.GalleryController.contestFiles]]): its admins and organizers.
+    * ([[controllers.GalleryController.contestFiles]]): its admins and organizers, and root; never
+    * its jurors, who browse within their rounds (the maintainer's decision of 2026-11-14).
     */
   def canViewContestFiles(refContestId: Long): Boolean =
     hasContestRole(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(refContestId))
-
-  /** Whether the user may open the contest files page at all ([[User.ContestFilesRoles]]): those
-    * who [[canViewContestFiles]], and the contest's jurors, who get only the files not deleted on
-    * Commons: no deleted files, no round's, no conflicts of interest and no authors
-    * ([[controllers.GalleryController.contestFiles]]). The monument page links it for them
-    * ([[controllers.MonumentController]]).
-    */
-  def mayOpenContestFiles(refContestId: Long): Boolean =
-    hasContestRole(User.ContestFilesRoles, Some(refContestId))
 
   /** Whether the user may see the authors of the contest's files: their names and links, the
     * contest files page's author filter ([[controllers.GalleryController.contestFiles]]'s
@@ -186,10 +178,6 @@ object User extends CRUDMapper[User] {
   val ADMIN_ROLES = Set(ADMIN_ROLE, ROOT_ROLE)
   /** Who may open a round's conflicts of interest page ([[User.canViewRoundConflicts]]). */
   val RoundConflictsRoles: Set[String] = ADMIN_ROLES ++ ORG_COM_ROLES
-  /** Who may open the contest files page ([[User.mayOpenContestFiles]]): its admins and
-    * organizers, and its jurors (a narrower page: no deleted files, no authors).
-    */
-  val ContestFilesRoles: Set[String] = ADMIN_ROLES ++ ORG_COM_ROLES ++ JURY_ROLES
   val USER_ID_PREFIX = "USER_ID_"
   /** The edit form's "no role": a member of the contest without access to it. */
   val NO_ROLE = "no"

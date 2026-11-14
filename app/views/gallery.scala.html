@@ -24,6 +24,7 @@
 
             @* the page's title, for screen readers: the navbar shows where it is *@
             <h1 class="visually-hidden">@Messages("gallery")</h1>
+            @snippets.monumentFilter(list, pager.count)
             @large.voteMoved(list)
 
         @* a vote on a tile (ug-theme-tiles.js) sends the session's CSRF token; a failed one shows

@@ -40,7 +40,7 @@ A role belongs to a membership: one account, one contest.
 
 | Role | What it can do |
 |---|---|
-| **Juror** | Votes in the rounds it is a juror of. Can open the contest's files from a [monument's page](organizer-guide.md#o-monuments), without the deleted files or any author. |
+| **Juror** | Votes in the rounds it is a juror of, and sees only its own files there (a monument's files too, from a [monument's page](organizer-guide.md#o-monuments)). Doesn't open the contest's files page. |
 | **Organizer** | Reads the statistics, the results of all jurors, the contest's files and the conflicts page, and may comment on the files of an open round. Changes nothing else. |
 | **Admin** | Everything an organizer does, and manages the contest: its people, rounds and files. |
 | **Board**, **Audit committee**, **Staff** | No access to the contest's pages. These roles record that a person belongs to the contest, so that their own photos count as [conflicts of interest](organizer-guide.md#o-conflicts). |

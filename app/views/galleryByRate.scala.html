@@ -69,6 +69,7 @@
 
             @* the page's title, for screen readers: the navbar shows where it is *@
             <h1 class="visually-hidden">@Messages("byrate")</h1>
+            @snippets.monumentFilter(list, pager.count)
             @large.voteMoved(list)
 
             @* a changed rate keeps the file's place and rank until a reload orders the list again:

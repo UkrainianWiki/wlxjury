@@ -619,15 +619,17 @@ round's jurors see these, is ignored (no form ever set it; dropped by the multi-
 migration). Judging is still not anonymous: a file's Commons page, which the large view links
 to, names its author. *Why:* votes and authors are the organizers' information.
 
-The contest's jurors may open the contest files page (`User.ContestFilesRoles`, the maintainer's
-decision D9 of 2026-11-13), a narrower one: `GalleryController.contestFilesView` drops
-`deleted`, `round` and `coi` for anyone without `User.canViewContestFiles` and leaves out the
-files deleted on Commons; every author surface there (the card, the chip, the authors list, the
-conflicts of interest) checks `User.canViewAuthors`. The monument page
+Jurors don't open the contest files page, its large view or its region and country menus: all
+four take `contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, …)`, the set of
+`User.canViewContestFiles` (the maintainer's decision of 2026-11-14, which reverses D9 of
+2026-11-13). A juror browses only within their round. The monument page
 (`MonumentController.context`) counts files only for an active member of the contest
-(`Secured.inContest`) and a round `mayViewRound` allows, a juror's round count from their own
-vote rows only, never `round_image` totals or others' rows (`ContestFilesMonumentSpec`,
-`MonumentControllerSpec`).
+(`Secured.inContest`) whose role sees galleries, the contest's count only for
+`canViewContestFiles`, and a round's only where `mayViewRound` allows: a juror's round count and
+the gallery it links come from their own vote rows only, never `round_image` totals or others'
+rows. A round list's monument filter (`RoundList.monument`, `monument=`) only narrows a list the
+viewer may already see, after `viewAs`; its value is bound in every statement, never put into the
+SQL text (`ContestFilesMonumentSpec`, `MonumentControllerSpec`, `RoundListMonumentSpec`).
 
 **Rule: conflicts of interest and lobbying.** The tool shows a round's jurors and votes only
 under the rules above, never to a participant without a role in the contest, so an author can't

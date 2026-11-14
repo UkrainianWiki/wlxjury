@@ -10,9 +10,11 @@ import play.api.test.Helpers._
 import scalikejdbc._
 import services.imports.DeletedFiles
 
-/** The monument page (decisions D5-D9 of 2026-11-13): the public list data for every signed-in
+/** The monument page (decisions D5-D8 of 2026-11-13): the public list data for every signed-in
   * user; the monument's files in a contest and round only where the user may see them, checked
-  * server-side; never an author or another juror's files. And the monuments' entry.
+  * server-side; never an author or another juror's files. A juror gets the round line only, linking
+  * their own gallery with the monument (the maintainer's decision of 2026-11-14). And the
+  * monuments' entry.
   */
 class MonumentControllerSpec extends Specification with PlayTestDb {
 
@@ -84,6 +86,10 @@ class MonumentControllerSpec extends Specification with PlayTestDb {
     """(?s)<dd class="col-sm-10" id="monument-files">(.*?)</dd>""".r.findFirstMatchIn(body)
       .map(_.group(1).replaceAll("<[^>]*>", "").replace("&rarr;", "→").replaceAll("\\s+", " ").trim)
 
+  /** The round line's link: the round's list with only the monument's files; None without one. */
+  private def roundLink(body: String): Option[String] =
+    """<a id="monument-round-files" href="([^"]*)"""".r.findFirstMatchIn(body).map(_.group(1).replace("&amp;", "&"))
+
   private def contestQuery(f: Fixture, round: Option[Long] = None) =
     s"?contest=${f.contest.getId}" + round.fold("")(r => s"&round=$r")
 
@@ -148,40 +154,60 @@ class MonumentControllerSpec extends Specification with PlayTestDb {
       }
     }
 
-    "count the contest's and the round's files for organizers, admins and root, linking the contest's" in {
+    "count the contest's and the round's files for organizers, admins and root, linking the contest's and all the jurors' list" in {
       testDbApp { implicit app =>
         val f = fixture()
-        val expected = Some("In the contest: 3 → · In round Main: 2")
+        val expected = Some("In the contest: 3 → · In round Main: 2 →")
         Seq(f.organizer, f.admin, f.root).map(u => files(page(u, contestQuery(f, Some(f.round))))) === Seq.fill(3)(expected)
-        page(f.organizer, contestQuery(f, Some(f.round))) must
-          contain(s"""id="monument-contest-files" href="/contest/${f.contest.getId}/files?monument=07-101-0001"""")
+        val body = page(f.organizer, contestQuery(f, Some(f.round)))
+        body must contain(s"""id="monument-contest-files" href="/contest/${f.contest.getId}/files?monument=07-101-0001"""")
+        // the round's list of all the jurors' votes (0), in its default order, with the monument
+        roundLink(body) must beSome(s"/gallery/round/${f.round}/user/0/page/1?monument=07-101-0001&sort=rate")
         // the round alone gives its contest
         files(page(f.organizer, s"?round=${f.round}")) === expected
       }
     }
 
-    "count only a juror's own files in the round, and the contest's not deleted on Commons" in {
+    "count only a juror's own files in the round, linking their gallery; no contest count" in {
       testDbApp { implicit app =>
         val f = fixture()
         val body = page(f.juror, contestQuery(f, Some(f.round)))
-        files(body) === Some("In the contest: 2 → · In round Main: 1 (yours)")
-        body must contain(s"""href="/contest/${f.contest.getId}/files?monument=07-101-0001"""")
+        files(body) === Some("In round Main: 1 (yours) →")
+        // their own gallery (their id, never 0), in their order, with the monument
+        roundLink(body) must beSome(s"/gallery/round/${f.round}/user/${f.juror.getId}/page/1?monument=07-101-0001&sort=file")
+        body must not contain "monument-contest-files"
+        // no link to the contest files page anywhere on a juror's page
+        body must not contain "/contest/"
         body must not contain Author
-        files(page(f.juror2, contestQuery(f, Some(f.round)))) === Some("In the contest: 2 → · In round Main: 1 (yours)")
-        files(page(f.juror2, contestQuery(f, Some(f.otherRound)))) === Some("In the contest: 2 → · In round Other: 1 (yours)")
+        files(page(f.juror2, contestQuery(f, Some(f.round)))) === Some("In round Main: 1 (yours) →")
+        roundLink(page(f.juror2, contestQuery(f, Some(f.round)))) must
+          beSome(s"/gallery/round/${f.round}/user/${f.juror2.getId}/page/1?monument=07-101-0001&sort=file")
+        files(page(f.juror2, contestQuery(f, Some(f.otherRound)))) === Some("In round Other: 1 (yours) →")
+      }
+    }
+
+    "show a juror's round without the monument's files as a count without a link" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val (code, body) = get(s"/monuments/id/99-101-0001${contestQuery(f, Some(f.round))}", f.juror)
+        code === OK
+        files(body) === Some("In round Main: 0 (yours)")
+        roundLink(body) must beNone
+        body must not contain "monument=99-101-0001"
       }
     }
 
     "leave out a round the juror isn't in, a round of another contest, and an unknown one" in {
       testDbApp { implicit app =>
         val f = fixture()
-        // the juror isn't in the other round: no count of its files
-        files(page(f.juror, contestQuery(f, Some(f.otherRound)))) === Some("In the contest: 2 →")
+        // the juror isn't in the other round: no count of its files, and no contest count for a
+        // juror, so no files row at all
+        files(page(f.juror, contestQuery(f, Some(f.otherRound)))) === None
         files(page(f.organizer, contestQuery(f, Some(f.foreignRound)))) === Some("In the contest: 3 →")
         files(page(f.organizer, contestQuery(f, Some(999999L)))) === Some("In the contest: 3 →")
         // a round being created is hidden from its jurors
         DB.autoCommit { implicit s => sql"UPDATE round SET distributing = 1 WHERE id = ${f.round}".update() }
-        files(page(f.juror, contestQuery(f, Some(f.round)))) === Some("In the contest: 2 →")
+        files(page(f.juror, contestQuery(f, Some(f.round)))) === None
       }
     }
 
@@ -194,7 +220,8 @@ class MonumentControllerSpec extends Specification with PlayTestDb {
         files(page(stranger, s"?round=${f.round}")) === None
         files(page(f.organizer, "?contest=999999")) === None
         files(page(f.organizer, s"?round=${f.foreignRound}")) === None
-        files(page(f.juror, s"?contest=${f.contest.getId}&round=${f.foreignRound}")) === Some("In the contest: 2 →")
+        files(page(f.juror, s"?contest=${f.contest.getId}&round=${f.foreignRound}")) === None
+        files(page(f.juror, s"?contest=${f.contest.getId}")) === None
       }
     }
 
@@ -211,16 +238,20 @@ class MonumentControllerSpec extends Specification with PlayTestDb {
       }
     }
 
-    "count in another of a juror's contests than the session's, without switching to it" in {
+    "count in another of a juror's contests than the session's, the round line only, without switching to it" in {
       testDbApp { implicit app =>
         val f = fixture()
         val both =
           userDao.create(User("both", "both@example.com", None, Set("jury"), contestId = createContests(30).head.id))
         UserContestJdbc.createMembership(both.getId, f.contest.getId, "jury")
+        Round.findById(f.round).get.addUsers(Seq(RoundUser(f.round, both.getId, "jury", active = true)))
+        selectionDao.create(1L, rate = 0, juryId = both.getId, roundId = f.round)
         val result = route(app, FakeRequest(GET, s"/monuments/id/$Id${contestQuery(f, Some(f.round))}")
           .withSession(Secured.UserName -> both.email, Secured.CurrentContestId -> "30")).get
         status(result) === OK
-        files(contentAsString(result)) === Some("In the contest: 2 →")
+        files(contentAsString(result)) === Some("In round Main: 1 (yours) →")
+        roundLink(contentAsString(result)) must
+          beSome(s"/gallery/round/${f.round}/user/${both.getId}/page/1?monument=07-101-0001&sort=file")
         session(result).get(Secured.CurrentContestId) must not(beSome(f.contest.getId.toString)) // still 30
       }
     }
@@ -267,6 +298,35 @@ class MonumentControllerSpec extends Specification with PlayTestDb {
           contain(s"""id="monument-page" href="/monuments/id/07-101-0001?contest=${f.contest.getId}&amp;round=${f.round}">Monument 07-101-0001 &rarr;</a>""")
         views.html.large.monumentInfo(image, monument).body must
           contain("""id="monument-page" href="/monuments/id/07-101-0001">""")
+      }
+    }
+
+    "carry the round line: a link into the list, the only file's text, a minimal card without a monument row" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val monument = MonumentJdbc.find(Id)
+        implicit val messages: play.api.i18n.Messages = play.api.i18n.MessagesImpl(play.api.i18n.Lang("en"),
+          app.injector.instanceOf[play.api.i18n.MessagesApi])
+        implicit val request: play.api.mvc.Request[Any] = FakeRequest()
+        implicit val flash: play.api.mvc.Flash = play.api.mvc.Flash()
+        val image = Image(1, "File:F1.jpg", None, None, 800, 600, monumentId = Some(Id))
+        val linked = views.html.large.monumentInfo(image, monument, f.contest.id, Some(f.round),
+          Some(MonumentLine(Id, 3, Some("/gallery/round/1/user/2/page/1?monument=07-101-0001&sort=file")))).body
+        linked must contain("""<a id="monument-round-list" href="/gallery/round/1/user/2/page/1?monument=07-101-0001&amp;sort=file"""")
+        linked must contain("This monument in the list (3) &rarr;")
+        linked must contain("""id="monument-page"""")
+        val only = views.html.large.monumentInfo(image, monument, f.contest.id, Some(f.round), Some(MonumentLine(Id, 1, None))).body
+        only must contain("""<span id="monument-round-list">The only file of this monument in the list</span>""")
+        // a monument without a row: its id and the line, no monument page (a 404 without a row)
+        val bare = Image(9, "File:F9.jpg", None, None, 800, 600, monumentId = Some("07-101-9999"))
+        val minimal = views.html.large.monumentInfo(bare, None, f.contest.id, Some(f.round),
+          Some(MonumentLine("07-101-9999", 2, Some("/x")))).body
+        minimal must contain("""id="monument-card"""")
+        minimal must contain("Monument 07-101-9999")
+        minimal must contain("This monument in the list (2)")
+        minimal must not contain "monument-page"
+        // no row and no line: no card
+        views.html.large.monumentInfo(bare, None, f.contest.id, Some(f.round)).body must not contain "monument-card"
       }
     }
   }

@@ -79,6 +79,7 @@
 @main("comments", user, list.asUserId, Some(round), rounds, gallery = false, Some(list), pagerNav(pager, list.pageUrl), rates,
     filters = views.html.regionMenu(regionMenu)) {
 
+    @snippets.monumentFilter(list, pager.count)
     <div class="wlx-comments-report">
         <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
             <h1 class="h5 mb-0 me-3">@Messages("comments") <span class="text-body-secondary fw-normal" id="comments-report-count">· @views.CommentCount.files(pager.count), @commenterName.fold(views.CommentCount.label(commentTotal))(name => Messages("comments.report.count.commenter", views.CommentCount.label(commentTotal), name))</span></h1>

@@ -15,7 +15,8 @@
         jurorCriteria: org.intracer.wmua.JurorCriteria = org.intracer.wmua.JurorCriteria.empty,
         commentCounts: Map[Long, Int] = Map.empty,
         commentRounds: Map[Long, String] = Map.empty,
-        showsCommentRounds: Boolean = true)(
+        showsCommentRounds: Boolean = true,
+        monumentLine: Option[MonumentLine] = None)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 
     @defining(list.round) { round =>
@@ -28,6 +29,20 @@
             <div class="row h-100">
                 <div class="col-1 large-side">
 
+                    @* while the list has only one monument's files, a compact chip says so: the next and
+                       previous files and the votes stay among them; its × shows this file in the list of
+                       all monuments *@
+                    @for(monumentId <- list.monument) {
+                        <div id="monument-filter" class="mb-1">
+                            <span class="badge rounded-pill text-bg-secondary fw-normal monument-chip text-wrap text-start">
+                                @Messages("monument.filter.chip.short", monumentId)
+                                <a id="monument-filter-remove" class="link-light text-decoration-none ms-1"
+                                   href="@list.withMonument(None).largeUrl(hood.file.pageId)"
+                                   title="@Messages("monument.filter.remove")" aria-label="@Messages("monument.filter.remove")">&times;</a>
+                            </span>
+                        </div>
+                    }
+
                     @* the viewed juror's name, beside their read-only vote: one juror's votes as the
                        organisers view them, whose list of votes has the juror; none without a name *@
                     @navigationButtons(user, list, hood, score, criteria, readOnly,
@@ -39,7 +54,7 @@
                         @if(user.canViewOrgInfo(round)){
                             @authorInfo(image, round.contestId)
                         }
-                        @monumentInfo(image, monument, Some(round.contestId), round.id)
+                        @monumentInfo(image, monument, Some(round.contestId), round.id, monumentLine)
                         @fullSizeUrl(image, round)
                         @juryStat(votes, list, jurorCriteria)
                     }
