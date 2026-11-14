@@ -136,7 +136,7 @@ class CriteriaResultsViewSpec extends PlaySpecification {
       noScript(doc, html)
     }
 
-    "list each juror's vote with its stars per criterion and its rates of the criteria" in {
+    "list each juror's vote with its stars per criterion, their number and sum, and its rates of the criteria" in {
       val a = User("Juror A", "a@example.org", id = Some(11), roles = Set("jury"), contestId = Some(1))
       val b = User("<b>Juror B</b>", "b@example.org", id = Some(12), roles = Set("jury"), contestId = Some(1))
       val votes = Seq(Vote(301, 11, 1, 14, id = Some(91)) -> a, Vote(301, 12, 1, 0, id = Some(92)) -> b)
@@ -147,9 +147,12 @@ class CriteriaResultsViewSpec extends PlaySpecification {
       // 14 over 2 criteria: 7 of 10 stars, the sum after them
       lines.head.select("i.wlx-star").size === 10
       lines.head.select("i.bi-star-fill").size === 7
+      // the number the stars show, then the sum beside it, labelled (Q1)
+      lines.head.select(".rate-stars").text() === "7.00 (Σ 14)"
       lines.head.select(".wlx-criteria-rates li").asScala.map(_.text) === Seq("Quality: 8", s"$xss: 6")
       // a partly rated vote: unrated (U5), its rated criterion shown
       lines(1).select("i.bi-star-fill").size === 0
+      lines(1).select(".rate-stars").text() === "0"
       lines(1).select(".wlx-criteria-rates li").asScala.map(_.text) === Seq("Quality: –", s"$xss: 3")
       html must not(contain("<b>Juror B</b>"))
       noScript(doc, html)

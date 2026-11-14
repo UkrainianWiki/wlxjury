@@ -39,8 +39,11 @@ new contest in the contest menu at the top of the page.
 On the sign-in page, type your email address (or your wiki user name, if your contest admin
 set one for you) and your password, then press **Sign in**.
 
-**Keep me signed in** is ticked by default. Untick it on a shared computer: you are then
-signed out when you close the browser.
+**Keep me signed in** is ticked by default. On a shared computer, untick it and choose
+**Logout** before you leave (see [Signing out](#signing-out)): closing the browser may not sign
+you out, because some browsers restore the session when they start again. Setting your password
+from an invitation or a link also signs you in and keeps you signed in, as if the box were
+ticked.
 
 If the tool says **Invalid user or password**, check both and try again. If you have forgotten
 your password, ask your contest admin for a link to set a new one.
@@ -66,6 +69,8 @@ password form. If you don't see these buttons, only the password works there.
 These buttons sign you in to the jury account you already have. They never create one. If the
 tool says **No jury account matches this account**, ask your contest admin to invite you, or sign
 in with your password and link the account on your profile, as the next paragraphs describe.
+They keep you signed in, whether **Keep me signed in** is ticked or not: on a shared computer,
+choose **Logout** before you leave.
 
 Google sign-in finds your account by itself only for a Gmail or Google Workspace address. For
 another address, accept the invitation first, then link Google on your profile. After that you
@@ -74,6 +79,10 @@ can sign in with it.
 To link an account, open your **Profile** from the person icon at the top right. Under
 **Linked accounts**, press **Link** next to Google or Wikimedia. **Unlink** removes the link
 again and signs out your other sessions.
+
+Setting a new password from a link (or accepting an invitation) unlinks your Google and
+Wikimedia accounts. To use them again, sign in with the new password and link them again on
+your profile.
 
 When you link a Wikimedia account and your jury account has no wiki account yet, a page
 **Set your wiki account** asks whether to use that Wikimedia user name. Press **Use it** to

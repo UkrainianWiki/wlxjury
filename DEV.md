@@ -3,6 +3,22 @@
 Install JDK 17 and sbt, start a MariaDB (10.6 or 10.11), and set `WLXJURY_DB_HOST`,
 `WLXJURY_DB`, `WLXJURY_DB_USER` and `WLXJURY_DB_PASSWORD`.
 
+The app creates the tables (Flyway migrations), not the database or its user. Create them once
+as MariaDB's root, with the names and password of those variables (here `wlxjury`):
+
+```sql
+CREATE DATABASE wlxjury CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+CREATE USER 'wlxjury'@'localhost' IDENTIFIED BY 'your-password';
+GRANT ALL PRIVILEGES ON wlxjury.* TO 'wlxjury'@'localhost';
+```
+
+If MariaDB runs in a container, or with `skip_name_resolve`, the app's connection doesn't come
+from `localhost`: create the user and grant to `'wlxjury'@'%'` (or the client's host or address)
+instead.
+
+`sbt run` refuses to start while migrations are pending, as a new database's are: start it as
+`sbt -Ddb.default.migration.auto=true run` to apply them (`db.Migrations`).
+
 scalawiki `0.7.0-SNAPSHOT` must be published locally first: `build.sbt` resolves it from
 `~/.ivy2/local` (or `~/.m2`), not from a repository. Check out `UkrainianWiki/scalawiki` at the
 commit in `project/scalawiki.sha` and run, in that checkout,

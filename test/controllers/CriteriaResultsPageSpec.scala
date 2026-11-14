@@ -144,7 +144,7 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
         val result = get(app, f.organizer, csv(f, 0))
         status(result) === OK
         val rows = csvRows(result)
-        rows.head === Seq("Rank", "File", "Overall", "Scientific value", "'" + hostileName, "Juror 1", "Juror 2", "Juror 3")
+        rows.head === Seq("Rank", "File", "Overall (sum of the criteria)", "Scientific value", "'" + hostileName, "Juror 1", "Juror 2", "Juror 3")
         val byTitle = rows.tail.map(r => r(1) -> r).toMap
         byTitle("File:Image0.jpg").drop(2) === Seq("14.50 (29 / 2)", "7.00", "7.50", "14", "15", "0")
         byTitle("File:Image1.jpg").drop(3) === Seq("5.00", "5.00", "10", "0", "0")
@@ -227,7 +227,7 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
         head.slice(3, 5) === Seq("Scientific value", hostileName)
         rows("File:Image0.jpg").slice(3, 5) === Seq("8.00", "6.00")
         val csvResult = csvRows(get(app, f.juror1, csv(f, f.juror1.getId)))
-        csvResult.head === Seq("Rank", "File", "Overall", "Scientific value", "'" + hostileName, "Juror 1")
+        csvResult.head === Seq("Rank", "File", "Overall (sum of the criteria)", "Scientific value", "'" + hostileName, "Juror 1")
         csvResult.tail.map(r => r(1) -> r.drop(3)).toMap === Map(
           "File:Image0.jpg" -> Seq("8.00", "6.00", "14"),
           "File:Image1.jpg" -> Seq("5.00", "5.00", "10"))
