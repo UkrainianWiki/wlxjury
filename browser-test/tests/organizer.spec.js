@@ -53,7 +53,8 @@ test.describe('an admin', () => {
     const posts = [];
     page.on('request', (r) => { if (r.method() === 'POST') posts.push(r.url()); });
     await page.getByRole('link', { name: 'Cancel' }).click();
-    await expect(page).toHaveURL(/\/admin\/rounds/);
+    // the rounds list, not the form (/admin/rounds/edit) it started on
+    await expect(page).toHaveURL((url) => url.pathname === '/admin/rounds');
     expect(posts, 'Cancel saves nothing').toEqual([]);
     await page.goto(form);
     await expect(page.getByLabel('Round name (optional)')).toHaveValue('Yes/No Round');

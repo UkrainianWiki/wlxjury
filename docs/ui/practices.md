@@ -117,8 +117,9 @@ performance §1.7.
 **5.2 Browser checks.** `--checks` runs `ui_checks.py` after the shots: a vote by key in the large
 view of both rounds, then Back, shows the stored vote; the large view's side sections are drawn in
 their stored state from the first frame. The browser tests (testing §10) run these checks, and
-more, in one current build of each engine on every PR; `--checks` stays as the harness's quick
-check in Chrome.
+more, in one current build of each engine on every PR, except the side sections' first frame:
+they enforce the restore by DOMContentLoaded, and the first-frame check is `fixme` there (U18).
+`--checks` stays as the harness's quick check in Chrome.
 
 **5.3 Every release:** the manual UI checks (the `auto` screenshots looked at, Back after a vote
 in Safari, category suggestions against live Commons) are in the

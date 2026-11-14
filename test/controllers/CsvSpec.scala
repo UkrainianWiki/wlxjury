@@ -88,9 +88,9 @@ class CsvSpec extends Specification {
       ImageWithRating(Image(11, "File:b.jpg"), Seq(Vote(11, 1, 0, rate = 0), Vote(11, 2, 0, rate = 0))))
     val averages = Map(10L -> Map(1L -> BigDecimal(7), 7L -> BigDecimal("7.5")))
 
-    "have each criterion's average after Overall, empty where none, the juror columns the sums (U8)" in {
+    "have each criterion's average after Overall, labelled the sum of the criteria (Q1), empty where none, the juror columns the sums (U8)" in {
       Csv.exportRates(files, jurors, round, criteria = criteria, averages = averages) === Seq(
-        Seq("Rank", "File", "Overall", "Quality", "Composition", "Juror1", "Juror2"),
+        Seq("Rank", "File", "Overall (sum of the criteria)", "Quality", "Composition", "Juror1", "Juror2"),
         Seq("1", "File:a.jpg", "14.50 (29 / 2)", "7.00", "7.50", "14", "15"),
         Seq("2", "File:b.jpg", "0", "", "", "0", "0")
       )

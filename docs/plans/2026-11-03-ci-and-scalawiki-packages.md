@@ -381,12 +381,12 @@ The two scalawiki diffs (`publishing.diff`, `anonymous-tests.diff`) both change 
 
 ## Open questions
 
-1. **Which commit gets the first tag?** *Superseded 2026-11-04:* on top of `java17` and the publishing branch (see "First release" above). The earlier recommendation: `0.7.0-M1` on `25951dbe` (page-categories head, the code wlxjury runs against now). Then merge page-categories into scalawiki `master` and cut later releases from `master`. A tag doesn't need its commit on `master`. Until then, CI depends on `25951dbe` staying reachable on GitHub (fetched by SHA). Tag it (`0.7.0-M1`, or a plain `wlxjury-ci-pin` tag), so a force-push or branch deletion in scalawiki can't break wlxjury's CI.
+1. **Which commit gets the first tag?** *Superseded 2026-11-04:* on top of `java17` and the publishing branch (see "First release" above). The earlier recommendation: `0.7.0-M1` on `25951dbe` (page-categories head, the code wlxjury runs against now). Then merge page-categories into scalawiki `master` and cut later releases from `master`. A tag doesn't need its commit on `master`. Until then, CI depends on `25951dbe` staying reachable on GitHub (fetched by SHA). Tag it with a plain `wlxjury-ci-pin` tag, so a force-push or branch deletion in scalawiki can't break wlxjury's CI; not with `0.7.0-M1`, which goes on top of `java17` and the publishing branch.
 2. ~~Should the CI file go at the bottom of the stack?~~ **Decided:** on top, as PR [55]. #184–#237 get no CI.
 3. **Rerun PRs when their base changes (`pull_request` type `edited`)?** *Recommendation:* no. The rebase push after a lower PR merges reruns it anyway, and `edited` also fires on title and description edits.
 4. ~~MariaDB 10.11 in CI?~~ **Decided:** only on pushes to master and weekly, until the move to 24.04 makes it the default.
 5. ~~Publish snapshots?~~ **Decided:** no, only tags.
-6. **JDK for scalawiki's publish: 11, like its CI, or 17, like wlxjury?** *Recommendation:* 11, matching the tested CI. The bytecode targets 8 either way. Move both together later.
+6. **JDK for scalawiki's publish: 11, like its CI, or 17, like wlxjury?** *Superseded 2026-11-04:* 17. With the Java 17 baseline (see "First release" above) the `java17` branch compiles with `-release:17`, which JDK 11 can't build, and its CI tests on JDK 17 and 21; the drafted `publish.yml` runs on 17. The earlier recommendation: 11, matching the then tested CI, the bytecode targeting 8 either way.
 7. ~~Remove the dead resolvers?~~ **Decided:** yes. wlxjury's are removed in [55]; scalawiki's go in its own PR (A3).
 8. ~~Keep `appveyor.yml`?~~ **Decided:** delete it once Actions is green, in a follow-up PR (scalawiki's in A3). wlxjury's was deleted in the Java 17 batch (2026-11-04).
 

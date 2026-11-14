@@ -157,11 +157,18 @@
       */
     def worstMarksText(count: Int): String = s" — worst marks: $count"
 
+    /** A criteria round's "Overall": the jurors' sums of the criteria, averaged, beside each
+      * criterion's own average, so the header says so (criteria rounds, Q1). In English, as the
+      * rest of the header is.
+      */
+    val CriteriaOverall = "Overall (sum of the criteria)"
+
     /** The juror names, criteria names (an admin's fallback text, [[org.intracer.wmua.Criterion]])
       * and file titles here are user text: [[writeRow]] neutralises them.
       */
     private def header(jurors: Seq[User], criteria: Seq[(Long, String)]): Seq[String] =
-      Seq("Rank", "File", "Overall") ++ criteria.map(_._2) ++ jurors.map(_.fullname)
+      Seq("Rank", "File", if (criteria.isEmpty) "Overall" else CriteriaOverall) ++ criteria.map(_._2) ++
+        jurors.map(_.fullname)
 
     /** A file's row; a criterion's average empty where no juror rated the file in all the
       * criteria (U5).
