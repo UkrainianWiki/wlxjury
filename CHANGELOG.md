@@ -138,7 +138,8 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   **Comments** menu: **All files**, **Only with comments (N)** and **Recent comments list (N)**,
   a choice with no file greyed out; the report's order menu moves into the bar. Organizers,
   admins and root get the same two menus (counts only in one juror's view, from 1700 pixels;
-  the bar stays on one line from 1280 pixels in Ukrainian), their view menu no longer lists the
+  the bar stays on one line from 1280 pixels in Ukrainian, its page links icons below 1920
+  pixels and a long juror name cut short), their view menu no longer lists the
   report (the **Comments** menu opens it with all rounds' comments), and their own files in the
   round are one **My votes** link instead of a second set of tabs. The monument and author
   chips move into the filters, compact (the id or the name, **↗** to the page, **×**). The file

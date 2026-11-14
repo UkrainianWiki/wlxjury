@@ -39,6 +39,18 @@ body.gallery {
     min-width: 0;
 }
 
+/* the organisers' juror menu (navbar.scala.html, dropDownSelection's truncate): a long name cut
+   with an ellipsis, whole in the toggle's title, so the results bar keeps its pager on its line
+   with the Votes menu's counts from 1700 px */
+.wlx-nav-truncate {
+    display: inline-block;
+    max-width: 12rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+}
+
 /* the list's monument and author in the navbar's filter group (navbar.scala.html monumentChip,
    authorChip): a long author's name cut with an ellipsis, whole in its title */
 .wlx-filter-chip .wlx-chip-name {
@@ -551,6 +563,24 @@ li.gallerybox .wlx-comment-badge, .ug-thumb-wrapper.ug-tile .wlx-tile-comments {
     .wlx-nav-results .wlx-nav-icon { display: inline-block; }
     .wlx-nav-results .wlx-nav-label,
     .wlx-nav-results .wlx-nav-count {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+}
+
+/* The results bar's page links (navbar.scala.html wlx-nav-links: up to five for an admin) stay
+   icons up to 1920 px: from 1700 px the Votes menu shows its counts, and an admin's bar with a
+   long juror name keeps its pager on its line only so (browser-test navbar.spec.js) */
+@media (max-width: 1919.98px) {
+    .wlx-nav-results .wlx-nav-links .wlx-nav-icon { display: inline-block; }
+    .wlx-nav-results .wlx-nav-links .wlx-nav-label {
         position: absolute;
         width: 1px;
         height: 1px;

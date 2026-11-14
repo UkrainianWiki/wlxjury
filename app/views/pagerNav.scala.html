@@ -1,7 +1,8 @@
 @(pager: Pager, pageUrl: Int => String)(implicit messages: Messages)
-@* The pager in the navbar (main.scala.html's pager), if there is more than one page *@
+@* The pager in the navbar (main.scala.html's pager), if there is more than one page: its own
+   group there, apart from the others by the groups' gap (navbar.scala.html) *@
 @if(pager.display) {
-    <li class="nav-item mx-2 my-1">
+    <li class="nav-item my-1">
         @pageLinks(pager, pageUrl)
     </li>
 }

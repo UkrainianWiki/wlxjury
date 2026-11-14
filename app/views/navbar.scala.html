@@ -369,13 +369,13 @@
         @if(staffBar(round)) {
             @roundMenu(l)
 
-            @* Select user *@
+            @* Select user: a long name cut short, so the bar keeps its pager on its line *@
             @(new UiSelectionDto[Long](
                 { userId: Long => Call("GET", l.withViewer(userId).pageUrl(1)) },
                 asUserId,
                 User.findRoundJurorsToView(round.getId).map(u => (u.getId, SelectionItem(u.fullname, localized = false))),
                 Some(0L -> SelectionItem("all"))
-            ).toDropDown())
+            ).toDropDown(id = Some("juror-menu"), truncate = true))
 
             @votesMenu(l, staff = true)
             @commentsMenu(l)

@@ -128,11 +128,12 @@ The votes menu is the jurors' own: **All**, **Unrated**, **Selected** and **Reje
 round **All**, **Unrated** and **Rated**), keeping the region and the other filters. In a single
 juror's view each choice has its count, and on **All** the button adds how many of the juror's
 files in the list are unrated (**All (900) · 40 unrated**); the view of **All** jurors has no
-counts. In a window narrower than about 1700 pixels, this bar shows the pages as icons (photos, people,
-a stack, a bar chart, a person with a check), the votes menu without its counts, the **Comments**
-menu as a speech bubble and a single juror's order menu as a sort icon, and the region menu shows
-only the chosen place, without the word "Region" (or "Country"); point at an icon to see its
-name. The bar and its pager stay on one line from 1280 pixels.
+counts. In a window narrower than about 1920 pixels, this bar shows the pages as icons (photos,
+people, a stack, a bar chart, a person with a check); narrower than about 1700 pixels also the
+votes menu without its counts, the **Comments** menu as a speech bubble and a single juror's order
+menu as a sort icon, and the region menu shows only the chosen place, without the word "Region"
+(or "Country"); point at an icon to see its name. A long juror name is cut short (point at it to
+see it whole). The bar and its pager stay on one line from 1280 pixels.
 
 **My votes** opens your own gallery of the round, where you vote as a juror; it is there only if
 you have files of your own in the round.

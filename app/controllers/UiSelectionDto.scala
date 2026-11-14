@@ -25,11 +25,12 @@ class UiSelectionDto[T](val itemUrlFunction: T => Call,
   /** The menu; `compactIcon`: in the organisers' crowded results bar, its toggle that icon below
     * 1700 px, the current item's text read by screen readers and shown as a tooltip, so the bar
     * stays on one line (dropDownSelection.scala.html, main.css). `id`: the menu's element id;
-    * `label`: what the menu is, read before the current item by screen readers only. */
+    * `label`: what the menu is, read before the current item by screen readers only; `truncate`: a
+    * long current item cut with an ellipsis, whole in the toggle's title. */
   def toDropDown(iconOnly: Boolean = false, compactIcon: Option[String] = None, id: Option[String] = None,
-      label: Option[String] = None)(implicit messages: Messages): Html =
+      label: Option[String] = None, truncate: Boolean = false)(implicit messages: Messages): Html =
     views.html
-      .dropDownSelection(this.asInstanceOf[UiSelectionDto[Any]], iconOnly, compactIcon, id, label)
+      .dropDownSelection(this.asInstanceOf[UiSelectionDto[Any]], iconOnly, compactIcon, id, label, truncate)
 }
 
 object UiSelectionDto {

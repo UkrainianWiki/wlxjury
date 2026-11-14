@@ -214,6 +214,9 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
         // the counts compact below 1700 px (main.css wlx-nav-count), read by screen readers
         one.select("#votes-menu > button .wlx-nav-count").size === 2
         one.select("nav").hasClass("wlx-nav-results") must beTrue
+        // the juror's name cut short if long, whole in the title
+        one.select("#juror-menu .wlx-nav-truncate").text === "Juror"
+        one.select("#juror-menu > button").attr("title") === "Juror"
         val all = page(app, f.organizer, gallery(f.round, 0))
         counts(all) === Seq("All" -> None, "Unrated" -> None, "Selected" -> None, "Rejected" -> None)
         NavMenus.button(all, "votes-menu") === Some("Votes: All")
@@ -243,7 +246,7 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
         staff.select(".wlx-nav-filters").hasClass("border-start") must beTrue
         staff.select(".wlx-nav-order").hasClass("border-start") must beTrue
         staff.select(".wlx-nav-filters > li").asScala.map(li => Option(li.id).filter(_.nonEmpty).getOrElse(li.className)).toList must
-          containTheSameElementsAs(List("nav-item dropdown", "nav-item dropdown", "votes-menu", "comments-menu"))
+          containTheSameElementsAs(List("nav-item dropdown", "juror-menu", "votes-menu", "comments-menu"))
         val juror = page(app, f.juror, gallery(f.round, f.juror.getId))
         groups(juror) === Seq("wlx-nav-filters", "wlx-nav-order")
         juror.select(".wlx-nav-groups > ul").asScala.map(_.attr("aria-label")).toList === List("Filters", "Sorting and view")
