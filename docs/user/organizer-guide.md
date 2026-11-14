@@ -23,7 +23,7 @@ a different role in each contest. Roles are explained in the [admin guide](admin
 |---|---|---|---|
 | Vote | on their own files | no | no |
 | Read the statistics, the results of all jurors, the file list and the CSV | no | yes | yes |
-| See the contest's files | without deleted files, authors or the tabs | yes | yes |
+| See the contest's files | no (their own files, in their rounds) | yes | yes |
 | See the conflicts page | no | yes | yes |
 | See the files' authors and the authors list | no | yes | yes |
 | Comment on a file of an open round | their own files | any file of the round | any file of the round |
