@@ -31,11 +31,12 @@
    and menus compact on narrower screens (wlx-nav-results, main.css) to stay on one line *@
 @resultsBar = @{ user != null && selectedRound.exists(r => user.getId != asUserId && user.canViewOrgInfo(r)) }
 
-@* The viewer's own gallery: the page's list if it is that, else where they start in its round;
-   the page's monument filter kept while the list is their own (its tabs count within it) *@
+@* The viewer's own gallery: the page's list if it is that, or their own comments report, whose
+   tabs act on it; else where they start in its round, the page's monument filter and comments
+   toggle kept while the list is their own (its tabs count what they open: decision 2 = A) *@
 @ownList(l: RoundList) = @{
-    if (l.asUserId == user.getId && l.view == GalleryView.Gallery) l
-    else if (l.asUserId == user.getId) RoundList.landing(l.round, user).withMonument(l.monument)
+    if (l.asUserId == user.getId && (l.view == GalleryView.Gallery || l.view == GalleryView.Comments)) l
+    else if (l.asUserId == user.getId) RoundList.landing(l.round, user).withMonument(l.monument).withComments(l.comments)
     else RoundList.landing(l.round, user)
 }
 
@@ -56,7 +57,7 @@
 @* The viewer's own files by their votes, in all regions: all, the unrated, and the selected and
    rejected (a binary round) or the rated; none if the viewer has no files in the round *@
 @ownTabs(l: RoundList) = {
-    @if(rates.all > 0) {
+    @if(rates.hasFiles) {
     @defining(ownList(l).withRegion("all")) { own =>
     @for((filter, name, count) <- Seq((VoteFilter.All, "all", rates.all), (VoteFilter.Unrated, "unrated", rates.unrated)) ++
             (if (l.round.isBinary) Seq((VoteFilter.Rate(1), "selected", rates.selected), (VoteFilter.Rate(-1), "rejected", rates.rejected))
@@ -77,24 +78,32 @@
    the tab, region and view shown (`commented`, given by a round's list page only). Pressed
    (aria-current) when on. Only narrows what the viewer may see: a juror's own files, the
    organisers' views of a juror's or all the jurors' votes. Not in the comments report, which has
-   only such files (GalleryView.comments) *@
+   only such files (GalleryView.comments). While on, "Recent comments" beside it opens the
+   comments report of the same files (RoundList.recentComments: all the contest's comments, by
+   the latest comment), the viewer, tab, region and monument kept *@
 @commentsToggle(l: RoundList) = {
     @for(n <- commented if list.isDefined && !l.view.comments) {
     <li class="nav-item">
         <a class="nav-link wlx-comments-toggle@if(l.comments) { active}" @if(l.comments) {aria-current="true" }href="@l.withComments(!l.comments).pageUrl(1)" title="@Messages("comments.only", n)"><i class="bi bi-chat-left-text" aria-hidden="true"></i> <span class="wlx-nav-label">@Messages("comments.only", n)</span></a>
     </li>
+    @if(l.comments) {
+    <li class="nav-item">
+        <a class="nav-link wlx-comments-report-link" id="comments-report-open" href="@l.recentComments.pageUrl(1)" title="@Messages("comments.report.open")"><i class="bi bi-chat-left-quote" aria-hidden="true"></i> <span class="wlx-nav-label">@Messages("comments.report.open")</span></a>
+    </li>
+    }
     }
 }
 
 @* The order of the viewer's own gallery, if they have files in the round (RoundList.orderChoices):
    in file order, which a vote doesn't change, by their rate, or by when they rated, the latest or
-   the oldest first. On a tab of one rate (selected, rejected: RoundList.oneRate) by rate would
+   the oldest first; not in their own comments report, which has its own order menu (the latest
+   comment first, then these). On a tab of one rate (selected, rejected: RoundList.oneRate) by rate would
    change nothing, so it isn't offered and shows as file order. On the unrated tab only file order
    applies: plain text saying so in the menu's place (navbar-text, a block padded as a nav link, so
    the bar doesn't shift between tabs); the list's links keep the order chosen for the other tabs *@
 @sortMenu(l: RoundList) = {
     @defining(ownList(l)) { own =>
-    @if(rates.all > 0) {
+    @if(rates.hasFiles && !own.view.comments) {
     @if(own.orderChoices.size == 1) {
     <li class="nav-item"><span class="navbar-text d-block px-2 gallery-order-fixed">@Messages("sort.file")</span></li>
     } else {

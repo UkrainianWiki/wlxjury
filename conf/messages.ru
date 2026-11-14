@@ -489,13 +489,16 @@ comments.count.few = {0} комментария
 comments.count.many = {0} комментариев
 comments.count.other = {0} комментария
 comment.round.other = Написано в раунде {0}
-# отчёт организаторов о комментариях (вид списка раунда, GalleryView.Comments)
+# отчёт о комментариях (вид списка раунда, GalleryView.Comments; организаторов, а также собственного списка члена жюри)
 comments.report.scope = Какие комментарии
 comments.report.scope.round = Этого раунда
 comments.report.scope.contest = Всех раундов конкурса
 comments.report.order = Порядок
 sort.latest-comment = Сначала новые комментарии
 comments.report.csv = CSV комментариев
+comments.report.open = Последние комментарии
+comments.report.own.note = Комментарии к вашим файлам этого раунда из всех раундов конкурса — те же, что и в большом просмотре файла.
+comments.report.gallery = Показать в галерее
 comments.report.files.one = {0} файл
 comments.report.files.few = {0} файла
 comments.report.files.many = {0} файлов
