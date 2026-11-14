@@ -15,8 +15,9 @@ import scala.jdk.CollectionConverters._
 /** The navbar's Votes and Comments menus and its groups (the navigation proposal v3, D1-D9):
   * what each menu shows and opens for a juror and for the organisers, the region kept by a Votes
   * choice with counts in it (also in a round of sub-regions), no Votes menu in a comments-only
-  * round, the file list's menus, the staff's "My votes" link, the groups' order, the menus'
-  * buttons and current items, and what a juror's menus never link.
+  * round, the file list's menus, the Pages menu by role, no "My votes" for staff (the
+  * maintainer's decision of 2026-11-14), the groups' order, the menus' buttons and current
+  * items, and what a juror's menus never link.
   */
 class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
 
@@ -30,7 +31,9 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
       juror: User,
       quiet: User,
       organizer: User,
-      orgJuror: User
+      orgJuror: User,
+      admin: User,
+      root: User
   )
 
   /** A yes/no round with the juror on files 1-8: 1-4 in region 12 (selected, unrated, rejected,
@@ -69,7 +72,9 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
       CommentJdbc.create(by.getId, by.fullname, r.getId, Some(a.getId), pageId, "a comment", "2026-11-12T14:05:00+02:00")
     comment(juror, 1)
     comment(organizer, 6)
-    Fixture(a, r, commentsOnly, viaRegia, juror, quiet, organizer, orgJuror)
+    val admin = user("Admin", "admin")
+    val root = userDao.create(User("Root", "root@example.com", None, Set(User.ROOT_ROLE)))
+    Fixture(a, r, commentsOnly, viaRegia, juror, quiet, organizer, orgJuror, admin, root)
   }
 
   private def get(app: Application, viewer: User, path: String): Future[Result] =
@@ -133,6 +138,10 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
         val doc = page(app, f.juror, gallery(f.viaRegia, f.juror.getId, "12"))
         counts(doc) === Seq("All" -> Some(4), "Unrated" -> Some(2), "Selected" -> Some(1), "Rejected" -> Some(1))
         forall(NavMenus.votes(doc).flatMap(_.href))(_ must contain("/region/12/"))
+        // each count is what its choice opens
+        forall(NavMenus.votes(doc)) { item =>
+          page(app, f.juror, item.href.get).select("#gallery img[data-pageId]").size aka item.name must_== item.count.get
+        }
         // in all of them: all the juror's files
         counts(page(app, f.juror, gallery(f.viaRegia, f.juror.getId))) ===
           Seq("All" -> Some(8), "Unrated" -> Some(4), "Selected" -> Some(3), "Rejected" -> Some(1))
@@ -211,11 +220,12 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
         val one = page(app, f.organizer, gallery(f.round, f.juror.getId))
         counts(one) === Seq("All" -> Some(8), "Unrated" -> Some(4), "Selected" -> Some(3), "Rejected" -> Some(1))
         NavMenus.button(one, "votes-menu") === Some("Votes: All (8) · 4 unrated")
-        // the counts compact below 1700 px (main.css wlx-nav-count), read by screen readers
-        one.select("#votes-menu > button .wlx-nav-count").size === 2
+        // the count always shown; the unrated read by screen readers only below 1700 px (main.css wlx-nav-suffix)
+        one.select("#votes-menu > button .wlx-votes-count").text === "(8)"
+        one.select("#votes-menu > button .wlx-nav-suffix").text === "· 4 unrated"
         one.select("nav").hasClass("wlx-nav-results") must beTrue
         // the juror's name cut short if long, whole in the title
-        one.select("#juror-menu .wlx-nav-truncate").text === "Juror"
+        one.select("#juror-menu .wlx-truncate").text === "Juror"
         one.select("#juror-menu > button").attr("title") === "Juror"
         val all = page(app, f.organizer, gallery(f.round, 0))
         counts(all) === Seq("All" -> None, "Unrated" -> None, "Selected" -> None, "Rejected" -> None)
@@ -223,18 +233,26 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "link the staff's own votes as one page link, only if they have files in the round (D6)" in {
+    "count one juror's choices in the region, each what it opens (D5, D8)" in {
+      testDbApp { app =>
+        val f = fixture()
+        val doc = page(app, f.organizer, gallery(f.round, f.juror.getId, "14"))
+        counts(doc) === Seq("All" -> Some(4), "Unrated" -> Some(2), "Selected" -> Some(2), "Rejected" -> Some(0))
+        forall(NavMenus.votes(doc)) { item =>
+          (item.href.get must contain("/region/14/")) and
+            (page(app, f.organizer, item.href.get).select("#gallery img[data-pageId]").size aka item.name must_== item.count.get)
+        }
+      }
+    }
+
+    "have no link to the staff's own votes, which the juror menu lists (no My votes until multi-role)" in {
       testDbApp { app =>
         val f = fixture()
         val own = page(app, f.orgJuror, gallery(f.round, 0))
-        val link = own.selectFirst(".wlx-nav-links #menu-my-votes")
-        link.attr("href") must startWith(gallery(f.round, f.orgJuror.getId))
-        link.text === "My votes"
-        // the last page link, no count, and no second set of vote choices
-        own.select(".wlx-nav-links a.nav-link").asScala.last.id === "menu-my-votes"
+        own.select("#menu-my-votes").size === 0
+        own.select("#juror-menu a.dropdown-item").asScala.map(_.attr("href")).toList must
+          contain(startWith(gallery(f.round, f.orgJuror.getId)))
         own.select("#votes-menu").size === 1
-        page(app, f.organizer, gallery(f.round, 0)).select("#menu-my-votes").size === 0
-        page(app, f.juror, gallery(f.round, f.juror.getId)).select("#menu-my-votes").size === 0
       }
     }
 
@@ -250,6 +268,33 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
         val juror = page(app, f.juror, gallery(f.round, f.juror.getId))
         groups(juror) === Seq("wlx-nav-filters", "wlx-nav-order")
         juror.select(".wlx-nav-groups > ul").asScala.map(_.attr("aria-label")).toList === List("Filters", "Sorting and view")
+      }
+    }
+  }
+
+  "the Pages menu" should {
+
+    "list the pages each role may open, this page's current and on its button" in {
+      testDbApp { app =>
+        val f = fixture()
+        def items(doc: Document) = doc.select("#pages-menu a.dropdown-item").asScala.map(_.id).toList
+        val stat = s"/roundstat/${f.round.getId}"
+        val org = page(app, f.organizer, gallery(f.round, f.juror.getId))
+        val admin = page(app, f.admin, stat)
+        val root = page(app, f.root, gallery(f.round, 0))
+        (items(org) === List("menu-contest-files", "menu-statistics")) and
+          (NavMenus.button(org, "pages-menu") === Some("Go to: Gallery")) and
+          (org.select("#pages-menu [aria-current]").size === 0) and
+          (items(admin) === List("menu-contest-files", "menu-users", "menu-rounds", "menu-statistics")) and
+          (NavMenus.button(admin, "pages-menu") === Some("Go to: Statistics")) and
+          (admin.select("#pages-menu a[aria-current=page]").asScala.map(_.id).toList === List("menu-statistics")) and
+          (admin.selectFirst("#menu-statistics").attr("href") === stat) and
+          (items(root).take(2) === List("menu-contests", "menu-contest-files")) and
+          (items(root) must contain("menu-statistics")) and
+          // the pages menu is the bar's first group, before the filters
+          (org.select(".wlx-nav-groups > ul").first.select("#pages-menu").size === 1) and
+          // a juror has none of these pages: no menu
+          (page(app, f.juror, gallery(f.round, f.juror.getId)).select("#pages-menu, .wlx-nav-links").size === 0)
       }
     }
   }

@@ -297,7 +297,7 @@ and **Last page**.
 To jump to a page, click the numbers in the middle, type a page number in the box, and press
 **Go**.
 
-<img src="images/juror-gallery-top-bar.png" alt="The top bar of a gallery, with the round, votes, comments and region menus, the order menu and the pager" width="1280">
+<img src="images/juror-gallery-top-bar.png" alt="The top bar of a gallery, with tabs, sort menu, region menu and pager" width="1280">
 
 ### Voting in a yes/no round's gallery
 

@@ -122,7 +122,7 @@ class RoundAuthorFilterSpec extends PlaySpecification with PlayTestDb {
         // (D9 of the navigation proposal v3)
         val chip = Jsoup.parse(body).selectFirst(".wlx-nav-filters #author-filter")
         chip.selectFirst(".wlx-chip-text").text === "Author: O'Brien"
-        chip.selectFirst(".wlx-chip-name").attr("title") === "O'Brien"
+        chip.selectFirst(".wlx-truncate").attr("title") === "O'Brien"
         href(body, "author-filter-remove") must beSome(f.gallery(f.juror.getId, "?sort=file"))
         // the list's links keep it: the large views, the filters, the views
         body must contain(s"$Q&amp;sort=file")

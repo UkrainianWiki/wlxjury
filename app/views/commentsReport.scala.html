@@ -12,8 +12,7 @@
         roundNames: Map[Long, String],
         commentTotal: Int,
         commenter: Option[(Long, Option[String])] = None,
-        jurorGalleries: Set[(Long, Long)] = Set.empty,
-        ownFiles: Boolean = false)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+        jurorGalleries: Set[(Long, Long)] = Set.empty)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 @* The comments report of a round's list (GalleryView.Comments): the organisers' of any list, a
    juror's of their own list only (GalleryController refuses the rest; the round filters proposal
@@ -91,7 +90,7 @@
 
 @defining(list.round) { round =>
 @main("comments", user, list.asUserId, Some(round), rounds, gallery = false, Some(list), pagerNav(pager, list.pageUrl), rates,
-    filters = views.html.regionMenu(regionMenu), commented = commented, ownFiles = ownFiles) {
+    filters = views.html.regionMenu(regionMenu), commented = commented) {
 
     <div class="wlx-comments-report">
         <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
@@ -103,7 +102,7 @@
             <div class="btn-group btn-group-sm" role="group" aria-label="@Messages("comments.report.scope")" id="comments-report-scope">
                 @for((scope, key) <- Seq(CommentScope.ThisRound -> "comments.report.scope.round", CommentScope.AllRounds -> "comments.report.scope.contest")) {
                     @defining(list.commentScope == scope) { active =>
-                    <a class="btn btn-outline-secondary@if(active) { active}" @if(active) {aria-current="true" }href="@list.withScope(scope).pageUrl(1)">@Messages(key)</a>
+                    <a class="btn btn-outline-secondary@if(active) { active}" @if(active) {aria-current="page" }href="@list.withScope(scope).pageUrl(1)">@Messages(key)</a>
                     }
                 }
             </div>

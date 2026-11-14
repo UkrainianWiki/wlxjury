@@ -44,7 +44,7 @@ open round, or the latest round if none is open. A contest with no round yet sho
 configured yet**.
 
 - The row of round names above the statistics table switches round.
-- **Contest files** in the top bar opens the contest's files.
+- **Contest files** in the pages menu at the start of the top bar opens the contest's files.
 - The contest menu at the top of the page switches contest, if you are in more than one.
 
 There is no **Rounds** or **Users** menu for you: those are the admins'. The admins create the
@@ -117,26 +117,24 @@ a moment after the page; until then, the links work without them.
 <a id="o-results"></a>
 ### Reading the results
 
-The bar at the top of a round's results has, from left to right, the pages (**Contest files**,
-**Users**, **Rounds**, **Statistics**, and **My votes** when you have files of your own in the
-round), then the filters: the round, the juror (a single juror's votes, or **All**), the votes
-menu, the [**Comments**](#o-comments-filter) menu and the region menu; after a thin line the
-order and the view menu (the **Gallery**, **By rate**, **File list** and **CSV**); then the
-pager. The views of **All** jurors take no votes.
+The bar at the top of a round's results has, from left to right, the pages menu (its button the
+menu icon and the page you are on, for example **Gallery**; its items **Contest files**, for
+admins **Users** and **Rounds**, and **Statistics**; for root also **Contests**), then the
+filters: the round, the juror (a single juror's votes, or **All**), the votes menu, the
+[**Comments**](#o-comments-filter) menu and the region menu; after a thin line the order and the
+view menu (the **Gallery**, **By rate**, **File list** and **CSV**); then the pager. The views of
+**All** jurors take no votes. Your own files in a round, if you have any, are under your name in
+the juror menu.
 
 The votes menu is the jurors' own: **All**, **Unrated**, **Selected** and **Rejected** (in a rated
 round **All**, **Unrated** and **Rated**), keeping the region and the other filters. In a single
 juror's view each choice has its count, and on **All** the button adds how many of the juror's
 files in the list are unrated (**All (900) · 40 unrated**); the view of **All** jurors has no
-counts. In a window narrower than about 1920 pixels, this bar shows the pages as icons (photos,
-people, a stack, a bar chart, a person with a check); narrower than about 1700 pixels also the
-votes menu without its counts, the **Comments** menu as a speech bubble and a single juror's order
-menu as a sort icon, and the region menu shows only the chosen place, without the word "Region"
-(or "Country"); point at an icon to see its name. A long juror name is cut short (point at it to
-see it whole). The bar and its pager stay on one line from 1280 pixels.
-
-**My votes** opens your own gallery of the round, where you vote as a juror; it is there only if
-you have files of your own in the round.
+counts. In a window narrower than about 1700 pixels, the votes menu shows its choice and count
+without the unrated, the **Comments** menu a speech bubble and its count, a single juror's order
+menu a sort icon, and the region menu only the chosen place, without the word "Region" (or
+"Country"); point at an icon to see its name. A long juror name is cut short (point at it to see
+it whole). The bar and its pager stay on one line from 1280 pixels.
 
 You can see a juror's votes only for a juror of that round. Choosing another person's page
 shows the tool's "not found" page.
@@ -151,7 +149,7 @@ large view then moves through those files only. **Recent comments list** opens t
 [comments report](#o-comments-report) of the same files (the juror, votes choice, region and
 monument kept), with all rounds' comments, by the latest comment. The menu's button says
 **Comments (N)**, or, highlighted, **With comments (N)** or **Comments list (N)**; in the view of
-**All** jurors, and below about 1700 pixels, without the number. A choice with no file is greyed
+**All** jurors without the number. A choice with no file is greyed
 out. In the gallery, the by-rate gallery and the large view's **Next files**, a file with
 comments shows a speech bubble with their number. Both count the comments the file's large view
 shows: from any round of the contest, by anyone.
@@ -294,7 +292,7 @@ that a spreadsheet would read as a formula are changed so that they don't run as
 <a id="o-contest-files"></a>
 ### The contest's files
 
-**Contest files** in the top bar shows all the files of the contest in a gallery, with the region
+**Contest files** in the pages menu at the start of the top bar shows all the files of the contest in a gallery, with the region
 menu of a monuments contest, and a large view of each file. It has three tabs:
 
 - **All files**;

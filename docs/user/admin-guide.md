@@ -63,7 +63,7 @@ that contest. Admins manage only the contests in which they are admins.
 <a id="a-users-page"></a>
 ### The users page
 
-Open **Users** in the top bar. The page lists the members of the current contest: **Full name**,
+Open **Users** in the pages menu at the start of the top bar. The page lists the members of the current contest: **Full name**,
 **Wiki account**, **Email**, **Role**, and a pencil to edit. Next to a wiki account there may be
 two buttons that write to the person on Commons, a message on their talk page and an email.
 
@@ -443,7 +443,7 @@ form. After the round's first vote you can only replace a criterion by another i
 <a id="a-rounds-list"></a>
 ### The rounds list
 
-Open **Rounds** in the top bar. The list shows, for each round: its **Number** (a link to the
+Open **Rounds** in the pages menu at the start of the top bar. The list shows, for each round: its **Number** (a link to the
 round form), its **Name**, the **File distribution**, the **Rating type**, whether it is
 **Active** (started), the number of **Images** and the state of its distribution.
 

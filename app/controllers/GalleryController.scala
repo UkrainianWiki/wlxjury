@@ -228,11 +228,6 @@ class GalleryController @Inject() (
     // opens (decision 2 = A): within the monument, author and comments filters and the region
     lazy val rates = if (asUserId == 0) RateDistribution.empty else votesCounts(list, counts, pager.count)
 
-    // the staff's "My votes" link (navbar): whether the viewer has files of their own in the
-    // round, when they view another juror's votes or all of them
-    lazy val ownFiles = !user.id.contains(asUserId) && user.canViewOrgInfo(round) &&
-      galleryService.rateDistribution(user, round).hasFiles
-
     // the Comments menu's number: the list's files with comments, the list's own total when on
     lazy val commented = Some(if (list.comments) pager.count else list.commentedCount())
 
@@ -247,7 +242,7 @@ class GalleryController @Inject() (
     list.view match {
       case GalleryView.Gallery if round.isBinary =>
         Ok(RequestTiming.render(views.html.gallery(user, list, files, pager, rounds, menu, rates, commented,
-          commentCounts(files), ownFiles)))
+          commentCounts(files))))
 
       case GalleryView.Csv =>
         val name = "WLXJury_Round_" + round.description
@@ -272,7 +267,7 @@ class GalleryController @Inject() (
         val commenter = list.commentsBy.map(id => id -> CommentJdbc.authorName(round.contestId, id))
         Ok(RequestTiming.render(views.html.commentsReport(user, withCriteria(list, criteriaResults(list, files)), files,
           pager, rounds, menu, rates, comments, roundNames, list.commentCount(), commenter,
-          if (staff) jurorGalleries(comments.values.flatten.toSeq, rounds) else Set.empty, ownFiles)))
+          if (staff) jurorGalleries(comments.values.flatten.toSeq, rounds) else Set.empty)))
 
       case GalleryView.CommentsCsv =>
         csvStream(Csv.commentRows(list)(blocking), "WLXJury_Round_" + round.description + "_comments")
@@ -282,7 +277,7 @@ class GalleryController @Inject() (
         val showAuthor = user.canViewOrgInfo(round) && files.exists(_.image.author.nonEmpty)
         val criteria = criteriaResults(list, files)
         Ok(views.html.fileList(user, withCriteria(list, criteria), asUser, files, ranks(files), jurors, rounds, menu, pager,
-          "wiki", useTable, rates, showAuthor, criteria, commented, ownFiles))
+          "wiki", useTable, rates, showAuthor, criteria, commented))
 
       case GalleryView.Gallery | GalleryView.ByRate =>
         // a criteria round's stars are per criterion, and its files' criteria averages: read
@@ -291,7 +286,7 @@ class GalleryController @Inject() (
         // the by-rate gallery's ranks among all the list's files, as a file list's; none in file
         // order, which they would not follow (RoundList.ranked)
         Ok(RequestTiming.render(views.html.galleryByRate(user, withCriteria(list, criteria), files, pager, rounds, menu,
-          rates, ranks(files), criteria, commented, commentCounts(files), ownFiles)))
+          rates, ranks(files), criteria, commented, commentCounts(files))))
     }
   }
 
@@ -854,8 +849,8 @@ object RegionMenu {
 }
 
 /** A list's files by the Votes menu's choices (navbar.scala.html votesMenu): what each choice
-  * would list ([[count]]), and whether its juror has files in the round ([[hasFiles]]: the menu,
-  * the order menu and the staff's "My votes" show only then).
+  * would list ([[count]]), and whether its juror has files in the round ([[hasFiles]]: the
+  * juror's menu and order menu show only then).
   */
 final class RateDistribution private (counts: VoteFilter => Int, val hasFiles: Boolean) {
 

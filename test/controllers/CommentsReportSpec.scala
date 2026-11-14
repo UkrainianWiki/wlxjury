@@ -439,7 +439,7 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
         // the scope switch: this round pressed, all the rounds kept the list
         val scopes = doc.select("#comments-report-scope a").asScala
         scopes.map(_.hasClass("active")) === Seq(true, false)
-        scopes.head.attr("aria-current") === "true"
+        scopes.head.attr("aria-current") === "page"
         scopes(1).attr("href") must contain("scope=contest")
         // the order menu: the latest comment first, then the binary orders and file order
         doc.select("#comments-report-order a.dropdown-item").asScala.map(_.attr("href")).toList.map(h =>

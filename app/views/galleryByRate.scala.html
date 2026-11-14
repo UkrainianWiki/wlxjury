@@ -12,8 +12,7 @@
         ranks: Seq[String] = Nil,
         criteria: org.intracer.wmua.CriteriaResults = org.intracer.wmua.CriteriaResults.empty,
         commented: Option[Int] = None,
-        commentCounts: Map[Long, Int] = Map.empty,
-        ownFiles: Boolean = false)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+        commentCounts: Map[Long, Int] = Map.empty)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
     @* the juror rates their own files here with stars as on the gallery's tiles (TileStars) *@
     @starsRound = @{ views.TileStars.round(user, list.asUserId, Some(list.round)) }
@@ -64,7 +63,7 @@
 
     @main("byrate", user, list.asUserId, Some(list.round), rounds, true, Some(list), pagerNav(pager, list.pageUrl), rates,
         filters = views.html.regionMenu(regionMenu), head = snippets.tileVoteScripts(starsRound.nonEmpty),
-        commented = commented, ownFiles = ownFiles) {
+        commented = commented) {
 
         @defining(list.round) { round =>
 

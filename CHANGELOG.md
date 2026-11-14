@@ -137,14 +137,18 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   comments**, **Recent comments** and the report's **Show in the gallery** become one
   **Comments** menu: **All files**, **Only with comments (N)** and **Recent comments list (N)**,
   a choice with no file greyed out; the report's order menu moves into the bar. Organizers,
-  admins and root get the same two menus (counts only in one juror's view, from 1700 pixels;
-  the bar stays on one line from 1280 pixels in Ukrainian, its page links icons below 1920
-  pixels and a long juror name cut short), their view menu no longer lists the
-  report (the **Comments** menu opens it with all rounds' comments), and their own files in the
-  round are one **My votes** link instead of a second set of tabs. The monument and author
+  admins and root get the same two menus (counts only in one juror's view; below 1700 pixels the
+  unrated suffix is left out; the bar stays on one line from 1280 pixels in Ukrainian, a long
+  juror name cut short), and their page links (contests, all users, contest files, users,
+  rounds, statistics) become one pages menu at the bar's start, showing the page you are on.
+  Their view menu no longer lists the report (the **Comments** menu opens it with all rounds'
+  comments). Their second set of vote tabs for their own files is gone, without a replacement
+  for now (staff don't vote: their files are under the juror menu); a "My votes" link comes back
+  with multi-role (maintainer, 2026-11-14). The monument and author
   chips move into the filters, compact (the id or the name, **↗** to the page, **×**). The file
-  list gets the menus too. The bar's menus open from buttons (Space opens them) and mark the
-  page's item for screen readers. Juror, organizer and admin guides.
+  list gets the menus too. Every navbar menu (the filters, order, pages, contest, theme and
+  account menus, and the pager's page box) opens from a button (Space opens it), and the link
+  menus mark the page's item for screen readers. Juror, organizer and admin guides.
 
 **Development**
 

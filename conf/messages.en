@@ -162,17 +162,17 @@ submit.comment = Submit comment
 # list's toggle of only the files with comments, a comment's round in the large view
 comments.only = Only with comments ({0})
 # the navbar (navbar.scala.html): the Votes menu (its name read by screen readers, the unrated
-# of the list after "All"), the staff's link to their own votes, the Comments menu's states and
-# items (All files: files.all), and the names of the bar's groups
+# of the list after "All"), the Comments menu's states and items (All files: files.all), the
+# names of the bar's groups, and the Pages menu's name, read before the page shown
 votes.menu = Votes
 votes.unrated.suffix = · {0} unrated
-votes.mine = My votes
 comments.only.plain = Only with comments
 comments.menu.on = With comments
 comments.menu.list = Comments list
 comments.menu.recent = Recent comments list ({0})
 comments.menu.recent.plain = Recent comments list
 nav.group.links = Sections
+nav.pages = Go to
 nav.group.filters = Filters
 nav.group.order = Sorting and view
 nav.group.pager = Pages

@@ -441,13 +441,14 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
       testDbApp { implicit app =>
         val f = fixture()
         val id = f.contest.getId
-        val entry = s"""<a class="nav-link" id="menu-contest-files" href="/contest/$id/files">Contest files</a>"""
+        // the Pages menu's item, this page's
+        val entry = s"""id="menu-contest-files" aria-current="page" href="/contest/$id/files"><i class="bi bi-images" aria-hidden="true"></i> Contest files</a>"""
         val importLink = s"""id="import-files"[^>]*href="/contest/$id/images"""".r
 
         val (_, admin) = get(s"/contest/$id/files", f.admin)
         admin must contain(entry)
         admin must not contain "Browse files"
-        admin must not contain s"""class="nav-link" href="/contest/$id/images""""
+        admin must not contain s"""class="dropdown-item" href="/contest/$id/images""""
         importLink.findFirstIn(admin) must beSome
 
         val (_, organizer) = get(s"/contest/$id/files", f.organizer)
@@ -455,16 +456,16 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         organizer must not contain s"/contest/$id/images"
         organizer must not contain "import-files"
 
-        // from the gallery of a round too, the entry only
         val (_, gallery) = get(s"/gallery/round/${f.open}/user/${f.admin.getId}/page/1", f.admin)
-        gallery must contain(entry)
+        // from the gallery of a round too, the entry only (not this page: no aria-current)
+        gallery must contain(s"""<a class="dropdown-item" id="menu-contest-files" href="/contest/$id/files">""")
         gallery must not contain s"""href="/contest/$id/images""""
 
         // the import and cache page links back to the files
         val (code, images) = get(s"/contest/$id/images", f.admin)
         code === OK
         images must contain(s"""<a id="browse-files" href="/contest/$id/files">&larr; Contest files</a>""")
-        images must contain(entry)
+        images must contain(s"""<a class="dropdown-item" id="menu-contest-files" href="/contest/$id/files">""")
 
         val organizerImages = route(app,
           FakeRequest(GET, s"/contest/$id/images").withSession(Secured.UserName -> f.organizer.email)).get

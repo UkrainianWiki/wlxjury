@@ -1,4 +1,4 @@
-@(dto: UiSelectionDto[Any], iconOnly: Boolean = false, compactIcon: Option[String] = None, id: Option[String] = None, label: Option[String] = None, truncate: Boolean = false)(implicit messages: Messages)
+@(dto: UiSelectionDto[Any], iconOnly: Boolean = false, compactIcon: Option[String] = None, menuId: Option[String] = None, label: Option[String] = None, truncate: Boolean = false)(implicit messages: Messages)
 @* A navbar menu: its toggle shows the current item (its icon only if `iconOnly` and it has one,
    the text then read by screen readers and shown as a tooltip), the menu every item, the current
    one marked active with aria-current="page" (each item opens a page; the current one is this
@@ -7,10 +7,10 @@
    read by screen readers and shown as a tooltip; elsewhere, and from 1700 px, the text (main.css,
    UiSelectionDto.toDropDown). `label`: what the menu is, before the current item for screen
    readers only (the comments report's order). `truncate`: a long current item cut with an
-   ellipsis, whole in the toggle's title (the organisers' juror menu, main.css wlx-nav-truncate).
+   ellipsis, whole in the toggle's title (the organisers' juror menu, main.css wlx-truncate).
    The toggle is a real button, so Space opens it as Enter does (Bootstrap's dropdown) *@
 @icon(iconClass: String) = {<i class="@iconClass" aria-hidden="true"></i>}
-<li class="nav-item dropdown"@for(i <- id) { id="@i"}>
+<li class="nav-item dropdown"@for(i <- menuId) { id="@i"}>
     <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"
         @if((iconOnly && dto.current.icon.nonEmpty) || compactIcon.nonEmpty || truncate) {title="@dto.current.localizedText"}>
         @for(l <- label) {<span class="visually-hidden">@l: </span>}
@@ -21,7 +21,7 @@
         case None => {
         @dto.current.icon.filter(_ => iconOnly) match {
             case Some(iconClass) => { @icon(iconClass)<span class="visually-hidden">@dto.current.localizedText</span> }
-            case None => { @if(truncate) {<span class="wlx-nav-truncate">@dto.current.localizedText</span>} else {@dto.current.localizedText} }
+            case None => { @if(truncate) {<span class="wlx-truncate">@dto.current.localizedText</span>} else {@dto.current.localizedText} }
         }
         }
         }

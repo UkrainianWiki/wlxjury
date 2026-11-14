@@ -11,13 +11,12 @@
         regionMenu: Option[RegionMenu],
         rates: RateDistribution,
         commented: Option[Int] = None,
-        commentCounts: Map[Long, Int] = Map.empty,
-        ownFiles: Boolean = false)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+        commentCounts: Map[Long, Int] = Map.empty)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 @import java.net.URLEncoder
 
     @main("gallery", user, list.asUserId, Some(list.round), rounds, gallery = true, Some(list),
-        pagerNav(pager, list.pageUrl), rates = rates, filters = views.html.regionMenu(regionMenu), commented = commented, ownFiles = ownFiles,
+        pagerNav(pager, list.pageUrl), rates = rates, filters = views.html.regionMenu(regionMenu), commented = commented,
         head = play.twirl.api.HtmlFormat.fill(List(snippets.galleryScripts(),
             snippets.tileVoteScripts(views.TileStars.round(user, list.asUserId, Some(list.round)).nonEmpty)))) {
 
