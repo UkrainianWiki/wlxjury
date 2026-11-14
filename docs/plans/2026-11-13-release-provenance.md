@@ -1,8 +1,10 @@
 # Release provenance: CI-built releases and reproducible builds (v5)
 
 **Status:** plan complete, 2026-11-13, revised 2026-11-14. All decisions are recorded: D1–D3 on
-2026-11-13, D4–D22 on 2026-11-14 (§8). All but D14 follow the recommendation; D14 keeps the local
-full suite at the release boundary as well as CI's run on the tagged commit.
+2026-11-13, D4–D22 on 2026-11-14 (§8). D7–D22 follow the recommendation except D14, which takes
+the alternative. D4–D6 are the maintainer's own decisions (v4), and D1 dropped its required
+review. D14 keeps the local full suite at the release boundary as well as CI's run on the tagged
+commit.
 Implementation is not scheduled; the maintainer decides when. Nothing is implemented. Two
 plans: **A**, GitHub Actions builds the release ZIP from a tag and attests it, and the server's
 `sudo wlxjury-release deploy 26.11.6` fetches it and verifies it before deploying; **B**, the
@@ -317,8 +319,8 @@ on top (L10).
 
 ### 4.3 Rehearsal (release agent)
 
-0. **Before the tag**, the release agent runs the full suite locally on the release commit, under
-   the shared sbt lock, as today (D14). It pushes the tag only after that run passes, and it asks
+0. **Before the tag**, the release agent runs the full suite locally on the commit it will tag
+   (after the merge), under the shared sbt lock, as today (D14). It pushes the tag only after that run passes, and it asks
    the maintainer for the `publish` approval only after both that run and CI's `CI ok` on the
    tagged commit have passed. If the local run fails, nothing is tagged and no number is burnt.
 1. Download the run's artifact: `gh run download <run> -n wlxjury-26.11.6`.
@@ -469,9 +471,9 @@ to the hash form silently.
   - What `deploy` checks.
   - The checklist and the runbook.
 - **workflow practices §7.4:** releases from master (`release-train` in the transition), the
-  release agent runs the full suite locally on the release commit before it tags (D14), agents
-  tag, CI runs the suite again on the tagged commit, the maintainer approves `publish`, and no
-  local release builds. §7.1 keeps "its commit had the full suite run". §4 gains the PC's
+  release agent runs the full suite locally on the commit it will tag, after the merge (D14),
+  agents tag, CI runs the suite again on the tagged commit, the maintainer approves `publish`,
+  and no local release builds. §7.1 keeps "its commit had the full suite run". §4 gains the PC's
   credentials: the one fine-grained token, and GCM set to tokens only.
 - **CLAUDE.md:** the release boundary keeps its local full suite, run before the tag; CI's run on
   the tagged commit comes in addition (D14).
@@ -516,10 +518,11 @@ lint fix is pushed (71f2723c on `stack/112`, merged up to `stack/130-comments-re
 
 ## 7. Recommendation
 
-1. **A0 first**, since it is cheap (D21; not scheduled). It takes the agents down to the token,
-   whatever else is decided. Then **A1–A4**. This takes the PC out of the build and makes the
-   release commit tested in CI, as well as locally before the tag (D14). Releases then come from
-   protected, public history, built and attested by CI. They deploy only after the maintainer's `publish` approval, which the server checks itself.
+1. **A0 first**, since it is cheap (D21; not scheduled). It takes the agents down to the token.
+   Then **A1–A4**. This takes the PC out of the build and makes the release commit tested in CI,
+   as well as locally before the tag (D14). Releases then come from protected, public history,
+   built and attested by CI. They deploy only after the maintainer's `publish` approval, which the
+   server checks itself.
 2. **B** afterwards, starting with B0. It is the only check against a compromised CI build,
    including a `release.yml` changed to build something else, and it lets anyone verify a release.
 3. **Hardware-key 2FA for `ukwikidev`**, whose web login is the one approval both plans have to
@@ -528,8 +531,9 @@ lint fix is pushed (71f2723c on `stack/112`, merged up to `stack/130-comments-re
 
 ## 8. Decisions for the maintainer
 
-All decisions are recorded: D1–D3 on 2026-11-13, D4–D22 on 2026-11-14. Each item lists the
-recommended option first. Every decision follows it except D14, which takes the alternative.
+All decisions are recorded: D1–D3 on 2026-11-13, D4–D22 on 2026-11-14. For D7–D22, each item
+lists the recommended option first. D7–D22 follow the recommendation except D14, which takes the
+alternative. D4–D6 are the maintainer's own decisions (v4), and D1 dropped its required review.
 
 1. **Release source.** Tags on master commits. Until the stack merges: a protected
    `release-train` fed by PRs. Both branches require a PR with 0 approvals and `CI ok` pinned to
@@ -614,8 +618,8 @@ recommended option first. Every decision follows it except D14, which takes the 
     the local one; local runs are for affected specs. Alternative: keep the local full suite at
     the release boundary as well as CI's run. **Decided (maintainer, 2026-11-14): the
     alternative.**
-    - The release agent runs the full suite locally on the release commit, under the shared sbt
-      lock, before it pushes the tag (§4.3, step 0).
+    - The release agent runs the full suite locally on the commit it will tag (after the merge),
+      under the shared sbt lock, before it pushes the tag (§4.3, step 0).
     - CI runs it again on the tagged commit (§4.2, step 2), and `publish` needs `CI ok`.
     - The agent asks for the `publish` approval only after both have passed.
     - A local failure stops the release before the tag, so it burns no number.
