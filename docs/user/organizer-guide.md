@@ -27,7 +27,8 @@ a different role in each contest. Roles are explained in the [admin guide](admin
 | See the conflicts page | no | yes | yes |
 | See the files' authors and the authors list | no | yes | yes |
 | Comment on a file of an open round | their own files | any file of the round | any file of the round |
-| Read the [comments report](#o-comments-report) and its CSV | no | yes | yes |
+| Read the [comments report](#o-comments-report) | of their own files | yes | yes |
+| Download the comments CSV, show one person's comments | no | yes | yes |
 | Set up rounds and files, start and stop rounds, pause jurors, disqualify files, manage people | no | no | yes |
 
 **Root**, the tool's own administrators, can do what an admin can, in every contest.
@@ -135,7 +136,9 @@ order and every view, the CSV included, and N is how many files of the current v
 comments. The large view then moves through those files only. Below about 1700 pixels it is a
 speech bubble icon. In the gallery, the by-rate gallery and the large view's **Next files**, a
 file with comments shows a speech bubble with their number. Both count the comments the file's
-large view shows: from any round of the contest, by anyone.
+large view shows: from any round of the contest, by anyone. While the toggle is on, **Recent
+comments** beside it opens the [comments report](#o-comments-report) of the same files (the
+juror, vote filter, region and monument kept), with all rounds' comments, by the latest comment.
 
 <a id="o-comments-report"></a>
 **Comments report:** the **Comments** view (a speech bubble in the view menu; also **Comments on
@@ -156,6 +159,14 @@ list:
   comment first**, which goes back to by rating.
 - **Comments CSV**: a spreadsheet with one row per comment of the report, in its order: the file,
   its page id and Commons link, the author, the time (UTC), the round and the text.
+- **Show in the gallery**: back to the gallery with only the files with comments (the juror, vote
+  filter, region and monument kept), in the gallery's default order. With **This round** the
+  gallery can have more files: its toggle counts comments from any round.
+
+A juror opens the report of their own files only, from **Recent comments** beside their
+**Only with comments**: every comment their large view shows (all rounds of the contest), without
+the round names, the scope buttons, the CSV or the icons below. Another juror's report, all
+jurors' together and the CSV are refused to them.
 
 <a id="o-comments-by-person"></a>
 **One person's comments:** after each comment's author are small icons. The funnel
