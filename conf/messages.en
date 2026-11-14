@@ -311,6 +311,7 @@ round.name.optional=Round name (optional)
 previous.round = Previous rounds
 error.previous.rounds.mixed.type = All previous rounds must have the same rating: all yes/no, all comments only, or all rated on the same scale with the same number of criteria (for example all 1–5 without criteria)
 jurors = Jurors
+jurors.all = All jurors
 juror.name=Juror name
 media.filtering = Media filtering
 selected.by.at.least.x.jurors=Selected by at least X jurors

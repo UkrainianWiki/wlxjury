@@ -62,7 +62,9 @@
    visible word, "Votes" read by screen readers and in its title (D2). Counts (`rates`: what each
    choice opens, in the region) only for one juror's list: none for all the jurors' votes
    together; in the organisers' results bar below 1700 px the unrated suffix is read by screen
-   readers only (wlx-nav-suffix, main.css), the count stays. The selected and rejected tinted as the tabs were (main.css) *@
+   readers only (wlx-nav-suffix, main.css), the count stays. The selected and rejected tinted as the tabs were (main.css).
+   A vote icon before the choice (aria-hidden), so its "All" isn't taken for the juror menu's
+   "All jurors" (the maintainer's decision C of 2026-11-14) *@
 @votesMenu(l: RoundList, staff: Boolean) = {
     @if(!commentsOnly(l.round) && (staff || rates.hasFiles)) {
     @defining(if (staff) l else ownList(l)) { target =>
@@ -73,7 +75,7 @@
     @defining(if (counted && current == VoteFilter.All) " " + Messages("votes.unrated.suffix", rates.unrated.toString) else "") { suffix =>
     <li class="nav-item dropdown wlx-votes-menu@current match { case VoteFilter.Rate(1) => { vote-selected} case VoteFilter.Rate(-1) => { vote-rejected} case _ => {}}" id="votes-menu">
         <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"
-            title="@Messages("votes.menu"): @Messages(current.param)@count@suffix"><span class="visually-hidden">@Messages("votes.menu"): </span>@Messages(current.param)@if(count.nonEmpty) {<span class="wlx-votes-count">@count</span>}@if(suffix.nonEmpty) {<span class="wlx-nav-suffix wlx-votes-unrated">@suffix</span>}</button>
+            title="@Messages("votes.menu"): @Messages(current.param)@count@suffix"><i class="bi bi-check2-square wlx-lead-icon" aria-hidden="true"></i><span class="visually-hidden">@Messages("votes.menu"): </span>@Messages(current.param)@if(count.nonEmpty) {<span class="wlx-votes-count">@count</span>}@if(suffix.nonEmpty) {<span class="wlx-nav-suffix wlx-votes-unrated">@suffix</span>}</button>
         <ul class="dropdown-menu">
             @for(filter <- choices) {
             @defining(filter == current) { active =>
@@ -385,13 +387,14 @@
         @if(staffBar(round)) {
             @roundMenu(l)
 
-            @* Select user: a long name cut short, so the bar keeps its pager on its line *@
+            @* Select user: a long name cut short, so the bar keeps its pager on its line; a people icon
+               and "All jurors", unlike the Votes menu's "All" (decision C of 2026-11-14) *@
             @(new UiSelectionDto[Long](
                 { userId: Long => Call("GET", l.withViewer(userId).pageUrl(1)) },
                 asUserId,
                 User.findRoundJurorsToView(round.getId).map(u => (u.getId, SelectionItem(u.fullname, localized = false))),
-                Some(0L -> SelectionItem("all"))
-            ).toDropDown(id = Some("juror-menu"), truncate = true))
+                Some(0L -> SelectionItem("jurors.all"))
+            ).toDropDown(id = Some("juror-menu"), truncate = true, leadIcon = Some("bi bi-people")))
 
             @votesMenu(l, staff = true)
             @commentsMenu(l)

@@ -122,16 +122,16 @@ a moment after the page; until then, the links work without them.
 The bar at the top of a round's results has, from left to right, the pages menu (its button the
 menu icon and the page you are on, for example **Gallery**; its items **Contest files**, for
 admins **Users** and **Rounds**, and **Statistics**; for root also **Contests**), then the
-filters: the round, the juror (a single juror's votes, or **All**), the votes menu, the
+filters: the round, the juror menu (its people icon, then a single juror's name, or **All jurors**), the votes menu, the
 [**Comments**](#o-comments-filter) menu and the region menu; after a thin line the order and the
 view menu (the **Gallery**, **By rate**, **File list** and **CSV**); then the pager. The views of
-**All** jurors take no votes. Your own files in a round, if you have any, are under your name in
+**All jurors** take no votes. Your own files in a round, if you have any, are under your name in
 the juror menu, with the same bar.
 
-The votes menu is the jurors' own: **All**, **Unrated**, **Selected** and **Rejected** (in a rated
+The votes menu (its button with a check-box icon) is the jurors' own: **All**, **Unrated**, **Selected** and **Rejected** (in a rated
 round **All**, **Unrated** and **Rated**), keeping the region and the other filters. In a single
 juror's view each choice has its count, and on **All** the button adds how many of the juror's
-files in the list are unrated (**All (900) · 40 unrated**); the view of **All** jurors has no
+files in the list are unrated (**All (900) · 40 unrated**); the view of **All jurors** has no
 counts. In a window narrower than about 1700 pixels, the pages menu shows only its icon, the
 votes menu its choice and count without the unrated, the **Comments** menu a speech bubble and its count, a single juror's order
 menu a sort icon, and the region menu only the chosen place, without the word "Region" (or
@@ -144,14 +144,14 @@ shows the tool's "not found" page.
 <a id="o-comments-filter"></a>
 **Files with comments:** the **Comments** menu, after the votes menu, has **All files**, **Only
 with comments (N)** and **Recent comments list (N)**. **Only with comments** shows only the files
-with comments in the view you are on: a single juror's files, or all of them for **All**. It
+with comments in the view you are on: a single juror's files, or all of them for **All jurors**. It
 works with the votes menu (for example the selected files with comments), the region, the order
 and every view, the CSV included, and N is how many files of the current view have comments. The
 large view then moves through those files only. **Recent comments list** opens the
 [comments report](#o-comments-report) of the same files (the juror, votes choice, region and
 monument kept), with all rounds' comments, by the latest comment. The menu's button says
 **Comments (N)**, or, highlighted, **With comments (N)** or **Comments list (N)**; in the view of
-**All** jurors without the number. A choice with no file is greyed
+**All jurors** without the number. A choice with no file is greyed
 out. In the gallery, the by-rate gallery and the large view's **Next files**, a file with
 comments shows a speech bubble with their number. Both count the comments the file's large view
 shows: from any round of the contest, by anyone.
@@ -160,7 +160,7 @@ shows: from any round of the contest, by anyone.
 **Comments report:** **Recent comments list** in the **Comments** menu (also **Comments on the
 round's files** in the round's statistics) lists the files with comments, 20 to a page. Each
 file has its thumbnail and name, which open its large view, its result in the round (the votes of
-**All** jurors, or the chosen juror's vote, a rated round's stars), and then its comments, each
+**All jurors**, or the chosen juror's vote, a rated round's stars), and then its comments, each
 with its author, its time and, for a comment from another round, that round's name. Above the
 list:
 
@@ -173,7 +173,7 @@ list:
   its page id and Commons link, the author, the time (UTC), the round and the text.
 
 The order menu, in the bar's order place: **Latest comment first** (the default), by the newest
-comment of the choice above, or the view's own (for **All** jurors the yes/no orders or by
+comment of the choice above, or the view's own (for **All jurors** the yes/no orders or by
 rating, and file order; for one juror that juror's orders). The report opens in it from the
 **Comments** menu and the round's statistics; the order chosen in the report is kept by its
 pages, the CSV and the large view's previous and next. Leaving the report for another view keeps
@@ -211,7 +211,7 @@ CSV: share it only with the contest's team.
 
 In a single juror's **Gallery** each file shows that juror's vote, read-only: in a yes/no round a
 green or red frame with a thumb, in a rated round the juror's stars (or ✗). In the **Gallery** of
-**All** jurors' votes on a yes/no round each file shows its tally, approvals (✓) and rejections
+**All jurors**' votes on a yes/no round each file shows its tally, approvals (✓) and rejections
 (✗), in the order chosen in the menu next to the views.
 
 A single juror's **Gallery** and **By rate** views have an order menu, by that juror's votes:
@@ -221,7 +221,7 @@ files come last). With a yes/no round's **Selected** or **Rejected** filter it h
 order** and the two vote-time orders; with **Unrated**, the files are in file order. In the
 vote-time orders each file shows when the juror voted (in your time zone; **Time not recorded**
 for votes from before), and the large view of a single juror's vote shows it in every order. The
-views of **All** jurors keep their own order and show no vote times.
+views of **All jurors** keep their own order and show no vote times.
 
 <a id="o-score"></a>
 ### The score

@@ -113,8 +113,10 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
               Some(text)
         }
         // within the comments filter: the list's unrated
-        NavMenus.button(page(app, f.juror, gallery(f.round, f.juror.getId, query = "?comments=1")), "votes-menu") ===
-          Some("Votes: All (2) · 0 unrated")
+        // the same vote icon as the organisers' (decision C of 2026-11-14), hidden from screen readers
+        (all.select("#votes-menu > button > i.bi-check2-square[aria-hidden=true]").size === 1) and
+          (NavMenus.button(page(app, f.juror, gallery(f.round, f.juror.getId, query = "?comments=1")), "votes-menu") ===
+            Some("Votes: All (2) · 0 unrated"))
       }
     }
 
@@ -229,7 +231,15 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
         one.select("#juror-menu > button").attr("title") === "Juror"
         val all = page(app, f.organizer, gallery(f.round, 0))
         counts(all) === Seq("All" -> None, "Unrated" -> None, "Selected" -> None, "Rejected" -> None)
-        NavMenus.button(all, "votes-menu") === Some("Votes: All")
+        (NavMenus.button(all, "votes-menu") === Some("Votes: All")) and
+          // decision C of 2026-11-14: the juror menu's people icon and "All jurors" (or the juror's
+          // name), the Votes button's vote icon, both hidden from screen readers
+          (NavMenus.button(all, "juror-menu") === Some("All jurors")) and
+          (NavMenus.current(all, "juror-menu").map(_.name) === Some("All jurors")) and
+          (all.select("#juror-menu > button > i.bi-people[aria-hidden=true]").size === 1) and
+          (one.select("#juror-menu > button > i.bi-people[aria-hidden=true]").size === 1) and
+          (all.select("#votes-menu > button > i.bi-check2-square[aria-hidden=true]").size === 1) and
+          (one.select("#votes-menu > button > i.bi-check2-square[aria-hidden=true]").size === 1)
       }
     }
 

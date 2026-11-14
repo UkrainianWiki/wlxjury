@@ -30,6 +30,9 @@ body.gallery {
 .wlx-votes-menu .wlx-vote-icon-selected { color: var(--wlx-selected); }
 .wlx-votes-menu .wlx-vote-icon-rejected { color: var(--wlx-rejected); }
 .wlx-votes-menu .dropdown-item.active i { color: currentColor; }
+/* the icon before a menu's choice that says which menu it is (the Votes menu's vote, the organisers'
+   juror menu's people: decision C of 2026-11-14), close to its text */
+.wlx-lead-icon { margin-right: .25rem; }
 
 /* the navbar's groups (navbar.scala.html): the pages, the filters, the order and the pager, each a
    list that wraps as a whole, apart by a gap (Bootstrap's column-gap-2); the wrapper may shrink
@@ -54,6 +57,9 @@ body.gallery {
 /* shorter in the organisers' results bar, which has the most menus (its juror's name, its region,
    the author chip) */
 .wlx-nav-results .wlx-truncate { max-width: 9rem; }
+/* its juror menu's name shorter by its people icon (decision C of 2026-11-14), so the icons keep
+   the bar on one line (browser-test navbar.spec.js) */
+.wlx-nav-results #juror-menu .wlx-truncate { max-width: 7.5rem; }
 
 .region-menu-list>li.region-nomination>a {
     font-style: italic;

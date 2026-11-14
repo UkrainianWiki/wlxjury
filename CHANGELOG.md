@@ -158,6 +158,12 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   opens the round's statistics on a round's page, else the current round's; a contest without
   rounds has no such item. Jurors still have no pages menu, and the statistics pages check access
   as before. Organizer guide.
+- **Juror menu and Votes button told apart** (the maintainer's decision C of 2026-11-14; developed
+  2026-11-14, `stack/153-statistics-in-pages-menu`): in the organisers' bar the juror menu's
+  button has a people icon and reads **All jurors** (uk «Усі журі», ru «Все жюри», fr «Tous les
+  jurés») or the juror's name, and the Votes button a check-box icon before its choice (for jurors
+  too), both icons hidden from screen readers, so **All jurors** and **All (5712)** no longer look
+  alike. Juror and organizer guides.
 
 **Development**
 
