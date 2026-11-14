@@ -108,6 +108,18 @@ class RoundStatCountsSpec extends PlaySpecification with PlayTestDb {
     Jsoup.parse(contentAsString(result))
   }
 
+  /** `f`'s result and the lines logged on security.authz meanwhile ([[Secured.logDenial]]). */
+  private def withAuthzLog[T](f: => T): (T, Seq[String]) = {
+    val logger = org.slf4j.LoggerFactory.getLogger("security.authz").asInstanceOf[ch.qos.logback.classic.Logger]
+    val appender = new ch.qos.logback.core.read.ListAppender[ch.qos.logback.classic.spi.ILoggingEvent]
+    appender.start()
+    logger.addAppender(appender)
+    try {
+      val result = f
+      (result, appender.list.asScala.toSeq.map(_.getFormattedMessage))
+    } finally logger.detachAppender(appender)
+  }
+
   /** The numbers of a text, in order. */
   private def numbers(text: String): Seq[Int] = "\\d+".r.findAllIn(text).map(_.toInt).toSeq
 
@@ -214,12 +226,49 @@ class RoundStatCountsSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "refuse a juror of the round's contest with JSON 403" in {
+    "refuse a juror of the round's contest with JSON 403, logged on security.authz with its reference" in {
       testDbApp { app =>
         val f = fixture()
-        val result = counts(app, f.round, Some(f.juror))
-        (status(result) === FORBIDDEN) and ((contentAsJson(result) \ "error").as[String] === "forbidden") and
-          ((contentAsJson(result) \ "reference").asOpt[String] must beSome)
+        val ((code, reference), log) = withAuthzLog {
+          val result = counts(app, f.round, Some(f.juror))
+          (status(result), (contentAsJson(result) \ "reference").asOpt[String])
+        }
+        (code === FORBIDDEN) and (reference must beSome) and
+          (log.count(line => line.contains(s"ref=${reference.get}") &&
+            line.contains(s"path=\"/roundstat/${f.round.getId}/counts\"")) === 1)
+      }
+    }
+
+    "answer an organizer of both contests, with the session in B, for A's round, keeping the session in B" in {
+      testDbApp { app =>
+        val f = fixture()
+        val both = userDao.create(User("Both", "both@example.com", None, Set("organizer"), contestId = f.b.id))
+        UserContestJdbc.createMembership(both.getId, f.a.getId, "organizer")
+        forall(Seq(true, false)) { script =>
+          val result = route(app, request(s"/roundstat/${f.round.getId}/counts", Some(both), script, f.b.id)).get
+          (status(result) aka s"script=$script" must_== OK) and
+            ((contentAsJson(result) \ "conflicts").as[Int] === 2) and
+            (session(result).get(Secured.CurrentContestId) must beNone.or(beSome(f.b.getId.toString)))
+        }
+      }
+    }
+
+    "count the history only as far as the conflicts page lists it, and one more" in {
+      testDbApp { app =>
+        val f = fixture()
+        def events(n: Int): Unit = DB.autoCommit { implicit s =>
+          val rows = SQLSyntax.createUnsafely(s"seq_1_to_$n") // MariaDB's sequence engine
+          sql"""INSERT INTO round_image_event (round_id, page_id, action, code, prior_status, new_status, created_by)
+                SELECT ${f.empty.getId}, 1, 'disqualify', 'coi', 'in', 'dq', ${f.admin.getId} FROM $rows""".update()
+        }
+        events(RoundConflicts.HistoryLimit)
+        val atLimit = (okCounts(app, f.empty, f.admin) \ "history").as[Int]
+        events(2)
+        val past = (okCounts(app, f.empty, f.admin) \ "history").as[Int]
+        (atLimit === RoundConflicts.HistoryLimit) and (past === RoundConflicts.HistoryLimit + 1) and
+          (RoundConflicts.review(f.empty).history.size === RoundConflicts.HistoryLimit) and
+          (page(app, f.admin, s"/roundstat/${f.empty.getId}").selectFirst("#round-conflicts-link a")
+            .attr("data-history-limit") === RoundConflicts.HistoryLimit.toString)
       }
     }
 
