@@ -32,8 +32,9 @@ object PlanScenarios {
       val counts = l.jurorCounts()
       val total = counts.map(_.total(l.filter, l.region)).getOrElse(l.count())
       val first = Pager(1, total, l.pageSize)
-      // the tabs' counts of all the juror's files, and the comments toggle's number
-      if (l.comments) l.withComments(false).jurorCounts() else l.commentedCount()
+      // the comments toggle's number (with it on, the list's own total); the tabs count what they
+      // open, from the counts above (decision 2 = A: no count of all the juror's files)
+      if (!l.comments) l.commentedCount()
       val files = l.files(first)
       // the page's comment badges
       CommentJdbc.countsByRoom(corner.contestId, files.map(_.pageId))
@@ -114,7 +115,26 @@ object PlanScenarios {
       })
     ).map { case (name, run) => within(name)(run()); name }
 
-    galleries ++ withComments ++ more ++ monument
+    // the juror's comments report of their own list (the round filters proposal v4 §2.4): its
+    // files with a comment in the contest by the latest comment, its total and tabs from the
+    // juror's counts with comments, the page's comments and the report's comment total, and a
+    // large view in it
+    val report = Seq(
+      "juror comments report" -> (() => {
+        gallery.viewerRounds(juror, round)
+        gallery.mayViewRound(juror, round)
+        val l = list(ListOrder.FileOrder).withComments(true).recentComments
+        val counts = l.jurorCounts()
+        val total = counts.map(_.total(l.filter, l.region)).getOrElse(l.count())
+        val files = l.files(Pager(1, total, l.pageSize))
+        l.commentsOf(files)
+        l.commentCount()
+        l.around(files.headOption.fold(corner.pageId)(_.pageId))
+        ()
+      })
+    ).map { case (name, run) => within(name)(run()); name }
+
+    galleries ++ withComments ++ more ++ monument ++ report
   }
 
   val RoundStatScenario = "roundstat"
