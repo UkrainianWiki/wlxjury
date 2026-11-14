@@ -1,12 +1,13 @@
 -- An index on images (author): a round's list filtered by author (a round list's `author=`, staff
 -- only: ImageDbNew.SelectionQuery.byAuthor, `s.page_id IN (SELECT ia.page_id FROM images ia WHERE
 -- ia.author = ? AND BINARY ia.author = ?)`), and the contest files page's author filter
--- (ImageJdbc.categoryAuthorFiles), which read the author's files by it, then the list's rows of
--- each. Without it MariaDB read the list's vote rows and looked up each file's author: on
+-- (ImageJdbc.categoryAuthorFiles), which can read the author's files by it, then the list's rows
+-- of each (QueryPlanSpec's seed: all the jurors' list does; one juror's list kept reading the
+-- juror's rows there). Without it MariaDB read the list's vote rows and looked up each file's author: on
 -- production's copy (rehearsal, MariaDB 10.6.22, 2026-11-14) 5-9 ms per statement for a typical
 -- juror's list (1.6k files), 440-498 ms cold and 21-29 ms warm for the largest one (22.6k files),
 -- 68-76 ms for all the jurors' list of a 29k round, and a large view step runs 5-7 such
--- statements. With it a statement reads the author's files only: at most 7,654 (the heaviest
+-- statements. Read by it, a statement reads the author's files only: at most 7,654 (the heaviest
 -- author there; 195,752 of 1,029,265 images have an author, 1,800 distinct). The round filters
 -- proposal v4, decision 4 = A.
 --

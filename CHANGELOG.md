@@ -129,10 +129,12 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   "Keep" notes only with `--verbose`.
 - **V104 `images_author_idx (author)`**, an **online index build** (`ALGORITHM = INPLACE,
   LOCK = NONE`: reads and writes go on; `ADD INDEX IF NOT EXISTS`, rerunnable; a 60 s
-  `lock_wait_timeout`; then `ANALYZE TABLE images`; undo `DROP INDEX`): a round's list by author
-  and the contest files page's author filter read the author's files by it (at most 7,654 of one
-  author on production's copy) instead of every file of the list or category (440-498 ms cold for
-  the largest juror list on production's copy without it). On 1.03M images, 81% without an author,
+  `lock_wait_timeout`; then `ANALYZE TABLE images`; undo `DROP INDEX`): the contest files page's
+  author filter and all the jurors' list of a round by author read the author's files by it (at
+  most 7,654 of one author on production's copy) instead of every file of the category or round.
+  For one juror's list MariaDB 10.6 chose, on QueryPlanSpec's seed, to keep reading the juror's
+  rows and checking each file's author (440-498 ms cold for the largest juror list on production's
+  copy); production's choice is still to be measured on a throwaway copy with the index. On 1.03M images, 81% without an author,
   expected to take seconds and some 20-35 MB (not timed on the rehearsal copy, where no DDL runs).
   `varchar(255)` utf8mb4 is 1,020 bytes, within the DYNAMIC row format's 3,072. **V103 stays
   reserved** for round lineage's `round.status`: Flyway needs no consecutive numbers, but with
