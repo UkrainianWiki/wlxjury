@@ -89,7 +89,7 @@ object CriteriaResultsBenchmark {
       val rates = criteria.map(_ => 1 + rnd.nextInt(10))
       // with one criterion a vote can't be partly rated: kind 1 is then unrated
       val rated0 =
-        if (kind == 0 || kind == 1 && criteriaCount == 1) Nil
+        if (kind == 0 || (kind == 1 && criteriaCount == 1)) Nil
         else if (kind == 1) rates.take(1 + rnd.nextInt(criteriaCount - 1))
         else rates
       (p, u, if (rated0.size == criteriaCount) rated0.sum else 0, rated0)

@@ -12,6 +12,10 @@ CREATE USER 'wlxjury'@'localhost' IDENTIFIED BY 'your-password';
 GRANT ALL PRIVILEGES ON wlxjury.* TO 'wlxjury'@'localhost';
 ```
 
+If MariaDB runs in a container, or with `skip_name_resolve`, the app's connection doesn't come
+from `localhost`: create the user and grant to `'wlxjury'@'%'` (or the client's host or address)
+instead.
+
 `sbt run` refuses to start while migrations are pending, as a new database's are: start it as
 `sbt -Ddb.default.migration.auto=true run` to apply them (`db.Migrations`).
 
