@@ -6,8 +6,10 @@
  *
  * Each link carries data-roundstat-counts (the URL), data-kind ("authors" or "conflicts"),
  * data-lang and its label templates, `{0}` for a number: data-label-count, data-label-none,
- * the plural forms data-files-* / data-unknown-* (one, few, many, other), data-disqualified
- * and data-history. The page renders the links enabled, without counts; this script changes a
+ * data-label-none-unknown (no author stored, but files without one), the plural forms
+ * data-files-* / data-disqualified-* / data-unknown-* (one, few, many, other), data-history and
+ * data-history-limit (the conflicts page lists that many of the latest events: more is shown as
+ * "500+", and the answer counts no further than one more). The page renders the links enabled, without counts; this script changes a
  * link's text, and disables it (no href, aria-disabled, out of the tab order) only when the
  * answer says its count is 0 (for the conflicts link: and no history). On a refusal, an error
  * or a failed fetch the links stay as they are.
@@ -43,7 +45,8 @@
     }
 
     function fill(template, value) {
-        return String(template || "").replace("{0}", value);
+        // a function, so that `$&` or `$1` in a translation is never a replacement pattern
+        return String(template || "").replace("{0}", function () { return value; });
     }
 
     function isCount(n) {
@@ -58,13 +61,15 @@
             parts.push(fill(t.files[pluralForm(counts.conflicts, lang)], formatNumber(counts.conflicts, lang)));
         }
         if (counts.disqualified > 0) {
-            parts.push(fill(t.disqualified, formatNumber(counts.disqualified, lang)));
+            parts.push(fill(t.disqualified[pluralForm(counts.disqualified, lang)], formatNumber(counts.disqualified, lang)));
         }
         if (parts.length > 0) return { text: fill(t.labelCount, parts.join(" · ")), enabled: true };
         // neither: the link stays while the round has a history, which its page lists
         if (!isCount(counts.history)) return null;
         if (counts.history > 0) {
-            return { text: t.labelNone + " · " + fill(t.history, formatNumber(counts.history, lang)), enabled: true };
+            var limit = t.historyLimit;
+            var shown = limit > 0 && counts.history > limit ? formatNumber(limit, lang) + "+" : formatNumber(counts.history, lang);
+            return { text: t.labelNone + " · " + fill(t.history, shown), enabled: true };
         }
         return { text: t.labelNone, enabled: false };
     }
@@ -72,11 +77,15 @@
     function authorsLabel(counts, t) {
         if (!counts || !isCount(counts.authors)) return null;
         var lang = t.lang;
-        if (counts.authors === 0) return { text: t.labelNone, enabled: false };
-        var inner = formatNumber(counts.authors, lang);
-        if (isCount(counts.withoutAuthor) && counts.withoutAuthor > 0) {
-            inner += " · " + fill(t.unknown[pluralForm(counts.withoutAuthor, lang)], formatNumber(counts.withoutAuthor, lang));
+        var unknown = isCount(counts.withoutAuthor) && counts.withoutAuthor > 0
+            ? fill(t.unknown[pluralForm(counts.withoutAuthor, lang)], formatNumber(counts.withoutAuthor, lang))
+            : null;
+        if (counts.authors === 0) {
+            // none stored, but files without one: the list shows those, so the link stays
+            return unknown === null ? { text: t.labelNone, enabled: false }
+                : { text: fill(t.labelNoneUnknown, unknown), enabled: true };
         }
+        var inner = formatNumber(counts.authors, lang) + (unknown === null ? "" : " · " + unknown);
         return { text: fill(t.labelCount, inner), enabled: true };
     }
 
@@ -92,10 +101,12 @@
             lang: link.getAttribute("data-lang") || "en",
             labelCount: link.getAttribute("data-label-count") || "",
             labelNone: link.getAttribute("data-label-none") || "",
+            labelNoneUnknown: link.getAttribute("data-label-none-unknown") || "",
             files: forms("files"),
             unknown: forms("unknown"),
-            disqualified: link.getAttribute("data-disqualified") || "",
-            history: link.getAttribute("data-history") || ""
+            disqualified: forms("disqualified"),
+            history: link.getAttribute("data-history") || "",
+            historyLimit: parseInt(link.getAttribute("data-history-limit"), 10) || 0
         };
     }
 

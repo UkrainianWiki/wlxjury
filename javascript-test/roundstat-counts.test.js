@@ -18,11 +18,15 @@ function page(lang = "en") {
             data-label-none="${uk ? "Конфлікт інтересів у цьому раунді: немає" : "Conflicts of interest of this round: none"}"
             data-files-one="${uk ? "{0} файл" : "{0} file"}" data-files-few="${uk ? "{0} файли" : "{0} files"}"
             data-files-many="${uk ? "{0} файлів" : "{0} files"}" data-files-other="${uk ? "{0} файлу" : "{0} files"}"
-            data-disqualified="${uk ? "{0} дискваліфіковано" : "{0} disqualified"}"
-            data-history="${uk ? "історія ({0})" : "history ({0})"}">Conflicts of interest of this round</a></p>
+            data-disqualified-one="${uk ? "{0} дискваліфікований" : "{0} disqualified"}"
+            data-disqualified-few="${uk ? "{0} дискваліфіковані" : "{0} disqualified"}"
+            data-disqualified-many="${uk ? "{0} дискваліфікованих" : "{0} disqualified"}"
+            data-disqualified-other="${uk ? "{0} дискваліфікованого" : "{0} disqualified"}"
+            data-history="${uk ? "історія ({0})" : "history ({0})"}" data-history-limit="500">Conflicts of interest of this round</a></p>
         <p id="round-authors-link"><a href="/contest/1/authors?round=7" data-roundstat-counts="${URL}" data-kind="authors"
             data-lang="${lang}"
             data-label-count="Authors of this round ({0})" data-label-none="Authors of this round: none stored"
+            data-label-none-unknown="Authors of this round: none stored · {0}"
             data-unknown-one="{0} file without an author" data-unknown-few="{0} files without an author"
             data-unknown-many="{0} files without an author" data-unknown-other="{0} files without an author">Authors of this round</a></p>`;
     return {
@@ -65,10 +69,28 @@ describe("the conflicts link", () => {
         expect(enabled(second)).toBe(true);
     });
 
-    test("the language's plural form", () => {
+    test("the language's plural form, of the files and the disqualified", () => {
         const { conflicts } = page("uk");
-        applyCounts(document, { authors: 1, withoutAuthor: 0, conflicts: 22, disqualified: 0 });
-        expect(conflicts.textContent).toBe("Конфлікт інтересів у цьому раунді (22 файли)");
+        applyCounts(document, { authors: 1, withoutAuthor: 0, conflicts: 22, disqualified: 5 });
+        expect(conflicts.textContent).toBe("Конфлікт інтересів у цьому раунді (22 файли · 5 дискваліфікованих)");
+        const second = page("uk").conflicts;
+        applyCounts(document, { authors: 1, withoutAuthor: 0, conflicts: 0, disqualified: 21 });
+        expect(second.textContent).toBe("Конфлікт інтересів у цьому раунді (21 дискваліфікований)");
+    });
+
+    test("a history longer than the page lists: its limit and a plus", () => {
+        const { conflicts } = page();
+        applyCounts(document, { authors: 1, withoutAuthor: 0, conflicts: 0, disqualified: 0, history: 501 });
+        expect(conflicts.textContent).toBe("Conflicts of interest of this round: none · history (500+)");
+        const second = page().conflicts;
+        applyCounts(document, { authors: 1, withoutAuthor: 0, conflicts: 0, disqualified: 0, history: 500 });
+        expect(second.textContent).toBe("Conflicts of interest of this round: none · history (500)");
+    });
+
+    test("a translation's $ patterns are kept as they are", () => {
+        const t = { lang: "en", labelCount: "C $& $1 ({0})", labelNone: "", files: { one: "{0} $&", other: "{0} $'" },
+            disqualified: {}, history: "" };
+        expect(conflictsLabel({ conflicts: 2, disqualified: 0 }, t).text).toBe("C $& $1 (2 $')");
     });
 
     test("none, but a history: the link stays, to the history", () => {
@@ -107,11 +129,18 @@ describe("the authors link", () => {
         expect(second.textContent).toBe("Authors of this round (1)");
     });
 
-    test("no author stored: disabled", () => {
+    test("no author stored and no file without one: disabled", () => {
         const { authors } = page();
-        applyCounts(document, { authors: 0, withoutAuthor: 5, conflicts: 1, disqualified: 0 });
+        applyCounts(document, { authors: 0, withoutAuthor: 0, conflicts: 1, disqualified: 0 });
         expect(authors.textContent).toBe("Authors of this round: none stored");
         expect(disabled(authors)).toBe(true);
+    });
+
+    test("no author stored, but files without one: enabled, saying so", () => {
+        const { authors } = page();
+        applyCounts(document, { authors: 0, withoutAuthor: 5, conflicts: 1, disqualified: 0 });
+        expect(authors.textContent).toBe("Authors of this round: none stored · 5 files without an author");
+        expect(enabled(authors)).toBe(true);
     });
 
     test("an answer without the count: unchanged", () => {
