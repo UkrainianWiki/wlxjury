@@ -631,6 +631,16 @@ rows. A round list's monument filter (`RoundList.monument`, `monument=`) only na
 viewer may already see, after `viewAs`; its value is bound in every statement, never put into the
 SQL text (`ContestFilesMonumentSpec`, `MonumentControllerSpec`, `RoundListMonumentSpec`).
 
+A round list's author filter (`RoundList.author`, `author=`) is kept only for
+`User.canViewAuthors` in the round's own contest (`RoundList.authorParam`, called by
+`RoundList.of` with the user as `Secured.inContest` gives it; `LargeViewController.rateByPageId`
+passes the session user, whose roles may be another contest's: the check then fails closed and the
+author is dropped, and only jurors vote anyway): for anyone else it is dropped
+without an error, as the contest files page drops it, so no list a juror sees carries, echoes or
+shows an author (the page's echoes of the request's own URL, such as `returnTo`, repeat what was
+sent). It too only narrows a list after `viewAs`, and the author is bound in every statement
+(`RoundListAuthorSpec`, `RoundAuthorFilterSpec`, `AuthorsSpec`).
+
 **Rule: conflicts of interest and lobbying.** The tool shows a round's jurors and votes only
 under the rules above, never to a participant without a role in the contest, so an author can't
 find and lobby a juror through it. Files by a contest member or root (`CoiMembers`: the file's

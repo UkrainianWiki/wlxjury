@@ -127,6 +127,34 @@ class LargeViewControllerSpec extends PlaySpecification {
         (doc.select("[data-nav=up], [data-nav=down]").asScala.map(_.attr("href")).forall(_.contains(monument)) must beTrue)
     }
 
+    "keep the author filter (staff only) in its keys' and stars' votes and moves, all by paths" in {
+      implicit val request = play.api.test.FakeRequest("GET", "/").withCSRFToken
+      implicit val messages = Helpers.stubMessagesApi().preferred(request)
+      implicit val flash: Flash = Flash()
+
+      val files = Seq(1L, 2L, 3L).map(id => ImageWithRating(Image(pageId = id, title = s"File:$id.jpg"), votes = Nil))
+      val round = Round(id = Some(1), number = 1, contestId = 1, active = true, rates = Round.ratesById(5))
+      // a root juror's own list: the only staff list that votes
+      val user = User("name", "email", id = Some(1), roles = Set("jury", "root"), contestId = Some(1))
+      val list = RoundList(round, asUserId = 1, filter = VoteFilter.Unrated, order = ListOrder.FileOrder)
+        .withAuthor(Some("O'Brien \"X\""))
+      val hood = Neighbourhood(files, 1, 1)
+      val doc = Jsoup.parse(contentAsString(views.html.large.main_large(user = user, list = list, readOnly = false,
+        hood = hood)(views.html.large.navigationButtons(user, list, hood, 0.0, readOnly = false))))
+      val stars = doc.getElementById("rate-image")
+      val keys = doc.getElementById("large-keys")
+      val author = "author=O%27Brien+%22X%22"
+      val urls = (keys.attributes.asScala.toSeq ++ stars.attributes.asScala.toSeq)
+        .filter(a => a.getKey.startsWith("data-key-") || a.getKey.startsWith("data-vote-key-"))
+        .map(_.getValue)
+      (stars.attr("data-vote-query") must_== s"?filter=unrated&$author&sort=file") and
+        (keys.attr("data-vote-key-1") must startWith("/large/round/1/pageid/2/select/1?")) and
+        (keys.attr("data-vote-key-1") must contain(author)) and
+        (urls must not(beEmpty)) and
+        (urls.filterNot(u => u.startsWith("/") && !u.startsWith("//")) must beEmpty) and
+        (doc.select("[data-nav=up], [data-nav=down]").asScala.map(_.attr("href")).forall(_.contains(author)) must beTrue)
+    }
+
     "keep the binary order of all the jurors' votes in its links" in {
       implicit val request = play.api.test.FakeRequest("GET", "/").withCSRFToken
       implicit val messages = Helpers.stubMessagesApi().preferred(request)
