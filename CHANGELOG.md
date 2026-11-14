@@ -65,6 +65,25 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   (`GET /roundstat/:round/counts`, numbers only, on the blocking pool) for those who may see all
   three links, checked in the round's own contest; until it answers, without JavaScript or if it
   fails, the two links stay as before, enabled and without counts. Organizer guide: "Statistics".
+- **A round's lists by monument; jurors no longer open the contest files page** (the maintainer's
+  decisions of 2026-11-14, PR-2 of the round filters proposal v4; developed 2026-11-14,
+  `stack/147-monument-round-filter`): a round's gallery, by-rate gallery, file list and comments
+  report take `monument=<id>` (exactly, as on the contest files page), shown as a chip
+  **Monument: … (N) ×** with a link to the monument's page. Every link of the list keeps it: the
+  pages, tabs, orders, views, the round and juror menus, and the large view's next and previous
+  files and votes, by the buttons, stars and keys. The tabs and the pager count only the
+  monument's files; the region is dropped and its menu hidden (a monument is in one region). The
+  large view shows a compact chip while the filter is on, and its monument box a line **This
+  monument in the list (N)**, which opens the current list (the same juror, tab and order) with
+  only the monument's files, or says it is the list's only file of the monument; files whose
+  monument isn't in a monument list (Wiki Loves Earth, other countries) get a small box with the
+  id and that line. The monument page's **In round …: N** links the round's gallery with the
+  monument: a juror's own files for a juror, all the jurors' votes for organizers, admins and
+  root. **Jurors no longer open the contest files page; a monument's page links their round's
+  files instead** (reverses D9): the page, its large view and its region and country menus are
+  the contest's admins', organizers' and root's again (a juror gets the 403 page or JSON 403), and
+  a juror's monument page has no contest count. `byRegionStat`, `regionCounts` and
+  `regionRateCounts` bind every value. Juror, organizer and admin guides.
 
 **Development**
 

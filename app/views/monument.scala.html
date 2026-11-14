@@ -4,9 +4,11 @@
 
 @* A monument's page (MonumentController.byId), which a file's monument card links: the monument
    as its Wikipedia list has it, its list row, Commons category and Wikidata item, and, only in a
-   contest and round the user may see (MonumentController.context), its files there: a count with
-   a link to the contest files page narrowed to them, and the round's count (a juror's own
-   files). No author, vote or juror anywhere. *@
+   contest and round the user may see (MonumentController.context), its files there: for those
+   who may open the contest files page, a count with a link to it narrowed to them; and the
+   round's count (a juror's own files) with a link to the round's list narrowed to them (a
+   juror's own gallery). A juror gets the round's line only; with no round they may view, no
+   "Files" row. No author, vote or juror anywhere. *@
 @defining(page.monument) { m =>
 @main("monument.page.title", user, contestId = page.context.flatMap(_.contest.id)) {
     <div class="container mt-3" id="monument">
@@ -30,7 +32,7 @@
                 <dt class="col-sm-2 fw-normal text-body-secondary">@Messages("monument.wikidata")</dt>
                 <dd class="col-sm-10"><a id="monument-wikidata-link" href="@url" target="_blank" rel="noopener">@q ↗</a></dd>
             }
-            @for(context <- page.context) {
+            @for(context <- page.context if context.files.isDefined || context.round.isDefined) {
                 <dt class="col-sm-2 fw-normal text-body-secondary">@Messages("monument.files")</dt>
                 <dd class="col-sm-10" id="monument-files">
                     @for(n <- context.files) {
@@ -40,10 +42,15 @@
                             <span id="monument-contest-files">@Messages("monument.files.contest", n)</span>
                         }
                     }
-                    @* the round's count only: its list filtered by monument comes later *@
+                    @* the round's count, linking its list with only the monument's files: the viewer's own
+                       gallery (own) or all the jurors' votes; no link to a list of none *@
                     @for(inRound <- context.round) {
                         @if(context.files.isDefined) { · }
-                        <span id="monument-round-files">@Messages("monument.files.round", inRound.round.description, inRound.files)@if(inRound.own) { <span class="text-body-secondary small">(@Messages("monument.files.round.yours"))</span>}</span>
+                        @if(inRound.files > 0) {
+                            <a id="monument-round-files" href="@inRound.listUrl" title="@Messages("monument.files.round.title")">@Messages("monument.files.round", inRound.round.description, inRound.files)@if(inRound.own) { <span class="small">(@Messages("monument.files.round.yours"))</span>} &rarr;</a>
+                        } else {
+                            <span id="monument-round-files">@Messages("monument.files.round", inRound.round.description, inRound.files)@if(inRound.own) { <span class="text-body-secondary small">(@Messages("monument.files.round.yours"))</span>}</span>
+                        }
                     }
                 </dd>
             }

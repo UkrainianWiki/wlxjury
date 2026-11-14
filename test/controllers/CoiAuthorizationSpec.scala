@@ -137,18 +137,10 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
       }
     }
 
-    "be ignored for the contest's juror (their files page, decision D9) and refused to another contest's admin" in {
+    "be refused to a juror and to another contest's admin" in {
       testDbApp { app =>
         setUp()
-        val juror = page(app, "juror@example.com", s"/contest/$contestId/files?coi=true")
-        status(juror) === OK
-        val html = contentAsString(juror)
-        // the whole list, as without coi: no conflicts, no people, no tab
-        html must contain("File:Image3.jpg")
-        html must not(contain("data-coi"))
-        html must not(contain("coi-people"))
-        html must not(contain("coi-tab"))
-        html must not(contain("Board member"))
+        status(page(app, "juror@example.com", s"/contest/$contestId/files?coi=true")) === FORBIDDEN
         status(page(app, "other-admin@example.com", s"/contest/$contestId/files?coi=true")) === FORBIDDEN
       }
     }

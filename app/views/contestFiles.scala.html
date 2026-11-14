@@ -36,10 +36,6 @@
                 }
                 <p><a href="@routes.RoundController.roundStat(round.getId)">@Messages("statistics")</a></p>
             }
-            case None if !view.full => {
-                @* a juror's page (view.full false): the files not deleted on Commons, no tabs *@
-                <p id="file-count" class="mb-2">@Messages("files.all") (@view.allCount)</p>
-            }
             case None => {
                 <ul class="nav nav-tabs mb-2" id="file-tabs">
                     <li class="nav-item">

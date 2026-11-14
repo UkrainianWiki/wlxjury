@@ -3,27 +3,31 @@
   "named": [
     {
       "group": "ImageDbNew.SelectionQuery.list",
-      "expect": {"10.6": ["vote_jury_round_rate_mon_page_idx"]},
+      "expect": {"10.6": ["vote_jury_round_rate_mon_page_idx", "vote_round_monument_id_idx"],
+                 "10.11": ["vote_jury_round_ratedesc_mon_page_idx", "vote_round_monument_id_idx"]},
       "canary": true,
-      "why": "the juror gallery's page (the deferred join's inner select) and the large view's neighbours: V99/V100's gallery index"
+      "why": "the juror gallery's page (the deferred join's inner select) and the large view's neighbours: V99/V100's gallery index; with a monument filter, that index or the monument's (round_id, monument_id), the optimizer's choice"
     },
     {
       "group": "ImageDbNew.SelectionQuery.regionRateCounts",
-      "expect": {"10.6": ["vote_jury_round_rate_mon_page_idx", "vote_round_jury_rate_idx"]},
+      "expect": {"10.6": ["vote_jury_round_rate_mon_page_idx", "vote_round_jury_rate_idx", "vote_round_monument_id_idx"],
+                 "10.11": ["vote_jury_round_ratedesc_mon_page_idx", "vote_round_jury_rate_idx", "vote_round_monument_id_idx"]},
       "canary": true,
-      "why": "the juror's counts by region and rate (the gallery's total, tabs and region menu)"
+      "why": "the juror's counts by region and rate (the gallery's total, tabs and region menu); with a monument filter, also the monument's index"
     },
     {
       "group": "ImageDbNew.SelectionQuery.countBefore",
-      "expect": {"10.6": ["vote_jury_round_rate_mon_page_idx"]},
+      "expect": {"10.6": ["vote_jury_round_rate_mon_page_idx", "vote_round_monument_id_idx"],
+                 "10.11": ["vote_jury_round_ratedesc_mon_page_idx", "vote_round_monument_id_idx"]},
       "canary": true,
-      "why": "a file's place in the juror's list (large view, a vote, a file's page)"
+      "why": "a file's place in the juror's list (large view, a vote, a file's page); with a monument filter, also the monument's index"
     },
     {
       "group": "ImageDbNew.SelectionQuery.orderKey",
-      "expect": {"10.6": ["vote_page_jury_round_uidx"]},
+      "expect": {"10.6": ["vote_page_jury_round_uidx", "vote_round_monument_id_idx"],
+                 "10.11": ["vote_page_jury_round_uidx", "vote_round_monument_id_idx"]},
       "canary": false,
-      "why": "a file's order key in the juror's list: one vote by its unique key"
+      "why": "a file's order key in the juror's list: one vote by its unique key; with a monument filter, possibly the monument's index"
     },
     {
       "group": "VoteJdbc.voteId",
