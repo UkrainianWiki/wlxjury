@@ -933,6 +933,7 @@ monument.filter.remove = Afficher les fichiers de tous les monuments
 monument.page.open = La page du monument
 monument.card.round.link = Ce monument dans la liste ({0})
 monument.card.round.only = Le seul fichier de ce monument dans la liste
+monument.card.round.title = N''afficher que les fichiers de ce monument dans cette liste
 monument.filter.chip.short = Monument : {0}
 monument.files.round.title = Ouvrir ces fichiers dans la galerie du tour
 authors.list = Auteurs

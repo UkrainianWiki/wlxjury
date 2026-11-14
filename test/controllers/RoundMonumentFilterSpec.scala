@@ -149,6 +149,20 @@ class RoundMonumentFilterSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "send a vote in a stopped round to the first page of the same list, its tab, order and monument kept" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        DB.autoCommit { implicit s => sql"UPDATE round SET active = 0 WHERE id = ${f.round.getId}".update() }
+        val vote = route(app,
+          FakeRequest(POST, s"/large/round/${f.round.getId}/pageid/1/select/1?filter=unrated&monument=$M&sort=latest-vote")
+            .withSession(Secured.UserName -> f.juror.email).withCSRFToken).get
+        status(vote) === SEE_OTHER
+        redirectLocation(vote) must beSome(f.gallery(f.juror.getId, s"?filter=unrated&monument=$M&sort=latest-vote"))
+        // nothing voted
+        VoteJdbc.findBy(1L, f.juror.getId, f.round.getId).map(_.rate) must beSome(0)
+      }
+    }
+
     "link the list of its file's monument from the card, a minimal card without a monument row" in {
       testDbApp { implicit app =>
         val f = fixture()

@@ -63,9 +63,13 @@ class LargeViewController @Inject() (
     // only a juror of the round's contest votes (Secured.VotePermission), by the buttons, the
     // keys or a criterion's rate: an organizer, admin or root without that role is a 403 page
     withAuth(Secured.VotePermission(roundId)) { user => implicit request =>
-    // a round open to its jurors, and the juror not stopped on it (P6): else as a stopped round
-    Round.findById(roundId).filter(_.openToJurors).filterNot(_ => RoundUser.isStopped(roundId, user.getId)).fold(
-      Redirect(routes.GalleryController.list(user.getId, 1, region, roundId))
+    // a round open to its jurors, and the juror not stopped on it (P6): else as a stopped round,
+    // to the first page of the juror's list the vote was cast in (its tab, order and monument
+    // kept), whose page says the round is closed
+    val maybeRound = Round.findById(roundId)
+    maybeRound.filter(_.openToJurors).filterNot(_ => RoundUser.isStopped(roundId, user.getId)).fold(
+      Redirect(maybeRound.fold(routes.GalleryController.list(user.getId, 1, region, roundId).url)(round =>
+        RoundList.of(round, user, user.getId, region, GalleryView.of(request)).pageUrl(1)))
     ) {
       // a rate the round doesn't take (the stars and keys give none), or a vote the round
       // doesn't take: a criteria round's votes are per criterion (a vote of the file's own

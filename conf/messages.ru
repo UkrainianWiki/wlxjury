@@ -910,6 +910,7 @@ monument.filter.remove = Показать файлы всех памятнико
 monument.page.open = Страница памятника
 monument.card.round.link = Этот памятник в списке ({0})
 monument.card.round.only = Единственный файл этого памятника в списке
+monument.card.round.title = Показать в этом списке только файлы этого памятника
 monument.filter.chip.short = Памятник: {0}
 monument.files.round.title = Открыть эти файлы в галерее раунда
 authors.list = Авторы
