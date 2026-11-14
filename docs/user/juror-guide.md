@@ -319,7 +319,8 @@ and its id. It opens the monument's page:
 
 The contest's files the link opens are all the contest's photos of the monument, not only
 yours, in a read-only gallery: no votes, no authors, and no files deleted on Commons. Remove the
-**Monument** chip to see all the contest's files.
+**Monument** chip to see all the contest's files. A monument's page is the way to the contest's
+files for jurors: the top bar has no link to them.
 
 <img src="images/juror-large-view-yes-no.png" alt="The large view of a yes/no round" width="820">
 
