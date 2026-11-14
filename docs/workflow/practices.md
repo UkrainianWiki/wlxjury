@@ -207,7 +207,10 @@ push of a pushed branch: reviewers' threads and the PR series' recorded tips sta
 
 **7.1 A release is a tree that was tested.** Its commit had the full suite run (or the same tree
 did); the roadmap's "Before any production deploy" lists the user's manual checks per release
-(every release, then per migration range); the ZIP is built only after them. The deploy itself is
+(every release, then per migration range); the ZIP is built only after them. At the local release
+build `test_database_restore` always runs and `test_release_script` only if `scripts/deployment/`
+changed since the last released version; the release record lists which ran and why (operations
+§3.3). The deploy itself is
 [deployment.md](../deployment.md) and [operations](../operations/practices.md) §4.
 
 **7.2 Hotfixes branch from what production runs.** `ukwikidev/hotfix-<what>-<deployed sha>` from

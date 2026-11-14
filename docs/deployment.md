@@ -815,8 +815,15 @@ docker run --rm --network none --mount type=bind,source="$PWD",target=/workspace
 sbt "testOnly deployment.* controllers.ReadinessControllerSpec services.jobs.JobSchedulerSpec db.ConvertToInnoDbMigrationSpec"
 sbt dist
 docker build -f scripts/deployment/Dockerfile.test -t wlxjury-deployment-test:local scripts/deployment
+# as CI runs it
 docker run --rm --network none --mount type=bind,source="$PWD",target=/workspace,readonly --workdir /workspace/scripts/deployment wlxjury-deployment-test:local -B -m unittest -v test_database_restore test_release_script
 docker run --rm --mount type=bind,source="$PWD",target=/s,readonly koalaman/shellcheck:stable -S style /s/scripts/deployment/wlxjury-release.sh /s/conf/monit/wlxjury-check
+```
+
+From Git Bash on Windows prefix the `docker run` lines with `MSYS_NO_PATHCONV=1`, or `/workspace` is rewritten to a Windows path. At a local release build run only the 6 restore tests, which start and restore the build's real ZIP from `target/universal` (add `test_release_script`, 57 tests on synthetic ZIPs, only when `scripts/deployment/` changed since the last released version; `-e CI` makes a missing ZIP fail instead of skipping the packaged-release test):
+
+```bash
+MSYS_NO_PATHCONV=1 docker run --rm -e CI --network none --mount type=bind,source="$PWD",target=/workspace,readonly --workdir /workspace/scripts/deployment wlxjury-deployment-test:local -B -m unittest -v test_database_restore
 ```
 
 Python 3.8 is the oldest supported version. The restore image is self-contained: Ubuntu 22.04's MariaDB 10.6 (`--build-arg UBUNTU=24.04` for a newer distribution's 10.11), OpenJDK 17, Python 3, `curl`, `unzip` and `monit`. Its packaged-release test runs the ZIP from `sbt dist`, checks that it carries no server setup files and that readiness refuses a forwarded request. `test_release_script` runs `wlxjury-release.sh` unmodified against a real MariaDB, with stand-ins only for systemd (a `systemctl` stub that starts and stops the selected release's launcher) and Apache (a fake proxy that honors the maintenance flag). It covers:
