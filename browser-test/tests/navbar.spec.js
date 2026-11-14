@@ -75,31 +75,58 @@ test.describe('a juror\'s navbar menus by keyboard', () => {
   });
 });
 
-// A long juror name, as organisers' bars show them (the fixture's are "Juror N"): put in the juror
-// menu's button before measuring
+// The widest bar the fixture can't show by itself, put in before measuring: a long juror name
+// (the fixture's are "Juror N"; main.css wlx-truncate cuts it), four-digit counts on the Votes
+// button (All and its unrated) and a count on the Comments button (the fixture has no comments).
+// A classic 17 px scrollbar, which the headless browser's overlay scrollbars don't take: the
+// window keeps the nominal width (the media queries see it, as a real browser's do) and the page
+// 17 px less, by a right margin on the root element.
 const LONG_NAME = 'Олександра Костянтинопольська';
+const SCROLLBAR = 17;
 
-// an admin's bar has the most page links (contest files, users, rounds, statistics)
+async function widest(page) {
+  await page.locator('#juror-menu .wlx-truncate').evaluate((span, name) => { span.textContent = name; }, LONG_NAME);
+  await page.locator('#votes-menu .wlx-votes-count').evaluate((span) => { span.textContent = ' (1234)'; });
+  await page.locator('#votes-menu .wlx-votes-unrated').evaluate((span) => { span.textContent = ' · 1234 без оцінки'; });
+  await page.locator('#comments-menu > button').evaluate((button) => {
+    let count = button.querySelector('.wlx-comments-count');
+    if (!count) {
+      count = document.createElement('span');
+      count.className = 'wlx-comments-count';
+      button.appendChild(count);
+    }
+    count.textContent = ' (31)';
+  });
+}
+
+// an admin's bar has the most pages in its Pages menu, root's not counted (no wider button)
 for (const [role, width] of [['organizer', 1280], ['organizer', 1700], ['admin', 1280], ['admin', 1700]]) {
-  test(`the ${role}'s bar of one juror's votes stays on one line at ${width} px in Ukrainian`, { tag: '@O-03' }, async ({ contextAs, fixture }) => {
+  test(`the ${role}'s bar of one juror's votes stays on one line at ${width} px in Ukrainian`, { tag: '@O-03' }, async ({ contextAs, fixture }, testInfo) => {
     const context = await contextAs(role, { viewport: { width, height: 900 }, locale: 'uk-UA' });
     await context.addCookies([{ name: 'PLAY_LANG', value: 'uk', url: fixture.baseUrl }]);
     const page = await context.newPage();
     await page.goto(galleryPath(fixture.roundBinaryId, fixture.accounts.juror.id));
     await expect(page.locator('html')).toHaveAttribute('lang', 'uk');
-    const votes = page.locator('#votes-menu > button');
-    // on all files, the widest Votes button: its count and unrated read by screen readers below
-    // 1700 px, shown from there
-    await expect(votes).toHaveAccessibleName(/^Голоси: Всі \(\d+\) · \d+ без оцінки$/);
+    // on all files, the widest Votes button: its unrated read by screen readers only below
+    // 1700 px, shown from there; the count always
+    await expect(page.locator('#votes-menu > button')).toHaveAccessibleName(/^Голоси: Всі \(\d+\) · \d+ без оцінки$/);
+    await expect(page.locator('#pages-menu > button')).toHaveAccessibleName('Перейти до: Галерея');
+    await widest(page);
+    await page.evaluate((px) => { document.documentElement.style.marginRight = `${px}px`; }, SCROLLBAR);
+    expect(await page.evaluate(() => Math.round(document.querySelector('nav.navbar').getBoundingClientRect().width))).toBe(width - SCROLLBAR);
     const unrated = await page.locator('#votes-menu .wlx-votes-unrated').boundingBox();
     if (width >= 1700) expect(unrated.width).toBeGreaterThan(20);
     else expect(unrated.width).toBeLessThanOrEqual(1);
-    // the juror menu's name, cut with an ellipsis past its width (main.css wlx-nav-truncate)
-    await page.locator('#juror-menu .wlx-nav-truncate').evaluate((span, name) => { span.textContent = name; }, LONG_NAME);
+    expect((await page.locator('#votes-menu .wlx-votes-count').boundingBox()).width).toBeGreaterThan(20);
+    expect((await page.locator('#comments-menu .wlx-comments-count').boundingBox()).width).toBeGreaterThan(10);
     const first = await page.locator('.wlx-nav-groups > ul > li').first().boundingBox();
     const pager = await page.locator('#pagenav').boundingBox();
+    const logged = await page.locator('nav .container-fluid > .navbar-nav').last().boundingBox();
     const middle = (box) => box.y + box.height / 2;
-    expect(Math.abs(middle(pager) - middle(first)), `the pager on the first menu's line at ${width} px`).toBeLessThan(4);
+    const free = Math.round(logged.x - (pager.x + pager.width));
+    testInfo.annotations.push({ type: 'width', description: `${role} ${width - SCROLLBAR} px: ${free} px free after the pager` });
+    console.log(`[width] ${role} ${width - SCROLLBAR} px: ${free} px free after the pager`);
+    expect(Math.abs(middle(pager) - middle(first)), `the pager on the first menu's line at ${width - SCROLLBAR} px`).toBeLessThan(4);
     await context.close();
   });
 }
