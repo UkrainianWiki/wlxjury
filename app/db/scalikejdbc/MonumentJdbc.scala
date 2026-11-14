@@ -29,8 +29,24 @@ object MonumentJdbc extends SQLSyntaxSupport[Monument] {
     gallery = rs.stringOpt(c.gallery),
     resolution = rs.stringOpt(c.resolution),
     page = rs.string(c.page),
-    contest = rs.longOpt(c.contest)
+    contest = rs.longOpt(c.contest),
+    // scalawiki's Monument has no field of its own for it: as the list's parser gives it
+    otherParams = rs.stringOpt(c.column("wikidata")).map(WikidataParam -> _).toMap
   )
+
+  /** The list rows' parameter of a monument's Wikidata item ([[wikidataOf]]), which scalawiki's
+    * list configs map to no field: the parser puts it in `otherParams`.
+    */
+  val WikidataParam = "wikidata"
+
+  private val WikidataId = "[Qq]([1-9][0-9]{0,14})".r
+
+  /** The monument's Wikidata item (`Q` and its number), from the list row's `wikidata`
+    * parameter (`otherParams`, V102): trimmed, `q` as `Q`; anything else (empty, a URL, a typo)
+    * is none.
+    */
+  def wikidataOf(m: Monument): Option[String] =
+    m.otherParams.get(WikidataParam).map(_.trim).collect { case WikidataId(n) => "Q" + n }
 
   // ── SQL builders ──────────────────────────────────────────────────────────
 
@@ -60,7 +76,8 @@ object MonumentJdbc extends SQLSyntaxSupport[Monument] {
       ${c.gallery} = VALUES(${c.gallery}),
       ${c.page} = VALUES(${c.page}),
       ${c.contest} = VALUES(${c.contest}),
-      adm0 = VALUES(adm0)"""
+      adm0 = VALUES(adm0),
+      wikidata = VALUES(wikidata)"""
   }
 
   // ── Shared helpers ─────────────────────────────────────────────────────────
@@ -81,7 +98,8 @@ object MonumentJdbc extends SQLSyntaxSupport[Monument] {
         m.gallery,
         m.page,
         m.contest,
-        m.id.split("-").headOption.map(_.take(3))
+        m.id.split("-").headOption.map(_.take(3)),
+        wikidataOf(m)
       )
     }
 
@@ -100,7 +118,8 @@ object MonumentJdbc extends SQLSyntaxSupport[Monument] {
       c.gallery     -> sqls.?,
       c.page        -> sqls.?,
       c.contest     -> sqls.?,
-      sqls"adm0"    -> sqls.?
+      sqls"adm0"    -> sqls.?,
+      sqls"wikidata" -> sqls.?
     )
   }
 
@@ -133,16 +152,6 @@ object MonumentJdbc extends SQLSyntaxSupport[Monument] {
   def pagesOf(ids: Seq[String])(implicit session: DBSession = autoSession): Map[String, String] =
     if (ids.isEmpty) Map.empty
     else sql"SELECT id, page FROM monument WHERE id IN ($ids)".map(rs => rs.string(1) -> rs.string(2)).list().toMap
-
-  def findAll(
-      limit: Option[Int] = None
-  )(implicit session: DBSession = autoSession): List[Monument] = withSQL {
-    val q: PagingSQLBuilder[List[Monument]] = select
-      .from(MonumentJdbc as c)
-      .orderBy(c.id)
-
-    limit.fold(q)(l => q.limit(l))
-  }.map(MonumentJdbc(c)).list()
 
   def find(id: String)(implicit session: DBSession = autoSession): Option[Monument] = withSQL {
     select.from(MonumentJdbc as c).where.eq(c.id, id)

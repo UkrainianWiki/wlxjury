@@ -39,7 +39,7 @@
                         @if(user.canViewOrgInfo(round)){
                             @authorInfo(image, round.contestId)
                         }
-                        @monumentInfo(image, monument)
+                        @monumentInfo(image, monument, Some(round.contestId), round.id)
                         @fullSizeUrl(image, round)
                         @juryStat(votes, list, jurorCriteria)
                     }

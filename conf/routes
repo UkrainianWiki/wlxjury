@@ -156,8 +156,8 @@ GET         /roundstat                                                          
 GET         /roundstat/:round                                                       @controllers.RoundController.roundStat(round: Long)
 GET         /roundstat/:round/table                                                 @controllers.RoundController.roundStatTable(round: Long)
 
-GET         /monuments                                                              controllers.MonumentController.list()
-GET         /monuments/id/:id                                                       controllers.MonumentController.byId(id)
+GET         /monuments                                                              controllers.MonumentController.list(id: Option[String] ?= None)
+GET         /monuments/id/:id                                                       controllers.MonumentController.byId(id, contest: Option[Long] ?= None, round: Option[Long] ?= None)
 
 # Bootstrap, jQuery and Font Awesome from their webjars (build.sbt), served from this host;
 # only the webjars listed in controllers.WebJars.Served
@@ -167,11 +167,11 @@ GET         /contests                                                           
 POST        /contests/save                                                          @controllers.ContestController.saveContest()
 POST        /contests/import                                                        @controllers.ContestController.importContests()
 GET         /contest/:id/images                                                     @controllers.ImageController.images(id: Long)
-GET         /contest/:contestId/files                                               @controllers.GalleryController.contestFiles(contestId: Long, page: Int ?= 1, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None, coi: Boolean ?= false, author: Option[String] ?= None)
-GET         /contest/:contestId/files/regions                                       @controllers.GalleryController.contestFileRegions(contestId: Long, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None, coi: Boolean ?= false, author: Option[String] ?= None)
-GET         /contest/:contestId/files/countries                                     @controllers.GalleryController.contestFileCountries(contestId: Long, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None, author: Option[String] ?= None)
+GET         /contest/:contestId/files                                               @controllers.GalleryController.contestFiles(contestId: Long, page: Int ?= 1, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None, coi: Boolean ?= false, author: Option[String] ?= None, monument: Option[String] ?= None)
+GET         /contest/:contestId/files/regions                                       @controllers.GalleryController.contestFileRegions(contestId: Long, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None, coi: Boolean ?= false, author: Option[String] ?= None, monument: Option[String] ?= None)
+GET         /contest/:contestId/files/countries                                     @controllers.GalleryController.contestFileCountries(contestId: Long, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None, author: Option[String] ?= None, monument: Option[String] ?= None)
 GET         /contest/:contestId/authors                                             @controllers.AuthorsController.list(contestId: Long, round: Option[Long] ?= None, sort: Option[String] ?= None)
-GET         /contest/:contestId/files/:pageId                                       @controllers.GalleryController.contestFileLarge(contestId: Long, pageId: Long, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None, coi: Boolean ?= false, author: Option[String] ?= None)
+GET         /contest/:contestId/files/:pageId                                       @controllers.GalleryController.contestFileLarge(contestId: Long, pageId: Long, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None, coi: Boolean ?= false, author: Option[String] ?= None, monument: Option[String] ?= None)
 POST        /contest/:id/importimages                                               @controllers.ImageController.importImages(id: Long)
 POST        /contest/:id/images/cache/start                                         @controllers.ImageController.startImageCache(id: Long)
 GET         /contest/:id/images/cache/status                                        @controllers.ImageController.imageCacheStatus(id: Long)

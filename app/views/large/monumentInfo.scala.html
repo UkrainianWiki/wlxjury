@@ -1,17 +1,20 @@
 @(
         image: org.intracer.wmua.Image,
-        monument: Option[org.scalawiki.wlx.dto.Monument]
+        monument: Option[org.scalawiki.wlx.dto.Monument],
+        contestId: Option[Long] = None,
+        roundId: Option[Long] = None
         )(implicit flash: Flash, request: play.api.mvc.Request[Any], messages: Messages)
 
+@* The file's monument, for everyone who sees the file (jurors too): its region, city, name and
+   place, and one link to the monument's page (MonumentController.byId), with the contest and the
+   round the file is seen in, which the page checks before it counts the monument's files there *@
 @for(m <- monument) {
-    <div class="card card-body large-box">
+    <div class="card card-body large-box" id="monument-card">
         @Messages(image.region.getOrElse("")), @views.WikiLinks(m.city, "uk.wikipedia.org") <br>
         @views.WikiLinks(m.name, "uk.wikipedia.org") <br>
         @views.WikiLinks(m.place, "uk.wikipedia.org")
-
-        @if(false){  <a href="@routes.MonumentController.byId(m.id)"><i class="icon-forward"></i></a> }
-
+        <div class="small mt-1">
+            <a id="monument-page" href="@routes.MonumentController.byId(m.id, contestId, roundId)">@Messages("monument.card.link", m.id) &rarr;</a>
+        </div>
     </div>
-
-
 }

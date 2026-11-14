@@ -1,0 +1,53 @@
+@import controllers.MonumentPage
+@import db.scalikejdbc.User
+@(user: User, page: MonumentPage)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+
+@* A monument's page (MonumentController.byId), which a file's monument card links: the monument
+   as its Wikipedia list has it, its list row, Commons category and Wikidata item, and, only in a
+   contest and round the user may see (MonumentController.context), its files there: a count with
+   a link to the contest files page narrowed to them, and the round's count (a juror's own
+   files). No author, vote or juror anywhere. *@
+@defining(page.monument) { m =>
+@main("monument.page.title", user, contestId = page.context.flatMap(_.contest.id)) {
+    <div class="container mt-3" id="monument">
+        <h1 class="h4 mb-1">@views.WikiLinks(m.name, MonumentPage.ListsHost)
+            <small class="text-body-secondary fs-6 ms-1" id="monument-meta">@m.id@for(t <- m.typ.filter(_.trim.nonEmpty)) { · @t}@for(y <- m.year.filter(_.trim.nonEmpty)) { · @views.WikiLinks(y, MonumentPage.ListsHost)}</small>
+        </h1>
+        <p class="mb-3" id="monument-place">
+            @for(c <- m.city.filter(_.trim.nonEmpty)) {@views.WikiLinks(c, MonumentPage.ListsHost)@if(m.place.exists(_.trim.nonEmpty)) {, }}@for(p <- m.place.filter(_.trim.nonEmpty)) {@views.WikiLinks(p, MonumentPage.ListsHost)}
+        </p>
+
+        <dl class="row mb-0" id="monument-links">
+            @for(url <- page.listUrl; title <- page.listPage) {
+                <dt class="col-sm-2 fw-normal text-body-secondary">@Messages("monument.list")</dt>
+                <dd class="col-sm-10"><a id="monument-list-link" href="@url" target="_blank" rel="noopener">@title@if(page.listAnchored) { #@m.id} ↗</a></dd>
+            }
+            @for(url <- page.commonsCategoryUrl; category <- page.commonsCategory) {
+                <dt class="col-sm-2 fw-normal text-body-secondary">@Messages("monument.commons")</dt>
+                <dd class="col-sm-10"><a id="monument-commons-link" href="@url" target="_blank" rel="noopener">Category:@category ↗</a></dd>
+            }
+            @for(url <- page.wikidataUrl; q <- page.wikidata) {
+                <dt class="col-sm-2 fw-normal text-body-secondary">@Messages("monument.wikidata")</dt>
+                <dd class="col-sm-10"><a id="monument-wikidata-link" href="@url" target="_blank" rel="noopener">@q ↗</a></dd>
+            }
+            @for(context <- page.context) {
+                <dt class="col-sm-2 fw-normal text-body-secondary">@Messages("monument.files")</dt>
+                <dd class="col-sm-10" id="monument-files">
+                    @for(n <- context.files) {
+                        @if(n > 0) {
+                            <a id="monument-contest-files" href="@context.filesUrl(m.id)">@Messages("monument.files.contest", n) &rarr;</a>
+                        } else {
+                            <span id="monument-contest-files">@Messages("monument.files.contest", n)</span>
+                        }
+                    }
+                    @* the round's count only: its list filtered by monument comes later *@
+                    @for(inRound <- context.round) {
+                        @if(context.files.isDefined) { · }
+                        <span id="monument-round-files">@Messages("monument.files.round", inRound.round.description, inRound.files)@if(inRound.own) { <span class="text-body-secondary small">(@Messages("monument.files.round.yours"))</span>}</span>
+                    }
+                </dd>
+            }
+        </dl>
+    </div>
+}
+}

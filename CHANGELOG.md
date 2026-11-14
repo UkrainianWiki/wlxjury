@@ -65,6 +65,36 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything deve
   follow it, with the juror, vote filter, region, scope and order. Comments without an account
   stay without links. Admins, organizers and root only, as the report: a juror's request with `commenter=` is
   refused as the report is, and ignored in their own gallery and large view.
+- **Monument page** (the maintainer's decisions D5-D9 of 2026-11-13; developed 2026-11-13,
+  `stack/140-monuments`): the monument box of a file's large view (in a round and on the contest
+  files page; jurors see it too) has one link, **Monument** and its id, to a page with the
+  monument as its Wikipedia list has it (name, place, year, type), its list row on uk.wikipedia
+  (`#<id>`: the regional lists' rows carry their id as an anchor; the special nominations' lists
+  don't, and are linked without one), its Commons category and its Wikidata item where the list
+  has them, and, in the contest and round the file was seen in, **Files: In the contest: N →**
+  (the contest files page with only the monument's files) and **In round …: N**. The contest and
+  round are checked on the server: only an active member of the contest (or root) gets counts,
+  only for a round they may see; a juror's round count is their own files (**yours**), their
+  contest count leaves out files deleted on Commons; no author or vote anywhere. Without them the
+  page has the monument alone. The round count has no link yet (a round list filtered by monument
+  is planned with the round list's author filter). The old `/monuments` table (the first 20
+  monuments, linked from nowhere) is now a box that opens a monument's page by its id.
+  The contest files page takes `monument=<id>` (exactly: `BINARY`, as `images.monument_id` is
+  `utf8mb4_general_ci`) with a chip **Monument: … (N) ×**, combined with the deleted files, the
+  region and country menus, the author filter and the large view.
+  **Jurors** of the contest can now open the contest files page (the maintainer's decision D9):
+  all its files except those deleted on Commons, without tabs, the authors list, the conflicts of
+  interest or any author; `deleted`, `round`, `coi` and `author` are ignored for them, and a
+  juror of another contest is refused as before. The top bar still links it for organizers and
+  admins only. Juror, organizer and admin guides: "The monument's page", "Monuments".
+
+**Development**
+
+- **V102 `monument.wikidata`** (VARCHAR(16), NULL; INSTANT, rerunnable): the list rows'
+  `wikidata` parameter, which scalawiki leaves in `otherParams`, stored by the monument list import
+  ("Update monuments") as `Q` and its number (anything else NULL) and replaced or cleared on each
+  import. Existing monuments get theirs on the next list import. Round lineage's `round.status`
+  moves to V103.
 
 ## 26.11.6 (2026-11-13)
 
