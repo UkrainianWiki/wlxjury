@@ -92,7 +92,29 @@ object PlanScenarios {
       })
     ).map { case (name, run) => within(name)(run()); name }
 
-    galleries ++ withComments ++ more
+    // the monument filter (the round filters proposal v4, PR-2): a gallery of one monument, the
+    // large view's line into it, a large view and a vote inside it; a file the scenarios above
+    // don't vote on. The seed gives every file its own monument id.
+    def monumentOf(pageId: Long) = f"${pageId % 27 + 1}%02d-101-$pageId%05d"
+    val inMonument = corner.pageId + 3
+    val monument = Seq(
+      "gallery monument" -> (() => page(list(ListOrder.FileOrder).withMonument(Some(monumentOf(inMonument))))),
+      "large view in monument filter" -> (() => {
+        val all = list(ListOrder.FileOrder)
+        all.around(inMonument).foreach(h => all.monumentLine(h.file))
+        all.withMonument(Some(monumentOf(inMonument))).around(inMonument)
+        ()
+      }),
+      "vote in monument filter" -> (() => {
+        val tab = list(ListOrder.FileOrder, VoteFilter.Unrated).withMonument(Some(monumentOf(inMonument)))
+        val hood = tab.around(inMonument)
+        VoteJdbc.rate(inMonument, jurorId, corner.roundId, 4)
+        hood.foreach(h => tab.voteMoved(inMonument, h.position, 4))
+        ()
+      })
+    ).map { case (name, run) => within(name)(run()); name }
+
+    galleries ++ withComments ++ more ++ monument
   }
 
   val DistributionScenario = "distribution"
