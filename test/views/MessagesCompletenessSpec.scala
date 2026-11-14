@@ -128,8 +128,7 @@ class MessagesCompletenessSpec extends Specification {
     "Min selected"         -> "rounds.scala.html: inside an HTML comment, never shown",
     "Max selected"         -> "rounds.scala.html: inside an HTML comment, never shown",
     "Recommended selected" -> "rounds.scala.html: inside an HTML comment, never shown"
-  ) ++ Seq("id", "place", "city", "user", "coordinates", "page", "type", "commons", "resolution")
-    .map(_ -> "monuments.scala.html: the unlinked /monuments list, headed by the field names")
+  )
 
   private lazy val literalKeys: Map[String, Set[String]] =
     sources

@@ -23,7 +23,8 @@ a different role in each contest. Roles are explained in the [admin guide](admin
 |---|---|---|---|
 | Vote | on their own files | no | no |
 | Read the statistics, the results of all jurors, the file list and the CSV | no | yes | yes |
-| See the contest's files and the conflicts page | no | yes | yes |
+| See the contest's files | without deleted files, authors or the tabs | yes | yes |
+| See the conflicts page | no | yes | yes |
 | See the files' authors and the authors list | no | yes | yes |
 | Comment on a file of an open round | their own files | any file of the round | any file of the round |
 | Read the [comments report](#o-comments-report) and its CSV | no | yes | yes |
@@ -256,6 +257,30 @@ The **Import and cache** button next to the contest's name is only for admins, w
 files in with it, see [Importing the contest's files](admin-guide.md#a-import-files).
 
 <img src="images/organizer-contest-files.png" alt="The contest's files as an organizer sees them, with the three tabs and no import button" width="1280">
+
+Jurors of the contest can open this page too, from a monument's page (see below): all the
+contest's files except those deleted on Commons, without the tabs, the authors, the authors
+list or the conflicts of interest. They never see votes there. The top bar doesn't link it for
+them.
+
+<a id="o-monuments"></a>
+### Monuments
+
+In a monuments contest, the monument's box in a file's large view (in a round and on the contest
+files page) ends with a link, **Monument** and its id, to the monument's page. It shows the
+monument as its Wikipedia list has it, links to its list row on Wikipedia, its Commons category
+and its Wikidata item where the list has them, and under **Files**:
+
+- **In the contest: N →**: the contest's files of this monument. The link opens the contest files
+  page with only them, under a chip **Monument: … (N)**; the **×** on the chip shows all the files
+  again. The filter takes the monument's id exactly and keeps to the pages, the region and
+  country menus, the author filter and the large view.
+- **In round …: N**: the round's files of this monument, those any juror has (for a juror: only
+  their own). The count has no link yet: a round's gallery filtered by monument is planned.
+
+The page counts files only in a contest you are a member of, and a round you may see; opened
+from elsewhere it shows the monument alone. **Monuments** (`/monuments`) opens a monument's page
+by its id.
 
 <a id="o-authors"></a>
 ### Authors

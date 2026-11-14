@@ -36,6 +36,10 @@
                 }
                 <p><a href="@routes.RoundController.roundStat(round.getId)">@Messages("statistics")</a></p>
             }
+            case None if !view.full => {
+                @* a juror's page (view.full false): the files not deleted on Commons, no tabs *@
+                <p id="file-count" class="mb-2">@Messages("files.all") (@view.allCount)</p>
+            }
             case None => {
                 <ul class="nav nav-tabs mb-2" id="file-tabs">
                     <li class="nav-item">
@@ -65,6 +69,19 @@
                     <a class="author-commons small ms-2" href="@views.WikiLinks.commonsUserUrl(account)" target="_blank" rel="noopener"
                        title="@Messages("author.commons.title", account)">@Messages("author.commons")</a>
                 }
+            </div>
+        }
+
+        @* the monument the list is narrowed to, for all who may open the page, as a chip that removes
+           the filter, with its files' count, and a link to the monument's page *@
+        @for(monumentId <- view.monument) {
+            <div id="monument-filter" class="mb-2">
+                <span class="badge rounded-pill text-bg-secondary fs-6 fw-normal monument-chip">
+                    @Messages("monument.filter.chip", monumentId, pager.count)
+                    <a id="monument-filter-remove" class="link-light text-decoration-none ms-1" href="@view.withoutMonumentUrl"
+                       title="@Messages("monument.filter.remove")" aria-label="@Messages("monument.filter.remove")">&times;</a>
+                </span>
+                <a id="monument-page-link" class="small ms-2" href="@routes.MonumentController.byId(monumentId, view.contest.id)">@Messages("monument.page.open")</a>
             </div>
         }
 

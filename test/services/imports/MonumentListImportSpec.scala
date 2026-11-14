@@ -94,6 +94,34 @@ class MonumentListImportSpec extends Specification with TestDb with BeforeAll wi
       name("80-361-0001") === Some("Kyiv fortress")
       lists.parsed.asScala.count(_._1 == "Lists A") === 1 // not read again
     }
+
+    "store each row's Wikidata item (V102), normalized, and follow the list's changes" in {
+      def withWikidata(id: String, value: Option[String]) =
+        m(id, s"Monument $id", "Lists A").copy(otherParams = value.map("wikidata" -> _).toMap)
+      def run(rows: Seq[Monument]) = {
+        val lists = new FakeMonumentListSource(embedding = Map(wlmListTemplate -> Seq("Lists A")),
+          monumentsOn = Map("Lists A" -> rows))
+        val services = new TestImportServices(new FakeCommonsSource(Nil), lists = lists)
+        services.imageService.updateMonuments(contest("Wiki Loves Monuments"), "Category:X")
+          .map(r => JobJdbc.findById(r.toOption.get.id).get.status) must contain(be_==(JobStatus.Done)).forall
+      }
+      def wikidata(id: String) = MonumentJdbc.find(id).flatMap(MonumentJdbc.wikidataOf)
+
+      run(Seq(withWikidata("01-101-0001", Some("Q42")), withWikidata("01-101-0002", Some(" q7 ")),
+        withWikidata("01-101-0003", Some("")), withWikidata("01-101-0004", Some("https://www.wikidata.org/wiki/Q5")),
+        withWikidata("01-101-0005", Some("Q0")), withWikidata("01-101-0006", None)))
+      Seq("01-101-0001", "01-101-0002", "01-101-0003", "01-101-0004", "01-101-0005", "01-101-0006").map(wikidata) ===
+        Seq(Some("Q42"), Some("Q7"), None, None, None, None)
+      // the column as stored: only the normalized item
+      scalikejdbc.DB.readOnly { implicit s =>
+        scalikejdbc.SQL("SELECT id, wikidata FROM monument WHERE wikidata IS NOT NULL ORDER BY id")
+          .map(rs => rs.string(1) -> rs.string(2)).list()
+      } === List("01-101-0001" -> "Q42", "01-101-0002" -> "Q7")
+
+      // imported again: a changed item replaces it, a removed one clears it
+      run(Seq(withWikidata("01-101-0001", Some("Q43")), withWikidata("01-101-0002", None)))
+      Seq("01-101-0001", "01-101-0002").map(wikidata) === Seq(Some("Q43"), None)
+    }
   }
 
   "a monument list import's job" should {
