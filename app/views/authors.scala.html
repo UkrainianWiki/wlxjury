@@ -5,7 +5,8 @@
 
 @* The contest's authors, or a round's, with their numbers of files and, in a round with votes,
    their votes (AuthorsController): for the contest's admins, organizers and root only. Each
-   name links the contest files page narrowed to the author's files, beside their Commons user
+   name links the contest files page narrowed to the author's files (a round's: the round's list
+   with only their files, the contest files page an icon beside it), beside their Commons user
    page; each column head sorts by it (again: the other way). *@
 
 @sortHead(column: Column, key: String) = {
@@ -77,7 +78,11 @@
             @for((row, index) <- page.rows.zipWithIndex) {
                 <tr class="author-row">
                     <td>@{index + 1}</td>
-                    <td>@for(author <- row.author) {@snippets.authorLinks(author, page.contest.getId)}</td>
+                    @* a round's authors: the name opens the round's list of all the jurors' votes with
+                       only the author's files (default order), an icon the contest files page with
+                       them; the contest's: the contest files page *@
+                    <td>@for(author <- row.author) {@snippets.authorLinks(author, page.contest.getId,
+                        page.round.map(r => RoundList(r, 0).withAuthor(Some(author)).pageUrl(1)), listTitleKey = "author.files.round.gallery.title")}</td>
                     <td class="author-files-count">@row.files</td>
                     @if(page.binaryVotes) {
                         <td class="author-approved">@ofFiles(row.approved, row.files)</td>

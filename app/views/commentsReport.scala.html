@@ -85,6 +85,7 @@
 @main("comments", user, list.asUserId, Some(round), rounds, gallery = false, Some(list), pagerNav(pager, list.pageUrl), rates,
     filters = views.html.regionMenu(regionMenu)) {
 
+    @snippets.authorFilter(list, pager.count)
     @snippets.monumentFilter(list, pager.count)
     <div class="wlx-comments-report">
         <div class="d-flex flex-wrap gap-2 align-items-center mb-2">

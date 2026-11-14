@@ -43,6 +43,20 @@
                         </div>
                     }
 
+                    @* while the list has only one author's files (staff only: RoundList.of drops the author
+                       for anyone else), a compact chip says so: the next and previous files stay among
+                       them; its × shows this file in the list of all authors *@
+                    @for(author <- list.author) {
+                        <div id="author-filter" class="mb-1">
+                            <span class="badge rounded-pill text-bg-secondary fw-normal author-chip text-wrap text-start">
+                                @Messages("author.filter.chip.short", services.imports.StoredAuthors.shown(Some(author)).getOrElse(author))
+                                <a id="author-filter-remove" class="link-light text-decoration-none ms-1"
+                                   href="@list.withAuthor(None).largeUrl(hood.file.pageId)"
+                                   title="@Messages("author.filter.remove")" aria-label="@Messages("author.filter.remove")">&times;</a>
+                            </span>
+                        </div>
+                    }
+
                     @* the viewed juror's name, beside their read-only vote: one juror's votes as the
                        organisers view them, whose list of votes has the juror; none without a name *@
                     @navigationButtons(user, list, hood, score, criteria, readOnly,
@@ -52,7 +66,7 @@
                     @* under the stars, what they rate: the file's details, then the files after it *@
                     @sideSection("large-info", "large.file.info", open = true) {
                         @if(user.canViewOrgInfo(round)){
-                            @authorInfo(image, round.contestId)
+                            @authorInfo(image, round.contestId, Some(list))
                         }
                         @monumentInfo(image, monument, Some(round.contestId), round.id, monumentLine)
                         @fullSizeUrl(image, round)

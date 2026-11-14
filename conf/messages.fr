@@ -916,6 +916,11 @@ author.commons = Commons ↗
 author.commons.title = Page utilisateur de {0} sur Wikimedia Commons (s''ouvre dans un nouvel onglet)
 author.filter.chip = Auteur : {0} ({1})
 author.filter.remove = Afficher les fichiers de tous les auteurs
+# a round's list with only one author's files (RoundList.author, staff only): the large view's
+# compact chip, the name's title in a round's large view and file list, and in a round's authors list
+author.filter.chip.short = Auteur : {0}
+author.files.round.title = Les fichiers de {0} dans cette liste
+author.files.round.gallery.title = Les fichiers de {0} dans la galerie du tour
 
 # the monument page (MonumentController), its card link and the contest files filter
 monument.card.link = Monument {0}

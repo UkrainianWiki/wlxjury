@@ -32,11 +32,13 @@
 @resultsBar = @{ user != null && selectedRound.exists(r => user.getId != asUserId && user.canViewOrgInfo(r)) }
 
 @* The viewer's own gallery: the page's list if it is that, or their own comments report, whose
-   tabs act on it; else where they start in its round, the page's monument filter and comments
-   toggle kept while the list is their own (its tabs count what they open: decision 2 = A) *@
+   tabs act on it; else where they start in its round, the page's monument and author filters
+   and comments toggle kept while the list is their own (its tabs count what they open: decision
+   2 = A; an author only ever in a list of those who may see authors, RoundList.of) *@
 @ownList(l: RoundList) = @{
     if (l.asUserId == user.getId && (l.view == GalleryView.Gallery || l.view == GalleryView.Comments)) l
-    else if (l.asUserId == user.getId) RoundList.landing(l.round, user).withMonument(l.monument).withComments(l.comments)
+    else if (l.asUserId == user.getId)
+      RoundList.landing(l.round, user).withMonument(l.monument).withAuthor(l.author).withComments(l.comments)
     else RoundList.landing(l.round, user)
 }
 
