@@ -84,6 +84,22 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   the contest's admins', organizers' and root's again (a juror gets the 403 page or JSON 403), and
   a juror's monument page has no contest count. `byRegionStat`, `regionCounts` and
   `regionRateCounts` bind every value. Juror, organizer and admin guides.
+- **Comments list for jurors; tabs count what they open** (the maintainer's decisions 2, 5 and 6
+  of 2026-11-14, PR-3 of the round filters proposal v4; developed 2026-11-14,
+  `stack/148-juror-comments-list`): while **Only with comments** is on, **Recent comments** beside
+  it opens the comments report of the same files (the juror, tab, region and monument kept; all
+  rounds' comments; latest comment first), for organizers and jurors alike, and the report's
+  **Show in the gallery** goes back to the gallery with the toggle on, in the gallery's default
+  order. A juror opens the report of their own list only: every comment their large view shows
+  on their files in the round (all the contest's rounds), with a note saying so, their tabs and
+  orders, and no scope buttons, round names, CSV, filter by person or gallery icons; its large
+  view's previous, next and votes stay among those files. Another juror's report, all jurors'
+  together, the CSV and the filter by person stay the organizers': a juror gets the 403 page, or
+  JSON 403 for a script request, and `scope=` and `commenter=` are ignored for them. **The tabs
+  count what they open** (changes #310): with the toggle on and in the report they count the
+  files with comments, so **All (17)** opens 17 files; the extra count of all the juror's files
+  is gone, and in a Via Regia round of sub-regions the tabs count from the same scan. Juror,
+  organizer and admin guides.
 
 **Development**
 

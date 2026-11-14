@@ -209,10 +209,13 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
         of(s"?commenter=${f.juror1.getId}").commentsBy === Some(f.juror1.getId)
         forall(Seq("?commenter=x", "?commenter=0", "?commenter=-3", ""))(q => of(q).commenter must beNone)
         of(s"?commenter=${f.juror1.getId}", view = GalleryView.Gallery).commenter must beNone
-        // a juror's large view naming the report: their gallery, the filter ignored
+        // a juror's own report (or its large view): the report, the filter ignored (decision 6 = A);
+        // another juror's: their gallery, refused before it is listed
         val juror = of(s"?commenter=${f.juror2.getId}&scope=contest", f.juror1, GalleryView.Comments, f.juror1.getId)
         (juror.view, juror.commenter, juror.query.commentsIn, juror.query.commentsBy) ===
-          ((GalleryView.Gallery, None, None, None))
+          ((GalleryView.Comments, None, Some(f.contest.getId), None))
+        val other = of(s"?commenter=${f.juror2.getId}", f.juror1, GalleryView.Comments, f.juror2.getId)
+        (other.view, other.commenter, other.query.commentsBy) === ((GalleryView.Gallery, None, None))
       }
     }
   }
@@ -368,21 +371,25 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
 
   "the filter's access" should {
 
-    "be the report's: refused to a juror as a page, the CSV too, and ignored in their gallery and large view" in {
+    "be the organisers': refused to a juror with all the jurors' report and the CSV, ignored in their own report, gallery and large view" in {
       testDbApp { app =>
         val f = fixture()
-        forall(Seq(path(f, f.juror1.getId, s"?commenter=${f.juror1.getId}"), path(f, 0, s"?commenter=${f.juror2.getId}"),
+        forall(Seq(path(f, 0, s"?commenter=${f.juror2.getId}"),
           s"/comments/round/${f.round.getId}/user/${f.juror1.getId}/region/all/csv?commenter=${f.juror1.getId}")) { p =>
           val result = get(app, f.juror1, p)
           status(result) aka p must_== FORBIDDEN
           contentAsString(result) must not(contain("j2 on seven"))
         }
+        // their own report: the filter ignored, no chip, no filter links
+        val own = page(app, f.juror1, path(f, f.juror1.getId, s"?commenter=${f.juror1.getId}"))
+        own.select("#comments-report-commenter, .wlx-comment-filter-link, a[href*=commenter=]").size === 0
         val gallery = page(app, f.juror1, s"/gallery/round/${f.round.getId}/user/${f.juror1.getId}/page/1?commenter=${f.juror2.getId}")
         gallery.select("a[href*=commenter=]").size === 0
         val large = page(app, f.juror1,
           s"/large/round/${f.round.getId}/user/${f.juror1.getId}/pageid/1?module=comments&commenter=${f.juror2.getId}")
         large.select("a[href*=commenter=]").size === 0
-        large.select("a[href*=/comments/]").size === 0
+        large.select("a[href*=/comments/]").asScala.forall(
+          _.attr("href").startsWith(s"/comments/round/${f.round.getId}/user/${f.juror1.getId}/")) must beTrue
       }
     }
   }

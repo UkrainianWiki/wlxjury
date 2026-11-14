@@ -209,9 +209,20 @@ as "3 comments".
 
 Next to the tabs, **Only with comments (N)** shows only your files that have comments. It works
 with the tabs: on **Selected** it shows your selected files with comments, and N is how many of
-the tab's files have them. The large view's previous and next then go through these files only,
-and your votes keep you in this list. Press it again to see all your files. On a narrow screen
-it is a speech bubble icon; point at it to see its name.
+the tab's files have them. While it is on, the tabs count your files with comments too: each
+tab's number is how many files it shows. The large view's previous and next then go through
+these files only, and your votes keep you in this list. Press it again to see all your files. On
+a narrow screen it is a speech bubble icon; point at it to see its name.
+
+<a id="j-recent-comments"></a>
+While **Only with comments** is on, **Recent comments** beside it opens the same files as a list
+of their comments: each file with its thumbnail, your vote and every comment its large view
+shows (from all rounds of the contest, with their authors and times), 20 files to a page, the
+file with the newest comment first. The tabs work there too, and count the files of the list.
+The order menu above the list has **Latest comment first** and your usual orders. Click a file
+to open its large view: previous, next and your votes then go through these files in the same
+order. **Show in the gallery** goes back to your gallery with only the files with comments, in
+your usual order. You see only your own files there, as in the gallery.
 
 ### Sorting your files
 

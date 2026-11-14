@@ -99,9 +99,9 @@ class GalleryController @Inject() (
   ): EssentialAction =
     listGeneric(Some(GalleryView.FileList), asUserId, Left(page), region, roundId)
 
-  /** The organisers' comments report of a round's list ([[GalleryView.Comments]]): its files with
-    * comments in its scope ([[CommentScope]]), a page of them, each with its comments. Refused
-    * to all but those who may view the round's organiser info ([[gallery]]).
+  /** The comments report of a round's list ([[GalleryView.Comments]]): its files with comments
+    * in its scope ([[CommentScope]]), a page of them, each with its comments. The organisers'
+    * of any list; a juror's of their own list only, with all the contest's comments ([[gallery]]).
     */
   def comments(asUserId: Long, page: Int = 1, region: String = "all", roundId: Long): EssentialAction =
     listGeneric(Some(GalleryView.Comments), asUserId, Left(page), region, roundId)
@@ -110,7 +110,7 @@ class GalleryController @Inject() (
   def commentsAt(asUserId: Long, pageId: Long, region: String = "all", roundId: Long): EssentialAction =
     listGeneric(Some(GalleryView.Comments), asUserId, Right(pageId), region, roundId)
 
-  /** The comments report's comments as CSV ([[Csv.commentRows]]), as [[comments]] refuses it. */
+  /** The comments report's comments as CSV ([[Csv.commentRows]]): the organisers' only ([[gallery]]). */
   def commentsCsv(asUserId: Long, region: String = "all", roundId: Long): EssentialAction =
     listGeneric(Some(GalleryView.CommentsCsv), asUserId, Left(1), region, roundId)
 
@@ -156,10 +156,17 @@ class GalleryController @Inject() (
     val rounds = galleryService.viewerRounds(user, round)
 
     if (galleryService.isNotAuthorized(user, Some(round), round.contestId, rounds)) {
-      onUnAuthorized(user, request, Secured.Denial.round(round, Secured.ViewerRoles))
-    } else if (view.exists(_.comments) && !user.canViewOrgInfo(round)) {
+      // not a viewer of the round (another contest, an inactive membership, a round stopped or
+      // still being distributed for a juror): JSON to a script, as the comments refusal below
+      val denial = Secured.Denial.round(round, Secured.ViewerRoles)
+      if (Secured.isScriptRequest(request)) onUnAuthorizedJson(user, request, denial)
+      else onUnAuthorized(user, request, denial)
+    } else if (view.exists(_.comments) && !user.canViewOrgInfo(round) &&
+        !(view.contains(GalleryView.Comments) && user.id.contains(asUserId))) {
       // the comments report and its CSV: the round's contest's admins, organizers and root, as
-      // the view menu that offers it; never a juror, even of their own files
+      // the view menu that offers it; a juror only their own list's report (the round filters
+      // proposal v4 §2.2), never its CSV, another juror's or all the jurors' (refused here, as
+      // JSON to a script, before viewAs, whose refusal is a page)
       val denial = Secured.Denial.round(round, User.ADMIN_ROLES ++ User.ORG_COM_ROLES)
       if (Secured.isScriptRequest(request)) onUnAuthorizedJson(user, request, denial)
       else onUnAuthorized(user, request, denial)
@@ -216,11 +223,10 @@ class GalleryController @Inject() (
     // the region menu, whose regions are read when it is opened (regions)
     lazy val menu = regionMenu(list, contest)
 
-    // the viewer's own tabs: the counts above when the list is their own, of all their files
-    // also with the comments toggle on (the toggle tells how many of them have comments); within
-    // the monument filter, also in a round of sub-regions (RoundList.tabCounts)
-    lazy val rates = Option.when(user.id.contains(asUserId))(
-      if (list.commentsOnly) list.allFiles.tabCounts() else counts.orElse(list.tabCounts()))
+    // the viewer's own tabs: the counts above when the list is their own, counting what each tab
+    // opens (decision 2 = A): within the monument filter and with only the files with comments
+    // (the toggle, the comments report), also in a round of sub-regions (RoundList.tabCounts)
+    lazy val rates = Option.when(user.id.contains(asUserId))(counts.orElse(list.tabCounts()))
       .flatten.fold(galleryService.rateDistribution(user, round))(c => new RateDistribution(c.rates))
 
     // the comments toggle's number: the list's files with comments, the list's own total when on
@@ -247,9 +253,12 @@ class GalleryController @Inject() (
 
       case GalleryView.Comments =>
         // the page's files' comments in the scope, and the names of the other rounds they were
-        // written in (all the contest's), for their badges
+        // written in (all the contest's), for their badges: the organisers' only, as in the large
+        // view (LargeViewController.showsCommentRounds); a juror's own report names no round
+        val staff = user.canViewOrgInfo(round)
         val comments = list.commentsOf(files)
-        val otherRounds = comments.values.flatten.map(_.roundId).filter(_ != round.getId).toSeq.distinct
+        val otherRounds =
+          if (!staff) Nil else comments.values.flatten.map(_.roundId).filter(_ != round.getId).toSeq.distinct
         val roundNames =
           if (otherRounds.isEmpty) Map.empty[Long, String]
           else Round.findByIds(round.contestId, otherRounds).map(r => r.getId -> r.description).toMap
@@ -259,7 +268,7 @@ class GalleryController @Inject() (
         val commenter = list.commentsBy.map(id => id -> CommentJdbc.authorName(round.contestId, id))
         Ok(RequestTiming.render(views.html.commentsReport(user, withCriteria(list, criteriaResults(list, files)), files,
           pager, rounds, menu, rates, comments, roundNames, list.commentCount(), commenter,
-          jurorGalleries(comments.values.flatten.toSeq, rounds))))
+          if (staff) jurorGalleries(comments.values.flatten.toSeq, rounds) else Set.empty)))
 
       case GalleryView.CommentsCsv =>
         csvStream(Csv.commentRows(list)(blocking), "WLXJury_Round_" + round.description + "_comments")
@@ -822,6 +831,12 @@ object RegionMenu {
 }
 
 class RateDistribution(rateMap: Map[Int, Int]) {
+
+  /** Whether the viewer has files the tabs open: a rate counted, also as 0 (with only the files
+    * with comments a juror's counts keep each rate of their files, those without a comment as 0:
+    * the tabs stay, counting 0).
+    */
+  def hasFiles: Boolean = rateMap.nonEmpty
 
   def unrated: Int = rateMap.getOrElse(0, 0)
 

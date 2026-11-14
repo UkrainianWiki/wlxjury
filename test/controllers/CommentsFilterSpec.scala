@@ -242,10 +242,16 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
         doc.select("#gallery img").asScala.map(i => i.attr("data-pageId") -> i.attr("data-comments")) ===
           Seq("1" -> "2", "3" -> "1", "5" -> "1")
         doc.selectFirst("#gallery img").attr("data-comments-label") === "2 comments"
-        // the tabs keep the toggle, with their own counts
+        // the tabs keep the toggle, counting what they open: the tab's files with comments
+        // (decision 2 = A of the round filters proposal v4; all the juror's files before)
         val selected = doc.select("a.nav-link").asScala.find(_.attr("href").contains("filter=selected")).get
         selected.attr("href") must contain("comments=1")
-        selected.text must contain("(2)")
+        selected.text must contain("(1)")
+        val all = doc.select("a.nav-link").asScala.find(_.text.startsWith("All (")).get
+        all.text must contain("(3)")
+        // and "Recent comments", the comments report of the same files, beside the toggle
+        doc.selectFirst("#comments-report-open").attr("href") must
+          startWith(s"/comments/round/${f.round.getId}/user/${f.juror1.getId}/page/1?scope=contest")
       }
     }
 

@@ -166,7 +166,7 @@ comments.count.few = {0} comments
 comments.count.many = {0} comments
 comments.count.other = {0} comments
 comment.round.other = Written in round {0}
-# the organisers' comments report (a round list's view, GalleryView.Comments): its scope, order,
+# the comments report (a round list's view, GalleryView.Comments; the organisers', and a juror's own list): its scope, order,
 # CSV, file count (by the language's plural form: views.CommentCount.files), and its link in the
 # round's statistics
 comments.report.scope = Which comments
@@ -175,6 +175,9 @@ comments.report.scope.contest = All rounds of the contest
 comments.report.order = Order
 sort.latest-comment = Latest comment first
 comments.report.csv = Comments CSV
+comments.report.open = Recent comments
+comments.report.own.note = Comments on your files in this round, from all rounds of the contest, as each file''s large view shows them.
+comments.report.gallery = Show in the gallery
 comments.report.files.one = {0} file
 comments.report.files.few = {0} files
 comments.report.files.many = {0} files

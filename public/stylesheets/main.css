@@ -498,10 +498,12 @@ li.gallerybox .wlx-comment-badge, .ug-thumb-wrapper.ug-tile .wlx-tile-comments {
 
 /* the navbar's toggle of a round's list, only the files with comments (navbar.scala.html): a
    speech bubble and its text, pressed when on; below 992 px the bubble alone, its text read by
-   screen readers and shown as its tooltip (as the results bar's compact links) */
+   screen readers and shown as its tooltip (as the results bar's compact links); the same for
+   "Recent comments" beside it while it is on */
 .wlx-comments-toggle.active { font-weight: 600; }
 @media (max-width: 991.98px) {
-    .wlx-comments-toggle .wlx-nav-label {
+    .wlx-comments-toggle .wlx-nav-label,
+    .wlx-comments-report-link .wlx-nav-label {
         position: absolute;
         width: 1px;
         height: 1px;

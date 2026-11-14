@@ -156,8 +156,8 @@ object ListOrder {
 }
 
 /** How a list is shown: as a gallery (a binary round's tiles to vote on, a rated round's
-  * thumbnails with their stars), by rate, as a file list, as CSV, or as the organisers'
-  * comments report (its page and its CSV).
+  * thumbnails with their stars), by rate, as a file list, as CSV, or as the comments report
+  * (its page, the organisers' and a juror's of their own list, and its CSV, the organisers' only).
   *
   * @param name its path's first segment (`/gallery/...`), and a large view URL's `module`
   */
@@ -165,7 +165,8 @@ sealed abstract class GalleryView(val name: String) {
 
   /** The comments report ([[GalleryView.Comments]], [[GalleryView.CommentsCsv]]): only the files
     * with comments in its scope ([[CommentScope]]), with them; for those who may view the
-    * round's organiser info (`User.canViewOrgInfo`) only.
+    * round's organiser info (`User.canViewOrgInfo`), and its page for a juror's own list too
+    * (all the contest's comments, as their large view shows them; GalleryController).
     */
   def comments: Boolean = false
 }
@@ -442,14 +443,16 @@ final case class RoundList(
   def jurorCounts(): Option[JurorCounts] =
     Option.when(asUserId != 0 && !query.subRegions)(JurorCounts(query.regionRateCounts(), round.isBinary))
 
-  /** The juror's counts for their tabs: [[jurorCounts]]; under a monument filter in a round of
-    * sub-regions too, from the same scan by top-level regions, whose rates don't depend on the
-    * regions (its region keys, wrong for sub-regions, aren't used). None for all the jurors' votes,
-    * and in a round of sub-regions without the filter: the tabs then count all the juror's files
-    * (`GalleryService.rateDistribution`), which no filter narrows.
+  /** The juror's counts for their tabs, which count what each tab opens (decision 2 = A of the
+    * round filters proposal v4): [[jurorCounts]]; under a monument filter or with only the files
+    * with comments (the toggle, the comments report) in a round of sub-regions too, from the same
+    * scan by top-level regions, whose rates don't depend on the regions (its region keys, wrong
+    * for sub-regions, aren't used). None for all the jurors' votes, and in a round of sub-regions
+    * without a filter: the tabs then count all the juror's files
+    * (`GalleryService.rateDistribution`), which is what they open there.
     */
   def tabCounts(): Option[JurorCounts] =
-    jurorCounts().orElse(Option.when(asUserId != 0 && monument.isDefined)(
+    jurorCounts().orElse(Option.when(asUserId != 0 && (monument.isDefined || commentsOnly))(
       JurorCounts(query.copy(subRegions = false).regionRateCounts(), round.isBinary)))
 
   /** The pager's page of files. */
@@ -578,6 +581,13 @@ final case class RoundList(
   /** The comments report's list in the scope. */
   def withScope(scope: CommentScope): RoundList = copy(commentScope = scope)
 
+  /** The comments report of the files this list has with the toggle on ("Recent comments", the
+    * round filters proposal v4 §2.2): its viewer, tab, region and monument kept, all the
+    * contest's comments (the toggle's scope), by the latest comment ([[withView]]).
+    */
+  def recentComments: RoundList =
+    withComments(false).withView(GalleryView.Comments).withScope(CommentScope.AllRounds)
+
   /** The large view's line of its file's monument (its monument id, as stored, whether or not a
     * monument list has a row of it): the number of files this list has of that monument (its
     * viewer's, view, order, tab and comments kept), and the list with only them if it has a file
@@ -599,11 +609,6 @@ final case class RoundList(
         val others = if (n == 1 && fileInList) 0 else n
         Option.when(n > 0)(MonumentLine(id, n, Option.when(others > 0)(ofMonument.pageUrl(1))))
       }
-
-  /** The list of all its files, whatever their comments: without the toggle, a comments report
-    * as the gallery ([[withView]]).
-    */
-  def allFiles: RoundList = withComments(false).withView(if (view.comments) GalleryView.Gallery else view)
 
   /** The list's own orders in the comments report: a juror's as their order menu has them; all
     * the jurors' votes on a yes/no round in a [[BinaryOrder]], on a rated round by rate, either
@@ -928,9 +933,13 @@ object RoundList {
   def of(round: Round, viewer: User, asUserId: Long, region: String, view: GalleryView)(implicit
       request: RequestHeader
   ): RoundList = {
-    // the comments report is the organisers' (GalleryController refuses its pages to others): a
-    // large view's `module` naming it is the gallery for anyone else
-    val shown = if (view.comments && !viewer.canViewOrgInfo(round)) GalleryView.Gallery else view
+    // the comments report is the organisers', and a juror's of their own list (GalleryController
+    // refuses the rest, and the CSV, to them): a large view's `module` naming another is the
+    // gallery for anyone else
+    val staff = viewer.canViewOrgInfo(round)
+    val shown =
+      if (view.comments && !staff && !(view == GalleryView.Comments && viewer.id.contains(asUserId))) GalleryView.Gallery
+      else view
     // the monument filter, for everyone: it only narrows what the viewer may see; it drops the
     // region (a monument is in one region, so a region of another would list nothing)
     val monument = monumentParam(request)
@@ -944,10 +953,12 @@ object RoundList {
         .getOrElse(defaultOrder(viewer, asUserId, shown)),
       shown,
       comments = request.getQueryString(CommentsParam).contains("1"),
-      commentScope = CommentScope.of(request),
-      // the report's filter by author: only in the report, so a juror's large view naming it with
-      // module=comments (their gallery, above) ignores it
-      commenter = Option.when(shown.comments)(
+      // a juror's own report has all the contest's comments, as their large view shows them
+      // (decision 5 = A): no scope of their own
+      commentScope = if (staff) CommentScope.of(request) else CommentScope.AllRounds,
+      // the report's filter by author: only in the report, and the organisers' only (decision 6 =
+      // A), so a juror's report or large view naming it ignores it
+      commenter = Option.when(shown.comments && staff)(
         request.getQueryString(CommenterParam).flatMap(_.toLongOption).filter(_ > 0)).flatten,
       monument = monument
     )
@@ -960,6 +971,16 @@ object RoundList {
       case _ => list
     }
   }
+
+  /** The way back from a comments report ("Show in the gallery"): the gallery with only the
+    * files with comments, its viewer, tab, region and monument kept, in the gallery's default
+    * order ([[defaultOrder]]: a juror's remembered one), not by rate as [[RoundList.withView]]
+    * leaves the latest comment. In the "this round" scope the gallery can have more files: its
+    * toggle is the contest's.
+    */
+  def galleryOfReport(list: RoundList, viewer: User)(implicit request: RequestHeader): RoundList =
+    list.withView(GalleryView.Gallery).withComments(true)
+      .withOrder(defaultOrder(viewer, list.asUserId, GalleryView.Gallery))
 
   private def rememberedBinary(implicit request: RequestHeader): BinaryOrder =
     request.cookies.get(BinarySortCookie).flatMap(c => BinaryOrder.parse(c.value)).getOrElse(BinaryOrder.Default)
