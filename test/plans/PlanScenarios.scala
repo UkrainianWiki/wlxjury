@@ -1,7 +1,7 @@
 package plans
 
 import controllers.{GalleryView, ListOrder, Pager, RoundList, VoteFilter}
-import plans.PlanSeed.Corner
+import plans.PlanSeed.{CornerFiles, Corner, Images}
 import plans.StatementCapture.within
 import db.scalikejdbc.{CategoryLinkJdbc, ContestJuryJdbc, MonumentJdbc, Round, RoundStatLinks, RoundUser, User, VoteJdbc}
 import org.intracer.wmua.{CommentJdbc, Image}
@@ -115,6 +115,38 @@ object PlanScenarios {
       })
     ).map { case (name, run) => within(name)(run()); name }
 
+    // the author filter (the round filters proposal v4, PR-4; staff only, a juror's `author=` is
+    // dropped): the corner juror's list as staff view it, of the seed's heavy author (3,000 of its
+    // 20,000 files), a large view and a vote inside it (as a root juror's own list would vote), and
+    // all the jurors' list of the author; images' author index (V104) reads the author's files
+    // an unrated file of the author's in the corner round that no scenario above votes on
+    val inAuthor: Long = (Images - CornerFiles + 1 until Images).map(_.toLong)
+      .find(p => p % 40 < 6 && p % 10 != 0 && p > corner.pageId + 3).getOrElse(corner.pageId + 4)
+    val author = Seq(
+      "gallery author" -> (() => page(list(ListOrder.FileOrder).withAuthor(Some(PlanSeed.HeavyAuthor)))),
+      "gallery author by rate" -> (() => page(list(ListOrder.ByRate).withAuthor(Some(PlanSeed.HeavyAuthor)))),
+      "large view in author filter" -> (() => {
+        val inList = list(ListOrder.FileOrder).withAuthor(Some(PlanSeed.HeavyAuthor))
+        inList.around(inAuthor)
+        list(ListOrder.LatestVote).withAuthor(Some(PlanSeed.HeavyAuthor)).around(inAuthor)
+        ()
+      }),
+      "vote in author filter" -> (() => {
+        val tab = list(ListOrder.FileOrder, VoteFilter.Unrated).withAuthor(Some(PlanSeed.HeavyAuthor))
+        val hood = tab.around(inAuthor)
+        VoteJdbc.rate(inAuthor, jurorId, corner.roundId, 4)
+        hood.foreach(h => tab.voteMoved(inAuthor, h.position, 4))
+        ()
+      }),
+      "gallery author all jurors" -> (() => {
+        val all = RoundList(round, 0, order = ListOrder.FileOrder).withAuthor(Some(PlanSeed.HeavyAuthor))
+        val total = all.count()
+        all.files(Pager(1, total, all.pageSize))
+        all.regionCounts()
+        ()
+      })
+    ).map { case (name, run) => within(name)(run()); name }
+
     // the juror's comments report of their own list (the round filters proposal v4 §2.4): its
     // files with a comment in the contest by the latest comment, its total and tabs from the
     // juror's counts with comments, the page's comments and the report's comment total, and a
@@ -134,7 +166,7 @@ object PlanScenarios {
       })
     ).map { case (name, run) => within(name)(run()); name }
 
-    galleries ++ withComments ++ more ++ monument ++ report
+    galleries ++ withComments ++ more ++ monument ++ author ++ report
   }
 
   val RoundStatScenario = "roundstat"

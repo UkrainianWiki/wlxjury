@@ -72,7 +72,9 @@ Track the rounds' lineage:
   (decision 3).
 - **Storage.** The read-only map and provenance need no new table. One `Round.findByContest`
   (≤100 rows) builds the graph in memory.
-- **One migration, V103, in phase 1** with the map:
+- **One migration, V103, in phase 1** with the map. V103 is usable only while V104 (images'
+  author index, `stack/149-author-round-filter`) is not deployed; otherwise take the next free
+  number above it (production's Flyway settings refuse a V103 added after V104 ran):
   - `round.status`, P3's column, with its backfill, and `status_changed_at` / `status_changed_by`;
   - the manual track label, `round.track`;
   - `round.created_at` without `ON UPDATE` (§1.4, decision 17).

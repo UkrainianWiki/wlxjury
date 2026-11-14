@@ -117,11 +117,14 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
   private def tiles(page: String): List[Long] =
     """data-pageId="(\d+)"""".r.findAllMatchIn(page).map(_.group(1).toLong).toList
 
-  /** The authors' links of a page: (name, its files' URL, its Commons URL; "" without one). */
+  /** The authors' links of a page: (name, its files' URL, its Commons URL; "" without one). The
+    * name's link: the round's list with the author in a round's pages (`author-round-files`), the
+    * contest files page with them elsewhere (`author-files`).
+    */
   private def authorLinks(page: String): Seq[(String, String, String)] =
     Jsoup.parse(page).select(".author-links").asScala.toSeq.map { e =>
-      (e.selectFirst("a.author-files").text, e.selectFirst("a.author-files").attr("href"),
-        Option(e.selectFirst("a.author-commons")).fold("")(_.attr("href")))
+      val name = e.selectFirst("a.author-round-files, a.author-files")
+      (name.text, name.attr("href"), Option(e.selectFirst("a.author-commons")).fold("")(_.attr("href")))
     }
 
   /** Adds files to contest A's category. */
@@ -157,9 +160,17 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
         val (_, contestLarge) = get(app, f.organizer, s"/contest/${f.contest.getId}/files/4")
         val (_, fileList) = get(app, f.organizer, s"/filelist/round/${f.binary.getId}/user/0/page/1")
         val (_, coi) = get(app, f.organizer, routes.GalleryController.contestFiles(f.contest.getId, coi = true).url)
-        (authorLinks(large) === Seq(petroLink(f))) and
+        // in a round's pages the name opens the round's list (the large view's and the file
+        // list's own: all the jurors' votes in the binary order) with the author; the large view
+        // has the contest files page as an icon beside it, the file list's rows have no third link
+        val ofList = RoundList(f.binary, 0, order = ListOrder.Binary(org.intracer.wmua.BinaryOrder.Default))
+          .withAuthor(Some(Petro))
+        def inRound(url: String) = (Petro, url, views.WikiLinks.commonsUserUrl(Petro))
+        (authorLinks(large) === Seq(inRound(ofList.pageUrl(1)))) and
+          (Jsoup.parse(large).selectFirst("#author a.author-files").attr("href") === filesUrl(f, Some(Petro))) and
           (authorLinks(contestLarge) === Seq(petroLink(f))) and
-          (authorLinks(fileList) must contain(petroLink(f))) and
+          (authorLinks(fileList) must contain(inRound(ofList.withView(GalleryView.FileList).pageUrl(1)))) and
+          (Jsoup.parse(fileList).select("td.file-author a.author-files").asScala must beEmpty) and
           (authorLinks(fileList).map(_._1) must contain(allOf("Ivan", "ivan", "Iván", "O'Brien"))) and
           (Jsoup.parse(coi).select("#coi-people .author-links").asScala.map(_.selectFirst("a.author-files").text) ===
             Seq(Petro)) and
@@ -189,6 +200,7 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
         val (_, list) = get(app, f.juror, s"/filelist/round/$r/user/$u/page/1")
         val jsonAuthors = contentAsJson(json).as[Seq[JsValue]].map(v => (v \ "image" \ "author").asOpt[String])
         (large must not(contain("Грушко"))) and (large must not(contain("author-files"))) and
+          (large must not(contain("author-round-files"))) and
           (large must not(contain("commons.wikimedia.org/wiki/User:"))) and
           (jsonAuthors must contain(beNone).forall) and
           (list must not(contain("author-links"))) and (list must not(contain("Грушко"))) and

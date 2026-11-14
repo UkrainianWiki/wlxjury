@@ -6,21 +6,21 @@
       "expect": {"10.6": ["vote_jury_round_rate_mon_page_idx", "vote_round_monument_id_idx"],
                  "10.11": ["vote_jury_round_ratedesc_mon_page_idx", "vote_round_monument_id_idx"]},
       "canary": true,
-      "why": "the juror gallery's page (the deferred join's inner select) and the large view's neighbours: V99/V100's gallery index; with a monument filter, that index or the monument's (round_id, monument_id), the optimizer's choice"
+      "why": "the juror gallery's page (the deferred join's inner select) and the large view's neighbours: V99/V100's gallery index; with a monument filter, that index or the monument's (round_id, monument_id), the optimizer's choice; with an author filter the same for a juror's list (each row's file then checked by images' primary key; on the seed MariaDB 10.6 keeps this order), while all the jurors' list reads images' author index (V104) first and vote by (round_id, page_id), which isn't constant-bound"
     },
     {
       "group": "ImageDbNew.SelectionQuery.regionRateCounts",
       "expect": {"10.6": ["vote_jury_round_rate_mon_page_idx", "vote_round_jury_rate_idx", "vote_round_monument_id_idx"],
                  "10.11": ["vote_jury_round_ratedesc_mon_page_idx", "vote_round_jury_rate_idx", "vote_round_monument_id_idx"]},
       "canary": true,
-      "why": "the juror's counts by region and rate (the gallery's total, tabs and region menu); with a monument filter, also the monument's index"
+      "why": "the juror's counts by region and rate (the gallery's total, tabs and region menu); with a monument filter, also the monument's index; with an author filter as the list"
     },
     {
       "group": "ImageDbNew.SelectionQuery.countBefore",
       "expect": {"10.6": ["vote_jury_round_rate_mon_page_idx", "vote_round_monument_id_idx"],
                  "10.11": ["vote_jury_round_ratedesc_mon_page_idx", "vote_round_monument_id_idx"]},
       "canary": true,
-      "why": "a file's place in the juror's list (large view, a vote, a file's page); with a monument filter, also the monument's index"
+      "why": "a file's place in the juror's list (large view, a vote, a file's page); with a monument filter, also the monument's index; with an author filter as the list"
     },
     {
       "group": "ImageDbNew.SelectionQuery.orderKey",

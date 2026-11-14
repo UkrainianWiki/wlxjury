@@ -1,9 +1,12 @@
-@(image: org.intracer.wmua.Image, contestId: Long)(implicit messages: Messages)
+@(image: org.intracer.wmua.Image, contestId: Long, roundList: Option[RoundList] = None)(implicit messages: Messages)
 @* The author, for those who may see authors only (User.canViewAuthors: the caller checks): the
-   account as plain text (StoredAuthors.shown), never an older import's raw wikitext, linking the
-   author's files in the contest and their Commons user page (snippets.authorLinks). *@
+   account as plain text (StoredAuthors.shown), never an older import's raw wikitext, and their
+   Commons user page (snippets.authorLinks). In a round's large view (`roundList`, the list it is
+   seen in) the name opens that list with only the author's files (RoundList.withAuthor: its
+   viewer, view, tab and order kept), a small icon beside it the contest files page with the
+   author; in the contest files page's large view the name opens that page with the author. *@
 @for(stored <- image.author; author <- services.imports.StoredAuthors.shown(Some(stored))) {
     <div id="author" class="card card-body large-box">
-        <div>@Messages("author"): @snippets.authorLinks(stored, contestId)</div>
+        <div>@Messages("author"): @snippets.authorLinks(stored, contestId, roundList.map(_.withAuthor(Some(stored)).pageUrl(1)))</div>
     </div>
 }

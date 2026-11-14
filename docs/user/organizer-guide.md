@@ -332,14 +332,31 @@ account, in these places:
 - the **Conflicts of interest** tab of the contest files page, which lists the people whose files
   they are.
 
-Each author's name links to their files: the contest files page shows only that author's
-files, with a chip **Author: … (N)** above them, N being the number of files. The **×** on the
-chip shows all the files again. The pages, the region and country menus and the large view
-keep the author; the tabs show all the contest's files again. The small link **Commons ↗** beside a name opens the
-author's user page on Wikimedia Commons in a new tab.
+Each author's name links to their files. Where it leads depends on where you are:
+
+- **In a round** (the round's large view and file list, and a round's authors list): the round's
+  list with only that author's files. From the large view and the file list it is the list you
+  are in (the same juror, or all the jurors' votes, and the same tab and order); from a round's
+  authors list it is the round's gallery of all the jurors' votes. In the large view and the
+  authors list a small images icon beside the name opens the contest files page with the author
+  instead.
+- **In the contest** (the contest's authors list, the contest files page's large view and its
+  conflicts of interest): the contest files page with only that author's files.
+
+Either list shows a chip **Author: … (N)** above the files, N being the number of files in the
+current tab. The **×** on the chip shows the files of all authors again. On the contest files
+page the pages, the region and country menus and the large view keep the author; the tabs show
+all the contest's files again. In a round's lists (the gallery, by rate, the file list, the
+comments report and its CSV) the filter keeps to the pages, tabs, orders, views, the region,
+round and juror menus and the large view, whose next and previous files stay among the author's
+files (a compact chip there says so). The tabs and the pager count only the author's files, and
+the filter combines with the monument filter and **Only with comments**. The small link
+**Commons ↗** beside a name or a chip opens the author's user page on Wikimedia Commons in a new
+tab.
 
 The filter takes the author exactly as stored: "Ivan", "ivan" and "Iván" are three different
-authors.
+authors. It is yours, the admins' and root's only: a juror who opens a link with an author gets
+their own list without it, and never sees the author.
 
 <a id="o-authors-list"></a>
 ### The authors list

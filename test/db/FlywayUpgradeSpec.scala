@@ -616,6 +616,56 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
   }
 
 
+  "V104's author index, with V103 reserved for round lineage" should {
+
+    "run after V102 with no V103, build the index, rerun as a no-op, and roll back to V102's schema" in {
+      emptyDb("fw_v104_prev")
+      flyway("fw_v104_prev", production.copy(target = Some("102"))).migrate()
+      emptyDb("fw_v104")
+      flyway("fw_v104", production.copy(target = Some("104"))).migrate().success must beTrue
+      val once = schema("fw_v104")
+      def indexes(db: String) = Using.resource(connect(db)) { c =>
+        rows(c, "SELECT INDEX_NAME, NON_UNIQUE, COLUMN_NAME, SUB_PART FROM information_schema.STATISTICS " +
+          "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'images' AND INDEX_NAME = 'images_author_idx'")(rs =>
+          (rs.getString(1), rs.getInt(2), rs.getString(3), Option(rs.getString(4))))
+      }
+      def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+      // the history goes from V102 to V104 while there is no V103 file (Flyway needs no
+      // consecutive numbers); a full-column, non-unique index
+      (history("fw_v104").map(_.split(" \\| ")(1)) === upTo("104")) and
+        (versions.contains("103") || !history("fw_v104").exists(_.split(" \\| ")(1) == "103")) and
+        (indexes("fw_v104") === List(("images_author_idx", 1, "author", None))) and {
+          Using.resource(connect("fw_v104"))(c => run(c, statements("V104__Images_author_index.sql")))
+          schema("fw_v104") === once
+        } and {
+          Using.resource(connect("fw_v104"))(c => run(c, Seq(
+            "ALTER TABLE images DROP INDEX images_author_idx, ALGORITHM = INPLACE, LOCK = NONE",
+            "DELETE FROM flyway_schema_history WHERE version = '104'")))
+          (tablesOnly(schema("fw_v104")) === tablesOnly(schema("fw_v104_prev"))) and
+            (flyway("fw_v104", production.copy(target = Some("104"))).migrate().success must beTrue) and
+            (schema("fw_v104") === once)
+        }
+    }
+
+    "refuse a V103 added after V104 ran (production's settings: outOfOrder off), so the second to deploy is renumbered" in {
+      if (versions.contains("103")) skipped("V103 exists now: the reserved number is taken")
+      else {
+        // a stand-in for round lineage's V103, in a location of its own beside the real ones
+        val dir = Paths.get("target", "flyway-v103-check").toAbsolutePath
+        Files.createDirectories(dir)
+        Files.write(dir.resolve("V103__Reserved_round_status.sql"), "DO 0;\n".getBytes(StandardCharsets.UTF_8))
+        val withV103 = production.copy(locations = Seq(Migrations.DefaultLocation, s"filesystem:$dir"))
+        emptyDb("fw_v103_late")
+        flyway("fw_v103_late", production.copy(target = Some("104"))).migrate().success must beTrue
+        val before = history("fw_v103_late")
+        (flyway("fw_v103_late", withV103).validate() must throwA[org.flywaydb.core.api.exception.FlywayValidateException](
+          message = "103")) and
+          (flyway("fw_v103_late", withV103).migrate() must throwA[org.flywaydb.core.api.exception.FlywayValidateException]) and
+          (history("fw_v103_late") === before).toResult
+      }
+    }
+  }
+
   /** V96's rollback SQL after reopen (CHANGELOG, the account change log): the live unsent
     * invitations revoked first, since an older release would show one as mailed; the log dropped.
     */

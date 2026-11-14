@@ -908,6 +908,11 @@ author.commons = Commons ↗
 author.commons.title = Сторінка користувача {0} на Вікісховищі (відкривається в новій вкладці)
 author.filter.chip = Автор: {0} ({1})
 author.filter.remove = Показати файли всіх авторів
+# a round's list with only one author's files (RoundList.author, staff only): the large view's
+# compact chip, the name's title in a round's large view and file list, and in a round's authors list
+author.filter.chip.short = Автор: {0}
+author.files.round.title = Файли автора {0} у цьому списку
+author.files.round.gallery.title = Файли автора {0} в галереї раунду
 
 # the monument page (MonumentController), its card link and the contest files filter
 monument.card.link = Пам''ятка {0}

@@ -220,7 +220,8 @@ object CommentScope {
 
 /** The list of a round's files a viewer is in: whose votes (a juror's, or all together with
   * `asUserId` 0), the region, the filter by votes, only the files with comments or all, only one
-  * monument's files or all, the order, and the view. It has the list's
+  * monument's files or all, only one author's files or all (staff only), the order, and the view.
+  * It has the list's
   * query and every URL into the list — its pages, a file's place in it, a file's large view
   * and a vote there — so a link keeps all of the list or none of it.
   *
@@ -246,6 +247,10 @@ final case class RoundList(
     // may see the list: it only narrows it; a hard condition with the others, the region dropped
     // ([[withMonument]])
     monument: Option[String] = None,
+    // only the files whose stored author is this value exactly ([[RoundList.AuthorParam]]): for
+    // those who may see authors only (User.canViewAuthors), [[RoundList.of]] drops it for anyone
+    // else; it only narrows the list, a hard condition with the others ([[withAuthor]])
+    author: Option[String] = None,
     // `roundImage.read` (P2b): all the jurors' list from round_image's counts ([[countsQuery]])
     countsRead: Boolean = false,
     // which source this request's statements read, shared by the list's copies ([[CountsSession]])
@@ -369,7 +374,8 @@ final case class RoundList(
       commentsIn = Option.when(commentsOnly)(round.contestId),
       commentsRound = commentsRound,
       commentsBy = commentsBy,
-      monumentId = monument
+      monumentId = monument,
+      author = author
     )
 
   /** The list over `round_image`'s counts ([[RoundImageQuery]]), if it may be read from them:
@@ -378,8 +384,9 @@ final case class RoundList(
     * statement's counts are the votes' is proved per statement ([[fromCounts]]).
     */
   def countsQuery: Option[RoundImageQuery] =
-    // a monument's list is read from the votes, as with the comments filter: it is small
-    if (!countsRead || asUserId != 0 || commentsOnly || monument.isDefined || countsSession.fellBack(roundId)) None
+    // a monument's or an author's list is read from the votes, as with the comments filter: it is small
+    if (!countsRead || asUserId != 0 || commentsOnly || monument.isDefined || author.isDefined ||
+        countsSession.fellBack(roundId)) None
     else RoundImageQuery.of(query, round.isBinary, rankKey.columns.map(_._1))
 
   /** Whether this request's statements so far were read from the counts, none fallen back. */
@@ -444,15 +451,15 @@ final case class RoundList(
     Option.when(asUserId != 0 && !query.subRegions)(JurorCounts(query.regionRateCounts(), round.isBinary))
 
   /** The juror's counts for their tabs, which count what each tab opens (decision 2 = A of the
-    * round filters proposal v4): [[jurorCounts]]; under a monument filter or with only the files
-    * with comments (the toggle, the comments report) in a round of sub-regions too, from the same
+    * round filters proposal v4): [[jurorCounts]]; under a monument or author filter or with only
+    * the files with comments (the toggle, the comments report) in a round of sub-regions too, from the same
     * scan by top-level regions, whose rates don't depend on the regions (its region keys, wrong
     * for sub-regions, aren't used). None for all the jurors' votes, and in a round of sub-regions
     * without a filter: the tabs then count all the juror's files
     * (`GalleryService.rateDistribution`), which is what they open there.
     */
   def tabCounts(): Option[JurorCounts] =
-    jurorCounts().orElse(Option.when(asUserId != 0 && (monument.isDefined || commentsOnly))(
+    jurorCounts().orElse(Option.when(asUserId != 0 && (monument.isDefined || author.isDefined || commentsOnly))(
       JurorCounts(query.copy(subRegions = false).regionRateCounts(), round.isBinary)))
 
   /** The pager's page of files. */
@@ -656,6 +663,13 @@ final case class RoundList(
   def withMonument(monumentId: Option[String]): RoundList =
     monumentId.flatMap(RoundList.validMonument).fold(copy(monument = None))(m => copy(monument = Some(m), region = None))
 
+  /** The list of only the author's files (the value as stored, [[RoundList.validAuthor]]'s
+    * rules: not blank, at most 255 characters, else none), or (None) of every author's. Not a
+    * permission check: [[RoundList.of]] keeps a request's author only for those who may see
+    * authors, and only their pages build a list with one.
+    */
+  def withAuthor(stored: Option[String]): RoundList = copy(author = stored.flatMap(RoundList.validAuthor))
+
   def withViewer(asUserId: Long): RoundList = copy(asUserId = asUserId)
 
   /** The list in another view; into the comments report by the latest comment, its default
@@ -688,7 +702,8 @@ final case class RoundList(
     else withRound(round).withViewer(0).withOrder(if (view.comments) ListOrder.LatestComment else ListOrder.ByRate)
 
   /** The list's query string: its view (`module`, for a large view's way back), filter, the
-    * comments toggle, the comments report's scope and filter by author, the monument, and order.
+    * comments toggle, the comments report's scope and filter by author, the monument, the
+    * author, and order.
     */
   private def params(module: Boolean): Seq[(String, String)] =
     Option.when(module && view != GalleryView.Gallery)("module" -> view.name).toSeq ++
@@ -697,7 +712,8 @@ final case class RoundList(
       Option.when(view.comments && commentScope != CommentScope.ThisRound)(RoundList.ScopeParam -> commentScope.param)
         .toSeq ++
       commentsBy.map(RoundList.CommenterParam -> _.toString).toSeq ++
-      monument.map(RoundList.MonumentParam -> _).toSeq :+
+      monument.map(RoundList.MonumentParam -> _).toSeq ++
+      author.map(RoundList.AuthorParam -> _).toSeq :+
       ("sort" -> order.param)
 
   private def withParams(path: String, params: Seq[(String, String)]): String =
@@ -921,10 +937,35 @@ object RoundList {
   def monumentParam(request: RequestHeader): Option[String] =
     request.getQueryString(MonumentParam).flatMap(validMonument)
 
+  /** A list URL's parameter of its author filter ([[RoundList.author]]): `author=<stored author>`. */
+  val AuthorParam = "author"
+
+  /** The longest author a list takes: `images.author`'s length (V25, `varchar(255)`: characters,
+    * so code points, not UTF-16 units).
+    */
+  val AuthorMaxLength = 255
+
+  /** An author as a list takes it: the value as stored, not trimmed, as the contest files page's
+    * author filter and the authors list's links take it (snippets.authorLinks passes the stored
+    * value; an import stores it trimmed); not blank and at most [[AuthorMaxLength]] characters,
+    * else none (the list of all authors, never an error).
+    */
+  def validAuthor(stored: String): Option[String] =
+    Some(stored).filter(a => a.trim.nonEmpty && a.codePointCount(0, a.length) <= AuthorMaxLength)
+
+  /** A request's author filter ([[AuthorParam]], [[validAuthor]]), only for a viewer who may see
+    * the round's contest's authors (User.canViewAuthors: its admins, organizers and root); for
+    * anyone else none, silently, as the contest files page ignores it: never used, echoed in a
+    * link or shown, and not a refusal, so a stale shared link opens their own list.
+    */
+  def authorParam(request: RequestHeader, viewer: User, round: Round): Option[String] =
+    request.getQueryString(AuthorParam).flatMap(validAuthor).filter(_ => viewer.canViewAuthors(round.contestId))
+
   /** The list a request is for: the round, whose votes, the region from its path ("all" or
     * [[GroupedRegion]] for all of them; all of them with a monument filter); the view
     * from its path or, for a large view, its `module`; the filter, the comments toggle
-    * ([[CommentsParam]]), the monument ([[MonumentParam]]) and order from its query,
+    * ([[CommentsParam]]), the monument ([[MonumentParam]]), the author ([[AuthorParam]], only
+    * for those who may see authors: [[authorParam]]) and order from its query,
     * the filter all files if the round's kind hasn't it, the order [[defaultOrder]] if it
     * names none. All the jurors' votes on a yes/no round by rate (or by vote time, a juror's
     * order) are in the binary order last chosen ([[BinarySortCookie]]), else the default; on a
@@ -960,7 +1001,8 @@ object RoundList {
       // A), so a juror's report or large view naming it ignores it
       commenter = Option.when(shown.comments && staff)(
         request.getQueryString(CommenterParam).flatMap(_.toLongOption).filter(_ > 0)).flatten,
-      monument = monument
+      monument = monument,
+      author = authorParam(request, viewer, round)
     )
     list.order match {
       case ListOrder.ByRate if list.aggregateBinary => list.withOrder(ListOrder.Binary(rememberedBinary))

@@ -33,6 +33,17 @@ object PlanSeed {
     */
   val FillerRounds: Int = sys.props.get("queryPlans.fillerRounds").map(_.toInt).getOrElse(25)
 
+  /** The one heavy author (the round filters proposal v4 §1.5, PR-4): production's top author has
+    * 7,654 files (rehearsal copy, 2026-11-14). Here 7,500: 4,500 of the files below the corner
+    * round's and 3,000 of its 20,000 (`page_id % 40` below 9 and 6), so a staff list of the
+    * corner juror by author is the largest list's slow case without images' author index (V104).
+    * A long tail of [[TailAuthors]] small authors has 5 files each (`page_id % 40 = 39`); the
+    * other 31,500 files (79%) have none, as 81% of production's. images only: vote's rows, and so
+    * the statistics snapshot ([[key]]), don't change.
+    */
+  val HeavyAuthor = "Heavy author"
+  val TailAuthors = 200
+
   sealed abstract class Mode(val name: String)
   /** Insert with every index in place. */
   case object IndexesBefore extends Mode("indexes-before")
@@ -95,10 +106,16 @@ object PlanSeed {
     val filler = (0 until fillerRounds).map(k =>
       round(fillerContest.getId, k + 1, s"Filler round ${k + 1}", active = false, Seq(fillerJurors(k % FillerJurors))))
 
-    execute(c, s"""INSERT INTO images (page_id, contest, title, width, height, size, mime, media_type, monument_id)
+    execute(c, s"""INSERT INTO images (page_id, contest, title, width, height, size, mime, media_type, monument_id, author)
       SELECT seq, ${contest.getId}, CONCAT('File:Query plan ', seq, '.jpg'), 4000, 3000, 2000000, 'image/jpeg', 'image',
-        CONCAT(LPAD(seq % 27 + 1, 2, '0'), '-101-', LPAD(seq, 5, '0'))
+        CONCAT(LPAD(seq % 27 + 1, 2, '0'), '-101-', LPAD(seq, 5, '0')),
+        CASE WHEN (seq <= ${Images - CornerFiles} AND seq % 40 < 9) OR (seq > ${Images - CornerFiles} AND seq % 40 < 6)
+               THEN '$HeavyAuthor'
+             WHEN seq % 40 = 39 THEN CONCAT('Author ', FLOOR(seq / 40) % $TailAuthors)
+        END
       FROM seq_1_to_$Images""")
+    // images' statistics (not in the snapshot, which is vote's): its author index's, at once
+    rows(c, "ANALYZE TABLE images")(_ => ())
 
     val definitions = secondaryIndexes(c)
     val keep = Set("vote_page_jury_round_uidx") // vote_page_id_fk's index: it can't be dropped
