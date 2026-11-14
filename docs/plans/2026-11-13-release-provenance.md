@@ -1,11 +1,14 @@
-# Release provenance: CI-built releases and reproducible builds (v4)
+# Release provenance: CI-built releases and reproducible builds (v5)
 
-**Status:** plan, 2026-11-13, revised 2026-11-14. D1–D6 are decided; D7–D22 are open (§8).
-Nothing is implemented. Two
+**Status:** plan complete, 2026-11-13, revised 2026-11-14. All decisions are recorded: D1–D3 on
+2026-11-13, D4–D22 on 2026-11-14 (§8). All but D14 follow the recommendation; D14 keeps the local
+full suite at the release boundary as well as CI's run on the tagged commit.
+Implementation is not scheduled; the maintainer decides when. Nothing is implemented. Two
 plans: **A**, GitHub Actions builds the release ZIP from a tag and attests it, and the server's
 `sudo wlxjury-release deploy 26.11.6` fetches it and verifies it before deploying; **B**, the
 same commit gives a byte-identical ZIP on any machine, so anyone can rebuild it and compare.
-Recommended order: A, then B (§7).
+The release agent still runs the full suite locally before it pushes the tag, and CI runs it
+again on the tagged commit (D14). Order: A0, A1–A4, then B (§7, D21).
 
 **Revisions:**
 - **v1** (82081463): CI build, attestation, `deploy VERSION` with cosign, `release-train`.
@@ -58,6 +61,10 @@ Recommended order: A, then B (§7).
   - §3 lists the residual risks: the web sessions of the accounts with admin rights, releases that
     agents create or delete, and Actions secrets and `GITHUB_TOKEN` in workflows that agents
     push.
+- **v5**: all decisions recorded (2026-11-14). D7–D13 and D15–D22 as recommended. D14 takes
+  the alternative: the local full suite stays at the release boundary, before the tag, as well as
+  CI's run on the tagged commit (§4.2, §4.3, §4.5, §4.6). The plan is complete; implementation
+  is not scheduled, and the maintainer decides when.
 
 ## 1. Today
 
@@ -94,7 +101,7 @@ ZIP was built from, or by what: it is the hash of a build on one PC.
 
 ## 3. Threat model
 
-These are the claims for plan A as designed in §4, with D1–D6 as decided and D7 as recommended.
+These are the claims for plan A as designed in §4, with D1–D22 as decided.
 
 | Threat | Today (hash by message) | A | B | A + B |
 |---|---|---|---|---|
@@ -250,7 +257,8 @@ It runs on `push` of tags `[0-9][0-9].[0-9]*`, with `contents: read` at the top.
      change under `.github/`, and the maintainer's check before approving reads only that
      directory (§4.3).
 2. **test**: `ci.yml` as a reusable workflow on this commit, which must pass (`CI ok`; D13). It
-   replaces the local full suite at the release boundary (D14). A flaky failure here is re-run
+   comes in addition to the local full suite, which the release agent runs before it pushes the
+   tag (D14, §4.3); it doesn't replace it. A flaky failure here is re-run
    ("re-run failed jobs") by the maintainer on the web, by convention (§3, residual risk 4). That
    doesn't touch the build, which ran in attempt 1.
 3. **build** runs **in parallel with guard and test**, not after them. Otherwise a flaky test
@@ -304,10 +312,15 @@ It runs on `push` of tags `[0-9][0-9].[0-9]*`, with `contents: read` at the top.
      is what GitHub renders itself (§4.3; M2).
 
 CI wall time per release is about 30–40 minutes: the suite plus about 10 minutes of build and
-5 of package tests. Approval and rehearsal time come on top (L10).
+5 of package tests. The local full suite before the tag (D14), approval and rehearsal time come
+on top (L10).
 
 ### 4.3 Rehearsal (release agent)
 
+0. **Before the tag**, the release agent runs the full suite locally on the release commit, under
+   the shared sbt lock, as today (D14). It pushes the tag only after that run passes, and it asks
+   the maintainer for the `publish` approval only after both that run and CI's `CI ok` on the
+   tagged commit have passed. If the local run fails, nothing is tagged and no number is burnt.
 1. Download the run's artifact: `gh run download <run> -n wlxjury-26.11.6`.
 2. Verify it:
    `gh attestation verify wlxjury-26.11.6.zip --repo UkrainianWiki/wlxjury --signer-workflow UkrainianWiki/wlxjury/.github/workflows/release.yml --source-ref refs/tags/26.11.6 --source-digest <the tag's commit> --deny-self-hosted-runners`.
@@ -455,10 +468,13 @@ to the hash form silently.
   - `deploy VERSION` first, then the hash form as the fallback and the offline form.
   - What `deploy` checks.
   - The checklist and the runbook.
-- **workflow practices §7.4:** releases from master (`release-train` in the transition), agents
-  tag, the maintainer approves `publish`, and no local release builds. §4 gains the PC's
+- **workflow practices §7.4:** releases from master (`release-train` in the transition), the
+  release agent runs the full suite locally on the release commit before it tags (D14), agents
+  tag, CI runs the suite again on the tagged commit, the maintainer approves `publish`, and no
+  local release builds. §7.1 keeps "its commit had the full suite run". §4 gains the PC's
   credentials: the one fine-grained token, and GCM set to tokens only.
-- **CLAUDE.md:** the release boundary's full suite is CI's.
+- **CLAUDE.md:** the release boundary keeps its local full suite, run before the tag; CI's run on
+  the tagged commit comes in addition (D14).
 
 ### 4.6 Phases and effort (agent time, before reviews)
 
@@ -468,10 +484,11 @@ to the hash form silently.
 | A1 | the `CI ok` aggregate; `release.yml` (build without `id-token`, in parallel with guard and test; a separate attest job that checks out nothing; `publish` after all of them, draft digests checked; the guard's SHA-pin check) in the pinned container; `workflow_call` for `ci.yml` and `deployment.yml`; the scalawiki `cache: false` input and its SHA in the manifest; the scalawiki tag (an agent creates it) and its guard; a dry run (`workflow_dispatch`: builds, doesn't attest or publish) | 2.5–3 d |
 | A2 | `deploy VERSION [SHA]`: the tag's commit from the API, cosign with the commit and ref, run and attempt from the certificate (openssl), the run's `release` approval, record, tests, shellcheck | 3–3.5 d |
 | A3 | `cosign.pin`, the infra playbook; confirm that the pinned cosign honours `TUF_ROOT` (else pass the location explicitly; nothing in `$HOME/.sigstore`); a verify of a real bundle on the server (maintainer's sudo) | 0.5–1 d |
-| A4 | Docs, runbook, practices | 0.5–1 d |
-| A5 | First CI release: `deploy VERSION SHA16` with the rehearsal's hash as a cross-check | with the release |
+| A4 | Docs, runbook, practices (the local full suite stays before the tag, D14; the hash form as the emergency path, D22) | 0.5–1 d |
+| A5 | First CI release: the local full suite on the release commit, then the tag; `deploy VERSION SHA16` with the rehearsal's hash as a cross-check | with the release |
 
-The total is **6.5–8.5 days**.
+The total is **6.5–8.5 days**. Keeping the local full suite (D14) adds no agent time to A1–A4.
+Each release still holds the shared sbt lock for its local run, and waits for CI's run as well.
 
 ## 5. Plan B: reproducible builds
 
@@ -499,10 +516,10 @@ lint fix is pushed (71f2723c on `stack/112`, merged up to `stack/130-comments-re
 
 ## 7. Recommendation
 
-1. **A0 now**, since it is cheap. It takes the agents down to the token, whatever else is
-   decided. Then **A1–A4**. This takes the PC out of the build and makes the release commit tested
-   in CI. Releases then come from protected, public history, built and attested by CI. They
-   deploy only after the maintainer's `publish` approval, which the server checks itself.
+1. **A0 first**, since it is cheap (D21; not scheduled). It takes the agents down to the token,
+   whatever else is decided. Then **A1–A4**. This takes the PC out of the build and makes the
+   release commit tested in CI, as well as locally before the tag (D14). Releases then come from
+   protected, public history, built and attested by CI. They deploy only after the maintainer's `publish` approval, which the server checks itself.
 2. **B** afterwards, starting with B0. It is the only check against a compromised CI build,
    including a `release.yml` changed to build something else, and it lets anyone verify a release.
 3. **Hardware-key 2FA for `ukwikidev`**, whose web login is the one approval both plans have to
@@ -511,7 +528,8 @@ lint fix is pushed (71f2723c on `stack/112`, merged up to `stack/130-comments-re
 
 ## 8. Decisions for the maintainer
 
-D1–D6 are decided. For D7–D22, one per item; the recommended option comes first.
+All decisions are recorded: D1–D3 on 2026-11-13, D4–D22 on 2026-11-14. Each item lists the
+recommended option first. Every decision follows it except D14, which takes the alternative.
 
 1. **Release source.** Tags on master commits. Until the stack merges: a protected
    `release-train` fed by PRs. Both branches require a PR with 0 approvals and `CI ok` pinned to
@@ -539,6 +557,7 @@ D1–D6 are decided. For D7–D22, one per item; the recommended option comes fi
    `ukwikidev` through the token. No account has a required review or a ruleset bypass. Tags
    still can't be moved or deleted.
 7. **Approval gates.** One gate: `publish`, approved by the maintainer after the rehearsal.
+   **Decided (maintainer, 2026-11-14), as recommended: one gate, `publish`.**
    - Agents tag (D6), on any commit they pushed, and so every such tag gets an attested build
      that no human approved. The server refuses such a build. It takes the commit from the tag,
      and the commit, ref, run and attempt from the certificate, not from the predicate. It
@@ -567,50 +586,73 @@ D1–D6 are decided. For D7–D22, one per item; the recommended option comes fi
      `.github/` since the last release; every action is pinned by SHA (§4.3).
    - `deploy VERSION [SHA]` takes an optional hash.
    - Alternative: the hash is required, pasted from the rehearsal record.
+   - **Decided (maintainer, 2026-11-14), as recommended: the hash is optional in
+     `deploy VERSION [SHA]`.**
 9. **Where the ZIP lives.** The run's artifact (30 days) for the rehearsal, and the published
    immutable release for the server. The only draft is `publish`'s few seconds, with its asset
-   digests checked before publishing.
+   digests checked before publishing. **Decided (maintainer, 2026-11-14), as recommended: the ZIP
+   lives on GitHub only, with no `scp`.**
 10. **Visibility.** Stay public: attestations and API reads need no token, and the ZIP holds
     nothing private (F2). Private would need Enterprise Cloud and a root-only fine-grained token.
+    **Decided (maintainer, 2026-11-14), as recommended: stay public.**
 11. **Server verifier and its updates.** cosign at `/usr/local/bin/cosign` from one shared
     `cosign.pin` (CI and infra), `TUF_ROOT` root-only, bumps by PR per dependency practices.
     Alternatives: `gh attestation verify` (an apt repository; whether `--bundle` works without
     login must be checked); sigstore-python; hand-written curl + openssl (rejected).
+    **Decided (maintainer, 2026-11-14), as recommended: pinned cosign.**
 12. **Offline deploys.** Only the hash form (`deploy ZIP SHA256`) is offline, with no provenance
     claim. Alternative: an offline bundle check with a maintained `trusted_root.json` plus a
-    required hash; it still can't check publication or the `publish` job.
+    required hash; it still can't check publication or the `publish` job. **Decided
+    (maintainer, 2026-11-14), as recommended: the hash form only, without provenance.**
 13. **Green CI first.** Require the whole `CI ok`. It is a quality gate, not a control against
     agents, who can change `ci.yml`. The lint fix is pushed (71f2723c, merged up
     to 7b5e5f57); confirm a green run before the first CI release. Alternative:
     require only the suite's steps (the release would then skip the lint, story and
-    query-plan gates).
-14. **Full suite at the release boundary.** CI's run on the tagged commit replaces the local
-    one; local runs are for affected specs.
+    query-plan gates). **Decided (maintainer, 2026-11-14), as recommended: the whole `CI ok`
+    must pass.**
+14. **Full suite at the release boundary.** Recommended: CI's run on the tagged commit replaces
+    the local one; local runs are for affected specs. Alternative: keep the local full suite at
+    the release boundary as well as CI's run. **Decided (maintainer, 2026-11-14): the
+    alternative.**
+    - The release agent runs the full suite locally on the release commit, under the shared sbt
+      lock, before it pushes the tag (§4.3, step 0).
+    - CI runs it again on the tagged commit (§4.2, step 2), and `publish` needs `CI ok`.
+    - The agent asks for the `publish` approval only after both have passed.
+    - A local failure stops the release before the tag, so it burns no number.
+    - The cost: each release holds the sbt lock for the local run (§1) and waits for CI's run too.
 15. **Version.** The release commit sets `version := "26.11.6"`, and CI checks that it equals
     the tag. Alternative: derive it from the tag (a rebuild needs the same override, and the
-    commit says SNAPSHOT).
+    commit says SNAPSHOT). **Decided (maintainer, 2026-11-14), as recommended.**
 16. **Failed rehearsal.** Reject `publish` and burn the number; the next is 26.11.7, and the
     changelog notes it. The same applies to a build that fails in attempt 1 for an
     infrastructure reason, and to a release someone published for the tag before `publish`
-    (§3, residual risk 2). (Re-tagging is impossible: tags can't be deleted.)
+    (§3, residual risk 2). (Re-tagging is impossible: tags can't be deleted.) **Decided
+    (maintainer, 2026-11-14), as recommended: burn the number.**
 17. **Caches in the release build.** None. Alternative: CI's caches (faster, and a cache
-    poisoned from another ref would end up attested).
+    poisoned from another ref would end up attested). **Decided (maintainer, 2026-11-14), as
+    recommended: no caches.**
 18. **The scalawiki pin.** Tag the pinned commit in scalawiki (for example `wlxjury-25951dbe`)
     under a tag ruleset that, like wlxjury's, forbids moving or deleting a tag, with no bypass.
     Agents create the tag through the token (D6). The guard checks that the pin equals that tag's
     commit, and the SHA goes into `wlxjury-build.json`. The tag keeps the pinned commit from
     disappearing; it doesn't mean someone reviewed it. Alternative: first publish a scalawiki release package
-    (docs/plans/2026-11-03-ci-and-scalawiki-packages.md), which is longer.
+    (docs/plans/2026-11-03-ci-and-scalawiki-packages.md), which is longer. **Decided
+    (maintainer, 2026-11-14), as recommended: a protected scalawiki tag.**
 19. **Line endings (B).** Build only on Linux checkouts (CI, the pinned container); no
     renormalization. Alternative: `eol=lf` for `app conf public` and a renormalizing commit (a
-    large diff that conflicts with the stack).
-20. **Immutable releases.** Turn them on, and have the server require `immutable`.
+    large diff that conflicts with the stack). **Decided (maintainer, 2026-11-14), as
+    recommended: Linux checkouts only.**
+20. **Immutable releases.** Turn them on, and have the server require `immutable`. **Decided
+    (maintainer, 2026-11-14), as recommended.**
 21. **Order.** A0, A1–A4, then B. Alternative: B first (verifiable builds, but the PC stays the
-    builder until A).
+    builder until A). **Decided (maintainer, 2026-11-14), as recommended.** No phase is
+    scheduled yet; the maintainer decides when.
 22. **The maintainer as the one person a release needs.** Only the maintainer approves
     `publish`, from the web login as `ukwikidev`. By convention, the maintainer also re-runs
     failed jobs. Accept it, and document the hash form (`deploy ZIP SHA256`, no provenance) as the
-    emergency path in the runbook. Alternatives:
+    emergency path in the runbook. **Decided (maintainer, 2026-11-14), as recommended: only the
+    maintainer approves; the hash form is the emergency path and goes in the runbook.**
+    Alternatives:
     - A second required reviewer; either one can approve. That gives more availability, but it
       is a second web session to protect.
     - A separate approver account, kept off the PC, as the only reviewer, with self-review
