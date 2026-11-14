@@ -20,7 +20,8 @@ object RoundStatLinks {
     *                      and `deleted` files whose author is one of the contest's conflict-of-interest
     *                      people ([[CoiMembers.matchOf]])
     * @param disqualified  its disqualified files (the round's `dq` rows)
-    * @param history       its history's events (`round_image_event`), read only when there is
+    * @param history       its history's events (`round_image_event`, at most one more than the
+    *                      page lists: [[historyCount]]), read only when there is
     *                      neither a conflict nor a disqualified file: the link then stays only
     *                      while the round has a history
     */
@@ -57,11 +58,13 @@ object RoundStatLinks {
     Counts(authors, withoutAuthor, conflicts, disqualified, history)
   }
 
-  /** The round's history events (all of them; the conflicts page shows the latest
-    * [[RoundConflicts.HistoryLimit]]): a range of round_image_event_round_page_idx.
+  /** The round's history events, counted up to one more than the conflicts page lists (its
+    * latest [[RoundConflicts.HistoryLimit]]): more than the limit is shown as "500+", as many as
+    * the page has. A range of round_image_event_round_page_idx, read no further than that.
     */
   def historyCount(roundId: Long)(implicit session: DBSession = AutoSession): Int =
-    sql"SELECT COUNT(*) FROM round_image_event WHERE round_id = $roundId".map(_.int(1)).single().getOrElse(0)
+    sql"""SELECT COUNT(*) FROM (SELECT 1 FROM round_image_event WHERE round_id = $roundId
+          LIMIT ${RoundConflicts.HistoryLimit + 1}) t""".map(_.int(1)).single().getOrElse(0)
 
   /** Who may read the counts, in the round's contest: those who may see each of the three
     * links (its organizer info, its authors, its conflicts of interest).
