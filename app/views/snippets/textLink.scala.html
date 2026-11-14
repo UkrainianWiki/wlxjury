@@ -1,0 +1,4 @@
+@(url: String, label: String, enabled: Boolean = true, icon: Option[String] = None)
+@* a text link, [[iconLink]]'s sibling with the same rule: not `enabled` (a count of 0), it is
+   plain text, with no href and out of the tab order; `icon`, Bootstrap Icons' name, before it *@
+@if(enabled) {<a href="@url">} else {<a class="text-body-secondary" aria-disabled="true" tabindex="-1">}@for(i <- icon) {<i class="bi bi-@i" aria-hidden="true"></i> }@label</a>
