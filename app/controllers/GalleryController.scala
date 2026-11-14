@@ -219,11 +219,10 @@ class GalleryController @Inject() (
     // the region menu, whose regions are read when it is opened (regions)
     lazy val menu = regionMenu(list, contest)
 
-    // the viewer's own tabs: the counts above when the list is their own, of all their files
-    // also with the comments toggle on (the toggle tells how many of them have comments); within
-    // the monument filter, also in a round of sub-regions (RoundList.tabCounts)
-    lazy val rates = Option.when(user.id.contains(asUserId))(
-      if (list.commentsOnly) list.allFiles.tabCounts() else counts.orElse(list.tabCounts()))
+    // the viewer's own tabs: the counts above when the list is their own, counting what each tab
+    // opens (decision 2 = A): within the monument filter and with only the files with comments
+    // (the toggle, the comments report), also in a round of sub-regions (RoundList.tabCounts)
+    lazy val rates = Option.when(user.id.contains(asUserId))(counts.orElse(list.tabCounts()))
       .flatten.fold(galleryService.rateDistribution(user, round))(c => new RateDistribution(c.rates))
 
     // the comments toggle's number: the list's files with comments, the list's own total when on

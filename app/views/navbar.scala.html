@@ -57,7 +57,7 @@
 @* The viewer's own files by their votes, in all regions: all, the unrated, and the selected and
    rejected (a binary round) or the rated; none if the viewer has no files in the round *@
 @ownTabs(l: RoundList) = {
-    @if(rates.all > 0) {
+    @if(rates.hasFiles) {
     @defining(ownList(l).withRegion("all")) { own =>
     @for((filter, name, count) <- Seq((VoteFilter.All, "all", rates.all), (VoteFilter.Unrated, "unrated", rates.unrated)) ++
             (if (l.round.isBinary) Seq((VoteFilter.Rate(1), "selected", rates.selected), (VoteFilter.Rate(-1), "rejected", rates.rejected))

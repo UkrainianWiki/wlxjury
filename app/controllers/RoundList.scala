@@ -442,14 +442,16 @@ final case class RoundList(
   def jurorCounts(): Option[JurorCounts] =
     Option.when(asUserId != 0 && !query.subRegions)(JurorCounts(query.regionRateCounts(), round.isBinary))
 
-  /** The juror's counts for their tabs: [[jurorCounts]]; under a monument filter in a round of
-    * sub-regions too, from the same scan by top-level regions, whose rates don't depend on the
-    * regions (its region keys, wrong for sub-regions, aren't used). None for all the jurors' votes,
-    * and in a round of sub-regions without the filter: the tabs then count all the juror's files
-    * (`GalleryService.rateDistribution`), which no filter narrows.
+  /** The juror's counts for their tabs, which count what each tab opens (decision 2 = A of the
+    * round filters proposal v4): [[jurorCounts]]; under a monument filter or with only the files
+    * with comments (the toggle, the comments report) in a round of sub-regions too, from the same
+    * scan by top-level regions, whose rates don't depend on the regions (its region keys, wrong
+    * for sub-regions, aren't used). None for all the jurors' votes, and in a round of sub-regions
+    * without a filter: the tabs then count all the juror's files
+    * (`GalleryService.rateDistribution`), which is what they open there.
     */
   def tabCounts(): Option[JurorCounts] =
-    jurorCounts().orElse(Option.when(asUserId != 0 && monument.isDefined)(
+    jurorCounts().orElse(Option.when(asUserId != 0 && (monument.isDefined || commentsOnly))(
       JurorCounts(query.copy(subRegions = false).regionRateCounts(), round.isBinary)))
 
   /** The pager's page of files. */
@@ -606,11 +608,6 @@ final case class RoundList(
         val others = if (n == 1 && fileInList) 0 else n
         Option.when(n > 0)(MonumentLine(id, n, Option.when(others > 0)(ofMonument.pageUrl(1))))
       }
-
-  /** The list of all its files, whatever their comments: without the toggle, a comments report
-    * as the gallery ([[withView]]).
-    */
-  def allFiles: RoundList = withComments(false).withView(if (view.comments) GalleryView.Gallery else view)
 
   /** The list's own orders in the comments report: a juror's as their order menu has them; all
     * the jurors' votes on a yes/no round in a [[BinaryOrder]], on a rated round by rate, either
