@@ -248,9 +248,18 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
         of("?sort=latest-comment", view = GalleryView.ByRate).order must not(be_==(ListOrder.LatestComment))
         GalleryView.of(FakeRequest(GET, "/?module=comments")) === GalleryView.Comments
         GalleryView.of(FakeRequest(GET, "/?module=comments-csv")) === GalleryView.Gallery
+        // a juror's own report: all the contest's comments whatever the scope asked, never a filter
+        // by person (the round filters proposal v4 §2.2); another's list, or the CSV, their gallery
         val juror = RoundList.of(f.round, f.juror1, f.juror1.getId, "all", GalleryView.Comments)(
+          FakeRequest(GET, s"/x?sort=latest-comment&scope=round&commenter=${f.organizer.getId}"))
+        (juror.view, juror.query.commentsIn, juror.commentsRound, juror.commentsBy, juror.order) ===
+          ((GalleryView.Comments, Some(f.contest.getId), None, None, ListOrder.LatestComment))
+        // (refused before it is listed: GalleryController; by rate, as any list not the viewer's own gallery)
+        val other = RoundList.of(f.round, f.juror1, f.juror2.getId, "all", GalleryView.Comments)(
           FakeRequest(GET, "/x?sort=latest-comment&scope=round"))
-        (juror.view, juror.query.commentsIn, juror.order) === ((GalleryView.Gallery, None, ListOrder.FileOrder))
+        (other.view, other.query.commentsIn, other.order) === ((GalleryView.Gallery, None, ListOrder.ByRate))
+        val csv = RoundList.of(f.round, f.juror1, f.juror1.getId, "all", GalleryView.CommentsCsv)(FakeRequest(GET, "/x"))
+        csv.view === GalleryView.Gallery
       }
     }
   }
@@ -582,24 +591,30 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
 
   "the comments report's access" should {
 
-    "be refused to a juror, of their own files too, as a page or JSON, the CSV too" in {
+    "be refused to a juror for another juror's and all the jurors' files, and the CSV, as a page or JSON; their own open" in {
       testDbApp { app =>
         val f = fixture()
-        val paths = Seq(path(f, f.juror1.getId), path(f, 0), s"/query?module=comments&round=${f.round.getId}&user=${f.juror1.getId}",
+        val paths = Seq(path(f, f.juror2.getId), path(f, 0), s"/query?module=comments&round=${f.round.getId}&user=0",
           s"/comments/round/${f.round.getId}/user/${f.juror1.getId}/region/all/csv",
-          s"/comments/round/${f.round.getId}/user/${f.juror1.getId}/region/all/pageid/1",
+          s"/comments/round/${f.round.getId}/user/${f.juror2.getId}/region/all/pageid/7",
           s"/query?module=comments-csv&round=${f.round.getId}&user=${f.juror1.getId}")
         forall(paths) { p =>
           val result = get(app, f.juror1, p)
           status(result) aka p must_== FORBIDDEN
           val body = contentAsString(result)
-          body must not(contain("one, first"))
-          body must not(contain("five, this round"))
+          body must not(contain("one, second"))
+          body must not(contain("seven"))
         }
-        val json = get(app, f.juror1, path(f, f.juror1.getId), "X-Requested-With" -> "XMLHttpRequest")
+        val json = get(app, f.juror1, path(f, f.juror2.getId), "X-Requested-With" -> "XMLHttpRequest")
         status(json) === FORBIDDEN
         (Json.parse(contentAsString(json)) \ "error").as[String] === "forbidden"
         (Json.parse(contentAsString(json)) \ "reference").as[String] must not(beEmpty)
+        // their own list's report: all the contest's comments on their files (JurorCommentsReportSpec)
+        forall(Seq(path(f, f.juror1.getId), s"/query?module=comments&round=${f.round.getId}&user=${f.juror1.getId}",
+          s"/comments/round/${f.round.getId}/user/${f.juror1.getId}/region/all/pageid/1")) { p =>
+          status(get(app, f.juror1, p)) aka p must_== OK
+        }
+        rows(page(app, f.juror1, path(f, f.juror1.getId))) === Seq(4L, 5L, 1L, 3L)
       }
     }
 
@@ -618,12 +633,16 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "make a juror's large view naming it their gallery's, never the report" in {
+    "keep a juror's large view naming it in their own report, never another's, nor the CSV" in {
       testDbApp { app =>
         val f = fixture()
         val doc = page(app, f.juror1, s"/large/round/${f.round.getId}/user/${f.juror1.getId}/pageid/1?module=comments&sort=latest-comment")
-        doc.select("a[href*=/comments/]").size === 0
-        doc.select("a[href*=module=comments]").size === 0
+        doc.select("a[href*=module=comments]").size must be_>(0)
+        doc.select("a[href*=/comments/round/]").asScala.map(_.attr("href")).forall(
+          _.startsWith(s"/comments/round/${f.round.getId}/user/${f.juror1.getId}/")) must beTrue
+        doc.select("a[href*=comments-csv], a[href*=/csv]").size === 0
+        status(get(app, f.juror1,
+          s"/large/round/${f.round.getId}/user/${f.juror2.getId}/pageid/5?module=comments")) === FORBIDDEN
       }
     }
 
