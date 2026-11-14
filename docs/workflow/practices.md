@@ -75,10 +75,17 @@ that fixes it avoids reopening done work, and the entries keep the rest from bei
 flagging it, and flags only what is neither fixed later nor planned.
 
 **3.3 CodeRabbit one PR at a time.** Its reviews come about one per 45–50 minutes and its chat
-answers are limited per hour, so reviews are requested one at a time (the user's choice,
-2026-11-03). Since 2026-11-13 the loop requests them on its own, in stack order, and queues each
-review; the orchestrator triages from the queue (replies in each thread, new entries in the
-triage document) and marks the PR triaged. The tools and their limits:
+answers are limited per hour, so reviews are requested one PR at a time, in stack order. The
+user's choice of 2026-11-03 was to request one review, triage it, then request the next. On
+2026-11-13 the maintainer asked for the loop to run continuously on its own (started, restarted
+and continued automatically, from a scheduled task) with a triage queue, so it no longer waits
+for triage: each review with comments, and each parked PR, is queued, and the queue can run
+ahead of triage. The orchestrator triages from the queue (replies in each thread, new entries
+in the triage document) and marks the PR triaged. A fix pushed to a PR during triage changes the
+PR's own-diff hash, so the loop requests a re-review (queued again if it has comments); a merge
+of the base, or a stack rebuild that keeps the PR's changes, does not. The loop halts until
+`--resume` after 3 different PRs in a row without a usable answer, or on a reply saying reviews
+are paused or disabled. The tools and their limits:
 [`scripts/review/`](../../scripts/review/README.md); the loop's files live outside every checkout
 and its request state is rebuilt from GitHub, so nothing is lost with a session.
 
