@@ -52,6 +52,18 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   interest or any author; `deleted`, `round`, `coi` and `author` are ignored for them, and a
   juror of another contest is refused as before. The top bar still links it for organizers and
   admins only. Juror, organizer and admin guides: "The monument's page", "Monuments".
+- **Counts on the round statistics links** (the round filters and comments proposal, §3;
+  developed 2026-11-14, `stack/146-roundstat-counts`): under a round's statistics,
+  **Comments on the round's files (12) · all rounds (30)** says the comments report's numbers
+  (this round's comments, and all the contest's comments on the round's files when there are
+  more, linking to that scope); **Conflicts of interest of this round (3 files · 2
+  disqualified)** and **Authors of this round (148 · 12 files without an author)** get their
+  counts after the page has loaded, each the number its page shows. A count of 0 makes the link
+  plain text (as the statistics table's icons); the conflicts link stays, as "none · history
+  (N)", while the round has a history. The counts come from a JSON request
+  (`GET /roundstat/:round/counts`, numbers only, on the blocking pool) for those who may see all
+  three links, checked in the round's own contest; until it answers, without JavaScript or if it
+  fails, the two links stay as before, enabled and without counts. Organizer guide: "Statistics".
 
 **Development**
 
