@@ -220,6 +220,86 @@ class JurorCommentsReportSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  "a juror's own comments report, as the round and the votes change" should {
+
+    "drop a file whose vote was removed, its comments kept" in {
+      testDbApp { app =>
+        val f = fixture()
+        scalikejdbc.DB.autoCommit { implicit s =>
+          import scalikejdbc._
+          sql"delete from vote where page_id = 5 and jury_id = ${f.juror1.getId} and round_id = ${f.round.getId}".update.apply()
+        }
+        rows(page(app, f.juror1, report(f, f.juror1.getId))) === Seq(1L, 3L)
+        // the comment is still the contest's: the organisers' report of juror 2's files has it
+        rows(page(app, f.organizer, report(f, f.juror2.getId, "?scope=contest"))) must contain(5L)
+      }
+    }
+
+    "be refused in a round stopped or still being distributed, as a page or JSON" in {
+      testDbApp { app =>
+        val f = fixture()
+        def refused(): org.specs2.execute.Result = {
+          val html = get(app, f.juror1, report(f, f.juror1.getId))
+          val json = get(app, f.juror1, report(f, f.juror1.getId), "X-Requested-With" -> "XMLHttpRequest")
+          (status(html) must_== FORBIDDEN) and (contentType(html) must beSome("text/html")) and
+            (contentAsString(html) must not(contain("one by org"))) and
+            (status(json) must_== FORBIDDEN) and
+            ((Json.parse(contentAsString(json)) \ "error").as[String] must_== "forbidden") and
+            ((Json.parse(contentAsString(json)) \ "reference").as[String] must not(beEmpty))
+        }
+        Round.setActive(f.round.getId, false)
+        val stopped = refused()
+        Round.setActive(f.round.getId, true)
+        scalikejdbc.DB.autoCommit { implicit s =>
+          import scalikejdbc._
+          sql"update round set distributing = 1 where id = ${f.round.getId}".update.apply()
+        }
+        stopped and refused()
+      }
+    }
+
+    "go back after a comment to the juror's own report" in {
+      testDbApp { app =>
+        val f = fixture()
+        val list = RoundList(f.round, f.juror1.getId, order = ListOrder.LatestComment, view = GalleryView.Comments,
+          commentScope = CommentScope.AllRounds)
+        val result = route(app, FakeRequest(POST, list.commentUrl(3))
+          .withSession(Secured.UserName -> f.juror1.email)
+          .withFormUrlEncodedBody("id" -> "0", "text" -> "a juror's note")
+          .withCSRFToken).get
+        status(result) === SEE_OTHER
+        val location = redirectLocation(result).get
+        location must startWith(s"/large/round/${f.round.getId}/user/${f.juror1.getId}/pageid/3")
+        location must contain("module=comments")
+        location must contain("scope=contest")
+        // the new comment makes file 3 the latest
+        rows(page(app, f.juror1, report(f, f.juror1.getId))) === Seq(3L, 1L, 5L)
+      }
+    }
+
+    "give its region menu for the juror's own list only: another's refused, the CSV's their gallery's" in {
+      testDbApp { app =>
+        val f = fixture()
+        def regions(asUserId: Long, module: String) =
+          route(app, FakeRequest(GET, s"/regions/round/${f.round.getId}/user/$asUserId/region/all?module=$module")
+            .withSession(Secured.UserName -> f.juror1.email).withHeaders("X-Requested-With" -> "XMLHttpRequest")).get
+        val own = regions(f.juror1.getId, "comments")
+        status(own) === OK
+        (contentAsJson(own) \ "all" \ "url").as[String] must
+          startWith(s"/comments/round/${f.round.getId}/user/${f.juror1.getId}/")
+        forall(Seq(f.juror2.getId, 0L)) { other =>
+          val refused = regions(other, "comments")
+          (status(refused) must_== FORBIDDEN) and ((contentAsJson(refused) \ "error").as[String] must_== "forbidden")
+        }
+        val csv = regions(f.juror1.getId, "comments-csv")
+        status(csv) === OK
+        (contentAsJson(csv) \ "all" \ "url").as[String] must
+          startWith(s"/gallery/round/${f.round.getId}/user/${f.juror1.getId}/")
+        status(regions(f.juror2.getId, "comments-csv")) === FORBIDDEN
+      }
+    }
+  }
+
   "the gallery with only the files with comments" should {
 
     "link Recent comments to the report of the same files, only while the toggle is on" in {
@@ -290,6 +370,17 @@ class JurorCommentsReportSpec extends PlaySpecification with PlayTestDb {
               (contentAsString(result) must not(contain("one by org")))
           }
         }
+        // sent by script: JSON 403, for the round's viewers' refusal as for the report's
+        forall(Seq(f.jurorB, f.former)) { viewer =>
+          val json = get(app, viewer, report(f, viewer.getId), "X-Requested-With" -> "XMLHttpRequest")
+          (status(json) must_== FORBIDDEN) and (contentType(json) must beSome("application/json")) and
+            ((Json.parse(contentAsString(json)) \ "error").as[String] must_== "forbidden") and
+            (session(json).get(Secured.CurrentContestId) must beNone)
+        }
+        val gallery = get(app, f.jurorB, s"/gallery/round/${f.round.getId}/user/${f.jurorB.getId}/page/1",
+          "Sec-Fetch-Mode" -> "cors")
+        status(gallery) === FORBIDDEN
+        contentType(gallery) must beSome("application/json")
         // juror B's own report of B's round: theirs, without A's comments
         rows(page(app, f.jurorB, s"/comments/round/${f.roundB.getId}/user/${f.jurorB.getId}/page/1")) === Seq(2L)
       }

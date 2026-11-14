@@ -156,7 +156,11 @@ class GalleryController @Inject() (
     val rounds = galleryService.viewerRounds(user, round)
 
     if (galleryService.isNotAuthorized(user, Some(round), round.contestId, rounds)) {
-      onUnAuthorized(user, request, Secured.Denial.round(round, Secured.ViewerRoles))
+      // not a viewer of the round (another contest, an inactive membership, a round stopped or
+      // still being distributed for a juror): JSON to a script, as the comments refusal below
+      val denial = Secured.Denial.round(round, Secured.ViewerRoles)
+      if (Secured.isScriptRequest(request)) onUnAuthorizedJson(user, request, denial)
+      else onUnAuthorized(user, request, denial)
     } else if (view.exists(_.comments) && !user.canViewOrgInfo(round) &&
         !(view.contains(GalleryView.Comments) && user.id.contains(asUserId))) {
       // the comments report and its CSV: the round's contest's admins, organizers and root, as
