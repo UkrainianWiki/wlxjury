@@ -45,6 +45,8 @@ configured yet**.
 
 - The row of round names above the statistics table switches round.
 - **Contest files** in the pages menu at the start of the top bar opens the contest's files.
+- **Statistics** in the same menu, on every page of the contest, opens the statistics of the
+  round you are looking at, or else of the latest open round (once the contest has a round).
 - The contest menu at the top of the page switches contest, if you are in more than one.
 
 There is no **Rounds** or **Users** menu for you: those are the admins'. The admins create the

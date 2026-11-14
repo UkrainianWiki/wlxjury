@@ -151,6 +151,13 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   list gets the menus too. Every navbar menu (the filters, order, pages, contest, theme and
   account menus, and the pager's page box) opens from a button (Space opens it), and the link
   menus mark the page's item for screen readers. Juror, organizer and admin guides.
+- **Statistics on every page of the contest** (the maintainer, 2026-11-14; developed 2026-11-14,
+  `stack/153-statistics-in-pages-menu`): the pages menu lists **Statistics** for the contest's
+  organizers and admins (and root) on all its pages, the users, rounds and contest files pages
+  too, not only on a page with rounds (a rule from when the links took room in the bar). It
+  opens the round's statistics on a round's page, else the current round's; a contest without
+  rounds has no such item. Jurors still have no pages menu, and the statistics pages check access
+  as before. Organizer guide.
 
 **Development**
 

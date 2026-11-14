@@ -321,6 +321,60 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
           (page(app, f.juror, gallery(f.round, f.juror.getId)).select("#pages-menu, .wlx-nav-links").size === 0)
       }
     }
+
+    "list Statistics on every page of the contest for its organizers and admins, the link working (2026-11-14)" in {
+      testDbApp { app =>
+        val f = fixture()
+        val c = f.contest.getId
+        val files = s"/contest/$c/files"
+        val roundGallery = gallery(f.round, f.juror.getId)
+        val current = s"/roundstat?contestId=$c"
+        def statHref(viewer: User, path: String): Option[String] =
+          Option(page(app, viewer, path).selectFirst("#pages-menu #menu-statistics")).map(_.attr("href"))
+        // the link opens a round's statistics page (the current round's through its redirect)
+        def opens(viewer: User, href: String) = {
+          val target = redirectLocation(get(app, viewer, href)).getOrElse(href)
+          (target must startWith("/roundstat/")) and
+            (page(app, viewer, target).select("#pages-menu a[aria-current=page]").asScala.map(_.id).toList ===
+              List("menu-statistics"))
+        }
+        val adminPages = Seq(s"/admin/rounds?contestId=$c", s"/admin/users?contestId=$c", files, roundGallery)
+        val orgPages = Seq(files, roundGallery)
+        (adminPages.filter(p => statHref(f.admin, p).isEmpty) must beEmpty) and
+          (orgPages.filter(p => statHref(f.organizer, p).isEmpty) must beEmpty) and
+          // on a page without a round, the current round's statistics; on a round's, that round's
+          (statHref(f.admin, s"/admin/users?contestId=$c") === Some(current)) and
+          (statHref(f.organizer, files) === Some(current)) and
+          (statHref(f.organizer, roundGallery) === Some(s"/roundstat/${f.round.getId}")) and
+          (statHref(f.root, s"/admin/users?contestId=$c") === Some(current)) and
+          opens(f.organizer, current) and opens(f.admin, current) and
+          // a juror: no Pages menu, so no Statistics, on their gallery; the contest files page refused
+          (page(app, f.juror, roundGallery).select("#pages-menu, #menu-statistics").size === 0) and
+          (status(get(app, f.juror, files)) === FORBIDDEN) and
+          // and the statistics stay refused to them
+          (status(get(app, f.juror, current)) === FORBIDDEN) and
+          (status(get(app, f.juror, s"/roundstat/${f.round.getId}")) === FORBIDDEN)
+      }
+    }
+
+    "not list Statistics in a contest without rounds, whose current statistics are no error" in {
+      testDbApp { app =>
+        val f = fixture()
+        val empty = contestDao.create(None, "WLE", 2026, "Ukraine")
+        val e = empty.getId
+        val admin = userDao.create(User("Empty Admin", "emptyadmin@example.com", None, Set("admin"), contestId = empty.id))
+        val org = userDao.create(User("Empty Org", "emptyorg@example.com", None, Set("organizer"), contestId = empty.id))
+        def items(viewer: User, path: String) =
+          page(app, viewer, path).select("#pages-menu a.dropdown-item").asScala.map(_.id).toList
+        (items(admin, s"/admin/rounds?contestId=$e") === List("menu-contest-files", "menu-users", "menu-rounds")) and
+          (items(admin, s"/admin/users?contestId=$e") === List("menu-contest-files", "menu-users", "menu-rounds")) and
+          (items(org, s"/contest/$e/files") === List("menu-contest-files")) and
+          (items(f.root, s"/admin/users?contestId=$e") must not(contain("menu-statistics"))) and
+          // reached by hand, the current round's statistics are a state page, not an error
+          (status(get(app, org, s"/roundstat?contestId=$e")) === OK) and
+          (status(get(app, admin, s"/roundstat?contestId=$e")) === OK)
+      }
+    }
   }
 
   "the navbar's menus" should {

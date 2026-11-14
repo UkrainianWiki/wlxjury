@@ -151,6 +151,13 @@ case class User(
     hasRole(User.ROOT_ROLE) ||
       contestId.contains(round.contestId) && hasAnyRole(User.ADMIN_ROLES ++ User.ORG_COM_ROLES)
 
+  /** Whether the user may see the statistics of the contest's rounds without a round at hand (the
+    * navbar's Statistics on every page of the contest): those [[canViewOrgInfo]] lets see each
+    * of its rounds, root or the contest's admins and organizers.
+    */
+  def canViewContestStats(refContestId: Long): Boolean =
+    hasContestRole(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(refContestId))
+
   /** Whether the user may vote in the round ([[controllers.Secured.VotePermission]]): their
     * role in the round's contest is jury. Only their own vote rows, a round juror's, change.
     */

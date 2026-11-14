@@ -296,8 +296,12 @@
 @staffBar(round: Round) = @{ user.canViewOrgInfo(round) && !jurorBar(round) && (list.isDefined || user.getId != asUserId) }
 
 @* The pages the viewer may open (the Pages menu): contests and all users (root; all users outside
-   a contest), the contest's files, its users and rounds (admins), the round's statistics (those
-   who may see it): (url, message key, icon, element id). None for a juror *@
+   a contest), the contest's files, its users and rounds (admins), and the statistics (those who
+   may see a round's): (url, message key, icon, element id). None for a juror.
+   The statistics are on every page of the contest (the maintainer, 2026-11-14: they no longer
+   wait for a page with rounds, which kept the bar short): the selected round's if the viewer may
+   see it, else the current round's (RoundController.currentRoundStat), only if the contest has a
+   round (the page's rounds, else one count query), so the link never ends on "no round yet" *@
 @pageItems = @{
     if (user == null) Nil
     else {
@@ -314,7 +318,9 @@
           (routes.UserController.users(contestId).url, "users", "bi-people", "menu-users"),
           (routes.RoundController.rounds(contestId).url, "rounds", "bi-collection", "menu-rounds")))
       val stat = selectedRound.filter(r => user.canViewOrgInfo(r)).map(r => routes.RoundController.roundStat(r.getId).url)
-        .orElse(Option.when(rounds.exists(r => user.canViewOrgInfo(r)))(routes.RoundController.currentRoundStat(contestId).url))
+        .orElse(contestId.filter(c => user.canViewContestStats(c) &&
+          (rounds.exists(_.contestId == c) || Round.countByContest(c) > 0))
+          .map(c => routes.RoundController.currentRoundStat(Some(c)).url))
         .map(url => (url, "statistics", "bi-bar-chart", "menu-statistics")).toSeq
       rootItems ++ files ++ admin ++ stat
     }
