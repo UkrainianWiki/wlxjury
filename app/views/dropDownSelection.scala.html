@@ -1,14 +1,18 @@
-@(dto: UiSelectionDto[Any], iconOnly: Boolean = false, compactIcon: Option[String] = None)(implicit messages: Messages)
+@(dto: UiSelectionDto[Any], iconOnly: Boolean = false, compactIcon: Option[String] = None, id: Option[String] = None, label: Option[String] = None)(implicit messages: Messages)
 @* A navbar menu: its toggle shows the current item (its icon only if `iconOnly` and it has one,
    the text then read by screen readers and shown as a tooltip), the menu every item, the current
-   one marked active. Icons are full class strings (`bi bi-…`). With `compactIcon`, in the
-   organisers' crowded results bar (navbar.scala.html, wlx-nav-results) the toggle is that icon
-   below 1700 px, its text read by screen readers and shown as a tooltip; elsewhere, and from
-   1700 px, the text (main.css, UiSelectionDto.toDropDown) *@
+   one marked active with aria-current="page" (each item opens a page; the current one is this
+   page). Icons are full class strings (`bi bi-…`). With `compactIcon`, in the organisers' crowded
+   results bar (navbar.scala.html, wlx-nav-results) the toggle is that icon below 1700 px, its text
+   read by screen readers and shown as a tooltip; elsewhere, and from 1700 px, the text (main.css,
+   UiSelectionDto.toDropDown). `label`: what the menu is, before the current item for screen
+   readers only (the comments report's order). The toggle is a real button, so Space opens it as
+   Enter does (Bootstrap's dropdown) *@
 @icon(iconClass: String) = {<i class="@iconClass" aria-hidden="true"></i>}
-<li class="nav-item dropdown">
-    <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" role="button" aria-expanded="false" href="#"
+<li class="nav-item dropdown"@for(i <- id) { id="@i"}>
+    <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"
         @if((iconOnly && dto.current.icon.nonEmpty) || compactIcon.nonEmpty) {title="@dto.current.localizedText"}>
+        @for(l <- label) {<span class="visually-hidden">@l: </span>}
         @compactIcon match {
         case Some(iconClass) => {
             @icon(iconClass + " wlx-nav-icon")<span class="wlx-nav-label">@dto.current.localizedText</span>
@@ -20,11 +24,11 @@
         }
         }
         }
-    </a>
+    </button>
     <ul class="dropdown-menu">
         @for((id, value) <- dto.optValues) {
             <li>
-                <a class="dropdown-item@if(id == dto.selectedItemId) { active}" @if(id == dto.selectedItemId) {aria-current="true" }href="@dto.itemUrlFunction(id)">
+                <a class="dropdown-item@if(id == dto.selectedItemId) { active}" @if(id == dto.selectedItemId) {aria-current="page" }href="@dto.itemUrlFunction(id)">
                     @value.icon.map { iconClass => @icon(iconClass) }
                     @value.localizedText
                 </a>

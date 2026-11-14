@@ -106,7 +106,7 @@ class RegionMenuSpec extends PlaySpecification with PlayTestDb {
         val in07 = page(s"/gallery/round/${f.binary.getId}/user/${f.juror.getId}/region/07/page/1", f.juror)
         in07 must contain("<b>Volyn O.</b>")
         in07 must contain(s"""<a class="dropdown-item" href="/gallery/round/${f.binary.getId}/user/${f.juror.getId}/page/1?sort=file">All regions</a>""")
-        in07 must contain(s"""<a class="dropdown-item active" href="/gallery/round/${f.binary.getId}/user/${f.juror.getId}/region/07/page/1?sort=file">Volyn O.</a>""")
+        in07 must contain(s"""<a class="dropdown-item active" aria-current="page" href="/gallery/round/${f.binary.getId}/user/${f.juror.getId}/region/07/page/1?sort=file">Volyn O.</a>""")
       }
     }
 
