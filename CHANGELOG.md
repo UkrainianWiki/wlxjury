@@ -164,6 +164,10 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   jurés») or the juror's name, and the Votes button a check-box icon before its choice (for jurors
   too), both icons hidden from screen readers, so **All jurors** and **All (5712)** no longer look
   alike. Juror and organizer guides.
+- **Ukrainian «усі» throughout** (the maintainer, 2026-11-14; developed 2026-11-14,
+  `stack/153-statistics-in-pages-menu`): the interface said both «Всі» and «Усі регіони»; every
+  form of "all" in `messages.uk` is now the у- form (**Усі**, «усіх», «усім», «усіма»), 19 keys,
+  the Votes menu's **Усі** among them. Russian and French had no such mix and are unchanged.
 
 **Development**
 

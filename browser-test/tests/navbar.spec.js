@@ -115,7 +115,7 @@ for (const [view, pageName, pathOf] of VIEWS) {
       await expect(page.locator('html')).toHaveAttribute('lang', 'uk');
       // on all files, the widest Votes button: its unrated read by screen readers only below
       // 1700 px, shown from there; the count always. The Pages menu: its icon alone below 1700 px
-      await expect(page.locator('#votes-menu > button')).toHaveAccessibleName(/^Голоси: Всі \(\d+\) · \d+ без оцінки$/);
+      await expect(page.locator('#votes-menu > button')).toHaveAccessibleName(/^Голоси: Усі \(\d+\) · \d+ без оцінки$/);
       await expect(page.locator('#pages-menu > button')).toHaveAccessibleName(`Перейти до: ${pageName}`);
       // the juror menu's people icon and the Votes button's vote icon (decision C of 2026-11-14) count in the width
       await expect(page.locator('#juror-menu > button > i.bi-people')).toBeVisible();
