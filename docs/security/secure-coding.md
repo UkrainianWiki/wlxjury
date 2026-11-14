@@ -633,7 +633,9 @@ SQL text (`ContestFilesMonumentSpec`, `MonumentControllerSpec`, `RoundListMonume
 
 A round list's author filter (`RoundList.author`, `author=`) is kept only for
 `User.canViewAuthors` in the round's own contest (`RoundList.authorParam`, called by
-`RoundList.of` with the user as `Secured.inContest` gives it): for anyone else it is dropped
+`RoundList.of` with the user as `Secured.inContest` gives it; `LargeViewController.rateByPageId`
+passes the session user, whose roles may be another contest's: the check then fails closed and the
+author is dropped, and only jurors vote anyway): for anyone else it is dropped
 without an error, as the contest files page drops it, so no list a juror sees carries, echoes or
 shows an author (the page's echoes of the request's own URL, such as `returnTo`, repeat what was
 sent). It too only narrows a list after `viewAs`, and the author is bound in every statement
