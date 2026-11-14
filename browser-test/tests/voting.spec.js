@@ -56,6 +56,8 @@ async function expectBackShowsVote(page, url, read, expected, before, browserNam
       .toEqual({ persisted: true });
     expect(await read(page), 'U23: the restored page shows the vote from before').toBe(before);
   } else {
+    // the reloaded page parsed: its buttons are there (expect.poll doesn't retry a reader that throws)
+    await page.waitForLoadState('domcontentloaded');
     await expect.poll(() => read(page), { message: 'Back shows the stored vote' }).toBe(expected);
   }
   const fresh = await page.context().newPage();
