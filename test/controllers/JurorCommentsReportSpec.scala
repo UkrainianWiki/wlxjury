@@ -17,9 +17,10 @@ import scala.jdk.CollectionConverters._
   * decisions 5 and 6 = A): every comment of the contest on their files in the round, as their
   * large view shows them, without round names, scope, CSV, filter by person or gallery icons;
   * another juror's, all the jurors' and the CSV refused (a page or JSON 403, never a contest
-  * switch for a script); "Recent comments" and "Show in the gallery" between the report and the
-  * gallery with "Only with comments"; and the tabs counting what each opens (decision 2 = A),
-  * with and without the comments filter, in the report and with the monument filter.
+  * switch for a script); the navbar's Comments menu between the report ("Recent comments list")
+  * and the gallery with "Only with comments" (the navigation proposal v3, D4); and the Votes
+  * menu's choices counting what each opens (decision 2 = A), with and without the comments
+  * filter, in the report and with the monument filter.
   */
 class JurorCommentsReportSpec extends PlaySpecification with PlayTestDb {
 
@@ -106,14 +107,12 @@ class JurorCommentsReportSpec extends PlaySpecification with PlayTestDb {
   private def report(f: Fixture, asUserId: Long, query: String = "") =
     s"/comments/round/${f.round.getId}/user/$asUserId/page/1$query"
 
-  private val Tab = """^(All|Unrated|Selected|Rejected) \((\d+)\)$""".r
+  /** The navbar's Votes menu's choices: name, number, link. */
+  private def tabs(doc: Document): Seq[(String, Int, String)] = NavMenus.voteCounts(doc)
 
-  /** The navbar's own tabs: name, number, link. */
-  private def tabs(doc: Document): Seq[(String, Int, String)] =
-    doc.select("nav a.nav-link").asScala.toSeq.flatMap(a => a.text.trim match {
-      case Tab(name, n) => Some((name, n.toInt, a.attr("href")))
-      case _            => None
-    })
+  /** The link of the Comments menu's item named `name` (its words before any count). */
+  private def commentsLink(doc: Document, name: String): String =
+    NavMenus.comments(doc).find(_.name == name).flatMap(_.href).getOrElse(sys.error(s"no link $name"))
 
   /** Each tab's number, and that it is the number of files its link opens (`files` of the page). */
   private def tabsOpening(app: Application, viewer: User, doc: Document, files: Document => Seq[Long]): Map[String, Int] = {
@@ -201,21 +200,25 @@ class JurorCommentsReportSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "link back to the gallery with only the files with comments, in the juror's own order" in {
+    "link back to the gallery with only the files with comments, or all of them, in the juror's own order" in {
       testDbApp { app =>
         val f = fixture()
         val doc = page(app, f.juror1, report(f, f.juror1.getId, "?filter=unrated"))
-        doc.selectFirst("#comments-report-gallery").attr("href") ===
-          s"/gallery/round/${f.round.getId}/user/${f.juror1.getId}/page/1?filter=unrated&comments=1&sort=file"
+        val gallery = s"/gallery/round/${f.round.getId}/user/${f.juror1.getId}/page/1"
+        commentsLink(doc, "Only with comments") === s"$gallery?filter=unrated&comments=1&sort=file"
+        commentsLink(doc, "All files") === s"$gallery?filter=unrated&sort=file"
+        // the report is the menu's current state, its count the report's files; no button in the body
+        NavMenus.current(doc, "comments-menu").map(_.name) === Some("Recent comments list")
+        NavMenus.button(doc, "comments-menu") === Some("Comments list (1)")
+        doc.select(".wlx-comments-report a.btn").size === 0
         val remembered = route(app, FakeRequest(GET, report(f, f.juror1.getId))
           .withSession(Secured.UserName -> f.juror1.email).withCookies(Cookie(RoundList.SortCookie, "latest-vote"))
           .withCSRFToken).get
-        Jsoup.parse(contentAsString(remembered)).selectFirst("#comments-report-gallery").attr("href") ===
-          s"/gallery/round/${f.round.getId}/user/${f.juror1.getId}/page/1?comments=1&sort=latest-vote"
+        commentsLink(Jsoup.parse(contentAsString(remembered)), "Only with comments") ===
+          s"$gallery?comments=1&sort=latest-vote"
         // the organisers' report: the gallery's default order (by rate), the scope not kept
         val org = page(app, f.organizer, report(f, 0))
-        org.selectFirst("#comments-report-gallery").attr("href") ===
-          s"/gallery/round/${f.round.getId}/user/0/page/1?comments=1&sort=rate"
+        commentsLink(org, "Only with comments") === s"/gallery/round/${f.round.getId}/user/0/page/1?comments=1&sort=rate"
       }
     }
   }
@@ -302,19 +305,20 @@ class JurorCommentsReportSpec extends PlaySpecification with PlayTestDb {
 
   "the gallery with only the files with comments" should {
 
-    "link Recent comments to the report of the same files, only while the toggle is on" in {
+    "link Recent comments list to the report of the same files, with the filter on or off" in {
       testDbApp { app =>
         val f = fixture()
         val gallery = s"/gallery/round/${f.round.getId}/user/${f.juror1.getId}/page/1"
-        page(app, f.juror1, gallery).select("#comments-report-open").size === 0
+        commentsLink(page(app, f.juror1, gallery), "Recent comments list") ===
+          report(f, f.juror1.getId, "?scope=contest&sort=latest-comment")
         val on = page(app, f.juror1, gallery + "?comments=1&filter=selected&monument=" + Monument)
-        val href = on.selectFirst("#comments-report-open").attr("href")
+        val href = commentsLink(on, "Recent comments list")
         href === report(f, f.juror1.getId, s"?filter=selected&scope=contest&monument=$Monument&sort=latest-comment")
         // the same files: the gallery's are the report's
         galleryFiles(on).sorted === rows(page(app, f.juror1, href)).sorted
         // the organisers', all the jurors' votes
         val org = page(app, f.organizer, s"/gallery/round/${f.round.getId}/user/0/page/1?comments=1")
-        val orgHref = org.selectFirst("#comments-report-open").attr("href")
+        val orgHref = commentsLink(org, "Recent comments list")
         orgHref === report(f, 0, "?scope=contest&sort=latest-comment")
         galleryFiles(org).sorted === rows(page(app, f.organizer, orgHref)).sorted
       }
@@ -404,9 +408,9 @@ class JurorCommentsReportSpec extends PlaySpecification with PlayTestDb {
           Map("All" -> 2, "Unrated" -> 1, "Selected" -> 1, "Rejected" -> 0)
         counts(report(f, j.getId, "?monument=" + Monument), rows) ===
           Map("All" -> 2, "Unrated" -> 1, "Selected" -> 1, "Rejected" -> 0)
-        // the toggle's number: the current tab's files with comments, its list's total when on
-        page(app, j, gallery + "?filter=selected").selectFirst("a.wlx-comments-toggle").text must contain("(1)")
-        page(app, j, gallery + "?comments=1").selectFirst("a.wlx-comments-toggle").text must contain("(3)")
+        // the Comments menu's number: the current choice's files with comments, its list's total when on
+        NavMenus.button(page(app, j, gallery + "?filter=selected"), "comments-menu") === Some("Comments (1)")
+        NavMenus.button(page(app, j, gallery + "?comments=1"), "comments-menu") === Some("With comments (3)")
       }
     }
 
@@ -419,7 +423,12 @@ class JurorCommentsReportSpec extends PlaySpecification with PlayTestDb {
         tabs(j2).map { case (name, n, _) => name -> n }.toMap ===
           Map("All" -> 2, "Unrated" -> 0, "Selected" -> 2, "Rejected" -> 0)
         galleryFiles(j2) === Nil
-        j2.select("#comments-report-open").size === 1
+        // the Comments menu stays: the current filter at 0, the empty list greyed out, not a link
+        NavMenus.button(j2, "comments-menu") === Some("With comments (0)")
+        NavMenus.comments(j2).map(i => (i.name, i.count, i.href.isDefined, i.active, i.disabled)) === Seq(
+          ("All files", None, true, false, false),
+          ("Only with comments", Some(0), true, true, false),
+          ("Recent comments list", Some(0), false, false, true))
         // none of the files in the list has a comment: the tabs and the order menu stay, at 0
         val none = page(app, f.juror2,
           s"/gallery/round/${f.round.getId}/user/${f.juror2.getId}/page/1?comments=1&monument=12-345-6")

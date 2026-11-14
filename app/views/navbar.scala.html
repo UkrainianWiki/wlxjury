@@ -15,30 +15,22 @@
         backHere: Boolean = true,
         commented: Option[Int] = None)(implicit messages: Messages, request: RequestHeader)
 
-@* A link of the bar's start: its text, and in the organisers' crowded results bar (resultsBar)
-   below 1700 px its icon instead, the text read by screen readers and shown as a tooltip
-   (main.css wlx-nav-icon, wlx-nav-label) *@
-@navLink(href: String, key: String, iconClass: String, id: Option[String] = None) = {
-    @if(resultsBar) {
-    <li class="nav-item"><a class="nav-link" @for(i <- id) {id="@i" }href="@href" title="@Messages(key)"><i class="bi @iconClass wlx-nav-icon" aria-hidden="true"></i><span class="wlx-nav-label">@Messages(key)</span></a></li>
-    } else {
-    <li class="nav-item"><a class="nav-link" @for(i <- id) {id="@i" }href="@href">@Messages(key)</a></li>
-    }
-}
-
 @* The organisers' bar of a round's results (another's votes, or all together): with its round,
    juror, filter, order, view and region menus and the pager it is the most crowded, so its links
    and menus compact on narrower screens (wlx-nav-results, main.css) to stay on one line *@
-@resultsBar = @{ user != null && selectedRound.exists(r => user.getId != asUserId && user.canViewOrgInfo(r)) }
+@resultsBar = @{ user != null && selectedRound.exists(r => staffBar(r)) }
 
-@* The viewer's own gallery: the page's list if it is that, or their own comments report, whose
-   tabs act on it; else where they start in its round, the page's monument and author filters
-   and comments toggle kept while the list is their own (its tabs count what they open: decision
-   2 = A; an author only ever in a list of those who may see authors, RoundList.of) *@
+@* The viewer's own list that their Votes and order menus act on: the page's list if it is their
+   gallery, file list or comments report; else where they start in its round, the page's region,
+   monument and author filters and comments filter kept while the list is their own (its Votes
+   choices count what they open: decision 2 = A, D8; an author only ever in a list of those who
+   may see authors, RoundList.of) *@
 @ownList(l: RoundList) = @{
-    if (l.asUserId == user.getId && (l.view == GalleryView.Gallery || l.view == GalleryView.Comments)) l
+    if (l.asUserId == user.getId &&
+        (l.view == GalleryView.Gallery || l.view == GalleryView.Comments || l.view == GalleryView.FileList)) l
     else if (l.asUserId == user.getId)
-      RoundList.landing(l.round, user).withMonument(l.monument).withAuthor(l.author).withComments(l.comments)
+      RoundList.landing(l.round, user).withRegion(l.regionParam).withMonument(l.monument).withAuthor(l.author)
+        .withComments(l.comments)
     else RoundList.landing(l.round, user)
 }
 
@@ -56,42 +48,103 @@
     }
 }
 
-@* The viewer's own files by their votes, in all regions: all, the unrated, and the selected and
-   rejected (a binary round) or the rated; none if the viewer has no files in the round *@
-@ownTabs(l: RoundList) = {
-    @if(rates.hasFiles) {
-    @defining(ownList(l).withRegion("all")) { own =>
-    @for((filter, name, count) <- Seq((VoteFilter.All, "all", rates.all), (VoteFilter.Unrated, "unrated", rates.unrated)) ++
-            (if (l.round.isBinary) Seq((VoteFilter.Rate(1), "selected", rates.selected), (VoteFilter.Rate(-1), "rejected", rates.rejected))
-             else Seq((VoteFilter.Rated, "rated", rates.rated)))) {
-        @defining(l.asUserId == user.getId && l.filter == filter) { active =>
-        <li class="nav-item@if(filter.isInstanceOf[VoteFilter.Rate]) { vote-@name}">
-            <a class="nav-link@if(active) { active}" @if(active) {aria-current="page" }href="@own.withFilter(filter).pageUrl(1)">@Messages(name) (@count)</a>
-        </li>
-        }
+@* A comments-only round: no Votes menu (its "All" always equals "Unrated", and nothing is
+   rated: the navigation proposal v3 §6 S2) *@
+@commentsOnly(round: Round) = @{ round.rates.id == Round.commentsOnlyRound.id }
+
+@* The Votes menu (the navigation proposal v3 §2.1, D1, D2, D5): which of the list's files by its
+   juror's votes, VoteFilter.ofRound's choices: all, the unrated, and the selected and rejected (a
+   yes/no round) or the rated. A juror's own (`staff` false: only if they have files in the round,
+   its links into their own list, ownList) or the organisers' (another juror's votes or all of
+   them, its links into the list shown). Each choice keeps the region (D8), the comments filter,
+   the monument and the author. The button shows the current choice and, with counts, its count,
+   and on "all" only how many of them are unrated ("· N unrated": left to rate in this list); no
+   visible word, "Votes" read by screen readers and in its title (D2). Counts (`rates`: what each
+   choice opens, in the region) only for one juror's list: none for all the jurors' votes
+   together; in the organisers' results bar below 1700 px the unrated suffix is read by screen
+   readers only (wlx-nav-suffix, main.css), the count stays. The selected and rejected tinted as the tabs were (main.css) *@
+@votesMenu(l: RoundList, staff: Boolean) = {
+    @if(!commentsOnly(l.round) && (staff || rates.hasFiles)) {
+    @defining(if (staff) l else ownList(l)) { target =>
+    @defining(rates.hasFiles && l.asUserId != 0) { counted =>
+    @defining(VoteFilter.ofRound(l.round)) { choices =>
+    @defining(if (choices.contains(l.filter)) l.filter else VoteFilter.All) { current =>
+    @defining(if (counted) " (" + rates.count(current) + ")" else "") { count =>
+    @defining(if (counted && current == VoteFilter.All) " " + Messages("votes.unrated.suffix", rates.unrated.toString) else "") { suffix =>
+    <li class="nav-item dropdown wlx-votes-menu@current match { case VoteFilter.Rate(1) => { vote-selected} case VoteFilter.Rate(-1) => { vote-rejected} case _ => {}}" id="votes-menu">
+        <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"
+            title="@Messages("votes.menu"): @Messages(current.param)@count@suffix"><span class="visually-hidden">@Messages("votes.menu"): </span>@Messages(current.param)@if(count.nonEmpty) {<span class="wlx-votes-count">@count</span>}@if(suffix.nonEmpty) {<span class="wlx-nav-suffix wlx-votes-unrated">@suffix</span>}</button>
+        <ul class="dropdown-menu">
+            @for(filter <- choices) {
+            @defining(filter == current) { active =>
+            <li><a class="dropdown-item@if(active) { active}" @if(active) {aria-current="page" }href="@target.withFilter(filter).pageUrl(1)">@filter match {
+                case VoteFilter.Rate(1) => {<i class="bi bi-hand-thumbs-up-fill wlx-vote-icon-selected" aria-hidden="true"></i> }
+                case VoteFilter.Rate(-1) => {<i class="bi bi-hand-thumbs-down-fill wlx-vote-icon-rejected" aria-hidden="true"></i> }
+                case _ => {}
+            }@Messages(filter.param)@if(counted) { (@rates.count(filter))}</a></li>
+            }
+            }
+        </ul>
+    </li>
+    }
+    }
+    }
+    }
     }
     }
     }
 }
 
-@* The page's list with only its files that have comments in the contest, or all of them again
-   (RoundList.comments, kept by all the list's links): beside the tabs, with which it combines
-   (the selected with comments, ...), and with the number of the list's files with comments in
-   the tab, region and view shown (`commented`, given by a round's list page only). Pressed
-   (aria-current) when on. Only narrows what the viewer may see: a juror's own files, the
-   organisers' views of a juror's or all the jurors' votes. Not in the comments report, which has
-   only such files (GalleryView.comments). While on, "Recent comments" beside it opens the
-   comments report of the same files (RoundList.recentComments: all the contest's comments, by
-   the latest comment), the viewer, tab, region and monument kept *@
-@commentsToggle(l: RoundList) = {
-    @for(n <- commented if list.isDefined && !l.view.comments) {
-    <li class="nav-item">
-        <a class="nav-link wlx-comments-toggle@if(l.comments) { active}" @if(l.comments) {aria-current="true" }href="@l.withComments(!l.comments).pageUrl(1)" title="@Messages("comments.only", n)"><i class="bi bi-chat-left-text" aria-hidden="true"></i> <span class="wlx-nav-label">@Messages("comments.only", n)</span></a>
+@* An item of the Comments menu: the current state's marked as this page; one with no file (and
+   not the current state) greyed out and not a link, which the menu's arrow keys skip *@
+@commentsItem(active: Boolean, url: String, text: String, empty: Boolean) = {
+    @if(active) {
+    <li><a class="dropdown-item active" aria-current="page" href="@url">@text</a></li>
+    } else {
+    @if(empty) {
+    <li><span class="dropdown-item disabled" aria-disabled="true">@text</span></li>
+    } else {
+    <li><a class="dropdown-item" href="@url">@text</a></li>
+    }
+    }
+}
+
+@* The Comments menu (the navigation proposal v3 §2.2, D3, D4, D7): the list's files with comments
+   in the contest or all of them, or their comments report (RoundList.recentComments: all the
+   contest's comments, the latest first), each keeping the viewer, Votes choice, region and
+   monument. Its state is the list's: the report (GalleryView.Comments), only the files with
+   comments (RoundList.comments), else all files; from the report its gallery
+   (RoundList.galleryOfReport). `commented`: the list's files with comments (with this Votes
+   choice, region and monument), shown on the button when off (not at 0) and in its items; None
+   where it isn't known (the organisers' report in "this round" scope or by one author: its
+   gallery can have more files). An item of 0 files, not the current state, is shown greyed out,
+   not a link. The button is highlighted when the filter or the report is on; below 992 px its
+   words are read by screen readers only (main.css), as in the organisers' results bar below 1700
+   px; its count stays; its title has them. On the organisers' view of all the jurors' votes the
+   button has no count (D5: counts only in one juror's view), its items have. On a round's list
+   pages only: the juror's own list and the organisers' views *@
+@commentsMenu(l: RoundList) = {
+    @if(list.isDefined && (commented.isDefined || l.view.comments)) {
+    @defining(if (l.view.comments) "list" else if (l.comments) "on" else "off") { state =>
+    @defining(commented.filter(n => (state != "off" || n > 0) && !(staffBar(l.round) && l.asUserId == 0))
+        .fold("")(n => " (" + n + ")")) { count =>
+    @defining(state match { case "list" => "comments.menu.list" case "on" => "comments.menu.on" case _ => "comments" }) { words =>
+    <li class="nav-item dropdown wlx-comments-menu" id="comments-menu">
+        <button type="button" class="nav-link dropdown-toggle@if(state != "off") { active}" data-bs-toggle="dropdown" aria-expanded="false"
+            title="@Messages(words)@count"><i class="bi bi-chat-left-text" aria-hidden="true"></i> <span class="wlx-nav-label">@Messages(words)</span>@if(count.nonEmpty) {<span class="wlx-comments-count">@count</span>}</button>
+        <ul class="dropdown-menu">
+            @defining(if (l.view.comments) RoundList.galleryOfReport(l, user) else l.withComments(true)) { withComments =>
+            @commentsItem(state == "off", withComments.withComments(false).pageUrl(1), Messages("files.all"), empty = false)
+            @commentsItem(state == "on", withComments.pageUrl(1),
+                commented.fold(Messages("comments.only.plain"))(n => Messages("comments.only", n.toString)), commented.contains(0))
+            <li><hr class="dropdown-divider"></li>
+            @commentsItem(state == "list", if (l.view.comments) l.pageUrl(1) else l.recentComments.pageUrl(1),
+                commented.fold(Messages("comments.menu.recent.plain"))(n => Messages("comments.menu.recent", n.toString)), commented.contains(0))
+            }
+        </ul>
     </li>
-    @if(l.comments) {
-    <li class="nav-item">
-        <a class="nav-link wlx-comments-report-link" id="comments-report-open" href="@l.recentComments.pageUrl(1)" title="@Messages("comments.report.open")"><i class="bi bi-chat-left-quote" aria-hidden="true"></i> <span class="wlx-nav-label">@Messages("comments.report.open")</span></a>
-    </li>
+    }
+    }
     }
     }
 }
@@ -99,7 +152,7 @@
 @* The order of the viewer's own gallery, if they have files in the round (RoundList.orderChoices):
    in file order, which a vote doesn't change, by their rate, or by when they rated, the latest or
    the oldest first; not in their own comments report, which has its own order menu (the latest
-   comment first, then these). On a tab of one rate (selected, rejected: RoundList.oneRate) by rate would
+   comment first, then these: reportOrderMenu). On a tab of one rate (selected, rejected: RoundList.oneRate) by rate would
    change nothing, so it isn't offered and shows as file order. On the unrated tab only file order
    applies: plain text saying so in the menu's place (navbar-text, a block padded as a nav link, so
    the bar doesn't shift between tabs); the list's links keep the order chosen for the other tabs *@
@@ -122,18 +175,19 @@
 @* The order of one juror's votes as the organisers view them (the juror menu: RoundList.asUserId a
    juror of the round, not the viewer), in the gallery and by-rate views, which follow it: by that
    juror's votes and vote times, as the juror's own menu offers them (RoundList.orderChoices), by
-   rating labelled as someone else's. Not for all the jurors' votes together (binaryOrderMenu).
+   rating labelled as someone else's (the viewer's own as theirs, when the organisers view their
+   own files). Not for all the jurors' votes together (binaryOrderMenu).
    Compact (a sort icon, its order's name beside it on extra-wide screens only): the organisers'
    bar has their menus besides, and kept the pager on its line at 1280 px only so *@
 @jurorOrderMenu(l: RoundList) = {
-    @if(l.asUserId != 0 && l.asUserId != user.getId && (l.view == GalleryView.Gallery || l.view == GalleryView.ByRate)) {
+    @if(l.asUserId != 0 && (l.view == GalleryView.Gallery || l.view == GalleryView.ByRate)) {
     @if(l.orderChoices.size == 1) {
     <li class="nav-item"><span class="navbar-text d-block px-2 gallery-order-fixed">@Messages("sort.file")</span></li>
     } else {
     @(new UiSelectionDto[ListOrder](
         (order: ListOrder) => Call("GET", l.withOrder(order).pageUrl(1)),
         l.shownOrder,
-        l.orderChoices.map(order => order -> SelectionItem(if (order == ListOrder.ByRate) "sort.rate.juror" else order.messageKey))
+        l.orderChoices.map(order => order -> SelectionItem(if (order == ListOrder.ByRate && l.asUserId != user.getId) "sort.rate.juror" else order.messageKey))
     ).toDropDown(compactIcon = Some("bi bi-sort-down")))
     }
     }
@@ -152,119 +206,250 @@
     }
 }
 
-<!-- Navigation bar on the top of the page, in the page's colour mode -->
+@* The comments report's order (the navigation proposal v3 §6 S1: in the bar's order slot, as
+   every list's): the latest comment in its scope first, or the list's own orders
+   (RoundList.commentOrderChoices); "Order" read before it by screen readers. In the organisers'
+   results bar a sort icon below 1700 px, as their juror order menu *@
+@reportOrderMenu(l: RoundList) = {
+    @if(l.view.comments) {
+    @(new UiSelectionDto[ListOrder](
+        (order: ListOrder) => Call("GET", l.withOrder(order).pageUrl(1)),
+        l.shownCommentOrder,
+        l.commentOrderChoices.map(order => order -> SelectionItem(order.messageKey))
+    ).toDropDown(compactIcon = Option.when(resultsBar)("bi bi-sort-down"), id = Some("comments-report-order"),
+        label = Some(Messages("comments.report.order"))))
+    }
+}
+
+@* The organisers' view menu, icons only: how the list's files are shown (the gallery, by rate, the
+   file list) or its CSV. Its comments report is the Comments menu's (D7 of the navigation
+   proposal v3, which opens it with all the contest's comments); while on it, the toggle shows its
+   icon, the report not listed *@
+@viewMenu(l: RoundList) = {
+    @(new UiSelectionDto[GalleryView](
+        { view: GalleryView => Call("GET", l.withView(view).pageUrl(1)) },
+        l.view,
+        Seq(
+            GalleryView.Gallery -> SelectionItem("gallery", Some("bi bi-grid-3x3-gap-fill")),
+            GalleryView.ByRate -> SelectionItem("byrate", Some("bi bi-bar-chart-fill")),
+            GalleryView.FileList -> SelectionItem("file.list", Some("bi bi-list-ul")),
+            GalleryView.Csv -> SelectionItem("csv", Some("bi bi-filetype-csv"))
+        ),
+        unlisted = SelectionItem("comments", Some("bi bi-chat-left-text"))
+    ).toDropDown(iconOnly = true))
+}
+
+@* The monument a round's list is narrowed to (RoundList.monument), in the filter group where the
+   region menu would be (the list of one monument has none: a monument is in one region; D9 of the
+   navigation proposal v3): a compact chip with its id, ↗ to the monument's page where a monument
+   list has a row of it (the page is a 404 without one), × showing the files of all monuments (the
+   region stays all of them). Its file count is the pager's and the Votes menu's *@
+@monumentChip(l: RoundList) = {
+    @for(monumentId <- l.monument) {
+    <li class="nav-item d-flex align-items-center mx-1" id="monument-filter">
+        <span class="badge rounded-pill text-bg-secondary fw-normal wlx-filter-chip monument-chip">
+            <span class="wlx-chip-text">@Messages("monument.filter.label") @monumentId</span>
+            @if(db.scalikejdbc.MonumentJdbc.find(monumentId).isDefined) {
+            <a id="monument-page-link" class="link-light text-decoration-none ms-1" href="@routes.MonumentController.byId(monumentId, Some(l.round.contestId), l.round.id)"
+               title="@Messages("monument.page.open")" aria-label="@Messages("monument.page.open")"><span aria-hidden="true">↗</span></a>
+            }
+            <a id="monument-filter-remove" class="link-light text-decoration-none ms-1" href="@l.withMonument(None).pageUrl(1)"
+               title="@Messages("monument.filter.remove")" aria-label="@Messages("monument.filter.remove")"><span aria-hidden="true">&times;</span></a>
+        </span>
+    </li>
+    }
+}
+
+@* The author a round's list is narrowed to (RoundList.author), after the monument's: their name as
+   shown (StoredAuthors.shown), a long one cut with an ellipsis and whole in its title, ↗ to their
+   Commons user page for an account, × showing the files of all authors. A list has an author only
+   for those who may see authors (RoundList.of drops it for anyone else), so a juror's bar never
+   has it *@
+@authorChip(l: RoundList) = {
+    @for(author <- l.author) {
+    @defining(services.imports.StoredAuthors.shown(Some(author)).getOrElse(author)) { name =>
+    <li class="nav-item d-flex align-items-center mx-1" id="author-filter">
+        <span class="badge rounded-pill text-bg-secondary fw-normal wlx-filter-chip author-chip">
+            <span class="wlx-chip-text">@Messages("author.filter.label") <span class="wlx-truncate" title="@name">@name</span></span>
+            @for(account <- services.imports.StoredAuthors.account(author)) {
+            <a class="author-commons link-light text-decoration-none ms-1" href="@views.WikiLinks.commonsUserUrl(account)" target="_blank" rel="noopener"
+               title="@Messages("author.commons.title", account)" aria-label="@Messages("author.commons.title", account)"><span aria-hidden="true">↗</span></a>
+            }
+            <a id="author-filter-remove" class="link-light text-decoration-none ms-1" href="@l.withAuthor(None).pageUrl(1)"
+               title="@Messages("author.filter.remove")" aria-label="@Messages("author.filter.remove")"><span aria-hidden="true">&times;</span></a>
+        </span>
+    </li>
+    }
+    }
+}
+
+@* the list the page shows; on another page, the round's gallery as the viewer's *@
+@shownList(round: Round) = @{ list.getOrElse(if (asUserId == user.getId) RoundList.landing(round, user) else RoundList(round, asUserId)) }
+
+@* The juror's bar: the viewer's own gallery (or, for a juror of the round, all the jurors' votes) *@
+@jurorBar(round: Round) = @{ (asUserId == 0 || asUserId == user.getId) && round.roles.intersect(user.roles).nonEmpty }
+
+@* The organisers' bar: for those who may see the round's results and aren't in the juror's bar,
+   on a round's list (another juror's votes, all of them, or their own files, which the juror menu
+   opens: "My votes" waits for multi-role, staff don't vote); not on the round's statistics, whose
+   page has no list *@
+@staffBar(round: Round) = @{ user.canViewOrgInfo(round) && !jurorBar(round) && (list.isDefined || user.getId != asUserId) }
+
+@* The pages the viewer may open (the Pages menu): contests and all users (root; all users outside
+   a contest), the contest's files, its users and rounds (admins), the round's statistics (those
+   who may see it): (url, message key, icon, element id). None for a juror *@
+@pageItems = @{
+    if (user == null) Nil
+    else {
+      val root = user.hasRole(User.ROOT_ROLE)
+      val rootItems =
+        if (!root) Nil
+        else Seq((routes.ContestController.list().url, "contests", "bi-trophy", "menu-contests")) ++
+          (if (contestId.isEmpty) Seq((routes.UserController.allUsers().url, "users", "bi-people", "menu-all-users")) else Nil)
+      val files = contestId.filter(c => user.canViewContestFiles(c))
+        .map(c => (routes.GalleryController.contestFiles(c).url, "contest.files", "bi-images", "menu-contest-files")).toSeq
+      val admin =
+        if (!user.hasAnyRole(User.ADMIN_ROLES)) Nil
+        else contestId.toSeq.flatMap(_ => Seq(
+          (routes.UserController.users(contestId).url, "users", "bi-people", "menu-users"),
+          (routes.RoundController.rounds(contestId).url, "rounds", "bi-collection", "menu-rounds")))
+      val stat = selectedRound.filter(r => user.canViewOrgInfo(r)).map(r => routes.RoundController.roundStat(r.getId).url)
+        .orElse(Option.when(rounds.exists(r => user.canViewOrgInfo(r)))(routes.RoundController.currentRoundStat(contestId).url))
+        .map(url => (url, "statistics", "bi-bar-chart", "menu-statistics")).toSeq
+      rootItems ++ files ++ admin ++ stat
+    }
+}
+
+@* Whether a page link is this page: its path is the request's; for the statistics, any round's
+   statistics page (the current round's, `/roundstat?contestId=…`, links a round's) *@
+@isCurrent(url: String, key: String) = @{
+    url.takeWhile(_ != '?') == request.path || key == "statistics" && request.path.startsWith("/roundstat")
+}
+
+@* The bar's first group (the maintainer's decision of 2026-11-14): one Pages menu, its button the
+   menu icon and this page's name ("Go to:" read before it by screen readers), its items the
+   pages the viewer may open (pageItems), this page's marked aria-current="page"; none for a
+   juror, who has no such pages. In the organisers' results bar below 1700 px the button is the
+   icon alone, the page's name read by screen readers and in its title (wlx-nav-label, main.css).
+   Signed out: the application's name *@
+@pageLinks = {
+    @if(user != null) {
+        @defining(pageItems) { items =>
+        @if(items.nonEmpty) {
+        @defining(items.find(item => isCurrent(item._1, item._2)).fold(Messages(title))(item => Messages(item._2))) { here =>
+        <li class="nav-item dropdown" id="pages-menu">
+            <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"
+                title="@Messages("nav.pages"): @here"><i class="bi bi-list" aria-hidden="true"></i> <span class="visually-hidden">@Messages("nav.pages"): </span><span class="wlx-nav-label">@here</span></button>
+            <ul class="dropdown-menu">
+                @for((url, key, icon, itemId) <- items) {
+                @defining(isCurrent(url, key)) { current =>
+                <li><a class="dropdown-item@if(current) { active}" id="@itemId" @if(current) {aria-current="page" }href="@url"><i class="bi @icon" aria-hidden="true"></i> @Messages(key)</a></li>
+                }
+                }
+            </ul>
+        </li>
+        }
+        }
+        }
+    } else {
+        <li class="nav-item"><span class="navbar-brand">@Messages("application.name")</span></li>
+    }
+}
+
+@* The filter group: which files (the round, the organisers' juror, Votes, Comments, then the
+   page's region or country menus, or the list's monument and author chips) *@
+@filterGroup = {
+    @if(user != null) {
+    @for(round <- selectedRound.toSeq) {
+    @defining(shownList(round)) { l =>
+        @if(!(user.canViewOrgInfo(round) || rounds.size > 1)) {
+            <li class="nav-item"><span class="navbar-text ms-2">@Messages(round.description)</span></li>
+        }
+
+        @if(jurorBar(round)) {
+            @if(user.canViewOrgInfo(round) || (rounds.size > 1)) {
+                @roundMenu(l)
+            }
+            @votesMenu(l, staff = false)
+            @if(l.asUserId == user.getId) {
+                @commentsMenu(l)
+            }
+        }
+
+        @if(staffBar(round)) {
+            @roundMenu(l)
+
+            @* Select user: a long name cut short, so the bar keeps its pager on its line *@
+            @(new UiSelectionDto[Long](
+                { userId: Long => Call("GET", l.withViewer(userId).pageUrl(1)) },
+                asUserId,
+                User.findRoundJurorsToView(round.getId).map(u => (u.getId, SelectionItem(u.fullname, localized = false))),
+                Some(0L -> SelectionItem("all"))
+            ).toDropDown(id = Some("juror-menu"), truncate = true))
+
+            @votesMenu(l, staff = true)
+            @commentsMenu(l)
+        }
+    }
+    }
+    }
+    @filters
+    @for(l <- list) {
+        @monumentChip(l)
+        @authorChip(l)
+    }
+}
+
+@* The order group: how the files are shown (the order; the organisers' view menu) *@
+@orderGroup = {
+    @if(user != null) {
+    @for(round <- selectedRound.toSeq) {
+    @defining(shownList(round)) { l =>
+        @if(jurorBar(round)) {
+            @sortMenu(l)
+            @if(l.asUserId == user.getId && list.isDefined) {
+                @reportOrderMenu(l)
+            }
+        }
+        @if(staffBar(round)) {
+            @binaryOrderMenu(l)
+            @jurorOrderMenu(l)
+            @reportOrderMenu(l)
+            @viewMenu(l)
+        }
+    }
+    }
+    }
+}
+
+@* whether a group has an item: a list item, not only whitespace or a comment *@
+@nonEmpty(html: Html) = @{ html.body.contains("<li") }
+
+@* The bar (the navigation proposal v3 §2): its groups, each a list that wraps as a whole, left to
+   right: the pages to go to, the filters, after a divider the order (and view), the pager; the
+   account menus (logged) on the right. A group with nothing is left out *@
 <nav class="navbar navbar-expand bg-body-tertiary border-bottom mb-2 py-1@if(resultsBar) { wlx-nav-results}">
     <div class="container-fluid px-2">
-        <ul class="navbar-nav flex-wrap align-items-center me-auto">
-            @if(user != null) {
-
-                @if(user.hasRole(User.ROOT_ROLE)) {
-                    @navLink(routes.ContestController.list().url, "contests", "bi-trophy")
-                    @if(contestId.isEmpty) {
-                        <li class="nav-item"><a class="nav-link" href="@routes.UserController.allUsers()">@Messages("users")</a></li>
-                    }
-                }
-                <!-- The contest's files: their gallery, which links their import for admins -->
-                @for(cId <- contestId) {
-                    @if(user.canViewContestFiles(cId)) {
-                        @navLink(routes.GalleryController.contestFiles(cId).url, "contest.files", "bi-images", Some("menu-contest-files"))
-                    }
-                }
-                <!-- Admin items: users and rounds setup -->
-                @if(user.hasAnyRole(User.ADMIN_ROLES)) {
-                    @for(cId <- contestId) {
-                        @navLink(routes.UserController.users(contestId).url, "users", "bi-people")
-                        @navLink(routes.RoundController.rounds(contestId).url, "rounds", "bi-collection")
-                    }
-                }
-
-                <!-- Link to statistics view, if user has rights -->
-                @if(selectedRound.nonEmpty && user.canViewOrgInfo(selectedRound.get)) {
-                    @navLink(routes.RoundController.roundStat(selectedRound.get.getId).url, "statistics", "bi-bar-chart")
-                } else {
-                    @if(rounds.exists(round => user.canViewOrgInfo(round))) {
-                        @navLink(routes.RoundController.currentRoundStat(contestId).url, "statistics", "bi-bar-chart")
-                    }
-                }
-
-                @for(round <- selectedRound.toSeq) {
-                @* the list the page shows; on another page, the round's gallery as the viewer's *@
-                @defining(list.getOrElse(if (asUserId == user.getId) RoundList.landing(round, user) else RoundList(round, asUserId))) { l =>
-
-                    @if(!(user.canViewOrgInfo(round) || rounds.size > 1)) {
-                        <li class="nav-item"><span class="navbar-text ms-2">@Messages(round.description)</span></li>
-                    }
-
-                    <!-- If (viewing users summary or own gallery) and user is juror" -->
-                    @if((asUserId == 0 || asUserId == user.getId) && round.roles.intersect(user.roles).nonEmpty) {
-
-                        <!-- Show rounds dropdown -->
-                        @if(user.canViewOrgInfo(round) || (rounds.size > 1)) {
-                            @roundMenu(l)
-                        }
-
-                        <!-- The viewer's own files by their votes, and their order -->
-                        @ownTabs(l)
-                        @if(l.asUserId == user.getId) {
-                            @commentsToggle(l)
-                        }
-                        @sortMenu(l)
-                    }
-
-                    @if(user.getId != asUserId && user.canViewOrgInfo(round)) {
-                        <!-- Select round -->
-                        @roundMenu(l)
-
-                        <!-- Select user -->
-                        @(new UiSelectionDto[Long](
-                            { userId: Long => Call("GET", l.withViewer(userId).pageUrl(1)) },
-                            asUserId,
-                            User.findRoundJurorsToView(round.getId).map(u => (u.getId, SelectionItem(u.fullname, localized = false))),
-                            Some(0L -> SelectionItem("all"))
-                        ).toDropDown())
-
-                        @(new UiSelectionDto[VoteFilter](
-                            { filter: VoteFilter => Call("GET", l.withFilter(filter).pageUrl(1)) },
-                            l.filter,
-                            if (round.isBinary) Seq(
-                                VoteFilter.Rate(1) -> SelectionItem("selected"),
-                                VoteFilter.Unrated -> SelectionItem("unrated"),
-                                VoteFilter.Rate(-1) -> SelectionItem("rejected")
-                            ) else Seq(
-                                VoteFilter.Rated -> SelectionItem("rated"),
-                                VoteFilter.Unrated -> SelectionItem("unrated")
-                            ),
-                            Some(VoteFilter.All -> SelectionItem("all"))
-                        ).toDropDown())
-
-                        @commentsToggle(l)
-
-                        @binaryOrderMenu(l)
-                        @jurorOrderMenu(l)
-
-                        @ownTabs(l)
-
-                        @(new UiSelectionDto[GalleryView](
-                            { view: GalleryView => Call("GET", l.withView(view).pageUrl(1)) },
-                            l.view,
-                            Seq(
-                                GalleryView.Gallery -> SelectionItem("gallery", Some("bi bi-grid-3x3-gap-fill")),
-                                GalleryView.ByRate -> SelectionItem("byrate", Some("bi bi-bar-chart-fill")),
-                                GalleryView.FileList -> SelectionItem("file.list", Some("bi bi-list-ul")),
-                                GalleryView.Csv -> SelectionItem("csv", Some("bi bi-filetype-csv")),
-                                GalleryView.Comments -> SelectionItem("comments", Some("bi bi-chat-left-text"))
-                            )
-                        ).toDropDown(iconOnly = true))
-                    }
-                }
-                }
-            } else {
-                <li class="nav-item"><span class="navbar-brand">@Messages("application.name")</span></li>
+        @defining(pageLinks) { links =>
+        @defining(filterGroup) { filterItems =>
+        @defining(orderGroup) { orderItems =>
+        <div class="d-flex flex-wrap align-items-center column-gap-2 me-auto wlx-nav-groups">
+            @if(nonEmpty(links)) {
+            <ul class="navbar-nav flex-wrap align-items-center wlx-nav-links" aria-label="@Messages("nav.group.links")">@links</ul>
             }
-            @* the page's filters (its region or country menus), then its pager *@
-            @filters
-            @pager
-        </ul>
+            @if(nonEmpty(filterItems)) {
+            <ul class="navbar-nav flex-wrap align-items-center wlx-nav-filters@if(nonEmpty(links)) { border-start ps-2}" aria-label="@Messages("nav.group.filters")">@filterItems</ul>
+            }
+            @if(nonEmpty(orderItems)) {
+            <ul class="navbar-nav flex-wrap align-items-center wlx-nav-order@if(nonEmpty(links) || nonEmpty(filterItems)) { border-start ps-2}" aria-label="@Messages("nav.group.order")">@orderItems</ul>
+            }
+            @if(nonEmpty(pager)) {
+            <ul class="navbar-nav flex-wrap align-items-center wlx-nav-pager" aria-label="@Messages("nav.group.pager")">@pager</ul>
+            }
+        </div>
+        }
+        }
+        }
         @logged(user, backHere)
     </div>
 </nav>

@@ -7,7 +7,8 @@ import play.twirl.api.Html
 class UiSelectionDto[T](val itemUrlFunction: T => Call,
                         val selectedItemId: T,
                         val items: Seq[(T, SelectionItem)],
-                        val defaultPair: Option[(T, SelectionItem)] = None) {
+                        val defaultPair: Option[(T, SelectionItem)] = None,
+                        val unlisted: SelectionItem = UiSelectionDto.Unlisted) {
 
   val optValues: Seq[(T, SelectionItem)] = defaultPair.fold(
     Seq.empty[(T, SelectionItem)])(Seq(_)) ++
@@ -17,15 +18,19 @@ class UiSelectionDto[T](val itemUrlFunction: T => Call,
 
   def map: Map[T, SelectionItem] = optValues.toMap
 
-  /** The selected item; a neutral one if it is not in the menu, never an error. */
-  def current: SelectionItem = map.getOrElse(selectedItemId, UiSelectionDto.Unlisted)
+  /** The selected item; `unlisted` if it is not in the menu (a neutral one by default), never an
+    * error. */
+  def current: SelectionItem = map.getOrElse(selectedItemId, unlisted)
 
   /** The menu; `compactIcon`: in the organisers' crowded results bar, its toggle that icon below
     * 1700 px, the current item's text read by screen readers and shown as a tooltip, so the bar
-    * stays on one line (dropDownSelection.scala.html, main.css). */
-  def toDropDown(iconOnly: Boolean = false, compactIcon: Option[String] = None)(implicit messages: Messages): Html =
+    * stays on one line (dropDownSelection.scala.html, main.css). `id`: the menu's element id;
+    * `label`: what the menu is, read before the current item by screen readers only; `truncate`: a
+    * long current item cut with an ellipsis, whole in the toggle's title. */
+  def toDropDown(iconOnly: Boolean = false, compactIcon: Option[String] = None, id: Option[String] = None,
+      label: Option[String] = None, truncate: Boolean = false)(implicit messages: Messages): Html =
     views.html
-      .dropDownSelection(this.asInstanceOf[UiSelectionDto[Any]], iconOnly, compactIcon)
+      .dropDownSelection(this.asInstanceOf[UiSelectionDto[Any]], iconOnly, compactIcon, id, label, truncate)
 }
 
 object UiSelectionDto {

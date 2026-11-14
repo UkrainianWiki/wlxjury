@@ -125,6 +125,32 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   only one of the monument (the former "The only file of this monument in the list"); **Page →**
   opens the monument's page. A monument without a row in a monument list gets the id and
   **Gallery (N)**, or just the id. Juror and organizer guides.
+- **Votes and Comments menus in a grouped top bar** (the navigation proposal v3, the maintainer's
+  decisions D1-D9 of 2026-11-14; developed 2026-11-14, `stack/152-filter-bar`): the bar of every
+  list page is in groups: the pages (staff), the filters (round, juror, votes, **Comments**,
+  region, or the monument and author chips), after a thin line the order (and the staff's view
+  menu), then the pager; each group wraps as a whole on a narrow window. A juror's vote tabs
+  become one votes menu (**All**, **Unrated**, **Selected**, **Rejected**, or **Rated**), its
+  button the current choice and count, on **All** also how many files in the list are unrated
+  (**All (5712) · 120 unrated**), "Votes" read by screen readers. A choice keeps the region and
+  counts in it (in a round of sub-regions one count per choice). The toggle **Only with
+  comments**, **Recent comments** and the report's **Show in the gallery** become one
+  **Comments** menu: **All files**, **Only with comments (N)** and **Recent comments list (N)**,
+  a choice with no file greyed out; the report's order menu moves into the bar. Organizers,
+  admins and root get the same two menus (counts only in one juror's view; below 1700 pixels the
+  unrated suffix is left out; the bar stays on one line from 1280 pixels in Ukrainian, a long
+  juror name cut short), and their page links (contests, all users, contest files, users,
+  rounds, statistics) become one pages menu at the bar's start, showing the page you are on
+  (below 1700 pixels its icon alone); their own files, opened from the juror menu, get the same
+  bar.
+  Their view menu no longer lists the report (the **Comments** menu opens it with all rounds'
+  comments). Their second set of vote tabs for their own files is gone, without a replacement
+  for now (staff don't vote: their files are under the juror menu); a "My votes" link comes back
+  with multi-role (maintainer, 2026-11-14). The monument and author
+  chips move into the filters, compact (the id or the name, **↗** to the page, **×**). The file
+  list gets the menus too. Every navbar menu (the filters, order, pages, contest, theme and
+  account menus, and the pager's page box) opens from a button (Space opens it), and the link
+  menus mark the page's item for screen readers. Juror, organizer and admin guides.
 
 **Development**
 

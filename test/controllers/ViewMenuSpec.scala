@@ -71,7 +71,7 @@ class ViewMenuSpec extends PlaySpecification with PlayTestDb {
       val a = menu.selectFirst(s"ul.dropdown-menu a.dropdown-item:has(i.$icon)")
       (view, a.attr("href"), a.hasClass("active"))
     }
-    val toggleIcon = menu.selectFirst("a.dropdown-toggle i")
+    val toggleIcon = menu.selectFirst(".dropdown-toggle i")
     (items, icons.collectFirst { case (view, icon) if toggleIcon != null && toggleIcon.hasClass(icon) => view })
   }
 

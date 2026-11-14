@@ -193,7 +193,7 @@ class ThemeSwitchSpec extends PlaySpecification with PlayTestDb with Mockito {
             .withSession(Secured.UserName -> email, Secured.CurrentContestId -> "10", "csrfToken" -> token(app))
             .withCookies(Cookie(Theme.CookieName, mode))).get
           val html = contentAsString(page)
-          val toggle = html.substring(html.indexOf("""id="theme-menu""""), html.indexOf("</a>", html.indexOf("""id="theme-menu"""")))
+          val toggle = html.substring(html.indexOf("""id="theme-menu""""), html.indexOf("</button>", html.indexOf("""id="theme-menu"""")))
           val label = "Theme: " + Map("light" -> "Light", "dark" -> "Dark", "auto" -> "System")(mode)
           toggle must contain(s"""title="$label"""")
           toggle must contain(s"""<i class="bi bi-$icon" aria-hidden="true"></i><span class="visually-hidden">$label</span>""")

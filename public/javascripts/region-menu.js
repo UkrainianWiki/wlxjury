@@ -10,6 +10,8 @@
     var li = document.createElement('li');
     var a = document.createElement('a');
     a.className = active ? 'dropdown-item active' : 'dropdown-item';
+    // the place shown, as the navbar's other menus mark their page's item
+    if (active) a.setAttribute('aria-current', 'page');
     a.href = url;
     a.textContent = text;
     li.appendChild(a);

@@ -43,7 +43,7 @@ a guide or a test needs them.
 | J-09 | A juror in several open rounds switches round from the round menu | [What you see after signing in](../user/juror-guide.md#what-you-see-after-signing-in) | |
 | J-10 | A round being prepared, stopped or paused for the juror is not shown | [Rounds you don't see](../user/juror-guide.md#rounds-you-dont-see) | |
 | J-11 | A juror in several contests switches contest from the contest menu (juror-only contests without an open round left out), or by a link | [Taking part in several contests](../user/juror-guide.md#taking-part-in-several-contests) | |
-| J-12 | The gallery's tabs (all, unrated, selected, rejected) show their files and counts | [Tabs: all, unrated, selected, rejected](../user/juror-guide.md#tabs-all-unrated-selected-rejected) | browser: the page tour opens the galleries only |
+| J-12 | The gallery's votes menu (all, unrated, selected, rejected) shows its files and counts, the region kept | [The votes menu](../user/juror-guide.md#the-votes-menu) | browser: the page tour opens the galleries and the menu, `navbar.spec.js` uses it by keyboard |
 | J-13 | A juror sorts the gallery | [Sorting your files](../user/juror-guide.md#sorting-your-files) | |
 | J-14 | A juror filters the gallery by region | [Regions](../user/juror-guide.md#regions) | |
 | J-15 | A juror pages through the gallery | [The pager](../user/juror-guide.md#the-pager) | |
@@ -67,7 +67,7 @@ a guide or a test needs them.
 | J-33 | The large view's side sections stay as the juror left them | – | *Part:* the first frame is `fixme` (U18, UI practices §9) |
 | J-34 | An expired page or token says to reload | ["This page has expired or you were signed out"](../user/juror-guide.md#this-page-has-expired-or-you-were-signed-out) | |
 | J-35 | "Access denied" shows a reference and a way to sign in as another account | ["Access denied" and its reference](../user/juror-guide.md#access-denied-and-its-reference) | |
-| J-36 | A juror changes an earlier vote from the Selected, Rejected or Rated tab | [Tabs: all, unrated, selected, rejected](../user/juror-guide.md#tabs-all-unrated-selected-rejected) | *Part:* no test changes a vote from the Selected, Rejected or Rated tab; the browser changes one from the first tab, the Scala specs one voted out of a filtered list |
+| J-36 | A juror changes an earlier vote from the Selected, Rejected or Rated choice | [The votes menu](../user/juror-guide.md#the-votes-menu) | *Part:* no test changes a vote from the Selected, Rejected or Rated choice; the browser changes one from the first tab, the Scala specs one voted out of a filtered list |
 | J-37 | The large view shows the file's resolution, monument and Commons link; a video plays | [Opening a file in the large view](../user/juror-guide.md#opening-a-file-in-the-large-view) | browser: the page tour opens it only |
 | J-38 | In a rated round with the worst mark, a juror gives a file ✗ and clears a vote apart, by the buttons, the tile and the keys (Delete, Backspace) | [Rated rounds (stars)](../user/juror-guide.md#rated-rounds-stars) | *Part:* no browser test yet; Jest (`worst-mark.test.js`) and the Scala specs |
 
@@ -77,7 +77,7 @@ a guide or a test needs them.
 |---|---|---|---|
 | O-01 | An organizer opens a round's statistics, a row per juror | – | |
 | O-02 | An organizer lists a round's results of all jurors (rank, average) as gallery, by rate or file list | – | |
-| O-03 | An organizer views one juror's votes from the juror menu | – | |
+| O-03 | An organizer views one juror's votes from the juror menu | – | browser: the bar and its pager stay on one line at 1280 and 1700 px in Ukrainian (`navbar.spec.js`) |
 | O-04 | An organizer reads a criteria round's results | – | |
 | O-05 | An organizer exports a round's results as CSV | – | |
 | O-06 | An organizer signs in with login and password | – | |

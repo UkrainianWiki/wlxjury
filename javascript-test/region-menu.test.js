@@ -142,6 +142,9 @@ test("lists all, then the regions with their counts, the region shown active, ki
           classes: "region-nomination" }
     ]);
     expect(menu().querySelector(".region-menu-list b")).toBeNull();
+    // the place shown marked as this page, as the navbar's other menus mark theirs
+    const current = Array.from(menu().querySelectorAll(".region-menu-list a[aria-current]"));
+    expect(current.map(a => [a.textContent, a.getAttribute("aria-current")])).toEqual([["Kyiv (0)", "page"]]);
 });
 
 test("marks all active when no region is shown", async () => {

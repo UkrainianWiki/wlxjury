@@ -72,8 +72,8 @@ describe("opening the box", () => {
             <nav class="navbar navbar-expand"><ul class="navbar-nav"><li class="nav-item">
             <ul class="pagination" id="pagenav">
                 <li class="page-item dropdown pager-jump-menu">
-                    <a class="page-link dropdown-toggle pager-range" href="#" data-bs-toggle="dropdown"
-                        data-bs-auto-close="outside" aria-expanded="false">46–60 of 600</a>
+                    <button type="button" class="page-link dropdown-toggle pager-range" data-bs-toggle="dropdown"
+                        data-bs-auto-close="outside" aria-expanded="false">46–60 of 600</button>
                     <div class="dropdown-menu pager-jump-box">
                         <form class="pager-jump" data-page-url="/contest/5/files?page={page}">
                             <input type="number" name="page" min="1" max="40" value="4">

@@ -104,9 +104,9 @@ class RegionMenuSpec extends PlaySpecification with PlayTestDb {
         }
         // the region shown, and all of them, without script
         val in07 = page(s"/gallery/round/${f.binary.getId}/user/${f.juror.getId}/region/07/page/1", f.juror)
-        in07 must contain("<b>Volyn O.</b>")
+        in07 must contain("""<b class="wlx-truncate" title="Volyn O.">Volyn O.</b>""")
         in07 must contain(s"""<a class="dropdown-item" href="/gallery/round/${f.binary.getId}/user/${f.juror.getId}/page/1?sort=file">All regions</a>""")
-        in07 must contain(s"""<a class="dropdown-item active" href="/gallery/round/${f.binary.getId}/user/${f.juror.getId}/region/07/page/1?sort=file">Volyn O.</a>""")
+        in07 must contain(s"""<a class="dropdown-item active" aria-current="page" href="/gallery/round/${f.binary.getId}/user/${f.juror.getId}/region/07/page/1?sort=file">Volyn O.</a>""")
       }
     }
 
@@ -116,7 +116,7 @@ class RegionMenuSpec extends PlaySpecification with PlayTestDb {
         def shown(region: String) = {
           val html = page(s"/byrate/round/${f.rated.getId}/user/0/region/$region/page/1", f.admin)
           html must not contain "col-sm-1" // the grouped view's region cards
-          """(?s)id="regionmenu".*?<b>([^<]*)</b>""".r.findFirstMatchIn(html).map(_.group(1))
+          """(?s)id="regionmenu".*?<b[^>]*>([^<]*)</b>""".r.findFirstMatchIn(html).map(_.group(1))
         }
         // an old link to the grouped view lists all the files, as region all does
         (shown("grouped") must beSome) and (shown("grouped") === shown("all"))

@@ -69,12 +69,20 @@ class RoundMonumentFilterSpec extends PlaySpecification with PlayTestDb {
 
   "a juror's gallery of one monument" should {
 
-    "list only their files of it under a chip, the tabs counting within it, without the region menu" in {
+    "list only their files of it with a chip in the bar's filter group, the Votes choices counting within it, without the region menu" in {
       testDbApp { implicit app =>
         val f = fixture()
         val body = page(f.gallery(f.juror.getId, s"?monument=$M"), f.juror)
         tiles(body) === List(1L, 2L, 3L)
-        body must contain("Monument: 07-101-0001 (3)")
+        // the chip in the filter group, where the region menu would be: the id, no count (D9 of
+        // the navigation proposal v3: the pager and the Votes menu have it), then the order group
+        val doc = org.jsoup.Jsoup.parse(body)
+        doc.select(".wlx-nav-filters #monument-filter .wlx-chip-text").text === "Monument: 07-101-0001"
+        doc.select(".wlx-nav-groups > ul").eachAttr("class").toArray.toSeq.map(_.toString.split(" ").find(_.startsWith("wlx-nav-")).get) ===
+          Seq("wlx-nav-filters", "wlx-nav-order")
+        doc.select(".wlx-nav-order").hasClass("border-start") must beTrue
+        doc.select("#monument-page-link").attr("aria-label") === "The monument's page"
+        doc.select("#monument-filter-remove").attr("aria-label") === "Show the files of all monuments"
         href(body, "monument-filter-remove") must beSome(f.gallery(f.juror.getId, "?sort=file"))
         href(body, "monument-page-link") must beSome(s"/monuments/id/$M?contest=${f.contest.getId}&round=${f.round.getId}")
         body must contain("All (3)")
@@ -118,7 +126,7 @@ class RoundMonumentFilterSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         val body = page(f.gallery(0, s"?monument=$M"), f.organizer)
         tiles(body).sorted === List(1L, 2L, 3L, 7L)
-        body must contain("Monument: 07-101-0001 (4)")
+        org.jsoup.Jsoup.parse(body).select(".wlx-nav-filters #monument-filter .wlx-chip-text").text === "Monument: 07-101-0001"
         tiles(page(f.gallery(f.juror.getId, s"?monument=$M"), f.organizer)).sorted === List(1L, 2L, 3L)
         status(get(f.gallery(f.organizer.getId, s"?monument=$M"), f.organizer)) ===
           status(get(f.gallery(f.organizer.getId), f.organizer))
