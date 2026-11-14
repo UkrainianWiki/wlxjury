@@ -940,7 +940,9 @@ object RoundList {
   /** A list URL's parameter of its author filter ([[RoundList.author]]): `author=<stored author>`. */
   val AuthorParam = "author"
 
-  /** The longest author a list takes: `images.author`'s length (V25, `varchar(255)`). */
+  /** The longest author a list takes: `images.author`'s length (V25, `varchar(255)`: characters,
+    * so code points, not UTF-16 units).
+    */
   val AuthorMaxLength = 255
 
   /** An author as a list takes it: the value as stored, not trimmed, as the contest files page's
@@ -949,7 +951,7 @@ object RoundList {
     * else none (the list of all authors, never an error).
     */
   def validAuthor(stored: String): Option[String] =
-    Some(stored).filter(a => a.trim.nonEmpty && a.length <= AuthorMaxLength)
+    Some(stored).filter(a => a.trim.nonEmpty && a.codePointCount(0, a.length) <= AuthorMaxLength)
 
   /** A request's author filter ([[AuthorParam]], [[validAuthor]]), only for a viewer who may see
     * the round's contest's authors (User.canViewAuthors: its admins, organizers and root); for

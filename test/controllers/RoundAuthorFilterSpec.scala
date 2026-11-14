@@ -270,6 +270,40 @@ class RoundAuthorFilterSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "be ignored in their CSV of their own votes" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        def csv(query: String) = {
+          val result = get(s"/query?module=csv&user=${f.juror.getId}&round=${f.round.getId}$query", f.juror)
+          status(result) === OK
+          contentAsString(result)(defaultAwaitTimeout, app.materializer)
+        }
+        val plain = csv("")
+        (plain must contain("Image5.jpg")) and (csv(s"&$Q") === plain) and (csv(s"&$Q") must not(contain("Brien")))
+      }
+    }
+
+    "be ignored for an organizer of another contest who is a juror of this one, in this contest's round" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        // the other contest's organizer, a juror here too (their session's contest is the other one)
+        val u = f.otherOrganizer
+        UserContestJdbc.createMembership(u.getId, f.contest.getId, "jury") must beTrue
+        f.round.addUsers(Seq(RoundUser(f.round.getId, u.getId, "jury", active = true)))
+        val authors = Map(1L -> A, 2L -> A, 5L -> "Ivan")
+        selectionDao.batchInsert(Seq(1L, 2L, 5L).map(id => Vote(
+          Image(id, s"File:Image$id.jpg", None, None, 640, 480, if (id == 3L) Some("07-101-0002") else Some(M),
+            author = authors.get(id)), u, f.round, 0)))
+        val plain = page(f.gallery(u.getId, "?sort=file"), u)
+        val withAuthor = page(f.gallery(u.getId, s"?$Q&sort=file"), u)
+        val large = page(f.large(u.getId, 2L, s"?$Q&sort=file"), u)
+        (files(plain) === List(1L, 2L, 5L)) and (files(withAuthor) === files(plain)) and noAuthor(withAuthor) and
+          noAuthor(large) and
+          // as organizer of their own contest they still filter its rounds: none here, so nothing to list
+          (status(get(f.gallery(0, s"?$Q"), u)) === FORBIDDEN)
+      }
+    }
+
     "refuse another juror's list and all the jurors' as without it" in {
       testDbApp { implicit app =>
         val f = fixture()

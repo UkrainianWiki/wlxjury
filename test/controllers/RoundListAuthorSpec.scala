@@ -206,6 +206,10 @@ class RoundListAuthorSpec extends Specification with TestDb with BeforeAll with 
       plain.withAuthor(Some("")).author must beNone
       plain.withAuthor(Some("x" * 255)).author must beSome("x" * 255)
       plain.withAuthor(Some("x" * 256)).author must beNone
+      // characters, as varchar(255) counts them: 255 emoji (510 UTF-16 units) are taken
+      val emoji = new String(Character.toChars(0x1F4F7))
+      plain.withAuthor(Some(emoji * 255)).author must beSome(emoji * 255)
+      plain.withAuthor(Some(emoji * 256)).author must beNone
       plain.withAuthor(None).author must beNone
     }
 
