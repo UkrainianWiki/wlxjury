@@ -66,13 +66,13 @@
     <div class="col-12">
 
     @* the list to copy into a wiki page, first a heading saying what it lists: the round, the
-       juror (all of them without one) and the region if one, inside the block so that copying
+       juror ("All jurors" without one, as the juror menu says) and the region if one, inside the block so that copying
        it copies the heading too *@
     <div contenteditable="true">
 
         <h2 class="h5">@{Seq(
             round.map(r => s"${Messages("round")} ${r.description}"),
-            Some(s"${Messages("juror")}: ${Option(asUser).fold(Messages("all"))(_.fullname)}"),
+            Some(Option(asUser).fold(Messages("jurors.all"))(u => s"${Messages("juror")}: ${u.fullname}")),
             KOATUU.regions.get(region).map(name => s"${Messages("region.menu")}: $name")
         ).flatten.mkString(" · ")}</h2>
 

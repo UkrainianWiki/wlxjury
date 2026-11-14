@@ -77,11 +77,12 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
     Fixture(a, r, commentsOnly, viaRegia, juror, quiet, organizer, orgJuror, admin, root)
   }
 
-  private def get(app: Application, viewer: User, path: String): Future[Result] =
-    route(app, FakeRequest(GET, path).withSession(Secured.UserName -> viewer.email).withCSRFToken).get
+  private def get(app: Application, viewer: User, path: String, headers: (String, String)*): Future[Result] =
+    route(app, FakeRequest(GET, path).withSession(Secured.UserName -> viewer.email).withHeaders(headers: _*)
+      .withCSRFToken).get
 
-  private def page(app: Application, viewer: User, path: String): Document = {
-    val result = get(app, viewer, path)
+  private def page(app: Application, viewer: User, path: String, headers: (String, String)*): Document = {
+    val result = get(app, viewer, path, headers: _*)
     status(result) aka path must_== OK
     Jsoup.parse(contentAsString(result))
   }
@@ -113,8 +114,10 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
               Some(text)
         }
         // within the comments filter: the list's unrated
-        NavMenus.button(page(app, f.juror, gallery(f.round, f.juror.getId, query = "?comments=1")), "votes-menu") ===
-          Some("Votes: All (2) · 0 unrated")
+        // the same vote icon as the organisers' (decision C of 2026-11-14), hidden from screen readers
+        (all.select("#votes-menu > button > i.bi-check2-square[aria-hidden=true]").size === 1) and
+          (NavMenus.button(page(app, f.juror, gallery(f.round, f.juror.getId, query = "?comments=1")), "votes-menu") ===
+            Some("Votes: All (2) · 0 unrated"))
       }
     }
 
@@ -229,7 +232,21 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
         one.select("#juror-menu > button").attr("title") === "Juror"
         val all = page(app, f.organizer, gallery(f.round, 0))
         counts(all) === Seq("All" -> None, "Unrated" -> None, "Selected" -> None, "Rejected" -> None)
-        NavMenus.button(all, "votes-menu") === Some("Votes: All")
+        (NavMenus.button(all, "votes-menu") === Some("Votes: All")) and
+          // decision C of 2026-11-14: the juror menu's people icon and "All jurors" (or the juror's
+          // name), the Votes button's vote icon, both hidden from screen readers
+          (NavMenus.button(all, "juror-menu") === Some("All jurors")) and
+          (NavMenus.current(all, "juror-menu").map(_.name) === Some("All jurors")) and
+          (all.select("#juror-menu > button > i.bi-people[aria-hidden=true]").size === 1) and
+          (one.select("#juror-menu > button > i.bi-people[aria-hidden=true]").size === 1) and
+          (all.select("#votes-menu > button > i.bi-check2-square[aria-hidden=true]").size === 1) and
+          (one.select("#votes-menu > button > i.bi-check2-square[aria-hidden=true]").size === 1) and
+          // in Ukrainian the app's term for the jurors, «члени журі» («журі» alone is the jury)
+          (NavMenus.button(page(app, f.organizer, gallery(f.round, 0), "Accept-Language" -> "uk"), "juror-menu") ===
+            Some("Усі члени журі")) and
+          // the file list of all jurors says so in its heading, not "Juror: All" (fr "Juré : Toutes")
+          (page(app, f.organizer, s"/filelist/round/${f.round.getId}/user/0/page/1", "Accept-Language" -> "fr")
+            .select("[contenteditable] h2").text must contain("Tous les jurés"))
       }
     }
 
@@ -319,6 +336,97 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
           } and
           // a juror has none of these pages: no menu
           (page(app, f.juror, gallery(f.round, f.juror.getId)).select("#pages-menu, .wlx-nav-links").size === 0)
+      }
+    }
+
+    "list Statistics on every page of the contest for its organizers and admins, the link working (2026-11-14)" in {
+      testDbApp { app =>
+        val f = fixture()
+        val c = f.contest.getId
+        val files = s"/contest/$c/files"
+        val roundGallery = gallery(f.round, f.juror.getId)
+        val current = s"/roundstat?contestId=$c"
+        def statHref(viewer: User, path: String): Option[String] =
+          Option(page(app, viewer, path).selectFirst("#pages-menu #menu-statistics")).map(_.attr("href"))
+        // the link opens a round's statistics page (the current round's through its redirect)
+        def opens(viewer: User, href: String) = {
+          val target = redirectLocation(get(app, viewer, href)).getOrElse(href)
+          (target must startWith("/roundstat/")) and
+            (page(app, viewer, target).select("#pages-menu a[aria-current=page]").asScala.map(_.id).toList ===
+              List("menu-statistics"))
+        }
+        val adminPages = Seq(s"/admin/rounds?contestId=$c", s"/admin/users?contestId=$c", files, roundGallery)
+        val orgPages = Seq(files, roundGallery)
+        (adminPages.filter(p => statHref(f.admin, p).isEmpty) must beEmpty) and
+          (orgPages.filter(p => statHref(f.organizer, p).isEmpty) must beEmpty) and
+          // on a page without a round, the current round's statistics; on a round's, that round's
+          (statHref(f.admin, s"/admin/users?contestId=$c") === Some(current)) and
+          (statHref(f.organizer, files) === Some(current)) and
+          (statHref(f.organizer, roundGallery) === Some(s"/roundstat/${f.round.getId}")) and
+          (statHref(f.root, s"/admin/users?contestId=$c") === Some(current)) and
+          opens(f.organizer, current) and opens(f.admin, current) and
+          // a juror: no Pages menu, so no Statistics, on their gallery; the contest files page refused
+          (page(app, f.juror, roundGallery).select("#pages-menu, #menu-statistics").size === 0) and
+          (status(get(app, f.juror, files)) === FORBIDDEN) and
+          // and the statistics stay refused to them
+          (status(get(app, f.juror, current)) === FORBIDDEN) and
+          (status(get(app, f.juror, s"/roundstat/${f.round.getId}")) === FORBIDDEN)
+      }
+    }
+
+    "not list Statistics for staff of another contest or a deactivated member, nor open it for them" in {
+      testDbApp { app =>
+        val f = fixture()
+        val c = f.contest.getId
+        // the organizer of contest A is a juror of contest B: on B's pages a juror, no Statistics
+        val b = contestDao.create(None, "WLE", 2026, "Ukraine")
+        val rb = roundDao.create(Round(None, 1, Some("B 1"), contestId = b.getId, rates = Round.binaryRound, active = true))
+        UserContestJdbc.createMembership(f.organizer.getId, b.getId, "jury")
+        rb.addUsers(Seq(RoundUser(rb.getId, f.organizer.getId, "jury", active = true)))
+        val onB = page(app, f.organizer, gallery(rb, f.organizer.getId))
+        val bStat = get(app, f.organizer, s"/roundstat?contestId=${b.getId}")
+        val bStatLanded = redirectLocation(bStat).fold(status(bStat))(to => status(get(app, f.organizer, to)))
+        // back in A (a page GET switches the contest), the organizer has it again
+        val onA = page(app, f.organizer, s"/contest/$c/files")
+        // an admin of A whose membership is deactivated (the "no" role): no page of A, no Statistics
+        UserContestJdbc.updateRole(f.admin.getId, c, User.NO_ROLE)
+        val files = get(app, f.admin, s"/contest/$c/files")
+        (onB.select("#pages-menu, #menu-statistics").size === 0) and
+          (bStatLanded === FORBIDDEN) and
+          (onA.select("#pages-menu #menu-statistics").size === 1) and
+          (status(files) !== OK) and
+          (contentAsString(files) must not(contain("menu-statistics"))) and
+          (status(get(app, f.admin, s"/roundstat?contestId=$c")) !== OK) and
+          (status(get(app, f.admin, s"/roundstat/${f.round.getId}")) !== OK)
+      }
+    }
+
+    "show Statistics to the same people as a round's organizer views (canViewContestStats = canViewOrgInfo)" in {
+      val (c, other) = (7L, 8L)
+      val round = Round(None, 1, contestId = c)
+      val cases = for {
+        roles <- Seq(Set("jury"), Set("organizer"), Set("admin"), Set(User.ROOT_ROLE), Set(User.NO_ROLE), Set(User.BOARD_ROLE), Set.empty[String])
+        contest <- Seq(Some(c), Some(other), None)
+      } yield User("U", "u@example.com", None, roles, contestId = contest)
+      forall(cases)(u => (u.roles, u.contestId, u.canViewContestStats(c)) === ((u.roles, u.contestId, u.canViewOrgInfo(round))))
+    }
+
+    "not list Statistics in a contest without rounds, whose current statistics are no error" in {
+      testDbApp { app =>
+        val f = fixture()
+        val empty = contestDao.create(None, "WLE", 2026, "Ukraine")
+        val e = empty.getId
+        val admin = userDao.create(User("Empty Admin", "emptyadmin@example.com", None, Set("admin"), contestId = empty.id))
+        val org = userDao.create(User("Empty Org", "emptyorg@example.com", None, Set("organizer"), contestId = empty.id))
+        def items(viewer: User, path: String) =
+          page(app, viewer, path).select("#pages-menu a.dropdown-item").asScala.map(_.id).toList
+        (items(admin, s"/admin/rounds?contestId=$e") === List("menu-contest-files", "menu-users", "menu-rounds")) and
+          (items(admin, s"/admin/users?contestId=$e") === List("menu-contest-files", "menu-users", "menu-rounds")) and
+          (items(org, s"/contest/$e/files") === List("menu-contest-files")) and
+          (items(f.root, s"/admin/users?contestId=$e") must not(contain("menu-statistics"))) and
+          // reached by hand, the current round's statistics are a state page, not an error
+          (status(get(app, org, s"/roundstat?contestId=$e")) === OK) and
+          (status(get(app, admin, s"/roundstat?contestId=$e")) === OK)
       }
     }
   }
