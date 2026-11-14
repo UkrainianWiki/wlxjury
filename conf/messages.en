@@ -930,7 +930,10 @@ author.files.round.title = {0}''s files in this list
 author.files.round.gallery.title = {0}''s files in the round''s gallery
 
 # the monument page (MonumentController), its card link and the contest files filter
-monument.card.link = Monument {0}
+monument.card.gallery = Gallery ({0})
+monument.card.gallery.title = Show only this monument''s photos in the gallery
+monument.card.page = Page
+monument.card.page.title = Monument page
 monument.page.title = Monument
 monument.list = List
 monument.commons = Commons
@@ -946,9 +949,6 @@ monument.search.not.found = There is no monument {0}.
 monument.filter.chip = Monument: {0} ({1})
 monument.filter.remove = Show the files of all monuments
 monument.page.open = The monument''s page
-monument.card.round.link = This monument in the list ({0})
-monument.card.round.only = The only file of this monument in the list
-monument.card.round.title = Show only this monument''s files in this list
 monument.filter.chip.short = Monument: {0}
 monument.files.round.title = Open these files in the round''s gallery
 authors.list = Authors

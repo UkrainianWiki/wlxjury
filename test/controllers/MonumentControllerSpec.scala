@@ -295,13 +295,13 @@ class MonumentControllerSpec extends Specification with PlayTestDb {
         implicit val flash: play.api.mvc.Flash = play.api.mvc.Flash()
         val image = Image(1, "File:F1.jpg", None, None, 800, 600, monumentId = Some(Id))
         views.html.large.monumentInfo(image, monument, f.contest.id, Some(f.round)).body must
-          contain(s"""id="monument-page" href="/monuments/id/07-101-0001?contest=${f.contest.getId}&amp;round=${f.round}">Monument 07-101-0001 &rarr;</a>""")
+          contain(s"""<span id="monument-id">07-101-0001</span> &middot; <a id="monument-page" href="/monuments/id/07-101-0001?contest=${f.contest.getId}&amp;round=${f.round}" title="Monument page">Page &rarr;</a></div>""")
         views.html.large.monumentInfo(image, monument).body must
-          contain("""id="monument-page" href="/monuments/id/07-101-0001">""")
+          contain("""id="monument-page" href="/monuments/id/07-101-0001" title="Monument page">""")
       }
     }
 
-    "carry the round line: a link into the list, the only file's text, a minimal card without a monument row" in {
+    "carry one line: the id, the gallery unless filtered or the only file, the page; a minimal card without a monument row" in {
       testDbApp { implicit app =>
         val f = fixture()
         val monument = MonumentJdbc.find(Id)
@@ -310,22 +310,36 @@ class MonumentControllerSpec extends Specification with PlayTestDb {
         implicit val request: play.api.mvc.Request[Any] = FakeRequest()
         implicit val flash: play.api.mvc.Flash = play.api.mvc.Flash()
         val image = Image(1, "File:F1.jpg", None, None, 800, 600, monumentId = Some(Id))
+        val page = s"""<a id="monument-page" href="/monuments/id/07-101-0001?contest=${f.contest.getId}&amp;round=${f.round}" title="Monument page">Page &rarr;</a>"""
         val linked = views.html.large.monumentInfo(image, monument, f.contest.id, Some(f.round),
           Some(MonumentLine(Id, 3, Some("/gallery/round/1/user/2/page/1?monument=07-101-0001&sort=file")))).body
-        linked must contain("""<a id="monument-round-list" href="/gallery/round/1/user/2/page/1?monument=07-101-0001&amp;sort=file"""")
-        linked must contain("This monument in the list (3) &rarr;")
-        linked must contain("""id="monument-page"""")
+        linked must contain(
+          """<span id="monument-id">07-101-0001</span> &middot; <a id="monument-round-list" href="/gallery/round/1/user/2/page/1?monument=07-101-0001&amp;sort=file" title="Show only this monument&#x27;s photos in the gallery">Gallery (3)</a> &middot; """ + page)
+        // the id once, "Monument" nowhere
+        linked.split("07-101-0001</span>").length === 2
+        linked must not contain "Monument 07"
+        // the only file: the id and the page
         val only = views.html.large.monumentInfo(image, monument, f.contest.id, Some(f.round), Some(MonumentLine(Id, 1, None))).body
-        only must contain("""<span id="monument-round-list">The only file of this monument in the list</span>""")
-        // a monument without a row: its id and the line, no monument page (a 404 without a row)
+        only must contain("""<span id="monument-id">07-101-0001</span> &middot; """ + page)
+        only must not contain "monument-round-list"
+        // the list already filtered to the monument (no line): the id and the page
+        val filtered = views.html.large.monumentInfo(image, monument, f.contest.id, Some(f.round), None, Some(Id)).body
+        filtered must contain("""<span id="monument-id">07-101-0001</span> &middot; """ + page)
+        filtered must not contain "monument-round-list"
+        // a monument without a row: its id and the gallery, no monument page (a 404 without a row)
         val bare = Image(9, "File:F9.jpg", None, None, 800, 600, monumentId = Some("07-101-9999"))
         val minimal = views.html.large.monumentInfo(bare, None, f.contest.id, Some(f.round),
           Some(MonumentLine("07-101-9999", 2, Some("/x")))).body
         minimal must contain("""id="monument-card"""")
-        minimal must contain("Monument 07-101-9999")
-        minimal must contain("This monument in the list (2)")
+        minimal must contain("""<span id="monument-id">07-101-9999</span> &middot; <a id="monument-round-list" href="/x" title="Show only this monument&#x27;s photos in the gallery">Gallery (2)</a></div>""")
         minimal must not contain "monument-page"
-        // no row and no line: no card
+        // its only file, or the list filtered to it: just the id
+        views.html.large.monumentInfo(bare, None, f.contest.id, Some(f.round), Some(MonumentLine("07-101-9999", 1, None))).body must
+          contain("""<span id="monument-id">07-101-9999</span></div>""")
+        views.html.large.monumentInfo(bare, None, f.contest.id, Some(f.round), None, Some("07-101-9999")).body must
+          contain("""<span id="monument-id">07-101-9999</span></div>""")
+        // filtered to another monument: no card
+        views.html.large.monumentInfo(bare, None, f.contest.id, Some(f.round), None, Some(Id)).body must not contain "monument-card"
         views.html.large.monumentInfo(bare, None, f.contest.id, Some(f.round)).body must not contain "monument-card"
       }
     }

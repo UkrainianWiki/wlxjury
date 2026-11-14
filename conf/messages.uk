@@ -915,7 +915,10 @@ author.files.round.title = Файли автора {0} у цьому списк�
 author.files.round.gallery.title = Файли автора {0} в галереї раунду
 
 # the monument page (MonumentController), its card link and the contest files filter
-monument.card.link = Пам''ятка {0}
+monument.card.gallery = Галерея ({0})
+monument.card.gallery.title = Показати в галереї лише фото цієї пам''ятки
+monument.card.page = Сторінка
+monument.card.page.title = Сторінка пам''ятки
 monument.page.title = Пам''ятка
 monument.list = Список
 monument.commons = Commons
@@ -931,9 +934,6 @@ monument.search.not.found = Пам''ятки {0} немає.
 monument.filter.chip = Пам''ятка: {0} ({1})
 monument.filter.remove = Показати файли всіх пам''яток
 monument.page.open = Сторінка пам''ятки
-monument.card.round.link = Ця пам''ятка у списку ({0})
-monument.card.round.only = Єдиний файл цієї пам''ятки у списку
-monument.card.round.title = Показати в цьому списку лише файли цієї пам''ятки
 monument.filter.chip.short = Пам''ятка: {0}
 monument.files.round.title = Відкрити ці файли в галереї раунду
 authors.list = Автори

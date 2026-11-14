@@ -3,24 +3,29 @@
         monument: Option[org.scalawiki.wlx.dto.Monument],
         contestId: Option[Long] = None,
         roundId: Option[Long] = None,
-        roundLine: Option[controllers.MonumentLine] = None
+        roundLine: Option[controllers.MonumentLine] = None,
+        listMonument: Option[String] = None
         )(implicit flash: Flash, request: play.api.mvc.Request[Any], messages: Messages)
 
 @* The file's monument, for everyone who sees the file (jurors too): its region, city, name and
-   place, and one link to the monument's page (MonumentController.byId), with the contest and the
-   round the file is seen in, which the page checks before it counts the monument's files there.
+   place, then one line with the monument's id (once), its gallery and its page (the maintainer's
+   decision of 2026-11-14): `46-233-0012 · Gallery (2) · Page →`.
 
-   In a round's large view, the line of the monument's files in the viewer's list
-   (RoundList.monumentLine): a link to the list with only them while it has a file other than
-   this one, else plain text saying this is its only one. The line comes from the file's monument
-   id, so a monument without a row in a monument list (Wiki Loves Earth, other countries, an id a
-   list lacks) gets a minimal card: its id and the line, without a monument page, which would be
-   a 404 *@
-@line(l: controllers.MonumentLine) = {
-    @l.url match {
-        case Some(url) => {<a id="monument-round-list" href="@url" title="@Messages("monument.card.round.title")">@Messages("monument.card.round.link", l.count) &rarr;</a>}
-        case None => {<span id="monument-round-list">@Messages("monument.card.round.only")</span>}
-    }
+   Gallery (N), in a round's large view: the viewer's list with only the monument's files
+   (RoundList.monumentLine), N its count. Left out while the list already has only this
+   monument's files (the large view's chip; monumentLine is None then) or when this file is the
+   list's only one of the monument (the line has no url).
+
+   Page: the monument's page (MonumentController.byId), with the contest and the round the file
+   is seen in, which the page checks before it counts the monument's files there.
+
+   The line comes from the file's monument id, so a monument without a row in a monument list
+   (Wiki Loves Earth, other countries, an id a list lacks) gets a minimal card: its id and the
+   gallery, without a page, which would be a 404; just the id while the list is filtered to it
+   (listMonument, the list's monument filter) *@
+@gallery = @{ roundLine.flatMap(l => l.url.map(l.count -> _)) }
+@idLine(id: String, page: Option[Call], spaced: Boolean) = {
+        <div class="small@if(spaced){ mt-1}" id="monument-line"><span id="monument-id">@id</span>@for((count, url) <- gallery) { &middot; <a id="monument-round-list" href="@url" title="@Messages("monument.card.gallery.title")">@Messages("monument.card.gallery", count)</a>}@for(p <- page) { &middot; <a id="monument-page" href="@p" title="@Messages("monument.card.page.title")">@Messages("monument.card.page") &rarr;</a>}</div>
 }
 @monument match {
     case Some(m) => {
@@ -28,18 +33,13 @@
         @Messages(image.region.getOrElse("")), @views.WikiLinks(m.city, "uk.wikipedia.org") <br>
         @views.WikiLinks(m.name, "uk.wikipedia.org") <br>
         @views.WikiLinks(m.place, "uk.wikipedia.org")
-        @for(l <- roundLine) {
-            <div class="small mt-1">@line(l)</div>
-        }
-        <div class="small mt-1">
-            <a id="monument-page" href="@routes.MonumentController.byId(m.id, contestId, roundId)">@Messages("monument.card.link", m.id) &rarr;</a>
-        </div>
+        @idLine(m.id, Some(routes.MonumentController.byId(m.id, contestId, roundId)), true)
     </div>
     }
     case None => {
-    @for(l <- roundLine) {
+    @for(id <- roundLine.map(_.monumentId).orElse(listMonument.filter(m => image.monumentId.flatMap(controllers.RoundList.validMonument).contains(m)))) {
     <div class="card card-body large-box" id="monument-card">
-        <div class="small"><span id="monument-id">@Messages("monument.card.link", l.monumentId)</span> · @line(l)</div>
+        @idLine(id, None, false)
     </div>
     }
     }

@@ -294,9 +294,11 @@ a monument's files in their own round instead (see below).
 ### Monuments
 
 In a monuments contest, the monument's box in a file's large view (in a round and on the contest
-files page) ends with a link, **Monument** and its id, to the monument's page. It shows the
-monument as its Wikipedia list has it, links to its list row on Wikipedia, its Commons category
-and its Wikidata item where the list has them, and under **Files**:
+files page) ends with one line, for example `46-233-0012 · Gallery (2) · Page →`: the
+monument's id, **Gallery (N)** in a round (see below), and **Page →**, which opens the monument's
+page. The page shows the monument as its Wikipedia list has it, links to its list row on
+Wikipedia, its Commons category and its Wikidata item where the list has them, and under
+**Files**:
 
 - **In the contest: N →**: the contest's files of this monument. The link opens the contest files
   page with only them, under a chip **Monument: … (N)**; the **×** on the chip shows all the files
@@ -311,10 +313,12 @@ filter too, under a chip **Monument: … (N)** with the **×** that removes it a
 monument's page. The tabs and the pager count only the monument's files, the region menu is
 hidden while the filter is on (a monument is in one region), and the filter keeps to the pages,
 tabs, orders, views, the round and juror menus and the large view, whose next and previous files
-and votes by keys stay among the monument's files. In the large view, the monument's box has
-**This monument in the list (N)**, which opens the list you are in (the same juror, tab and order)
-with only the monument's files; for a file whose monument isn't in the tool's monument lists the
-box shows just the id and that line.
+and votes by keys stay among the monument's files. In the large view, the monument's line has
+**Gallery (N)**, which opens the list you are in (the same juror, tab and order) with only the
+monument's N files; it is left out while the list already has only them and when the file is the
+list's only one of the monument. For a file whose monument isn't in the tool's monument lists
+the box shows the id and **Gallery (N)**, or just the id when the file is the list's only one of
+the monument or the list already has only the monument's files.
 
 The page counts files only in a contest you are a member of, and a round you may see; opened
 from elsewhere it shows the monument alone. **Monuments** (`/monuments`) opens a monument's page

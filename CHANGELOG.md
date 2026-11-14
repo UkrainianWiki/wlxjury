@@ -115,6 +115,16 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   the contest files page's large view and its conflicts of interest still open the contest files
   page. For anyone else, jurors included, `author=` is ignored without an error, as on the contest
   files page: no author, chip or `author=` in any of their pages. Organizer guide: "Authors".
+- **One line on the monument card** (the maintainer's decision of 2026-11-14; developed
+  2026-11-14, `stack/151-monument-card-line`): the large view's monument box no longer repeats
+  the monument ("This monument in the list (2) →", "Monument 46-233-0012 →" and the chip). Under
+  the region, city, name and place it has one line, `46-233-0012 · Gallery (2) · Page →`:
+  **Gallery (N)** opens the current list with only the monument's files (the former "This
+  monument in the list (N)", titled "Show only this monument's photos in the gallery"), and is
+  left out while the list already has only them (the chip is on) or when the file is the list's
+  only one of the monument (the former "The only file of this monument in the list"); **Page →**
+  opens the monument's page. A monument without a row in a monument list gets the id and
+  **Gallery (N)**, or just the id. Juror and organizer guides.
 
 **Development**
 
