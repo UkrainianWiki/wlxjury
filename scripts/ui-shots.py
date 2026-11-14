@@ -142,9 +142,12 @@ def pages(s):
         # menus and dropdowns opened
         ("gallery-pagerbox", "juror", f"/gallery/round/{rb}/user/{j}/page/1", [".pager-range"]),
         ("gallery-usermenu", "juror", f"/gallery/round/{rb}/user/{j}/page/1",
-         ["nav .navbar-nav:last-child > .dropdown:last-child > [data-bs-toggle=dropdown]"]),
+         ["nav .container-fluid > .navbar-nav:last-child > .dropdown:last-child > [data-bs-toggle=dropdown]"]),
         ("byrate-viewmenu", "organizer", f"/byrate/round/{rr}/user/0/page/1",
-         ["a.dropdown-toggle:has(.bi-bar-chart-fill)"]),
+         [".dropdown-toggle:has(.bi-bar-chart-fill)"]),
+        # the navbar's Votes and Comments menus (navbar.scala.html votesMenu, commentsMenu)
+        ("gallery-votesmenu", "juror", f"/gallery/round/{rb}/user/{j}/page/1", ["#votes-menu > button"]),
+        ("gallery-commentsmenu", "juror", f"/gallery/round/{rb}/user/{j}/page/1", ["#comments-menu > button"]),
         ("contestfiles-regionmenu", "organizer", f"/contest/{c}/files", [".region-menu > [data-bs-toggle=dropdown]"]),
         ("editround-new", "organizer", f"/admin/rounds/edit?contestId={c}"),
         ("editround-new-jurors", "organizer", f"/admin/rounds/edit?contestId={c}", ["#jurors-ts-control"]),
@@ -153,7 +156,7 @@ def pages(s):
         # the navbar's theme switch, the user menu, and the deleted / failed marks
         ("users-thememenu", "organizer", f"/admin/users?contestId={c}", ["#theme-menu"]),
         ("users-usermenu", "organizer", f"/admin/users?contestId={c}",
-         ["nav .navbar-nav:last-child > .dropdown:last-child > [data-bs-toggle=dropdown]"]),
+         ["nav .container-fluid > .navbar-nav:last-child > .dropdown:last-child > [data-bs-toggle=dropdown]"]),
         ("contestfiles-marks", "organizer", f"/contest/{c}/files", [], MARKS_JS),
         ("contestfile-large-marks", "organizer", f"/contest/{c}/files/{p}", [], MARKS_JS),
         # the stars stay inside the side column: the fixture's ten on one line, and 20

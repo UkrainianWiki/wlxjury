@@ -44,7 +44,7 @@ open round, or the latest round if none is open. A contest with no round yet sho
 configured yet**.
 
 - The row of round names above the statistics table switches round.
-- **Contest files** in the top bar opens the contest's files.
+- **Contest files** in the pages menu at the start of the top bar opens the contest's files.
 - The contest menu at the top of the page switches contest, if you are in more than one.
 
 There is no **Rounds** or **Users** menu for you: those are the admins'. The admins create the
@@ -117,54 +117,73 @@ a moment after the page; until then, the links work without them.
 <a id="o-results"></a>
 ### Reading the results
 
-The bar at the top of a round's results has the menus that show other views of the same
-round: the round, the juror (a single juror's votes, or **All**), a vote filter and five views:
-the **Gallery**, **By rate**, **File list**, **CSV** and [**Comments**](#o-comments-report). The views of **All** jurors take no
-votes. In a window narrower than about 1700 pixels, this bar shows **Contest files** and
-**Statistics** as icons (photos and a bar chart) and a single juror's order menu as a sort icon,
-and the region menu shows only the chosen place, without the word "Region" (or "Country"); point
-at an icon to see its name.
+The bar at the top of a round's results has, from left to right, the pages menu (its button the
+menu icon and the page you are on, for example **Gallery**; its items **Contest files**, for
+admins **Users** and **Rounds**, and **Statistics**; for root also **Contests**), then the
+filters: the round, the juror (a single juror's votes, or **All**), the votes menu, the
+[**Comments**](#o-comments-filter) menu and the region menu; after a thin line the order and the
+view menu (the **Gallery**, **By rate**, **File list** and **CSV**); then the pager. The views of
+**All** jurors take no votes. Your own files in a round, if you have any, are under your name in
+the juror menu, with the same bar.
+
+The votes menu is the jurors' own: **All**, **Unrated**, **Selected** and **Rejected** (in a rated
+round **All**, **Unrated** and **Rated**), keeping the region and the other filters. In a single
+juror's view each choice has its count, and on **All** the button adds how many of the juror's
+files in the list are unrated (**All (900) · 40 unrated**); the view of **All** jurors has no
+counts. In a window narrower than about 1700 pixels, the pages menu shows only its icon, the
+votes menu its choice and count without the unrated, the **Comments** menu a speech bubble and its count, a single juror's order
+menu a sort icon, and the region menu only the chosen place, without the word "Region" (or
+"Country"); point at an icon to see its name. A long juror name or region is cut short (point at
+it to see it whole). The bar and its pager stay on one line from 1280 pixels.
 
 You can see a juror's votes only for a juror of that round. Choosing another person's page
 shows the tool's "not found" page.
 
 <a id="o-comments-filter"></a>
-**Files with comments:** **Only with comments (N)**, next to the vote filter, shows only the
-files with comments in the view you are on: a single juror's files, or all of them for **All**.
-It works with the vote filter (for example the selected files with comments), the region, the
-order and every view, the CSV included, and N is how many files of the current view have
-comments. The large view then moves through those files only. Below about 1700 pixels it is a
-speech bubble icon. In the gallery, the by-rate gallery and the large view's **Next files**, a
-file with comments shows a speech bubble with their number. Both count the comments the file's
-large view shows: from any round of the contest, by anyone. While the toggle is on, **Recent
-comments** beside it opens the [comments report](#o-comments-report) of the same files (the
-juror, vote filter, region and monument kept), with all rounds' comments, by the latest comment.
+**Files with comments:** the **Comments** menu, after the votes menu, has **All files**, **Only
+with comments (N)** and **Recent comments list (N)**. **Only with comments** shows only the files
+with comments in the view you are on: a single juror's files, or all of them for **All**. It
+works with the votes menu (for example the selected files with comments), the region, the order
+and every view, the CSV included, and N is how many files of the current view have comments. The
+large view then moves through those files only. **Recent comments list** opens the
+[comments report](#o-comments-report) of the same files (the juror, votes choice, region and
+monument kept), with all rounds' comments, by the latest comment. The menu's button says
+**Comments (N)**, or, highlighted, **With comments (N)** or **Comments list (N)**; in the view of
+**All** jurors without the number. A choice with no file is greyed
+out. In the gallery, the by-rate gallery and the large view's **Next files**, a file with
+comments shows a speech bubble with their number. Both count the comments the file's large view
+shows: from any round of the contest, by anyone.
 
 <a id="o-comments-report"></a>
-**Comments report:** the **Comments** view (a speech bubble in the view menu; also **Comments on
-the round's files** in the round's statistics) lists the files with comments, 20 to a page. Each
+**Comments report:** **Recent comments list** in the **Comments** menu (also **Comments on the
+round's files** in the round's statistics) lists the files with comments, 20 to a page. Each
 file has its thumbnail and name, which open its large view, its result in the round (the votes of
 **All** jurors, or the chosen juror's vote, a rated round's stars), and then its comments, each
 with its author, its time and, for a comment from another round, that round's name. Above the
 list:
 
-- **This round** (the default) or **All rounds of the contest**: which comments the report shows.
-  A file is listed when it has at least one comment of that choice; **All rounds of the contest**
-  shows every comment its large view shows.
-- The order: **Latest comment first** (the default), by the newest comment of the choice above,
-  or the view's own (for **All** jurors the yes/no orders or by rating, and file order; for one
-  juror that juror's orders). The report opens in it from the view menu and the round's
-  statistics; the order chosen in the report is kept by its pages, the CSV and the large view's
-  previous and next. Leaving the report for another view keeps that order, except **Latest
-  comment first**, which goes back to by rating.
+- **This round** or **All rounds of the contest**: which comments the report shows. A file is
+  listed when it has at least one comment of that choice; **All rounds of the contest** shows
+  every comment its large view shows. The **Comments** menu opens the report with **All rounds of
+  the contest**, the same files as its **Only with comments**; the round's statistics open it with
+  **This round**.
 - **Comments CSV**: a spreadsheet with one row per comment of the report, in its order: the file,
   its page id and Commons link, the author, the time (UTC), the round and the text.
-- **Show in the gallery**: back to the gallery with only the files with comments (the juror, vote
-  filter, region and monument kept), in the gallery's default order. With **This round** the
-  gallery can have more files: its toggle counts comments from any round.
 
-A juror opens the report of their own files only, from **Recent comments** beside their
-**Only with comments**: every comment their large view shows (all rounds of the contest), without
+The order menu, in the bar's order place: **Latest comment first** (the default), by the newest
+comment of the choice above, or the view's own (for **All** jurors the yes/no orders or by
+rating, and file order; for one juror that juror's orders). The report opens in it from the
+**Comments** menu and the round's statistics; the order chosen in the report is kept by its
+pages, the CSV and the large view's previous and next. Leaving the report for another view keeps
+that order, except **Latest comment first**, which goes back to by rating.
+
+**Only with comments** in the **Comments** menu goes back to the gallery with only the files with
+comments (the juror, votes choice, region and monument kept), in the gallery's default order, and
+**All files** to all of them. With **This round** the gallery can have more files (it counts
+comments from any round), so the menu shows no numbers there.
+
+A juror opens the report of their own files only, from **Recent comments list** in their
+**Comments** menu: every comment their large view shows (all rounds of the contest), without
 the round names, the scope buttons, the CSV or the icons below. Another juror's report, all
 jurors' together and the CSV are refused to them.
 
@@ -176,16 +195,16 @@ contest**). A chip **Comments by Name ×** above the list says so; **×** shows 
 again. Each file then shows that person's comments, with the file's other comments folded under
 them (**N other comments on this file**, click to open). **Latest comment first** is then by that
 person's latest comment; the counts, the pages, the **Comments CSV** (only their comments) and the
-large view's previous and next follow it, together with the juror, vote filter, region and order.
+large view's previous and next follow it, together with the juror, votes choice, region and order.
 The pictures icon (**Gallery of juror Name in round …**) opens that person's gallery of the round
 the comment was written in, with their votes; it is shown only for a juror of that round (a
 pre-screener's comment in an earlier round links their gallery there). Old comments without
 an account have no icons. Hover over an icon to see what it does; screen readers read the same
 text.
 
-The juror, vote filter and region menus and the pager work as in the other views, the CSV
-included. Only admins and organizers of the contest (and root) can open the report and its CSV;
-jurors cannot, even for their own files. Comment authors' names and texts leave the tool in the
+The juror, votes, Comments and region menus and the pager work as in the other views, the CSV
+included. Only admins and organizers of the contest (and root) can open all the jurors' report
+and its CSV; jurors open only their own report, without the CSV. Comment authors' names and texts leave the tool in the
 CSV: share it only with the contest's team.
 
 In a single juror's **Gallery** each file shows that juror's vote, read-only: in a yes/no round a
@@ -216,7 +235,7 @@ of 3 jurors)". The rules are in [The file score](admin-guide.md#a-score-rule).
 
 **By rate** shows the files of the round as a gallery, best first, with each file's rank and
 score. In a yes/no round the order depends on the menu next to the views: **Approvals, then
-fewest rejections** or **Approvals minus rejections**. The vote filter shows only files with
+fewest rejections** or **Approvals minus rejections**. The votes menu shows only files with
 **Selected**, **Unrated** or **Rejected** votes: for a yes/no round, files with at least one
 such vote, or for a rated round **Rated** or **Unrated**. A rated round's score follows its
 [file score](#o-score), with the divisor shown. In a round with criteria, each file shows
@@ -273,7 +292,7 @@ that a spreadsheet would read as a formula are changed so that they don't run as
 <a id="o-contest-files"></a>
 ### The contest's files
 
-**Contest files** in the top bar shows all the files of the contest in a gallery, with the region
+**Contest files** in the pages menu at the start of the top bar shows all the files of the contest in a gallery, with the region
 menu of a monuments contest, and a large view of each file. It has three tabs:
 
 - **All files**;
@@ -309,12 +328,13 @@ Wikipedia, its Commons category and its Wikidata item where the list has them, a
   with only them: all the jurors' votes for you, a juror's own gallery for them.
 
 A round's lists (the gallery, by rate, the file list and the comments report) take the monument
-filter too, under a chip **Monument: … (N)** with the **×** that removes it and a link to the
-monument's page. The tabs and the pager count only the monument's files, the region menu is
-hidden while the filter is on (a monument is in one region), and the filter keeps to the pages,
-tabs, orders, views, the round and juror menus and the large view, whose next and previous files
-and votes by keys stay among the monument's files. In the large view, the monument's line has
-**Gallery (N)**, which opens the list you are in (the same juror, tab and order) with only the
+filter too, with a compact chip **Monument: …** in the bar's filters, where the region menu is:
+**↗** opens the monument's page and **×** removes the filter. The votes menu and the pager count
+only the monument's files, the region menu is hidden while the filter is on (a monument is in one
+region), and the filter keeps to the pages, the votes choices, orders, views, the round and juror
+menus and the large view, whose next and previous files and votes by keys stay among the
+monument's files. In the large view, the monument's line has **Gallery (N)**, which opens the list
+you are in (the same juror, votes choice and order) with only the
 monument's N files; it is left out while the list already has only them and when the file is the
 list's only one of the monument. For a file whose monument isn't in the tool's monument lists
 the box shows the id and **Gallery (N)**, or just the id when the file is the list's only one of
@@ -347,16 +367,18 @@ Each author's name links to their files. Where it leads depends on where you are
 - **In the contest** (the contest's authors list, the contest files page's large view and its
   conflicts of interest): the contest files page with only that author's files.
 
-Either list shows a chip **Author: … (N)** above the files, N being the number of files in the
-current tab. The **×** on the chip shows the files of all authors again. On the contest files
-page the pages, the region and country menus and the large view keep the author; the tabs show
-all the contest's files again. In a round's lists (the gallery, by rate, the file list, the
-comments report and its CSV) the filter keeps to the pages, tabs, orders, views, the region,
-round and juror menus and the large view, whose next and previous files stay among the author's
-files (a compact chip there says so). The tabs and the pager count only the author's files, and
-the filter combines with the monument filter and **Only with comments**. The small link
-**Commons ↗** beside a name or a chip opens the author's user page on Wikimedia Commons in a new
-tab.
+The contest files page shows a chip **Author: … (N)** above the files, N being the number of
+files in the current tab; a round's lists show a compact chip **Author: …** in the bar's filters,
+after the monument's, a long name cut short (point at it to see it whole). The **×** on the chip
+shows the files of all authors again. On the contest files page the pages, the region and country
+menus and the large view keep the author; the tabs show all the contest's files again. In a
+round's lists (the gallery, by rate, the file list, the comments report and its CSV) the filter
+keeps to the pages, the votes choices, orders, views, the region, round and juror menus and the
+large view, whose next and previous files stay among the author's files (a compact chip there
+says so). The votes menu and the pager count only the author's files, and the filter combines
+with the monument filter and **Only with comments**. The small link **Commons ↗** beside a name
+on the contest files page, or **↗** on a round's chip, opens the author's user page on Wikimedia
+Commons in a new tab.
 
 The filter takes the author exactly as stored: "Ivan", "ivan" and "Iván" are three different
 authors. It is yours, the admins' and root's only: a juror who opens a link with an author gets

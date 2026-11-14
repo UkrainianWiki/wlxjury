@@ -118,14 +118,18 @@ class RoundAuthorFilterSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         val body = page(f.gallery(f.juror.getId, s"?$Q&sort=file"), f.organizer)
         files(body) === List(1L, 2L, 3L)
-        Jsoup.parse(body).selectFirst("#author-filter .author-chip").text must startWith("Author: O'Brien (3)")
+        // a chip in the bar's filter group: the name (whole in its title, cut if long), no count
+        // (D9 of the navigation proposal v3)
+        val chip = Jsoup.parse(body).selectFirst(".wlx-nav-filters #author-filter")
+        chip.selectFirst(".wlx-chip-text").text === "Author: O'Brien"
+        chip.selectFirst(".wlx-truncate").attr("title") === "O'Brien"
         href(body, "author-filter-remove") must beSome(f.gallery(f.juror.getId, "?sort=file"))
         // the list's links keep it: the large views, the filters, the views
         body must contain(s"$Q&amp;sort=file")
         // all the jurors' votes
         val all = page(f.gallery(0, s"?$Q"), f.organizer)
         files(all).sorted === List(1L, 2L, 3L, 7L)
-        Jsoup.parse(all).selectFirst("#author-filter .author-chip").text must startWith("Author: O'Brien (4)")
+        Jsoup.parse(all).selectFirst(".wlx-nav-filters #author-filter .wlx-chip-text").text === "Author: O'Brien"
         files(page(f.list("byrate", 0, s"?$Q"), f.organizer)).sorted === List(1L, 2L, 3L, 7L)
         val fileList = page(f.list("filelist", 0, s"?$Q"), f.organizer)
         rows(fileList).sorted === List(1L, 2L, 3L, 7L)
@@ -155,7 +159,9 @@ class RoundAuthorFilterSpec extends PlaySpecification with PlayTestDb {
         val both = page(f.gallery(f.juror.getId, s"?$Q&monument=$M&sort=file"), f.organizer)
         files(both) === List(1L, 2L)
         both must contain("""id="monument-filter"""")
-        Jsoup.parse(both).selectFirst("#author-filter .author-chip").text must startWith("Author: O'Brien (2)")
+        // both chips in the filter group, the monument's first
+        Jsoup.parse(both).select(".wlx-nav-filters .wlx-filter-chip .wlx-chip-text").eachText.toArray.toSeq ===
+          Seq("Monument: " + M, "Author: O'Brien")
         // with comments: 3 only; all three: none
         files(page(f.gallery(f.juror.getId, s"?$Q&comments=1&sort=file"), f.organizer)) === List(3L)
         files(page(f.gallery(f.juror.getId, s"?$Q&monument=$M&comments=1&sort=file"), f.organizer)) === Nil

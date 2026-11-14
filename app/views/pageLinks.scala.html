@@ -13,15 +13,15 @@
     @link(pager.hasPrev, 1, "first", "pager.first", Html("&laquo;"))
     @link(pager.hasPrev, pager.page - 1, "prev", "pager.previous", Html("&lsaquo;"))
     <li class="page-item dropdown pager-jump-menu">
-        <a class="page-link dropdown-toggle pager-range" href="#" data-bs-toggle="dropdown" data-bs-auto-close="outside"
-            role="button" aria-expanded="false" title="@Messages("pager.go.title")">@Messages("pager.range", pager.first, pager.last, pager.count)</a>
+        <button type="button" class="page-link dropdown-toggle pager-range" data-bs-toggle="dropdown" data-bs-auto-close="outside"
+            aria-expanded="false" title="@Messages("pager.go.title")">@Messages("pager.range", pager.first.toString, pager.last.toString, pager.count.toString)</button>
         <div class="dropdown-menu pager-jump-box">
             <form class="pager-jump" action="@pageUrl(pager.page)" data-page-url="@Pager.urlTemplate(pageUrl)">
                 <label>@Messages("pager.page")
                     @* as wide as the last page's digits, and one more *@
                     <input type="number" name="page" class="form-control form-control-sm" min="1" max="@pager.pages"
                         value="@pager.page" required style="width: calc(@(pager.pages.toString.length + 1)ch + 14px)">
-                    @Messages("pager.of", pager.pages)</label>
+                    @Messages("pager.of", pager.pages.toString)</label>
                 <button type="submit" class="btn btn-primary btn-sm">@Messages("pager.go")</button>
             </form>
         </div>

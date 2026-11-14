@@ -31,12 +31,17 @@ const KNOWN = {
 
 const A11Y_DIR = path.join(OUT, 'a11y');
 
-/** (name, role, path) of the tour: role null is signed out; path from the fixture. */
+/** (name, role, path[, menu]) of the tour: role null is signed out; path from the fixture; menu,
+  * a navbar menu opened before the scan (its expanded items scanned too). */
 const TOUR = [
   ['login', null, () => '/auth'],
   ['gallery, binary', 'juror', (f) => galleryPath(f.roundBinaryId, f.accounts.juror.id)],
   ['gallery, rated', 'juror', (f) => galleryPath(f.roundRatingId, f.accounts.juror.id)],
   ['file list', 'juror', (f) => `/filelist/round/${f.roundBinaryId}/user/${f.accounts.juror.id}/page/1`],
+  ['comments list, juror', 'juror', (f) => `/comments/round/${f.roundBinaryId}/user/${f.accounts.juror.id}/page/1`],
+  ['gallery, Votes menu open', 'juror', (f) => galleryPath(f.roundBinaryId, f.accounts.juror.id), '#votes-menu'],
+  ['gallery, Comments menu open', 'juror', (f) => galleryPath(f.roundBinaryId, f.accounts.juror.id), '#comments-menu'],
+  ["one juror's gallery, Votes menu open", 'organizer', (f) => galleryPath(f.roundBinaryId, f.accounts.juror.id), '#votes-menu'],
   ['large view, binary', 'juror', (f) => largePath(f.roundBinaryId, f.accounts.juror.id, f.accounts.juror.pageId)],
   ['large view, rated', 'juror', (f) => largePath(f.roundRatingId, f.accounts.juror.id, f.accounts.juror.ratedPageId)],
   ['own profile', 'juror', (f) => `/users/edit/${f.accounts.juror.id}`],
@@ -61,7 +66,7 @@ const summarize = (violations) => violations.map((v) => ({
 }));
 
 test.describe('the page tour', { tag: '@S-04' }, () => {
-  for (const [name, role, pathOf] of TOUR) {
+  for (const [name, role, pathOf, menu] of TOUR) {
     test(name, async ({ contextAs, fixture, browserName }, testInfo) => {
       const context = await contextAs(role);
       const page = await context.newPage();
@@ -69,6 +74,10 @@ test.describe('the page tour', { tag: '@S-04' }, () => {
       const response = await page.goto(target);
       expect(response.status()).toBe(200);
       await expect(page.locator('h1'), 'one h1 (UI §4.2)').toHaveCount(1);
+      if (menu) {
+        await page.locator(`${menu} > button`).click();
+        await expect(page.locator(`${menu} .dropdown-menu`)).toBeVisible();
+      }
 
       if (browserName !== 'chromium') return;
       const results = await new AxeBuilder({ page })
