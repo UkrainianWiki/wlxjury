@@ -18,7 +18,7 @@
 @* The organisers' bar of a round's results (another's votes, or all together): with its round,
    juror, filter, order, view and region menus and the pager it is the most crowded, so its links
    and menus compact on narrower screens (wlx-nav-results, main.css) to stay on one line *@
-@resultsBar = @{ user != null && selectedRound.exists(r => user.getId != asUserId && user.canViewOrgInfo(r)) }
+@resultsBar = @{ user != null && selectedRound.exists(r => staffBar(r)) }
 
 @* The viewer's own list that their Votes and order menus act on: the page's list if it is their
    gallery, file list or comments report; else where they start in its round, the page's region,
@@ -175,18 +175,19 @@
 @* The order of one juror's votes as the organisers view them (the juror menu: RoundList.asUserId a
    juror of the round, not the viewer), in the gallery and by-rate views, which follow it: by that
    juror's votes and vote times, as the juror's own menu offers them (RoundList.orderChoices), by
-   rating labelled as someone else's. Not for all the jurors' votes together (binaryOrderMenu).
+   rating labelled as someone else's (the viewer's own as theirs, when the organisers view their
+   own files). Not for all the jurors' votes together (binaryOrderMenu).
    Compact (a sort icon, its order's name beside it on extra-wide screens only): the organisers'
    bar has their menus besides, and kept the pager on its line at 1280 px only so *@
 @jurorOrderMenu(l: RoundList) = {
-    @if(l.asUserId != 0 && l.asUserId != user.getId && (l.view == GalleryView.Gallery || l.view == GalleryView.ByRate)) {
+    @if(l.asUserId != 0 && (l.view == GalleryView.Gallery || l.view == GalleryView.ByRate)) {
     @if(l.orderChoices.size == 1) {
     <li class="nav-item"><span class="navbar-text d-block px-2 gallery-order-fixed">@Messages("sort.file")</span></li>
     } else {
     @(new UiSelectionDto[ListOrder](
         (order: ListOrder) => Call("GET", l.withOrder(order).pageUrl(1)),
         l.shownOrder,
-        l.orderChoices.map(order => order -> SelectionItem(if (order == ListOrder.ByRate) "sort.rate.juror" else order.messageKey))
+        l.orderChoices.map(order => order -> SelectionItem(if (order == ListOrder.ByRate && l.asUserId != user.getId) "sort.rate.juror" else order.messageKey))
     ).toDropDown(compactIcon = Some("bi bi-sort-down")))
     }
     }
@@ -288,10 +289,11 @@
 @* The juror's bar: the viewer's own gallery (or, for a juror of the round, all the jurors' votes) *@
 @jurorBar(round: Round) = @{ (asUserId == 0 || asUserId == user.getId) && round.roles.intersect(user.roles).nonEmpty }
 
-@* The organisers' bar: another juror's votes or all of them, for those who may see them; their
-   own files in the round, if any, by the juror menu ("My votes" waits for multi-role: staff don't
-   vote) *@
-@staffBar(round: Round) = @{ user.getId != asUserId && user.canViewOrgInfo(round) }
+@* The organisers' bar: for those who may see the round's results and aren't in the juror's bar,
+   on a round's list (another juror's votes, all of them, or their own files, which the juror menu
+   opens: "My votes" waits for multi-role, staff don't vote); not on the round's statistics, whose
+   page has no list *@
+@staffBar(round: Round) = @{ user.canViewOrgInfo(round) && !jurorBar(round) && (list.isDefined || user.getId != asUserId) }
 
 @* The pages the viewer may open (the Pages menu): contests and all users (root; all users outside
    a contest), the contest's files, its users and rounds (admins), the round's statistics (those
@@ -318,28 +320,35 @@
     }
 }
 
-@* Whether a page link is this page: its path is the request's *@
-@isCurrent(url: String) = @{ url.takeWhile(_ != '?') == request.path }
+@* Whether a page link is this page: its path is the request's; for the statistics, any round's
+   statistics page (the current round's, `/roundstat?contestId=…`, links a round's) *@
+@isCurrent(url: String, key: String) = @{
+    url.takeWhile(_ != '?') == request.path || key == "statistics" && request.path.startsWith("/roundstat")
+}
 
 @* The bar's first group (the maintainer's decision of 2026-11-14): one Pages menu, its button the
    menu icon and this page's name ("Go to:" read before it by screen readers), its items the
    pages the viewer may open (pageItems), this page's marked aria-current="page"; none for a
-   juror, who has no such pages. Signed out: the application's name *@
+   juror, who has no such pages. In the organisers' results bar below 1700 px the button is the
+   icon alone, the page's name read by screen readers and in its title (wlx-nav-label, main.css).
+   Signed out: the application's name *@
 @pageLinks = {
     @if(user != null) {
-        @if(pageItems.nonEmpty) {
-        @defining(pageItems.find(item => isCurrent(item._1)).fold(Messages(title))(item => Messages(item._2))) { here =>
+        @defining(pageItems) { items =>
+        @if(items.nonEmpty) {
+        @defining(items.find(item => isCurrent(item._1, item._2)).fold(Messages(title))(item => Messages(item._2))) { here =>
         <li class="nav-item dropdown" id="pages-menu">
             <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"
-                title="@Messages("nav.pages"): @here"><i class="bi bi-list" aria-hidden="true"></i> <span class="visually-hidden">@Messages("nav.pages"): </span>@here</button>
+                title="@Messages("nav.pages"): @here"><i class="bi bi-list" aria-hidden="true"></i> <span class="visually-hidden">@Messages("nav.pages"): </span><span class="wlx-nav-label">@here</span></button>
             <ul class="dropdown-menu">
-                @for((url, key, icon, itemId) <- pageItems) {
-                @defining(isCurrent(url)) { current =>
+                @for((url, key, icon, itemId) <- items) {
+                @defining(isCurrent(url, key)) { current =>
                 <li><a class="dropdown-item@if(current) { active}" id="@itemId" @if(current) {aria-current="page" }href="@url"><i class="bi @icon" aria-hidden="true"></i> @Messages(key)</a></li>
                 }
                 }
             </ul>
         </li>
+        }
         }
         }
     } else {

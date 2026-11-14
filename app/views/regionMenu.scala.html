@@ -3,15 +3,15 @@
    the pager: a Bootstrap dropdown, as the navbar's other menus, so it closes on a click outside
    it or on Esc. Its places and their file counts are read when it is first opened
    (region-menu.js); until then, or if that fails, it lists all of them and the place shown. Its
-   toggle is a real button (Space opens it), the place shown marked aria-current="page", as the
-   navbar's other menus. Its styles are in main.css. *@
+   toggle is a real button (Space opens it), a long place cut with an ellipsis (whole in its
+   title), the place shown marked aria-current="page", as the navbar's other menus. Its styles are in main.css. *@
 @for(m <- menus) {
     <li class="nav-item dropdown region-menu" id="@m.id" data-regions-url="@m.optionsUrl"
         data-loading="@Messages("region.menu.loading")" data-failed="@Messages("region.menu.failed")">
         <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
             @* the label, read by screen readers only below 1700 px in the organisers' results bar
                (main.css wlx-nav-label): the place shown says what the menu is *@
-            <span class="wlx-nav-label">@Messages(m.label):</span> <b>@m.current.getOrElse(Messages(m.allLabel))</b>
+            <span class="wlx-nav-label">@Messages(m.label):</span> @defining(m.current.getOrElse(Messages(m.allLabel))) { place =><b class="wlx-truncate" title="@place">@place</b>}
         </button>
         <ul class="dropdown-menu region-menu-list">
             <li><a class="dropdown-item@if(m.current.isEmpty) { active}" @if(m.current.isEmpty) {aria-current="page" }href="@m.allUrl">@Messages(m.allLabel)</a></li>

@@ -262,7 +262,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
 
         val (_, deleted) = get(s"$base?deleted=true&region=14", f.admin)
         tiles(deleted) === List(6L)
-        deleted must contain("""<span class="wlx-nav-label">Region:</span> <b>14</b>""") // the region shown
+        deleted must contain("""<span class="wlx-nav-label">Region:</span> <b class="wlx-truncate" title="14">14</b>""") // the region shown
         // the deleted files' regions
         counted(menuPlaces(deleted, "regionmenu", f.admin)) ===
           Map(s"$base?deleted=true&region=07" -> 1, s"$base?deleted=true&region=14" -> 1)
@@ -355,14 +355,14 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
 
         val (_, page) = get(base, f.admin)
         page must contain("""id="countrymenu"""")
-        page must contain("<b>All countries</b>")
+        page must contain(""">All countries</b>""")
         page must not contain "regionmenu" // not a contest of monuments
         val countries = menuPlaces(page, "countrymenu", f.admin)
         countries.map { case (name, n, _) => name -> n } === Seq("Armenia" -> Some(1), "Bénin" -> Some(1))
 
         val (_, armenia) = get(countries.head._3, f.admin)
         tiles(armenia) === List(1L)
-        armenia must contain("<b>Armenia</b>")
+        armenia must contain(""">Armenia</b>""")
         get(countries(1)._3, f.admin)._1 === OK
       }
     }

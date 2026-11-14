@@ -40,8 +40,9 @@ body.gallery {
 }
 
 /* a long name in the navbar cut with an ellipsis, whole in its title: the organisers' juror menu
-   (dropDownSelection's truncate), so the results bar keeps its pager on its line, and the author
-   chip in the filter group (navbar.scala.html authorChip) */
+   (dropDownSelection's truncate) and the place shown in a region menu (regionMenu.scala.html), so
+   the results bar keeps its pager on its line, and the author chip in the filter group
+   (navbar.scala.html authorChip) */
 .wlx-truncate {
     display: inline-block;
     max-width: 12rem;
@@ -50,6 +51,9 @@ body.gallery {
     white-space: nowrap;
     vertical-align: bottom;
 }
+/* shorter in the organisers' results bar, which has the most menus (its juror's name, its region,
+   the author chip) */
+.wlx-nav-results .wlx-truncate { max-width: 9rem; }
 
 .region-menu-list>li.region-nomination>a {
     font-style: italic;

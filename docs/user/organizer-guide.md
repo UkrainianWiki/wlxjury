@@ -124,17 +124,17 @@ filters: the round, the juror (a single juror's votes, or **All**), the votes me
 [**Comments**](#o-comments-filter) menu and the region menu; after a thin line the order and the
 view menu (the **Gallery**, **By rate**, **File list** and **CSV**); then the pager. The views of
 **All** jurors take no votes. Your own files in a round, if you have any, are under your name in
-the juror menu.
+the juror menu, with the same bar.
 
 The votes menu is the jurors' own: **All**, **Unrated**, **Selected** and **Rejected** (in a rated
 round **All**, **Unrated** and **Rated**), keeping the region and the other filters. In a single
 juror's view each choice has its count, and on **All** the button adds how many of the juror's
 files in the list are unrated (**All (900) · 40 unrated**); the view of **All** jurors has no
-counts. In a window narrower than about 1700 pixels, the votes menu shows its choice and count
-without the unrated, the **Comments** menu a speech bubble and its count, a single juror's order
+counts. In a window narrower than about 1700 pixels, the pages menu shows only its icon, the
+votes menu its choice and count without the unrated, the **Comments** menu a speech bubble and its count, a single juror's order
 menu a sort icon, and the region menu only the chosen place, without the word "Region" (or
-"Country"); point at an icon to see its name. A long juror name is cut short (point at it to see
-it whole). The bar and its pager stay on one line from 1280 pixels.
+"Country"); point at an icon to see its name. A long juror name or region is cut short (point at
+it to see it whole). The bar and its pager stay on one line from 1280 pixels.
 
 You can see a juror's votes only for a juror of that round. Choosing another person's page
 shows the tool's "not found" page.

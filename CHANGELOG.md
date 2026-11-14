@@ -140,7 +140,9 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   admins and root get the same two menus (counts only in one juror's view; below 1700 pixels the
   unrated suffix is left out; the bar stays on one line from 1280 pixels in Ukrainian, a long
   juror name cut short), and their page links (contests, all users, contest files, users,
-  rounds, statistics) become one pages menu at the bar's start, showing the page you are on.
+  rounds, statistics) become one pages menu at the bar's start, showing the page you are on
+  (below 1700 pixels its icon alone); their own files, opened from the juror menu, get the same
+  bar.
   Their view menu no longer lists the report (the **Comments** menu opens it with all rounds'
   comments). Their second set of vote tabs for their own files is gone, without a replacement
   for now (staff don't vote: their files are under the juror menu); a "My votes" link comes back

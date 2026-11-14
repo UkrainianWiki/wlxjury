@@ -256,6 +256,23 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "give staff the organisers' bar in their own gallery, opened from the juror menu" in {
+      testDbApp { app =>
+        val f = fixture()
+        val href = page(app, f.orgJuror, gallery(f.round, 0)).select("#juror-menu a.dropdown-item").asScala
+          .map(_.attr("href")).find(_.startsWith(gallery(f.round, f.orgJuror.getId))).get
+        val own = page(app, f.orgJuror, href)
+        (own.select("nav").hasClass("wlx-nav-results") must beTrue) and
+          (NavMenus.current(own, "juror-menu").map(_.name) === Some("Org Juror")) and
+          // their two unrated files, counted; the Comments menu and their order (by their rating)
+          (counts(own) === Seq("All" -> Some(2), "Unrated" -> Some(2), "Selected" -> Some(0), "Rejected" -> Some(0))) and
+          (NavMenus.button(own, "votes-menu") === Some("Votes: All (2) · 2 unrated")) and
+          (own.select("#comments-menu").size === 1) and
+          (own.select(".wlx-nav-order a.dropdown-item").asScala.map(_.text.trim).toList must contain("By my rating")) and
+          (own.select(".wlx-nav-filters > li").size must be_>=(4))
+      }
+    }
+
     "group the bar: the page links, the filters, the order and view after a divider (§2)" in {
       testDbApp { app =>
         val f = fixture()
@@ -293,6 +310,13 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
           (items(root) must contain("menu-statistics")) and
           // the pages menu is the bar's first group, before the filters
           (org.select(".wlx-nav-groups > ul").first.select("#pages-menu").size === 1) and
+          // the current round's statistics (no round in the URL) is the statistics page too
+          {
+            val current = get(app, f.admin, s"/roundstat?contestId=${f.contest.getId}")
+            val landed = redirectLocation(current).getOrElse(s"/roundstat?contestId=${f.contest.getId}")
+            page(app, f.admin, landed).select("#pages-menu a[aria-current=page]").asScala.map(_.id).toList ===
+              List("menu-statistics")
+          } and
           // a juror has none of these pages: no menu
           (page(app, f.juror, gallery(f.round, f.juror.getId)).select("#pages-menu, .wlx-nav-links").size === 0)
       }
