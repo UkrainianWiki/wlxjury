@@ -6,8 +6,8 @@
         url: String,
         criteria: Seq[(org.intracer.wmua.Criterion, Option[Int])] = Nil)(implicit messages: Messages)
 @* a juror's vote: a binary round's mark, a rated round's stars and rate; a criteria round's
-   stars per criterion (Round.perCriterion: its rate is their sum), then the juror's rate of each
-   criterion, rated or not yet (C3) *@
+   stars per criterion (Round.perCriterion: its rate is their sum) and that number with the sum
+   beside it, then the juror's rate of each criterion, rated or not yet (C3) *@
 
 <div class="rank-line">
 
@@ -26,7 +26,15 @@
                 @for(i <- 1 to round.numberOfStars) {
                     @showStar(i, round.starsRate(vote.rate), halfStar)
                     }
-                @vote.rate
+                @if(round.hasCriteria && vote.rate > 0) {
+                    @* the number the stars show, per criterion, then the vote's sum beside it, as the
+                       by-rate gallery has it (criteria.rate.one: "7.00 (Σ 14)"); 0 not rated yet (U5) *@
+                    @Messages("criteria.rate.one",
+                        org.intracer.wmua.CriteriaResults.format(BigDecimal(round.perCriterion(vote.rate) / round.starUnits)),
+                        vote.rate.toString)
+                } else {
+                    @vote.rate
+                }
             }
         }
     </span>

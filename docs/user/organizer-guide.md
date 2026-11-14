@@ -235,8 +235,8 @@ round's file, also one sent from a page opened before the round was stopped.
 
 The **CSV** view downloads the round's results as a file for a spreadsheet. It has a row for
 each file, in the order of the list you were on, and the columns **Rank**, **File**, **Overall**
-(the score), for a round with criteria a column for each criterion, then a column for each
-juror. The last row explains the values: for a yes/no round, 1 selected, -1 rejected, 0 not voted
+(the score; in a round with criteria **Overall (sum of the criteria)**), for a round with criteria
+a column for each criterion's average, then a column for each juror. The last row explains the values: for a yes/no round, 1 selected, -1 rejected, 0 not voted
 yet, empty not assigned; for a rated round with the worst mark, -1 is the worst mark.
 
 The file is named **WLXJury_Round_** with the round's name. Cells that start with a character
