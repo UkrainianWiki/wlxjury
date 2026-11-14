@@ -140,7 +140,7 @@ class RoundListMonumentSpec extends Specification with TestDb with BeforeAll wit
 
   "the large view's monument line" should {
 
-    "link the list with the monument while it has another file, else say it is the only one" in {
+    "link the list with the monument while it has another file, else no link (the card leaves the gallery out)" in {
       val f = fixture()
       def file(id: Long) = juror(f).files(Pager(1, 0)).find(_.pageId == id).get
       val all = juror(f)

@@ -135,8 +135,9 @@ class RoundMonumentFilterSpec extends PlaySpecification with PlayTestDb {
         body must contain("""id="monument-filter"""")
         body must contain("Monument: 07-101-0001")
         href(body, "monument-filter-remove") must beSome(f.large(f.juror.getId, 1L, "?sort=file"))
-        // no line into the list it already is
+        // no gallery link into the list it already is: the card's line is the id and the page
         body must not contain "monument-round-list"
+        body must contain(s"""<span id="monument-id">$M</span> &middot; <a id="monument-page"""")
         body must contain(s"""data-nav="down" href="${f.large(f.juror.getId, 2L, s"?monument=$M&amp;sort=file")}"""")
         // a vote for the monument's last file goes on to the one before it, by a path
         val vote = route(app, FakeRequest(POST, s"/large/round/${f.round.getId}/pageid/3/select/1?monument=$M&sort=file")
@@ -163,27 +164,31 @@ class RoundMonumentFilterSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "link the list of its file's monument from the card, a minimal card without a monument row" in {
+    "link the gallery of its file's monument from the card's line, a minimal card without a monument row" in {
       testDbApp { implicit app =>
         val f = fixture()
         val body = page(f.large(f.juror.getId, 1L, "?sort=file"), f.juror)
         href(body, "monument-round-list") must beSome(f.gallery(f.juror.getId, s"?monument=$M&sort=file"))
-        body must contain("This monument in the list (3)")
+        body must contain("Gallery (3)</a>")
         href(body, "monument-page") must beSome(s"/monuments/id/$M?contest=${f.contest.getId}&round=${f.round.getId}")
         // a juror's card links the round's list and the monument page, never the contest's files
         body must not contain "/contest/"
         // the tab is kept: on the unrated tab, 2 (selected) is off it
         val unrated = page(f.large(f.juror.getId, 1L, "?filter=unrated&sort=file"), f.juror)
         href(unrated, "monument-round-list") must beSome(f.gallery(f.juror.getId, s"?filter=unrated&monument=$M&sort=file"))
-        unrated must contain("This monument in the list (2)")
-        // without a monument row: the id and the line, no monument page
+        unrated must contain("Gallery (2)</a>")
+        // without a monument row: the id and the gallery, no monument page
         val bare = page(f.large(f.juror.getId, 5L, "?sort=file"), f.juror)
-        bare must contain("Monument 07-101-9999")
+        bare must contain("""<span id="monument-id">07-101-9999</span> &middot; <a id="monument-round-list"""")
         href(bare, "monument-round-list") must beSome(f.gallery(f.juror.getId, "?monument=07-101-9999&sort=file"))
         bare must not contain """id="monument-page""""
-        // the only file of its monument in the list: plain text
-        page(f.large(f.juror.getId, 4L, "?sort=file"), f.juror) must
-          contain("""<span id="monument-round-list">The only file of this monument in the list</span>""")
+        // the only file of its monument in the list: no gallery part
+        val only = page(f.large(f.juror.getId, 4L, "?sort=file"), f.juror)
+        only must not contain "monument-round-list"
+        only must contain("""id="monument-id"""")
+        // filtered to a monument without a row: just its id
+        page(f.large(f.juror.getId, 5L, "?monument=07-101-9999&sort=file"), f.juror) must
+          contain("""<span id="monument-id">07-101-9999</span></div>""")
       }
     }
   }
