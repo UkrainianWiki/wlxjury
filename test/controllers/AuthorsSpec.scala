@@ -237,13 +237,10 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "ignore it for a juror (their files page: all files, no chip), refuse another contest's organizer, let root in" in {
+    "refuse a juror and another contest's organizer, and let root in" in {
       testDbApp { app =>
         val f = fixture()
-        val (jurorCode, jurorPage) = get(app, f.juror, filesUrl(f, Some("Ivan")))
-        (jurorCode === OK) and
-          (tiles(jurorPage) === List(1L, 2L, 3L, 4L, 6L, 7L)) and // 5, deleted on Commons, left out for them
-          (jurorPage must not(contain("author-filter"))) and
+        (get(app, f.juror, filesUrl(f, Some("Ivan")))._1 === FORBIDDEN) and
           (get(app, f.otherOrganizer, filesUrl(f, Some("Ivan")))._1 === FORBIDDEN) and
           (tiles(get(app, f.root, filesUrl(f, Some("Ivan")))._2) === List(1L, 5L))
       }
