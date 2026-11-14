@@ -217,8 +217,10 @@ class GalleryController @Inject() (
     lazy val menu = regionMenu(list, contest)
 
     // the viewer's own tabs: the counts above when the list is their own, of all their files
-    // also with the comments toggle on (the toggle tells how many of them have comments)
-    lazy val rates = Option.when(user.id.contains(asUserId))(if (list.commentsOnly) list.allFiles.jurorCounts() else counts)
+    // also with the comments toggle on (the toggle tells how many of them have comments); within
+    // the monument filter, also in a round of sub-regions (RoundList.tabCounts)
+    lazy val rates = Option.when(user.id.contains(asUserId))(
+      if (list.commentsOnly) list.allFiles.tabCounts() else counts.orElse(list.tabCounts()))
       .flatten.fold(galleryService.rateDistribution(user, round))(c => new RateDistribution(c.rates))
 
     // the comments toggle's number: the list's files with comments, the list's own total when on
@@ -307,11 +309,12 @@ class GalleryController @Inject() (
     else list.withRound(list.round.copy(criteriaCount = criteria.criteria.size.max(1)))
 
   /** The region menu of a round's list in a contest of monuments: the region shown, and the
-    * URL of its regions ([[regions]]); None in a contest whose files have no monument ids.
+    * URL of its regions ([[regions]]); None in a contest whose files have no monument ids, and
+    * while the list has one monument's files (a monument is in one region).
     */
   private def regionMenu(list: RoundList, contest: ContestJury)(implicit messages: play.api.i18n.Messages)
       : Option[RegionMenu] =
-    Option.when(ContestKind.monumentIdTemplate(contest).isDefined) {
+    Option.when(ContestKind.monumentIdTemplate(contest).isDefined && list.monument.isEmpty) {
       val current = list.region.map(RegionScheme.of(contest).region(_, None).name)
       RegionMenu.regions(current, list.withRegion("all").pageUrl(1), list.pageUrl(1), list.regionsUrl)
     }

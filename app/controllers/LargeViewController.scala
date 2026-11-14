@@ -181,6 +181,9 @@ class LargeViewController @Inject() (
       if (roundCriteria.isEmpty || votes.isEmpty) Map.empty else CriteriaRate.ratesOfFile(round.getId, pageId))
 
     val monument = hood.file.image.monumentId.flatMap(id => if (id.trim.nonEmpty) MonumentJdbc.find(id) else None)
+    // the monument's files in this list, from the file's monument id even without a monument row
+    // (decision 1 = A of the round filters proposal): the card's line into the list filtered by it
+    lazy val monumentLine = list.monumentLine(hood.file)
 
     val comments = CommentJdbc.findBySubjectAndContest(pageId, round.contestId)
     // the names of the other rounds the comments were written in, for their badges, where the
@@ -209,7 +212,8 @@ class LargeViewController @Inject() (
               jurorCriteria,
               commentCounts,
               commentRounds,
-              LargeViewController.showsCommentRounds(user, round)
+              LargeViewController.showsCommentRounds(user, round),
+              monumentLine
             )
           )
         )
