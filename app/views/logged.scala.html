@@ -10,6 +10,8 @@
         <li class="nav-item dropdown">
             <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="@Messages("contest.switch")">
                 <i class="bi bi-shuffle" aria-hidden="true"></i>
+                @* what the menu does, read before the contest by screen readers *@
+                @if(entries.exists(e => user.contestId.contains(e._1.contestId))) {<span class="visually-hidden">@Messages("contest.switch"): </span>}
                 @entries.find(e => user.contestId.contains(e._1.contestId)).fold(Messages("contest.switch"))(_._2.fullName)
             </button>
             <ul class="dropdown-menu dropdown-menu-end">

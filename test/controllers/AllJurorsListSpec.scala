@@ -79,7 +79,7 @@ class AllJurorsListSpec extends PlaySpecification with PlayTestDb {
         // tied files share one range across the pages
         page2.map(_._1).distinct === List("501-1003")
         page1.head._1 === "1-2"
-        contentAsString(first) must contain("1–1,000 of 1,003")
+        contentAsString(first) must contain("1–1000 of 1003")
         second must contain(s"""href="${fileList(f, 1)}?sort=approvals" rel="prev"""")
       }
     }

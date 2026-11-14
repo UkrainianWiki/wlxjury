@@ -291,7 +291,7 @@ at the top of the left column reminds you; its **×** shows the same file in you
 ### The pager
 
 When your files don't fit on one page, the pager in the top bar shows which files you see, for
-example "46–60 of 5,712". Use the arrows for the **First page**, **Previous page**, **Next page**
+example "46–60 of 5712". Use the arrows for the **First page**, **Previous page**, **Next page**
 and **Last page**.
 
 To jump to a page, click the numbers in the middle, type a page number in the box, and press
