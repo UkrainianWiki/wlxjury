@@ -259,7 +259,7 @@ tabs count only that monument's files too, and the **Region** menu is hidden: a 
 one region. Click **×** on the chip to see all your files again. **The monument's page** beside
 the chip opens the monument's page.
 
-You open this list from a file's large view (**This monument in the list**, see below) or from
+You open this list from a file's large view (**Gallery** in the monument's box, see below) or from
 a monument's page. Votes work as usual. In the large view, **Next image** and **Previous image**
 and voting by keys stay among the monument's files, and a small chip **Monument: 07-101-0001**
 at the top of the left column reminds you; its **×** shows the same file in your whole list.
@@ -340,8 +340,9 @@ Videos play in the large view.
 
 ### The monument's page
 
-In a monuments contest, the monument's box in **File details** ends with a link, **Monument**
-and its id. It opens the monument's page:
+In a monuments contest, the monument's box in **File details** ends with one line: the
+monument's id, **Gallery (N)** and **Page →**, for example `46-233-0012 · Gallery (2) · Page →`.
+**Page →** opens the monument's page:
 
 - its name, place, year and type, as its Wikipedia list has them;
 - links to its row in the list on Wikipedia, its category on Commons and its Wikidata item,
@@ -350,12 +351,11 @@ and its id. It opens the monument's page:
   linked to your gallery with only those files. Other jurors' files and votes are never counted
   for you.
 
-The monument's box itself has a line **This monument in the list (N)** when your list (the tab
-you are on) has other files of the monument: it opens the list with only them. When this is
-the list's only file of the monument, the line says **The only file of this monument in the
-list** instead. Files whose monument isn't in the tool's monument lists (for example in Wiki
-Loves Earth) get a small box with the monument's id and that line, without a link to a
-monument's page.
+**Gallery (N)** opens your gallery (the tab you are on) with only the monument's N files. It
+isn't shown when your gallery already shows only this monument, or when this is its only file
+of the monument; the line is then `46-233-0012 · Page →`. Files whose monument isn't in the
+tool's monument lists (for example in Wiki Loves Earth) get a small box with the monument's id
+and **Gallery (N)**, without a link to a monument's page.
 
 You see only the files of your rounds: the contest's other files aren't shown to jurors.
 
