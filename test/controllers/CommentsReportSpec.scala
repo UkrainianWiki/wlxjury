@@ -306,16 +306,21 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "open from the view menu and the round statistics by the latest comment, and leave it by the list's order" in {
+    "open from the Comments menu and the round statistics by the latest comment, and leave it by the list's order" in {
       testDbApp { app =>
         val f = fixture()
         val r = f.round.getId
         val gallery = page(app, f.organizer, s"/gallery/round/$r/user/0/page/1?sort=approvals-only")
-        val menuLink = gallery.selectFirst(s"a.dropdown-item[href^=/comments/round/$r/user/0/page/1]").attr("href")
+        // the Comments menu's list: all the contest's comments (D7 of the navigation proposal v3);
+        // the view menu no longer lists the report
+        val menuLink = gallery.selectFirst(s"#comments-menu a.dropdown-item[href^=/comments/round/$r/user/0/page/1]").attr("href")
+        val viewMenu = gallery.select("ul.navbar-nav li.dropdown").asScala.filter(_.select("i.bi-filetype-csv").size > 0)
         val stat = page(app, f.organizer, s"/roundstat/$r")
         val report = page(app, f.organizer, path(f, 0))
         val back = report.selectFirst(s"a.dropdown-item[href^=/byrate/round/$r/user/0/page/1]").attr("href")
-        (menuLink must endWith("sort=latest-comment")) and
+        (menuLink must endWith("?scope=contest&sort=latest-comment")) and
+          (viewMenu.size === 1) and
+          (viewMenu.head.select(s"a[href^=/comments/]").size === 0) and
           (stat.selectFirst("#round-comments-link a").attr("href") must endWith("sort=latest-comment")) and
           (back must endWith("sort=rate"))
       }
@@ -340,19 +345,21 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
           doc.select(css).asScala.map(_.attr("href")).toList.map(h => h.substring(h.indexOf("sort=") + 5))
         val (gallery, _) = withRemembered(s"/gallery/round/$r/user/0/page/1")
         val (stat, _) = withRemembered(s"/roundstat/$r")
+        // the Comments menu's list has all the contest's comments, file 3's earlier one too
         val entries = Seq(
-          "view menu" -> href(gallery, s"a.dropdown-item[href^=/comments/round/$r/user/0/page/1]"),
-          "round statistics" -> href(stat, "#round-comments-link a"),
-          "no order" -> path(f, 0))
+          ("comments menu", href(gallery, s"#comments-menu a.dropdown-item[href^=/comments/round/$r/user/0/page/1]"),
+            Seq(4L, 5L, 1L, 7L, 3L)),
+          ("round statistics", href(stat, "#round-comments-link a"), Seq(4L, 1L, 7L, 5L)),
+          ("no order", path(f, 0), Seq(4L, 1L, 7L, 5L)))
         (remembered.map(_.value) === Seq(BinaryOrder.ApprovalsOnly.param)) and
           // the gallery without an order is in the remembered one
           (sorts(gallery, "a.dropdown-item.active") must contain("approvals-only")) and
-          forall(entries) { case (entry, url) =>
+          forall(entries) { case (entry, url, expected) =>
             val (doc, set) = withRemembered(url)
             (entry, url, rows(doc), doc.select("#comments-report-order .dropdown-toggle").text,
               sorts(doc, "#comments-report-order a.dropdown-item"),
               sorts(doc, "#comments-report-order a.dropdown-item.active"), set) ===
-              ((entry, url, Seq(4L, 1L, 7L, 5L), "Order: Latest comment first",
+              ((entry, url, expected, "Order: Latest comment first",
                 List("latest-comment", "approvals", "difference", "approvals-only", "file"), List("latest-comment"), None))
           } and
           (entries.take(2).map(_._2) must contain(endWith("sort=latest-comment")).forall) and {
@@ -439,8 +446,14 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
           h.substring(h.indexOf("sort=") + 5)) === List("latest-comment", "approvals", "difference", "approvals-only", "file")
         doc.selectFirst("#comments-report-csv").attr("href") must startWith(
           s"/comments/round/${f.round.getId}/user/0/region/all/csv")
-        // no comments toggle: the report has only such files
-        doc.select("a.wlx-comments-toggle").size === 0
+        // the Comments menu with the report current; in this round's scope its gallery can have
+        // more files, so no count (the navigation proposal v3 §3)
+        NavMenus.button(doc, "comments-menu") === Some("Comments list")
+        NavMenus.comments(doc).map(i => (i.name, i.count, i.active)) ===
+          Seq(("All files", None, false), ("Only with comments", None, false), ("Recent comments list", None, true))
+        // the order menu sits in the navbar's order group, not in the report
+        doc.select(".wlx-nav-order #comments-report-order").size === 1
+        doc.select(".wlx-comments-report #comments-report-order, #comments-report-gallery").size === 0
       }
     }
 
@@ -649,15 +662,18 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "offer it in the view menu and round statistics to the organisers only" in {
+    "offer all the jurors' report in the Comments menu and round statistics to the organisers only, a juror only their own" in {
       testDbApp { app =>
         val f = fixture()
         val org = page(app, f.organizer, s"/byrate/round/${f.round.getId}/user/0/page/1")
         org.select(s"a[href^=/comments/round/${f.round.getId}/user/0/page/1]").size === 1
         val stat = page(app, f.organizer, s"/roundstat/${f.round.getId}")
         stat.selectFirst("#round-comments-link a").attr("href") must startWith(s"/comments/round/${f.round.getId}/user/0/page/1")
-        val juror = contentAsString(get(app, f.juror1, s"/gallery/round/${f.round.getId}/user/${f.juror1.getId}/page/1"))
-        juror must not(contain("/comments/round/"))
+        // a juror's Comments menu: their own list's report only (D4 of the navigation proposal v3)
+        val juror = page(app, f.juror1, s"/gallery/round/${f.round.getId}/user/${f.juror1.getId}/page/1")
+        val reports = juror.select("a[href*=/comments/round/]").asScala.map(_.attr("href")).toList
+        (reports must not(beEmpty)) and
+          (reports must contain(startWith(s"/comments/round/${f.round.getId}/user/${f.juror1.getId}/page/1")).forall)
       }
     }
   }

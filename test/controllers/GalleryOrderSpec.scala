@@ -125,7 +125,7 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "have tabs for all, unrated and rated files, and a choice of order, keeping the order" in {
+    "have Votes choices for all, unrated and rated files, and a choice of order, keeping the order" in {
       testDbApp { implicit app =>
         val f = fixture()
         VoteJdbc.rate(f.pageIds(9), f.juror.getId, f.round.getId, 5)
@@ -135,8 +135,12 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         html must contain(s"""href="$base?sort=file">All (20)</a>""")
         html must contain(s"""href="$base?filter=unrated&sort=file">Unrated (19)</a>""")
         html must contain(s"""href="$base?filter=rated&sort=file">Rated (1)</a>""")
-        // the unrated tab is the page's
-        html must contain(s"""<a class="nav-link active" aria-current="page" href="$base?filter=unrated&sort=file">""")
+        // the unrated choice is the page's, on the Votes button without the unrated suffix (D1)
+        html must contain(s"""<a class="dropdown-item active" aria-current="page" href="$base?filter=unrated&sort=file">""")
+        NavMenus.button(org.jsoup.Jsoup.parse(html), "votes-menu") === Some("Votes: Unrated (19)")
+        // on all files the button adds how many are left to rate in this list
+        NavMenus.button(org.jsoup.Jsoup.parse(page(gallery(f), f)), "votes-menu") === Some("Votes: All (20) · 19 unrated")
+        NavMenus.button(org.jsoup.Jsoup.parse(page(gallery(f, "?filter=rated"), f)), "votes-menu") === Some("Votes: Rated (1)")
         // no choice of order on the unrated tab, where every file has the same (no) rate; the
         // all files tab has it
         html must not(contain(s"""href="$base?filter=unrated&sort=rate""""))
@@ -174,17 +178,21 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
 
         (hasRateOrder(all) must beTrue) and
           (tiles(all).take(3) === selectedFirst.toList) and
-          (all must contain(s"""href="$selectedLink">Selected (3)</a>""")) and
+          (NavMenus.votes(org.jsoup.Jsoup.parse(all)).find(_.name == "Selected").map(i => (i.href, i.count)) ===
+            Some((Some(selectedLink), Some(3)))) and
+          // the selected tinted on the button, no unrated suffix there
+          (org.jsoup.Jsoup.parse(selected).select("#votes-menu.vote-selected").size === 1) and
+          (NavMenus.button(org.jsoup.Jsoup.parse(selected), "votes-menu") === Some("Votes: Selected (3)")) and
           (hasRateOrder(selected) must beFalse) and
           (fixedOrder(selected) must beFalse) and (fixedOrder(all) must beFalse) and
-          (selected must contain("""<a class="dropdown-item active" aria-current="true" href="""" + base + "?filter=selected&sort=file\">")) and
+          (selected must contain("""<a class="dropdown-item active" aria-current="page" href="""" + base + "?filter=selected&sort=file\">")) and
           (fixedOrder(html("?filter=rejected&sort=rate")) must beFalse) and
           (fixedOrder(html("?filter=unrated")) must beTrue) and
           (tiles(selected) === selectedFirst.toList) and
           (selected must contain(s"""href="$allLink">All (20)</a>""")) and
           (hasRateOrder(html("?filter=rejected&sort=rate")) must beFalse) and
           (hasRateOrder(html("?filter=unrated")) must beFalse) and
-          (back must contain(s"""<a class="dropdown-item active" aria-current="true" href="$base?sort=rate">""")) and
+          (back must contain(s"""<a class="dropdown-item active" aria-current="page" href="$base?sort=rate">""")) and
           (tiles(back).take(3) === selectedFirst.toList) and
           // the remembered order stays by rate: visiting a tab of one rate doesn't change it
           (cookies(get(gallery(f, "?filter=selected&sort=rate"), f, Cookie(RoundList.SortCookie, "rate")))
@@ -209,12 +217,12 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
           (tiles(unrated).take(3) === f.pageIds.filterNot(_ == f.pageIds(9)).take(3).toList) and
           (unrated must contain(s"""href="$base?sort=rate">All (20)</a>""")) and
           (unrated must contain(s"""href="$base?filter=rated&sort=rate">Rated (1)</a>""")) and
-          (back must contain(s"""<a class="dropdown-item active" aria-current="true" href="$base?sort=rate">""")) and
+          (back must contain(s"""<a class="dropdown-item active" aria-current="page" href="$base?sort=rate">""")) and
           (tiles(back).head === f.pageIds(9))
       }
     }
 
-    "have a binary round's tabs: all, unrated, selected and rejected" in {
+    "have a binary round's Votes choices: all, unrated, selected and rejected, the two tinted" in {
       testDbApp { implicit app =>
         val f = fixture(Round.binaryRound)
         VoteJdbc.rate(f.pageIds(0), f.juror.getId, f.round.getId, 1)
@@ -224,12 +232,17 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
 
         html must contain(s"""href="$base?sort=file">All (20)</a>""")
         html must contain(s"""href="$base?filter=unrated&sort=file">Unrated (18)</a>""")
-        html must contain(s"""href="$base?filter=selected&sort=file">Selected (1)</a>""")
-        html must contain(s"""href="$base?filter=rejected&sort=file">Rejected (1)</a>""")
+        NavMenus.votes(org.jsoup.Jsoup.parse(html)).flatMap(_.href).drop(2) ===
+          Seq(s"$base?filter=selected&sort=file", s"$base?filter=rejected&sort=file")
+        NavMenus.votes(org.jsoup.Jsoup.parse(html)).map(i => (i.name, i.count)) ===
+          Seq("All" -> Some(20), "Unrated" -> Some(18), "Selected" -> Some(1), "Rejected" -> Some(1))
+        // the thumbs in the menu carry the tint, the text keeps its colour
+        org.jsoup.Jsoup.parse(html).select("#votes-menu .dropdown-item i.wlx-vote-icon-selected").size === 1
+        org.jsoup.Jsoup.parse(html).select("#votes-menu .dropdown-item i.wlx-vote-icon-rejected").size === 1
       }
     }
 
-    "switch rounds of the other kind with one of the round's tabs active, all files for the other kind's filter" in {
+    "switch rounds of the other kind with one of the round's Votes choices current, all files for the other kind's filter" in {
       testDbApp { implicit app =>
         val f = fixture()
         val binary = roundDao.create(Round(None, 2, None, f.contest.getId, rates = Round.binaryRound, active = true))
@@ -238,9 +251,8 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         VoteJdbc.rate(f.pageIds(0), f.juror.getId, binary.getId, 1)
         VoteJdbc.rate(f.pageIds(0), f.juror.getId, f.round.getId, 5)
         def base(r: Round) = s"/gallery/round/${r.getId}/user/${f.juror.getId}/page/1"
-        // the own tabs shown active: their names
-        def activeTabs(html: String) =
-          """<a class="nav-link active" aria-current="page" href="[^"]*">(\w+) \(""".r.findAllMatchIn(html).map(_.group(1)).toList
+        // the Votes menu's current choice: its name
+        def activeTabs(html: String) = NavMenus.current(org.jsoup.Jsoup.parse(html), "votes-menu").map(_.name).toList
         // the round menu's link to the round
         def menuLink(html: String, r: Round) =
           s"""href="(${base(r)}[^"]*)"""".r.findAllMatchIn(html).map(_.group(1)).toList

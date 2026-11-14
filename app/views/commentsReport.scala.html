@@ -12,7 +12,8 @@
         roundNames: Map[Long, String],
         commentTotal: Int,
         commenter: Option[(Long, Option[String])] = None,
-        jurorGalleries: Set[(Long, Long)] = Set.empty)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+        jurorGalleries: Set[(Long, Long)] = Set.empty,
+        ownFiles: Boolean = false)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 @* The comments report of a round's list (GalleryView.Comments): the organisers' of any list, a
    juror's of their own list only (GalleryController refuses the rest; the round filters proposal
@@ -24,8 +25,9 @@
    large view in this list, its result in the round (as the by-rate view shows it: all the
    jurors' tally or one juror's vote, a rated round's stars), then its comments in the scope in
    the order written (snippets.comment), another round's marked with its name. The list's juror,
-   filter and region menus and pager are the navbar's; the scope, the order (the list's own and
-   the latest comment first) and the comments' CSV are above the rows.
+   Votes, Comments and region menus, its order (the list's own and the latest comment first) and
+   pager are the navbar's (its Comments menu opens the gallery with only the files with comments,
+   or all of them); the scope and the comments' CSV are above the rows.
 
    The filter by author (RoundList.commenter, `commenter=<user id>`; `commenter`: its id and the
    name of their latest comment in the contest, None if they have none): only the files with a
@@ -81,12 +83,16 @@
     }
 }
 
+@* the navbar's Comments menu's number: the report's files, which are those its gallery has with
+   only the files with comments when the report has all the contest's comments (a juror's always,
+   the toggle's scope); none for the organisers' "this round" scope or filter by author, where the
+   gallery can have more *@
+@commented = @{ Option.when(list.commentScope == CommentScope.AllRounds && list.commentsBy.isEmpty)(pager.count) }
+
 @defining(list.round) { round =>
 @main("comments", user, list.asUserId, Some(round), rounds, gallery = false, Some(list), pagerNav(pager, list.pageUrl), rates,
-    filters = views.html.regionMenu(regionMenu)) {
+    filters = views.html.regionMenu(regionMenu), commented = commented, ownFiles = ownFiles) {
 
-    @snippets.authorFilter(list, pager.count)
-    @snippets.monumentFilter(list, pager.count)
     <div class="wlx-comments-report">
         <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
             <h1 class="h5 mb-0 me-3">@Messages("comments") <span class="text-body-secondary fw-normal" id="comments-report-count">· @views.CommentCount.files(pager.count), @commenterName.fold(views.CommentCount.label(commentTotal))(name => Messages("comments.report.count.commenter", views.CommentCount.label(commentTotal), name))</span></h1>
@@ -103,20 +109,6 @@
             </div>
             }
 
-            @* the order: the list's own, or the latest comment in the scope first *@
-            <div class="dropdown" id="comments-report-order">
-                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                    <span class="visually-hidden">@Messages("comments.report.order"): </span>@Messages(list.shownCommentOrder.messageKey)
-                </button>
-                <ul class="dropdown-menu">
-                    @for(order <- list.commentOrderChoices) {
-                        @defining(order == list.shownCommentOrder) { active =>
-                        <li><a class="dropdown-item@if(active) { active}" @if(active) {aria-current="true" }href="@list.withOrder(order).pageUrl(1)">@Messages(order.messageKey)</a></li>
-                        }
-                    }
-                </ul>
-            </div>
-
             @* the filter by author: its name, and a link without it *@
             @for(name <- commenterName) {
                 <span class="badge rounded-pill wlx-commenter-chip" id="comments-report-commenter">@Messages("comments.report.commenter", name)
@@ -125,9 +117,6 @@
                     }
                 </span>
             }
-
-            @* back to the gallery with only the files with comments, in its default order *@
-            <a class="btn btn-sm btn-outline-secondary@if(!staff) { ms-auto}" id="comments-report-gallery" href="@RoundList.galleryOfReport(list, user).pageUrl(1)"><i class="bi bi-grid-3x3-gap" aria-hidden="true"></i> @Messages("comments.report.gallery")</a>
 
             @if(staff) {
             <a class="btn btn-sm btn-outline-primary ms-auto" id="comments-report-csv" href="@list.withView(GalleryView.CommentsCsv).pageUrl(1)"><i class="bi bi-filetype-csv" aria-hidden="true"></i> @Messages("comments.report.csv")</a>

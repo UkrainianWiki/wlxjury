@@ -8,8 +8,8 @@ body.gallery {
     background-color: var(--wlx-image-bg);
 }
 
-/* the navbar's links a little apart, and the page's own tab (ownTabs) or menu item marked
-   with a background */
+/* the navbar's links a little apart, and the page's own link or menu button marked with a
+   background */
 .navbar .navbar-nav .nav-link {
     padding-left: .6rem;
     padding-right: .6rem;
@@ -18,12 +18,36 @@ body.gallery {
     background-color: var(--wlx-nav-active-bg);
     border-radius: var(--bs-border-radius);
 }
-/* the navbar's selected and rejected tabs (navbar.scala.html ownTabs) */
+/* the navbar's Votes menu (navbar.scala.html votesMenu) on the selected or the rejected: its
+   button's text tinted (at least 4.5:1 on the navbar in both modes); in its menu only the thumbs
+   are, the text staying readable on the active item's background, where the thumb is its colour */
 .navbar .nav-item.vote-selected > .nav-link {
     color: var(--wlx-selected);
 }
 .navbar .nav-item.vote-rejected > .nav-link {
     color: var(--wlx-rejected);
+}
+.wlx-votes-menu .wlx-vote-icon-selected { color: var(--wlx-selected); }
+.wlx-votes-menu .wlx-vote-icon-rejected { color: var(--wlx-rejected); }
+.wlx-votes-menu .dropdown-item.active i { color: currentColor; }
+
+/* the navbar's groups (navbar.scala.html): the pages, the filters, the order and the pager, each a
+   list that wraps as a whole, apart by a gap (Bootstrap's column-gap-2); the wrapper may shrink
+   inside the navbar's row (navbar-expand doesn't wrap), so its lists wrap instead of pushing the
+   account menus out */
+.wlx-nav-groups {
+    min-width: 0;
+}
+
+/* the list's monument and author in the navbar's filter group (navbar.scala.html monumentChip,
+   authorChip): a long author's name cut with an ellipsis, whole in its title */
+.wlx-filter-chip .wlx-chip-name {
+    display: inline-block;
+    max-width: 12rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
 }
 
 .region-menu-list>li.region-nomination>a {
@@ -496,14 +520,13 @@ li.gallerybox .wlx-comment-badge, .ug-thumb-wrapper.ug-tile .wlx-tile-comments {
 }
 .ug-thumb-wrapper.ug-tile .wlx-tile-vote-mark ~ .wlx-tile-comments { top: 34px; }
 
-/* the navbar's toggle of a round's list, only the files with comments (navbar.scala.html): a
-   speech bubble and its text, pressed when on; below 992 px the bubble alone, its text read by
-   screen readers and shown as its tooltip (as the results bar's compact links); the same for
-   "Recent comments" beside it while it is on */
-.wlx-comments-toggle.active { font-weight: 600; }
+/* the navbar's Comments menu (navbar.scala.html commentsMenu): a speech bubble, its words and
+   count, bold on the highlighted background while the filter or the comments list is on; below
+   992 px the bubble and the count, its words read by screen readers and in its title (as the
+   results bar's compact links) */
+.wlx-comments-menu .nav-link.active { font-weight: 600; }
 @media (max-width: 991.98px) {
-    .wlx-comments-toggle .wlx-nav-label,
-    .wlx-comments-report-link .wlx-nav-label {
+    .wlx-comments-menu .wlx-nav-label {
         position: absolute;
         width: 1px;
         height: 1px;
@@ -517,14 +540,17 @@ li.gallerybox .wlx-comment-badge, .ug-thumb-wrapper.ug-tile .wlx-tile-comments {
 }
 
 /* The organisers' bar of a round's results (navbar.scala.html wlx-nav-results): below 1700 px
-   its order menu (dropDownSelection's compactIcon) and its links are icons and its region menu
-   shows the place without "Region:", each text then read by screen readers only (as Bootstrap's
-   visually-hidden) and shown as a tooltip, so the bar and its pager stay on one line from 1280
-   px in Ukrainian (its longest), with a long juror name. Elsewhere, and wider, the texts. */
+   its order menu (dropDownSelection's compactIcon) and its links are icons, its region menu
+   shows the place without "Region:", its Votes menu the current choice without its count and
+   unrated, its Comments menu the bubble alone (wlx-nav-count), each text then read by screen
+   readers only (as Bootstrap's visually-hidden) and shown as a tooltip, so the bar and its pager
+   stay on one line from 1280 px in Ukrainian (its longest), with a long juror name
+   (browser-test pages.spec.js measures it). Elsewhere, and wider, the texts. */
 .wlx-nav-icon { display: none; }
 @media (max-width: 1699.98px) {
     .wlx-nav-results .wlx-nav-icon { display: inline-block; }
-    .wlx-nav-results .wlx-nav-label {
+    .wlx-nav-results .wlx-nav-label,
+    .wlx-nav-results .wlx-nav-count {
         position: absolute;
         width: 1px;
         height: 1px;

@@ -223,13 +223,17 @@ class GalleryController @Inject() (
     // the region menu, whose regions are read when it is opened (regions)
     lazy val menu = regionMenu(list, contest)
 
-    // the viewer's own tabs: the counts above when the list is their own, counting what each tab
-    // opens (decision 2 = A): within the monument filter and with only the files with comments
-    // (the toggle, the comments report), also in a round of sub-regions (RoundList.tabCounts)
-    lazy val rates = Option.when(user.id.contains(asUserId))(counts.orElse(list.tabCounts()))
-      .flatten.fold(galleryService.rateDistribution(user, round))(c => new RateDistribution(c.rates))
+    // the Votes menu's counts: the list's juror's (the viewer's own, or one juror's as the
+    // organisers view them; none for all the jurors' votes together), each choice counting what it
+    // opens (decision 2 = A): within the monument, author and comments filters and the region
+    lazy val rates = if (asUserId == 0) RateDistribution.empty else votesCounts(list, counts, pager.count)
 
-    // the comments toggle's number: the list's files with comments, the list's own total when on
+    // the staff's "My votes" link (navbar): whether the viewer has files of their own in the
+    // round, when they view another juror's votes or all of them
+    lazy val ownFiles = !user.id.contains(asUserId) && user.canViewOrgInfo(round) &&
+      galleryService.rateDistribution(user, round).hasFiles
+
+    // the Comments menu's number: the list's files with comments, the list's own total when on
     lazy val commented = Some(if (list.comments) pager.count else list.commentedCount())
 
     // the page's files' comments in the contest, for their badges (one grouped query)
@@ -243,7 +247,7 @@ class GalleryController @Inject() (
     list.view match {
       case GalleryView.Gallery if round.isBinary =>
         Ok(RequestTiming.render(views.html.gallery(user, list, files, pager, rounds, menu, rates, commented,
-          commentCounts(files))))
+          commentCounts(files), ownFiles)))
 
       case GalleryView.Csv =>
         val name = "WLXJury_Round_" + round.description
@@ -268,7 +272,7 @@ class GalleryController @Inject() (
         val commenter = list.commentsBy.map(id => id -> CommentJdbc.authorName(round.contestId, id))
         Ok(RequestTiming.render(views.html.commentsReport(user, withCriteria(list, criteriaResults(list, files)), files,
           pager, rounds, menu, rates, comments, roundNames, list.commentCount(), commenter,
-          if (staff) jurorGalleries(comments.values.flatten.toSeq, rounds) else Set.empty)))
+          if (staff) jurorGalleries(comments.values.flatten.toSeq, rounds) else Set.empty, ownFiles)))
 
       case GalleryView.CommentsCsv =>
         csvStream(Csv.commentRows(list)(blocking), "WLXJury_Round_" + round.description + "_comments")
@@ -278,7 +282,7 @@ class GalleryController @Inject() (
         val showAuthor = user.canViewOrgInfo(round) && files.exists(_.image.author.nonEmpty)
         val criteria = criteriaResults(list, files)
         Ok(views.html.fileList(user, withCriteria(list, criteria), asUser, files, ranks(files), jurors, rounds, menu, pager,
-          "wiki", useTable, rates, showAuthor, criteria, commented))
+          "wiki", useTable, rates, showAuthor, criteria, commented, ownFiles))
 
       case GalleryView.Gallery | GalleryView.ByRate =>
         // a criteria round's stars are per criterion, and its files' criteria averages: read
@@ -287,9 +291,28 @@ class GalleryController @Inject() (
         // the by-rate gallery's ranks among all the list's files, as a file list's; none in file
         // order, which they would not follow (RoundList.ranked)
         Ok(RequestTiming.render(views.html.galleryByRate(user, withCriteria(list, criteria), files, pager, rounds, menu,
-          rates, ranks(files), criteria, commented, commentCounts(files))))
+          rates, ranks(files), criteria, commented, commentCounts(files), ownFiles)))
     }
   }
+
+  /** The Votes menu's counts of a juror's list (navbar.scala.html votesMenu): from the juror's
+    * counts read for the pager (`counts`), in the list's region, else, under a monument, author
+    * or comments filter, from [[RoundList.tabCounts]]. In a round of sub-regions there are no
+    * counts by sub-region: in all of them its juror's files by rate (the filtered list's counts,
+    * else all their files in the round); in one of them one count per choice, the shown
+    * choice's being the pager's `total` (D8 of the navigation proposal v3, measured in its PR).
+    */
+  private def votesCounts(list: RoundList, counts: Option[JurorCounts], total: => Int): RateDistribution =
+    counts match {
+      case Some(c) => RateDistribution.of(c, list.region)
+      case None if list.query.subRegions && list.region.isDefined =>
+        val choices = VoteFilter.ofRound(list.round)
+          .map(f => f -> (if (f == list.filter) total else list.withFilter(f).count())).toMap
+        RateDistribution.ofChoices(choices, ImageJdbc.rateDistribution(list.asUserId, list.roundId).nonEmpty)
+      case None =>
+        list.tabCounts().fold(new RateDistribution(ImageJdbc.rateDistribution(list.asUserId, list.roundId)))(
+          RateDistribution.of(_, None))
+    }
 
   /** Of the comments' authors, by the rounds they were written in, those whose one-juror gallery
     * of that round the comments report links ((round id, user id)): a juror of the round
@@ -830,24 +853,56 @@ object RegionMenu {
     RegionMenu("countrymenu", "country", "country.all", current, allUrl, currentUrl, optionsUrl)
 }
 
-class RateDistribution(rateMap: Map[Int, Int]) {
+/** A list's files by the Votes menu's choices (navbar.scala.html votesMenu): what each choice
+  * would list ([[count]]), and whether its juror has files in the round ([[hasFiles]]: the menu,
+  * the order menu and the staff's "My votes" show only then).
+  */
+final class RateDistribution private (counts: VoteFilter => Int, val hasFiles: Boolean) {
 
-  /** Whether the viewer has files the tabs open: a rate counted, also as 0 (with only the files
-    * with comments a juror's counts keep each rate of their files, those without a comment as 0:
-    * the tabs stay, counting 0).
+  /** From the files per rate (all regions; [[RateDistribution.fromRates]]): a file with any
+    * rate counted, also as 0, is the juror's.
     */
-  def hasFiles: Boolean = rateMap.nonEmpty
+  def this(rateMap: Map[Int, Int]) = this(RateDistribution.fromRates(rateMap), rateMap.nonEmpty)
 
-  def unrated: Int = rateMap.getOrElse(0, 0)
+  /** The files the choice would list. */
+  def count(filter: VoteFilter): Int = counts(filter)
 
-  def selected: Int = rateMap.getOrElse(1, 0)
+  def unrated: Int = count(VoteFilter.Unrated)
 
-  def rejected: Int = rateMap.getOrElse(-1, 0)
+  def selected: Int = count(VoteFilter.Rate(1))
 
-  def all: Int = rateMap.values.sum
+  def rejected: Int = count(VoteFilter.Rate(-1))
 
-  def positive: Int = all - unrated - rejected
+  def all: Int = count(VoteFilter.All)
 
-  def rated: Int = all - unrated
+  def rated: Int = count(VoteFilter.Rated)
+}
 
+object RateDistribution {
+
+  /** No counts: all the jurors' votes, or a page without a round's list. */
+  val empty: RateDistribution = new RateDistribution(Map.empty[Int, Int])
+
+  /** The choices' counts from the files per rate: rated is every file not unrated. */
+  def fromRates(rateMap: Map[Int, Int])(filter: VoteFilter): Int = filter match {
+    case VoteFilter.All     => rateMap.values.sum
+    case VoteFilter.Unrated => rateMap.getOrElse(0, 0)
+    case VoteFilter.Rated   => rateMap.values.sum - rateMap.getOrElse(0, 0)
+    case VoteFilter.Rate(n) => rateMap.getOrElse(n, 0)
+  }
+
+  /** A juror's counts in the list's region (all of them for None), each choice counting what it
+    * opens there (D8 of the navigation proposal v3: a choice keeps the region), as the pager's
+    * total ([[JurorCounts.total]]): no query of its own. The juror has files if they have any in
+    * the round, in any region.
+    */
+  def of(counts: JurorCounts, region: Option[String]): RateDistribution =
+    new RateDistribution(counts.total(_, region), counts.byRegionRate.nonEmpty)
+
+  /** Each choice's count read on its own (a round of sub-regions in one of them, whose juror
+    * counts are by top-level region: one count per choice, [[RoundList.count]]); a choice not
+    * given counts 0.
+    */
+  def ofChoices(counts: Map[VoteFilter, Int], hasFiles: Boolean): RateDistribution =
+    new RateDistribution(counts.getOrElse(_, 0), hasFiles)
 }

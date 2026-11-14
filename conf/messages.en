@@ -161,6 +161,21 @@ submit.comment = Submit comment
 # the comments badge on thumbnails (its words by the language's plural form: views.Plural), the
 # list's toggle of only the files with comments, a comment's round in the large view
 comments.only = Only with comments ({0})
+# the navbar (navbar.scala.html): the Votes menu (its name read by screen readers, the unrated
+# of the list after "All"), the staff's link to their own votes, the Comments menu's states and
+# items (All files: files.all), and the names of the bar's groups
+votes.menu = Votes
+votes.unrated.suffix = · {0} unrated
+votes.mine = My votes
+comments.only.plain = Only with comments
+comments.menu.on = With comments
+comments.menu.list = Comments list
+comments.menu.recent = Recent comments list ({0})
+comments.menu.recent.plain = Recent comments list
+nav.group.links = Sections
+nav.group.filters = Filters
+nav.group.order = Sorting and view
+nav.group.pager = Pages
 comments.count.one = {0} comment
 comments.count.few = {0} comments
 comments.count.many = {0} comments
@@ -175,9 +190,7 @@ comments.report.scope.contest = All rounds of the contest
 comments.report.order = Order
 sort.latest-comment = Latest comment first
 comments.report.csv = Comments CSV
-comments.report.open = Recent comments
 comments.report.own.note = Comments on your files in this round, from all rounds of the contest, as each file''s large view shows them.
-comments.report.gallery = Show in the gallery
 comments.report.files.one = {0} file
 comments.report.files.few = {0} files
 comments.report.files.many = {0} files
@@ -922,6 +935,7 @@ author.files.title = The contest''s files by {0}
 author.commons = Commons ↗
 author.commons.title = {0}''s user page on Wikimedia Commons (opens in a new tab)
 author.filter.chip = Author: {0} ({1})
+author.filter.label = Author:
 author.filter.remove = Show the files of all authors
 # a round's list with only one author's files (RoundList.author, staff only): the large view's
 # compact chip, the name's title in a round's large view and file list, and in a round's authors list
@@ -947,6 +961,7 @@ monument.search.label = Monument id
 monument.search.submit = Open
 monument.search.not.found = There is no monument {0}.
 monument.filter.chip = Monument: {0} ({1})
+monument.filter.label = Monument:
 monument.filter.remove = Show the files of all monuments
 monument.page.open = The monument''s page
 monument.filter.chip.short = Monument: {0}

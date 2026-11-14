@@ -228,44 +228,48 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
 
   "a round's gallery with the toggle" should {
 
-    "list a juror's own commented files, the toggle pressed with its number, and badges on the tiles" in {
+    "list a juror's own commented files, the Comments menu on with its number, and badges on the tiles" in {
       testDbApp { app =>
         val f = fixture()
         val page = contentAsString(get(app, f.juror1, s"/gallery/round/${f.round.getId}/user/${f.juror1.getId}/page/1?comments=1"))
         val doc = Jsoup.parse(page)
         doc.select("#gallery img").asScala.map(_.attr("data-pageId").toLong) === Seq(1L, 3L, 5L)
-        val toggle = doc.selectFirst("a.wlx-comments-toggle")
-        toggle.hasClass("active") must beTrue
-        toggle.attr("aria-current") === "true"
-        toggle.text must contain("(3)")
-        toggle.attr("href") must not(contain("comments="))
+        // the menu's button highlighted, its current item this page; "All files" drops the filter
+        doc.selectFirst("#comments-menu > button").hasClass("active") must beTrue
+        NavMenus.button(doc, "comments-menu") === Some("With comments (3)")
+        val on = NavMenus.current(doc, "comments-menu").get
+        on.name === "Only with comments"
+        on.count === Some(3)
+        doc.selectFirst("#comments-menu a.dropdown-item.active").attr("aria-current") === "page"
+        NavMenus.comments(doc).find(_.name == "All files").flatMap(_.href).get must not(contain("comments="))
         doc.select("#gallery img").asScala.map(i => i.attr("data-pageId") -> i.attr("data-comments")) ===
           Seq("1" -> "2", "3" -> "1", "5" -> "1")
         doc.selectFirst("#gallery img").attr("data-comments-label") === "2 comments"
-        // the tabs keep the toggle, counting what they open: the tab's files with comments
-        // (decision 2 = A of the round filters proposal v4; all the juror's files before)
-        val selected = doc.select("a.nav-link").asScala.find(_.attr("href").contains("filter=selected")).get
-        selected.attr("href") must contain("comments=1")
-        selected.text must contain("(1)")
-        val all = doc.select("a.nav-link").asScala.find(_.text.startsWith("All (")).get
-        all.text must contain("(3)")
-        // and "Recent comments", the comments report of the same files, beside the toggle
-        doc.selectFirst("#comments-report-open").attr("href") must
+        // the Votes choices keep the filter, counting what they open: the choice's files with
+        // comments (decision 2 = A of the round filters proposal v4; all the juror's files before)
+        val selected = NavMenus.votes(doc).find(_.href.exists(_.contains("filter=selected"))).get
+        selected.href.get must contain("comments=1")
+        selected.count === Some(1)
+        NavMenus.votes(doc).find(_.name == "All").flatMap(_.count) === Some(3)
+        // and "Recent comments list", the comments report of the same files
+        NavMenus.comments(doc).find(_.name == "Recent comments list").flatMap(_.href).get must
           startWith(s"/comments/round/${f.round.getId}/user/${f.juror1.getId}/page/1?scope=contest")
       }
     }
 
-    "offer the toggle off with the tab's number of commented files" in {
+    "offer the Comments menu off with the choice's number of commented files" in {
       testDbApp { app =>
         val f = fixture()
         val doc = Jsoup.parse(contentAsString(
           get(app, f.juror1, s"/gallery/round/${f.round.getId}/user/${f.juror1.getId}/page/1?filter=selected")))
         doc.select("#gallery img").asScala.map(_.attr("data-pageId").toLong) === Seq(1L, 2L)
-        val toggle = doc.selectFirst("a.wlx-comments-toggle")
-        toggle.hasClass("active") must beFalse
-        toggle.text must contain("(1)")
-        toggle.attr("href") must contain("comments=1")
-        toggle.attr("href") must contain("filter=selected")
+        doc.selectFirst("#comments-menu > button").hasClass("active") must beFalse
+        NavMenus.button(doc, "comments-menu") === Some("Comments (1)")
+        NavMenus.current(doc, "comments-menu").map(_.name) === Some("All files")
+        val on = NavMenus.comments(doc).find(_.name == "Only with comments").get
+        on.count === Some(1)
+        on.href.get must contain("comments=1")
+        on.href.get must contain("filter=selected")
       }
     }
 
@@ -285,13 +289,15 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
         def ids(path: String) = Jsoup.parse(contentAsString(get(app, f.organizer, path)))
         val juror2 = ids(s"/gallery/round/${f.round.getId}/user/${f.juror2.getId}/page/1?comments=1")
         juror2.select("#gallery img").asScala.map(_.attr("data-pageId").toLong) === Seq(5L, 7L)
-        juror2.selectFirst("a.wlx-comments-toggle").text must contain("(2)")
+        NavMenus.button(juror2, "comments-menu") === Some("With comments (2)")
         val all = ids(s"/byrate/round/${f.round.getId}/user/0/page/1?comments=1")
         all.select("li.gallerybox").asScala.map(_.id.toLong).sorted === Seq(1L, 3L, 5L, 7L)
         // the by-rate tiles' badges, their words for screen readers
         all.select("li.gallerybox .wlx-comment-badge .visually-hidden").asScala.map(_.text).sorted ===
           Seq("1 comment", "1 comment", "1 comment", "2 comments")
-        all.selectFirst("a.wlx-comments-toggle").text must contain("(4)")
+        // all the jurors' votes: no count on the button (D5 of the navigation proposal v3), the items have it
+        NavMenus.button(all, "comments-menu") === Some("With comments")
+        NavMenus.current(all, "comments-menu").flatMap(_.count) === Some(4)
       }
     }
   }

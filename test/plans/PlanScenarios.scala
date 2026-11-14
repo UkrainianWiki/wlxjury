@@ -32,8 +32,9 @@ object PlanScenarios {
       val counts = l.jurorCounts()
       val total = counts.map(_.total(l.filter, l.region)).getOrElse(l.count())
       val first = Pager(1, total, l.pageSize)
-      // the comments toggle's number (with it on, the list's own total); the tabs count what they
-      // open, from the counts above (decision 2 = A: no count of all the juror's files)
+      // the Comments menu's number (with the filter on, the list's own total); the Votes choices
+      // count what they open, from the counts above (decision 2 = A: no count of all the juror's
+      // files)
       if (!l.comments) l.commentedCount()
       val files = l.files(first)
       // the page's comment badges

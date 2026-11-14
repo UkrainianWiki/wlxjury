@@ -484,6 +484,18 @@ submit.comment = Добавить комментарий
 # the comments badge on thumbnails (its words by the language's plural form: views.Plural), the
 # list's toggle of only the files with comments, a comment's round in the large view
 comments.only = Только с комментариями ({0})
+votes.menu = Голоса
+votes.unrated.suffix = · {0} без оценки
+votes.mine = Мои голоса
+comments.only.plain = Только с комментариями
+comments.menu.on = С комментариями
+comments.menu.list = Список комментариев
+comments.menu.recent = Список последних комментариев ({0})
+comments.menu.recent.plain = Список последних комментариев
+nav.group.links = Разделы
+nav.group.filters = Фильтры
+nav.group.order = Порядок и вид
+nav.group.pager = Страницы
 comments.count.one = {0} комментарий
 comments.count.few = {0} комментария
 comments.count.many = {0} комментариев
@@ -496,9 +508,7 @@ comments.report.scope.contest = Всех раундов конкурса
 comments.report.order = Порядок
 sort.latest-comment = Сначала новые комментарии
 comments.report.csv = CSV комментариев
-comments.report.open = Последние комментарии
 comments.report.own.note = Комментарии к вашим файлам этого раунда из всех раундов конкурса — те же, что и в большом просмотре файла.
-comments.report.gallery = Показать в галерее
 comments.report.files.one = {0} файл
 comments.report.files.few = {0} файла
 comments.report.files.many = {0} файлов
@@ -892,6 +902,7 @@ author.files.title = Файлы конкурса автора {0}
 author.commons = Commons ↗
 author.commons.title = Страница участника {0} на Викискладе (открывается в новой вкладке)
 author.filter.chip = Автор: {0} ({1})
+author.filter.label = Автор:
 author.filter.remove = Показать файлы всех авторов
 # a round's list with only one author's files (RoundList.author, staff only): the large view's
 # compact chip, the name's title in a round's large view and file list, and in a round's authors list
@@ -917,6 +928,7 @@ monument.search.label = Идентификатор памятника
 monument.search.submit = Открыть
 monument.search.not.found = Памятника {0} нет.
 monument.filter.chip = Памятник: {0} ({1})
+monument.filter.label = Памятник:
 monument.filter.remove = Показать файлы всех памятников
 monument.page.open = Страница памятника
 monument.filter.chip.short = Памятник: {0}

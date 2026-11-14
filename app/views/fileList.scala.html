@@ -18,7 +18,8 @@
         rates: RateDistribution,
         showAuthor: Boolean = false,
         criteria: org.intracer.wmua.CriteriaResults = org.intracer.wmua.CriteriaResults.empty,
-        commented: Option[Int] = None
+        commented: Option[Int] = None,
+        ownFiles: Boolean = false
 )(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 @wrapInIf(tag: String, condition: Boolean)(content: Html) = {@if(condition) {<@tag> @content </@tag>} else {@content}}
@@ -53,7 +54,8 @@
 @* a page of the list, its pager in the navbar: a round's 38k files with all the jurors' votes
    at once ran a 1 GB server out of memory *@
 @main("filelist", user, list.asUserId, Some(list.round), rounds, gallery = false, Some(list),
-    pager = pagerNav(pager, list.pageUrl), filters = views.html.regionMenu(regionMenu), commented = commented) {
+    pager = pagerNav(pager, list.pageUrl), rates = rates, filters = views.html.regionMenu(regionMenu), commented = commented,
+    ownFiles = ownFiles) {
 
     @defining(Some(list.round)) { round =>
     @defining(list.asUserId) { asUserId =>
@@ -61,8 +63,6 @@
 
     @* the page's title, for screen readers: the navbar shows where it is *@
     <h1 class="visually-hidden">@Messages("filelist")</h1>
-    @snippets.authorFilter(list, pager.count)
-    @snippets.monumentFilter(list, pager.count)
 
     <div class="row">
     <div class="col-12">

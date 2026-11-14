@@ -15,11 +15,13 @@
         filters: Html = Html(""),
         backHere: Boolean = true,
         head: Html = Html(""),
-        commented: Option[Int] = None)(content: Html)(implicit messages: Messages, request: RequestHeader)
+        commented: Option[Int] = None,
+        ownFiles: Boolean = false)(content: Html)(implicit messages: Messages, request: RequestHeader)
 @* `head`: the page's own scripts and styles (snippets.galleryScripts, tileVoteScripts,
    multiSelectScripts), after the navbar's region menu and pager scripts, which every page with
    a navbar may show. `commented`: the number of the list's files with comments, for the navbar's
-   toggle (a round's list pages only) *@
+   Comments menu (a round's list pages only); `ownFiles`: the staff's "My votes" link (the viewer
+   has files of their own in the round of another juror's or all the jurors' list) *@
 @layout(Messages(title), bodyClass = if (gallery) "gallery" else "") {
         <script src="@routes.Assets.versioned("javascripts/region-menu.js")"></script>
         <script src="@routes.Assets.versioned("javascripts/pager-jump.js")"></script>
@@ -27,7 +29,7 @@
         @head
 } {
         @navbar(title, user, asUserId, selectedRound, rounds, list, pager,
-            contestId = contestId.orElse(selectedRound.map(_.contestId)), rates, filters, backHere, commented)
+            contestId = contestId.orElse(selectedRound.map(_.contestId)), rates, filters, backHere, commented, ownFiles)
 
      <div class="container-fluid">
 

@@ -11,12 +11,13 @@
         regionMenu: Option[RegionMenu],
         rates: RateDistribution,
         commented: Option[Int] = None,
-        commentCounts: Map[Long, Int] = Map.empty)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+        commentCounts: Map[Long, Int] = Map.empty,
+        ownFiles: Boolean = false)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 @import java.net.URLEncoder
 
     @main("gallery", user, list.asUserId, Some(list.round), rounds, gallery = true, Some(list),
-        pagerNav(pager, list.pageUrl), rates = rates, filters = views.html.regionMenu(regionMenu), commented = commented,
+        pagerNav(pager, list.pageUrl), rates = rates, filters = views.html.regionMenu(regionMenu), commented = commented, ownFiles = ownFiles,
         head = play.twirl.api.HtmlFormat.fill(List(snippets.galleryScripts(),
             snippets.tileVoteScripts(views.TileStars.round(user, list.asUserId, Some(list.round)).nonEmpty)))) {
 
@@ -24,8 +25,6 @@
 
             @* the page's title, for screen readers: the navbar shows where it is *@
             <h1 class="visually-hidden">@Messages("gallery")</h1>
-            @snippets.authorFilter(list, pager.count)
-            @snippets.monumentFilter(list, pager.count)
             @large.voteMoved(list)
 
         @* a vote on a tile (ug-theme-tiles.js) sends the session's CSRF token; a failed one shows
