@@ -73,6 +73,13 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       // monument page counts a round's files (ImageJdbc.roundMonumentFileCount); a hard condition,
       // never OR'ed with [[withPageId]]: a vote doesn't change a file's monument
       monumentId: Option[String] = None,
+      // only the files whose stored author is this value exactly (a round list's `author=`,
+      // controllers.RoundList.author, staff only): `images.author` byte for byte, as the contest
+      // files page's author filter matches it (ImageJdbc.categoryAuthorFiles) and the authors list
+      // groups it; a subquery on images' author index (V104), so the conditions stay on vote's
+      // rows (keyed, counted without a join); a hard condition, never OR'ed with [[withPageId]]:
+      // a vote doesn't change a file's author
+      author: Option[String] = None,
       driver: String = "mysql"
   ) {
 
@@ -262,7 +269,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         val images = sql"select ${i.result.*} from images i where i.page_id in ($pageIds)"
           .map(ImageJdbc(i)(_)).list().map(image => image.pageId -> image).toMap
         val conditions =
-          copy(regions = Set.empty, keyset = None, withPageId = None, commentsIn = None, monumentId = None).where()
+          copy(regions = Set.empty, keyset = None, withPageId = None, commentsIn = None, monumentId = None, author = None)
+            .where()
         val inPage = if (conditions.value.isEmpty) sqls"where" else sqls"$conditions and"
         val votes = sql"select ${VoteJdbc.resultAll(s)} from vote s $inPage s.page_id in ($pageIds) order by s.id"
           .map(VoteJdbc(s)(_)).list().groupBy(_.pageId)
@@ -383,7 +391,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
                $monumentJoin
                WHERE $region IS NOT NULL
                  AND s.jury_id = $id
-                 AND s.round_id = $round ${ofMonument("s")}"""
+                 AND s.round_id = $round ${ofMonument("s")} ${ofAuthor("s")}"""
         case None =>
           val (region, monumentJoin) =
             if (subRegions) (SQLSyntax.createUnsafely(s"m.$regionColumn"), sqls"JOIN monument m ON m.id = ri.monument_id")
@@ -392,7 +400,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
                FROM round_image ri
                $monumentJoin
                WHERE $region IS NOT NULL
-                 AND ri.round_id = $round AND ri.status = 'in' ${ofMonument("ri")}"""
+                 AND ri.round_id = $round AND ri.status = 'in' ${ofMonument("ri")} ${ofAuthor("ri")}"""
       }
       query
         .map(rs => rs.string(1) -> Option.empty[Int])
@@ -419,12 +427,14 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         case Some(juror) =>
           sql"""SELECT ${SQLSyntax.createUnsafely(regionOf("s.monument_id"))} AS region, SUM($hit$commentedHit) FROM vote s
                ${commentedJoin(sqls"s.page_id")}
-               WHERE s.jury_id = $juror AND s.round_id = $round ${ofMonument("s")}
+               WHERE s.jury_id = $juror AND s.round_id = $round ${ofMonument("s")} ${ofAuthor("s")}
                GROUP BY region ORDER BY NULL"""
         case None =>
-          // the monument's condition on the votes, in the inner select (vote_round_monument_id_idx)
+          // the monument's and the author's conditions on the votes, in the inner select
+          // (vote_round_monument_id_idx; images' author index, V104)
           sql"""SELECT ${SQLSyntax.createUnsafely(regionOf("i.monument_id"))} AS region, SUM(p.hit$commentedHit)
-               FROM (SELECT s.page_id, MAX($hit) AS hit FROM vote s WHERE s.round_id = $round ${ofMonument("s")}
+               FROM (SELECT s.page_id, MAX($hit) AS hit FROM vote s
+                     WHERE s.round_id = $round ${ofMonument("s")} ${ofAuthor("s")}
                      GROUP BY s.page_id) p
                JOIN images i FORCE INDEX (images_page_monument_idx) ON i.page_id = p.page_id
                ${commentedJoin(sqls"p.page_id")}
@@ -446,6 +456,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       sql"""SELECT ${SQLSyntax.createUnsafely(regionOf("s.monument_id"))} AS region, s.rate, $count FROM vote s
            ${commentedJoin(sqls"s.page_id")}
            WHERE s.jury_id = ${userId.get} AND s.round_id = ${roundId.get} AND s.page_id IS NOT NULL ${ofMonument("s")}
+             ${ofAuthor("s")}
            GROUP BY region, s.rate ORDER BY NULL"""
         .map(rs => (rs.stringOpt(1), rs.int(2)) -> rs.int(3))
         .list()
@@ -474,6 +485,12 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         val column = SQLSyntax.createUnsafely(s"$table.monument_id")
         sqls"AND $column = $m AND BINARY $column = $m"
       }
+
+    /** The author filter's condition ([[author]]) on a table's file (`s`, vote's; `ri`,
+      * round_image's page id), after a condition before it; nothing without the filter.
+      */
+    private def ofAuthor(table: String): SQLSyntax =
+      author.fold(sqls"")(a => sqls"AND ${SelectionQuery.byAuthor(SQLSyntax.createUnsafely(s"$table.page_id"), a)}")
 
     /** A single sub-region (adm1) filter, which the monument table has. */
     private def subRegionFilter: Boolean = subRegions && regions.size == 1 && regions.head.length > 2
@@ -578,6 +595,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
           }
         },
         monumentId.map(m => sqls"s.monument_id = $m and binary s.monument_id = $m"),
+        author.map(a => SelectionQuery.byAuthor(sqls"s.page_id", a)),
         commentsFilter,
         Option.when(withPage)(sqls"s.page_id is not null")
       ).flatten
@@ -668,6 +686,17 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       */
     def inRound(roundId: Option[Long], userId: Option[Long] = None): String =
       roundId.fold("")(r => s" and c.round_id = ${r.toLong}") + userId.fold("")(u => s" and c.user_id = ${u.toLong}")
+
+    /** A file (its page id, `pageId`) whose stored author is `author` exactly: `images.author`
+      * byte for byte (`BINARY`: the column is `utf8mb4_general_ci`, where "Ivan" would also be
+      * "ivan" and "Iván"), as the contest files page's author filter
+      * (ImageJdbc.categoryAuthorFiles) and the authors list (AuthorStats, `GROUP BY BINARY`)
+      * take it, after the plain equality images' author index (V104) reads. The author is bound.
+      * `images.page_id` is the primary key, so MariaDB pulls the subquery's table out into a
+      * join: the author's files by the index, then the list's rows of each.
+      */
+    def byAuthor(pageId: SQLSyntax, author: String): SQLSyntax =
+      sqls"$pageId in (select ia.page_id from images ia where ia.author = $author and binary ia.author = $author)"
 
     /** [[inRound]] with its values bound. */
     def inRoundBound(roundId: Option[Long], userId: Option[Long] = None): SQLSyntax =

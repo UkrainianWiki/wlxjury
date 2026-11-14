@@ -684,15 +684,19 @@ object ImageJdbc extends CRUDMapper[Image]
 
   /** The category's files by the author, by page id: those whose stored author is `author`
     * byte for byte (`BINARY`), not in the column's `utf8mb4_general_ci` collation, where
-    * "Ivan" would also match "ivan" and "Iván". `images.author` has no index: the category's
-    * members by its index, each image by its primary key (on the production copy, 2026-11-13,
-    * the 32,531 files of WLM UA 2026 in about 0.07 s).
+    * "Ivan" would also match "ivan" and "Iván"; the same match as a round list's author filter
+    * (ImageDbNew.SelectionQuery.byAuthor). The author's files by images' author index (V104,
+    * the plain equality it reads; at most 7,654 files of one author on production's copy,
+    * 2026-11-14), each checked for the category by category_members' key, as
+    * [[categoryMonumentFiles]]; before V104 it read the category's members (32,531 in WLM UA
+    * 2026, about 0.07 s).
     */
   def categoryAuthorFiles(categoryId: Long, author: String)(implicit
       session: DBSession = AutoSession
   ): Seq[Long] =
-    sql"""SELECT m.page_id FROM category_members m STRAIGHT_JOIN images i ON i.page_id = m.page_id
-          WHERE m.category_id = $categoryId AND BINARY i.author = $author ORDER BY m.page_id"""
+    sql"""SELECT i.page_id FROM images i
+            STRAIGHT_JOIN category_members m ON m.category_id = $categoryId AND m.page_id = i.page_id
+          WHERE i.author = $author AND BINARY i.author = $author ORDER BY i.page_id"""
       .map(_.long(1))
       .list()
 
