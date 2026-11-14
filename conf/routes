@@ -155,6 +155,7 @@ POST        /round/setrounduser                                                 
 GET         /roundstat                                                              @controllers.RoundController.currentRoundStat(contestId: Option[Long] ?= None)
 GET         /roundstat/:round                                                       @controllers.RoundController.roundStat(round: Long)
 GET         /roundstat/:round/table                                                 @controllers.RoundController.roundStatTable(round: Long)
+GET         /roundstat/:round/counts                                                @controllers.RoundController.roundStatCounts(round: Long)
 
 GET         /monuments                                                              controllers.MonumentController.list(id: Option[String] ?= None)
 GET         /monuments/id/:id                                                       controllers.MonumentController.byId(id, contest: Option[Long] ?= None, round: Option[Long] ?= None)

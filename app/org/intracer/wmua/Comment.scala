@@ -130,6 +130,30 @@ object CommentJdbc extends SQLSyntaxSupport[Comment] {
             where contest_id = $contestId and room in (${rooms.distinct}) group by room"""
         .map(rs => rs.long(1) -> rs.int(2)).list().toMap
 
+  /** The comments report's totals for a round's files ([[roundCounts]]): this round's comments
+    * and the files they are on (its default scope, "this round"), and all the contest's comments
+    * on the round's files and those files (the scope "all rounds").
+    */
+  final case class RoundCounts(roundComments: Int, roundFiles: Int, allComments: Int, allFiles: Int)
+
+  /** The round statistics page's comments count: what the comments report's header says for
+    * all the jurors (`asUserId` 0) in each scope. A file is the round's if it has a vote row in
+    * it, as the report lists the round's vote rows (a file whose votes were moved aside has
+    * none, so neither counts it). One statement driven from the contest's comments on comment's
+    * (contest_id, room) index (V101), each probing vote_round_page_rate_idx (round_id, page_id,
+    * rate) once: independent of the round's size, where starting from the round's vote rows
+    * would read all its index entries.
+    */
+  def roundCounts(contestId: Long, roundId: Long)(implicit session: DBSession = autoSession): RoundCounts =
+    sql"""SELECT COALESCE(SUM(c.round_id = $roundId), 0), COUNT(DISTINCT CASE WHEN c.round_id = $roundId THEN c.room END),
+                 COUNT(*), COUNT(DISTINCT c.room)
+          FROM comment c
+          WHERE c.contest_id = $contestId
+            AND EXISTS (SELECT 1 FROM vote s WHERE s.round_id = $roundId AND s.page_id = c.room)"""
+      .map(rs => RoundCounts(rs.int(1), rs.int(2), rs.int(3), rs.int(4)))
+      .single()
+      .getOrElse(RoundCounts(0, 0, 0, 0))
+
   /** The comments on the files (`room`) in the contest, in the round and by the account
     * (`userId`) if given, in the order written (by id): a page of the comments report's files at
     * once, on comment's (contest_id, room) index (V101).

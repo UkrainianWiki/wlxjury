@@ -89,9 +89,25 @@ columns of the totals can add up to more than the files.
 Under the table:
 
 - for a rated round, the round's **File score** rule, see [The score](#o-score);
-- the link **Conflicts of interest of this round**, see [The conflicts page](#o-conflicts-page);
+- **Comments on the round's files (N)**, the [comments report](#o-comments-report): N is the
+  number of comments written in this round on its files. When the round's files also have
+  comments from other rounds of the contest, **all rounds (M)** follows with all of them, and
+  opens the report with **All rounds of the contest**;
+- the link **Conflicts of interest of this round**, see [The conflicts page](#o-conflicts-page),
+  with the number of the round's files that are conflicts of interest now and of its
+  disqualified files, for example "(3 files · 2 disqualified)". With neither it says "none",
+  and while the round has a history of disqualified and requalified files, "none · history (N)"
+  (500+ when it has more than the 500 latest events the page lists);
+- the link **Authors of this round**, see [The authors list](#o-authors-list), with the number of
+  authors the list shows and of the files without a stored author, for example "(148 · 12 files
+  without an author)". "None stored" can mean that the files were imported without their
+  authors; the link then still opens the list while some files have no author, for example
+  "none stored · 12 files without an author";
 - **Deleted on Commons**, when some of the round's files were deleted on Commons: the number
   links to these files.
+
+A link whose number is 0 is plain text. The numbers of the conflicts and authors links appear
+a moment after the page; until then, the links work without them.
 
 <img src="images/organizer-round-statistics.png" alt="The statistics page, a row for each juror, with the Voting column" width="1280">
 
