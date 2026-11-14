@@ -60,7 +60,8 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   disqualified)** and **Authors of this round (148 · 12 files without an author)** get their
   counts after the page has loaded, each the number its page shows. A count of 0 makes the link
   plain text (as the statistics table's icons); the conflicts link stays, as "none · history
-  (N)", while the round has a history. The counts come from a JSON request
+  (N)" (500+ beyond the 500 events its page lists), while the round has a history, and the
+  authors link, as "none stored · N files without an author", while the round has such files. The counts come from a JSON request
   (`GET /roundstat/:round/counts`, numbers only, on the blocking pool) for those who may see all
   three links, checked in the round's own contest; until it answers, without JavaScript or if it
   fails, the two links stay as before, enabled and without counts. Organizer guide: "Statistics".

@@ -96,11 +96,13 @@ Under the table:
 - the link **Conflicts of interest of this round**, see [The conflicts page](#o-conflicts-page),
   with the number of the round's files that are conflicts of interest now and of its
   disqualified files, for example "(3 files · 2 disqualified)". With neither it says "none",
-  and while the round has a history of disqualified and requalified files, "none · history (N)";
+  and while the round has a history of disqualified and requalified files, "none · history (N)"
+  (500+ when it has more than the 500 latest events the page lists);
 - the link **Authors of this round**, see [The authors list](#o-authors-list), with the number of
   authors the list shows and of the files without a stored author, for example "(148 · 12 files
   without an author)". "None stored" can mean that the files were imported without their
-  authors;
+  authors; the link then still opens the list while some files have no author, for example
+  "none stored · 12 files without an author";
 - **Deleted on Commons**, when some of the round's files were deleted on Commons: the number
   links to these files.
 
