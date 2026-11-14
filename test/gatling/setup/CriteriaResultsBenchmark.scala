@@ -87,7 +87,11 @@ object CriteriaResultsBenchmark {
     val rated = for (p <- 1L to files.toLong; u <- users) yield {
       val kind = rnd.nextInt(20) // 0: unrated, 1: partly, else rated
       val rates = criteria.map(_ => 1 + rnd.nextInt(10))
-      val rated0 = if (kind == 0) Nil else if (kind == 1) rates.take(1 + rnd.nextInt(criteriaCount - 1)) else rates
+      // with one criterion a vote can't be partly rated: kind 1 is then unrated
+      val rated0 =
+        if (kind == 0 || (kind == 1 && criteriaCount == 1)) Nil
+        else if (kind == 1) rates.take(1 + rnd.nextInt(criteriaCount - 1))
+        else rates
       (p, u, if (rated0.size == criteriaCount) rated0.sum else 0, rated0)
     }
     batch("INSERT INTO vote (page_id, jury_id, round_id, rate, monument_id) VALUES (?, ?, ?, ?, ?)",
@@ -123,6 +127,9 @@ object CriteriaResultsBenchmark {
       val byRate = RoundList(round, 0, view = GalleryView.ByRate)
       val allIds = fileList.query.pageKeys(Seq("sum(s.rate)")).map(_._1)
       val rnd = new Random(7)
+      // pages of 1,000 and of 15 files, at least one: a fixture smaller than a page has one
+      val pages1000 = math.max(1, (files + 999) / 1000)
+      val pages15 = math.max(1, (files + 14) / 15)
 
       /** `a` and `b` paired, interleaved; their medians and p90 and B's share. */
       def paired(name: String, a: () => Any, b: () => Any): Unit = {
@@ -140,11 +147,11 @@ object CriteriaResultsBenchmark {
       }
 
       paired("file list page (1000 files), A files, B C3",
-        () => fileList.files(Pager(1 + rnd.nextInt(files / 1000), files, 1000)),
-        () => { val from = 1000 * rnd.nextInt(files / 1000); CriteriaResults.of(round, allIds.slice(from, from + 1000), 0) })
+        () => fileList.files(Pager(1 + rnd.nextInt(pages1000), files, 1000)),
+        () => { val from = 1000 * rnd.nextInt(pages1000); CriteriaResults.of(round, allIds.slice(from, from + 1000), 0) })
       paired("by-rate page (15 files), A files, B C3",
-        () => byRate.files(Pager(1 + rnd.nextInt(files / 15), files, 15)),
-        () => { val from = 15 * rnd.nextInt(files / 15); CriteriaResults.of(round, allIds.slice(from, from + 15), 0) })
+        () => byRate.files(Pager(1 + rnd.nextInt(pages15), files, 15)),
+        () => { val from = 15 * rnd.nextInt(pages15); CriteriaResults.of(round, allIds.slice(from, from + 15), 0) })
       paired("CSV, all files by 1000, A withVotes, B averages",
         () => allIds.grouped(1000).foreach(fileList.query.withVotes(_)),
         () => allIds.grouped(1000).foreach(CriteriaRate.averages(round.getId, _)))
@@ -161,8 +168,8 @@ object CriteriaResultsBenchmark {
               WHERE v.round_id = $rid0 AND v.page_id IN ($ids) AND v.rate > 0 AND cr.rate > 0
               GROUP BY v.page_id, cr.criterion_id $order""".map(rs => rs.long(1)).list()
       paired("averages 1000 files: A as built, B ORDER BY NULL",
-        () => { val from = 1000 * rnd.nextInt(files / 1000); CriteriaRate.averages(round.getId, allIds.slice(from, from + 1000)) },
-        () => { val from = 1000 * rnd.nextInt(files / 1000); variant(allIds.slice(from, from + 1000), sqls"ORDER BY NULL") })
+        () => { val from = 1000 * rnd.nextInt(pages1000); CriteriaRate.averages(round.getId, allIds.slice(from, from + 1000)) },
+        () => { val from = 1000 * rnd.nextInt(pages1000); variant(allIds.slice(from, from + 1000), sqls"ORDER BY NULL") })
       paired("CSV averages: A by 1000 files, B one query by round",
         () => allIds.grouped(1000).foreach(CriteriaRate.averages(round.getId, _)),
         () => sql"""SELECT v.page_id, cr.criterion_id, AVG(cr.rate) FROM vote v
@@ -171,10 +178,10 @@ object CriteriaResultsBenchmark {
               WHERE v.round_id = $rid0 AND v.rate > 0 AND cr.rate > 0
               GROUP BY v.page_id, cr.criterion_id ORDER BY NULL""".map(rs => rs.long(1)).list())
       paired("rows read: A the 1000 files' rates, B their count only",
-        () => { val from = 1000 * rnd.nextInt(files / 1000); val ids = allIds.slice(from, from + 1000)
+        () => { val from = 1000 * rnd.nextInt(pages1000); val ids = allIds.slice(from, from + 1000)
           sql"""SELECT v.page_id, cr.criterion_id, cr.rate FROM vote v STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = v.id
                 WHERE v.round_id = $rid0 AND v.page_id IN ($ids) AND v.rate > 0""".map(rs => rs.long(1)).list() },
-        () => { val from = 1000 * rnd.nextInt(files / 1000); val ids = allIds.slice(from, from + 1000)
+        () => { val from = 1000 * rnd.nextInt(pages1000); val ids = allIds.slice(from, from + 1000)
           sql"""SELECT COUNT(*) FROM vote v WHERE v.round_id = $rid0 AND v.page_id IN ($ids) AND v.rate > 0""".map(_.long(1)).single() })
 
       def explain(name: String, q: SQLSyntax): Unit = {
