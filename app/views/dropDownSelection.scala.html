@@ -1,4 +1,4 @@
-@(dto: UiSelectionDto[Any], iconOnly: Boolean = false, compactIcon: Option[String] = None, menuId: Option[String] = None, label: Option[String] = None, truncate: Boolean = false)(implicit messages: Messages)
+@(dto: UiSelectionDto[Any], iconOnly: Boolean = false, compactIcon: Option[String] = None, menuId: Option[String] = None, label: Option[String] = None, truncate: Boolean = false, leadIcon: Option[String] = None)(implicit messages: Messages)
 @* A navbar menu: its toggle shows the current item (its icon only if `iconOnly` and it has one,
    the text then read by screen readers and shown as a tooltip), the menu every item, the current
    one marked active with aria-current="page" (each item opens a page; the current one is this
@@ -8,12 +8,15 @@
    UiSelectionDto.toDropDown). `label`: what the menu is, before the current item for screen
    readers only (the comments report's order). `truncate`: a long current item cut with an
    ellipsis, whole in the toggle's title (the organisers' juror menu, main.css wlx-truncate).
+   `leadIcon`: an icon always before the current item, hidden from screen readers, saying what the
+   menu is (the organisers' juror menu: people, so its "All jurors" isn't read as the Votes "All").
    The toggle is a real button, so Space opens it as Enter does (Bootstrap's dropdown) *@
 @icon(iconClass: String) = {<i class="@iconClass" aria-hidden="true"></i>}
 <li class="nav-item dropdown"@for(i <- menuId) { id="@i"}>
     <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"
         @if((iconOnly && dto.current.icon.nonEmpty) || compactIcon.nonEmpty || truncate) {title="@dto.current.localizedText"}>
         @for(l <- label) {<span class="visually-hidden">@l: </span>}
+        @for(i <- leadIcon) {@icon(i + " wlx-lead-icon")}
         @compactIcon match {
         case Some(iconClass) => {
             @icon(iconClass + " wlx-nav-icon")<span class="wlx-nav-label">@dto.current.localizedText</span>

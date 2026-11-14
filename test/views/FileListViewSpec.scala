@@ -49,7 +49,7 @@ class FileListViewSpec extends PlaySpecification {
         val heading = copy.child(0)
         (copy.parent.hasClass("col-12") must beTrue) and (copy.parent.parent.hasClass("row") must beTrue) and
           (heading.tagName must_== "h2") and (heading.hasClass("h5") must beTrue) and
-          (heading.text must_== s"round Round <one> · juror: ${Option(asUser).fold("all")(_.fullname)}") and
+          (heading.text must_== s"round Round <one> · ${Option(asUser).fold("jurors.all")(u => s"juror: ${u.fullname}")}") and
           (Option(heading.nextElementSibling).forall(_.tagName != "br") must beTrue) and
           // text, never markup: no comment node, no tag from the names
           (copy.getAllElements.asScala.flatMap(_.childNodes.asScala).collect { case c: Comment => c } must beEmpty) and
@@ -62,7 +62,7 @@ class FileListViewSpec extends PlaySpecification {
     "name the region in its heading when it has one" in {
       if (controllers.KOATUU.regions.isEmpty) controllers.KOATUU.load()
       block(render(null, wrapInTable = true, region = "80")).child(0).text must_==
-        s"round Round <one> · juror: all · region.menu: ${controllers.KOATUU.regions("80")}"
+        s"round Round <one> · jurors.all · region.menu: ${controllers.KOATUU.regions("80")}"
     }
 
     "show all the jurors' votes as a table, its header and footer as wide as its rows" in {

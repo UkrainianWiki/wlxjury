@@ -304,6 +304,7 @@ round.name.optional=Nom du tour (optionel)
 previous.round = Tours précédents
 error.previous.rounds.mixed.type = Tous les tours précédents doivent avoir la même notation : tous oui/non, tous commentaires seulement, ou tous notés sur la même échelle avec le même nombre de critères (par exemple tous de 1 à 5 sans critères)
 jurors = Jurés
+jurors.all = Tous les jurés
 juror.name=Nom du juré
 media.filtering = Filtrage d''image
 selected.by.at.least.x.jurors=Sélectionné par au moins X jurés

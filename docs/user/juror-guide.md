@@ -209,7 +209,7 @@ The first menu after the round chooses your files by your votes, each choice wit
 - in a yes/no round: **All**, **Unrated**, **Selected** and **Rejected**;
 - in a rated round: **All**, **Unrated** and **Rated**.
 
-The menu's button shows your choice and its count, for example **Unrated (120)**. On **All** it
+The menu's button shows a check-box icon, your choice and its count, for example **Unrated (120)**. On **All** it
 also shows how many of these files you haven't rated yet: **All (5712) · 120 unrated**. That is
 the quickest way to see what is left to do: choose **Unrated** to see those files. On
 **Selected** and **Rejected** the button is coloured as your thumbs are.
