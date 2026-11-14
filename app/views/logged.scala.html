@@ -8,10 +8,10 @@
         @defining(controllers.JurorContests.switcherEntries(user)) { entries =>
         @if(entries.nonEmpty) {
         <li class="nav-item dropdown">
-            <a href="#" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" role="button" aria-expanded="false" title="@Messages("contest.switch")">
+            <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="@Messages("contest.switch")">
                 <i class="bi bi-shuffle" aria-hidden="true"></i>
                 @entries.find(e => user.contestId.contains(e._1.contestId)).fold(Messages("contest.switch"))(_._2.fullName)
-            </a>
+            </button>
             <ul class="dropdown-menu dropdown-menu-end">
                 @for((uc, contest) <- entries) {
                     <li>
@@ -33,9 +33,9 @@
            browser's scheme *@
         @defining(controllers.Theme.of(request)) { current =>
         <li class="nav-item dropdown">
-            <a href="#" class="nav-link dropdown-toggle" id="theme-menu" data-bs-toggle="dropdown" role="button" aria-expanded="false" title="@Messages("theme.switch", Messages("theme." + current.value))">
+            <button type="button" class="nav-link dropdown-toggle" id="theme-menu" data-bs-toggle="dropdown" aria-expanded="false" title="@Messages("theme.switch", Messages("theme." + current.value))">
                 <i class="bi bi-@current.icon" aria-hidden="true"></i><span class="visually-hidden">@Messages("theme.switch", Messages("theme." + current.value))</span>
-            </a>
+            </button>
             <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-menu">
                 <li><h6 class="dropdown-header" id="theme-switch-label">@Messages("theme")</h6></li>
                 <li>
@@ -55,9 +55,9 @@
         </li>
         }
         <li class="nav-item dropdown">
-            <a href="#" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" role="button" aria-expanded="false" title="@user.fullname">
+            <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="@user.fullname">
                 <i class="bi bi-person-fill" aria-hidden="true"></i><span class="visually-hidden">@user.fullname</span>
-            </a>
+            </button>
             <ul class="dropdown-menu dropdown-menu-end">
                 @* who is signed in (one person may have an account per contest or year): the signed-in
                    account's own name, role in the current contest (root: root), then wiki login and sign-in

@@ -13,8 +13,8 @@
     @link(pager.hasPrev, 1, "first", "pager.first", Html("&laquo;"))
     @link(pager.hasPrev, pager.page - 1, "prev", "pager.previous", Html("&lsaquo;"))
     <li class="page-item dropdown pager-jump-menu">
-        <a class="page-link dropdown-toggle pager-range" href="#" data-bs-toggle="dropdown" data-bs-auto-close="outside"
-            role="button" aria-expanded="false" title="@Messages("pager.go.title")">@Messages("pager.range", pager.first, pager.last, pager.count)</a>
+        <button type="button" class="page-link dropdown-toggle pager-range" data-bs-toggle="dropdown" data-bs-auto-close="outside"
+            aria-expanded="false" title="@Messages("pager.go.title")">@Messages("pager.range", pager.first, pager.last, pager.count)</button>
         <div class="dropdown-menu pager-jump-box">
             <form class="pager-jump" action="@pageUrl(pager.page)" data-page-url="@Pager.urlTemplate(pageUrl)">
                 <label>@Messages("pager.page")
