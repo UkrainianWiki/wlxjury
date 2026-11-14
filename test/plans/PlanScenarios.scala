@@ -3,7 +3,7 @@ package plans
 import controllers.{GalleryView, ListOrder, Pager, RoundList, VoteFilter}
 import plans.PlanSeed.Corner
 import plans.StatementCapture.within
-import db.scalikejdbc.{CategoryLinkJdbc, ContestJuryJdbc, MonumentJdbc, Round, RoundUser, User, VoteJdbc}
+import db.scalikejdbc.{CategoryLinkJdbc, ContestJuryJdbc, MonumentJdbc, Round, RoundStatLinks, RoundUser, User, VoteJdbc}
 import org.intracer.wmua.{CommentJdbc, Image}
 import services.{GalleryService, TestRoundServices}
 
@@ -115,6 +115,23 @@ object PlanScenarios {
     ).map { case (name, run) => within(name)(run()); name }
 
     galleries ++ withComments ++ more ++ monument
+  }
+
+  val RoundStatScenario = "roundstat"
+
+  /** An organizer's round statistics page (RoundController.roundStat and roundStatCounts) on
+    * the corner round: the comments link's counts (inline), and the authors and conflicts
+    * links' grouped pass and the history count (the counts endpoint, which reads the history
+    * only without conflicts: here always).
+    */
+  def organizer(corner: Corner): Seq[String] = {
+    within(RoundStatScenario) {
+      CommentJdbc.roundCounts(corner.contestId, corner.roundId)
+      RoundStatLinks.counts(corner.round)
+      RoundStatLinks.historyCount(corner.roundId)
+      ()
+    }
+    Seq(RoundStatScenario)
   }
 
   val DistributionScenario = "distribution"

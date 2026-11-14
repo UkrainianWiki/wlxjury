@@ -1,8 +1,19 @@
 @import db.scalikejdbc.User
 @import db.scalikejdbc.Round
-@(user: User, round: Round, stat: RoundStat)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@import db.scalikejdbc.RoundStatLinks
+@import db.scalikejdbc.RoundConflicts
+@import org.intracer.wmua.CommentJdbc
+@(user: User, round: Round, stat: RoundStat, comments: CommentJdbc.RoundCounts)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
-    @main("statistics", user, user.getId, Some(round), stat.rounds, gallery = false) {
+@* the label templates roundstat-counts.js fills in with the counts (`{0}` kept as it is) *@
+@template(key: String) = @{ Messages(key, "{0}") }
+@pluralTemplates(prefix: String, attr: String) = {@for(form <- views.Plural.Forms) { data-@attr-@form="@template(s"$prefix.$form")"}}
+@* the counts of the authors and conflicts links, loaded after the page by roundstat-counts.js,
+   for those who may see all three links: an attribute of each link, with its labels *@
+@countsUrl = @{ Option.when(RoundStatLinks.mayView(user, round))(routes.RoundController.roundStatCounts(round.getId).url) }
+@countsScript = {@if(countsUrl.nonEmpty) {<script src="@routes.Assets.versioned("javascripts/roundstat-counts.js")"></script>}}
+
+    @main("statistics", user, user.getId, Some(round), stat.rounds, gallery = false, head = countsScript) {
         @* the page's title, for screen readers: the navbar shows where it is *@
         <h1 class="visually-hidden">@Messages("statistics")</h1>
 
@@ -26,20 +37,29 @@
         }
 
         @* the comments report of all the jurors' votes on the round's files (GalleryView.Comments),
-           for those who may view its organiser info, as the gallery's view menu offers it *@
+           for those who may view its organiser info, as the gallery's view menu offers it: with
+           its header's number of comments in this round (its default scope), and all the
+           contest's comments on the round's files when there are more; a 0 is plain text *@
         @if(user.canViewOrgInfo(round)) {
-            <p id="round-comments-link"><a href="@RoundList(round, 0).withView(GalleryView.Comments).pageUrl(1)"><i class="bi bi-chat-left-text" aria-hidden="true"></i> @Messages("comments.report.link")</a></p>
+            @defining(RoundList(round, 0).withView(GalleryView.Comments)) { report =>
+            <p id="round-comments-link">@snippets.textLink(report.pageUrl(1),
+                if (comments.roundComments > 0) Messages("comments.report.link.count", comments.roundComments) else Messages("comments.report.link.none"),
+                comments.roundComments != 0, Some("chat-left-text"))@if(comments.allComments > comments.roundComments) { · @snippets.textLink(report.withScope(CommentScope.AllRounds).pageUrl(1), Messages("comments.report.link.all", comments.allComments))}</p>
+            }
         }
 
         @* the round's conflicts of interest, for its contest's admins and organizers: the
-           organizers' way there (they have no round form, the admins' other link) *@
+           organizers' way there (they have no round form, the admins' other link). Its count
+           comes after the page (roundstat-counts.js); until then, without script or if that
+           fails, the link as it is *@
         @if(user.canViewRoundConflicts(round.contestId)) {
-            <p id="round-conflicts-link"><a href="@routes.RoundConflictsController.page(round.getId)">@Messages("coi.round.link")</a></p>
+            <p id="round-conflicts-link"><a href="@routes.RoundConflictsController.page(round.getId)"@for(url <- countsUrl) { data-roundstat-counts="@url" data-kind="conflicts" data-lang="@messages.lang.language" data-label-count="@template("coi.round.link.count")" data-label-none="@template("coi.round.none")"@pluralTemplates("coi.round.files", "files")@pluralTemplates("coi.round.link.disqualified", "disqualified") data-history="@template("coi.round.history")" data-history-limit="@RoundConflicts.HistoryLimit"}>@Messages("coi.round.link")</a></p>
         }
 
-        @* the round's authors with their files and votes, for those who may see authors *@
+        @* the round's authors with their files and votes, for those who may see authors; its
+           count as the conflicts link's *@
         @if(user.canViewAuthors(round.contestId)) {
-            <p id="round-authors-link"><a href="@routes.AuthorsController.list(round.contestId, round.id)">@Messages("authors.round.link")</a></p>
+            <p id="round-authors-link"><a href="@routes.AuthorsController.list(round.contestId, round.id)"@for(url <- countsUrl) { data-roundstat-counts="@url" data-kind="authors" data-lang="@messages.lang.language" data-label-count="@template("authors.round.link.count")" data-label-none="@template("authors.round.none")" data-label-none-unknown="@template("authors.round.none.unknown")"@pluralTemplates("authors.round.unknown", "unknown")}>@Messages("authors.round.link")</a></p>
         }
 
         @* the round's files deleted on Commons: out of the table above while it is open *@
