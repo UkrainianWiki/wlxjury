@@ -317,7 +317,8 @@ and votes by keys stay among the monument's files. In the large view, the monume
 **Gallery (N)**, which opens the list you are in (the same juror, tab and order) with only the
 monument's N files; it is left out while the list already has only them and when the file is the
 list's only one of the monument. For a file whose monument isn't in the tool's monument lists
-the box shows just the id and **Gallery (N)**.
+the box shows the id and **Gallery (N)**, or just the id when the file is the list's only one of
+the monument or the list already has only the monument's files.
 
 The page counts files only in a contest you are a member of, and a round you may see; opened
 from elsewhere it shows the monument alone. **Monuments** (`/monuments`) opens a monument's page

@@ -355,7 +355,8 @@ monument's id, **Gallery (N)** and **Page →**, for example `46-233-0012 · Gal
 isn't shown when your gallery already shows only this monument, or when this is its only file
 of the monument; the line is then `46-233-0012 · Page →`. Files whose monument isn't in the
 tool's monument lists (for example in Wiki Loves Earth) get a small box with the monument's id
-and **Gallery (N)**, without a link to a monument's page.
+and **Gallery (N)**, without a link to a monument's page; just the id when this is the only file
+of the monument or your gallery already shows only this monument.
 
 You see only the files of your rounds: the contest's other files aren't shown to jurors.
 
