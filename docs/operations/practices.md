@@ -98,7 +98,11 @@ database's identity, free space, and after writes resumed a fresh `before-restor
 **3.3 Rehearse restores.** Each deploy and each section of the recovery runbook is rehearsed on an
 isolated production copy before relying on it (deployment.md, "Build and rehearse"); CI's
 `test_database_restore` and `test_release_script` run the restore path against a real MariaDB and
-the packaged ZIP on every PR. *Why:* a backup that was never restored is a hope, not a backup.
+the packaged ZIP on every PR. At a local release build the release agent always runs
+`test_database_restore` (it restores the build's own ZIP, with `-e CI`, so a missing ZIP fails) and runs `test_release_script` only when
+`scripts/deployment/` changed since the last released version (`git diff <previous release branch
+or tag>..HEAD -- scripts/deployment` is not empty), and the release record says which ran and why
+(the user, 2026-11-14). *Why:* a backup that was never restored is a hope, not a backup.
 
 **3.3a Keep on the server only what a restore can need.** `wlxjury-release prune`, run at the end
 of every successful `reopen` (never after a failed one), keeps the current release and the 4
@@ -199,8 +203,8 @@ secure-coding §18. A new pool, worker count or limit is checked against those b
 | 1.5 driver text redacted (R227-1) | a spec logging a duplicate-key error (db §10, proposed 2) | planned |
 | 1.6 the server's logback equals the repository's | — | planned (logging plan: ship it with each release) |
 | 2.1 readiness: local only, schema and READ COMMITTED | `ReadinessControllerSpec`, `ReadinessDatabaseSpec` | enforced |
-| 3.3 restore path | `test_database_restore`, `test_release_script` (`deployment.yml`) | enforced on every PR |
-| 3.3a retention: prune keeps what a restore needs | `test_release_script` (the prune tests) | enforced on every PR |
+| 3.3 restore path | `test_database_restore`, `test_release_script` (`deployment.yml`) | enforced on every PR; at a release build `test_database_restore` always, `test_release_script` when `scripts/deployment/` changed |
+| 3.3a retention: prune keeps what a restore needs | `test_release_script` (the prune tests) | enforced on every PR; at a release build when `scripts/deployment/` changed |
 | The image cache is the service user's and not group- or world-writable | `wlxjury-release deploy` refuses; `test_release_script` | enforced at each deploy |
 | 5.1 monit check: alert only, quiet in maintenance | `MonitCheckTest` (with `monit -t`) | enforced on every PR; installing it is the user's step |
 | 4.4 production settings | `ProductionConfigSpec`; G14 `ProductionConfigParitySpec` for the infra template | enforced; G14 planned |
