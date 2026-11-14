@@ -35,8 +35,10 @@ def main():
     for i, p in enumerate(stack, 1):
         if p["number"] < a.start:
             continue
-        tip = subprocess.run(["git", "-C", a.git, "rev-parse", f"origin/{p['headRefName']}"],
-                             capture_output=True, text=True).stdout.strip()
+        # --verify --quiet: a ref that isn't there prints nothing (plain rev-parse echoes the name)
+        rp = subprocess.run(["git", "-C", a.git, "rev-parse", "--verify", "--quiet",
+                             f"origin/{p['headRefName']}^{{commit}}"], capture_output=True, text=True)
+        tip = rp.stdout.strip() if rp.returncode == 0 else ""
         if not tip:
             print(f"{i:02d} #{p['number']} origin/{p['headRefName']} not fetched")
             prev = None
