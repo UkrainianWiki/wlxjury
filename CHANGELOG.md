@@ -129,18 +129,19 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   "Keep" notes only with `--verbose`.
 - **V104 `images_author_idx (author)`**, an **online index build** (`ALGORITHM = INPLACE,
   LOCK = NONE`: reads and writes go on; `ADD INDEX IF NOT EXISTS`, rerunnable; a 60 s
-  `lock_wait_timeout`; then `ANALYZE TABLE images`; undo `DROP INDEX`): the contest files page's
-  author filter and all the jurors' list of a round by author read the author's files by it (at
-  most 7,654 of one author on production's copy) instead of every file of the category or round.
-  For one juror's list MariaDB 10.6 chose, on QueryPlanSpec's seed, to keep reading the juror's
-  rows and checking each file's author (440-498 ms cold for the largest juror list on production's
-  copy); production's choice is still to be measured on a throwaway copy with the index. On 1.03M images, 81% without an author,
-  expected to take seconds and some 20-35 MB (not timed on the rehearsal copy, where no DDL runs).
+  `lock_wait_timeout`, also for the `ANALYZE TABLE images` after it; undo `DROP INDEX`; about 8 s
+  on production's copy). Measured there with the index and with `IGNORE INDEX` (warm runs): all
+  the jurors' list of a 29k round by author counts in 7 ms instead of 101-116 (523 cold) and its
+  region counts in 12-14 instead of 80-87; the largest juror list (22.6k files) counts one author's
+  files in 14-48 ms instead of 62-66; the contest files page's author filter takes 7 ms (its
+  previous shape read the category's members, 97-134 ms); the conflicts of interest 29-30 instead
+  of 95-100. A juror's page, and a typical juror's list, keep reading the juror's rows (the same
+  plan and speed either way, 9-24 ms); a shape driven from the author index was no faster there.
   `varchar(255)` utf8mb4 is 1,020 bytes, within the DYNAMIC row format's 3,072. **V103 stays
-  reserved** for round lineage's `round.status`: Flyway needs no consecutive numbers, but with
+  reserved** for round lineage's `round.status`, usable only while V104 isn't deployed: with
   production's settings a database that has V104 refuses a V103 added later, so whichever deploys
-  second is renumbered above the other (FlywayUpgradeSpec checks both). QueryPlanSpec's seed
-  gains a heavy author (7,500 files, 3,000 in the corner juror's round; vote's rows and the
+  second takes the next free number above the other (FlywayUpgradeSpec checks both). QueryPlanSpec's
+  seed gains a heavy author (7,500 files, 3,000 in the corner juror's round; vote's rows and the
   statistics snapshot unchanged) and author scenarios.
 - **V102 `monument.wikidata`** (VARCHAR(16), NULL; INSTANT, rerunnable): the list rows'
   `wikidata` parameter, which scalawiki leaves in `otherParams`, stored by the monument list import
