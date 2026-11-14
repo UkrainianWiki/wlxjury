@@ -610,10 +610,13 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
         (Json.parse(contentAsString(json)) \ "error").as[String] === "forbidden"
         (Json.parse(contentAsString(json)) \ "reference").as[String] must not(beEmpty)
         // their own list's report: all the contest's comments on their files (JurorCommentsReportSpec)
-        forall(Seq(path(f, f.juror1.getId), s"/query?module=comments&round=${f.round.getId}&user=${f.juror1.getId}",
-          s"/comments/round/${f.round.getId}/user/${f.juror1.getId}/region/all/pageid/1")) { p =>
+        forall(Seq(path(f, f.juror1.getId), s"/query?module=comments&round=${f.round.getId}&user=${f.juror1.getId}")) { p =>
           status(get(app, f.juror1, p)) aka p must_== OK
         }
+        // the page with a file: to the report's page with it
+        val at = get(app, f.juror1, s"/comments/round/${f.round.getId}/user/${f.juror1.getId}/region/all/pageid/1")
+        status(at) === SEE_OTHER
+        redirectLocation(at).get must startWith(s"/comments/round/${f.round.getId}/user/${f.juror1.getId}/page/1")
         rows(page(app, f.juror1, path(f, f.juror1.getId))) === Seq(4L, 5L, 1L, 3L)
       }
     }
