@@ -100,6 +100,21 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   files with comments, so **All (17)** opens 17 files; the extra count of all the juror's files
   is gone, and in a Via Regia round of sub-regions the tabs count from the same scan. Juror,
   organizer and admin guides.
+- **A round's lists by author, for staff** (decision 4 = A of 2026-11-14, PR-4 of the round
+  filters proposal v4; developed 2026-11-14, `stack/149-author-round-filter`): a round's gallery,
+  by-rate gallery, file list, comments report and CSV take `author=<author as stored>` (exactly,
+  as on the contest files page and the authors list: "Ivan", "ivan" and "Iván" are three
+  authors), shown as a chip **Author: … (N) ×** with the author's **Commons ↗**, for the
+  contest's admins, organizers and root only. Every link of the list keeps it, as the monument
+  filter: pages, tabs, orders, views, the region, round and juror menus, the large view's next and
+  previous files (a compact chip there) and its votes; it combines with the monument filter and
+  **Only with comments**, and the tabs and pager count within it. In a round's pages an author's
+  name now opens the round's list with their files: in the round's large view (the current list,
+  with a small icon to the contest files page beside it), the round's file list (that file list)
+  and a round's authors list (all the jurors' votes, with the icon); the contest's authors list,
+  the contest files page's large view and its conflicts of interest still open the contest files
+  page. For anyone else, jurors included, `author=` is ignored without an error, as on the contest
+  files page: no author, chip or `author=` in any of their pages. Organizer guide: "Authors".
 
 **Development**
 
@@ -112,6 +127,19 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   ZIP's SHA-256 into each release folder and replaces a non-current folder that came from the
   same ZIP; the current release and any other folder are still refused. `prune`'s skip and
   "Keep" notes only with `--verbose`.
+- **V104 `images_author_idx (author)`**, an **online index build** (`ALGORITHM = INPLACE,
+  LOCK = NONE`: reads and writes go on; `ADD INDEX IF NOT EXISTS`, rerunnable; a 60 s
+  `lock_wait_timeout`; then `ANALYZE TABLE images`; undo `DROP INDEX`): a round's list by author
+  and the contest files page's author filter read the author's files by it (at most 7,654 of one
+  author on production's copy) instead of every file of the list or category (440-498 ms cold for
+  the largest juror list on production's copy without it). On 1.03M images, 81% without an author,
+  expected to take seconds and some 20-35 MB (not timed on the rehearsal copy, where no DDL runs).
+  `varchar(255)` utf8mb4 is 1,020 bytes, within the DYNAMIC row format's 3,072. **V103 stays
+  reserved** for round lineage's `round.status`: Flyway needs no consecutive numbers, but with
+  production's settings a database that has V104 refuses a V103 added later, so whichever deploys
+  second is renumbered above the other (FlywayUpgradeSpec checks both). QueryPlanSpec's seed
+  gains a heavy author (7,500 files, 3,000 in the corner juror's round; vote's rows and the
+  statistics snapshot unchanged) and author scenarios.
 - **V102 `monument.wikidata`** (VARCHAR(16), NULL; INSTANT, rerunnable): the list rows'
   `wikidata` parameter, which scalawiki leaves in `otherParams`, stored by the monument list import
   ("Update monuments") as `Q` and its number (anything else NULL) and replaced or cleared on each
