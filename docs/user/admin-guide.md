@@ -738,12 +738,12 @@ when you start it again. A juror with no round open sees **No round configured y
 Jurors see their own votes only, and never the files' authors: the author's name and links, the
 contest files page's author filter and the authors list are for admins, organizers and root
 (the organizer guide explains [them](organizer-guide.md#o-authors)). In the large view of a file
-they see comments of other jurors, with names. Their **Only with comments** toggle and the comment counts on their tiles cover
+they see comments of other jurors, with names. Their **Comments** menu and the comment counts on their tiles cover
 their own files only; the organizer guide explains [both](organizer-guide.md#o-comments-filter).
 A stopped round takes no comments, also from admins and organizers. Admins and organizers also
 have the round's [comments report](organizer-guide.md#o-comments-report), with its CSV: every
 file with comments of the round (or of the whole contest) and its comments on one page. Jurors
-open it for their own files only (**Recent comments**, with the comments their large view shows),
+open it for their own files only (**Recent comments list** in their **Comments** menu, with the comments their large view shows),
 without the CSV, the round names or the filter by person.
 
 <a id="a-leave-out-conflicts"></a>

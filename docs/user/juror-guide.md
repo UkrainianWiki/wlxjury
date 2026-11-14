@@ -191,14 +191,31 @@ A few rounds take no votes, only comments on the files.
 
 ## The gallery
 
-### Tabs: all, unrated, selected, rejected
+### The top bar
 
-The bar at the top has tabs for your own files in the round, each with a count:
+The bar at the top of the gallery has, from left to right:
+
+- the **filters**, which choose the files you see: the round, the votes menu, the
+  **Comments** menu, and the **Region** menu (or the chip of one monument, see below);
+- after a thin line, the **order** of the files;
+- the **pager**.
+
+On a narrow window the groups move to a new line as a whole, the pager first.
+
+### The votes menu
+
+The first menu after the round chooses your files by your votes, each choice with a count:
 
 - in a yes/no round: **All**, **Unrated**, **Selected** and **Rejected**;
 - in a rated round: **All**, **Unrated** and **Rated**.
 
-**Unrated** is the quickest way to see what is left to do.
+The menu's button shows your choice and its count, for example **Unrated (120)**. On **All** it
+also shows how many of these files you haven't rated yet: **All (5712) · 120 unrated**. That is
+the quickest way to see what is left to do: choose **Unrated** to see those files. On
+**Selected** and **Rejected** the button is coloured as your thumbs are.
+
+Each count is the number of files that choice shows, in the region and with the other filters
+you have chosen. Choosing another one keeps them. A comments-only round has no votes menu.
 
 ### Files with comments
 
@@ -207,26 +224,33 @@ A file that has comments shows a speech bubble with their number in its corner, 
 file's large view shows: those written in any round of the contest. A screen reader reads it
 as "3 comments".
 
-Next to the tabs, **Only with comments (N)** shows only your files that have comments. It works
-with the tabs: on **Selected** it shows your selected files with comments, and N is how many of
-the tab's files have them. While it is on, the tabs count your files with comments too: each
-tab's number is how many files it shows. The large view's previous and next then go through
-these files only, and your votes keep you in this list. Press it again to see all your files. On
-a narrow screen it is a speech bubble icon; point at it to see its name.
+The **Comments** menu, after the votes menu, has three choices:
+
+- **All files**: your files with or without comments;
+- **Only with comments (N)**: only your files that have comments. It works with the votes menu:
+  on **Selected** it shows your selected files with comments, and N is how many of them have
+  comments. The votes menu then counts your files with comments too. The large view's previous
+  and next go through these files only, and your votes keep you in this list;
+- **Recent comments list (N)**: the same files as a list of their comments (below).
+
+The button shows **Comments (N)** while you see all your files, N being how many of them have
+comments (just **Comments** when none has). While a choice is on, the button is highlighted and
+says **With comments (N)** or **Comments list (N)**. A choice with no file is greyed out. On a
+narrow screen the button shows the speech bubble and the number; point at it to see its name.
 
 <a id="j-recent-comments"></a>
-While **Only with comments** is on, **Recent comments** beside it opens the same files as a list
-of their comments: each file with its thumbnail, your vote and every comment its large view
-shows (from all rounds of the contest, with their authors and times), 20 files to a page, the
-file with the newest comment first. The tabs work there too, and count the files of the list.
-The order menu above the list has **Latest comment first** and your usual orders. Click a file
-to open its large view: previous, next and your votes then go through these files in the same
-order. **Show in the gallery** goes back to your gallery with only the files with comments, in
-your usual order. You see only your own files there, as in the gallery.
+**Recent comments list** shows each of these files with its thumbnail, your vote and every
+comment its large view shows (from all rounds of the contest, with their authors and times), 20
+files to a page, the file with the newest comment first. The votes menu works there too, and
+counts the files of the list. The order menu in the top bar has **Latest comment first** and your
+usual orders. Click a file to open its large view: previous, next and your votes then go through
+these files in the same order. **Only with comments** in the **Comments** menu goes back to your
+gallery with only the files with comments, in your usual order, and **All files** to all of them.
+You see only your own files there, as in the gallery.
 
 ### Sorting your files
 
-The sort menu next to the tabs has **In file order**, **By my rating**, **Newest votes first**
+The order menu, after the line in the top bar, has **In file order**, **By my rating**, **Newest votes first**
 and **Oldest votes first**. **In file order** keeps every file in its place when you vote.
 **By my rating** puts your highest-rated files first. **Newest votes first** puts the files whose
 vote you changed most recently first, and **Oldest votes first** the ones you voted on longest
@@ -238,9 +262,9 @@ In these two orders each file you voted on shows when you voted, in your own tim
 example "12 Nov, 14:05"); a vote from before these options says **Time not recorded**. The
 large view shows the time of your vote on the file in every order.
 
-On the **Selected** and **Rejected** tabs of a yes/no round the menu has **In file order**,
-**Newest votes first** and **Oldest votes first**. On the **Unrated** tab the files are always
-in file order.
+On **Selected** and **Rejected** in a yes/no round the order menu has **In file order**,
+**Newest votes first** and **Oldest votes first**. On **Unrated** the files are always in file
+order.
 
 A file you vote on stays where it is on the page until you reload it. In your list of a rated
 round, a note above the files says so after your first vote on the page: **Changed rates are
@@ -249,15 +273,15 @@ re-sorted when the page is reloaded**.
 ### Regions
 
 In a monuments contest, the bar has a **Region** menu: choose a region to see only its files,
-or **All regions**. Each region shows how many files of the tab you are on are in it.
+or **All regions**. Each region shows how many files of your choice in the votes menu are in it.
+The votes menu keeps the region you chose, and counts the files in it.
 
 ### One monument's files
 
-Your gallery can show only your files of one monument. A chip under the top bar says so:
-**Monument: 07-101-0001 (6)**, with the number of your files of it on the tab you are on. The
-tabs count only that monument's files too, and the **Region** menu is hidden: a monument is in
-one region. Click **×** on the chip to see all your files again. **The monument's page** beside
-the chip opens the monument's page.
+Your gallery can show only your files of one monument. A chip in the top bar, where the
+**Region** menu is, says so: **Monument: 07-101-0001**. The votes menu and the pager count only
+that monument's files, and the **Region** menu is hidden: a monument is in one region. Click
+**×** on the chip to see all your files again. **↗** on the chip opens the monument's page.
 
 You open this list from a file's large view (**Gallery** in the monument's box, see below) or from
 a monument's page. Votes work as usual. In the large view, **Next image** and **Previous image**
@@ -273,7 +297,7 @@ and **Last page**.
 To jump to a page, click the numbers in the middle, type a page number in the box, and press
 **Go**.
 
-<img src="images/juror-gallery-top-bar.png" alt="The top bar of a gallery, with tabs, sort menu, region menu and pager" width="1280">
+<img src="images/juror-gallery-top-bar.png" alt="The top bar of a gallery, with the round, votes, comments and region menus, the order menu and the pager" width="1280">
 
 ### Voting in a yes/no round's gallery
 
@@ -351,7 +375,7 @@ monument's id, **Gallery (N)** and **Page →**, for example `46-233-0012 · Gal
   linked to your gallery with only those files. Other jurors' files and votes are never counted
   for you.
 
-**Gallery (N)** opens your gallery (the tab you are on) with only the monument's N files. It
+**Gallery (N)** opens your gallery (your choice in the votes menu) with only the monument's N files. It
 isn't shown when your gallery already shows only this monument, or when this is its only file
 of the monument; the line is then `46-233-0012 · Page →`. Files whose monument isn't in the
 tool's monument lists (for example in Wiki Loves Earth) get a small box with the monument's id
@@ -475,7 +499,7 @@ wiki account that is already set, ask a contest admin.
 
 ### Disqualified files
 
-A disqualified file simply leaves your list, and your tab counts change with it. You don't
+A disqualified file simply leaves your list, and the counts in your votes menu change with it. You don't
 need to do anything. If you had voted on it, your vote is kept and comes back if the file is
 requalified.
 
