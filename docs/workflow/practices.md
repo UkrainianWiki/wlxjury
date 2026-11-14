@@ -75,10 +75,12 @@ that fixes it avoids reopening done work, and the entries keep the rest from bei
 flagging it, and flags only what is neither fixed later nor planned.
 
 **3.3 CodeRabbit one PR at a time.** Its reviews come about one per 45–50 minutes and its chat
-answers are limited per hour, so the orchestrator requests one review, triages it (replies in
-each thread, new entries in the triage document), then requests the next (the user's choice,
-2026-11-03). The tools and their limits: [`scripts/review/`](../../scripts/review/README.md);
-their state files are rebuilt from GitHub, so nothing is lost with a session.
+answers are limited per hour, so reviews are requested one at a time (the user's choice,
+2026-11-03). Since 2026-11-13 the loop requests them on its own, in stack order, and queues each
+review; the orchestrator triages from the queue (replies in each thread, new entries in the
+triage document) and marks the PR triaged. The tools and their limits:
+[`scripts/review/`](../../scripts/review/README.md); the loop's files live outside every checkout
+and its request state is rebuilt from GitHub, so nothing is lost with a session.
 
 ## 4. Worktrees, the sbt lock and the environment
 
