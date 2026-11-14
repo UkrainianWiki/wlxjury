@@ -77,11 +77,12 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
     Fixture(a, r, commentsOnly, viaRegia, juror, quiet, organizer, orgJuror, admin, root)
   }
 
-  private def get(app: Application, viewer: User, path: String): Future[Result] =
-    route(app, FakeRequest(GET, path).withSession(Secured.UserName -> viewer.email).withCSRFToken).get
+  private def get(app: Application, viewer: User, path: String, headers: (String, String)*): Future[Result] =
+    route(app, FakeRequest(GET, path).withSession(Secured.UserName -> viewer.email).withHeaders(headers: _*)
+      .withCSRFToken).get
 
-  private def page(app: Application, viewer: User, path: String): Document = {
-    val result = get(app, viewer, path)
+  private def page(app: Application, viewer: User, path: String, headers: (String, String)*): Document = {
+    val result = get(app, viewer, path, headers: _*)
     status(result) aka path must_== OK
     Jsoup.parse(contentAsString(result))
   }
@@ -239,7 +240,13 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
           (all.select("#juror-menu > button > i.bi-people[aria-hidden=true]").size === 1) and
           (one.select("#juror-menu > button > i.bi-people[aria-hidden=true]").size === 1) and
           (all.select("#votes-menu > button > i.bi-check2-square[aria-hidden=true]").size === 1) and
-          (one.select("#votes-menu > button > i.bi-check2-square[aria-hidden=true]").size === 1)
+          (one.select("#votes-menu > button > i.bi-check2-square[aria-hidden=true]").size === 1) and
+          // in Ukrainian the app's term for the jurors, «члени журі» («журі» alone is the jury)
+          (NavMenus.button(page(app, f.organizer, gallery(f.round, 0), "Accept-Language" -> "uk"), "juror-menu") ===
+            Some("Усі члени журі")) and
+          // the file list of all jurors says so in its heading, not "Juror: All" (fr "Juré : Toutes")
+          (page(app, f.organizer, s"/filelist/round/${f.round.getId}/user/0/page/1", "Accept-Language" -> "fr")
+            .select("[contenteditable] h2").text must contain("Tous les jurés"))
       }
     }
 
@@ -365,6 +372,43 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
           (status(get(app, f.juror, current)) === FORBIDDEN) and
           (status(get(app, f.juror, s"/roundstat/${f.round.getId}")) === FORBIDDEN)
       }
+    }
+
+    "not list Statistics for staff of another contest or a deactivated member, nor open it for them" in {
+      testDbApp { app =>
+        val f = fixture()
+        val c = f.contest.getId
+        // the organizer of contest A is a juror of contest B: on B's pages a juror, no Statistics
+        val b = contestDao.create(None, "WLE", 2026, "Ukraine")
+        val rb = roundDao.create(Round(None, 1, Some("B 1"), contestId = b.getId, rates = Round.binaryRound, active = true))
+        UserContestJdbc.createMembership(f.organizer.getId, b.getId, "jury")
+        rb.addUsers(Seq(RoundUser(rb.getId, f.organizer.getId, "jury", active = true)))
+        val onB = page(app, f.organizer, gallery(rb, f.organizer.getId))
+        val bStat = get(app, f.organizer, s"/roundstat?contestId=${b.getId}")
+        val bStatLanded = redirectLocation(bStat).fold(status(bStat))(to => status(get(app, f.organizer, to)))
+        // back in A (a page GET switches the contest), the organizer has it again
+        val onA = page(app, f.organizer, s"/contest/$c/files")
+        // an admin of A whose membership is deactivated (the "no" role): no page of A, no Statistics
+        UserContestJdbc.updateRole(f.admin.getId, c, User.NO_ROLE)
+        val files = get(app, f.admin, s"/contest/$c/files")
+        (onB.select("#pages-menu, #menu-statistics").size === 0) and
+          (bStatLanded === FORBIDDEN) and
+          (onA.select("#pages-menu #menu-statistics").size === 1) and
+          (status(files) !== OK) and
+          (contentAsString(files) must not(contain("menu-statistics"))) and
+          (status(get(app, f.admin, s"/roundstat?contestId=$c")) !== OK) and
+          (status(get(app, f.admin, s"/roundstat/${f.round.getId}")) !== OK)
+      }
+    }
+
+    "show Statistics to the same people as a round's organizer views (canViewContestStats = canViewOrgInfo)" in {
+      val (c, other) = (7L, 8L)
+      val round = Round(None, 1, contestId = c)
+      val cases = for {
+        roles <- Seq(Set("jury"), Set("organizer"), Set("admin"), Set(User.ROOT_ROLE), Set(User.NO_ROLE), Set(User.BOARD_ROLE), Set.empty[String])
+        contest <- Seq(Some(c), Some(other), None)
+      } yield User("U", "u@example.com", None, roles, contestId = contest)
+      forall(cases)(u => (u.roles, u.contestId, u.canViewContestStats(c)) === ((u.roles, u.contestId, u.canViewOrgInfo(round))))
     }
 
     "not list Statistics in a contest without rounds, whose current statistics are no error" in {

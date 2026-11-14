@@ -321,7 +321,7 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
         val doc = page(app, f.organizer, path(f, 0, s"?commenter=${f.juror1.getId}"), "Accept-Language" -> "uk")
         doc.selectFirst("#comments-report-commenter").ownText.trim === "Коментарі: Juror 1"
         doc.selectFirst("#comments-report-count").text === "· 3 файли, 3 коментарі, автор: Juror 1"
-        doc.selectFirst("a.wlx-commenter-chip-remove").attr("aria-label") === "Показати коментарі усіх"
+        doc.selectFirst("a.wlx-commenter-chip-remove").attr("aria-label") === "Показати коментарі всіх"
         val msg = msgOf(doc, "j2 on seven")
         links(msg).map(l => (l._3, l._4, l._5)) === Seq(
           ("Лише коментарі: Juror 2", "Лише коментарі: Juror 2", ""),

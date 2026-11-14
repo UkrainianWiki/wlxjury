@@ -160,14 +160,17 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   as before. Organizer guide.
 - **Juror menu and Votes button told apart** (the maintainer's decision C of 2026-11-14; developed
   2026-11-14, `stack/153-statistics-in-pages-menu`): in the organisers' bar the juror menu's
-  button has a people icon and reads **All jurors** (uk «Усі журі», ru «Все жюри», fr «Tous les
-  jurés») or the juror's name, and the Votes button a check-box icon before its choice (for jurors
-  too), both icons hidden from screen readers, so **All jurors** and **All (5712)** no longer look
-  alike. Juror and organizer guides.
-- **Ukrainian «усі» throughout** (the maintainer, 2026-11-14; developed 2026-11-14,
-  `stack/153-statistics-in-pages-menu`): the interface said both «Всі» and «Усі регіони»; every
-  form of "all" in `messages.uk` is now the у- form (**Усі**, «усіх», «усім», «усіма»), 19 keys,
-  the Votes menu's **Усі** among them. Russian and French had no such mix and are unchanged.
+  button has a people icon and reads **All jurors** (uk «Усі члени журі», ru «Все члены жюри», fr
+  «Tous les jurés») or the juror's name, and the Votes button a check-box icon before its choice
+  (for jurors too), both icons hidden from screen readers, so **All jurors** and **All (5712)** no
+  longer look alike. To keep the bar on one line, the juror's name in it is cut a little shorter
+  (at 7.5rem instead of 9rem; whole in its title). The file list of all jurors is headed **All
+  jurors** instead of "Juror: All" (in French it read «Juré : Toutes»). Juror and organizer guides.
+- **Ukrainian «усі»/«всі»** (the maintainer, 2026-11-14; developed 2026-11-14,
+  `stack/153-statistics-in-pages-menu`): a label that starts with the word says **Усі** (the Votes
+  menu's «Всі» is now **Усі**, as **Усі регіони**), and inside a sentence the word follows the у/в
+  alternation (**всі** after a vowel, **усі** after a consonant or a pause): «Кожний файл усім
+  членам журі». Russian and French had no such mix and are unchanged.
 
 **Development**
 
