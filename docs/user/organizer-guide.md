@@ -259,10 +259,9 @@ files in with it, see [Importing the contest's files](admin-guide.md#a-import-fi
 
 <img src="images/organizer-contest-files.png" alt="The contest's files as an organizer sees them, with the three tabs and no import button" width="1280">
 
-Jurors of the contest can open this page too, from a monument's page (see below): all the
-contest's files except those deleted on Commons, without the tabs, the authors, the authors
-list or the conflicts of interest. They never see votes there. The top bar doesn't link it for
-them.
+Jurors don't open this page: it is for the contest's admins and organizers. A juror who follows
+an old link to it gets the "no access" page, which suggests their round's gallery. Jurors reach
+a monument's files in their own round instead (see below).
 
 <a id="o-monuments"></a>
 ### Monuments
@@ -276,8 +275,19 @@ and its Wikidata item where the list has them, and under **Files**:
   page with only them, under a chip **Monument: … (N)**; the **×** on the chip shows all the files
   again. The filter takes the monument's id exactly and keeps to the pages, the region and
   country menus, the author filter and the large view.
-- **In round …: N**: the round's files of this monument, those any juror has (for a juror: only
-  their own). The count has no link yet: a round's gallery filtered by monument is planned.
+- **In round …: N →**: the round's files of this monument, those any juror has (for a juror: only
+  their own, and the contest's count isn't shown to them). The link opens the round's gallery
+  with only them: all the jurors' votes for you, a juror's own gallery for them.
+
+A round's lists (the gallery, by rate, the file list and the comments report) take the monument
+filter too, under a chip **Monument: … (N)** with the **×** that removes it and a link to the
+monument's page. The tabs and the pager count only the monument's files, the region menu is
+hidden while the filter is on (a monument is in one region), and the filter keeps to the pages,
+tabs, orders, views, the round and juror menus and the large view, whose next and previous files
+and votes by keys stay among the monument's files. In the large view, the monument's box has
+**This monument in the list (N)**, which opens the list you are in (the same juror, tab and order)
+with only the monument's files; for a file whose monument isn't in the tool's monument lists the
+box shows just the id and that line.
 
 The page counts files only in a contest you are a member of, and a round you may see; opened
 from elsewhere it shows the monument alone. **Monuments** (`/monuments`) opens a monument's page

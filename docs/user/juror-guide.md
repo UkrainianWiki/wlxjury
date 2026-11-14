@@ -240,6 +240,19 @@ re-sorted when the page is reloaded**.
 In a monuments contest, the bar has a **Region** menu: choose a region to see only its files,
 or **All regions**. Each region shows how many files of the tab you are on are in it.
 
+### One monument's files
+
+Your gallery can show only your files of one monument. A chip under the top bar says so:
+**Monument: 07-101-0001 (6)**, with the number of your files of it on the tab you are on. The
+tabs count only that monument's files too, and the **Region** menu is hidden: a monument is in
+one region. Click **×** on the chip to see all your files again. **The monument's page** beside
+the chip opens the monument's page.
+
+You open this list from a file's large view (**This monument in the list**, see below) or from
+a monument's page. Votes work as usual. In the large view, **Next image** and **Previous image**
+and voting by keys stay among the monument's files, and a small chip **Monument: 07-101-0001**
+at the top of the left column reminds you; its **×** shows the same file in your whole list.
+
 ### The pager
 
 When your files don't fit on one page, the pager in the top bar shows which files you see, for
@@ -322,14 +335,18 @@ and its id. It opens the monument's page:
 - its name, place, year and type, as its Wikipedia list has them;
 - links to its row in the list on Wikipedia, its category on Commons and its Wikidata item,
   where the list has them;
-- **Files**: how many of the contest's files show this monument, linked to those files, and
-  how many of them are yours in the round you came from (**yours**). Other jurors' files and
-  votes are never counted for you.
+- **Files**: how many of your files in the round you came from show this monument (**yours**),
+  linked to your gallery with only those files. Other jurors' files and votes are never counted
+  for you.
 
-The contest's files the link opens are all the contest's photos of the monument, not only
-yours, in a read-only gallery: no votes, no authors, and no files deleted on Commons. Remove the
-**Monument** chip to see all the contest's files. A monument's page is the way to the contest's
-files for jurors: the top bar has no link to them.
+The monument's box itself has a line **This monument in the list (N)** when your list (the tab
+you are on) has other files of the monument: it opens the list with only them. When this is
+the list's only file of the monument, the line says **The only file of this monument in the
+list** instead. Files whose monument isn't in the tool's monument lists (for example in Wiki
+Loves Earth) get a small box with the monument's id and that line, without a link to a
+monument's page.
+
+You see only the files of your rounds: the contest's other files aren't shown to jurors.
 
 <img src="images/juror-large-view-yes-no.png" alt="The large view of a yes/no round" width="820">
 
@@ -423,9 +440,8 @@ is open.
 
 ### Your own votes only
 
-You see only your own votes. Other jurors' votes, the files' authors and the contest's
-statistics are for the organizers. The contest's files, which a monument's page links, show you
-the files without their authors or votes.
+You see only your own votes and your own files in your rounds. Other jurors' votes, the files'
+authors, the contest's other files and its statistics are for the organizers.
 
 The tool doesn't show you who made a file, but judging isn't anonymous: the file's page on
 Commons, which the large view links to, names its author.
