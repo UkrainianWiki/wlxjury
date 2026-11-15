@@ -8,8 +8,8 @@
 // units, the CSRF header) and showing the new stars at once; a failed vote showing the
 // last stored stars again and explained (vote-errors.js); a click while a vote is pending
 // sending nothing; a click on them never reaching the tile, which opens the large view. Which galleries get stars at all: views.GalleryTileStarsViewSpec.
-// A binary round's tiles: their frames and pressed thumbs from the stored vote at load, and
-// after a vote. The juror's own by-rate list: the same stars per file in place of the static
+// A binary round's tiles: their vote badge (✓ or ✗ at the lower left, no frame) and pressed
+// buttons from the stored vote at load, and after a vote. The juror's own by-rate list: the same stars per file in place of the static
 // ones, a vote updating the rate text in place and marking the file changed (its place and
 // rank kept until a reload), the hint above the list shown from the first change on.
 
@@ -177,7 +177,7 @@ describe("a rated round's tile stars", () => {
     });
 });
 
-// a binary round's tile with its thumbs, as unitegallery draws it for a juror (in its overlay)
+// a binary round's tile with its ✓ and ✗ buttons, as unitegallery draws it for a juror (in its overlay)
 function binaryTile(rate) {
     document.body.firstElementChild.setAttribute("data-vote-selected", "Selected");
     document.body.firstElementChild.setAttribute("data-vote-rejected", "Rejected");
@@ -188,20 +188,33 @@ function binaryTile(rate) {
     return item;
 }
 
-/** The tile's frame ("selected", "rejected" or "none") and its thumbs pressed. */
+/** The tile's state ("selected", "rejected" or "none": its state class, and its vote chip's icon
+  * and name, one chip at most, first in the tile's chips) and its buttons pressed. */
 function shown() {
     const t = tile();
-    const frame = t.classList.contains("wlx-tile-selected") ? "selected"
+    const state = t.classList.contains("wlx-tile-selected") ? "selected"
         : t.classList.contains("wlx-tile-rejected") ? "rejected" : "none";
     expect(t.classList.contains("wlx-tile-selected") && t.classList.contains("wlx-tile-rejected")).toBe(false);
-    return [frame, t.querySelector(".ug-icon-select").getAttribute("aria-pressed"),
+    const marks = t.querySelectorAll(".wlx-tile-vote-mark");
+    expect(marks.length).toBeLessThanOrEqual(1);
+    const shownIn = (m, icon) => m.querySelector("[aria-hidden=true] > i." + icon);
+    const mark = marks.length === 0 ? "none"
+        : shownIn(marks[0], "bi-check-lg.wlx-vote-selected") && marks[0].title === "Selected" ? "selected"
+        : shownIn(marks[0], "bi-x-lg.wlx-vote-rejected") && marks[0].title === "Rejected" ? "rejected" : "?";
+    expect(mark).toBe(state);
+    if (marks.length) {
+        expect(marks[0].parentNode.className).toBe("wlx-tile-chips");
+        expect(marks[0].parentNode.firstElementChild).toBe(marks[0]);
+        expect(marks[0].querySelector(".visually-hidden").textContent).toBe(marks[0].title);
+    }
+    return [state, t.querySelector(".ug-icon-select").getAttribute("aria-pressed"),
         t.querySelector(".ug-icon-reject").getAttribute("aria-pressed")];
 }
 
 describe("a binary round's tile", () => {
 
     test.each([[1, "selected", "true", "false"], [-1, "rejected", "false", "true"], [0, "none", "false", "false"]])(
-        "shows a stored %i at load: frame %s", (rate, frame, up, down) => {
+        "shows a stored %i at load: %s", (rate, frame, up, down) => {
             binaryTile(rate);
             expect(shown()).toEqual([frame, up, down]);
         });
@@ -215,7 +228,7 @@ describe("a binary round's tile", () => {
     });
 
     test.each([[1, "selected", "true", "false"], [-1, "rejected", "false", "true"], [0, "none", "false", "false"]])(
-        "shows a vote of %i once stored: frame %s", (rate, frame, up, down) => {
+        "shows a vote of %i once stored: %s", (rate, frame, up, down) => {
             const item = binaryTile(rate === 0 ? 1 : 0);
             vote(tile(), item, rate);
             expect(requests[0].options.url).toBe("/rate/round/1/pageid/101/select/" + rate);
@@ -271,7 +284,7 @@ describe("a binary round's tile", () => {
 
     test("keeps the stored vote shown if a vote fails, and says why", () => {
         const item = binaryTile(1);
-        vote(tile(), item, 0); // thumbs up on a selected file: un-select
+        vote(tile(), item, 0); // ✓ on a selected file: un-select
         requests[0].answer.reject({ status: 409, responseJSON: { error: "round_closed" } });
         expect(shown()).toEqual(["selected", "true", "false"]);
         expect(item.rate).toBe("1");
@@ -503,6 +516,7 @@ describe("a tile's comments", () => {
     test("show a bubble and the number, the words for screen readers and as the tooltip", () => {
         const badge = addComments(tile(), { comments: "3", commentsLabel: "3 коментарі" });
         expect(tile().querySelector(".wlx-tile-comments")).toBe(badge);
+        expect(badge.tagName).toBe("SPAN"); // no large view to link
         expect(badge.querySelector("i.bi-chat-left-text-fill").getAttribute("aria-hidden")).toBe("true");
         const shown = badge.querySelector("span[aria-hidden=true]");
         expect(shown.textContent.trim()).toBe("3");
@@ -514,6 +528,37 @@ describe("a tile's comments", () => {
         expect(read).toBe("3 коментарі");
     });
 
+    test("link the file's large view at its comments, named for screen readers, the click its own", () => {
+        document.body.firstElementChild.setAttribute("data-comments-open", "{0}: open the comments");
+        const clicked = jest.fn();
+        tile().addEventListener("click", clicked);
+        const link = addComments(tile(), { comments: "3", commentsLabel: "3 comments",
+            largeUrl: "/large/round/1/user/2/pageid/101?sort=rate" });
+        expect(link.tagName).toBe("A");
+        expect(link.getAttribute("href")).toBe("/large/round/1/user/2/pageid/101?sort=rate#comments");
+        expect(link.querySelector(".visually-hidden").textContent).toBe("3 comments: open the comments");
+        expect(link.title).toBe("3 comments: open the comments");
+        expect(link.querySelector("span[aria-hidden=true]").textContent).toBe("3");
+        link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+        expect(clicked).not.toHaveBeenCalled();
+    });
+
+    test("follow the vote or the tally in the tile's chips, or come first without one", () => {
+        const badge = addComments(tile(), { comments: "2", commentsLabel: "2 comments" });
+        expect(tile().querySelector(".wlx-tile-chips").firstElementChild).toBe(badge);
+        const tally = addTally(tile(), { approvals: "1", rejections: "0", tally: "1 approval" });
+        expect(Array.from(tile().querySelector(".wlx-tile-chips").children)).toEqual([tally, badge]);
+        expect(tile().querySelectorAll(".wlx-tile-chips")).toHaveLength(1);
+    });
+
+    test("sit in the tile's foot above a rated round's stars", () => {
+        const { el } = stars(3);
+        addComments(tile(), { comments: "1", commentsLabel: "1 comment" });
+        const foot = tile().querySelector(".wlx-tile-foot");
+        expect(Array.from(foot.children).map(c => c.className.split(" ")[0])).toEqual(["wlx-tile-chips", "wlx-tile-stars"]);
+        expect(el.parentNode).toBe(foot);
+    });
+
     test("add nothing to a tile without comments", () => {
         expect(addComments(tile(), {})).toBeNull();
         expect(addComments(tile(), { comments: "0", commentsLabel: "0 comments" })).toBeNull();
@@ -522,38 +567,77 @@ describe("a tile's comments", () => {
     });
 });
 
-// The time of the juror's vote on a tile in an order by vote time (addVoteTime): a <time> with the
-// UTC value, formatted by vote-time.js where loaded; the text for a vote without a time; nothing
+// The time of the juror's vote on a tile in an order by vote time (addVoteTime), in the vote chip
+// after its mark: a <time> with the UTC value, formatted by vote-time.js where loaded; in a rated
+// round (no mark) the text for a vote without a time, in a binary round the mark alone; nothing
 // for an unrated file or a tile without the attribute (any other order). After a stored vote in
-// the tile (voteTimeAfter): a changed vote's time is now, a cleared vote's badge goes, the same
+// the tile (voteTimeAfter): a changed vote's time is now, a cleared vote's chip goes, the same
 // vote again keeps its time.
 describe("a tile's vote time", () => {
     afterEach(() => { delete window.wlxVoteTime; });
 
     const badge = () => tile().querySelector(".wlx-tile-time");
+    const chip = () => tile().querySelector(".wlx-tile-vote-mark");
+    const said = () => chip().querySelector(".visually-hidden").textContent;
 
-    test("shows the time formatted, the UTC value as its datetime", () => {
+    test("shows the time formatted, the UTC value as its datetime, in the vote chip", () => {
         window.wlxVoteTime = { format: (iso, lang, zone, now, year) => `formatted ${iso} ${lang || ""}${year ? " year" : ""}`.trim() };
         document.documentElement.setAttribute("lang", "uk");
         const shown = addVoteTime(tile(), { rate: "1", votedAt: "2026-11-12T14:05:00Z" });
         const time = shown.querySelector("time.wlx-vote-time");
-        expect(badge()).toBe(shown);
+        expect(chip()).toBe(shown);
+        expect(badge().parentNode.getAttribute("aria-hidden")).toBe("true");
         expect(time.getAttribute("datetime")).toBe("2026-11-12T14:05:00Z");
         expect(time.textContent).toBe("formatted 2026-11-12T14:05:00Z uk");
         expect(time.title).toBe("formatted 2026-11-12T14:05:00Z uk year");
+        // a rated round's (no mark): the time alone, read and titled as shown (the title with the year)
+        expect(said()).toBe("formatted 2026-11-12T14:05:00Z uk");
+        expect(chip().title).toBe("formatted 2026-11-12T14:05:00Z uk year");
     });
 
     test("keeps the UTC value without the formatter", () => {
         const shown = addVoteTime(tile(), { rate: "3", votedAt: "2026-11-12T14:05:00Z" });
         expect(shown.querySelector("time").textContent).toBe("2026-11-12T14:05:00Z");
         expect(shown.querySelector("time").title).toBe("");
+        expect(shown.title).toBe("2026-11-12T14:05:00Z");
     });
 
-    test("says no time was recorded for a vote without one", () => {
-        const shown = addVoteTime(tile(), { rate: "-1", votedAt: "", votedNone: "Time not recorded" });
-        expect(shown.querySelector("time")).toBeNull();
-        expect(shown.classList.contains("wlx-vote-time-none")).toBe(true);
-        expect(shown.textContent).toBe("Time not recorded");
+    test("says no time was recorded for a rated round's vote without one", () => {
+        addVoteTime(tile(), { rate: "3", votedAt: "", votedNone: "Time not recorded" });
+        expect(chip().querySelector("time")).toBeNull();
+        expect(badge().classList.contains("wlx-vote-time-none")).toBe(true);
+        expect(badge().textContent).toBe("Time not recorded");
+        expect(said()).toBe("Time not recorded");
+    });
+
+    test("one chip in a binary round: the mark, then the time; one name for both", () => {
+        window.wlxVoteTime = { format: (iso, lang, zone, now, year) => (year ? "12 Nov 2026, 14:05" : "12 Nov, 14:05") };
+        const item = binaryTile(1);
+        item.votedAt = "2026-11-12T14:05:00Z";
+        addVoteTime(tile(), item);
+        expect(tile().querySelectorAll(".wlx-tile-chips > *")).toHaveLength(1);
+        const shown = chip().querySelector(".wlx-chip-shown");
+        expect(Array.from(shown.children).map(c => c.className)).toEqual(
+            ["bi wlx-chip-mark bi-check-lg wlx-vote-selected", "wlx-tile-time"]);
+        expect(said()).toBe("Selected, 12 Nov, 14:05");
+        expect(chip().title).toBe("Selected, 12 Nov 2026, 14:05");
+        // a vote without a time: the mark alone
+        item.votedAt = "";
+        item.votedNone = "Time not recorded";
+        addVoteTime(tile(), item);
+        expect(badge()).toBeNull();
+        expect(said()).toBe("Selected");
+        expect(chip().querySelector("i.bi-check-lg")).not.toBeNull();
+    });
+
+    test("the same chip whether the time or the mark comes first (an organiser's view of one juror)", () => {
+        const holder = document.body.firstElementChild;
+        holder.setAttribute("data-vote-rejected", "Rejected");
+        const item = { rate: "-1", votedAt: "2026-11-12T14:05:00Z" };
+        addVoteTime(tile(), item);
+        addVoteMark(tile(), item, { binary: true });
+        expect(tile().querySelectorAll(".wlx-tile-vote-mark")).toHaveLength(1);
+        expect(said()).toBe("Rejected, 2026-11-12T14:05:00Z");
     });
 
     test("adds nothing for an unrated file, or in another order", () => {
@@ -573,12 +657,15 @@ describe("a tile's vote time", () => {
         expect(badge()).toBeNull(); // not before it is stored
         requests[0].answer.resolve("success");
         const first = badge().querySelector("time").getAttribute("datetime");
+        expect(tile().querySelectorAll(".wlx-tile-vote-mark")).toHaveLength(1);
         expect(Date.parse(first)).toBeGreaterThanOrEqual(start - 1000);
         expect(item.votedAt).toBe(first);
 
         vote(tile(), item, 0);
         requests[1].answer.resolve("success");
         expect(badge()).toBeNull();
+        expect(chip()).toBeNull();
+        expect(tile().querySelector(".wlx-tile-chips")).toBeNull();
         expect(item.votedAt).toBe("");
     });
 
@@ -616,7 +703,7 @@ describe("a tile's vote time", () => {
 });
 
 // One juror's vote on a binary round's tile as an organiser views it (addVoteMark): read-only,
-// no thumbs to click; the frame and a thumb named by the page; nothing for an unrated file.
+// no ✓ or ✗ to click; the badge of the juror's own tiles; nothing for an unrated file.
 describe("a tile's read-only vote", () => {
     beforeEach(() => {
         const holder = document.body.firstElementChild;
@@ -624,19 +711,21 @@ describe("a tile's read-only vote", () => {
         holder.setAttribute("data-vote-rejected", "Rejected");
     });
 
-    test.each([[1, "wlx-tile-selected", "bi-hand-thumbs-up-fill", "Selected"],
-               [-1, "wlx-tile-rejected", "bi-hand-thumbs-down-fill", "Rejected"]])(
-        "a binary round's %i: frame %s, its thumb and name", (rate, frame, icon, name) => {
+    test.each([[1, "wlx-tile-selected", "bi-check-lg", "Selected"],
+               [-1, "wlx-tile-rejected", "bi-x-lg", "Rejected"]])(
+        "a binary round's %i: state %s, its icon %s and name", (rate, state, icon, name) => {
             const mark = addVoteMark(tile(), { rate: String(rate) }, { binary: true });
-            expect(tile().classList.contains(frame)).toBe(true);
-            expect(mark.querySelector("i." + icon)).not.toBeNull();
+            expect(tile().classList.contains(state)).toBe(true);
+            expect(mark.className).toBe("badge wlx-tile-chip wlx-tile-vote-mark");
+            expect(mark.querySelector("[aria-hidden=true] > i." + icon)).not.toBeNull();
+            expect(mark.querySelector("[class*=thumbs]")).toBeNull();
             expect(mark.querySelector(".visually-hidden").textContent).toBe(name);
             expect(mark.title).toBe(name);
             // nothing to vote with
             expect(tile().querySelectorAll("[role=button], .ug-tile-icon, a, button")).toHaveLength(0);
         });
 
-    test("an unrated file in a binary round: no frame, no mark", () => {
+    test("an unrated file in a binary round: no state, no mark", () => {
         expect(addVoteMark(tile(), { rate: "0" }, { binary: true })).toBeNull();
         expect(tile().className).toBe("ug-tile");
     });

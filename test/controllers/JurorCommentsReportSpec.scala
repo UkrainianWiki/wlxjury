@@ -209,7 +209,7 @@ class JurorCommentsReportSpec extends PlaySpecification with PlayTestDb {
         commentsLink(doc, "All files") === s"$gallery?filter=unrated&sort=file"
         // the report is the menu's current state, its count the report's files; no button in the body
         NavMenus.current(doc, "comments-menu").map(_.name) === Some("Recent comments list")
-        NavMenus.button(doc, "comments-menu") === Some("Comments list (1)")
+        NavMenus.button(doc, "comments-menu") === Some("Comments list 1")
         doc.select(".wlx-comments-report a.btn").size === 0
         val remembered = route(app, FakeRequest(GET, report(f, f.juror1.getId))
           .withSession(Secured.UserName -> f.juror1.email).withCookies(Cookie(RoundList.SortCookie, "latest-vote"))
@@ -409,8 +409,8 @@ class JurorCommentsReportSpec extends PlaySpecification with PlayTestDb {
         counts(report(f, j.getId, "?monument=" + Monument), rows) ===
           Map("All" -> 2, "Unrated" -> 1, "Selected" -> 1, "Rejected" -> 0)
         // the Comments menu's number: the current choice's files with comments, its list's total when on
-        NavMenus.button(page(app, j, gallery + "?filter=selected"), "comments-menu") === Some("Comments (1)")
-        NavMenus.button(page(app, j, gallery + "?comments=1"), "comments-menu") === Some("With comments (3)")
+        NavMenus.button(page(app, j, gallery + "?filter=selected"), "comments-menu") === Some("Comments 1")
+        NavMenus.button(page(app, j, gallery + "?comments=1"), "comments-menu") === Some("With comments 3")
       }
     }
 
@@ -424,7 +424,7 @@ class JurorCommentsReportSpec extends PlaySpecification with PlayTestDb {
           Map("All" -> 2, "Unrated" -> 0, "Selected" -> 2, "Rejected" -> 0)
         galleryFiles(j2) === Nil
         // the Comments menu stays: the current filter at 0, the empty list greyed out, not a link
-        NavMenus.button(j2, "comments-menu") === Some("With comments (0)")
+        NavMenus.button(j2, "comments-menu") === Some("With comments 0")
         NavMenus.comments(j2).map(i => (i.name, i.count, i.href.isDefined, i.active, i.disabled)) === Seq(
           ("All files", None, true, false, false),
           ("Only with comments", Some(0), true, true, false),

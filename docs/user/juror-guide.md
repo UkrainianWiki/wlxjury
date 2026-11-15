@@ -204,38 +204,43 @@ On a narrow window the groups move to a new line as a whole, the pager first.
 
 ### The votes menu
 
-The first menu after the round chooses your files by your votes, each choice with a count:
+The first menu after the round chooses your files by your votes, each choice with its count at its right:
 
 - in a yes/no round: **All**, **Unrated**, **Selected** and **Rejected**;
 - in a rated round: **All**, **Unrated** and **Rated**.
 
-The menu's button shows a check-box icon, your choice and its count, for example **Unrated (120)**. On **All** it
-also shows how many of these files you haven't rated yet: **All (5712) · 120 unrated**. That is
+The menu's button shows your choice's icon, the choice and its count, for example **Unrated 120**
+with an empty circle; **Selected** has ✓, **Rejected** ✗, **Rated** a star, and **All** the icons of
+all the choices together. On **All** it
+also shows how many of these files you haven't rated yet: **All 5712 · 120 unrated**. That is
 the quickest way to see what is left to do: choose **Unrated** to see those files. On
-**Selected** and **Rejected** the button is coloured as your thumbs are.
+**Selected** and **Rejected** the button is coloured as your votes are: green and red.
 
 Each count is the number of files that choice shows, in the region and with the other filters
 you have chosen. Choosing another one keeps them. A comments-only round has no votes menu.
 
 ### Files with comments
 
-A file that has comments shows a speech bubble with their number in its corner, for example
-💬 3, in the gallery and in the large view's **Next files**. It counts the comments that the
-file's large view shows: those written in any round of the contest. A screen reader reads it
-as "3 comments".
+A file that has comments shows a speech bubble with their number in its lower-left corner, for
+example 💬 3, in the gallery (right after your vote's mark) and in the large view's **Next
+files**. It counts the comments that the file's large view shows: those written in any round of
+the contest. A screen reader reads it as "3 comments"; in the gallery, where it is a link, as "3
+comments: open the comments". In the gallery, click it to open the file's large view at its
+comments. In the large view the same 💬 3 is under the buttons, after
+your vote; click it to jump to the comments under the image.
 
 The **Comments** menu, after the votes menu, has three choices:
 
 - **All files**: your files with or without comments;
-- **Only with comments (N)**: only your files that have comments. It works with the votes menu:
+- **Only with comments N**: only your files that have comments. It works with the votes menu:
   on **Selected** it shows your selected files with comments, and N is how many of them have
   comments. The votes menu then counts your files with comments too. The large view's previous
   and next go through these files only, and your votes keep you in this list;
-- **Recent comments list (N)**: the same files as a list of their comments (below).
+- **Recent comments list N**: the same files as a list of their comments (below).
 
-The button shows **Comments (N)** while you see all your files, N being how many of them have
+The button shows **Comments N** while you see all your files, N being how many of them have
 comments (just **Comments** when none has). While a choice is on, the button is highlighted and
-says **With comments (N)** or **Comments list (N)**. A choice with no file is greyed out. On a
+says **With comments N** or **Comments list N**. A choice with no file is greyed out. On a
 narrow screen the button shows the speech bubble and the number; point at it to see its name.
 
 <a id="j-recent-comments"></a>
@@ -258,9 +263,11 @@ ago; in both, files you haven't voted on yet come last, and votes from before th
 added count as older than any other. Your browser remembers your choice; on another computer or
 browser, choose it again.
 
-In these two orders each file you voted on shows when you voted, in your own time zone (for
-example "12 Nov, 14:05"); a vote from before these options says **Time not recorded**. The
-large view shows the time of your vote on the file in every order.
+In these two orders each file you voted on shows when you voted, in your own time zone, next to
+your vote's mark in its lower-left corner (for example "✓ 12 Nov, 14:05"; in a rated round the
+time alone, above the stars). A yes/no vote from before these options shows its mark alone, a
+rated one **Time not recorded**. On a narrow tile the time is left out; the large view shows the
+time of your vote on the file in every order.
 
 On **Selected** and **Rejected** in a yes/no round the order menu has **In file order**,
 **Newest votes first** and **Oldest votes first**. On **Unrated** the files are always in file
@@ -301,11 +308,12 @@ To jump to a page, click the numbers in the middle, type a page number in the bo
 
 ### Voting in a yes/no round's gallery
 
-Point at a file's tile and its buttons appear: thumbs up to select it, thumbs down to reject it.
-A selected file gets a green frame, a rejected one a red frame. The picture below shows tiles at
-rest, with the frames of earlier votes.
+Point at a file's tile and its buttons appear: ✓ to select it, ✗ to reject it.
+A selected file gets a green ✓ in its tile's lower-left corner, a rejected one a red ✗, with the
+file's comments (💬 3) right after it. The picture below shows tiles at rest, with the marks of
+earlier votes.
 
-To undo a vote, press the same thumb again: the file is unrated again. The thumbs also work from
+To undo a vote, press the same button again: the file is unrated again. The buttons also work from
 the keyboard: move to one and press Enter or Space. A vote shows once it is stored, and further
 clicks on that file are ignored until then. If a vote can't be stored, the file keeps its
 earlier vote and a message says why.
@@ -392,8 +400,8 @@ You see only the files of your rounds: the contest's other files aren't shown to
 
 ### Voting in the large view
 
-In a yes/no round, use the green thumbs-up button (**Select image**) and the red thumbs-down
-button (**Reject image**). Only the vote the file doesn't have yet is offered.
+In a yes/no round, use the green ✓ button (**Select image**) and the red ✗ button
+(**Reject image**). Only the vote the file doesn't have yet is offered.
 
 In a rated round, click the stars. The number above them shows the file's rate, or "–" if it
 has none. While you point at a star, it shows the rate a click gives. The circled cross removes
@@ -460,7 +468,8 @@ You can change it there.
 ### Comments on a file
 
 Under the image in the large view is **Comments**. Type in **Your comment here** and press
-**Submit comment**.
+**Submit comment**. When a file has comments, the 💬 with their number under the buttons takes you
+there (also with the keyboard: Tab to it and press Enter; the vote keys still work).
 
 <img src="images/juror-large-view-comments.png" alt="The comment box under the image, with the button Submit comment" width="664">
 

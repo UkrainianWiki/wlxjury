@@ -19,8 +19,9 @@ body.gallery {
     border-radius: var(--bs-border-radius);
 }
 /* the navbar's Votes menu (navbar.scala.html votesMenu) on the selected or the rejected: its
-   button's text tinted (at least 4.5:1 on the navbar in both modes); in its menu only the thumbs
-   are, the text staying readable on the active item's background, where the thumb is its colour */
+   button's text and its icon tinted (at least 4.5:1 on the navbar in both modes); in its menu only
+   the icons (✓, ✗) are, the text staying readable on the active item's background, where the
+   icon is its colour */
 .navbar .nav-item.vote-selected > .nav-link {
     color: var(--wlx-selected);
 }
@@ -29,7 +30,28 @@ body.gallery {
 }
 .wlx-votes-menu .wlx-vote-icon-selected { color: var(--wlx-selected); }
 .wlx-votes-menu .wlx-vote-icon-rejected { color: var(--wlx-rejected); }
+.wlx-votes-menu .wlx-vote-icon-unrated { color: var(--bs-secondary-color); }
 .wlx-votes-menu .dropdown-item.active i { color: currentColor; }
+/* "All"'s icons, all the round's marks (navbar.scala.html voteIcon): a little smaller and a hair
+   apart (the glyphs' own side bearings, less .12em; none less after the circle, which fills its
+   width, and a hair more before the star, which nearly fills its own), the text as close as after one icon, so that the
+   organisers' bar stays on one line (browser-test navbar.spec.js: 1683 px by rate) */
+.wlx-vote-icons { white-space: nowrap; font-size: .8em; }
+.wlx-votes-menu .wlx-vote-icons.wlx-lead-icon { margin-right: .15rem; }
+.wlx-vote-icons > i + i { margin-left: -.12em; }
+.wlx-vote-icons > .bi-circle + i { margin-left: 0; }
+.wlx-vote-icons > .bi-circle + .bi-star-fill { margin-left: .12em; }
+/* in the Votes menu each item's icon in a box as wide as "All"'s group, so the labels line up */
+.wlx-votes-menu .dropdown-item > .wlx-lead-icon { display: inline-block; width: 2.5rem; margin-right: .25rem; }
+/* counts without brackets (the maintainer's decision of 2026-11-15): a menu item's at its right
+   edge (navbar.scala.html itemCount, region-menu.js), a closed button's after its name
+   (wlx-nav-count), muted (--bs-secondary-color: 4.5:1 and more on the navbar and the menus in
+   both modes), the digits of a menu's counts lined up in one column; on the active item in its
+   text colour, on a greyed-out one greyed out with it */
+.wlx-menu-item { display: flex; align-items: center; }
+.wlx-menu-count { margin-inline-start: auto; padding-inline-start: 1rem; }
+.wlx-menu-count, .wlx-nav-count { color: var(--bs-secondary-color); font-variant-numeric: tabular-nums; }
+.dropdown-item.active .wlx-menu-count, .dropdown-item.disabled .wlx-menu-count { color: inherit; }
 /* the icon before a menu's choice that says which menu it is (the Votes menu's vote, the organisers'
    juror menu's people: decision C of 2026-11-14), close to its text */
 .wlx-lead-icon { margin-right: .25rem; }
@@ -279,25 +301,25 @@ a.wlx-large-failed img {
     white-space: nowrap;
     cursor: pointer;
 }
-/* A binary round's vote on the juror's own gallery tiles (tile-votes.js), from the file's
-   stored vote at load: a frame over the tile's edge, so that no tile or image moves when a
-   vote changes it; none unrated. Saturated colours (theme.css --wlx-vote-*) with an inner line
-   that parts the frame from a photo as dark or as bright as it is. The thumb of the vote the
-   file has (aria-pressed) is ringed in its colour: a click on it undoes the vote. */
-.ug-thumb-wrapper.ug-tile.wlx-tile-selected::before, .ug-thumb-wrapper.ug-tile.wlx-tile-rejected::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    border: 4px solid var(--wlx-vote-selected);
-    box-shadow: inset 0 0 0 1px var(--wlx-vote-line);
-    z-index: 4;
-    pointer-events: none;
+/* A binary round's select (✓, bi-check-lg) and reject (✗, bi-x-lg) on the juror's own tiles
+   (unitegallery.js P11): the glyph in the vote's colour on a chip of the page's background, which
+   keeps it readable over a photo as dark or as bright as it is. The tile has no frame (the
+   maintainer's decision of 2026-11-15: too strong); its vote is the ✓ or ✗ badge at its lower left
+   (wlx-tile-vote-mark, with the tally below), and the button of the vote the file has
+   (aria-pressed) is ringed in its colour: a click on it undoes the vote. */
+.ug-thumb-wrapper.ug-tile .ug-tile-icon.ug-icon-select, .ug-thumb-wrapper.ug-tile .ug-tile-icon.ug-icon-reject {
+    border-radius: 6px;
+    background-color: rgba(var(--bs-body-bg-rgb), .85);
+    color: var(--wlx-vote-selected);
+    font-size: 26px;
+    line-height: 38px;
+    text-align: center;
 }
-.ug-thumb-wrapper.ug-tile.wlx-tile-rejected::before {
-    border-color: var(--wlx-vote-rejected);
+.ug-thumb-wrapper.ug-tile .ug-tile-icon.ug-icon-reject {
+    color: var(--wlx-vote-rejected);
+}
+.ug-thumb-wrapper.ug-tile .ug-tile-icon.ug-icon-select:hover, .ug-thumb-wrapper.ug-tile .ug-tile-icon.ug-icon-reject:hover {
+    background-color: var(--bs-body-bg);
 }
 .ug-thumb-wrapper.ug-tile .ug-tile-icon[aria-pressed=true] {
     border-radius: 6px;
@@ -307,7 +329,7 @@ a.wlx-large-failed img {
 .ug-thumb-wrapper.ug-tile .ug-tile-icon.ug-icon-reject[aria-pressed=true] {
     box-shadow: 0 0 0 3px var(--wlx-vote-rejected);
 }
-/* A thumb with the keyboard focus (tile-votes.js): the focus ring outside the pressed one. */
+/* A ✓ or ✗ with the keyboard focus (tile-votes.js): the focus ring outside the pressed one. */
 .ug-thumb-wrapper.ug-tile .ug-tile-icon[tabindex]:focus-visible {
     outline: var(--bs-focus-ring-width) solid var(--bs-focus-ring-color);
     outline-offset: 4px;
@@ -399,6 +421,9 @@ a:has(> .btn) { text-decoration: none; }
    the buttons, stars, the file's details and the files after it, and the image beside it */
 .large-view { padding-left: 5px; }
 .large-side { min-width: 220px; }
+/* the side column's links (the jury's names, the file's details) on the light image grey: Bootstrap's
+   link blue is 3.5:1 on #e3e3e3, its hover blue (#0a58ca) 5.0:1, its pressed one (#084298) 7.3:1 */
+:root:not([data-bs-theme=dark]) .large-side { --bs-link-color-rgb: 10, 88, 202; --bs-link-hover-color-rgb: 8, 66, 152; }
 .large-main { margin-left: 5px; margin-top: 10px; }
 .large-nav { margin: 10px; }
 /* a box in the side column (author, monument, deleted file, comments), and a line (full
@@ -441,13 +466,12 @@ a:has(> .btn) { text-decoration: none; }
    star and the cancel icon is 1em wide (raty finds a half star by the icon's font size): as
    large as one line of them fits the tile (--wlx-tile-stars: the stars and the cancel icon),
    from 11px to 16px; on a narrower tile they wrap onto a second line. Above the tile's hover
-   overlay and its zoom icon. */
+   overlay and its zoom icon. In the tile's foot (.wlx-tile-foot), below its chips. */
 .ug-thumb-wrapper.ug-tile .wlx-tile-stars {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    position: relative;
+    align-self: stretch;
     z-index: 7;
+    pointer-events: auto;
     container-type: inline-size;
     display: flex;
     flex-wrap: wrap;
@@ -501,35 +525,99 @@ a:has(> .btn) { text-decoration: none; }
    yet to come as a dot in the secondary text colour */
 .wlx-vote-selected { color: var(--wlx-selected); }
 .wlx-vote-rejected { color: var(--wlx-rejected); }
+/* ✓ (bi-check-lg) and ✗ (bi-x-lg) at one optical size wherever they are shown, the maintainer's
+   note of 2026-11-15 (the tile's buttons looked different sizes): the check is 11 × 8.5 of the
+   font's 16 units with 1.5-unit strokes, the cross 12 × 12 with 1-unit strokes, so the check is
+   drawn 12% larger and the cross 8% smaller with its strokes thickened to the check's (a .05em
+   outline). Drawn scaled, not set larger: their boxes, the lines they sit on and the buttons'
+   tap targets stay as they are */
+.bi-check-lg::before { transform: scale(1.12); }
+.bi-x-lg::before {
+    transform: scale(.92);
+    -webkit-text-stroke: .05em currentcolor;
+}
 .wlx-vote-unrated { color: var(--bs-secondary-color); font-weight: bold; }
-/* all the jurors' votes on an organiser's tile (tile-votes.js addTally): on the page's colours
-   over the photo, at the tile's foot, under the tile's click, which opens the large view */
-.ug-thumb-wrapper.ug-tile .wlx-tile-tally {
+/* the gallery tile's foot (tile-votes.js foot): a column at its bottom edge, its chips above a
+   rated round's stars, so the two never overlap however the stars wrap. No stacking context of
+   its own (no z-index): the chips stay under the ✓ and ✗ buttons (z-index 6), the stars above
+   the zoom icon. It takes no clicks; the stars do */
+.ug-thumb-wrapper.ug-tile .wlx-tile-foot {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    pointer-events: none;
+}
+/* the tile's chips (tile-votes.js chips), one row at its lower left, the maintainer's decisions of
+   2026-11-15: the vote ("✓ 14:32": one juror's, the juror's own or as the organisers view it) or
+   all the jurors' tally ("✓ 12 ✗ 3"), then the comments ("💬 3"), on the page's colours over the
+   photo. As wide as the tile less its margins, so a narrower tile is measured again (fit) and
+   drops the vote's time first (wlx-chips-tight); clipped at the edge, never wider than the tile.
+   Under the ✓ and ✗ buttons; the vote and the tally take no clicks (the tile's click, which
+   opens the large view, goes through them), the comments' chip is a link of its own. A file
+   deleted on Commons has its mark there, but only on the contest files page, which has no chips */
+.ug-thumb-wrapper.ug-tile .wlx-tile-chips {
+    position: relative;
+    z-index: 5;
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    margin: 0 6px 6px;
+    overflow: hidden;
+    pointer-events: none;
+}
+.ug-thumb-wrapper.ug-tile .wlx-tile-chips > .wlx-tile-chip {
+    flex: none;
+    display: inline-flex;
+    gap: .3em;
+    align-items: center;
+    min-height: 24px;
+}
+/* the comments' chip, the one that is a link (to the large view at its comments): it takes the
+   clicks and the focus (24 px high and at least as wide, WCAG's minimum target), the row around it
+   none; underlined while pointed at, Bootstrap's focus ring inside the row, which clips outside */
+.ug-thumb-wrapper.ug-tile a.wlx-tile-comments {
+    min-width: 24px;
+    justify-content: center;
+    text-decoration: none;
+    pointer-events: auto;
+    cursor: pointer;
+}
+.ug-thumb-wrapper.ug-tile a.wlx-tile-comments:hover { text-decoration: underline; }
+.ug-thumb-wrapper.ug-tile a.wlx-tile-comments:focus-visible {
+    outline: var(--bs-focus-ring-width) solid var(--bs-focus-ring-color);
+    outline-offset: -2px;
+}
+.ug-thumb-wrapper.ug-tile .wlx-tile-chips.wlx-chips-tight .wlx-tile-time { display: none; }
+/* every chip on a thumbnail: the tile's, the by-rate gallery's and the large view's strip's
+   comments (snippets.commentBadge), the same height and style */
+.wlx-tile-chip, li.gallerybox .wlx-comment-badge {
+    color: var(--bs-body-color);
+    background-color: rgba(var(--bs-body-bg-rgb), .85);
+    font-weight: normal;
+    pointer-events: none;
+}
+/* the vote chip's mark and time with a small gap; the time after a mark muted (--bs-secondary-color
+   on the chip: 4.5:1 or more over any photo in both modes), alone (a rated round's) in the text
+   colour; the text that none was recorded muted */
+.wlx-tile-vote-mark .wlx-chip-shown {
+    display: inline-flex;
+    gap: .35em;
+    align-items: center;
+}
+.wlx-tile-vote-mark .wlx-chip-mark + .wlx-tile-time,
+.wlx-tile-vote-mark .wlx-tile-time.wlx-vote-time-none { color: var(--bs-secondary-color); }
+.wlx-tile-time { font-variant-numeric: tabular-nums; }
+/* a file's comments on the by-rate gallery's thumbnail and the large view's strip
+   (snippets.commentBadge): in the tiles' chips' place, the lower left, under the link */
+li.gallerybox .wlx-comment-badge {
     position: absolute;
     left: 6px;
     bottom: 6px;
     z-index: 6;
-    color: var(--bs-body-color);
-    background-color: rgba(var(--bs-body-bg-rgb), .85);
-    font-weight: normal;
-    pointer-events: none;
 }
-
-/* a file's comments in its contest on its thumbnail (snippets.commentBadge: the by-rate
-   gallery, the large view's strip; tile-votes.js addComments: the gallery's tiles): a speech
-   bubble and the number at the top right, on the page's colours over the photo, under the tile's
-   click; below one juror's read-only vote mark, which has that corner on an organiser's tiles */
-li.gallerybox .wlx-comment-badge, .ug-thumb-wrapper.ug-tile .wlx-tile-comments {
-    position: absolute;
-    right: 6px;
-    top: 6px;
-    z-index: 6;
-    color: var(--bs-body-color);
-    background-color: rgba(var(--bs-body-bg-rgb), .85);
-    font-weight: normal;
-    pointer-events: none;
-}
-.ug-thumb-wrapper.ug-tile .wlx-tile-vote-mark ~ .wlx-tile-comments { top: 34px; }
 
 /* the navbar's Comments menu (navbar.scala.html commentsMenu): a speech bubble, its words and
    count, bold on the highlighted background while the filter or the comments list is on; below
@@ -574,41 +662,40 @@ li.gallerybox .wlx-comment-badge, .ug-thumb-wrapper.ug-tile .wlx-tile-comments {
     }
 }
 
-/* one juror's vote shown read-only on an organiser's view of their binary round's tiles
-   (tile-votes.js addVoteMark): the frame as above with a thumb at the tile's top right, not
-   clickable (the tile's click opens the large view) */
-.ug-thumb-wrapper.ug-tile .wlx-tile-vote-mark {
-    position: absolute;
-    right: 6px;
-    top: 6px;
-    z-index: 6;
-    background-color: rgba(var(--bs-body-bg-rgb), .85);
-    pointer-events: none;
-}
-.ug-thumb-wrapper.ug-tile .wlx-tile-vote-mark.wlx-vote-selected { color: var(--wlx-vote-selected); }
-.ug-thumb-wrapper.ug-tile .wlx-tile-vote-mark.wlx-vote-rejected { color: var(--wlx-vote-rejected); }
-
 /* the same vote in the large view's read-only one-juror view of a binary round
-   (large/navigationButtons): its thumb and words in the tile mark's colours, before its time */
+   (large/navigationButtons): its ✓ or ✗ and words in the vote's text colours (.wlx-vote-selected,
+   -rejected: --wlx-selected, --wlx-rejected, 5:1 or more on the side column's image grey in both
+   modes), before its time. Not the buttons' saturated --wlx-vote-* (3:1 for icons; the dark
+   mode's red is 4.1:1 on #303030, too faint for words) */
 .wlx-viewed-vote-mark { font-weight: 600; }
-.wlx-viewed-vote-mark.wlx-vote-selected { color: var(--wlx-vote-selected); }
-.wlx-viewed-vote-mark.wlx-vote-rejected { color: var(--wlx-vote-rejected); }
+/* the large view's vote summary (the tally, the vote, its time) and the comments' link after it
+   (large/navigationButtons): one row, wrapping in the narrow side column */
+.wlx-large-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 .5rem;
+}
+/* the comments' link: the tiles' comment chip on the side column's background, a link to the
+   comments section; its focus ring Bootstrap's */
+.wlx-chip.wlx-comments-link {
+    display: inline-flex;
+    gap: .3em;
+    align-items: center;
+    min-height: 24px;
+    min-width: 24px;
+    color: var(--bs-body-color);
+    background-color: var(--bs-secondary-bg);
+    font-weight: normal;
+    text-decoration: none;
+}
+.wlx-chip.wlx-comments-link:hover { text-decoration: underline; }
+.wlx-chip.wlx-comments-link:focus-visible {
+    outline: var(--bs-focus-ring-width) solid var(--bs-focus-ring-color);
+    outline-offset: 1px;
+}
 /* its time wraps as a whole, onto the next line in the narrow side column */
 .wlx-large-viewed-vote .wlx-large-vote-time { white-space: nowrap; }
-
-/* the time of the juror's vote on their tile in an order by vote time (tile-votes.js
-   addVoteTime): as the tally, at the tile's top; none recorded in the secondary text colour */
-.ug-thumb-wrapper.ug-tile .wlx-tile-time {
-    position: absolute;
-    left: 6px;
-    top: 6px;
-    z-index: 6;
-    color: var(--bs-body-color);
-    background-color: rgba(var(--bs-body-bg-rgb), .85);
-    font-weight: normal;
-    pointer-events: none;
-}
-.ug-thumb-wrapper.ug-tile .wlx-tile-time.wlx-vote-time-none { color: var(--bs-secondary-color); }
 
 /* the round and user forms' Save and Cancel (snippets/submit, snippets/button) */
 .form-action-wide { width: 25%; }

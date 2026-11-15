@@ -247,7 +247,7 @@ class RoundAuthorFilterSpec extends PlaySpecification with PlayTestDb {
         // file order: no monument id first
         files(page(f.gallery(u, s"?$Q&sort=file"), f.juror)) === List(6L, 1L, 2L, 4L, 5L, 3L)
         // its tabs count all their files
-        page(f.gallery(u, s"?$Q&sort=file"), f.juror) must contain("All (6)")
+        page(f.gallery(u, s"?$Q&sort=file"), f.juror) must contain("""All <span class="wlx-menu-count">6</span>""")
         // the region menu's links
         val regions = contentAsString(get(s"/regions/round/${f.round.getId}/user/$u/region/all?$Q", f.juror, script = true))
         regions must not(contain("author"))

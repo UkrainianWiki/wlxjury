@@ -148,15 +148,11 @@ your.comment.here = Ваш коментар
 your.comment = Ваш коментар
 comments = Коментарі
 submit.comment = Додати коментар
-# the comments badge on thumbnails (its words by the language's plural form: views.Plural), the
-# list's toggle of only the files with comments, a comment's round in the large view
-comments.only = Лише з коментарями ({0})
 votes.menu = Голоси
 votes.unrated.suffix = · {0} без оцінки
 comments.only.plain = Лише з коментарями
 comments.menu.on = З коментарями
 comments.menu.list = Список коментарів
-comments.menu.recent = Список останніх коментарів ({0})
 comments.menu.recent.plain = Список останніх коментарів
 nav.group.links = Розділи
 nav.pages = Перейти до
@@ -167,6 +163,10 @@ comments.count.one = {0} коментар
 comments.count.few = {0} коментарі
 comments.count.many = {0} коментарів
 comments.count.other = {0} коментаря
+# the large view's link to its comments section, after the count in words ("3 comments")
+comments.goto = {0}: перейти до коментарів
+# a gallery tile's link to the file's large view at its comments, after the count in words
+comments.open = {0}: відкрити коментарі
 comment.round.other = Написано в раунді {0}
 # звіт про коментарі (вигляд списку раунду, GalleryView.Comments; організаторів, а також власного списку члена журі)
 comments.report.scope = Які коментарі
@@ -292,7 +292,7 @@ round.name.optional=Назва раунда (необов''язково)
 previous.round = Попередні раунди
 error.previous.rounds.mixed.type = Усі попередні раунди мають оцінюватися однаково: усі «так/ні», усі лише з коментарями або всі за однією шкалою з однаковою кількістю критеріїв (наприклад, усі 1–5 без критеріїв)
 jurors = Члени журі
-jurors.all = Усі члени журі
+jurors.all = Усе журі
 juror.name=Ім''я члена журі
 media.filtering = Фільтрування файлів
 selected.by.at.least.x.jurors=Вибрано принаймні N членами журі

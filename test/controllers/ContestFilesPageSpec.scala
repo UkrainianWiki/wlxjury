@@ -522,7 +522,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         // no rating: no votes, buttons or keys
         page must not contain "rate-image"
         page must not contain "/select/"
-        page must not contain "thumbs-up"
+        page must not contain "data-vote-url"
       }
     }
 

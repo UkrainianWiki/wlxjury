@@ -128,10 +128,10 @@ view menu (the **Gallery**, **By rate**, **File list** and **CSV**); then the pa
 **All jurors** take no votes. Your own files in a round, if you have any, are under your name in
 the juror menu, with the same bar.
 
-The votes menu (its button with a check-box icon) is the jurors' own: **All**, **Unrated**, **Selected** and **Rejected** (in a rated
+The votes menu (its button with the icon of its choice: ✓ selected, ✗ rejected, an empty circle unrated, a star rated, all of them for **All**) is the jurors' own: **All**, **Unrated**, **Selected** and **Rejected** (in a rated
 round **All**, **Unrated** and **Rated**), keeping the region and the other filters. In a single
 juror's view each choice has its count, and on **All** the button adds how many of the juror's
-files in the list are unrated (**All (900) · 40 unrated**); the view of **All jurors** has no
+files in the list are unrated (**All 900 · 40 unrated**); the view of **All jurors** has no
 counts. In a window narrower than about 1700 pixels, the pages menu shows only its icon, the
 votes menu its choice and count without the unrated, the **Comments** menu a speech bubble and its count, a single juror's order
 menu a sort icon, and the region menu only the chosen place, without the word "Region" (or
@@ -143,18 +143,21 @@ shows the tool's "not found" page.
 
 <a id="o-comments-filter"></a>
 **Files with comments:** the **Comments** menu, after the votes menu, has **All files**, **Only
-with comments (N)** and **Recent comments list (N)**. **Only with comments** shows only the files
+with comments N** and **Recent comments list N**. **Only with comments** shows only the files
 with comments in the view you are on: a single juror's files, or all of them for **All jurors**. It
 works with the votes menu (for example the selected files with comments), the region, the order
 and every view, the CSV included, and N is how many files of the current view have comments. The
 large view then moves through those files only. **Recent comments list** opens the
 [comments report](#o-comments-report) of the same files (the juror, votes choice, region and
 monument kept), with all rounds' comments, by the latest comment. The menu's button says
-**Comments (N)**, or, highlighted, **With comments (N)** or **Comments list (N)**; in the view of
+**Comments N**, or, highlighted, **With comments N** or **Comments list N**; in the view of
 **All jurors** without the number. A choice with no file is greyed
 out. In the gallery, the by-rate gallery and the large view's **Next files**, a file with
-comments shows a speech bubble with their number. Both count the comments the file's large view
-shows: from any round of the contest, by anyone.
+comments shows a speech bubble with their number in its lower-left corner (on a gallery tile
+right after the vote or the tally; there a click opens the file's large view at its comments).
+In the large view the same 💬 3 follows the vote or the tally under the buttons and jumps to the
+comments under the image. They all count the comments the
+file's large view shows: from any round of the contest, by anyone.
 
 <a id="o-comments-report"></a>
 **Comments report:** **Recent comments list** in the **Comments** menu (also **Comments on the
@@ -210,17 +213,20 @@ and its CSV; jurors open only their own report, without the CSV. Comment authors
 CSV: share it only with the contest's team.
 
 In a single juror's **Gallery** each file shows that juror's vote, read-only: in a yes/no round a
-green or red frame with a thumb, in a rated round the juror's stars (or ✗). In the **Gallery** of
-**All jurors**' votes on a yes/no round each file shows its tally, approvals (✓) and rejections
-(✗), in the order chosen in the menu next to the views.
+green ✓ or a red ✗ in the tile's lower-left corner, in a rated round the juror's stars (or ✗). In
+the **Gallery** of **All jurors**' votes on a yes/no round each file shows its tally in the same
+corner, approvals (✓) and rejections (✗), in the order chosen in the menu next to the views. The
+file's comments (💬 3) follow the vote or the tally there.
 
 A single juror's **Gallery** and **By rate** views have an order menu, by that juror's votes:
 **In file order**, **By rating**, **Newest votes first** and **Oldest votes first** (when the
 juror last changed each vote; votes from before these options count as the oldest, unrated
 files come last). With a yes/no round's **Selected** or **Rejected** filter it has **In file
 order** and the two vote-time orders; with **Unrated**, the files are in file order. In the
-vote-time orders each file shows when the juror voted (in your time zone; **Time not recorded**
-for votes from before), and the large view of a single juror's vote shows it in every order. The
+vote-time orders each file shows when the juror voted, next to the vote's mark (in your time
+zone, "✓ 12 Nov, 14:05"; a yes/no vote from before shows its mark alone, a rated one **Time not
+recorded**; a narrow tile leaves the time out), and the large view of a single juror's vote shows
+it in every order. The
 views of **All jurors** keep their own order and show no vote times.
 
 <a id="o-score"></a>
@@ -264,8 +270,10 @@ guide](juror-guide.md#the-pager).
 ### The large view for all jurors
 
 Open a file from the by-rate gallery or the file list to see it large with the votes of **all**
-jurors: the file's score and the comments on it. In a round with criteria, it shows the stars
-of every criterion. The view takes no votes. The keys that move between files work as in the
+jurors: the file's score and the comments on it. In a yes/no round its approvals and rejections
+(**✓ 12 ✗ 3**) are under the buttons, as on the file's tile in the gallery of all jurors, and
+after them its comments (**💬 3**), a link to the comments under the file. In a
+round with criteria, it shows the stars of every criterion. The view takes no votes. The keys that move between files work as in the
 [juror guide](juror-guide.md#keyboard-shortcuts-in-the-large-view).
 
 **Comments:** while the round is open, the view has a comment box under the file, as the

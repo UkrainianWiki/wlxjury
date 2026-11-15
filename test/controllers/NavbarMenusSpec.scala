@@ -104,20 +104,35 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         val all = page(app, f.juror, gallery(f.round, f.juror.getId))
         counts(all) === Seq("All" -> Some(8), "Unrated" -> Some(4), "Selected" -> Some(3), "Rejected" -> Some(1))
+        // counts without brackets (the maintainer's decision of 2026-11-15): an item's at its right
+        // edge in its own span, after a space, so that it reads "All 8"; the button's after the choice
+        all.select("#votes-menu .dropdown-item.wlx-menu-item > .wlx-menu-count").asScala.map(_.text).toList ===
+          List("8", "4", "3", "1")
+        all.select("#votes-menu .dropdown-item").asScala.map(_.text).toList === List("All 8", "Unrated 4", "Selected 3", "Rejected 1")
+        all.select("#votes-menu > button > .wlx-votes-count.wlx-nav-count").text === "8"
+        all.select("#votes-menu").text must not(contain("("))
         // no visible word: "Votes" read by screen readers and in the title
-        NavMenus.button(all, "votes-menu") === Some("Votes: All (8) · 4 unrated")
+        NavMenus.button(all, "votes-menu") === Some("Votes: All 8 · 4 unrated")
         all.select("#votes-menu > button > .visually-hidden").text === "Votes:"
-        all.selectFirst("#votes-menu > button").attr("title") === "Votes: All (8) · 4 unrated"
-        forall(Seq("unrated" -> "Votes: Unrated (4)", "selected" -> "Votes: Selected (3)", "rejected" -> "Votes: Rejected (1)")) {
+        all.selectFirst("#votes-menu > button").attr("title") === "Votes: All 8 · 4 unrated"
+        forall(Seq("unrated" -> "Votes: Unrated 4", "selected" -> "Votes: Selected 3", "rejected" -> "Votes: Rejected 1")) {
           case (filter, text) =>
             NavMenus.button(page(app, f.juror, gallery(f.round, f.juror.getId, query = s"?filter=$filter")), "votes-menu") ===
               Some(text)
         }
         // within the comments filter: the list's unrated
-        // the same vote icon as the organisers' (decision C of 2026-11-14), hidden from screen readers
-        (all.select("#votes-menu > button > i.bi-check2-square[aria-hidden=true]").size === 1) and
+        // the icon of the choice (the maintainer's decision of 2026-11-15), hidden from screen
+        // readers: on All the round's marks together, the circle, ✓ and ✗; each choice its own
+        def icons(doc: org.jsoup.nodes.Document) =
+          doc.select("#votes-menu > button > span[aria-hidden=true] > i").asScala.map(_.className).toList
+        (icons(all) === List("bi bi-circle wlx-vote-icon-unrated", "bi bi-check-lg wlx-vote-icon-selected", "bi bi-x-lg wlx-vote-icon-rejected")) and
+          (forall(Seq("unrated" -> "bi bi-circle wlx-vote-icon-unrated", "selected" -> "bi bi-check-lg wlx-vote-icon-selected",
+              "rejected" -> "bi bi-x-lg wlx-vote-icon-rejected")) { case (filter, icon) =>
+            icons(page(app, f.juror, gallery(f.round, f.juror.getId, query = s"?filter=$filter"))) === List(icon)
+          }) and
+          (all.select("#votes-menu > button i.bi-check2-square").size === 0) and
           (NavMenus.button(page(app, f.juror, gallery(f.round, f.juror.getId, query = "?comments=1")), "votes-menu") ===
-            Some("Votes: All (2) · 0 unrated"))
+            Some("Votes: All 2 · 0 unrated"))
       }
     }
 
@@ -126,7 +141,7 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         val doc = page(app, f.juror, gallery(f.round, f.juror.getId, "14"))
         counts(doc) === Seq("All" -> Some(4), "Unrated" -> Some(2), "Selected" -> Some(2), "Rejected" -> Some(0))
-        NavMenus.button(doc, "votes-menu") === Some("Votes: All (4) · 2 unrated")
+        NavMenus.button(doc, "votes-menu") === Some("Votes: All 4 · 2 unrated")
         forall(NavMenus.votes(doc).flatMap(_.href))(_ must startWith(s"/gallery/round/${f.round.getId}/user/${f.juror.getId}/region/14/page/1"))
         // each count is what its choice opens
         forall(NavMenus.votes(doc)) { item =>
@@ -191,7 +206,7 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
       testDbApp { app =>
         val f = fixture()
         val doc = page(app, f.juror, s"/comments/round/${f.round.getId}/user/${f.juror.getId}/page/1")
-        NavMenus.button(doc, "comments-menu") === Some("Comments list (2)")
+        NavMenus.button(doc, "comments-menu") === Some("Comments list 2")
         NavMenus.current(doc, "comments-menu").map(i => (i.name, i.count)) === Some(("Recent comments list", Some(2)))
         // the report's order in the bar's order group
         doc.select(".wlx-nav-order #comments-report-order").size === 1
@@ -222,9 +237,9 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         val one = page(app, f.organizer, gallery(f.round, f.juror.getId))
         counts(one) === Seq("All" -> Some(8), "Unrated" -> Some(4), "Selected" -> Some(3), "Rejected" -> Some(1))
-        NavMenus.button(one, "votes-menu") === Some("Votes: All (8) · 4 unrated")
+        NavMenus.button(one, "votes-menu") === Some("Votes: All 8 · 4 unrated")
         // the count always shown; the unrated read by screen readers only below 1700 px (main.css wlx-nav-suffix)
-        one.select("#votes-menu > button .wlx-votes-count").text === "(8)"
+        one.select("#votes-menu > button .wlx-votes-count").text === "8"
         one.select("#votes-menu > button .wlx-nav-suffix").text === "· 4 unrated"
         one.select("nav").hasClass("wlx-nav-results") must beTrue
         // the juror's name cut short if long, whole in the title
@@ -239,11 +254,11 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
           (NavMenus.current(all, "juror-menu").map(_.name) === Some("All jurors")) and
           (all.select("#juror-menu > button > i.bi-people[aria-hidden=true]").size === 1) and
           (one.select("#juror-menu > button > i.bi-people[aria-hidden=true]").size === 1) and
-          (all.select("#votes-menu > button > i.bi-check2-square[aria-hidden=true]").size === 1) and
-          (one.select("#votes-menu > button > i.bi-check2-square[aria-hidden=true]").size === 1) and
-          // in Ukrainian the app's term for the jurors, «члени журі» («журі» alone is the jury)
+          (all.select("#votes-menu > button > span.wlx-vote-icons[aria-hidden=true] > i").size === 3) and
+          (one.select("#votes-menu > button > span.wlx-vote-icons[aria-hidden=true] > i").size === 3) and
+          // in Ukrainian «Усе журі», shorter for the bar than «Усі члени журі» (the maintainer, 2026-11-15)
           (NavMenus.button(page(app, f.organizer, gallery(f.round, 0), "Accept-Language" -> "uk"), "juror-menu") ===
-            Some("Усі члени журі")) and
+            Some("Усе журі")) and
           // the file list of all jurors says so in its heading, not "Juror: All" (fr "Juré : Toutes")
           (page(app, f.organizer, s"/filelist/round/${f.round.getId}/user/0/page/1", "Accept-Language" -> "fr")
             .select("[contenteditable] h2").text must contain("Tous les jurés"))
@@ -283,7 +298,7 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
           (NavMenus.current(own, "juror-menu").map(_.name) === Some("Org Juror")) and
           // their two unrated files, counted; the Comments menu and their order (by their rating)
           (counts(own) === Seq("All" -> Some(2), "Unrated" -> Some(2), "Selected" -> Some(0), "Rejected" -> Some(0))) and
-          (NavMenus.button(own, "votes-menu") === Some("Votes: All (2) · 2 unrated")) and
+          (NavMenus.button(own, "votes-menu") === Some("Votes: All 2 · 2 unrated")) and
           (own.select("#comments-menu").size === 1) and
           (own.select(".wlx-nav-order a.dropdown-item").asScala.map(_.text.trim).toList must contain("By my rating")) and
           (own.select(".wlx-nav-filters > li").size must be_>=(4))

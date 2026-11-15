@@ -145,7 +145,7 @@ function UGTheme_tiles(){
 				//wlx_view_votes: an organiser's view of a juror's votes)
 				if(g_options.wlx_view_votes)
 					wlxTileVotes.addVoteMark(this, g_objTileDesign.getItemByTile(jQuery(this)), g_options.wlx_view_votes);
-				//wlxjury: the file's comments, after the vote mark, whose corner it then goes below
+				//wlxjury: the file's comments, after the vote in the tile's chips at its lower left
 				wlxTileVotes.addComments(this, g_objTileDesign.getItemByTile(jQuery(this)));
 			});
 		}
@@ -215,7 +215,7 @@ function UGTheme_tiles(){
 	}
 
 	/**
-	 * wlxjury: on a thumb up click: select the file, or take the selection back if it is selected
+	 * wlxjury: on a select (check) click: select the file, or take the selection back if it is selected
 	 * (issue #6)
 	 */
 	function onSelectClick(data, objTile){
@@ -232,7 +232,7 @@ function UGTheme_tiles(){
 	}
 
 	/**
-	 * wlxjury: on a thumb down click: reject the file, or take the rejection back (issue #6)
+	 * wlxjury: on a reject (cross) click: reject the file, or take the rejection back (issue #6)
 	 */
 	function onRejectClick(data, objTile) {
 
@@ -298,7 +298,7 @@ function UGTheme_tiles(){
 		}
 		
 		jQuery(g_objTileDesign).on(g_objTileDesign.events.TILE_CLICK, onTileClick);
-		//wlxjury: the thumbs' clicks (unitegallery.js UGTileDesign's SELECT_CLICK, REJECT_CLICK)
+		//wlxjury: the select and reject icons' clicks (unitegallery.js UGTileDesign's SELECT_CLICK, REJECT_CLICK)
 		jQuery(g_objTileDesign).on(g_objTileDesign.events.SELECT_CLICK, onSelectClick);
 		jQuery(g_objTileDesign).on(g_objTileDesign.events.REJECT_CLICK, onRejectClick);
 		

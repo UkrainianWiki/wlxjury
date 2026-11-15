@@ -85,6 +85,21 @@ object UiShotsServer {
         s"""{"id": $id, "login": ${q(email)}, "password": ${q(password)}, """ +
           s""""pageId": ${firstPage(id, f.roundBinaryId)}, "ratedPageId": ${firstPage(id, f.roundRatingId)}}"""
       }
+    // a file of the binary round that none of the listed jurors (nor the first juror) has there,
+    // and a juror who has it: where voting.spec.js writes a comment for the comments links, so the
+    // listed jurors' views keep having none (navbar.spec.js). Comments are the contest's, every
+    // round's views count them, so the file the fewest listed jurors have in the other rounds
+    // (none if there is one; the fixture's rated round may give every file to one of them, then
+    // their rated-round views count it: commentFile's otherRounds says how many); (0, 0, 0) if
+    // every binary file is theirs
+    val listedIds = (jurorId +: listedJurors.map(_._1)).distinct
+    val (commentJuror, commentPage, commentOthers) =
+      sql"""SELECT v.jury_id, v.page_id,
+                  (SELECT COUNT(*) FROM vote o WHERE o.page_id = v.page_id AND o.jury_id IN ($listedIds)) AS others
+           FROM vote v WHERE v.round_id = ${f.roundBinaryId}
+           AND NOT EXISTS (SELECT 1 FROM vote w WHERE w.round_id = v.round_id AND w.page_id = v.page_id
+                           AND w.jury_id IN ($listedIds))
+           ORDER BY others, v.page_id LIMIT 1""".map(r => (r.long(1), r.long(2), r.long(3))).single().getOrElse((0L, 0L, 0L))
     val (_, orgEmail, orgPassword) = f.organizer
     // a root account, in this run's container only, for the root-only pages (the contests page)
     val (rootEmail, rootPassword) = ("root@ui-shots.test", "rootpass")
@@ -145,6 +160,7 @@ object UiShotsServer {
          |  "root": {"login": ${q(rootEmail)}, "password": ${q(rootPassword)}},
          |  "organizerRole": {"login": ${q(orgRoleEmail)}, "password": ${q(orgRolePassword)}},
          |  "jurors": [${jurors.mkString(", ")}],
+         |  "commentFile": {"juror": $commentJuror, "pageId": $commentPage, "otherRounds": $commentOthers},
          |  "pageId": $pageId,
          |  "ratedPageId": $ratedPageId
          |}

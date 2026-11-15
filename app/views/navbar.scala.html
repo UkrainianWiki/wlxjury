@@ -63,27 +63,39 @@
    choice opens, in the region) only for one juror's list: none for all the jurors' votes
    together; in the organisers' results bar below 1700 px the unrated suffix is read by screen
    readers only (wlx-nav-suffix, main.css), the count stays. The selected and rejected tinted as the tabs were (main.css).
-   A vote icon before the choice (aria-hidden), so its "All" isn't taken for the juror menu's
-   "All jurors" (the maintainer's decision C of 2026-11-14) *@
+   The button and each choice show the choice's vote icon (voteIcon, aria-hidden): the app's one
+   set for yes/no votes, ✓ selected and ✗ rejected (the maintainer's decision of 2026-11-15),
+   an empty circle for the unrated, a star for the rated, and for all files all of the round's
+   marks together, so its "All" isn't taken for the juror menu's "All jurors" either (decision C
+   of 2026-11-14) *@
+@* A Votes choice's icon (aria-hidden, close to its text: wlx-lead-icon): the unrated's empty
+   circle (muted), the selected's ✓ (green), the rejected's ✗ (red), the rated's star; for all
+   files a tight group of the round's (wlx-vote-icons: circle, ✓ and ✗ in a yes/no round, circle
+   and star in a rated one). Tinted (main.css) but on the menu's active item *@
+@markIcon(filter: VoteFilter) = {@filter match {
+    case VoteFilter.Unrated => {<i class="bi bi-circle wlx-vote-icon-unrated"></i>}
+    case VoteFilter.Rated => {<i class="bi bi-star-fill"></i>}
+    case VoteFilter.Rate(1) => {<i class="bi bi-check-lg wlx-vote-icon-selected"></i>}
+    case VoteFilter.Rate(-1) => {<i class="bi bi-x-lg wlx-vote-icon-rejected"></i>}
+    case _ => {}
+}}
+@voteIcon(filter: VoteFilter, choices: Seq[VoteFilter]) = {@if(filter == VoteFilter.All) {<span class="wlx-vote-icons wlx-lead-icon" aria-hidden="true">@for(f <- choices if f != VoteFilter.All) {@markIcon(f)}</span>} else {<span class="wlx-vote-icon wlx-lead-icon" aria-hidden="true">@markIcon(filter)</span>}}
+
 @votesMenu(l: RoundList, staff: Boolean) = {
     @if(!commentsOnly(l.round) && (staff || rates.hasFiles)) {
     @defining(if (staff) l else ownList(l)) { target =>
     @defining(rates.hasFiles && l.asUserId != 0) { counted =>
     @defining(VoteFilter.ofRound(l.round)) { choices =>
     @defining(if (choices.contains(l.filter)) l.filter else VoteFilter.All) { current =>
-    @defining(if (counted) " (" + rates.count(current) + ")" else "") { count =>
+    @defining(if (counted) " " + rates.count(current) else "") { count =>
     @defining(if (counted && current == VoteFilter.All) " " + Messages("votes.unrated.suffix", rates.unrated.toString) else "") { suffix =>
     <li class="nav-item dropdown wlx-votes-menu@current match { case VoteFilter.Rate(1) => { vote-selected} case VoteFilter.Rate(-1) => { vote-rejected} case _ => {}}" id="votes-menu">
         <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"
-            title="@Messages("votes.menu"): @Messages(current.param)@count@suffix"><i class="bi bi-check2-square wlx-lead-icon" aria-hidden="true"></i><span class="visually-hidden">@Messages("votes.menu"): </span>@Messages(current.param)@if(count.nonEmpty) {<span class="wlx-votes-count">@count</span>}@if(suffix.nonEmpty) {<span class="wlx-nav-suffix wlx-votes-unrated">@suffix</span>}</button>
+            title="@Messages("votes.menu"): @Messages(current.param)@count@suffix">@voteIcon(current, choices)<span class="visually-hidden">@Messages("votes.menu"): </span>@Messages(current.param)@if(count.nonEmpty) {<span class="wlx-votes-count wlx-nav-count">@count</span>}@if(suffix.nonEmpty) {<span class="wlx-nav-suffix wlx-votes-unrated">@suffix</span>}</button>
         <ul class="dropdown-menu">
             @for(filter <- choices) {
             @defining(filter == current) { active =>
-            <li><a class="dropdown-item@if(active) { active}" @if(active) {aria-current="page" }href="@target.withFilter(filter).pageUrl(1)">@filter match {
-                case VoteFilter.Rate(1) => {<i class="bi bi-hand-thumbs-up-fill wlx-vote-icon-selected" aria-hidden="true"></i> }
-                case VoteFilter.Rate(-1) => {<i class="bi bi-hand-thumbs-down-fill wlx-vote-icon-rejected" aria-hidden="true"></i> }
-                case _ => {}
-            }@Messages(filter.param)@if(counted) { (@rates.count(filter))}</a></li>
+            <li><a class="dropdown-item wlx-menu-item@if(active) { active}" @if(active) {aria-current="page" }href="@target.withFilter(filter).pageUrl(1)">@voteIcon(filter, choices)@Messages(filter.param)@itemCount(Option.when(counted)(rates.count(filter)))</a></li>
             }
             }
         </ul>
@@ -97,16 +109,23 @@
     }
 }
 
+@* A menu item's count, without brackets (the maintainer's decision of 2026-11-15): after a space,
+   so that its name reads "All 539", at the item's right edge in the muted colour, its digits
+   lined up (wlx-menu-item, wlx-menu-count: main.css; region-menu.js draws the region menu's
+   alike) *@
+@itemCount(count: Option[Int]) = {@for(n <- count) { <span class="wlx-menu-count">@n</span>}}
+
 @* An item of the Comments menu: the current state's marked as this page; one with no file (and
-   not the current state) greyed out and not a link, which the menu's arrow keys skip *@
-@commentsItem(active: Boolean, url: String, text: String, empty: Boolean) = {
+   not the current state) greyed out and not a link, which the menu's arrow keys skip; its count
+   (0 too) where it is known *@
+@commentsItem(active: Boolean, url: String, text: String, empty: Boolean, count: Option[Int] = None) = {
     @if(active) {
-    <li><a class="dropdown-item active" aria-current="page" href="@url">@text</a></li>
+    <li><a class="dropdown-item wlx-menu-item active" aria-current="page" href="@url">@text@itemCount(count)</a></li>
     } else {
     @if(empty) {
-    <li><span class="dropdown-item disabled" aria-disabled="true">@text</span></li>
+    <li><span class="dropdown-item wlx-menu-item disabled" aria-disabled="true">@text@itemCount(count)</span></li>
     } else {
-    <li><a class="dropdown-item" href="@url">@text</a></li>
+    <li><a class="dropdown-item wlx-menu-item" href="@url">@text@itemCount(count)</a></li>
     }
     }
 }
@@ -129,19 +148,18 @@
     @if(list.isDefined && (commented.isDefined || l.view.comments)) {
     @defining(if (l.view.comments) "list" else if (l.comments) "on" else "off") { state =>
     @defining(commented.filter(n => (state != "off" || n > 0) && !(staffBar(l.round) && l.asUserId == 0))
-        .fold("")(n => " (" + n + ")")) { count =>
+        .fold("")(n => " " + n)) { count =>
     @defining(state match { case "list" => "comments.menu.list" case "on" => "comments.menu.on" case _ => "comments" }) { words =>
     <li class="nav-item dropdown wlx-comments-menu" id="comments-menu">
         <button type="button" class="nav-link dropdown-toggle@if(state != "off") { active}" data-bs-toggle="dropdown" aria-expanded="false"
-            title="@Messages(words)@count"><i class="bi bi-chat-left-text" aria-hidden="true"></i> <span class="wlx-nav-label">@Messages(words)</span>@if(count.nonEmpty) {<span class="wlx-comments-count">@count</span>}</button>
+            title="@Messages(words)@count"><i class="bi bi-chat-left-text" aria-hidden="true"></i> <span class="wlx-nav-label">@Messages(words)</span>@if(count.nonEmpty) {<span class="wlx-comments-count wlx-nav-count">@count</span>}</button>
         <ul class="dropdown-menu">
             @defining(if (l.view.comments) RoundList.galleryOfReport(l, user) else l.withComments(true)) { withComments =>
             @commentsItem(state == "off", withComments.withComments(false).pageUrl(1), Messages("files.all"), empty = false)
-            @commentsItem(state == "on", withComments.pageUrl(1),
-                commented.fold(Messages("comments.only.plain"))(n => Messages("comments.only", n.toString)), commented.contains(0))
+            @commentsItem(state == "on", withComments.pageUrl(1), Messages("comments.only.plain"), commented.contains(0), commented)
             <li><hr class="dropdown-divider"></li>
             @commentsItem(state == "list", if (l.view.comments) l.pageUrl(1) else l.recentComments.pageUrl(1),
-                commented.fold(Messages("comments.menu.recent.plain"))(n => Messages("comments.menu.recent", n.toString)), commented.contains(0))
+                Messages("comments.menu.recent.plain"), commented.contains(0), commented)
             }
         </ul>
     </li>

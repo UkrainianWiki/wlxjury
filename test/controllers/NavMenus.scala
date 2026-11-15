@@ -9,19 +9,16 @@ import scala.jdk.CollectionConverters._
   */
 object NavMenus {
 
-  /** A menu item: its name and count ("Unrated (19)" is "Unrated", 19), its link (None for a
+  /** A menu item: its name and count ("Unrated 19", the count in its own span, is "Unrated", 19), its link (None for a
     * greyed-out item), whether it is the current one (active, aria-current="page") or disabled.
     */
   final case class Item(name: String, count: Option[Int], href: Option[String], active: Boolean, disabled: Boolean)
 
-  private val Counted = """^(.*?) \((\d+)\)$""".r
-
   private def item(e: Element): Item = {
+    val count = Option(e.selectFirst(".wlx-menu-count")).map(_.text.trim.toInt)
     val text = e.text.trim
-    val (name, count) = text match {
-      case Counted(n, c) => (n, Some(c.toInt))
-      case other         => (other, None)
-    }
+    // the name: the text before the count, which follows it after a space ("Unrated 19")
+    val name = count.fold(text)(n => text.stripSuffix(n.toString).trim)
     Item(name, count, Option(e.attr("href")).filter(_.nonEmpty), e.hasClass("active"), e.hasClass("disabled"))
   }
 
@@ -34,7 +31,7 @@ object NavMenus {
   /** The Comments menu's items, in order. */
   def comments(doc: Document): Seq[Item] = items(doc, "comments-menu")
 
-  /** A menu's button text, with what only screen readers read ("Votes: All (6) · 3 unrated"). */
+  /** A menu's button text, with what only screen readers read ("Votes: All 6 · 3 unrated"). */
   def button(doc: Document, menuId: String): Option[String] =
     Option(doc.selectFirst(s"#$menuId > button")).map(_.text.trim)
 

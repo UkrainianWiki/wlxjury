@@ -54,7 +54,7 @@ class GalleryTileStarsViewSpec extends PlaySpecification {
       val absent = Seq(
         page(LargeViewRenders.ratedRound, asUserId = LargeViewRenders.otherJurorId),
         page(LargeViewRenders.ratedRound.copy(active = false)), // stopped
-        page(LargeViewRenders.binaryRound), // thumbs up and down instead
+        page(LargeViewRenders.binaryRound), // select ✓ and reject ✗ instead
         page(LargeViewRenders.criteriaRound), // voted in the large view
         page(LargeViewRenders.ratedRound.copy(rates = Round.commentsOnlyRound))
       )
@@ -64,7 +64,7 @@ class GalleryTileStarsViewSpec extends PlaySpecification {
       }
     }
 
-    "leave the binary round's thumbs as they were" in {
+    "leave the binary round's select and reject as they were" in {
       val html = page(LargeViewRenders.binaryRound)
       html must contain("data-jury=\"true\"")
       html must contain("data-binary=\"true\"")

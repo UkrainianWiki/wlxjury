@@ -273,7 +273,7 @@ describe("the theme's constructor, looked up by name (no eval under the CSP)", (
     });
 });
 
-describe("the binary round's thumbs (issue #6)", () => {
+describe("the binary round's select and reject icons (issue #6)", () => {
     const tile = (overrides) => Object.assign({ src: loaded("/t/n" + nextId + ".jpg") }, overrides);
 
     test("a juror's tiles in a binary round have them, and get their stored votes", async () => {
@@ -284,6 +284,10 @@ describe("the binary round's thumbs (issue #6)", () => {
         tiles.forEach((t) => {
             expect(t.querySelectorAll(".ug-icon-select")).toHaveLength(1);
             expect(t.querySelectorAll(".ug-icon-reject")).toHaveLength(1);
+            // ✓ selects, ✗ rejects (the maintainer's decision of 2026-11-15), glyphs hidden from
+            // screen readers (tile-votes.js names the buttons)
+            expect(t.querySelectorAll(".ug-icon-select > i.bi.bi-check-lg[aria-hidden=true]")).toHaveLength(1);
+            expect(t.querySelectorAll(".ug-icon-reject > i.bi.bi-x-lg[aria-hidden=true]")).toHaveLength(1);
         });
         expect(window.wlxTileVotes.addVote).toHaveBeenCalledTimes(2);
         const [el, item] = window.wlxTileVotes.addVote.mock.calls[0];
@@ -292,7 +296,7 @@ describe("the binary round's thumbs (issue #6)", () => {
         expect([item.rate, item.pageId, item.roundId]).toEqual(["1", "42", "7"]);
     });
 
-    test("the thumbs sit below the zoom icon, select left of reject (positionElements)", async () => {
+    test("select and reject sit below the zoom icon, select left of reject (positionElements)", async () => {
         const [t] = await gallery([tile()], { jury: true, binary: true });
         const at = (sel) => {
             const s = t.querySelector(sel).style;
@@ -305,7 +309,7 @@ describe("the binary round's thumbs (issue #6)", () => {
         expect(select.left).toBeLessThan(reject.left);
     });
 
-    test("no thumbs for an organiser, nor in a rated round", async () => {
+    test("no select or reject for an organiser, nor in a rated round", async () => {
         let tiles = await gallery([tile()], { jury: false, binary: true });
         expect(tiles[0].querySelector(".ug-icon-select, .ug-icon-reject")).toBeNull();
         tiles = await gallery([tile()], { jury: true, binary: false });
@@ -393,7 +397,7 @@ describe("the tiles theme (ug-theme-tiles.js)", () => {
         expect(el).toBe(tiles[0]);
         expect(item.rate).toBe("-1");
         expect(v).toEqual(view);
-        // no thumbs to vote with: the tiles aren't the viewer's (jury off)
+        // no select or reject to vote with: the tiles aren't the viewer's (jury off)
         expect(tiles[0].querySelectorAll(".ug-icon-select, .ug-icon-reject")).toHaveLength(0);
         expect(window.wlxTileVotes.addVote).not.toHaveBeenCalled();
     });

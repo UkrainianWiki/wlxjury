@@ -340,6 +340,14 @@ class VoteTimeOrderSpec extends PlaySpecification with ThrownExpectations with P
           (block(untimed) === Some(("wlx-viewed-vote-mark wlx-vote-selected", "Selected", Some("· Time not recorded")))) and
           (block(unrated) === Some(("wlx-viewed-vote-mark text-body-secondary", "Unrated", None))) and
           (forall(Seq(yes, no, untimed, unrated))(doc => controls(doc) === 0)) and
+          // the marks' icons: ✓ selected, ✗ rejected (the maintainer's decision of 2026-11-15)
+          (yes.select(".wlx-viewed-vote-mark > i.bi-check-lg[aria-hidden=true]").size === 1) and
+          (no.select(".wlx-viewed-vote-mark > i.bi-x-lg[aria-hidden=true]").size === 1) and
+          (unrated.select(".wlx-viewed-vote-mark > i").size === 0) and
+          // the juror's own buttons on an unrated file: ✓ to select, ✗ to reject, titles as before
+          (large(f.juror, f.juror.getId, 2L).select(".large-side [data-vote-url]").asScala.map(b =>
+            (b.selectFirst("i").className, b.attr("title"))).toList ===
+            List(("bi bi-check-lg", "Select image <Space>"), ("bi bi-x-lg", "Reject image <Delete>"))) and
           // whose vote it is: the large view has no navbar juror menu
           (forall(Seq(yes, no, untimed, unrated))(doc => doc.select(".large-side .wlx-viewed-juror").text === "Juror")) and
           (large(f.juror, f.juror.getId, 8L).select(".wlx-viewed-juror").size === 0) and
@@ -350,7 +358,37 @@ class VoteTimeOrderSpec extends PlaySpecification with ThrownExpectations with P
           (large(f.juror, f.juror.getId, 8L).select(".large-side .wlx-large-vote-time").text === s"Voted ${iso(3)}") and
           // all the jurors' votes together: no one juror's vote or time
           (block(large(organizer, 0L, 8L)) must beNone) and
-          (large(organizer, 0L, 8L).select(".wlx-large-vote-time").size === 0)
+          (large(organizer, 0L, 8L).select(".wlx-large-vote-time").size === 0) and
+          // a one-juror view and the juror's own have no tally
+          (large(organizer, f.juror.getId, 8L).select(".wlx-large-tally").size === 0) and
+          (large(f.juror, f.juror.getId, 8L).select(".wlx-large-tally").size === 0)
+      }
+    }
+
+    "show all the jurors' tally in the large view of their votes together, as the gallery's tile, to the organisers only" in {
+      testDbApp { implicit app =>
+        val f = fixture(Round.binaryRound, binaryRates)
+        val (other, organizer) = others(f)
+        val r = f.round.getId
+        // the tiles' tallies (gallery.scala.html data-tally), by file
+        val gallery = getAs(s"/gallery/round/$r/user/0/page/1?sort=file", organizer)
+        val tiles = Jsoup.parse(contentAsString(gallery)).select("[data-pageId][data-tally]").asScala
+          .map(t => t.attr("data-pageId").toLong -> t.attr("data-tally")).toMap
+        def tally(viewer: User, asUser: Long, pageId: Long) = {
+          val result = getAs(s"/large/round/$r/user/$asUser/pageid/$pageId?sort=file", viewer)
+          if (status(result) != OK) None
+          else Option(Jsoup.parse(contentAsString(result)).selectFirst(".large-side .wlx-large-tally"))
+            .map(t => (t.select("[aria-hidden=true]").text, t.select(".visually-hidden").text))
+        }
+        // the juror's and the other's votes: 8 yes and yes, 5 no and no, 3 yes and no, 2 unrated and yes
+        (tally(organizer, 0L, 8L) === Some(("2 0", "2 approvals, 0 rejections"))) and
+          (tally(organizer, 0L, 5L) === Some(("0 2", "0 approvals, 2 rejections"))) and
+          (tally(organizer, 0L, 3L) === Some(("1 1", "1 approval, 1 rejection"))) and
+          (forall(Seq(8L, 5L, 3L, 2L))(p => tally(organizer, 0L, p).map(_._2) === tiles.get(p))) and
+          // never for a juror: their own view, and all the jurors' votes refused or without it
+          (tally(f.juror, f.juror.getId, 8L) must beNone) and
+          (tally(f.juror, 0L, 8L) must beNone) and
+          (tally(other, 0L, 8L) must beNone)
       }
     }
 

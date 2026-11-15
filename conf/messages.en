@@ -158,9 +158,6 @@ your.comment.here = Your comment here
 your.comment = Your comment
 comments = Comments
 submit.comment = Submit comment
-# the comments badge on thumbnails (its words by the language's plural form: views.Plural), the
-# list's toggle of only the files with comments, a comment's round in the large view
-comments.only = Only with comments ({0})
 # the navbar (navbar.scala.html): the Votes menu (its name read by screen readers, the unrated
 # of the list after "All"), the Comments menu's states and items (All files: files.all), the
 # names of the bar's groups, and the Pages menu's name, read before the page shown
@@ -169,7 +166,6 @@ votes.unrated.suffix = · {0} unrated
 comments.only.plain = Only with comments
 comments.menu.on = With comments
 comments.menu.list = Comments list
-comments.menu.recent = Recent comments list ({0})
 comments.menu.recent.plain = Recent comments list
 nav.group.links = Sections
 nav.pages = Go to
@@ -180,6 +176,10 @@ comments.count.one = {0} comment
 comments.count.few = {0} comments
 comments.count.many = {0} comments
 comments.count.other = {0} comments
+# the large view's link to its comments section, after the count in words ("3 comments")
+comments.goto = {0}: go to the comments
+# a gallery tile's link to the file's large view at its comments, after the count in words
+comments.open = {0}: open the comments
 comment.round.other = Written in round {0}
 # the comments report (a round list's view, GalleryView.Comments; the organisers', and a juror's own list): its scope, order,
 # CSV, file count (by the language's plural form: views.CommentCount.files), and its link in the

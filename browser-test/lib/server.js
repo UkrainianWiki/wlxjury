@@ -50,6 +50,9 @@ export function fixtureFor(browserName) {
     freshJuror: s.jurors[3 + i],
     // a juror whose votes the other jurors must not see
     otherJuror: s.jurors[6],
+    // a binary round's file none of the listed jurors has, and its juror (id): where a test may
+    // write a comment without giving the jurors above one (UiShotsServer)
+    commentFile: s.commentFile,
   };
 }
 

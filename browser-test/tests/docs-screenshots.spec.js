@@ -18,6 +18,9 @@
 // generated: no real name, address or secret appears. The users page shot first invites one
 // address at example.org (a pending invitation); a second run reuses it.
 //
+// Run them on a freshly started server: voting.spec.js writes a comment on the fixture's
+// commentFile (lib/server.js), which the organisers' views of all the jurors then count.
+//
 // Stories walked: none (the shots open pages, they test nothing; the page tour tests them).
 import fs from 'node:fs';
 import path from 'node:path';

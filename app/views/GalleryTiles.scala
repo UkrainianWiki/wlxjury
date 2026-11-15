@@ -5,7 +5,7 @@ import play.twirl.api.{Html, HtmlFormat}
 
 /** The attributes of a page's #gallery that gallery-init.js starts the tiles with: whether the
   * viewer votes on them (their own files in an active round, as a juror), whether the round is
-  * binary (thumbs up and down), a rated round's tile stars ([[TileStars]]), as JSON, and the
+  * binary (select ✓ and reject ✗), a rated round's tile stars ([[TileStars]]), as JSON, and the
   * viewed juror's votes shown read-only ([[viewVotes]]).
   */
 object GalleryTiles {

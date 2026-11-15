@@ -482,15 +482,11 @@ your.comment.here = Ваш комментарий
 your.comment = Ваш комментарий
 comments = Комментарии
 submit.comment = Добавить комментарий
-# the comments badge on thumbnails (its words by the language's plural form: views.Plural), the
-# list's toggle of only the files with comments, a comment's round in the large view
-comments.only = Только с комментариями ({0})
 votes.menu = Голоса
 votes.unrated.suffix = · {0} без оценки
 comments.only.plain = Только с комментариями
 comments.menu.on = С комментариями
 comments.menu.list = Список комментариев
-comments.menu.recent = Список последних комментариев ({0})
 comments.menu.recent.plain = Список последних комментариев
 nav.group.links = Разделы
 nav.pages = Перейти к
@@ -501,6 +497,10 @@ comments.count.one = {0} комментарий
 comments.count.few = {0} комментария
 comments.count.many = {0} комментариев
 comments.count.other = {0} комментария
+# the large view's link to its comments section, after the count in words ("3 comments")
+comments.goto = {0}: перейти к комментариям
+# a gallery tile's link to the file's large view at its comments, after the count in words
+comments.open = {0}: открыть комментарии
 comment.round.other = Написано в раунде {0}
 # отчёт о комментариях (вид списка раунда, GalleryView.Comments; организаторов, а также собственного списка члена жюри)
 comments.report.scope = Какие комментарии

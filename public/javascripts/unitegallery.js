@@ -10709,12 +10709,12 @@ function UGTileDesign(){
 
 				htmlAdd += "<div class='ug-tile-icon " + iconPlayClass + "' style='display:none'></div>";
 
-				//wlxjury: thumbs up and down on a juror's tiles in a binary round (options jury and
-				//binary, gallery-init.js; issue #6)
+				//wlxjury: select (a check, bi-check-lg) and reject (a cross, bi-x-lg) on a juror's
+				//tiles in a binary round (options jury and binary, gallery-init.js; issue #6)
 				if(g_options.jury) {
 					if(g_options.binary) {
-						htmlAdd += "<div class='ug-tile-icon ug-icon-select' style='display:none'></div>";
-						htmlAdd += "<div class='ug-tile-icon ug-icon-reject' style='display:none'></div>";
+						htmlAdd += "<div class='ug-tile-icon ug-icon-select' style='display:none'><i class='bi bi-check-lg' aria-hidden='true'></i></div>";
+						htmlAdd += "<div class='ug-tile-icon ug-icon-reject' style='display:none'><i class='bi bi-x-lg' aria-hidden='true'></i></div>";
 					}
 				}
 			}
@@ -11004,7 +11004,7 @@ function UGTileDesign(){
 		return objButton;
 	}
 
-	//wlxjury: the tile's thumbs up (select) and down (reject) icons, or null (issue #6)
+	//wlxjury: the tile's select and reject icons, or null (issue #6)
 	function getButtonSelect(objTile){
 		var objButton = objTile.find(".ug-icon-select");
 		if(objButton.length == 0)
@@ -11260,7 +11260,7 @@ function UGTileDesign(){
 	/**
 	 * position the elements
 	 */
-	//wlxjury: the zoom icon above the middle and the thumbs up and down below it, rather than
+	//wlxjury: the zoom icon above the middle and select and reject below it, rather than
 	//upstream's zoom and link icons side by side; the gap above a text panel a third of its
 	//height, not a half (issue #6: icons on portrait files)
 	function positionElements(objTile){
@@ -11679,7 +11679,7 @@ function UGTileDesign(){
 
 	/**
 	 * on select icon click
-	 * wlxjury: the thumbs' clicks, as onLinkButtonClick, become SELECT_CLICK / REJECT_CLICK for
+	 * wlxjury: the select and reject icons' clicks, as onLinkButtonClick, become SELECT_CLICK / REJECT_CLICK for
 	 * the tiles theme (issue #6)
 	 */
 	function onSelectButtonClick(event){
@@ -11734,7 +11734,7 @@ function UGTileDesign(){
 		g_objParentWrapper.delegate(".ug-tile", "click", onTileClick);
 
 		g_objParentWrapper.delegate(".ug-tile .ug-icon-link", "click", onLinkButtonClick);
-		//wlxjury: the deleted file's mark and the thumbs
+		//wlxjury: the deleted file's mark and the select and reject icons
 		g_objParentWrapper.delegate(".ug-tile .wlx-deleted-label", "click", onDeletedLabelClick);
 		g_objParentWrapper.delegate(".ug-tile .ug-icon-select", "click", onSelectButtonClick);
 		g_objParentWrapper.delegate(".ug-tile .ug-icon-reject", "click", onRejectButtonClick);

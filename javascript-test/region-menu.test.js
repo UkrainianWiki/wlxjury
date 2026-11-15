@@ -85,7 +85,7 @@ function items() {
         const a = li.querySelector("a");
         const classes = li.querySelector("hr.dropdown-divider") ? "divider"
             : [li.className, a ? a.className : ""].join(" ").split(/\s+/)
-                .filter(c => c && c !== "dropdown-item" && c !== "dropdown-item-text" && c !== "region-menu-status").join(" ");
+                .filter(c => c && c !== "dropdown-item" && c !== "wlx-menu-item" && c !== "dropdown-item-text" && c !== "region-menu-status").join(" ");
         return { text: li.textContent.trim(), href: a && a.getAttribute("href"), classes };
     });
 }
@@ -134,8 +134,8 @@ test("lists all, then the regions with their counts, the region shown active, ki
 
     expect(items()).toEqual([
         { text: "All", href: "/gallery/round/1/user/2/page/1", classes: "" },
-        { text: "Volyn (12)", href: "/gallery/round/1/user/2/region/07/page/1", classes: "" },
-        { text: "Kyiv (0)", href: "/gallery/round/1/user/2/region/80/page/1", classes: "active" },
+        { text: "Volyn 12", href: "/gallery/round/1/user/2/region/07/page/1", classes: "" },
+        { text: "Kyiv 0", href: "/gallery/round/1/user/2/region/80/page/1", classes: "active" },
         { text: "", href: null, classes: "divider" },
         // no count (not counted): the name alone; a name is text, never markup
         { text: "Nature <b>reserves</b>", href: "/gallery/round/1/user/2/region/WLE/page/1",
@@ -144,7 +144,13 @@ test("lists all, then the regions with their counts, the region shown active, ki
     expect(menu().querySelector(".region-menu-list b")).toBeNull();
     // the place shown marked as this page, as the navbar's other menus mark theirs
     const current = Array.from(menu().querySelectorAll(".region-menu-list a[aria-current]"));
-    expect(current.map(a => [a.textContent, a.getAttribute("aria-current")])).toEqual([["Kyiv (0)", "page"]]);
+    expect(current.map(a => [a.textContent, a.getAttribute("aria-current")])).toEqual([["Kyiv 0", "page"]]);
+    // the counts without brackets, each in its own span at the item's right edge (main.css), the
+    // fetched items laid out as the navbar's other menus' items
+    const links = Array.from(menu().querySelectorAll(".region-menu-list a"));
+    expect(links.every(a => a.classList.contains("wlx-menu-item"))).toBe(true);
+    expect(links.map(a => { const n = a.querySelector(".wlx-menu-count"); return n && n.textContent; }))
+        .toEqual([null, "12", "0", null]);
 });
 
 test("marks all active when no region is shown", async () => {
@@ -163,7 +169,7 @@ test("keeps the regions for the page: opening it again reads nothing", async () 
     await open();
 
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(items().map(i => i.text)).toEqual(["All", "Volyn (12)", "Kyiv (0)", "", "Nature <b>reserves</b>"]);
+    expect(items().map(i => i.text)).toEqual(["All", "Volyn 12", "Kyiv 0", "", "Nature <b>reserves</b>"]);
 });
 
 test("a second toggle while loading reads nothing more", async () => {
@@ -195,7 +201,7 @@ test.each([
         await open();
 
         expect(fetch).toHaveBeenCalledTimes(2);
-        expect(items().map(i => i.text)).toEqual(["All", "Volyn (12)", "Kyiv (0)", "", "Nature <b>reserves</b>"]);
+        expect(items().map(i => i.text)).toEqual(["All", "Volyn 12", "Kyiv 0", "", "Nature <b>reserves</b>"]);
     });
 
 test("closing the menu reads nothing", async () => {
@@ -210,7 +216,7 @@ test("a click on the toggle opens it and reads the regions", async () => {
 
     expect(toggle().getAttribute("aria-expanded")).toBe("true");
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(items().map(i => i.text)).toEqual(["All", "Volyn (12)", "Kyiv (0)", "", "Nature <b>reserves</b>"]);
+    expect(items().map(i => i.text)).toEqual(["All", "Volyn 12", "Kyiv 0", "", "Nature <b>reserves</b>"]);
 });
 
 test("works without jQuery: Bootstrap 5 then dispatches its events natively only", async () => {

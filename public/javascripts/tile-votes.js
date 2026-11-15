@@ -1,8 +1,10 @@
 // The votes on the juror's own gallery tiles (ug-theme-tiles.js), sent by script to
 // GalleryController.selectWS with the page's CSRF token; a failed one explained by
-// vote-errors.js. A binary round's tile shows the file's vote as a frame (main.css:
-// selected, rejected, none unrated) from its stored rate (data-rate) on, with the thumb of
-// that vote pressed, as a click on it undoes the vote. A rated round's tiles get stars (raty,
+// vote-errors.js. A binary round's tile shows the file's vote as a ✓ or ✗ chip at its lower
+// left, with the vote's time in an order by it ("✓ 14:32"), where all the jurors' tally is on the
+// organisers' tiles, the comments' chip after it (chips(); none unrated; the tile's state
+// classes wlx-tile-selected / -rejected draw nothing), from its stored rate (data-rate) on, with
+// the button of that vote (✓ select, ✗ reject) pressed, as a click on it undoes the vote. A rated round's tiles get stars (raty,
 // as the large view's, large-stars.js), drawn from the stored rate; a click votes, the
 // stars showing the new rate at once and the last stored one again if the vote fails. While a
 // tile's vote is pending (aria-busy) its further clicks are ignored, so the votes on a file are
@@ -40,37 +42,193 @@
     if (jqXHR.status === 401 && texts.loginUrl) window.location.href = texts.loginUrl;
   }
 
-  /** A binary round's `rate` on the tile: its frame, and its thumbs pressed or not. */
+  /** A binary round's `rate` on the tile: its state classes, its badge (showMark), and its ✓
+    * and ✗ buttons, where it has them, pressed or not. */
   function showVote(tile, rate) {
     rate = +rate || 0;
     tile.classList.toggle('wlx-tile-selected', rate === 1);
     tile.classList.toggle('wlx-tile-rejected', rate === -1);
     pressed(tile.querySelector('.ug-icon-select'), rate === 1);
     pressed(tile.querySelector('.ug-icon-reject'), rate === -1);
+    showMark(tile, rate);
+  }
+
+  /** The vote's ✓ or ✗ in the tile's vote chip ([[voteChip]]): none for an unrated file. The
+    * vote's only mark on a tile at rest: the tile has no frame (too strong) and its buttons show
+    * while pointed at. */
+  function showMark(tile, rate) {
+    chipState(tile).rate = rate;
+    voteChip(tile);
+  }
+
+  /** The tile's foot (gallery tiles only): a column at its bottom edge with the chips' row
+    * ([[chips]]) above a rated round's stars (addStars), so that the two never overlap however
+    * the stars wrap. It takes no clicks itself (main.css .wlx-tile-foot). */
+  function foot(tile) {
+    for (var i = 0; i < tile.children.length; i++) {
+      if (tile.children[i].classList.contains('wlx-tile-foot')) return tile.children[i];
+    }
+    var el = document.createElement('div');
+    el.className = 'wlx-tile-foot';
+    tile.appendChild(el);
+    return el;
+  }
+
+  /** The tile's chips at its lower left, in one row (the maintainer's decisions of 2026-11-15):
+    * first the vote ([[voteChip]]: "✓ 14:32", the juror's own or one juror's as the organisers
+    * view it) or all the jurors' tally ([[addTally]]: "✓ 12 ✗ 3"), then the comments
+    * ([[addComments]]: "💬 3", a link to the large view's comments). The vote and the tally
+    * take no clicks (the tile's click, which opens the large view, goes through them); all of them
+    * stay under the ✓ and ✗ buttons (main.css). A row too wide for the tile drops the vote's
+    * time first ([[fit]], from the ResizeObserver that watches it). */
+  function chips(tile) {
+    var f = foot(tile);
+    var row = f.querySelector('.wlx-tile-chips');
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'wlx-tile-chips';
+      f.insertBefore(row, f.firstChild);
+      if (resizes) resizes.observe(row);
+    }
+    return row;
+  }
+
+  /** `chip` in the tile's chips: the vote or the tally first, the comments after them. */
+  function place(tile, chip, first) {
+    var row = chips(tile);
+    if (first) row.insertBefore(chip, row.firstChild);
+    else row.appendChild(chip);
+    refit(row);
+    return chip;
+  }
+
+  /** Removes the tile's chip `selector`, and the chips' row if that leaves it empty. */
+  function unplace(tile, selector) {
+    var old = tile.querySelector('.wlx-tile-chips > ' + selector);
+    if (!old) return;
+    var row = old.parentNode;
+    row.removeChild(old);
+    if (!row.firstChild) {
+      if (resizes) resizes.unobserve(row);
+      row.parentNode.removeChild(row);
+    }
+  }
+
+  /** Rows too wide for their tiles (narrow portrait ones) drop the vote's time, which the large
+    * view shows anyway; the marks and the comments' number stay. Measured by a ResizeObserver,
+    * which reports each row once laid out and again as the tiles' widths change (the justified
+    * rows are laid out again on a resize): all the rows at their full width first, then all their
+    * widths read, then the narrow ones tightened, so a page of tiles is laid out once, not once
+    * per chip. Without one a row is clipped at the tile's edge (main.css). */
+  function fit(rows) {
+    rows.forEach(function (row) { row.classList.remove('wlx-chips-tight'); });
+    var tight = rows.filter(function (row) { return row.scrollWidth > row.clientWidth + 1; });
+    tight.forEach(function (row) { row.classList.add('wlx-chips-tight'); });
+  }
+
+  /** `row`, whose chips changed (a vote, its time), measured again in the next frame with the
+    * others changed by then: a new chip may not fit where the old one did, and the row's own
+    * size, which the ResizeObserver watches, doesn't change with its chips. */
+  var pending = [];
+  function refit(row) {
+    if (!resizes || typeof window.requestAnimationFrame !== 'function') return;
+    if (pending.indexOf(row) < 0) pending.push(row);
+    if (pending.length > 1) return;
+    window.requestAnimationFrame(function () {
+      var rows = pending.filter(function (r) { return r.isConnected; });
+      pending = [];
+      fit(rows);
+    });
+  }
+
+  var resizes = typeof window.ResizeObserver === 'function'
+    ? new window.ResizeObserver(function (entries) {
+      fit(entries.map(function (entry) { return entry.target; }));
+    })
+    : null;
+
+  /** What the tile's vote chip shows: the binary vote's rate (showMark) and the vote's time
+    * (addVoteTime: {iso} or {none: the page's text}), each set apart, in either order. */
+  function chipState(tile) {
+    if (!tile.wlxVoteChip) tile.wlxVoteChip = { rate: 0, time: null };
+    return tile.wlxVoteChip;
+  }
+
+  /** The tile's vote chip, drawn again from its state, first in its chips: a binary round's ✓ or
+    * ✗ in the vote's colour, then the vote's time, muted ("✓ 14:32"); the mark alone without a
+    * time, or for a vote whose time wasn't recorded; in a rated round (its stars are its mark) the
+    * time alone, or the text saying none was recorded. One name for screen readers and as its
+    * title: the vote's (data-vote-selected / -rejected) and the time, "Selected, 12 Nov, 14:05"
+    * (the title's time with its year). None for an unrated file. */
+  function voteChip(tile) {
+    var state = chipState(tile);
+    unplace(tile, '.wlx-tile-vote-mark');
+    var time = state.time;
+    if (time && time.none && state.rate) time = null; // the mark alone
+    if (!state.rate && !time) return null;
+    var holder = document.querySelector('[data-csrf-token]');
+    var chip = document.createElement('span');
+    chip.className = 'badge wlx-tile-chip wlx-tile-vote-mark';
+    var shown = document.createElement('span');
+    shown.className = 'wlx-chip-shown';
+    shown.setAttribute('aria-hidden', 'true');
+    var said = [];
+    var titled = [];
+    if (state.rate) {
+      var name = (holder && holder.getAttribute(state.rate > 0 ? 'data-vote-selected' : 'data-vote-rejected')) || '';
+      var icon = document.createElement('i');
+      icon.className = 'bi wlx-chip-mark ' + (state.rate > 0 ? 'bi-check-lg wlx-vote-selected' : 'bi-x-lg wlx-vote-rejected');
+      shown.appendChild(icon);
+      said.push(name);
+      titled.push(name);
+    }
+    if (time) {
+      var part = document.createElement('span');
+      part.className = 'wlx-tile-time';
+      if (time.iso) {
+        var el = timeElement(time.iso);
+        part.appendChild(el);
+        said.push(el.textContent);
+        titled.push(el.title || el.textContent);
+      } else {
+        part.classList.add('wlx-vote-time-none');
+        part.textContent = time.none;
+        said.push(time.none);
+        titled.push(time.none);
+      }
+      shown.appendChild(part);
+    }
+    var text = document.createElement('span');
+    text.className = 'visually-hidden';
+    text.textContent = said.filter(Boolean).join(', ');
+    chip.title = titled.filter(Boolean).join(', ');
+    chip.appendChild(shown);
+    chip.appendChild(text);
+    return place(tile, chip, true);
   }
 
   function pressed(icon, on) {
     if (icon) icon.setAttribute('aria-pressed', String(on));
   }
 
-  /** A binary round's tile as the page loads: its thumbs toggle buttons, named by the page's
-    * texts (data-vote-selected / -rejected), and the file's stored vote. The thumbs take the
-    * focus and vote with Enter or Space as with a click (ug-theme-tiles.js: the thumb of the
+  /** A binary round's tile as the page loads: its ✓ and ✗ toggle buttons, named by the page's
+    * texts (data-vote-selected / -rejected), and the file's stored vote. They take the
+    * focus and vote with Enter or Space as with a click (ug-theme-tiles.js: the icon of the
     * file's vote undoes it), the key never reaching the tile, which opens the large view. */
   function addVote(tile, item) {
     var holder = document.querySelector('[data-csrf-token]');
-    [['.ug-icon-select', 'selected', 1], ['.ug-icon-reject', 'rejected', -1]].forEach(function (thumb) {
-      var icon = tile.querySelector(thumb[0]);
+    [['.ug-icon-select', 'selected', 1], ['.ug-icon-reject', 'rejected', -1]].forEach(function (button) {
+      var icon = tile.querySelector(button[0]);
       if (!icon) return;
       icon.setAttribute('role', 'button');
       icon.setAttribute('tabindex', '0');
-      var label = holder && holder.getAttribute('data-vote-' + thumb[1]);
+      var label = holder && holder.getAttribute('data-vote-' + button[1]);
       if (label) icon.setAttribute('aria-label', label);
       icon.addEventListener('keydown', function (e) {
         if (e.key !== 'Enter' && e.key !== ' ') return;
         e.preventDefault(); // Space would scroll the page
         e.stopPropagation();
-        vote(tile, item, +item.rate === thumb[2] ? 0 : thumb[2]);
+        vote(tile, item, +item.rate === button[2] ? 0 : button[2]);
       });
     });
     showVote(tile, item.rate);
@@ -131,7 +289,8 @@
     var el = $('<div class="wlx-tile-stars"></div>')
       .css('--wlx-tile-stars', options.number + (options.worst ? 2 : 1))
       .on('click', function (e) { e.stopPropagation(); })
-      .appendTo(tile)[0];
+      // on a gallery tile in its foot, below the chips; in the by-rate list in its box
+      .appendTo(tile.classList.contains('ug-tile') ? foot(tile) : tile)[0];
     var worst = null;
 
     /** Draws `rate`: its stars, the worst-mark button pressed for a worst mark, the clear (raty's cancel icon, in a
@@ -299,7 +458,7 @@
   function addTally(tile, item) {
     if (!item.tally) return null;
     var badge = document.createElement('span');
-    badge.className = 'badge wlx-tile-tally';
+    badge.className = 'badge wlx-tile-chip wlx-tile-tally';
     badge.title = item.tally;
     var shown = document.createElement('span');
     shown.setAttribute('aria-hidden', 'true');
@@ -315,8 +474,7 @@
     text.textContent = item.tally;
     badge.appendChild(shown);
     badge.appendChild(text);
-    tile.appendChild(badge);
-    return badge;
+    return place(tile, badge, true);
   }
 
   /** A vote's time `iso` (ISO 8601 in UTC) as snippets/voteTime.scala.html renders it, a
@@ -337,22 +495,18 @@
   }
 
   /** The time of the juror's vote on its tile, in an order by vote time (gallery.scala.html's
-    * data-voted-at, ISO 8601 in UTC, on every tile then): formatted in the viewer's time zone and
-    * the page's language (vote-time.js), or the text saying none was recorded (data-voted-none);
-    * none for an unrated file, or a tile in another order (no data-voted-at). */
+    * data-voted-at, ISO 8601 in UTC, on every tile then), in the vote chip after the vote's mark
+    * ([[voteChip]]): formatted in the viewer's time zone and the page's language (vote-time.js),
+    * or, in a rated round, the text saying none was recorded (data-voted-none); none for an
+    * unrated file, or a tile in another order (no data-voted-at). Returns the vote chip, or null
+    * without one. */
   function addVoteTime(tile, item) {
     if (item.votedAt === undefined || item.votedAt === null) return null;
-    if (!(+item.rate) || (!item.votedAt && !item.votedNone)) return null;
-    var badge = document.createElement('span');
-    badge.className = 'badge wlx-tile-time';
-    if (item.votedAt) {
-      badge.appendChild(timeElement(item.votedAt));
-    } else {
-      badge.classList.add('wlx-vote-time-none');
-      badge.textContent = item.votedNone || '';
-    }
-    tile.appendChild(badge);
-    return badge;
+    var state = chipState(tile);
+    state.time = !(+item.rate) ? null
+      : item.votedAt ? { iso: item.votedAt }
+      : item.votedNone ? { none: item.votedNone } : null;
+    return voteChip(tile);
   }
 
   /** After a stored vote from `before` to `rate`, the tile's vote time, in an order by vote time
@@ -362,62 +516,56 @@
   function voteTimeAfter(tile, item, before, rate) {
     if (item.votedAt === undefined || item.votedAt === null || rate === before) return;
     item.votedAt = rate === 0 ? '' : new Date().toISOString();
-    var old = tile.querySelector('.wlx-tile-time');
-    if (old) old.parentNode.removeChild(old);
     addVoteTime(tile, item);
   }
 
-  /** One juror's vote on a binary round's tile, read-only (no thumbs, no clicks: the viewer
+  /** One juror's vote on a binary round's tile, read-only (no ✓ or ✗ buttons, no clicks: the viewer
     * doesn't vote for them), where the page shows it (gallery-init.js wlx_view_votes, `view`):
-    * the frame of the juror's own tiles and a thumb badge named by the page (data-vote-selected /
-    * -rejected); nothing for an unrated file. */
+    * the vote chip of the juror's own tiles (showVote), with the vote's time in an order by it,
+    * or null for an unrated file. */
   function addVoteMark(tile, item, view) {
     if (!view || !view.binary) return null;
-    var rate = +item.rate || 0;
-    showVote(tile, rate);
-    if (!rate) return null;
-    var holder = document.querySelector('[data-csrf-token]');
-    var name = (holder && holder.getAttribute(rate > 0 ? 'data-vote-selected' : 'data-vote-rejected')) || '';
-    var mark = document.createElement('span');
-    mark.className = 'badge wlx-tile-vote-mark ' + (rate > 0 ? 'wlx-vote-selected' : 'wlx-vote-rejected');
-    mark.title = name;
-    var thumb = document.createElement('i');
-    thumb.className = 'bi ' + (rate > 0 ? 'bi-hand-thumbs-up-fill' : 'bi-hand-thumbs-down-fill');
-    thumb.setAttribute('aria-hidden', 'true');
-    var text = document.createElement('span');
-    text.className = 'visually-hidden';
-    text.textContent = name;
-    mark.appendChild(thumb);
-    mark.appendChild(text);
-    tile.appendChild(mark);
-    return mark;
+    showVote(tile, +item.rate || 0);
+    return tile.querySelector('.wlx-tile-vote-mark');
   }
 
   /** The file's comments in the contest on its tile (gallery.scala.html's data-comments and
     * -comments-label), as snippets/commentBadge.scala.html draws them on the other thumbnails: a
-    * speech bubble and the number, hidden from screen readers, which read the words ("3
-    * comments", in the page's plural form), also its tooltip; none for a file without them. */
+    * speech bubble and the number, hidden from screen readers; none for a file without them. The
+    * last of the tile's chips, after the vote or the tally, or alone ([[chips]]), and the one
+    * chip that is a link (the maintainer, 2026-11-15): to the file's large view at its comments
+    * section (the tile's own data-largeUrl, its list kept, and #comments). Screen readers and its
+    * title say where it goes, "3 comments: open the comments" (the page's data-comments-open, "{0}"
+    * the words in the page's plural form; the words alone without it). A click on it is its own:
+    * it never reaches the tile, whose click opens the large view at the top; Enter follows it as
+    * any link. */
   function addComments(tile, item) {
     var count = parseInt(item.comments, 10);
     if (!(count > 0)) return null;
     var label = item.commentsLabel || String(count);
-    var badge = document.createElement('span');
-    badge.className = 'badge wlx-tile-comments';
-    badge.title = label;
+    var holder = document.querySelector('[data-csrf-token]');
+    var pattern = holder && holder.getAttribute('data-comments-open');
+    var name = pattern ? pattern.replace('{0}', label) : label;
+    var badge = document.createElement(item.largeUrl ? 'a' : 'span');
+    badge.className = 'badge wlx-tile-chip wlx-tile-comments';
+    if (item.largeUrl) {
+      badge.href = item.largeUrl + '#comments';
+      badge.addEventListener('click', function (e) { e.stopPropagation(); });
+    }
+    badge.title = item.largeUrl ? name : label;
     var icon = document.createElement('i');
     icon.className = 'bi bi-chat-left-text-fill';
     icon.setAttribute('aria-hidden', 'true');
     var shown = document.createElement('span');
     shown.setAttribute('aria-hidden', 'true');
-    shown.textContent = ' ' + count;
+    shown.textContent = String(count);
     var text = document.createElement('span');
     text.className = 'visually-hidden';
-    text.textContent = label;
+    text.textContent = item.largeUrl ? name : label;
     badge.appendChild(icon);
     badge.appendChild(shown);
     badge.appendChild(text);
-    tile.appendChild(badge);
-    return badge;
+    return place(tile, badge, false);
   }
 
   window.wlxTileVotes = {

@@ -129,7 +129,7 @@ test.describe('a juror votes', () => {
     await expectBackShowsVote(page, url, ratedVote, expected, before, browserName);
   });
 
-  test('in the binary round\'s gallery by a tile\'s thumb', { tag: ['@J-16', '@J-36', '@S-02'] }, async ({ page, context, fixture }) => {
+  test('in the binary round\'s gallery by a tile\'s ✓ button', { tag: ['@J-16', '@J-36', '@S-02'] }, async ({ page, context, fixture }) => {
     const { juror } = fixture.accounts;
     await page.goto(galleryPath(fixture.roundBinaryId, juror.id));
     const select = page.getByRole('button', { name: 'Selected' }).first();
@@ -141,6 +141,31 @@ test.describe('a juror votes', () => {
     expect(voted.status()).toBe(200);
     expect(voted.request().headers()['csrf-token'], 'the vote sends the CSRF token').toBeTruthy();
     await expect(select).toHaveAttribute('aria-pressed', String(!wasPressed));
+    // the tile shows the vote as a ✓ chip in its lower-left corner (where the organisers' tally
+    // is), none unrated, and has no coloured frame (the maintainer's decisions of 2026-11-15):
+    // one chip (the fixture has no comments), named once for screen readers
+    const tile = select.locator('xpath=ancestor::*[contains(concat(" ", @class, " "), " ug-tile ")][1]');
+    const mark = tile.locator('.wlx-tile-vote-mark');
+    await expect(mark).toHaveCount(wasPressed ? 0 : 1);
+    if (!wasPressed) {
+      await expect(mark.locator('i.bi-check-lg')).toBeVisible();
+      await expect(tile.locator('.wlx-tile-chips > .wlx-tile-chip')).toHaveCount(1);
+      await expect(tile.locator('.wlx-tile-time')).toHaveCount(0); // in file order: no time
+      await expect(mark.locator('.visually-hidden')).toHaveText('Selected');
+      const [t, m] = [await tile.boundingBox(), await mark.boundingBox()];
+      expect(m.x - t.x, 'the chip at the left').toBeLessThan(12);
+      expect(t.y + t.height - (m.y + m.height), 'the chip at the foot').toBeLessThan(12);
+      // the chips under the ✓ and ✗ buttons: the point at the ✗'s centre is the ✗'s
+      await tile.hover();
+      const reject = tile.locator('.ug-icon-reject');
+      await expect(reject).toBeVisible();
+      const r = await reject.boundingBox();
+      expect(await page.evaluate(([x, y]) => !!document.elementFromPoint(x, y)?.closest('.ug-icon-reject'),
+        [r.x + r.width / 2, r.y + r.height / 2]), 'the ✗ button not covered').toBe(true);
+      expect(await tile.locator('.wlx-tile-chips').evaluate((el) => Number(getComputedStyle(el).zIndex)))
+        .toBeLessThan(await reject.evaluate((el) => Number(getComputedStyle(el).zIndex)));
+    }
+    expect(await tile.evaluate((el) => getComputedStyle(el, '::before').borderTopWidth)).toBe('0px');
     // the stored vote, in the file's large view
     const [, pageId, rate] = new URL(voted.url()).pathname.match(/\/pageid\/(\d+)\/select\/(-?\d+)$/);
     expect(Number(rate)).toBe(wasPressed ? 0 : 1);
@@ -148,6 +173,23 @@ test.describe('a juror votes', () => {
     await large.goto(largePath(fixture.roundBinaryId, juror.id, pageId));
     expect(await binaryVote(large)).toBe(Number(rate));
     await large.close();
+    if (!wasPressed) {
+      // newest votes first: the file first, its mark and time in one chip ("✓ 15 Nov, 14:32"),
+      // the time muted, one name for both ("Selected, 15 Nov, 14:32"); no second chip for the time
+      const latest = await context.newPage();
+      await latest.goto(`${galleryPath(fixture.roundBinaryId, juror.id)}?sort=latest-vote`);
+      const first = latest.locator('.ug-tile').first();
+      const chip = first.locator('.wlx-tile-vote-mark');
+      await expect(chip.locator('i.bi-check-lg')).toBeVisible();
+      await expect(chip.locator('.wlx-tile-time time')).toBeVisible();
+      await expect(first.locator('.wlx-tile-time')).toHaveCount(1);
+      await expect(first.locator('.wlx-tile-chips > .wlx-tile-chip')).toHaveCount(1);
+      await expect(chip.locator('.visually-hidden')).toHaveText(/^Selected, .*\d\d:\d\d$/);
+      const [time, mark] = await Promise.all([chip.locator('.wlx-tile-time'), chip.locator('i')]
+        .map((l) => l.evaluate((el) => getComputedStyle(el).color)));
+      expect(time, 'the time muted, not in the mark\'s colour').not.toBe(mark);
+      await latest.close();
+    }
   });
 
   test('in the rated round\'s gallery by a tile\'s star', { tag: '@J-17' }, async ({ page, context, fixture }) => {
@@ -169,5 +211,66 @@ test.describe('a juror votes', () => {
     await large.goto(largePath(fixture.roundRatingId, juror.id, pageId));
     expect(await ratedVote(large)).toBe(expected);
     await large.close();
+  });
+});
+
+// The large view's comments link (navigationButtons commentsLink): after the vote's summary, the
+// tiles' comment chip ("💬 1") as a link to the comments section under the file; a click moves
+// there. The tile's comments chip links the same place from the gallery (tile-votes.js addComments).
+// The fixture has no comments: the contest's admin writes one on a file none of the tests' jurors
+// has (lib/server.js commentFile), so their views still have none (navbar.spec.js); a rerun on the
+// same server finds it there.
+test.describe('the large view\'s comments link', () => {
+  test('scrolls to the comments section, with the count it shows', { tag: '@J-25' }, async ({ contextAs, fixture }) => {
+    const context = await contextAs('admin');
+    const page = await context.newPage();
+    const other = { id: fixture.commentFile.juror, pageId: fixture.commentFile.pageId };
+    expect(other.pageId, 'server.json has a file for the comment (restart the fixture)').toBeGreaterThan(0);
+    const url = largePath(fixture.roundBinaryId, other.id, other.pageId);
+    await page.goto(url);
+    const link = page.locator('a.wlx-comments-link');
+    if (await link.count() === 0) {
+      await page.locator('#addComment textarea').fill('A comment for the comments link (browser test)');
+      await Promise.all([page.waitForNavigation(), page.locator('#saySomething').click()]);
+      await page.goto(url);
+    }
+    const count = await page.locator('.large-comments .msg').count();
+    expect(count).toBeGreaterThan(0);
+    await expect(link).toHaveAttribute('href', '#comments');
+    await expect(link.locator('span[aria-hidden=true]')).toHaveText(String(count));
+    await expect(link).toHaveAccessibleName(`${count} comment${count === 1 ? '' : 's'}: go to the comments`);
+    // the heading below the view's height first, then in view after the click: the view made
+    // shorter than the heading's place (the file loaded, which pushes the comments down; the
+    // file's height follows the view's in some engines, so measured again after each change)
+    await page.waitForFunction(() => { const img = document.getElementById('large_image'); return !img || img.complete; });
+    const heading = page.locator('h2#comments');
+    let height = 400;
+    for (let i = 0; i < 4; i++) {
+      await page.setViewportSize({ width: 1366, height });
+      await page.evaluate(() => window.scrollTo(0, 0));
+      const top = await heading.evaluate((h) => h.getBoundingClientRect().top);
+      if (top >= height) break;
+      height = Math.max(120, Math.floor(top * 0.7));
+    }
+    await expect(heading).not.toBeInViewport();
+    await link.click();
+    await expect(page).toHaveURL(/#comments$/);
+    await expect(heading).toBeInViewport();
+
+    // the gallery page with the file (the large view's Gallery button): its tile's comments chip,
+    // the one chip that is a link, opens the file's large view at the comments
+    await page.goto(await page.locator('[data-nav=gallery]').getAttribute('href'));
+    const chip = page.locator(`.ug-tile a.wlx-tile-comments[href*="/pageid/${other.pageId}"]`);
+    await expect(chip).toBeVisible();
+    // its name says its shown number (another engine sharing the server may have commented since)
+    await expect(chip).toHaveAccessibleName(/^\d+ comments?: open the comments$/);
+    const named = (await chip.getAttribute('title')).match(/^(\d+) /)[1];
+    await expect(chip.locator('span[aria-hidden=true]')).toHaveText(named);
+    const box = await chip.boundingBox();
+    expect(box.height, 'a 24 px target').toBeGreaterThanOrEqual(24);
+    expect(box.width, 'a 24 px target').toBeGreaterThanOrEqual(24);
+    await chip.click();
+    await page.waitForURL(new RegExp(`/pageid/${other.pageId}.*#comments$`));
+    await expect(heading).toBeInViewport();
   });
 });

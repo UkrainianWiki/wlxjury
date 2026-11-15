@@ -1,7 +1,7 @@
 // Starts the justified tiles (unitegallery's tiles theme, snippets/galleryScripts.scala.html) on
 // the page's #gallery, once it is parsed. What the tiles do comes from #gallery's attributes
 // (views.GalleryTiles): data-jury, "true" when the viewer votes on them (their own files in an
-// active round); data-binary, "true" in a binary round (thumbs up and down, tile-votes.js);
+// active round); data-binary, "true" in a binary round (select ✓ and reject ✗, tile-votes.js);
 // data-stars, a rated round's tile stars as JSON, {"number": 5, "half": false}, or none;
 // data-view-votes, one juror's votes shown read-only (GalleryTiles.viewVotes), or none.
 (function () {

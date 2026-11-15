@@ -6,14 +6,24 @@
 (function () {
   'use strict';
 
-  function item(text, url, active) {
+  /** An item: its name, and its count (if not null) at its right edge, muted, without brackets
+    * and after a space, so that it reads "Kyiv 120", as the navbar's other menus have them
+    * (navbar.scala.html itemCount; main.css wlx-menu-item, wlx-menu-count). */
+  function item(text, url, active, count) {
     var li = document.createElement('li');
     var a = document.createElement('a');
-    a.className = active ? 'dropdown-item active' : 'dropdown-item';
+    a.className = 'dropdown-item wlx-menu-item' + (active ? ' active' : '');
     // the place shown, as the navbar's other menus mark their page's item
     if (active) a.setAttribute('aria-current', 'page');
     a.href = url;
     a.textContent = text;
+    if (count !== null && count !== undefined) {
+      a.appendChild(document.createTextNode(' '));
+      var number = document.createElement('span');
+      number.className = 'wlx-menu-count';
+      number.textContent = String(count);
+      a.appendChild(number);
+    }
     li.appendChild(a);
     return li;
   }
@@ -32,8 +42,7 @@
         list.appendChild(separator);
       }
       previousKind = region.kind;
-      var text = region.count == null ? region.name : region.name + ' (' + region.count + ')';
-      var li = item(text, region.url, region.id === data.current);
+      var li = item(region.name, region.url, region.id === data.current, region.count);
       if (region.kind === 'Nomination') li.className = 'region-nomination';
       list.appendChild(li);
     });

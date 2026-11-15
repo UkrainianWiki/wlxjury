@@ -160,15 +160,11 @@ your.comment.here = Votre commentaire ici
 your.comment = Votre commentaire
 comments = Commentaires
 submit.comment = Envoyer un commentaire
-# the comments badge on thumbnails (its words by the language's plural form: views.Plural), the
-# list's toggle of only the files with comments, a comment's round in the large view
-comments.only = Seulement avec commentaires ({0})
 votes.menu = Votes
 votes.unrated.suffix = · {0} pas notées
 comments.only.plain = Seulement avec commentaires
 comments.menu.on = Avec commentaires
 comments.menu.list = Liste des commentaires
-comments.menu.recent = Liste des commentaires récents ({0})
 comments.menu.recent.plain = Liste des commentaires récents
 nav.group.links = Sections
 nav.pages = Aller à
@@ -179,6 +175,10 @@ comments.count.one = {0} commentaire
 comments.count.few = {0} commentaires
 comments.count.many = {0} commentaires
 comments.count.other = {0} commentaires
+# the large view's link to its comments section, after the count in words ("3 comments")
+comments.goto = {0} : aller aux commentaires
+# a gallery tile's link to the file's large view at its comments, after the count in words
+comments.open = {0} : ouvrir les commentaires
 comment.round.other = Écrit au tour {0}
 # le rapport des commentaires (une vue de la liste d'un tour, GalleryView.Comments) : pour les organisateurs, et pour la liste d'un juré lui-même
 comments.report.scope = Quels commentaires

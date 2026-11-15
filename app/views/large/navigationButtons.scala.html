@@ -6,7 +6,8 @@
         score: Double = 0,
         criteria: Seq[(org.intracer.wmua.Criterion, Double)] = Nil,
         readOnly: Boolean = true,
-        viewedJuror: Option[String] = None)(
+        viewedJuror: Option[String] = None,
+        comments: Int = 0)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 
 @round = @{ list.round }
@@ -91,14 +92,27 @@
 @buttonSelect() = {
     @if(files(index).rate <=0 ) {
         <a role="button" class="btn btn-success btn-sm" href="#" data-vote-url="@list.voteUrl(files(index).pageId, 1)" title="@Messages("select.image") &lt;Space&gt;">
-            <i class="bi bi-hand-thumbs-up-fill" aria-hidden="true"></i>
+            <i class="bi bi-check-lg" aria-hidden="true"></i>
         </a>
     }
     @if(files(index).rate >=0 ) {
         <a role="button" class="btn btn-danger btn-sm" href="#" data-vote-url="@list.voteUrl(files(index).pageId, -1)" title="@Messages("reject.image") &lt;Delete&gt;">
-            <i class="bi bi-hand-thumbs-down-fill" aria-hidden="true"></i>
+            <i class="bi bi-x-lg" aria-hidden="true"></i>
         </a>
     }
+}
+
+@* the file's comments, after the vote's summary (the tally, the vote and its time; alone without
+   one): the tiles' comment chip ("💬 3") as a link to the comments section below the file
+   (large/commentsView's heading, #comments), which a long side column or a tall file otherwise
+   scrolls to; the count the section shows (`comments`: the large view's list of them). Screen
+   readers and its title say where it goes ("3 comments: go to the comments"). A plain link: it
+   moves without script, takes the focus as links do, and leaves the vote keys to the page
+   (large-keys.js: Space and Delete still vote while it has the focus; Enter follows it) *@
+@commentsLink() = {
+    @if(comments > 0) {@defining(Messages("comments.goto", views.CommentCount.label(comments))) { label =>
+    <a class="badge wlx-chip wlx-comments-link mt-1" href="#comments" title="@label"><i class="bi bi-chat-left-text-fill" aria-hidden="true"></i><span aria-hidden="true">@comments</span><span class="visually-hidden">@label</span></a>
+    }}
 }
 
 <div class="btn-group large-nav" role="group">
@@ -147,21 +161,32 @@
         }
     }
     }
+@* the vote's summary and the comments' link in one wrapping row (main.css), rendered only with
+   something in it (no empty row without a tally, a vote or comments) *@
+@summary = {
 @* the time of one juror's vote on the file (theirs, or as the organisers view it; never all the
    jurors' votes together), in any order, after the vote: the juror's own controls or, read-only, the
    viewed juror's stars above. A yes/no round's read-only view (one juror's votes as the organisers
    view them) has no controls, so the vote itself goes first: the read-only mark of the gallery's
-   tiles (a thumb in the vote's colour) and its words (one vote's: vote.selected, not the tabs'
+   tiles (✓ or ✗ in the vote's colour) and its words (one vote's: vote.selected, not the tabs'
    plural "selected"), unrated without a time *@
+@* all the jurors' votes on a yes/no round's file together, where one juror's vote is in their
+   view: the tally of the organisers' gallery tile ("✓ 12 ✗ 3", binaryTally), from the same list
+   query (RoundList.query's tally: ImageWithRating.approvals and rejections), no other. Only the
+   organisers view all the jurors' votes (GalleryService.viewAs); checked here too. A rated round
+   has the overall rate above (wlx-overall-rate) *@
+@if(round.isBinary && list.asUserId == 0 && user.canViewOrgInfo(round)) {
+    <div class="wlx-large-tally small mt-1">@binaryTally(files(index).approvals, files(index).rejections)</div>
+}
 @if(list.showsVoteTime) {
     @defining(files(index).votes.headOption.flatMap(_.votedAt)) { votedAt =>
     @defining(files(index).rate) { rate =>
     @if(round.isBinary && readOnly && list.asUserId != user.getId) {
     <div class="wlx-large-viewed-vote small mt-1">
         @if(rate > 0) {
-        <span class="wlx-viewed-vote-mark wlx-vote-selected"><i class="bi bi-hand-thumbs-up-fill" aria-hidden="true"></i> @Messages("vote.selected")</span>
+        <span class="wlx-viewed-vote-mark wlx-vote-selected"><i class="bi bi-check-lg" aria-hidden="true"></i> @Messages("vote.selected")</span>
         } else if (rate < 0) {
-        <span class="wlx-viewed-vote-mark wlx-vote-rejected"><i class="bi bi-hand-thumbs-down-fill" aria-hidden="true"></i> @Messages("vote.rejected")</span>
+        <span class="wlx-viewed-vote-mark wlx-vote-rejected"><i class="bi bi-x-lg" aria-hidden="true"></i> @Messages("vote.rejected")</span>
         } else {
         <span class="wlx-viewed-vote-mark text-body-secondary">@Messages("vote.unrated")</span>
         }
@@ -177,4 +202,9 @@
     }
     }
     }
+}
+@commentsLink()
+}
+@if(summary.body.trim.nonEmpty) {
+<div class="wlx-large-summary">@summary</div>
 }

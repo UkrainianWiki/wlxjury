@@ -2,7 +2,8 @@
 @* the attributes of the element holding a page's votes by script (tile-votes.js): the session's
    CSRF token, sent as the Csrf-Token header (empty if the request has none, as without the
    CSRF filter), and the texts saying why a vote failed (vote-errors.js), signed out going on
-   to the login page, back here after it *@
+   to the login page, back here after it; the name of a tile's comments link ("{0}" the count in
+   words, tile-votes.js addComments) *@
 data-csrf-token="@play.filters.csrf.CSRF.getToken.fold("")(_.value)"
             data-vote-signed-out="@Messages("vote.error.signed.out")"
             data-vote-expired="@Messages("vote.error.expired")"
@@ -16,4 +17,5 @@ data-csrf-token="@play.filters.csrf.CSRF.getToken.fold("")(_.value)"
             data-vote-clear="@Messages("vote.clear")"
             data-vote-failed="@Messages("vote.error.failed")"
             data-vote-reference="@Messages("vote.error.reference", "{0}")"
+            data-comments-open="@Messages("comments.open", "{0}")"
             data-vote-login-url="@routes.LoginController.login(controllers.Secured.safeLocalPath(Some(request.uri)))"

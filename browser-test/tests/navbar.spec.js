@@ -38,7 +38,7 @@ test.describe('a juror\'s navbar menus by keyboard', () => {
     await page.goto(galleryPath(fixture.roundBinaryId, fixture.accounts.juror.id));
     const votes = page.locator('#votes-menu');
     // no visible word: the current choice and its count, "Votes" its accessible name's start
-    await expect(votes.locator('> button')).toHaveAccessibleName(/^Votes: All \(\d+\) · \d+ unrated$/);
+    await expect(votes.locator('> button')).toHaveAccessibleName(/^Votes: All \d+ · \d+ unrated$/);
 
     let button = await openBySpace(page, votes);
     await page.keyboard.press('Escape');
@@ -49,8 +49,13 @@ test.describe('a juror\'s navbar menus by keyboard', () => {
     await arrowTo(page, 'Unrated');
     await Promise.all([page.waitForURL(/filter=unrated/), page.keyboard.press('Enter')]);
     button = votes.locator('> button');
-    await expect(button).toHaveAccessibleName(/^Votes: Unrated \(\d+\)$/);
-    await expect(votes.getByRole('link', { name: /^Unrated/, includeHidden: true })).toHaveAttribute('aria-current', 'page');
+    await expect(button).toHaveAccessibleName(/^Votes: Unrated \d+$/);
+    // in the menu shown (Playwright gives the closed menu's hidden items an empty name), the page's
+    // item marked, the items' counts without brackets, read after the name ("Unrated 120")
+    await openBySpace(page, votes);
+    await expect(votes.getByRole('link', { name: /^Unrated \d+$/ })).toHaveAttribute('aria-current', 'page');
+    await expect(votes.getByRole('link', { name: /^All \d+$/ })).toBeVisible();
+    await page.keyboard.press('Escape');
   });
 
   test('the order and Comments menus open by Space; greyed-out items are skipped', { tag: '@J-12' }, async ({ page, fixture }) => {
@@ -87,16 +92,16 @@ const SCROLLBAR = 17;
 
 async function widest(page) {
   await page.locator('#juror-menu .wlx-truncate').evaluate((span, name) => { span.textContent = name; }, LONG_NAME);
-  await page.locator('#votes-menu .wlx-votes-count').evaluate((span) => { span.textContent = ' (38123)'; });
+  await page.locator('#votes-menu .wlx-votes-count').evaluate((span) => { span.textContent = ' 38123'; });
   await page.locator('#votes-menu .wlx-votes-unrated').evaluate((span) => { span.textContent = ' · 12345 без оцінки'; });
   await page.locator('#comments-menu > button').evaluate((button) => {
     let count = button.querySelector('.wlx-comments-count');
     if (!count) {
       count = document.createElement('span');
-      count.className = 'wlx-comments-count';
+      count.className = 'wlx-comments-count wlx-nav-count';
       button.appendChild(count);
     }
-    count.textContent = ' (31)';
+    count.textContent = ' 31';
   });
   await page.locator('#regionmenu > button b').evaluate((b, region) => { b.textContent = region; }, LONG_REGION);
 }
@@ -115,11 +120,15 @@ for (const [view, pageName, pathOf] of VIEWS) {
       await expect(page.locator('html')).toHaveAttribute('lang', 'uk');
       // on all files, the widest Votes button: its unrated read by screen readers only below
       // 1700 px, shown from there; the count always. The Pages menu: its icon alone below 1700 px
-      await expect(page.locator('#votes-menu > button')).toHaveAccessibleName(/^Голоси: Усі \(\d+\) · \d+ без оцінки$/);
+      await expect(page.locator('#votes-menu > button')).toHaveAccessibleName(/^Голоси: Усі \d+ · \d+ без оцінки$/);
       await expect(page.locator('#pages-menu > button')).toHaveAccessibleName(`Перейти до: ${pageName}`);
-      // the juror menu's people icon and the Votes button's vote icon (decision C of 2026-11-14) count in the width
+      // the juror menu's people icon (decision C of 2026-11-14) and the Votes button's icons, on All
+      // the round's marks together (circle, ✓, ✗: the maintainer's decision of 2026-11-15), count in the width
       await expect(page.locator('#juror-menu > button > i.bi-people')).toBeVisible();
-      await expect(page.locator('#votes-menu > button > i.bi-check2-square')).toBeVisible();
+      await expect(page.locator('#votes-menu > button > .wlx-vote-icons > i')).toHaveCount(3);
+      await expect(page.locator('#votes-menu > button > .wlx-vote-icons > i.bi-x-lg')).toBeVisible();
+      const icons = await page.locator('#votes-menu > button > .wlx-vote-icons').boundingBox();
+      console.log(`[width] ${role} ${view} ${width} px: the Votes button's icons ${icons.width.toFixed(1)} px`);
       await widest(page);
       await page.evaluate((px) => { document.documentElement.style.marginRight = `${px}px`; }, SCROLLBAR);
       expect(await page.evaluate(() => Math.round(document.querySelector('nav.navbar').getBoundingClientRect().width))).toBe(width - SCROLLBAR);

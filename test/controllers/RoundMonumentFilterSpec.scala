@@ -85,15 +85,15 @@ class RoundMonumentFilterSpec extends PlaySpecification with PlayTestDb {
         doc.select("#monument-filter-remove").attr("aria-label") === "Show the files of all monuments"
         href(body, "monument-filter-remove") must beSome(f.gallery(f.juror.getId, "?sort=file"))
         href(body, "monument-page-link") must beSome(s"/monuments/id/$M?contest=${f.contest.getId}&round=${f.round.getId}")
-        body must contain("All (3)")
-        body must contain("Unrated (2)")
-        body must contain("Selected (1)")
+        body must contain("""All <span class="wlx-menu-count">3</span>""")
+        body must contain("""Unrated <span class="wlx-menu-count">2</span>""")
+        body must contain("""Selected <span class="wlx-menu-count">1</span>""")
         body must contain(s"filter=unrated&amp;monument=$M&amp;sort=file")
         body must not contain """id="regionmenu""""
         // the same gallery without the filter has the region menu, and all the juror's files
         val plain = page(f.gallery(f.juror.getId), f.juror)
         plain must contain("""id="regionmenu"""")
-        plain must contain("All (6)")
+        plain must contain("""All <span class="wlx-menu-count">6</span>""")
         // a region in the path is dropped by the filter
         tiles(page(s"/gallery/round/${f.round.getId}/user/${f.juror.getId}/region/14/page/1?monument=$M", f.juror)) ===
           List(1L, 2L, 3L)

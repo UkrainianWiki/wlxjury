@@ -236,7 +236,7 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
         doc.select("#gallery img").asScala.map(_.attr("data-pageId").toLong) === Seq(1L, 3L, 5L)
         // the menu's button highlighted, its current item this page; "All files" drops the filter
         doc.selectFirst("#comments-menu > button").hasClass("active") must beTrue
-        NavMenus.button(doc, "comments-menu") === Some("With comments (3)")
+        NavMenus.button(doc, "comments-menu") === Some("With comments 3")
         val on = NavMenus.current(doc, "comments-menu").get
         on.name === "Only with comments"
         on.count === Some(3)
@@ -264,7 +264,7 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
           get(app, f.juror1, s"/gallery/round/${f.round.getId}/user/${f.juror1.getId}/page/1?filter=selected")))
         doc.select("#gallery img").asScala.map(_.attr("data-pageId").toLong) === Seq(1L, 2L)
         doc.selectFirst("#comments-menu > button").hasClass("active") must beFalse
-        NavMenus.button(doc, "comments-menu") === Some("Comments (1)")
+        NavMenus.button(doc, "comments-menu") === Some("Comments 1")
         NavMenus.current(doc, "comments-menu").map(_.name) === Some("All files")
         val on = NavMenus.comments(doc).find(_.name == "Only with comments").get
         on.count === Some(1)
@@ -289,7 +289,7 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
         def ids(path: String) = Jsoup.parse(contentAsString(get(app, f.organizer, path)))
         val juror2 = ids(s"/gallery/round/${f.round.getId}/user/${f.juror2.getId}/page/1?comments=1")
         juror2.select("#gallery img").asScala.map(_.attr("data-pageId").toLong) === Seq(5L, 7L)
-        NavMenus.button(juror2, "comments-menu") === Some("With comments (2)")
+        NavMenus.button(juror2, "comments-menu") === Some("With comments 2")
         val all = ids(s"/byrate/round/${f.round.getId}/user/0/page/1?comments=1")
         all.select("li.gallerybox").asScala.map(_.id.toLong).sorted === Seq(1L, 3L, 5L, 7L)
         // the by-rate tiles' badges, their words for screen readers
@@ -407,6 +407,67 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
         val location = redirectLocation(result).get
         location must contain("/pageid/5")
         location must contain("comments=1")
+      }
+    }
+  }
+
+  /** The large view's link to its comments section (navigationButtons commentsLink): the tiles'
+    * comment chip after the vote's summary, as many as the section shows, to its heading
+    * (#comments); none without comments. */
+  "the large view's comments link" should {
+
+    /** The link's shown number, its words, its target, the summary's parts before it, and the
+      * section's comments, of `viewer`'s large view `path`. */
+    def linkOf(app: Application, viewer: User, path: String) = {
+      val doc = Jsoup.parse(contentAsString(get(app, viewer, path)))
+      val links = doc.select("a.wlx-comments-link")
+      val shown = links.asScala.map(_.selectFirst("span[aria-hidden=true]").text)
+      val said = links.asScala.map(_.selectFirst(".visually-hidden").text)
+      val summary = Option(doc.selectFirst(".wlx-large-summary")).toSeq
+        .flatMap(_.children.asScala.map(_.className.split(" ").head))
+      (links.asScala.map(_.attr("href")), shown, said, summary, doc.select(".large-comments .msg").size,
+        doc.select(".large-comments h2#comments").size)
+    }
+
+    "show a juror the count their comments section shows, linking it, after their vote" in {
+      testDbApp { app =>
+        val f = fixture()
+        val (hrefs, shown, said, summary, msgs, anchors) =
+          linkOf(app, f.juror1, s"/large/round/${f.round.getId}/user/${f.juror1.getId}/pageid/1")
+        msgs === 2
+        hrefs === Seq("#comments")
+        anchors === 1
+        shown === Seq(msgs.toString)
+        said === Seq("2 comments: go to the comments")
+        summary.last === "badge"
+        // file 3: one comment, from an earlier round, as its section shows
+        val (_, shown3, said3, _, msgs3, _) =
+          linkOf(app, f.juror1, s"/large/round/${f.round.getId}/user/${f.juror1.getId}/pageid/3")
+        (msgs3, shown3, said3) === ((1, Seq("1"), Seq("1 comment: go to the comments")))
+      }
+    }
+
+    "be absent for a file without comments" in {
+      testDbApp { app =>
+        val f = fixture()
+        val (hrefs, _, _, _, msgs, anchors) =
+          linkOf(app, f.juror1, s"/large/round/${f.round.getId}/user/${f.juror1.getId}/pageid/4")
+        msgs === 0
+        anchors === 1 // the open round's comment box
+        hrefs must beEmpty
+      }
+    }
+
+    "follow the tally in the organisers' all-jurors view, and the vote in their view of one juror" in {
+      testDbApp { app =>
+        val f = fixture()
+        val (hrefs, shown, said, summary, msgs, anchors) =
+          linkOf(app, f.organizer, s"/large/round/${f.round.getId}/user/0/pageid/1")
+        (hrefs, shown, said, msgs, anchors) === ((Seq("#comments"), Seq("2"), Seq("2 comments: go to the comments"), 2, 1))
+        summary === Seq("wlx-large-tally", "badge")
+        val (hrefs1, shown1, _, _, msgs1, _) =
+          linkOf(app, f.organizer, s"/large/round/${f.round.getId}/user/${f.juror1.getId}/pageid/3")
+        (hrefs1, shown1, msgs1) === ((Seq("#comments"), Seq("1"), 1))
       }
     }
   }

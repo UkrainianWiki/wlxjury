@@ -160,10 +160,11 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   as before. Organizer guide.
 - **Juror menu and Votes button told apart** (the maintainer's decision C of 2026-11-14; developed
   2026-11-14, `stack/153-statistics-in-pages-menu`): in the organisers' bar the juror menu's
-  button has a people icon and reads **All jurors** (uk «Усі члени журі», ru «Все члены жюри», fr
-  «Tous les jurés») or the juror's name, and the Votes button a check-box icon before its choice
-  (for jurors too), both icons hidden from screen readers, so **All jurors** and **All (5712)** no
-  longer look alike. To keep the bar on one line, the juror's name in it is cut a little shorter
+  button has a people icon and reads **All jurors** (uk «Усе журі», shorter for the bar than the
+  first «Усі члени журі»: the maintainer, 2026-11-15; ru «Все члены жюри», fr «Tous les jurés»)
+  or the juror's name, and the Votes button an icon before its choice (for jurors too; since
+  `stack/154-vote-icons` the choice's own, below), both icons hidden from screen readers, so
+  **All jurors** and **All (5712)** no longer look alike. To keep the bar on one line, the juror's name in it is cut a little shorter
   (at 7.5rem instead of 9rem; whole in its title). The file list of all jurors is headed **All
   jurors** instead of "Juror: All" (in French it read «Juré : Toutes»). Juror and organizer guides.
 - **Ukrainian «усі»/«всі»** (the maintainer, 2026-11-14; developed 2026-11-14,
@@ -171,6 +172,49 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   menu's «Всі» is now **Усі**, as **Усі регіони**), and inside a sentence the word follows the у/в
   alternation (**всі** after a vowel, **усі** after a consonant or a pause): «Кожний файл усім
   членам журі». Russian and French had no such mix and are unchanged.
+- **One set of icons for yes/no votes** (the maintainer's decision of 2026-11-15; developed
+  2026-11-15, `stack/154-vote-icons`): ✓ means selected and ✗ rejected everywhere. The voting
+  buttons of the large view and of the gallery tiles (the tiles' green and red thumb pictures),
+  the read-only vote of one juror's view (large view and tiles) and the Votes menu's items no
+  longer show thumbs up and down; the results already used ✓ and ✗. The Votes button shows the
+  icon of its choice instead of a fixed check box, as its items do: **Unrated** an empty circle,
+  **Selected** ✓ (green), **Rejected** ✗ (red), **Rated** a star, and **All** the round's marks
+  together (circle, ✓ and ✗, or circle and star in a rated round). The icons stay hidden from
+  screen readers; the buttons' names, titles, keys and behaviour are unchanged. Rated rounds keep
+  their stars, and their worst mark (also ✗) is never on a page with a yes/no round's ✗.
+  **A voted tile has no coloured frame any more** (too strong, the maintainer): in a single
+  juror's gallery of a yes/no round, the juror's own and the organisers' read-only view of it, the
+  vote is a ✓ or ✗ badge in the tile's lower-left corner, where the gallery of all the jurors shows
+  its tally (✓ 12 ✗ 3), styled as the tally; the read-only badge was at the top right, and the
+  comments' badge no longer moves down for it. **The large view of all the jurors' votes** on a
+  yes/no round shows the file's tally (**✓ 12 ✗ 3**, as its gallery tile) where a single juror's
+  view shows that juror's vote; it comes from the list query the view already runs (no new
+  query), and only organisers, admins and root see that view. Rated rounds already show the
+  overall rate there. Juror and organizer guides.
+  **Two chips side by side in a tile's lower-left corner** (the maintainer's notes of
+  2026-11-15, same branch): the vote and its time are one chip (**✓ 14:32**, the time muted; the
+  mark alone for a vote without a time; a rated round's time alone, above the stars), where they
+  were two (the time at the top left); the comments' chip (**💬 3**) follows it, or the tally in
+  the gallery of all the jurors (**✓ 12 ✗ 3**), instead of the top right, as in the by-rate
+  gallery and the large view's **Next files**. The comments' chip is a link: it opens the file's
+  large view at its comments (the tile's own list, plus `#comments`), takes the focus, and is 24
+  px high at least; the vote chip still takes no clicks. A narrow tile leaves the time out first;
+  the chips never cover the ✓ and ✗ buttons. Screen readers read one name per chip ("Selected, 12
+  Nov, 14:32", "3 comments: open the comments"; new key `comments.open`).
+  The ✓ and ✗ glyphs (the buttons', the badges', the menus') are drawn at one optical size: the
+  check 12% larger, the cross 8% smaller with thicker strokes, their boxes and tap targets as
+  before. **The large view links its comments**: under the buttons, after the vote, its time or
+  the tally, a file with comments has the same **💬 3**, a link to the comments section under the
+  file (`#comments`), with the count that section shows; screen readers and its title say "3
+  comments: go to the comments" (new key `comments.goto`, en, fr, ru, uk). A plain link: no
+  script, and the vote keys keep working while it has the focus. Juror and organizer guides.
+- **Counts without brackets in the navbar** (the maintainer's decision of 2026-11-15; developed
+  2026-11-15, `stack/154-vote-icons`): the Votes, Comments and region menus' items show their
+  count at the item's right edge, muted, the digits lined up in a column; a closed
+  button shows it after its name, muted: **○✓✗ All 539 · 482 unrated**, **Comments 4**. Screen
+  readers still read it ("All 539"). The messages that carried "({0})" for the Comments menu's
+  items (`comments.only`, `comments.menu.recent`) are gone: the template draws the count after
+  the plain text, in all four languages. Juror and organizer guides.
 
 **Development**
 

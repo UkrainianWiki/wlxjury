@@ -8,6 +8,7 @@ import play.api.test.CSRFTokenHelper._
 import play.api.test.{FakeRequest, PlaySpecification}
 
 import scala.concurrent.Future
+import scala.jdk.CollectionConverters._
 
 /** A juror's own gallery: where it starts, its order (file order unless the juror chose by
   * rate, remembered in a cookie) and its tabs by vote. Through the router, as the browser opens
@@ -43,6 +44,10 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
 
   private def tiles(page: String): List[Long] =
     """(?:data-pageId|class="gallerybox" id)="(\d+)"""".r.findAllMatchIn(page).map(_.group(1).toLong).toList
+
+  /** A Votes menu item's link and count, by its name (the icons before it aside). */
+  private def votesItem(page: String, name: String): Option[(String, Int)] =
+    NavMenus.votes(org.jsoup.Jsoup.parse(page)).find(_.name == name).flatMap(i => i.href.zip(i.count))
 
   private def gallery(f: Fixture, query: String = "") = s"/gallery/round/${f.round.getId}/user/${f.juror.getId}/page/1$query"
 
@@ -132,15 +137,23 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         val html = page(gallery(f, "?filter=unrated"), f).replace("&amp;", "&")
         val base = s"/gallery/round/${f.round.getId}/user/${f.juror.getId}/page/1"
 
-        html must contain(s"""href="$base?sort=file">All (20)</a>""")
-        html must contain(s"""href="$base?filter=unrated&sort=file">Unrated (19)</a>""")
-        html must contain(s"""href="$base?filter=rated&sort=file">Rated (1)</a>""")
+        votesItem(html, "All") === Some((s"$base?sort=file", 20))
+        votesItem(html, "Unrated") === Some((s"$base?filter=unrated&sort=file", 19))
+        votesItem(html, "Rated") === Some((s"$base?filter=rated&sort=file", 1))
         // the unrated choice is the page's, on the Votes button without the unrated suffix (D1)
-        html must contain(s"""<a class="dropdown-item active" aria-current="page" href="$base?filter=unrated&sort=file">""")
-        NavMenus.button(org.jsoup.Jsoup.parse(html), "votes-menu") === Some("Votes: Unrated (19)")
+        NavMenus.current(org.jsoup.Jsoup.parse(html), "votes-menu").flatMap(_.href) === Some(s"$base?filter=unrated&sort=file")
+        NavMenus.button(org.jsoup.Jsoup.parse(html), "votes-menu") === Some("Votes: Unrated 19")
         // on all files the button adds how many are left to rate in this list
-        NavMenus.button(org.jsoup.Jsoup.parse(page(gallery(f), f)), "votes-menu") === Some("Votes: All (20) · 19 unrated")
-        NavMenus.button(org.jsoup.Jsoup.parse(page(gallery(f, "?filter=rated"), f)), "votes-menu") === Some("Votes: Rated (1)")
+        NavMenus.button(org.jsoup.Jsoup.parse(page(gallery(f), f)), "votes-menu") === Some("Votes: All 20 · 19 unrated")
+        NavMenus.button(org.jsoup.Jsoup.parse(page(gallery(f, "?filter=rated"), f)), "votes-menu") === Some("Votes: Rated 1")
+        // a rated round's icons: the unrated's circle, the rated's star, both on All, on the
+        // button as on its items
+        def icons(h: String, at: String) =
+          org.jsoup.Jsoup.parse(h).select(s"#votes-menu $at > span[aria-hidden=true] > i").asScala.map(_.className).toSeq
+        icons(html, "> button") === Seq("bi bi-circle wlx-vote-icon-unrated")
+        icons(page(gallery(f), f), "> button") === Seq("bi bi-circle wlx-vote-icon-unrated", "bi bi-star-fill")
+        icons(html, ".dropdown-item") ===
+          Seq("bi bi-circle wlx-vote-icon-unrated", "bi bi-star-fill", "bi bi-circle wlx-vote-icon-unrated", "bi bi-star-fill")
         // no choice of order on the unrated tab, where every file has the same (no) rate; the
         // all files tab has it
         html must not(contain(s"""href="$base?filter=unrated&sort=rate""""))
@@ -182,14 +195,17 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
             Some((Some(selectedLink), Some(3)))) and
           // the selected tinted on the button, no unrated suffix there
           (org.jsoup.Jsoup.parse(selected).select("#votes-menu.vote-selected").size === 1) and
-          (NavMenus.button(org.jsoup.Jsoup.parse(selected), "votes-menu") === Some("Votes: Selected (3)")) and
+          (NavMenus.button(org.jsoup.Jsoup.parse(selected), "votes-menu") === Some("Votes: Selected 3")) and
           (hasRateOrder(selected) must beFalse) and
           (fixedOrder(selected) must beFalse) and (fixedOrder(all) must beFalse) and
+          // the Votes menu's current item keeps the order chosen for the other tabs; the order
+          // menu's current item is file order (a tab of one rate has no by rate)
+          (NavMenus.current(org.jsoup.Jsoup.parse(selected), "votes-menu").flatMap(_.href) === Some(selectedLink)) and
           (selected must contain("""<a class="dropdown-item active" aria-current="page" href="""" + base + "?filter=selected&sort=file\">")) and
           (fixedOrder(html("?filter=rejected&sort=rate")) must beFalse) and
           (fixedOrder(html("?filter=unrated")) must beTrue) and
           (tiles(selected) === selectedFirst.toList) and
-          (selected must contain(s"""href="$allLink">All (20)</a>""")) and
+          (votesItem(selected, "All") === Some((s"$allLink", 20))) and
           (hasRateOrder(html("?filter=rejected&sort=rate")) must beFalse) and
           (hasRateOrder(html("?filter=unrated")) must beFalse) and
           (back must contain(s"""<a class="dropdown-item active" aria-current="page" href="$base?sort=rate">""")) and
@@ -215,8 +231,8 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
           (back must not(contain("gallery-order-fixed"))) and
           // file order there (the rated file is not in it), the order kept for the other tabs
           (tiles(unrated).take(3) === f.pageIds.filterNot(_ == f.pageIds(9)).take(3).toList) and
-          (unrated must contain(s"""href="$base?sort=rate">All (20)</a>""")) and
-          (unrated must contain(s"""href="$base?filter=rated&sort=rate">Rated (1)</a>""")) and
+          (votesItem(unrated, "All") === Some((s"$base?sort=rate", 20))) and
+          (votesItem(unrated, "Rated") === Some((s"$base?filter=rated&sort=rate", 1))) and
           (back must contain(s"""<a class="dropdown-item active" aria-current="page" href="$base?sort=rate">""")) and
           (tiles(back).head === f.pageIds(9))
       }
@@ -230,15 +246,21 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         val html = page(gallery(f), f).replace("&amp;", "&")
         val base = s"/gallery/round/${f.round.getId}/user/${f.juror.getId}/page/1"
 
-        html must contain(s"""href="$base?sort=file">All (20)</a>""")
-        html must contain(s"""href="$base?filter=unrated&sort=file">Unrated (18)</a>""")
+        votesItem(html, "All") === Some((s"$base?sort=file", 20))
+        votesItem(html, "Unrated") === Some((s"$base?filter=unrated&sort=file", 18))
         NavMenus.votes(org.jsoup.Jsoup.parse(html)).flatMap(_.href).drop(2) ===
           Seq(s"$base?filter=selected&sort=file", s"$base?filter=rejected&sort=file")
         NavMenus.votes(org.jsoup.Jsoup.parse(html)).map(i => (i.name, i.count)) ===
           Seq("All" -> Some(20), "Unrated" -> Some(18), "Selected" -> Some(1), "Rejected" -> Some(1))
-        // the thumbs in the menu carry the tint, the text keeps its colour
-        org.jsoup.Jsoup.parse(html).select("#votes-menu .dropdown-item i.wlx-vote-icon-selected").size === 1
-        org.jsoup.Jsoup.parse(html).select("#votes-menu .dropdown-item i.wlx-vote-icon-rejected").size === 1
+        // each item's icon (✓ selected, ✗ rejected, an empty circle unrated, all three on All)
+        // carries the tint, the text keeps its colour; hidden from screen readers
+        val items = org.jsoup.Jsoup.parse(html).select("#votes-menu .dropdown-item").asScala.toSeq
+        items.map(_.select("> span[aria-hidden=true] > i").asScala.map(_.className).toSeq) === Seq(
+          Seq("bi bi-circle wlx-vote-icon-unrated", "bi bi-check-lg wlx-vote-icon-selected", "bi bi-x-lg wlx-vote-icon-rejected"),
+          Seq("bi bi-circle wlx-vote-icon-unrated"),
+          Seq("bi bi-check-lg wlx-vote-icon-selected"),
+          Seq("bi bi-x-lg wlx-vote-icon-rejected"))
+        org.jsoup.Jsoup.parse(html).select("#votes-menu [class*=thumbs]").size === 0
       }
     }
 
@@ -283,7 +305,7 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
           .withHeaders(ACCEPT -> "text/html").withCSRFToken).get
         status(result) === OK
         val html = contentAsString(result)
-        html must not(contain("All (0)"))
+        html must not(contain("""All <span class="wlx-menu-count">0</span>"""))
         // no own menu: the viewed juror's, by rating, not "my" rating
         html must not(contain("By my rating"))
         html must contain("By rating")
