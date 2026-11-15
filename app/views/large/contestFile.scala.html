@@ -81,20 +81,16 @@
                                 <div class="thumb_small@if(thumb.deletedAt.isDefined) { wlx-deleted}">
                                     @* the link fills the box: a thumbnail that failed to load, hidden, takes no clicks *@
                                     <a class="wlx-box-link" href="@view.largeUrl(thumb.image.pageId)" title="@thumb.image.title">
-                                        @if(thumb.image.isImage) {
-                                            @defining(if (thumb.deletedAt.isDefined) Global.cachedSrcSet(thumb.image, Global.thumbSizeX, Global.thumbSizeY)
-                                                      else Global.srcSet(thumb.image, Global.thumbSizeX, Global.thumbSizeY)) { srcset =>
-                                            <img class="cropped" alt="@thumb.image.title"
-                                                src="@Global.resizeTo(thumb.image, Global.thumbSizeX, Global.thumbSizeY)"
-                                                @if(srcset.nonEmpty) {srcset="@srcset"}
-                                                data-failed-mark="thumb">
-                                            }
+                                        @* an image's or a video's thumbnail; a video's with its mark *@
+                                        @defining(if (thumb.deletedAt.isDefined) Global.cachedSrcSet(thumb.image, Global.thumbSizeX, Global.thumbSizeY)
+                                                  else Global.srcSet(thumb.image, Global.thumbSizeX, Global.thumbSizeY)) { srcset =>
+                                        <img class="cropped" alt="@if(thumb.image.isVideo) {@Messages("video"): }@thumb.image.title"
+                                            src="@Global.resizeTo(thumb.image, Global.thumbSizeX, Global.thumbSizeY)"
+                                            @if(srcset.nonEmpty) {srcset="@srcset"}
+                                            data-failed-mark="thumb">
                                         }
-                                        @if(thumb.image.isVideo) {
-                                            <video width="100%" height="100%" muted>
-                                                <source src="@thumb.image.url" type="video/webm">
-                                            </video>
-                                        }
+                                        @* a deleted video plays nowhere: no mark *@
+                                        @if(thumb.image.isVideo && thumb.deletedAt.isEmpty) {@snippets.videoMark()}
                                     </a>
                                 </div>
                             </li>

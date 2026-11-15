@@ -69,6 +69,25 @@ class GalleryByRateViewSpec extends PlaySpecification {
         new RateDistribution(Map.empty)))
       Jsoup.parse(html).select("div.rank-line b").asScala.map(_.text).distinct === Seq("")
     }
+
+    "show a video as its still thumbnail with a play mark, linked as an image is" in {
+      val video = ImageWithRating(
+        Image(pageId = 205L, title = "File:Video 205.webm",
+          url = Some("https://upload.wikimedia.org/wikipedia/commons/c/cd/Video_205.webm"), width = 1920, height = 1080),
+        votes = Seq(Vote(205L, juror.getId, round.getId, 5)))
+      val doc = Jsoup.parse(contentAsString(views.html.galleryByRate(
+        juror, list, files.take(1) :+ video, Pager(1, 2), Nil, None, new RateDistribution(Map.empty))))
+      val Seq(image, tile) = doc.select("li.gallerybox div.thumb > a").asScala.toSeq
+      val img = tile.selectFirst("img.cropped")
+      (doc.select("video").size must_== 0) and
+        (image.attr("href") must_== list.largeUrl(201L)) and
+        (tile.attr("href") must_== list.largeUrl(205L)) and
+        // stub messages: the key "video"
+        (img.attr("alt") must_== "video: File:Video 205.webm") and
+        (img.attr("src") must beMatching(raw"/wikipedia/commons/thumb/c/cd/Video_205\.webm/\d+px--Video_205\.webm\.jpg")) and
+        (tile.select(".wlx-video-mark[aria-hidden=true] i.bi-play-fill").size must_== 1) and
+        (image.select(".wlx-video-mark").size must_== 0)
+    }
   }
 
   "a binary round's by-rate gallery" should {

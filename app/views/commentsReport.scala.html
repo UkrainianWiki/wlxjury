@@ -135,13 +135,9 @@
             @* its id: where a list's link to the file (commentsAt, #pageId) scrolls *@
             <article class="wlx-comments-row" id="@file.pageId" aria-labelledby="file-title-@file.pageId">
                 <a class="wlx-comments-thumb" href="@list.largeUrl(file.pageId)" tabindex="-1" aria-hidden="true">
-                    @if(file.image.isImage) {
-                        <img alt="" loading="lazy" src="@Global.resizeTo(file.image, Global.gallerySizeX, Global.gallerySizeY)"
-                        srcset="@Global.srcSet(file.image, Global.gallerySizeX, Global.gallerySizeY)">
-                    }
-                    @if(file.image.isVideo) {
-                        <video muted preload="metadata"><source src="@file.image.url" type="video/webm"></video>
-                    }
+                    <img alt="" loading="lazy" src="@Global.resizeTo(file.image, Global.gallerySizeX, Global.gallerySizeY)"
+                    srcset="@Global.srcSet(file.image, Global.gallerySizeX, Global.gallerySizeY)">
+                    @if(file.image.isVideo) {@snippets.videoMark()}
                 </a>
                 <div class="wlx-comments-main">
                     <h2 class="h6 mb-1" id="file-title-@file.pageId"><a href="@list.largeUrl(file.pageId)">@file.title</a></h2>

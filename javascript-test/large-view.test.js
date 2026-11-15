@@ -76,6 +76,19 @@ describe("a failed image", () => {
         expect(document.getElementById("link").classList.contains("wlx-large-failed")).toBe(true);
     });
 
+    test("a failed video thumbnail shows the failure mark without the video's play mark (main.css)", () => {
+        const css = require("fs").readFileSync(require("path").join(__dirname, "../public/stylesheets/main.css"), "utf8");
+        document.head.innerHTML = `<style>${css}</style>`;
+        document.body.innerHTML = '<div class="thumb_small"><a class="wlx-box-link"><img src="/v.jpg" data-failed-mark="thumb">' +
+            '<span class="wlx-video-mark" aria-hidden="true"></span></a></div>';
+        const mark = document.querySelector(".wlx-video-mark");
+        expect(getComputedStyle(mark).display).not.toBe("none");
+        fail(document.querySelector("img"));
+        expect(document.querySelector(".thumb_small").classList.contains("wlx-thumb-failed")).toBe(true);
+        expect(getComputedStyle(mark).display).toBe("none");
+        document.head.innerHTML = "";
+    });
+
     test("other images and elements are left alone", () => {
         document.body.innerHTML = '<div class="thumb_small"><a><img src="/x.jpg"></a></div><a><video></video></a>';
         fail(document.querySelector("img"));

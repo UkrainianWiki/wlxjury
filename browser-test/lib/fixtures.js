@@ -113,6 +113,35 @@ export class Diagnostics {
   }
 }
 
+/** WebKit on Windows (local runs only: CI's Linux WebKit plays media with GStreamer, whose loads
+  * go through WebKit's network stack and the route; not checked on CI): its media player,
+  * Media Foundation, fetches a video's source itself (user agent "NSPlayer/12.00
+  * WMFSDK/12.00"), past the guard's route and the routeless
+  * browser's proxy, from Commons' real upload host. With a webm it receives, Playwright's build
+  * never reaches HAVE_CURRENT_DATA, so the video delays the page's load event for good and
+  * `goto` times out (the large view's "next files" strip in voting.spec's gallery ✓ test,
+  * 2026-11-14/15); a 429 or a slow answer from Commons lets the page load, hence the flake. So
+  * there the pages' video and audio sources are removed before the media element's task reads
+  * them (a MutationObserver's callback is a microtask, run first): they don't play, as the
+  * route's placeholder leaves them elsewhere. The source is kept in `data-wlx-src`. */
+function noMediaSources() {
+  const MEDIA = 'video, audio, source';
+  const strip = (el) => {
+    if (!el.matches(MEDIA) || !el.hasAttribute('src')) return;
+    el.setAttribute('data-wlx-src', el.getAttribute('src'));
+    el.removeAttribute('src');
+  };
+  const visit = (node) => {
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    strip(node);
+    node.querySelectorAll(MEDIA).forEach(strip);
+  };
+  new MutationObserver((records) => records.forEach((r) => {
+    if (r.type === 'attributes') strip(r.target);
+    else r.addedNodes.forEach(visit);
+  })).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
+}
+
 /** The CSP probe and the listeners of every page of `context`; `routed`: whether the guard's
   * route answers the requests (else the routeless context's proxy refuses other hosts). */
 async function watchPages(context, diagnostics, { routed }) {
@@ -129,6 +158,7 @@ async function watchPages(context, diagnostics, { routed }) {
       }
     });
   });
+  if (diagnostics.browserName === 'webkit' && process.platform === 'win32') await context.addInitScript(noMediaSources);
   const watch = (page) => {
     // the routeless browser: this page's refused uploads, and its dead-proxy console lines
     // without a location to tie them to one (WebKit's)

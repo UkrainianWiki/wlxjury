@@ -445,7 +445,16 @@ by page. A test that opens a 403 or 404 page on purpose says so with
 only other allowances: Firefox's console line for a font download a navigation cancelled
 (everywhere), and U22's page error in the two tests that leave a gallery by a POST, in Firefox
 only. The guard's route doesn't see WebSockets (that would take `routeWebSocket`); the app opens
-none, and a page's WebSocket to another host is reported by the `websocket` event. The fixture runs with the production CSP, CSRF checked on POSTs, and its image proxy
+none, and a page's WebSocket to another host is reported by the `websocket` event.
+The guard's route doesn't see media in WebKit on Windows either: its media player (Media
+Foundation) fetches a video's or audio's source itself, past the routes and the routeless
+browser's proxy, from Commons' real host, and a webm it receives keeps the page's load event
+from firing (`goto` timed out after a gallery vote, 2026-11-14/15). So in local WebKit runs on
+Windows an init script (`noMediaSources`) removes the pages' media sources before they load, and
+their videos don't play, as elsewhere; each such element keeps its original URL in
+`data-wlx-src`, for a test that needs it. CI's Linux WebKit plays media with GStreamer, whose
+loads the route sees (not checked on CI).
+The fixture runs with the production CSP, CSRF checked on POSTs, and its image proxy
 fetching from a placeholder stub in its JVM, never from Commons (`-Dui.csp=production
 -Dui.csrf=on -Dui.images=stub`, `fixture-server.mjs`).
 

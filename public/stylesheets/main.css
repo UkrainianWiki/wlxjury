@@ -619,6 +619,32 @@ li.gallerybox .wlx-comment-badge {
     z-index: 6;
 }
 
+/* a video's still thumbnail in a list or strip (snippets.videoMark): a ▶ at its centre, white on
+   a dark disc (4.5:1 or more over any photo); the comments report's thumbnail link is its box */
+.wlx-video-mark {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    color: #fff;
+    background-color: rgba(0, 0, 0, .55);
+    font-size: 1.5rem;
+    line-height: 1;
+    pointer-events: none;
+}
+.wlx-comments-thumb { position: relative; }
+/* a video's thumbnail that failed to load (large-view.js): the failure's ⊘ alone, without its ▶ */
+div.thumb_small.wlx-thumb-failed .wlx-video-mark {
+    display: none;
+}
+
 /* the navbar's Comments menu (navbar.scala.html commentsMenu): a speech bubble, its words and
    count, bold on the highlighted background while the filter or the comments list is on; below
    992 px the bubble and the count, its words read by screen readers and in its title (as the

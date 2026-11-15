@@ -121,6 +121,48 @@ class LargeViewSideSpec extends Specification {
     }
   }
 
+  "a video" should {
+    // the file and the one after it are videos (stub messages: the key "video")
+    val videos = Set(middle, middle + 1)
+    val video = pageIdAt(middle + 1)
+
+    /** The strip's first item (the video after the file): its link, as an image's, and its
+      * still thumbnail. */
+    def checkStripVideo(doc: Document) = {
+      val link = doc.select("#large-next a[href]").first
+      val img = link.selectFirst("img.cropped")
+      (strip(doc).headOption must beSome(video)) and
+        (doc.select("#large-next video").size must_== 0) and
+        (img.attr("alt") must_== s"video: File:Video $video.webm") and
+        // the image proxy's thumbnail, as the gallery's tiles have it
+        (img.attr("src") must beMatching(raw"/wikipedia/commons/thumb/c/cd/Video_$video\.webm/\d+px--Video_$video\.webm\.jpg")) and
+        (img.attr("srcset") must contain(" 2x")) and
+        (link.select(".wlx-video-mark[aria-hidden=true] i.bi-play-fill").size must_== 1) and
+        // the images after it have none
+        (doc.select("#large-next .wlx-video-mark").size must_== 1)
+    }
+
+    "show as a still thumbnail with a play mark in a round's strip, and play as the file itself" in {
+      val doc = Jsoup.parse(large(ratedRound, middle, videos = videos))
+      checkStripVideo(doc) and
+        (doc.select("#mainContent video source[src$=/Video_" + pageIdAt(middle) + ".webm]").size must_== 1)
+    }
+
+    "show no play mark in a contest file's strip once deleted on Commons, as it plays nowhere" in {
+      val doc = Jsoup.parse(contestFile(middle, videos = Set(middle + 1), deleted = Set(middle + 1)))
+      val box = doc.select("#large-next div.thumb_small").first
+      (box.hasClass("wlx-deleted") must beTrue) and
+        (box.select("img.cropped").attr("alt") must_== s"video: File:Video $video.webm") and
+        (doc.select("#large-next .wlx-video-mark").size must_== 0)
+    }
+
+    "show as a still thumbnail with a play mark in a contest file's strip, and play as the file itself" in {
+      val doc = Jsoup.parse(contestFile(middle, videos = videos))
+      checkStripVideo(doc) and
+        (doc.select("#mainContent video source[src$=/Video_" + pageIdAt(middle) + ".webm]").size must_== 1)
+    }
+  }
+
   "a criteria round's numbers above the stars" should {
 
     /** Each criterion's number above its stars, and the score its stars are drawn from. */

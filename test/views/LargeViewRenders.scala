@@ -44,16 +44,27 @@ object LargeViewRenders {
   val middle = 6
   def pageIdAt(i: Int): Long = 101L + i
 
-  /** The files in the juror's view: `rated` maps an index to the juror's rate there. */
-  def files(rated: Map[Int, Int] = Map.empty): Seq[ImageWithRating] =
+  /** The files in the juror's view: `rated` maps an index to the juror's rate there; those at
+    * `videos` are videos (webm, 1920 × 1080), the rest images.
+    */
+  def files(rated: Map[Int, Int] = Map.empty, videos: Set[Int] = Set.empty): Seq[ImageWithRating] =
     (0 until fileCount).map { i =>
       val pageId = pageIdAt(i)
       ImageWithRating(
-        Image(
-          pageId = pageId,
-          title = s"File:Image $pageId.jpg",
-          url = Some(s"https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_$pageId.jpg")
-        ),
+        if (videos(i))
+          Image(
+            pageId = pageId,
+            title = s"File:Video $pageId.webm",
+            url = Some(s"https://upload.wikimedia.org/wikipedia/commons/c/cd/Video_$pageId.webm"),
+            width = 1920,
+            height = 1080
+          )
+        else
+          Image(
+            pageId = pageId,
+            title = s"File:Image $pageId.jpg",
+            url = Some(s"https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_$pageId.jpg")
+          ),
         // a juror's view has the juror's row for each file, rated or not
         votes = Seq(Vote(pageId, juror.getId, 1, rated.getOrElse(i, 0)))
       )
@@ -90,9 +101,10 @@ object LargeViewRenders {
       module: String = "gallery",
       rate: Option[Int] = None,
       cookies: Seq[Cookie] = Nil,
-      criteriaRates: Option[Map[Int, Int]] = None
+      criteriaRates: Option[Map[Int, Int]] = None,
+      videos: Set[Int] = Set.empty
   ): String = {
-    val fs = files(rated)
+    val fs = files(rated, videos)
     implicit val req: Request[AnyContentAsEmpty.type] =
       request(s"/large/round/${round.getId}/user/$asUserId/pageid/${fs(index).pageId}", cookies)
     implicit val msgs: Messages = messages
@@ -117,9 +129,12 @@ object LargeViewRenders {
       categoryId = Some(1))
 
   /** A contest files page's large view (GalleryController.contestFileLarge) of index `index`. */
-  def contestFile(index: Int, cookies: Seq[Cookie] = Nil): String = {
+  def contestFile(index: Int, cookies: Seq[Cookie] = Nil, videos: Set[Int] = Set.empty,
+      deleted: Set[Int] = Set.empty): String = {
     val view = ContestFilesView(contest, deletedOnly = false, round = None)
-    val stored = files().map(f => ImageJdbc.StoredFile(f.image, deletedAt = None))
+    val stored = files(videos = videos).zipWithIndex.map { case (f, i) =>
+      ImageJdbc.StoredFile(f.image, deletedAt = Option.when(deleted(i))(java.time.ZonedDateTime.parse("2026-11-01T00:00:00Z")))
+    }
     implicit val req: Request[AnyContentAsEmpty.type] = request(view.largeUrl(stored(index).image.pageId), cookies)
     implicit val msgs: Messages = messages
     implicit val flash: Flash = Flash()
