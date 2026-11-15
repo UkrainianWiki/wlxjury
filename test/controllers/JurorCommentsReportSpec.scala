@@ -173,6 +173,7 @@ class JurorCommentsReportSpec extends PlaySpecification with PlayTestDb {
         val org = page(app, f.organizer, report(f, f.juror1.getId, "?scope=contest"))
         org.select(".wlx-comment-round").size must be_>(0)
         org.select("#comments-report-csv, #comments-report-scope").size === 2
+        org.select(".wlx-comment-filter-link i.bi-funnel").size must be_>(0)
         org.select("#comments-report-note").size === 0
       }
     }

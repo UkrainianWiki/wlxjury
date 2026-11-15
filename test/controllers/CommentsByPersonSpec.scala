@@ -18,8 +18,9 @@ import scala.jdk.CollectionConverters._
   * the files with a comment by that account in the scope, counted, ordered by the latest of
   * theirs and exported by it, combined with the list's juror, tab, region, scope and order, kept
   * by its links and the large view's neighbours; chosen in the navbar's "Comments by" menu, which
-  * lists every author of the report's comments with the number the list filtered by them counts;
-  * each comment's icon link to its author's one-juror gallery of the comment's round (a juror of it
+  * lists every author of the report's comments with the number the list filtered by them counts,
+  * or by the funnel after each comment's author (the same link; on the filtered author's comments
+  * filled and current, removing the filter); each comment's icon link to its author's one-juror gallery of the comment's round (a juror of it
   * the viewer may see); the organisers' only, as the report.
   */
 class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
@@ -147,6 +148,17 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
         a.attr("aria-label"), a.text)
     }.toSeq
 
+  /** A comment's funnel after its author: (href, title, aria-label, current, filled, text). */
+  private def funnel(msg: Element): Option[(String, String, String, Boolean, Boolean, String)] =
+    Option(msg.selectFirst("a.wlx-comment-filter-link")).map { a =>
+      (a.attr("href"), a.attr("title"), a.attr("aria-label"), a.attr("aria-current") == "true",
+        a.hasClass("active") && a.select("i.bi-funnel-fill[aria-hidden=true]").size == 1 && a.select("i.bi-funnel").isEmpty,
+        a.text)
+    }
+
+  /** The Comments menu's "Comments by" item's link for a name ("Everyone" for everyone's). */
+  private def menuHref(doc: Document, name: String): String = menu(doc).find(_._1 == name).map(_._3).get
+
   private def msgOf(doc: Document, body: String): Element =
     doc.select(".msg").asScala.find(_.selectFirst(".wlx-comment-body").text == body).get
 
@@ -245,23 +257,38 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         val doc = page(app, f.organizer, path(f, 0, "?scope=contest"))
         val j1 = links(msgOf(doc, "j1 on one"))
-        // the gallery only: the filter by author is the navbar's "Comments by" menu, no funnel
-        j1.map(_._1) === Seq("gallery")
-        j1.head._2 === s"/gallery/round/${f.round.getId}/user/${f.juror1.getId}/page/1"
-        // an icon only: the words in title and aria-label
+        // the funnel (quick access to the Comments menu's "Comments by"), then the gallery
+        j1.map(_._1) === Seq("filter", "gallery")
+        j1(1)._2 === s"/gallery/round/${f.round.getId}/user/${f.juror1.getId}/page/1"
+        // icons only: the words in title and aria-label
         forall(j1)(l => (l._5 === "") and (l._3 === l._4))
-        j1.head._3 === "Gallery of juror Juror 1 in round Round 2"
-        msgOf(doc, "j1 on one").select("a.wlx-comment-author-link i[aria-hidden=true]").size === 1
-        doc.select(".wlx-comment-filter-link, .bi-funnel, .bi-funnel-fill, #comments-report-commenter").size === 0
+        j1.head._3 === "Show only Juror 1's comments"
+        j1(1)._3 === "Gallery of juror Juror 1 in round Round 2"
+        msgOf(doc, "j1 on one").select("a.wlx-comment-author-link i[aria-hidden=true]").size === 2
+        // the funnel: outlined, not current, the list filtered by them with the scope and order kept,
+        // the same link as their item in the Comments menu
+        val (href, _, _, current, filled, _) = funnel(msgOf(doc, "j1 on one")).get
+        current must beFalse
+        filled must beFalse
+        msgOf(doc, "j1 on one").select("a.wlx-comment-filter-link i.bi-funnel").size === 1
+        href must startWith(s"/comments/round/${f.round.getId}/user/0/page/1?")
+        forall(Seq(s"commenter=${f.juror1.getId}", "scope=contest", "sort=latest-comment"))(href must contain(_))
+        href === menuHref(doc, "Juror 1")
+        rows(page(app, f.organizer, href)) === Seq(7L, 1L, 5L)
+        // every funnel the same link as its author's menu item, none current; no chip
+        forall(Seq("j2 on seven" -> EvilName, "pre on three" -> "Pre", "org on one" -> "Org")) { case (body, name) =>
+          funnel(msgOf(doc, body)).map(l => (l._1, l._4)) must_== Some((menuHref(doc, name), false))
+        }
+        doc.select(".wlx-comment-filter-link.active, .bi-funnel-fill, .wlx-comment-filter-link[aria-current]").size === 0
+        doc.select("#comments-report-commenter, .wlx-commenter-chip").size === 0
         // the author's name stays text
         msgOf(doc, "j1 on one").select(".wlx-comment-meta strong a").size === 0
         msgOf(doc, "j1 on one").selectFirst(".wlx-comment-meta strong").text === "Juror 1"
         // the pre-screener's gallery is the earlier round's, where they are a juror
-        links(msgOf(doc, "pre on three")).map(l => l._1 -> l._2) === Seq(
-          "gallery" -> s"/gallery/round/${f.earlier.getId}/user/${f.prescreener.getId}/page/1")
-        links(msgOf(doc, "pre on three")).head._3 === "Gallery of juror Pre in round Pre-screening"
-        // an organizer who commented, a comment without an account: none
-        links(msgOf(doc, "org on one")) === Nil
+        links(msgOf(doc, "pre on three")).filter(_._1 == "gallery").map(l => l._2 -> l._3) === Seq(
+          s"/gallery/round/${f.earlier.getId}/user/${f.prescreener.getId}/page/1" -> "Gallery of juror Pre in round Pre-screening")
+        // an organizer who commented: the funnel alone; a comment without an account: none
+        links(msgOf(doc, "org on one")).map(l => (l._1, l._3)) === Seq("filter" -> "Show only Org's comments")
         links(msgOf(doc, "legacy on six")) === Nil
         msgOf(doc, "legacy on six").selectFirst(".wlx-comment-meta strong").text === "Legacy"
       }
@@ -275,8 +302,8 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
         // juror 2 on a file of the earlier round, which they are no juror of
         CommentJdbc.create(f.juror2.getId, "Juror 2", f.earlier.getId, Some(f.contest.getId), 3, "j2 in pre")
         val doc = page(app, f.organizer, path(f, 0, "?scope=contest"))
-        links(msgOf(doc, "j1 in B's round")) === Nil
-        links(msgOf(doc, "j2 in pre")) === Nil
+        links(msgOf(doc, "j1 in B's round")).map(_._1) === Seq("filter")
+        links(msgOf(doc, "j2 in pre")).map(_._1) === Seq("filter")
         doc.select(s"a[href^=/gallery/round/${f.roundB.getId}/]").size === 0
       }
     }
@@ -323,8 +350,25 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
         shown(doc.getElementById("5")) === ((Seq("j1 on five"), Seq("pre on five", "org on five")))
         doc.getElementById("5").selectFirst("details.wlx-comments-others summary").text === "2 other comments on this file"
         doc.getElementById("5").select("details[open]").size === 0
-        // no chip and no funnels: the menu replaces them
-        doc.select("#comments-report-commenter, .wlx-commenter-chip, .wlx-comment-filter-link, .bi-funnel, .bi-funnel-fill").size === 0
+        // no chip: the menu and its button show the filter
+        doc.select("#comments-report-commenter, .wlx-commenter-chip").size === 0
+        // juror 1's funnels: filled and current, named for what they do, linking the list without
+        // the filter, as the menu's "Everyone" (its scope, votes choice and order kept)
+        val j1Funnels = Seq("j1 on seven", "j1 on one", "j1 on five").map(b => funnel(msgOf(doc, b)).get)
+        forall(j1Funnels) { case (href, title, label, current, filled, text) =>
+          (current must beTrue) and (filled must beTrue) and (text === "") and
+            (title === "Show all authors' comments") and (label === title) and (href === everyone._3)
+        }
+        doc.select("a.wlx-comment-filter-link.active").size === 3
+        doc.select("a.wlx-comment-filter-link[aria-current=true]").size === 3
+        // the menu agrees: juror 1's item is the current one, "Everyone" the funnels' link
+        items.find(_._4).map(_._1) === Some("Juror 1")
+        // another author's funnel (folded under theirs) switches to them, as their menu item (named
+        // by the comment's own signature, beside it; the menu by their latest comment's)
+        funnel(msgOf(doc, "j2 on seven")).map(l => (l._1, l._2, l._4, l._5)) ===
+          Some((menuHref(doc, EvilName), "Show only Juror 2's comments", false, false))
+        funnel(msgOf(doc, "org on five")).map(_._1) === Some(menuHref(doc, "Org"))
+        menu(page(app, f.organizer, funnel(msgOf(doc, "j2 on seven")).get._1)).find(_._4).map(_._1) === Some(EvilName)
         // the order and scope menus, the CSV, the region menu and the files' large views keep it
         forall(Seq("#comments-report-order a", "#comments-report-scope a", "#comments-report-csv",
           "article.wlx-comments-row h2 a")) { sel =>
@@ -340,6 +384,8 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
         page(app, f.organizer, s"/gallery/round/${f.round.getId}/user/0/page/1").select("nav.navbar.wlx-nav-comments").size === 0
         menu(plain).filter(_._4).map(_._1) === Seq("Everyone")
         plain.select("details.wlx-comments-others").size === 0
+        // unfiltered: no funnel current
+        plain.select("a.wlx-comment-filter-link.active, a.wlx-comment-filter-link[aria-current], .bi-funnel-fill").size === 0
       }
     }
 
@@ -404,6 +450,7 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
         menu(doc).filter(_._4).map(_._1) === Seq(EvilName)
         val evil = msgOf(page(app, f.organizer, path(f, 0, "")), "j2 on four")
         evil.selectFirst("a.wlx-comment-gallery-link").attr("title") === s"Gallery of juror $EvilName in round Round 2"
+        funnel(evil).map(l => (l._2, l._3)) === Some((s"Show only $EvilName's comments", s"Show only $EvilName's comments"))
         evil.select(".wlx-comment-meta b").size === 0
       }
     }
@@ -419,7 +466,10 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
         doc.selectFirst("#comments-report-count").text === "· 3 файли, 3 коментарі, автор: Juror 1"
         val msg = msgOf(doc, "j2 on seven")
         links(msg).map(l => (l._3, l._4, l._5)) === Seq(
+          ("Показати лише коментарі автора Juror 2", "Показати лише коментарі автора Juror 2", ""),
           ("Галерея члена журі Juror 2 у раунді Round 2", "Галерея члена журі Juror 2 у раунді Round 2", ""))
+        funnel(msgOf(doc, "j1 on seven")).map(l => (l._2, l._3)) ===
+          Some(("Показати коментарі всіх авторів", "Показати коментарі всіх авторів"))
         doc.getElementById("7").selectFirst("details summary").text === "Ще 1 коментар до цього файлу"
       }
     }
@@ -478,7 +528,11 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
         }
         // their own report: the filter ignored, no "Comments by" menu, no filter links
         val own = page(app, f.juror1, path(f, f.juror1.getId, s"?commenter=${f.juror1.getId}"))
-        own.select("#commenters-menu, #comments-by-header, .wlx-comments-by-item, .wlx-comments-by-name, #comments-report-commenter, .wlx-comment-filter-link, a[href*=commenter=]").size === 0
+        own.select("#commenters-menu, #comments-by-header, .wlx-comments-by-item, .wlx-comments-by-name, #comments-report-commenter, .wlx-comment-filter-link, .bi-funnel, .bi-funnel-fill, a[href*=commenter=]").size === 0
+        // nor without the parameter: jurors never get funnels
+        val ownPlain = page(app, f.juror1, path(f, f.juror1.getId, ""))
+        ownPlain.select(".wlx-comment-author-link").size === 0
+        ownPlain.select(".wlx-comment-filter-link, .bi-funnel, .bi-funnel-fill, a[href*=commenter=]").size === 0
         val gallery = page(app, f.juror1, s"/gallery/round/${f.round.getId}/user/${f.juror1.getId}/page/1?commenter=${f.juror2.getId}")
         gallery.select("a[href*=commenter=]").size === 0
         val large = page(app, f.juror1,

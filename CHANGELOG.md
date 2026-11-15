@@ -249,6 +249,19 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   Votes button its icon alone and the names cut shorter. Everywhere the links a little closer
   (0.375rem each side, was 0.5), the juror's name cut at 6.5rem (was 7.5) and the region at 8rem
   (was 9). Jurors' bars are unchanged. Organizer guide.
+- **The funnel after each comment's author is back, as quick access** (the maintainer's request
+  of 2026-11-15, after `26.11.8`; developed 2026-11-15, `stack/159-comment-author-funnel`): in
+  the organisers' comments list each comment's author with an account is again followed by a
+  funnel, **Show only Name's comments**, the same `commenter=` link as the author's item under
+  the **Comments** menu's **Comments by**. On the filtered author's comments the funnel is filled
+  and current (`aria-current="true"`, as the menu's item), **Show all authors' comments**, and
+  links the list without the filter, as **Everyone** does; other authors' funnels in the filtered
+  view switch to them. The **Comments by** section stays the menu's uniform filter; the chip
+  **Comments by Name ×** stays gone (the menu and the button show the filter). The author icons'
+  focus outline is now solid in the link colour (Bootstrap's focus ring colour, a 25% tint, was
+  too faint for a 2 px outline). Jurors get no funnels, and `commenter=` stays ignored in their
+  own list. The keys `comments.report.author.filter` and `comments.report.commenter.remove` are
+  back (en, fr, ru, uk), with new words. Organizer guide.
 
 **Development**
 

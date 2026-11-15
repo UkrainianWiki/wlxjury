@@ -188,7 +188,7 @@ img.cropped {
 .wlx-comments-main { flex: 1 1 auto; min-width: 0; max-width: 48rem; }
 .wlx-comments-main h2 { overflow-wrap: anywhere; }
 .wlx-comments-report .wlx-comment-other-round { border-left: 3px solid var(--bs-secondary-color); }
-/* a comment author's icon link in the report (their gallery of the round):
+/* a comment author's icon links in the report (its filter by them, their gallery of the round):
    muted beside the name, a 24 px target (WCAG 2.5.8), an outline when focused (kept in forced
    colours, unlike a shadow); their words are in title and aria-label */
 .wlx-comments-report .wlx-comment-author-link {
@@ -204,7 +204,12 @@ img.cropped {
     text-decoration: none;
 }
 .wlx-comments-report .wlx-comment-author-link:hover { color: var(--bs-link-hover-color); background: var(--bs-tertiary-bg); }
-.wlx-comments-report .wlx-comment-author-link:focus-visible { outline: 2px solid var(--bs-focus-ring-color); outline-offset: 1px; }
+/* the focus outline solid in the link colour (3:1 and more against the page in light and dark;
+   Bootstrap's focus ring colour is a 25% tint, too faint for a 2 px outline) */
+.wlx-comments-report .wlx-comment-author-link:focus-visible { outline: 2px solid var(--bs-link-color); outline-offset: 1px; }
+/* the funnel of the author the report is filtered by: filled, in the link colour (Bootstrap's
+   --bs-link-color, 4.5:1 and more on the page in light and dark), it removes the filter */
+.wlx-comments-report .wlx-comment-filter-link.active { color: var(--bs-link-color); }
 /* the filter by author's view: the file's other comments folded under theirs */
 .wlx-comments-others > summary { cursor: pointer; margin-bottom: .5rem; }
 @media (max-width: 575.98px) {

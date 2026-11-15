@@ -206,10 +206,14 @@ comments.report.link.none = Comments on the round''s files: none
 comments.by = Comments by
 comments.by.all = Everyone
 # the report's filter by author (RoundList.commenter): the name of an account without a comment
-# in the contest, the header's count of their comments; a comment author's icon link (its words
-# are the link's title and aria-label: {0} the author, {1} the round); the file's other comments,
+# in the contest; a comment author's funnel (its words are its title and aria-label: the filter by
+# {0} the author, or, on the filtered author's comments, the filter removed); the header's count
+# of their comments; a comment author's gallery icon link (its words are the link's title and
+# aria-label: {0} the author, {1} the round); the file's other comments,
 # folded (by the language's plural form); the empty report
 comments.report.commenter.account = account #{0}
+comments.report.author.filter = Show only {0}''s comments
+comments.report.commenter.remove = Show all authors'' comments
 comments.report.count.commenter = {0} by {1}
 comments.report.author.gallery = Gallery of juror {0} in round {1}
 comments.report.others.one = {0} other comment on this file

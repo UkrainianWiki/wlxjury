@@ -35,16 +35,34 @@
    by" section of the Comments menu (commentsBySection): only the files with a comment by them in the scope, counted and
    ordered by theirs, the heading naming them. Each row then shows their comments, and the file's
    other comments in the scope folded under them (a <details>, closed), each part in the order
-   written. A comment's author stays text, followed by an icon link (authorLinks): their one-juror
-   gallery of the round the comment was written in (`jurorGalleries`, (round id, user id): a juror
-   of it the viewer may see, GalleryController.jurorGalleries). The icon says nothing: its title
-   and aria-label name the person and the round *@
+   written. A comment's author stays text, followed by icon links (authorLinks): a funnel to the
+   report filtered by them (any comment with an account, user_id > 0; on theirs while it is, filled
+   and current, it removes the filter) and their one-juror gallery of the round the comment was
+   written in (`jurorGalleries`, (round id, user id): a juror of it the viewer may see,
+   GalleryController.jurorGalleries). The icons say nothing: their title and aria-label name the
+   person (and the round) *@
 
 @* the organisers' report: its scope, CSV, filter by author, gallery icons and round names *@
 @staff = @{ user.canViewOrgInfo(list.round) }
 
-@* a comment's link by its author: an icon, its words in title and aria-label; the organisers' only *@
+@* a comment's links by its author: icons, their words in title and aria-label; the organisers' only.
+   The funnel is quick access to the Comments menu's "Comments by" section (the maintainer,
+   2026-11-15: the menu is the uniform filter, the funnel beside each name the quick one): it
+   filters the report by the comment's author; on the comments of the author it is filtered by,
+   filled and current (aria-current="true", as the menu's item), it removes the filter, as the
+   menu's "Everyone" does. Another author's funnel in the filtered view switches to them *@
 @authorLinks(msg: Comment) = {
+    @if(staff && msg.userId > 0) {
+        @if(list.commentsBy.contains(msg.userId)) {
+        @defining(Messages("comments.report.commenter.remove")) { label =>
+        <a class="wlx-comment-author-link wlx-comment-filter-link active" href="@list.withCommenter(None).pageUrl(1)" aria-current="true" title="@label" aria-label="@label"><i class="bi bi-funnel-fill" aria-hidden="true"></i></a>
+        }
+        } else {
+        @defining(Messages("comments.report.author.filter", msg.username)) { label =>
+        <a class="wlx-comment-author-link wlx-comment-filter-link" href="@list.withCommenter(Some(msg.userId)).pageUrl(1)" title="@label" aria-label="@label"><i class="bi bi-funnel" aria-hidden="true"></i></a>
+        }
+        }
+    }
     @if(staff && msg.userId > 0 && jurorGalleries.contains(msg.roundId -> msg.userId)) {
         @defining(Messages("comments.report.author.gallery", msg.username,
             if (msg.roundId == list.roundId) list.round.description else roundNames.getOrElse(msg.roundId, msg.roundId.toString))) { label =>
@@ -57,8 +75,8 @@
 @commenterName = @{ commenter.map { case (id, name) => name.getOrElse(Messages("comments.report.commenter.account", id.toString)) } }
 
 @* The organisers' "Comments by" section of the navbar's Comments menu (the maintainer's decisions
-   of 2026-11-15: in place of the funnels after each author and the chip above the rows, then of a
-   menu of its own), after a divider and its header: everyone's comments, or one author's
+   of 2026-11-15: in place of the chip above the rows and of a menu of its own; the funnels after
+   each author stay as quick access, authorLinks), after a divider and its header: everyone's comments, or one author's
    (RoundList.withCommenter: `commenter=`). Its items: everyone, with all the comments, then each
    author with an account of the report's comments without the filter (`commentAuthors`: the
    scope and the list's juror, votes choice, region and filters; jurors, pre-screeners and

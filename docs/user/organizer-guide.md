@@ -205,11 +205,16 @@ rounds of the contest**); the **Comments** button then shows their name after it
 them (**N other comments on this file**, click to open). **Latest comment first** is then by that
 person's latest comment; the counts, the pages, the **Comments CSV** (only their comments) and the
 large view's previous and next follow it, together with the juror, votes choice, region and order.
-After each comment's author, the pictures icon (**Gallery of juror Name in round …**) opens that person's gallery of the round
+After each comment's author, the funnel icon (**Show only Name's comments**) is a quicker way to
+the same choice: it shows only that person's comments, as choosing them under **Comments by**
+does. On the comments of the person the report is filtered by, the funnel is filled (**Show all
+authors' comments**) and shows everyone's comments again, as **Everyone** does; the funnels of
+other people's comments (folded under theirs) switch to that person. The pictures icon
+(**Gallery of juror Name in round …**) opens that person's gallery of the round
 the comment was written in, with their votes; it is shown only for a juror of that round (a
 pre-screener's comment in an earlier round links their gallery there). Old comments without
-an account have no icon, and aren't listed under **Comments by** (they count in **Everyone**).
-Hover over the icon to see what it does; screen readers read the same text.
+an account have no icons, and aren't listed under **Comments by** (they count in **Everyone**).
+Hover over an icon to see what it does; screen readers read the same text.
 
 The juror, votes, Comments and region menus and the pager work as in the other views, the CSV
 included. Only admins and organizers of the contest (and root) can open all the jurors' report

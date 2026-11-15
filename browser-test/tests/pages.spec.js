@@ -28,14 +28,18 @@ const KNOWN = {
   // the organisers' comments list: its "Comments CSV" button (btn-outline-primary), first scanned
   // on 2026-11-15 with its Comments menu open (its "Comments by" section has no finding of its own)
   'comments list, all jurors, Comments menu open': { 'color-contrast': U19 },
+  // the same button, on the list filtered by an author (its funnels scanned, the filled one too)
+  'comments list, filtered by an author': { 'color-contrast': U19 },
   // aria-label on the navbar's disabled view links; seen again on 2026-11-04's re-check
   'round statistics': { 'aria-prohibited-attr': U20 },
 };
 
 const A11Y_DIR = path.join(OUT, 'a11y');
 
-/** (name, role, path[, menu]) of the tour: role null is signed out; path from the fixture; menu,
-  * a navbar menu opened before the scan (its expanded items scanned too). */
+/** (name, role, path[, menu[, follow]]) of the tour: role null is signed out; path from the
+  * fixture; menu, a navbar menu opened before the scan (its expanded items scanned too); follow, a
+  * link followed first if the page has one (a comment author's funnel: the list filtered by them,
+  * its funnel filled; without a comment yet, voting.spec.js writes it, the page as it is). */
 const TOUR = [
   ['login', null, () => '/auth'],
   ['gallery, binary', 'juror', (f) => galleryPath(f.roundBinaryId, f.accounts.juror.id)],
@@ -45,6 +49,7 @@ const TOUR = [
   // all the contest's comments (the one voting.spec.js writes, commentFile, and its row's chip once
   // it has), its Comments menu open with the "Comments by" section
   ['comments list, all jurors, Comments menu open', 'organizer', (f) => `/comments/round/${f.roundBinaryId}/user/0/page/1?scope=contest`, '#comments-menu'],
+  ['comments list, filtered by an author', 'organizer', (f) => `/comments/round/${f.roundBinaryId}/user/0/page/1?scope=contest`, null, 'a.wlx-comment-filter-link'],
   ['gallery, Votes menu open', 'juror', (f) => galleryPath(f.roundBinaryId, f.accounts.juror.id), '#votes-menu'],
   ['gallery, Comments menu open', 'juror', (f) => galleryPath(f.roundBinaryId, f.accounts.juror.id), '#comments-menu'],
   ["one juror's gallery, Votes menu open", 'organizer', (f) => galleryPath(f.roundBinaryId, f.accounts.juror.id), '#votes-menu'],
@@ -72,7 +77,7 @@ const summarize = (violations) => violations.map((v) => ({
 }));
 
 test.describe('the page tour', { tag: '@S-04' }, () => {
-  for (const [name, role, pathOf, menu] of TOUR) {
+  for (const [name, role, pathOf, menu, follow] of TOUR) {
     test(name, async ({ contextAs, fixture, browserName }, testInfo) => {
       const context = await contextAs(role);
       const page = await context.newPage();
@@ -80,6 +85,10 @@ test.describe('the page tour', { tag: '@S-04' }, () => {
       const response = await page.goto(target);
       expect(response.status()).toBe(200);
       await expect(page.locator('h1'), 'one h1 (UI §4.2)').toHaveCount(1);
+      if (follow && await page.locator(follow).count() > 0) {
+        await Promise.all([page.waitForNavigation(), page.locator(follow).first().click()]);
+        await expect(page.locator('a.wlx-comment-filter-link.active[aria-current="true"]').first()).toBeVisible();
+      }
       if (menu) {
         await page.locator(`${menu} > button`).click();
         await expect(page.locator(`${menu} .dropdown-menu`)).toBeVisible();
