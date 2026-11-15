@@ -176,9 +176,9 @@ comments.count.one = {0} comment
 comments.count.few = {0} comments
 comments.count.many = {0} comments
 comments.count.other = {0} comments
-# the large view's link to its comments section, after the count in words ("3 comments")
-comments.goto = {0}: go to the comments
-# a gallery tile's link to the file's large view at its comments, after the count in words
+# the comment chip's words as a link (snippets.commentChip: a gallery tile's, the comments list's
+# rows' to the file's large view at its comments, the large view's to its comments section), after
+# the count in words ("3 comments")
 comments.open = {0}: open the comments
 comment.round.other = Written in round {0}
 # the comments report (a round list's view, GalleryView.Comments; the organisers', and a juror's own list): its scope, order,
@@ -201,15 +201,16 @@ comments.report.link = Comments on the round''s files
 comments.report.link.count = Comments on the round''s files ({0})
 comments.report.link.all = all rounds ({0})
 comments.report.link.none = Comments on the round''s files: none
-# the report's filter by author (RoundList.commenter): its chip and the chip's remove link, the
-# name of an account without a comment in the contest, the header's count of their comments; a comment author's icon links (their words
-# are the links' title and aria-label: {0} the author, {1} the round); the file's other comments,
+# the "Comments by" section of the organisers' comments report's Comments menu (commentsReport):
+# its header, its first item (everyone's comments)
+comments.by = Comments by
+comments.by.all = Everyone
+# the report's filter by author (RoundList.commenter): the name of an account without a comment
+# in the contest, the header's count of their comments; a comment author's icon link (its words
+# are the link's title and aria-label: {0} the author, {1} the round); the file's other comments,
 # folded (by the language's plural form); the empty report
-comments.report.commenter = Comments by {0}
 comments.report.commenter.account = account #{0}
-comments.report.commenter.remove = Show everyone''s comments
 comments.report.count.commenter = {0} by {1}
-comments.report.author.filter = Only the comments by {0}
 comments.report.author.gallery = Gallery of juror {0} in round {1}
 comments.report.others.one = {0} other comment on this file
 comments.report.others.few = {0} other comments on this file

@@ -122,7 +122,8 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
         }
         // within the comments filter: the list's unrated
         // the icon of the choice (the maintainer's decision of 2026-11-15), hidden from screen
-        // readers: on All the round's marks together, the circle, ✓ and ✗; each choice its own
+        // readers: on All the round's marks together, the circle, ✓ and ✗, squeezed into one
+        // icon's box (wlx-vote-icons, a yes/no round's triangle: main.css); each choice its own
         def icons(doc: org.jsoup.nodes.Document) =
           doc.select("#votes-menu > button > span[aria-hidden=true] > i").asScala.map(_.className).toList
         (icons(all) === List("bi bi-circle wlx-vote-icon-unrated", "bi bi-check-lg wlx-vote-icon-selected", "bi bi-x-lg wlx-vote-icon-rejected")) and
@@ -131,6 +132,7 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
             icons(page(app, f.juror, gallery(f.round, f.juror.getId, query = s"?filter=$filter"))) === List(icon)
           }) and
           (all.select("#votes-menu > button i.bi-check2-square").size === 0) and
+          (all.select("#votes-menu > button > span").first.className === "wlx-vote-icons wlx-lead-icon") and
           (NavMenus.button(page(app, f.juror, gallery(f.round, f.juror.getId, query = "?comments=1")), "votes-menu") ===
             Some("Votes: All 2 · 0 unrated"))
       }

@@ -175,8 +175,6 @@ comments.count.one = {0} commentaire
 comments.count.few = {0} commentaires
 comments.count.many = {0} commentaires
 comments.count.other = {0} commentaires
-# the large view's link to its comments section, after the count in words ("3 comments")
-comments.goto = {0} : aller aux commentaires
 # a gallery tile's link to the file's large view at its comments, after the count in words
 comments.open = {0} : ouvrir les commentaires
 comment.round.other = Écrit au tour {0}
@@ -198,11 +196,10 @@ comments.report.link = Commentaires sur les fichiers du tour
 comments.report.link.count = Commentaires sur les fichiers du tour ({0})
 comments.report.link.all = tous les tours ({0})
 comments.report.link.none = Commentaires sur les fichiers du tour : aucun
-comments.report.commenter = Commentaires de {0}
+comments.by = Commentaires de
+comments.by.all = Tout le monde
 comments.report.commenter.account = compte n° {0}
-comments.report.commenter.remove = Afficher les commentaires de tous
 comments.report.count.commenter = {0} de {1}
-comments.report.author.filter = Seulement les commentaires de {0}
 comments.report.author.gallery = Galerie du juré {0} dans le tour {1}
 comments.report.others.one = {0} autre commentaire sur ce fichier
 comments.report.others.few = {0} autres commentaires sur ce fichier

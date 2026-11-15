@@ -10,6 +10,7 @@
 // the stored one), so they fail once Chromium stops doing it, the signal to revisit U23.
 // Each engine votes as its own juror (lib/server.js), so the engines can share a server; each
 // test reads the file's vote first and casts one that changes it, so a rerun votes again.
+import AxeBuilder from '@axe-core/playwright';
 import { test, expect } from '../lib/fixtures.js';
 import { galleryPath, largePath, one } from '../lib/actions.js';
 
@@ -145,12 +146,12 @@ test.describe('a juror votes', () => {
     // is), none unrated, and has no coloured frame (the maintainer's decisions of 2026-11-15):
     // one chip (the fixture has no comments), named once for screen readers
     const tile = select.locator('xpath=ancestor::*[contains(concat(" ", @class, " "), " ug-tile ")][1]');
-    const mark = tile.locator('.wlx-tile-vote-mark');
+    const mark = tile.locator('.wlx-chip-vote');
     await expect(mark).toHaveCount(wasPressed ? 0 : 1);
     if (!wasPressed) {
       await expect(mark.locator('i.bi-check-lg')).toBeVisible();
-      await expect(tile.locator('.wlx-tile-chips > .wlx-tile-chip')).toHaveCount(1);
-      await expect(tile.locator('.wlx-tile-time')).toHaveCount(0); // in file order: no time
+      await expect(tile.locator('.wlx-tile-chips > .wlx-chip')).toHaveCount(1);
+      await expect(tile.locator('.wlx-chip-time')).toHaveCount(0); // in file order: no time
       await expect(mark.locator('.visually-hidden')).toHaveText('Selected');
       const [t, m] = [await tile.boundingBox(), await mark.boundingBox()];
       expect(m.x - t.x, 'the chip at the left').toBeLessThan(12);
@@ -179,13 +180,13 @@ test.describe('a juror votes', () => {
       const latest = await context.newPage();
       await latest.goto(`${galleryPath(fixture.roundBinaryId, juror.id)}?sort=latest-vote`);
       const first = latest.locator('.ug-tile').first();
-      const chip = first.locator('.wlx-tile-vote-mark');
+      const chip = first.locator('.wlx-chip-vote');
       await expect(chip.locator('i.bi-check-lg')).toBeVisible();
-      await expect(chip.locator('.wlx-tile-time time')).toBeVisible();
-      await expect(first.locator('.wlx-tile-time')).toHaveCount(1);
-      await expect(first.locator('.wlx-tile-chips > .wlx-tile-chip')).toHaveCount(1);
+      await expect(chip.locator('.wlx-chip-time time')).toBeVisible();
+      await expect(first.locator('.wlx-chip-time')).toHaveCount(1);
+      await expect(first.locator('.wlx-tile-chips > .wlx-chip')).toHaveCount(1);
       await expect(chip.locator('.visually-hidden')).toHaveText(/^Selected, .*\d\d:\d\d$/);
-      const [time, mark] = await Promise.all([chip.locator('.wlx-tile-time'), chip.locator('i')]
+      const [time, mark] = await Promise.all([chip.locator('.wlx-chip-time'), chip.locator('i')]
         .map((l) => l.evaluate((el) => getComputedStyle(el).color)));
       expect(time, 'the time muted, not in the mark\'s colour').not.toBe(mark);
       await latest.close();
@@ -221,14 +222,14 @@ test.describe('a juror votes', () => {
 // has (lib/server.js commentFile), so their views still have none (navbar.spec.js); a rerun on the
 // same server finds it there.
 test.describe('the large view\'s comments link', () => {
-  test('scrolls to the comments section, with the count it shows', { tag: '@J-25' }, async ({ contextAs, fixture }) => {
+  test('scrolls to the comments section, with the count it shows', { tag: '@J-25' }, async ({ contextAs, fixture, browserName }) => {
     const context = await contextAs('admin');
     const page = await context.newPage();
     const other = { id: fixture.commentFile.juror, pageId: fixture.commentFile.pageId };
     expect(other.pageId, 'server.json has a file for the comment (restart the fixture)').toBeGreaterThan(0);
     const url = largePath(fixture.roundBinaryId, other.id, other.pageId);
     await page.goto(url);
-    const link = page.locator('a.wlx-comments-link');
+    const link = page.locator('a.wlx-chip-comments');
     if (await link.count() === 0) {
       await page.locator('#addComment textarea').fill('A comment for the comments link (browser test)');
       await Promise.all([page.waitForNavigation(), page.locator('#saySomething').click()]);
@@ -238,7 +239,7 @@ test.describe('the large view\'s comments link', () => {
     expect(count).toBeGreaterThan(0);
     await expect(link).toHaveAttribute('href', '#comments');
     await expect(link.locator('span[aria-hidden=true]')).toHaveText(String(count));
-    await expect(link).toHaveAccessibleName(`${count} comment${count === 1 ? '' : 's'}: go to the comments`);
+    await expect(link).toHaveAccessibleName(`${count} comment${count === 1 ? '' : 's'}: open the comments`);
     // the heading below the view's height first, then in view after the click: the view made
     // shorter than the heading's place (the file loaded, which pushes the comments down; the
     // file's height follows the view's in some engines, so measured again after each change)
@@ -260,7 +261,7 @@ test.describe('the large view\'s comments link', () => {
     // the gallery page with the file (the large view's Gallery button): its tile's comments chip,
     // the one chip that is a link, opens the file's large view at the comments
     await page.goto(await page.locator('[data-nav=gallery]').getAttribute('href'));
-    const chip = page.locator(`.ug-tile a.wlx-tile-comments[href*="/pageid/${other.pageId}"]`);
+    const chip = page.locator(`.ug-tile a.wlx-chip-comments[href*="/pageid/${other.pageId}"]`);
     await expect(chip).toBeVisible();
     // its name says its shown number (another engine sharing the server may have commented since)
     await expect(chip).toHaveAccessibleName(/^\d+ comments?: open the comments$/);
@@ -272,5 +273,24 @@ test.describe('the large view\'s comments link', () => {
     await chip.click();
     await page.waitForURL(new RegExp(`/pageid/${other.pageId}.*#comments$`));
     await expect(heading).toBeInViewport();
+
+    // the comments list (commentsReport commentsLink): the file's row, after its vote marks, has
+    // the same chip with the row's own comments, a link to its large view at the comments
+    await page.goto(`/comments/round/${fixture.roundBinaryId}/user/${other.id}/page/1`);
+    const row = page.locator(`article.wlx-comments-row[id="${other.pageId}"]`);
+    const rowChip = row.locator('.wlx-comments-result > a.wlx-chip-comments');
+    const shown = await row.locator('.msg').count();
+    await expect(rowChip.locator('span[aria-hidden=true]')).toHaveText(String(shown));
+    await expect(rowChip).toHaveAccessibleName(`${shown} comment${shown === 1 ? '' : 's'}: open the comments`);
+    const target = await rowChip.boundingBox();
+    expect(target.height, 'a 24 px target').toBeGreaterThanOrEqual(24);
+    if (browserName === 'chromium') {
+      const results = await new AxeBuilder({ page }).include(`article.wlx-comments-row[id="${other.pageId}"]`)
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+      expect(results.violations.map((v) => v.id), 'the row with its chip: no accessibility findings').toEqual([]);
+    }
+    await rowChip.click();
+    await page.waitForURL(new RegExp(`/large/round/${fixture.roundBinaryId}/user/${other.id}/pageid/${other.pageId}.*#comments$`));
+    await expect(page.locator('h2#comments')).toBeInViewport();
   });
 });

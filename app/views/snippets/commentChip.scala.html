@@ -1,0 +1,19 @@
+@(count: Int, href: Option[String] = None)(implicit messages: Messages)
+@* A file's comments as a chip, the one definition of it (the maintainer, 2026-11-15): a speech
+   bubble and the number, hidden from screen readers, which read its words (views.CommentCount:
+   "3 comments"), the same words as its title. With `href` a link, its words then saying where it
+   goes ("3 comments: open the comments", comments.open): the large view's to its comments section
+   (large/navigationButtons, `#comments`), the comments list's rows' to the file's large view at its
+   comments (commentsReport); without, a plain chip on a thumbnail (the by-rate
+   gallery, the large view's strip). The gallery's tiles clone it from a <template>
+   (snippets.chipTemplates, tile-votes.js addComments). Nothing without comments. Its look:
+   main.css .wlx-chip *@
+@inner(label: String) = {<i class="bi bi-chat-left-text-fill" aria-hidden="true"></i><span class="wlx-chip-shown" aria-hidden="true">@count</span><span class="visually-hidden">@label</span>}
+@if(count > 0) {
+    @defining(views.CommentCount.label(count)) { words =>
+    @defining(href.fold(words)(_ => Messages("comments.open", words))) { label =>
+    @for(url <- href) {<a class="badge wlx-chip wlx-chip-comments" href="@url" title="@label">@inner(label)</a>}
+    @if(href.isEmpty) {<span class="badge wlx-chip wlx-chip-comments" title="@label">@inner(label)</span>}
+    }
+    }
+}

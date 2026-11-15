@@ -1,0 +1,19 @@
+@(rate: Int, time: Option[Option[java.time.ZonedDateTime]] = None)(implicit messages: Messages)
+@* One juror's vote on a file as a chip, the one definition of it (the maintainer, 2026-11-15): a
+   yes/no round's ✓ or ✗ in the vote's colour (`rate` 1 or -1; 0: none, a rated round's stars are
+   its mark), then with `time` the vote's time, muted after a mark (snippets.voteTime: Some(at), or
+   the text that none was recorded, None), "✓ 14:32"; marks and time hidden from screen readers,
+   which read its words, the vote's and the time's ("Selected, 12 Nov, 14:32"), its title too. The
+   gallery's tiles clone it from a <template> (snippets.chipTemplates, tile-votes.js voteChip),
+   setting the mark, the time and the words. Nothing without a mark or a time. Its look: main.css
+   .wlx-chip *@
+@word = @{ if (rate > 0) Some(Messages("selected")) else if (rate < 0) Some(Messages("rejected")) else None }
+@timeText = @{ time.map(_.fold(Messages("vote.time.none"))(_.toInstant.toString)) }
+@if(word.nonEmpty || time.nonEmpty) {
+    @defining((word.toSeq ++ timeText).mkString(", ")) { label =>
+    <span class="badge wlx-chip wlx-chip-vote" title="@label"><span class="wlx-chip-shown" aria-hidden="true">@if(rate > 0) {<i class="bi wlx-chip-mark bi-check-lg wlx-vote-selected"></i>}@if(rate < 0) {<i class="bi wlx-chip-mark bi-x-lg wlx-vote-rejected"></i>}@for(at <- time) {@at match {
+        case Some(_) => {<span class="wlx-chip-time">@snippets.voteTime(at)</span>}
+        case None => {<span class="wlx-chip-time wlx-vote-time-none">@Messages("vote.time.none")</span>}
+    }}</span><span class="visually-hidden">@label</span></span>
+    }
+}

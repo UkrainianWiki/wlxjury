@@ -315,6 +315,32 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
           .map(_.int(1)).single().getOrElse(0)
       }
 
+    /** The authors of the comments [[commentCount]] counts, without the filter by author
+      * ([[commentsBy]]): per `comment.user_id` (0 for a comment without an account) the number of
+      * their comments in the scope on the list's files, which is what the list filtered by them
+      * counts (their comments are on files with a comment of theirs), and the name their latest
+      * comment in the contest is signed with (as [[org.intracer.wmua.CommentJdbc.authorName]]:
+      * the comments report's "Comments by" section). One query: commentCount's join grouped by
+      * author, each author's latest comment in the contest from one pass over the contest's
+      * comments on comment's (contest_id, room) index (V101), grouped by author, and its name by
+      * primary key; `comment.user_id` has no index of its own, so not a lookup per author. Their
+      * sum is commentCount's. Empty without the comments filter.
+      */
+    def commentAuthors()(implicit session: DBSession = autoSession): Seq[(Long, Int, Option[String])] =
+      commentsIn.fold(Seq.empty[(Long, Int, Option[String])]) { contestId =>
+        val ids = copy(commentsBy = None, order = Nil, limit = None, withPageId = None, keyset = None)
+          .query(idOnly = true, noLimit = true)
+        val inRound = SQLSyntax.createUnsafely(SelectionQuery.inRound(commentsRound))
+        sql"""select g.uid, g.n, named.username
+              from (select coalesce(c.user_id, 0) uid, count(*) n
+                    from ($ids) t straight_join comment c on c.contest_id = $contestId and c.room = t.pi_on_i$inRound
+                    group by coalesce(c.user_id, 0)) g
+              left join (select user_id, max(id) mid from comment where contest_id = $contestId group by user_id) latest
+                on latest.user_id = g.uid
+              left join comment named on named.id = latest.mid"""
+          .map(rs => (rs.long(1), rs.int(2), rs.stringOpt(3))).list()
+      }
+
     def imageRank(pageId: Long)(implicit session: DBSession = autoSession): Int = {
       val inner = query(ranked = true, idOnly = true, noLimit = true)
       sql"${imageRankSql(pageId, inner)}".map(_.int(1)).single().getOrElse(0)

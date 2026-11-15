@@ -13,7 +13,9 @@
         rates: RateDistribution = new RateDistribution(Map.empty),
         filters: Html = Html(""),
         backHere: Boolean = true,
-        commented: Option[Int] = None)(implicit messages: Messages, request: RequestHeader)
+        commented: Option[Int] = None,
+        commentsBy: Html = Html(""),
+        commentsByName: Option[String] = None)(implicit messages: Messages, request: RequestHeader)
 
 @* The organisers' bar of a round's results (another's votes, or all together): with its round,
    juror, filter, order, view and region menus and the pager it is the most crowded, so its links
@@ -61,7 +63,7 @@
    and on "all" only how many of them are unrated ("· N unrated": left to rate in this list); no
    visible word, "Votes" read by screen readers and in its title (D2). Counts (`rates`: what each
    choice opens, in the region) only for one juror's list: none for all the jurors' votes
-   together; in the organisers' results bar below 1700 px the unrated suffix is read by screen
+   together; in the organisers' results bar below its full width (main.css) the unrated suffix is read by screen
    readers only (wlx-nav-suffix, main.css), the count stays. The selected and rejected tinted as the tabs were (main.css).
    The button and each choice show the choice's vote icon (voteIcon, aria-hidden): the app's one
    set for yes/no votes, ✓ selected and ✗ rejected (the maintainer's decision of 2026-11-15),
@@ -70,8 +72,9 @@
    of 2026-11-14) *@
 @* A Votes choice's icon (aria-hidden, close to its text: wlx-lead-icon): the unrated's empty
    circle (muted), the selected's ✓ (green), the rejected's ✗ (red), the rated's star; for all
-   files a tight group of the round's (wlx-vote-icons: circle, ✓ and ✗ in a yes/no round, circle
-   and star in a rated one). Tinted (main.css) but on the menu's active item *@
+   files the round's marks squeezed into one icon's box (wlx-vote-icons: ✓ and ✗ above the circle
+   in a yes/no round, circle and star on a diagonal in a rated one: wlx-vote-icons-rated; the
+   maintainer's idea of 2026-11-15). Tinted (main.css) but on the menu's active item *@
 @markIcon(filter: VoteFilter) = {@filter match {
     case VoteFilter.Unrated => {<i class="bi bi-circle wlx-vote-icon-unrated"></i>}
     case VoteFilter.Rated => {<i class="bi bi-star-fill"></i>}
@@ -79,7 +82,7 @@
     case VoteFilter.Rate(-1) => {<i class="bi bi-x-lg wlx-vote-icon-rejected"></i>}
     case _ => {}
 }}
-@voteIcon(filter: VoteFilter, choices: Seq[VoteFilter]) = {@if(filter == VoteFilter.All) {<span class="wlx-vote-icons wlx-lead-icon" aria-hidden="true">@for(f <- choices if f != VoteFilter.All) {@markIcon(f)}</span>} else {<span class="wlx-vote-icon wlx-lead-icon" aria-hidden="true">@markIcon(filter)</span>}}
+@voteIcon(filter: VoteFilter, choices: Seq[VoteFilter]) = {@if(filter == VoteFilter.All) {<span class="wlx-vote-icons@if(choices.contains(VoteFilter.Rated)) { wlx-vote-icons-rated} wlx-lead-icon" aria-hidden="true">@for(f <- choices if f != VoteFilter.All) {@markIcon(f)}</span>} else {<span class="wlx-vote-icon wlx-lead-icon" aria-hidden="true">@markIcon(filter)</span>}}
 
 @votesMenu(l: RoundList, staff: Boolean) = {
     @if(!commentsOnly(l.round) && (staff || rates.hasFiles)) {
@@ -91,7 +94,7 @@
     @defining(if (counted && current == VoteFilter.All) " " + Messages("votes.unrated.suffix", rates.unrated.toString) else "") { suffix =>
     <li class="nav-item dropdown wlx-votes-menu@current match { case VoteFilter.Rate(1) => { vote-selected} case VoteFilter.Rate(-1) => { vote-rejected} case _ => {}}" id="votes-menu">
         <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"
-            title="@Messages("votes.menu"): @Messages(current.param)@count@suffix">@voteIcon(current, choices)<span class="visually-hidden">@Messages("votes.menu"): </span>@Messages(current.param)@if(count.nonEmpty) {<span class="wlx-votes-count wlx-nav-count">@count</span>}@if(suffix.nonEmpty) {<span class="wlx-nav-suffix wlx-votes-unrated">@suffix</span>}</button>
+            title="@Messages("votes.menu"): @Messages(current.param)@count@suffix">@voteIcon(current, choices)<span class="visually-hidden">@Messages("votes.menu"): </span><span class="wlx-nav-choice">@Messages(current.param)</span>@if(count.nonEmpty) {<span class="wlx-votes-count wlx-nav-count">@count</span>}@if(suffix.nonEmpty) {<span class="wlx-nav-suffix wlx-votes-unrated">@suffix</span>}</button>
         <ul class="dropdown-menu">
             @for(filter <- choices) {
             @defining(filter == current) { active =>
@@ -140,10 +143,14 @@
    where it isn't known (the organisers' report in "this round" scope or by one author: its
    gallery can have more files). An item of 0 files, not the current state, is shown greyed out,
    not a link. The button is highlighted when the filter or the report is on; below 992 px its
-   words are read by screen readers only (main.css), as in the organisers' results bar below 1700
+   words are read by screen readers only (main.css), as in the organisers' results bar below its full width
    px; its count stays; its title has them. On the organisers' view of all the jurors' votes the
    button has no count (D5: counts only in one juror's view), its items have. On a round's list
-   pages only: the juror's own list and the organisers' views *@
+   pages only: the juror's own list and the organisers' views. In the organisers' comments report
+   (`commentsBy`, commentsReport.scala.html) a second section, "Comments by": everyone's or one
+   author's comments (the maintainer's decision of 2026-11-15, one menu for the comments, not two
+   speech bubbles side by side); filtered by one, the button adds their name ("Recent comments
+   list · Olena", `commentsByName`, cut short, whole in its title) *@
 @commentsMenu(l: RoundList) = {
     @if(list.isDefined && (commented.isDefined || l.view.comments)) {
     @defining(if (l.view.comments) "list" else if (l.comments) "on" else "off") { state =>
@@ -152,7 +159,7 @@
     @defining(state match { case "list" => "comments.menu.list" case "on" => "comments.menu.on" case _ => "comments" }) { words =>
     <li class="nav-item dropdown wlx-comments-menu" id="comments-menu">
         <button type="button" class="nav-link dropdown-toggle@if(state != "off") { active}" data-bs-toggle="dropdown" aria-expanded="false"
-            title="@Messages(words)@count"><i class="bi bi-chat-left-text" aria-hidden="true"></i> <span class="wlx-nav-label">@Messages(words)</span>@if(count.nonEmpty) {<span class="wlx-comments-count wlx-nav-count">@count</span>}</button>
+            title="@Messages(words)@count@for(n <- commentsByName) { · @n}"><i class="bi bi-chat-left-text" aria-hidden="true"></i> <span class="wlx-nav-label">@Messages(words)</span>@for(n <- commentsByName) {<span class="wlx-nav-label"> · </span><span class="wlx-truncate wlx-comments-by-name">@n</span>}@if(count.nonEmpty) {<span class="wlx-comments-count wlx-nav-count">@count</span>}</button>
         <ul class="dropdown-menu">
             @defining(if (l.view.comments) RoundList.galleryOfReport(l, user) else l.withComments(true)) { withComments =>
             @commentsItem(state == "off", withComments.withComments(false).pageUrl(1), Messages("files.all"), empty = false)
@@ -161,6 +168,7 @@
             @commentsItem(state == "list", if (l.view.comments) l.pageUrl(1) else l.recentComments.pageUrl(1),
                 Messages("comments.menu.recent.plain"), commented.contains(0), commented)
             }
+            @commentsBy
         </ul>
     </li>
     }
@@ -229,7 +237,7 @@
 @* The comments report's order (the navigation proposal v3 §6 S1: in the bar's order slot, as
    every list's): the latest comment in its scope first, or the list's own orders
    (RoundList.commentOrderChoices); "Order" read before it by screen readers. In the organisers'
-   results bar a sort icon below 1700 px, as their juror order menu *@
+   results bar a sort icon below its full width (main.css), as their juror order menu *@
 @reportOrderMenu(l: RoundList) = {
     @if(l.view.comments) {
     @(new UiSelectionDto[ListOrder](
@@ -355,7 +363,7 @@
 @* The bar's first group (the maintainer's decision of 2026-11-14): one Pages menu, its button the
    menu icon and this page's name ("Go to:" read before it by screen readers), its items the
    pages the viewer may open (pageItems), this page's marked aria-current="page"; none for a
-   juror, who has no such pages. In the organisers' results bar below 1700 px the button is the
+   juror, who has no such pages. In the organisers' results bar below its full width (main.css) the button is the
    icon alone, the page's name read by screen readers and in its title (wlx-nav-label, main.css).
    Signed out: the application's name *@
 @pageLinks = {
@@ -455,7 +463,7 @@
 @* The bar (the navigation proposal v3 §2): its groups, each a list that wraps as a whole, left to
    right: the pages to go to, the filters, after a divider the order (and view), the pager; the
    account menus (logged) on the right. A group with nothing is left out *@
-<nav class="navbar navbar-expand bg-body-tertiary border-bottom mb-2 py-1@if(resultsBar) { wlx-nav-results}">
+<nav class="navbar navbar-expand bg-body-tertiary border-bottom mb-2 py-1@if(resultsBar) { wlx-nav-results}@if(resultsBar && list.exists(_.view.comments)) { wlx-nav-comments}">
     <div class="container-fluid px-2">
         @defining(pageLinks) { links =>
         @defining(filterGroup) { filterItems =>

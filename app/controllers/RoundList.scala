@@ -642,6 +642,10 @@ final case class RoundList(
     */
   def commentCount(): Int = query.commentCount()
 
+  /** The report's comment authors without its filter by author: (user id, comments, name), user
+    * id 0 for the comments without an account ([[SelectionQuery.commentAuthors]]). */
+  def commentAuthors(): Seq[(Long, Int, Option[String])] = query.commentAuthors()
+
   /** The comments of the files of a page of the comments report, in its scope, each file's in
     * the order written: everyone's, also with the filter by author ([[commentsBy]]), whose
     * comments the report shows, the others' folded under them (commentsReport).

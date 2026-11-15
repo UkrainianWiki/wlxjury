@@ -152,6 +152,9 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
           org.jsoup.Jsoup.parse(h).select(s"#votes-menu $at > span[aria-hidden=true] > i").asScala.map(_.className).toSeq
         icons(html, "> button") === Seq("bi bi-circle wlx-vote-icon-unrated")
         icons(page(gallery(f), f), "> button") === Seq("bi bi-circle wlx-vote-icon-unrated", "bi bi-star-fill")
+        // All's two squeezed into one icon's box on a diagonal (main.css wlx-vote-icons-rated)
+        org.jsoup.Jsoup.parse(page(gallery(f), f)).select("#votes-menu > button > span").first.className ===
+          "wlx-vote-icons wlx-vote-icons-rated wlx-lead-icon"
         icons(html, ".dropdown-item") ===
           Seq("bi bi-circle wlx-vote-icon-unrated", "bi bi-star-fill", "bi bi-circle wlx-vote-icon-unrated", "bi bi-star-fill")
         // no choice of order on the unrated tab, where every file has the same (no) rate; the

@@ -28,8 +28,15 @@ object NavMenus {
   /** The Votes menu's items, in order. */
   def votes(doc: Document): Seq[Item] = items(doc, "votes-menu")
 
-  /** The Comments menu's items, in order. */
-  def comments(doc: Document): Seq[Item] = items(doc, "comments-menu")
+  /** The Comments menu's items, in order: its states (the files, those with comments, the list), not
+    * the organisers' comments list's "Comments by" section ([[commentsBy]]). */
+  def comments(doc: Document): Seq[Item] =
+    doc.select("#comments-menu ul.dropdown-menu .dropdown-item:not(.wlx-comments-by-item)").asScala.toSeq.map(item)
+
+  /** The Comments menu's "Comments by" section (the organisers' comments list): everyone, then each
+    * author, in order. */
+  def commentsBy(doc: Document): Seq[Item] =
+    doc.select("#comments-menu ul.dropdown-menu .dropdown-item.wlx-comments-by-item").asScala.toSeq.map(item)
 
   /** A menu's button text, with what only screen readers read ("Votes: All 6 · 3 unrated"). */
   def button(doc: Document, menuId: String): Option[String] =

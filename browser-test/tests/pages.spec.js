@@ -25,6 +25,9 @@ const KNOWN = {
   'new round form': { 'color-contrast': U19, 'select-name': U21 },
   users: { 'color-contrast': U19, 'button-name': U20, 'link-name': U20 },
   'contest images': { 'color-contrast': U19, label: U21 },
+  // the organisers' comments list: its "Comments CSV" button (btn-outline-primary), first scanned
+  // on 2026-11-15 with its Comments menu open (its "Comments by" section has no finding of its own)
+  'comments list, all jurors, Comments menu open': { 'color-contrast': U19 },
   // aria-label on the navbar's disabled view links; seen again on 2026-11-04's re-check
   'round statistics': { 'aria-prohibited-attr': U20 },
 };
@@ -39,6 +42,9 @@ const TOUR = [
   ['gallery, rated', 'juror', (f) => galleryPath(f.roundRatingId, f.accounts.juror.id)],
   ['file list', 'juror', (f) => `/filelist/round/${f.roundBinaryId}/user/${f.accounts.juror.id}/page/1`],
   ['comments list, juror', 'juror', (f) => `/comments/round/${f.roundBinaryId}/user/${f.accounts.juror.id}/page/1`],
+  // all the contest's comments (the one voting.spec.js writes, commentFile, and its row's chip once
+  // it has), its Comments menu open with the "Comments by" section
+  ['comments list, all jurors, Comments menu open', 'organizer', (f) => `/comments/round/${f.roundBinaryId}/user/0/page/1?scope=contest`, '#comments-menu'],
   ['gallery, Votes menu open', 'juror', (f) => galleryPath(f.roundBinaryId, f.accounts.juror.id), '#votes-menu'],
   ['gallery, Comments menu open', 'juror', (f) => galleryPath(f.roundBinaryId, f.accounts.juror.id), '#comments-menu'],
   ["one juror's gallery, Votes menu open", 'organizer', (f) => galleryPath(f.roundBinaryId, f.accounts.juror.id), '#votes-menu'],

@@ -431,6 +431,16 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
         one.selectFirst("a.wlx-comments-thumb img").attr("src") must not(beEmpty)
         // all the jurors' tally: file 1 selected by juror 1
         one.selectFirst(".wlx-comments-result .wlx-approvals .visually-hidden").text must contain("1")
+        // after the vote marks the comment chip: the row's own comments, a link to the file's large
+        // view in this list at its comments, named where it goes
+        val chip = one.selectFirst(".wlx-comments-result > a.wlx-chip-comments")
+        chip.selectFirst("span[aria-hidden=true]").text === "2"
+        chip.selectFirst(".visually-hidden").text === "2 comments: open the comments"
+        chip.attr("title") === "2 comments: open the comments"
+        chip.attr("href") === one.selectFirst("h2 a").attr("href") + "#comments"
+        chip.previousElementSibling.hasClass("rate-stars") === true
+        doc.select("article.wlx-comments-row").asScala.map(_.selectFirst("a.wlx-chip-comments span[aria-hidden=true]").text) ===
+          Seq("2", "1", "1", "1")
         one.select(".msg .wlx-comment-body").asScala.map(_.text) === Seq("one, first", "one, second")
         one.select(".msg .wlx-comment-meta strong").asScala.map(_.text) === Seq("Juror 1", "Org")
         one.select(".msg time.wlx-comment-time").asScala.map(_.attr("datetime")) ===
@@ -469,6 +479,9 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
         five.map(_.select(".wlx-comment-round .visually-hidden").text) === Seq("", "Written in round Pre-screening")
         five.map(_.hasClass("wlx-comment-other-round")) === Seq(false, true)
         doc.getElementById("3").selectFirst("time.wlx-comment-time").attr("datetime") === "2016-10-05T09:34:56Z"
+        // the comment chip counts the row's comments in this scope, another round's included
+        doc.getElementById("5").selectFirst("a.wlx-chip-comments").attr("title") === "2 comments: open the comments"
+        doc.getElementById("5").selectFirst("a.wlx-chip-comments").attr("href") must endWith("#comments")
         doc.select("#comments-report-scope a.active").text === "All rounds of the contest"
         doc.select("#comments-report-order .dropdown-toggle").text must contain("Latest comment first")
       }

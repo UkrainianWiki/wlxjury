@@ -293,7 +293,7 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
         val all = ids(s"/byrate/round/${f.round.getId}/user/0/page/1?comments=1")
         all.select("li.gallerybox").asScala.map(_.id.toLong).sorted === Seq(1L, 3L, 5L, 7L)
         // the by-rate tiles' badges, their words for screen readers
-        all.select("li.gallerybox .wlx-comment-badge .visually-hidden").asScala.map(_.text).sorted ===
+        all.select("li.gallerybox .wlx-chip-comments .visually-hidden").asScala.map(_.text).sorted ===
           Seq("1 comment", "1 comment", "1 comment", "2 comments")
         // all the jurors' votes: no count on the button (D5 of the navigation proposal v3), the items have it
         NavMenus.button(all, "comments-menu") === Some("With comments")
@@ -317,7 +317,7 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
         doc.select("a[href*=/pageid/2?], a[href*=/pageid/4?]").size === 0
         doc.selectFirst("form#addComment").attr("action") must contain("comments=1")
         // the strip's file 5, with its badge
-        doc.select(".gallerybox .wlx-comment-badge .visually-hidden").asScala.map(_.text) === Seq("1 comment")
+        doc.select(".gallerybox .wlx-chip-comments .visually-hidden").asScala.map(_.text) === Seq("1 comment")
         // file 3's one comment: from the earlier round, its stored time (a zone id) read
         val comment = doc.selectFirst(".large-comments .msg")
         comment.selectFirst(".wlx-comment-meta strong").text === "Org"
@@ -420,7 +420,7 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
       * section's comments, of `viewer`'s large view `path`. */
     def linkOf(app: Application, viewer: User, path: String) = {
       val doc = Jsoup.parse(contentAsString(get(app, viewer, path)))
-      val links = doc.select("a.wlx-comments-link")
+      val links = doc.select("a.wlx-chip-comments")
       val shown = links.asScala.map(_.selectFirst("span[aria-hidden=true]").text)
       val said = links.asScala.map(_.selectFirst(".visually-hidden").text)
       val summary = Option(doc.selectFirst(".wlx-large-summary")).toSeq
@@ -438,12 +438,12 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
         hrefs === Seq("#comments")
         anchors === 1
         shown === Seq(msgs.toString)
-        said === Seq("2 comments: go to the comments")
+        said === Seq("2 comments: open the comments")
         summary.last === "badge"
         // file 3: one comment, from an earlier round, as its section shows
         val (_, shown3, said3, _, msgs3, _) =
           linkOf(app, f.juror1, s"/large/round/${f.round.getId}/user/${f.juror1.getId}/pageid/3")
-        (msgs3, shown3, said3) === ((1, Seq("1"), Seq("1 comment: go to the comments")))
+        (msgs3, shown3, said3) === ((1, Seq("1"), Seq("1 comment: open the comments")))
       }
     }
 
@@ -463,7 +463,7 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         val (hrefs, shown, said, summary, msgs, anchors) =
           linkOf(app, f.organizer, s"/large/round/${f.round.getId}/user/0/pageid/1")
-        (hrefs, shown, said, msgs, anchors) === ((Seq("#comments"), Seq("2"), Seq("2 comments: go to the comments"), 2, 1))
+        (hrefs, shown, said, msgs, anchors) === ((Seq("#comments"), Seq("2"), Seq("2 comments: open the comments"), 2, 1))
         summary === Seq("wlx-large-tally", "badge")
         val (hrefs1, shown1, _, _, msgs1, _) =
           linkOf(app, f.organizer, s"/large/round/${f.round.getId}/user/${f.juror1.getId}/pageid/3")

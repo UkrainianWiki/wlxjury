@@ -1,0 +1,37 @@
+<div id="holder" data-csrf-token="fixture-csrf-token"
+data-vote-signed-out="You have been signed out. Sign in again and reload the page."
+data-vote-expired="This page has expired. Reload it and vote again."
+data-vote-closed="This round is closed for voting."
+data-vote-invalid-rate="This round doesn&#x27;t take that rate. Reload the page and vote again."
+data-vote-not-found="This file is no longer assigned to you. Reload the page."
+data-vote-forbidden="You can no longer vote in this round. Reload the page."
+data-vote-selected="Selected"
+data-vote-rejected="Rejected"
+data-vote-worst="Worst mark"
+data-vote-clear="Clear the vote"
+data-vote-failed="Your vote could not be saved. Try again."
+data-vote-reference="Reference: {0}"
+data-comments-open="{0}: open the comments"
+data-vote-login-url="/auth?returnTo=%2Fgallery%2Fround%2F2%2Fuser%2F7%2Fpage%2F1">
+<template id="wlx-chip-vote-template">
+<span class="badge wlx-chip wlx-chip-vote" title="Selected, Time not recorded"><span class="wlx-chip-shown" aria-hidden="true"><i class="bi wlx-chip-mark bi-check-lg wlx-vote-selected"></i><span class="wlx-chip-time wlx-vote-time-none">Time not recorded</span></span><span class="visually-hidden">Selected, Time not recorded</span></span>
+</template>
+<template id="wlx-chip-tally-template">
+<span class="badge wlx-chip wlx-chip-tally wlx-approvals" title="0 approvals, 0 rejections"><span class="wlx-chip-shown" aria-hidden="true"><i class="bi bi-check-lg wlx-vote-selected"></i> <span class="wlx-tally-approvals">0</span> <i class="bi bi-x-lg wlx-vote-rejected"></i> <span class="wlx-tally-rejections">0</span></span><span class="visually-hidden">0 approvals, 0 rejections</span></span>
+</template>
+<template id="wlx-chip-comments-link-template">
+<a class="badge wlx-chip wlx-chip-comments" href="#comments" title="1 comment: open the comments"><i class="bi bi-chat-left-text-fill" aria-hidden="true"></i><span class="wlx-chip-shown" aria-hidden="true">1</span><span class="visually-hidden">1 comment: open the comments</span></a>
+</template>
+<template id="wlx-chip-comments-template">
+<span class="badge wlx-chip wlx-chip-comments" title="1 comment"><i class="bi bi-chat-left-text-fill" aria-hidden="true"></i><span class="wlx-chip-shown" aria-hidden="true">1</span><span class="visually-hidden">1 comment</span></span>
+</template>
+<div class="ug-tile"></div>
+</div>
+<div id="server-comments-link"><a class="badge wlx-chip wlx-chip-comments" href="/large/round/2/user/7/pageid/101?sort=rate#comments" title="3 comments: open the comments"><i class="bi bi-chat-left-text-fill" aria-hidden="true"></i><span class="wlx-chip-shown" aria-hidden="true">3</span><span class="visually-hidden">3 comments: open the comments</span></a></div>
+<div id="server-comments"><span class="badge wlx-chip wlx-chip-comments" title="1 comment"><i class="bi bi-chat-left-text-fill" aria-hidden="true"></i><span class="wlx-chip-shown" aria-hidden="true">1</span><span class="visually-hidden">1 comment</span></span></div>
+<div id="server-tally"><span class="badge wlx-chip wlx-chip-tally wlx-approvals" title="12 approvals, 3 rejections"><span class="wlx-chip-shown" aria-hidden="true"><i class="bi bi-check-lg wlx-vote-selected"></i> <span class="wlx-tally-approvals">12</span> <i class="bi bi-x-lg wlx-vote-rejected"></i> <span class="wlx-tally-rejections">3</span></span><span class="visually-hidden">12 approvals, 3 rejections</span></span></div>
+<div id="server-vote-selected"><span class="badge wlx-chip wlx-chip-vote" title="Selected"><span class="wlx-chip-shown" aria-hidden="true"><i class="bi wlx-chip-mark bi-check-lg wlx-vote-selected"></i></span><span class="visually-hidden">Selected</span></span></div>
+<div id="server-vote-rejected-time"><span class="badge wlx-chip wlx-chip-vote" title="Rejected, 2026-11-12T14:05:00Z"><span class="wlx-chip-shown" aria-hidden="true"><i class="bi wlx-chip-mark bi-x-lg wlx-vote-rejected"></i><span class="wlx-chip-time">
+<time class="wlx-vote-time" datetime="2026-11-12T14:05:00Z">2026-11-12T14:05:00Z</time>
+</span></span><span class="visually-hidden">Rejected, 2026-11-12T14:05:00Z</span></span></div>
+<div id="server-vote-time-none"><span class="badge wlx-chip wlx-chip-vote" title="Time not recorded"><span class="wlx-chip-shown" aria-hidden="true"><span class="wlx-chip-time wlx-vote-time-none">Time not recorded</span></span><span class="visually-hidden">Time not recorded</span></span></div>

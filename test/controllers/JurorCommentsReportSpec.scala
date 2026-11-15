@@ -137,6 +137,19 @@ class JurorCommentsReportSpec extends PlaySpecification with PlayTestDb {
             row.select(".msg").asScala.map(_.id).toSeq)
           inReport aka s"file $pageId" must_== commentIds(large, ".large-comments")
         }
+        // each row's comment chip: as many as the row shows (and as the large view's own chip), a
+        // link to its large view at its comments
+        forall(rows(doc)) { pageId =>
+          val row = doc.getElementById(pageId.toString)
+          val chip = row.selectFirst(".wlx-comments-result > a.wlx-chip-comments")
+          val n = row.select(".msg").size
+          val large = page(app, f.juror1, s"/large/round/${f.round.getId}/user/${f.juror1.getId}/pageid/$pageId")
+          (chip.selectFirst("span[aria-hidden=true]").text aka s"file $pageId" must_== n.toString) and
+            (large.select("a.wlx-chip-comments span[aria-hidden=true]").text must_== n.toString) and
+            (chip.selectFirst(".visually-hidden").text must endWith(": open the comments")) and
+            (chip.attr("href") must_== row.selectFirst("h2 a").attr("href") + "#comments") and
+            (chip.attr("href") must startWith(s"/large/round/${f.round.getId}/user/${f.juror1.getId}/pageid/$pageId"))
+        }
         val html = doc.outerHtml
         html must contain("one by org")
         html must contain("three, earlier")
@@ -172,7 +185,7 @@ class JurorCommentsReportSpec extends PlaySpecification with PlayTestDb {
           val doc = page(app, f.juror1, report(f, f.juror1.getId, q))
           (rows(doc) aka q must_== Seq(1L, 5L, 3L)) and
             (doc.select("#comments-report-count").text must_== plain.select("#comments-report-count").text) and
-            (doc.select("#comments-report-commenter").size must_== 0)
+            (doc.select("#comments-report-commenter, #comments-by-header, .wlx-comments-by-item, .wlx-comment-filter-link").size must_== 0)
         }
       }
     }

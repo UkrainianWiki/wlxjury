@@ -24,9 +24,15 @@ const { addStars, addVote, vote, addListStars, addTally, addVoteTime, addVoteMar
 
 let requests; // the votes sent: { options, answer (a Deferred) }
 
+// the gallery page's chip templates (snippets.chipTemplates), which the tiles' chips are cloned
+// from, as the server renders them (views.ChipFixturesSpec writes the fixture)
+const TEMPLATES = (require("fs").readFileSync(require("path").join(__dirname, "fixtures", "chips.html"), "utf8")
+    .match(/<template[\s\S]*?<\/template>/g) || []).join("");
+
 beforeEach(() => {
     document.body.innerHTML =
-        '<div data-csrf-token="token-1" data-vote-closed="Closed."><div class="ug-tile" data-rate="0"></div></div>';
+        '<div data-csrf-token="token-1" data-vote-closed="Closed.">' + TEMPLATES +
+        '<div class="ug-tile" data-rate="0"></div></div>';
     requests = [];
     jest.spyOn($, "ajax").mockImplementation(options => {
         const answer = $.Deferred();
@@ -195,7 +201,7 @@ function shown() {
     const state = t.classList.contains("wlx-tile-selected") ? "selected"
         : t.classList.contains("wlx-tile-rejected") ? "rejected" : "none";
     expect(t.classList.contains("wlx-tile-selected") && t.classList.contains("wlx-tile-rejected")).toBe(false);
-    const marks = t.querySelectorAll(".wlx-tile-vote-mark");
+    const marks = t.querySelectorAll(".wlx-chip-vote");
     expect(marks.length).toBeLessThanOrEqual(1);
     const shownIn = (m, icon) => m.querySelector("[aria-hidden=true] > i." + icon);
     const mark = marks.length === 0 ? "none"
@@ -494,7 +500,7 @@ describe("the juror's by-rate list's vote times", () => {
 describe("a tile's approvals and rejections", () => {
     test("show a check and a cross with their numbers, the text for screen readers", () => {
         const badge = addTally(tile(), { approvals: "3", rejections: "2", tally: "3 approvals, 2 rejections" });
-        expect(tile().querySelector(".wlx-tile-tally")).toBe(badge);
+        expect(tile().querySelector(".wlx-chip-tally")).toBe(badge);
         const shown = badge.querySelector("[aria-hidden=true]");
         expect(shown.textContent.trim().split(/\s+/)).toEqual(["3", "2"]);
         expect(shown.querySelector("i.bi-check-lg.wlx-vote-selected")).not.toBeNull();
@@ -505,7 +511,7 @@ describe("a tile's approvals and rejections", () => {
 
     test("add nothing to a tile without them, as a juror's own", () => {
         expect(addTally(tile(), { rate: "1" })).toBeNull();
-        expect(tile().querySelector(".wlx-tile-tally")).toBeNull();
+        expect(tile().querySelector(".wlx-chip-tally")).toBeNull();
     });
 });
 
@@ -515,7 +521,7 @@ describe("a tile's approvals and rejections", () => {
 describe("a tile's comments", () => {
     test("show a bubble and the number, the words for screen readers and as the tooltip", () => {
         const badge = addComments(tile(), { comments: "3", commentsLabel: "3 коментарі" });
-        expect(tile().querySelector(".wlx-tile-comments")).toBe(badge);
+        expect(tile().querySelector(".wlx-chip-comments")).toBe(badge);
         expect(badge.tagName).toBe("SPAN"); // no large view to link
         expect(badge.querySelector("i.bi-chat-left-text-fill").getAttribute("aria-hidden")).toBe("true");
         const shown = badge.querySelector("span[aria-hidden=true]");
@@ -563,7 +569,7 @@ describe("a tile's comments", () => {
         expect(addComments(tile(), {})).toBeNull();
         expect(addComments(tile(), { comments: "0", commentsLabel: "0 comments" })).toBeNull();
         expect(addComments(tile(), { comments: "x" })).toBeNull();
-        expect(tile().querySelector(".wlx-tile-comments")).toBeNull();
+        expect(tile().querySelector(".wlx-chip-comments")).toBeNull();
     });
 });
 
@@ -576,8 +582,8 @@ describe("a tile's comments", () => {
 describe("a tile's vote time", () => {
     afterEach(() => { delete window.wlxVoteTime; });
 
-    const badge = () => tile().querySelector(".wlx-tile-time");
-    const chip = () => tile().querySelector(".wlx-tile-vote-mark");
+    const badge = () => tile().querySelector(".wlx-chip-time");
+    const chip = () => tile().querySelector(".wlx-chip-vote");
     const said = () => chip().querySelector(".visually-hidden").textContent;
 
     test("shows the time formatted, the UTC value as its datetime, in the vote chip", () => {
@@ -618,7 +624,7 @@ describe("a tile's vote time", () => {
         expect(tile().querySelectorAll(".wlx-tile-chips > *")).toHaveLength(1);
         const shown = chip().querySelector(".wlx-chip-shown");
         expect(Array.from(shown.children).map(c => c.className)).toEqual(
-            ["bi wlx-chip-mark bi-check-lg wlx-vote-selected", "wlx-tile-time"]);
+            ["bi wlx-chip-mark bi-check-lg wlx-vote-selected", "wlx-chip-time"]);
         expect(said()).toBe("Selected, 12 Nov, 14:05");
         expect(chip().title).toBe("Selected, 12 Nov 2026, 14:05");
         // a vote without a time: the mark alone
@@ -636,7 +642,7 @@ describe("a tile's vote time", () => {
         const item = { rate: "-1", votedAt: "2026-11-12T14:05:00Z" };
         addVoteTime(tile(), item);
         addVoteMark(tile(), item, { binary: true });
-        expect(tile().querySelectorAll(".wlx-tile-vote-mark")).toHaveLength(1);
+        expect(tile().querySelectorAll(".wlx-chip-vote")).toHaveLength(1);
         expect(said()).toBe("Rejected, 2026-11-12T14:05:00Z");
     });
 
@@ -657,7 +663,7 @@ describe("a tile's vote time", () => {
         expect(badge()).toBeNull(); // not before it is stored
         requests[0].answer.resolve("success");
         const first = badge().querySelector("time").getAttribute("datetime");
-        expect(tile().querySelectorAll(".wlx-tile-vote-mark")).toHaveLength(1);
+        expect(tile().querySelectorAll(".wlx-chip-vote")).toHaveLength(1);
         expect(Date.parse(first)).toBeGreaterThanOrEqual(start - 1000);
         expect(item.votedAt).toBe(first);
 
@@ -716,7 +722,7 @@ describe("a tile's read-only vote", () => {
         "a binary round's %i: state %s, its icon %s and name", (rate, state, icon, name) => {
             const mark = addVoteMark(tile(), { rate: String(rate) }, { binary: true });
             expect(tile().classList.contains(state)).toBe(true);
-            expect(mark.className).toBe("badge wlx-tile-chip wlx-tile-vote-mark");
+            expect(mark.className).toBe("badge wlx-chip wlx-chip-vote");
             expect(mark.querySelector("[aria-hidden=true] > i." + icon)).not.toBeNull();
             expect(mark.querySelector("[class*=thumbs]")).toBeNull();
             expect(mark.querySelector(".visually-hidden").textContent).toBe(name);

@@ -128,14 +128,15 @@ view menu (the **Gallery**, **By rate**, **File list** and **CSV**); then the pa
 **All jurors** take no votes. Your own files in a round, if you have any, are under your name in
 the juror menu, with the same bar.
 
-The votes menu (its button with the icon of its choice: ✓ selected, ✗ rejected, an empty circle unrated, a star rated, all of them for **All**) is the jurors' own: **All**, **Unrated**, **Selected** and **Rejected** (in a rated
+The votes menu (its button with the icon of its choice: ✓ selected, ✗ rejected, an empty circle unrated, a star rated, all of them small in one icon for **All**) is the jurors' own: **All**, **Unrated**, **Selected** and **Rejected** (in a rated
 round **All**, **Unrated** and **Rated**), keeping the region and the other filters. In a single
 juror's view each choice has its count, and on **All** the button adds how many of the juror's
 files in the list are unrated (**All 900 · 40 unrated**); the view of **All jurors** has no
-counts. In a window narrower than about 1700 pixels, the pages menu shows only its icon, the
-votes menu its choice and count without the unrated, the **Comments** menu a speech bubble and its count, a single juror's order
-menu a sort icon, and the region menu only the chosen place, without the word "Region" (or
-"Country"); point at an icon to see its name. A long juror name or region is cut short (point at
+counts. In a window narrower than 1800 pixels (2100 in the comments list), the pages menu shows only its icon, the
+votes menu its choice and count without the unrated, the **Comments** menu a speech bubble and its
+count (or the person the comments list is filtered by), the order menu a sort icon, and the region
+menu only the chosen place, without the word "Region" (or "Country"); in the comments list the
+votes menu shows only its icon and the names are cut shorter. Point at an icon to see its name. A long juror name or region is cut short (point at
 it to see it whole). The bar and its pager stay on one line from 1280 pixels.
 
 You can see a juror's votes only for a juror of that round. Choosing another person's page
@@ -163,7 +164,8 @@ file's large view shows: from any round of the contest, by anyone.
 **Comments report:** **Recent comments list** in the **Comments** menu (also **Comments on the
 round's files** in the round's statistics) lists the files with comments, 20 to a page. Each
 file has its thumbnail and name, which open its large view, its result in the round (the votes of
-**All jurors**, or the chosen juror's vote, a rated round's stars), and then its comments, each
+**All jurors**, or the chosen juror's vote, a rated round's stars) followed by the 💬 with the
+number of comments the row shows (a link to the file's large view at its comments), and then its comments, each
 with its author, its time and, for a comment from another round, that round's name. Above the
 list:
 
@@ -193,19 +195,21 @@ the round names, the scope buttons, the CSV or the icons below. Another juror's 
 jurors' together and the CSV are refused to them.
 
 <a id="o-comments-by-person"></a>
-**One person's comments:** after each comment's author are small icons. The funnel
-(its tooltip: **Only the comments by Name**) shows the report with only the files that
-person commented on, by their comments of the choice above (**This round** or **All rounds of the
-contest**). A chip **Comments by Name ×** above the list says so; **×** shows everyone's comments
-again. Each file then shows that person's comments, with the file's other comments folded under
+**One person's comments:** the **Comments** menu in the top bar has a second part, **Comments
+by**: **Everyone** with all the comments of the report, then everyone who wrote a comment on a
+file of the list as it is (its comments scope, juror, votes choice and region): jurors,
+pre-screeners and organizers, each with the number of their comments there, the most first. Choosing a person shows the report with only the
+files that person commented on, by their comments of the choice above (**This round** or **All
+rounds of the contest**); the **Comments** button then shows their name after its words
+(**Comments list · Olena**), and **Everyone** shows everyone's comments again. Each file then shows that person's comments, with the file's other comments folded under
 them (**N other comments on this file**, click to open). **Latest comment first** is then by that
 person's latest comment; the counts, the pages, the **Comments CSV** (only their comments) and the
 large view's previous and next follow it, together with the juror, votes choice, region and order.
-The pictures icon (**Gallery of juror Name in round …**) opens that person's gallery of the round
+After each comment's author, the pictures icon (**Gallery of juror Name in round …**) opens that person's gallery of the round
 the comment was written in, with their votes; it is shown only for a juror of that round (a
 pre-screener's comment in an earlier round links their gallery there). Old comments without
-an account have no icons. Hover over an icon to see what it does; screen readers read the same
-text.
+an account have no icon, and aren't listed under **Comments by** (they count in **Everyone**).
+Hover over the icon to see what it does; screen readers read the same text.
 
 The juror, votes, Comments and region menus and the pager work as in the other views, the CSV
 included. Only admins and organizers of the contest (and root) can open all the jurors' report

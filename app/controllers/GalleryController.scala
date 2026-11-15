@@ -265,9 +265,16 @@ class GalleryController @Inject() (
         // of criteria (withCriteria), else a 3-criteria 4/4/4 vote would be 12 stars
         // the filter by author's name, from their comments in the contest ([[CommentJdbc.authorName]])
         val commenter = list.commentsBy.map(id => id -> CommentJdbc.authorName(round.contestId, id))
+        // the Comments menu's "Comments by" authors and counts: the organisers' only; the report's
+        // total is theirs (all of them, or the filtered author's: the same as commentCount, one
+        // query fewer), a juror's report counts its own
+        val authors = if (staff) list.commentAuthors() else Nil
+        val total =
+          if (!staff) list.commentCount()
+          else list.commentsBy.fold(authors.map(_._2).sum)(id => authors.find(_._1 == id).fold(0)(_._2))
         Ok(RequestTiming.render(views.html.commentsReport(user, withCriteria(list, criteriaResults(list, files)), files,
-          pager, rounds, menu, rates, comments, roundNames, list.commentCount(), commenter,
-          if (staff) jurorGalleries(comments.values.flatten.toSeq, rounds) else Set.empty)))
+          pager, rounds, menu, rates, comments, roundNames, total, commenter,
+          if (staff) jurorGalleries(comments.values.flatten.toSeq, rounds) else Set.empty, authors)))
 
       case GalleryView.CommentsCsv =>
         csvStream(Csv.commentRows(list)(blocking), "WLXJury_Round_" + round.description + "_comments")

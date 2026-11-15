@@ -497,8 +497,6 @@ comments.count.one = {0} комментарий
 comments.count.few = {0} комментария
 comments.count.many = {0} комментариев
 comments.count.other = {0} комментария
-# the large view's link to its comments section, after the count in words ("3 comments")
-comments.goto = {0}: перейти к комментариям
 # a gallery tile's link to the file's large view at its comments, after the count in words
 comments.open = {0}: открыть комментарии
 comment.round.other = Написано в раунде {0}
@@ -520,11 +518,10 @@ comments.report.link = Комментарии к файлам раунда
 comments.report.link.count = Комментарии к файлам раунда ({0})
 comments.report.link.all = всех раундов ({0})
 comments.report.link.none = Комментарии к файлам раунда: нет
-comments.report.commenter = Комментарии: {0}
+comments.by = Комментарии от
+comments.by.all = Всех
 comments.report.commenter.account = учётная запись №{0}
-comments.report.commenter.remove = Показать комментарии всех
 comments.report.count.commenter = {0}, автор: {1}
-comments.report.author.filter = Только комментарии: {0}
 comments.report.author.gallery = Галерея члена жюри {0} в раунде {1}
 comments.report.others.one = Ещё {0} комментарий к этому файлу
 comments.report.others.few = Ещё {0} комментария к этому файлу

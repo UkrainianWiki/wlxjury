@@ -211,7 +211,8 @@ The first menu after the round chooses your files by your votes, each choice wit
 
 The menu's button shows your choice's icon, the choice and its count, for example **Unrated 120**
 with an empty circle; **Selected** has ✓, **Rejected** ✗, **Rated** a star, and **All** the icons of
-all the choices together. On **All** it
+all the choices squeezed into one: a small ✓ and ✗ above a small circle (a circle and a star in a
+rated round). On **All** it
 also shows how many of these files you haven't rated yet: **All 5712 · 120 unrated**. That is
 the quickest way to see what is left to do: choose **Unrated** to see those files. On
 **Selected** and **Rejected** the button is coloured as your votes are: green and red.
@@ -244,7 +245,8 @@ says **With comments N** or **Comments list N**. A choice with no file is greyed
 narrow screen the button shows the speech bubble and the number; point at it to see its name.
 
 <a id="j-recent-comments"></a>
-**Recent comments list** shows each of these files with its thumbnail, your vote and every
+**Recent comments list** shows each of these files with its thumbnail, your vote, the 💬 with
+the number of its comments (click it to open the file's large view at its comments) and every
 comment its large view shows (from all rounds of the contest, with their authors and times), 20
 files to a page, the file with the newest comment first. The votes menu works there too, and
 counts the files of the list. The order menu in the top bar has **Latest comment first** and your

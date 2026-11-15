@@ -528,6 +528,27 @@ NO_UPDATE_NOTIFIER=1 npm run report   # the Allure report, checked (§10.10)
 node fixture-server.mjs stop
 ```
 
+**With Linux's fonts** (CI's: Ubuntu draws the navbar's text wider than Windows, so its width
+tests can pass on Windows and fail on CI): `node linux-fonts.mjs <Playwright arguments>` runs the
+tests in the official Playwright image of the version in `package-lock.json`
+(`mcr.microsoft.com/playwright:v<version>-noble`, Ubuntu 24.04 as CI's runners), with DejaVu Sans
+installed, which CI's runner gives for `system-ui` (`LINUX_FONTS=image` keeps the image's own
+fonts), against the fixture server started above on the host (Docker Desktop; the container
+reaches it as `host.docker.internal` and forwards its `localhost` port, so cookies are as on the
+host). The image is pinned by digest for the Playwright version measured with it. It stops if
+DejaVu Sans can't be installed or isn't `system-ui`. Results go to `target/browser-test/` as
+usual, written as root in the container: on a Linux host they are root's (remove them with sudo or
+from a container); Docker Desktop on Windows and macOS maps them to the user:
+
+```bash
+node linux-fonts.mjs tests/navbar.spec.js -g "one line"                     # the three engines
+node linux-fonts.mjs tests/navbar.spec.js -g "one line" --project=chromium
+```
+
+The navbar's width tests (`navbar.spec.js`, "stays on one line") log each bar's room as `[width]`
+lines: the px free after the pager, or by how much a wrapping bar is short. Keep 10 px free with
+Linux's fonts at the tightest case.
+
 `start` compiles, starts `Test/runMain gatling.setup.UiShotsServer` in the background (log:
 `target/ui-shots/server-browser-test.log`), and returns when `server.json` answers; it reuses a
 server that already answers. `stop` asks it to stop and waits. A server started by

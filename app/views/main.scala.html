@@ -15,11 +15,15 @@
         filters: Html = Html(""),
         backHere: Boolean = true,
         head: Html = Html(""),
-        commented: Option[Int] = None)(content: Html)(implicit messages: Messages, request: RequestHeader)
+        commented: Option[Int] = None,
+        commentsBy: Html = Html(""),
+        commentsByName: Option[String] = None)(content: Html)(implicit messages: Messages, request: RequestHeader)
 @* `head`: the page's own scripts and styles (snippets.galleryScripts, tileVoteScripts,
    multiSelectScripts), after the navbar's region menu and pager scripts, which every page with
    a navbar may show. `commented`: the number of the list's files with comments, for the navbar's
-   Comments menu (a round's list pages only) *@
+   Comments menu (a round's list pages only). `commentsBy`: the Comments menu's
+   "Comments by" section and `commentsByName` the author it is filtered by (the organisers' comments
+   report: navbar.scala.html commentsMenu) *@
 @layout(Messages(title), bodyClass = if (gallery) "gallery" else "") {
         <script src="@routes.Assets.versioned("javascripts/region-menu.js")"></script>
         <script src="@routes.Assets.versioned("javascripts/pager-jump.js")"></script>
@@ -27,7 +31,7 @@
         @head
 } {
         @navbar(title, user, asUserId, selectedRound, rounds, list, pager,
-            contestId = contestId.orElse(selectedRound.map(_.contestId)), rates, filters, backHere, commented)
+            contestId = contestId.orElse(selectedRound.map(_.contestId)), rates, filters, backHere, commented, commentsBy, commentsByName)
 
      <div class="container-fluid">
 

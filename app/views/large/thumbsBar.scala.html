@@ -6,7 +6,7 @@
         implicit flash: Flash, request: Request[Any], messages: Messages)
 @* A round's large view's strip of the files after its file (Neighbourhood.following), in a
    section closed by default; none at the list's end. Not the file itself, which the stars
-   above rate, nor those before it. Each with its comments' badge (snippets.commentBadge) *@
+   above rate, nor those before it. Each with its comments' badge (snippets.commentChip) *@
 
 @if(hood.following.nonEmpty) {
 @sideSection("large-next", "large.next.files", open = false) {
@@ -17,7 +17,7 @@
     <div class="thumb_small">
         <div class="my-1 mx-auto">
             <a href="@list.largeUrl(file.pageId)">
-                @snippets.commentBadge(commentCounts.getOrElse(file.pageId, 0))
+                @snippets.commentChip(commentCounts.getOrElse(file.pageId, 0))
                 @* an image's or a video's thumbnail; a video's with its mark *@
                 <img class="cropped" alt="@if(file.image.isVideo) {@Messages("video"): }@file.title"
                 src="@Global.resizeTo(file.image, Global.thumbSizeX, Global.thumbSizeY)"

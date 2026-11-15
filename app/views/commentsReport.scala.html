@@ -12,7 +12,8 @@
         roundNames: Map[Long, String],
         commentTotal: Int,
         commenter: Option[(Long, Option[String])] = None,
-        jurorGalleries: Set[(Long, Long)] = Set.empty)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+        jurorGalleries: Set[(Long, Long)] = Set.empty,
+        commentAuthors: Seq[(Long, Int, Option[String])] = Nil)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 @* The comments report of a round's list (GalleryView.Comments): the organisers' of any list, a
    juror's of their own list only (GalleryController refuses the rest; the round filters proposal
@@ -22,33 +23,28 @@
    comment in its scope (CommentScope: this round's, the default, or all the contest's), a page
    of them (RoundList.CommentsPageSize), one row each: its thumbnail and title linking to its
    large view in this list, its result in the round (as the by-rate view shows it: all the
-   jurors' tally or one juror's vote, a rated round's stars), then its comments in the scope in
+   jurors' tally or one juror's vote, a rated round's stars) and the comment chip linking to its
+   comments in the large view (commentsLink), then its comments in the scope in
    the order written (snippets.comment), another round's marked with its name. The list's juror,
    Votes, Comments and region menus, its order (the list's own and the latest comment first) and
    pager are the navbar's (its Comments menu opens the gallery with only the files with comments,
    or all of them); the scope and the comments' CSV are above the rows.
 
    The filter by author (RoundList.commenter, `commenter=<user id>`; `commenter`: its id and the
-   name of their latest comment in the contest, None if they have none): only the files with a
-   comment by them in the scope, counted and ordered by theirs; a chip above the rows names them
-   and removes it. Each row then shows their comments, and the file's other comments in the scope
-   folded under them (a <details>, closed), each part in the order written. A comment's author
-   stays text, followed by icon links (authorLinks): the report filtered by them (any comment
-   with an account, user_id > 0; not theirs while it is) and their one-juror gallery of the round
-   the comment was written in (`jurorGalleries`, (round id, user id): a juror of it the viewer
-   may see, GalleryController.jurorGalleries). The icons say nothing: their title and aria-label
-   name the person (and the round) *@
+   name of their latest comment in the contest, None if they have none), the navbar's "Comments
+   by" section of the Comments menu (commentsBySection): only the files with a comment by them in the scope, counted and
+   ordered by theirs, the heading naming them. Each row then shows their comments, and the file's
+   other comments in the scope folded under them (a <details>, closed), each part in the order
+   written. A comment's author stays text, followed by an icon link (authorLinks): their one-juror
+   gallery of the round the comment was written in (`jurorGalleries`, (round id, user id): a juror
+   of it the viewer may see, GalleryController.jurorGalleries). The icon says nothing: its title
+   and aria-label name the person and the round *@
 
 @* the organisers' report: its scope, CSV, filter by author, gallery icons and round names *@
 @staff = @{ user.canViewOrgInfo(list.round) }
 
-@* a comment's links by its author: icons, their words in title and aria-label; the organisers' only *@
+@* a comment's link by its author: an icon, its words in title and aria-label; the organisers' only *@
 @authorLinks(msg: Comment) = {
-    @if(staff && msg.userId > 0 && !list.commentsBy.contains(msg.userId)) {
-        @defining(Messages("comments.report.author.filter", msg.username)) { label =>
-        <a class="wlx-comment-author-link wlx-comment-filter-link" href="@list.withCommenter(Some(msg.userId)).pageUrl(1)" title="@label" aria-label="@label"><i class="bi bi-funnel" aria-hidden="true"></i></a>
-        }
-    }
     @if(staff && msg.userId > 0 && jurorGalleries.contains(msg.roundId -> msg.userId)) {
         @defining(Messages("comments.report.author.gallery", msg.username,
             if (msg.roundId == list.roundId) list.round.description else roundNames.getOrElse(msg.roundId, msg.roundId.toString))) { label =>
@@ -59,6 +55,43 @@
 
 @* the filter by author's name: their latest comment's, else their account's number *@
 @commenterName = @{ commenter.map { case (id, name) => name.getOrElse(Messages("comments.report.commenter.account", id.toString)) } }
+
+@* The organisers' "Comments by" section of the navbar's Comments menu (the maintainer's decisions
+   of 2026-11-15: in place of the funnels after each author and the chip above the rows, then of a
+   menu of its own), after a divider and its header: everyone's comments, or one author's
+   (RoundList.withCommenter: `commenter=`). Its items: everyone, with all the comments, then each
+   author with an account of the report's comments without the filter (`commentAuthors`: the
+   scope and the list's juror, votes choice, region and filters; jurors, pre-screeners and
+   organisers alike), the most comments first, then by name, each with their count, which is what
+   the list filtered by them counts; the filtered author always listed (0 if they have none here),
+   current (aria-current="true": the menu's list item is this page's). A group named by its header
+   (a list in it, so its items stay list items), the header in the muted text colour (4.5:1 on
+   the menu: Bootstrap's grey is 4.4:1 there);
+   the count after a space, read as "Juror 1 3". Filtered, the Comments button adds their name
+   (`filteredName`, navbar.scala.html) *@
+@authorItems = @{
+    val listed = commentAuthors.filter(_._1 > 0).map { case (id, n, name) =>
+        (id, n, name.getOrElse(Messages("comments.report.commenter.account", id.toString))) }
+    (listed ++ list.commentsBy.filterNot(id => listed.exists(_._1 == id)).map(id => (id, 0, commenterName.getOrElse(id.toString))))
+        .sortBy { case (_, n, name) => (-n, name.toLowerCase) }
+}
+@filteredName = @{ if (staff) list.commentsBy.flatMap(id => authorItems.find(_._1 == id)).map(_._3) else None }
+@commentsBySection = {
+    @if(staff) {
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header text-body-secondary" id="comments-by-header">@Messages("comments.by")</h6></li>
+    <li><div role="group" aria-labelledby="comments-by-header"><ul class="list-unstyled mb-0">
+    @defining(list.commentsBy.isEmpty) { active =>
+    <li><a class="dropdown-item wlx-menu-item wlx-comments-by-item@if(active) { active}" @if(active) {aria-current="true" }href="@list.withCommenter(None).pageUrl(1)">@Messages("comments.by.all") <span class="wlx-menu-count">@commentAuthors.map(_._2).sum</span></a></li>
+    }
+    @for((id, n, name) <- authorItems) {
+    @defining(list.commentsBy.contains(id)) { active =>
+    <li><a class="dropdown-item wlx-menu-item wlx-comments-by-item@if(active) { active}" @if(active) {aria-current="true" }href="@list.withCommenter(Some(id)).pageUrl(1)">@name <span class="wlx-menu-count">@n</span></a></li>
+    }
+    }
+    </ul></div></li>
+    }
+}
 
 @comment(msg: Comment) = {
     @snippets.comment(msg, Option.when(staff && msg.roundId != list.roundId)(roundNames.getOrElse(msg.roundId, msg.roundId.toString)), authorLinks(msg))
@@ -82,6 +115,12 @@
     }
 }
 
+@* the row's comments after its vote marks: the comment chip (snippets.commentChip, "💬 3"), a link to the file's large view in this list at its
+   comments section (#comments), for jurors and the organisers alike; the number the row's own
+   comments (`count`: what the row shows, the folded ones included). Screen readers and its title
+   say where it goes, as the tiles' chip ("3 comments: open the comments") *@
+@commentsLink(file: ImageWithRating, count: Int) = {@snippets.commentChip(count, Some(list.largeUrl(file.pageId) + "#comments"))}
+
 @* the navbar's Comments menu's number: the report's files, which are those its gallery has with
    only the files with comments when the report has all the contest's comments (a juror's always,
    the toggle's scope); none for the organisers' "this round" scope or filter by author, where the
@@ -90,7 +129,7 @@
 
 @defining(list.round) { round =>
 @main("comments", user, list.asUserId, Some(round), rounds, gallery = false, Some(list), pagerNav(pager, list.pageUrl), rates,
-    filters = views.html.regionMenu(regionMenu), commented = commented) {
+    filters = views.html.regionMenu(regionMenu), commented = commented, commentsBy = commentsBySection, commentsByName = filteredName) {
 
     <div class="wlx-comments-report">
         <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
@@ -106,15 +145,6 @@
                     }
                 }
             </div>
-            }
-
-            @* the filter by author: its name, and a link without it *@
-            @for(name <- commenterName) {
-                <span class="badge rounded-pill wlx-commenter-chip" id="comments-report-commenter">@Messages("comments.report.commenter", name)
-                    @defining(Messages("comments.report.commenter.remove")) { label =>
-                    <a class="wlx-commenter-chip-remove" href="@list.withCommenter(None).pageUrl(1)" title="@label" aria-label="@label"><span aria-hidden="true">×</span></a>
-                    }
-                </span>
             }
 
             @if(staff) {
@@ -141,8 +171,8 @@
                 </a>
                 <div class="wlx-comments-main">
                     <h2 class="h6 mb-1" id="file-title-@file.pageId"><a href="@list.largeUrl(file.pageId)">@file.title</a></h2>
-                    <div class="small mb-2 wlx-comments-result">@result(file)</div>
                     @defining(comments.getOrElse(file.pageId, Nil)) { all =>
+                    <div class="small mb-2 wlx-comments-result">@result(file)@commentsLink(file, all.size)</div>
                     @if(list.commentsBy.isEmpty) {
                         @for(msg <- all) { @comment(msg) }
                     } else {

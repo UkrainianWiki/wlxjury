@@ -9,7 +9,7 @@
     <li class="nav-item dropdown region-menu" id="@m.id" data-regions-url="@m.optionsUrl"
         data-loading="@Messages("region.menu.loading")" data-failed="@Messages("region.menu.failed")">
         <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-            @* the label, read by screen readers only below 1700 px in the organisers' results bar
+            @* the label, read by screen readers only below its full width (main.css) in the organisers' results bar
                (main.css wlx-nav-label): the place shown says what the menu is *@
             <span class="wlx-nav-label">@Messages(m.label):</span> @defining(m.current.getOrElse(Messages(m.allLabel))) { place =><b class="wlx-truncate" title="@place">@place</b>}
         </button>

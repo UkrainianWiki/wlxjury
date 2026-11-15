@@ -94,7 +94,7 @@
 
                         <div class="thumb">
                             <a href="@list.largeUrl(file.pageId)" >
-                            @snippets.commentBadge(commentCounts.getOrElse(file.pageId, 0))
+                            @snippets.commentChip(commentCounts.getOrElse(file.pageId, 0))
                             @* an image's or a video's thumbnail; a video's with its mark *@
                             <img class="cropped" alt="@if(file.image.isVideo) {@Messages("video"): }@file.title"
                             src="@Global.resizeTo(file.image, Global.gallerySizeX, Global.gallerySizeY)"

@@ -179,7 +179,11 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   longer show thumbs up and down; the results already used ✓ and ✗. The Votes button shows the
   icon of its choice instead of a fixed check box, as its items do: **Unrated** an empty circle,
   **Selected** ✓ (green), **Rejected** ✗ (red), **Rated** a star, and **All** the round's marks
-  together (circle, ✓ and ✗, or circle and star in a rated round). The icons stay hidden from
+  together (circle, ✓ and ✗, or circle and star in a rated round), since
+  `stack/156-all-votes-icon` squeezed into one icon's box (the maintainer's idea of 2026-11-15:
+  the row of three looked wide): a small ✓ and ✗ above a small circle, tinted as before (an
+  upright triangle, the circle on top, read as a person beside the juror menu's people icon), a
+  rated round's circle and star on a diagonal; CSS only, the menu items' icon box narrowed to it. The icons stay hidden from
   screen readers; the buttons' names, titles, keys and behaviour are unchanged. Rated rounds keep
   their stars, and their worst mark (also ✗) is never on a page with a yes/no round's ✗.
   **A voted tile has no coloured frame any more** (too strong, the maintainer): in a single
@@ -206,17 +210,74 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   before. **The large view links its comments**: under the buttons, after the vote, its time or
   the tally, a file with comments has the same **💬 3**, a link to the comments section under the
   file (`#comments`), with the count that section shows; screen readers and its title say "3
-  comments: go to the comments" (new key `comments.goto`, en, fr, ru, uk). A plain link: no
+  comments: open the comments" (as the tiles' chip, `comments.open`, since
+  `stack/156-all-votes-icon`; first a key of its own). A plain link: no
   script, and the vote keys keep working while it has the focus. Juror and organizer guides.
 - **Counts without brackets in the navbar** (the maintainer's decision of 2026-11-15; developed
   2026-11-15, `stack/154-vote-icons`): the Votes, Comments and region menus' items show their
   count at the item's right edge, muted, the digits lined up in a column; a closed
-  button shows it after its name, muted: **○✓✗ All 539 · 482 unrated**, **Comments 4**. Screen
+  button shows it after its name, muted: **All 539 · 482 unrated**, **Comments 4**. Screen
   readers still read it ("All 539"). The messages that carried "({0})" for the Comments menu's
   items (`comments.only`, `comments.menu.recent`) are gone: the template draws the count after
   the plain text, in all four languages. Juror and organizer guides.
+- **The comments list links each file's comments, and filters by author from its Comments menu**
+  (the maintainer's notes and decisions of 2026-11-15; developed 2026-11-15,
+  `stack/156-all-votes-icon`): in **Recent comments list** each row has, after its vote marks, the
+  comment chip of the tiles and the large view (**💬 3**, the row's own comments: no extra query),
+  a link to the file's large view at its comments (`#comments`), for jurors and the organisers
+  alike; screen readers read "3 comments: open the comments". In the organisers' list the
+  **Comments** menu has a second section, **Comments by** (uk **Коментарі від**), which replaces
+  the funnel after each comment's author and the chip **Comments by Name ×** above the rows (once
+  filtered the funnels were gone and the way back wasn't seen): **Everyone** with all the
+  comments, then every author of the list's comments in the scope (jurors, pre-screeners and
+  organizers, also one without files of their own), each with the number the list filtered by
+  them counts, the most first, the current one marked; filtered, the button names them
+  (**Список коментарів · Олена**, cut short if long). One menu, not a second speech bubble beside
+  it. The same `commenter=` links, no new routes; the counts from one grouped query over the
+  report's own scope (`SelectionQuery.commentAuthors`). Jurors get no such section, and
+  `commenter=` stays ignored in their own list. New keys `comments.by`, `comments.by.all` (en, fr,
+  ru, uk); the chip's and the funnel's keys (`comments.report.commenter`, `.commenter.remove`,
+  `comments.report.author.filter`) are gone. Juror and organizer guides.
+- **The organisers' results bar fits with Linux's fonts too** (the maintainer's decisions of
+  2026-11-15; developed 2026-11-15, `stack/156-all-votes-icon`): the bar of one juror's votes
+  (gallery, by rate, file list, comments list) keeps its pager on its line from 1280 pixels in
+  Ukrainian with the fonts CI's Ubuntu has (DejaVu Sans, wider than Windows'), which it didn't (15
+  to 40 px short). Its full labels from 1800 pixels (the comments list, whose Comments button can
+  name an author, from 2100), compact below, where it was 1700 for all: the order menu a sort
+  icon, the Pages menu its icon, the Votes button without the unrated, the region without
+  "Region:", the Comments menu its bubble and count or the author's name; in the comments list the
+  Votes button its icon alone and the names cut shorter. Everywhere the links a little closer
+  (0.375rem each side, was 0.5), the juror's name cut at 6.5rem (was 7.5) and the region at 8rem
+  (was 9). Jurors' bars are unchanged. Organizer guide.
 
 **Development**
+
+- **Width tests with Linux's fonts** (developed 2026-11-15, `stack/156-all-votes-icon`):
+  `browser-test/linux-fonts.mjs` runs Playwright in the official image of its version
+  (`mcr.microsoft.com/playwright:v<version>-noble`) with DejaVu Sans, CI's `system-ui`, against
+  the fixture server on the host, so the navbar's width tests can be run with CI's fonts from
+  Windows (docs/testing/practices.md §10.6). `navbar.spec.js` covers every view of the organisers'
+  results bar (gallery, by rate, file list, comments list), compact at 1280 px and full at the
+  width it is full from, each with at least 10 px free after the pager, and logs by how much a
+  wrapping bar is short. Measured free px on Linux (chromium, firefox / webkit): at 1263 gallery
+  and by rate 42 / 32, file list 77 / 68, comments list 41-42 / 31; full at 1783 gallery 100 / 90,
+  by rate 53 / 43, file list 158 / 149, at 2083 the comments list 44 / 34.
+
+- **One definition per chip** (the maintainer's request of 2026-11-15; developed 2026-11-15,
+  `stack/156-all-votes-icon`): the vote (`snippets.voteChip`: mark and optional time), all the
+  jurors' tally (`binaryTally`, with `chip = true`) and the comments (`snippets.commentChip`,
+  a link with an `href`) are each one Twirl snippet; the large view, the comments list and the
+  by-rate and strip thumbnails render them (`snippets.commentBadge` is gone), and the gallery has
+  them once in `<template>`s (`snippets.chipTemplates`) that `tile-votes.js` clones, setting only
+  text and attributes, instead of building its own markup. One class set (`badge wlx-chip` and
+  `wlx-chip-vote`, `-tally`, `-comments`; `wlx-chip-time`) and one label key (`comments.open`;
+  `comments.goto` is gone, so the large view's chip now reads "3 comments: open the comments") in
+  place of the tiles' `wlx-tile-chip`/`-vote-mark`/`-tally`/`-comments`/`-time`, the large
+  view's `wlx-comments-link` and the thumbnails' `wlx-comment-badge`. Placement, the tiles'
+  click handling, their fitting and the vote keys are unchanged. `views.ChipFixturesSpec`
+  renders the templates and the server's chips into `javascript-test/fixtures/chips.html`
+  (`FIXTURES_UPDATE=true` regenerates it), and `chips.test.js` checks that each chip a tile
+  builds has the server's elements, classes, attributes and accessible name.
 
 - **Release tool safety** (after 26.11.6's mistaken restore; `stack/139-release-tool-safety`,
   #322; installed on the server on 2026-11-14, before the 26.11.7 deploy): `deploy`, `restore` and

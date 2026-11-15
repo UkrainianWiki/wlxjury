@@ -147,6 +147,16 @@
     })
     : null;
 
+  /** A copy of the page's chip `name` (snippets.chipTemplates: the <template id="wlx-chip-NAME-template">
+    * the server renders with snippets.voteChip, binaryTally's chip and snippets.commentChip), for
+    * a tile to set its marks, numbers, times, links and words in (text and attributes only, no
+    * markup from data); null without it (a page without tiles). */
+  function chipFrom(name) {
+    var template = document.getElementById('wlx-chip-' + name + '-template');
+    var chip = template && template.content && template.content.firstElementChild;
+    return chip ? chip.cloneNode(true) : null;
+  }
+
   /** What the tile's vote chip shows: the binary vote's rate (showMark) and the vote's time
     * (addVoteTime: {iso} or {none: the page's text}), each set apart, in either order. */
   function chipState(tile) {
@@ -162,48 +172,44 @@
     * (the title's time with its year). None for an unrated file. */
   function voteChip(tile) {
     var state = chipState(tile);
-    unplace(tile, '.wlx-tile-vote-mark');
+    unplace(tile, '.wlx-chip-vote');
     var time = state.time;
     if (time && time.none && state.rate) time = null; // the mark alone
     if (!state.rate && !time) return null;
+    var chip = chipFrom('vote');
+    if (!chip) return null;
     var holder = document.querySelector('[data-csrf-token]');
-    var chip = document.createElement('span');
-    chip.className = 'badge wlx-tile-chip wlx-tile-vote-mark';
-    var shown = document.createElement('span');
-    shown.className = 'wlx-chip-shown';
-    shown.setAttribute('aria-hidden', 'true');
+    var shown = chip.querySelector('.wlx-chip-shown');
+    var icon = shown.querySelector('.wlx-chip-mark');
+    var part = shown.querySelector('.wlx-chip-time');
     var said = [];
     var titled = [];
     if (state.rate) {
       var name = (holder && holder.getAttribute(state.rate > 0 ? 'data-vote-selected' : 'data-vote-rejected')) || '';
-      var icon = document.createElement('i');
-      icon.className = 'bi wlx-chip-mark ' + (state.rate > 0 ? 'bi-check-lg wlx-vote-selected' : 'bi-x-lg wlx-vote-rejected');
-      shown.appendChild(icon);
+      icon.setAttribute('class', 'bi wlx-chip-mark ' + (state.rate > 0 ? 'bi-check-lg wlx-vote-selected' : 'bi-x-lg wlx-vote-rejected'));
       said.push(name);
       titled.push(name);
+    } else {
+      shown.removeChild(icon);
     }
     if (time) {
-      var part = document.createElement('span');
-      part.className = 'wlx-tile-time';
+      part.textContent = '';
       if (time.iso) {
+        part.classList.remove('wlx-vote-time-none');
         var el = timeElement(time.iso);
         part.appendChild(el);
         said.push(el.textContent);
         titled.push(el.title || el.textContent);
       } else {
-        part.classList.add('wlx-vote-time-none');
         part.textContent = time.none;
         said.push(time.none);
         titled.push(time.none);
       }
-      shown.appendChild(part);
+    } else {
+      shown.removeChild(part);
     }
-    var text = document.createElement('span');
-    text.className = 'visually-hidden';
-    text.textContent = said.filter(Boolean).join(', ');
-    chip.title = titled.filter(Boolean).join(', ');
-    chip.appendChild(shown);
-    chip.appendChild(text);
+    chip.querySelector('.visually-hidden').textContent = said.filter(Boolean).join(', ');
+    chip.setAttribute('title', titled.filter(Boolean).join(', '));
     return place(tile, chip, true);
   }
 
@@ -457,23 +463,12 @@
     * the text; none for a file without them. */
   function addTally(tile, item) {
     if (!item.tally) return null;
-    var badge = document.createElement('span');
-    badge.className = 'badge wlx-tile-chip wlx-tile-tally';
-    badge.title = item.tally;
-    var shown = document.createElement('span');
-    shown.setAttribute('aria-hidden', 'true');
-    [['bi-check-lg wlx-vote-selected', item.approvals], ['bi-x-lg wlx-vote-rejected', item.rejections]]
-      .forEach(function (mark, i) {
-        var icon = document.createElement('i');
-        icon.className = 'bi ' + mark[0];
-        shown.appendChild(icon);
-        shown.appendChild(document.createTextNode(' ' + (+mark[1] || 0) + (i === 0 ? ' ' : '')));
-      });
-    var text = document.createElement('span');
-    text.className = 'visually-hidden';
-    text.textContent = item.tally;
-    badge.appendChild(shown);
-    badge.appendChild(text);
+    var badge = chipFrom('tally');
+    if (!badge) return null;
+    badge.setAttribute('title', item.tally);
+    badge.querySelector('.wlx-tally-approvals').textContent = String(+item.approvals || 0);
+    badge.querySelector('.wlx-tally-rejections').textContent = String(+item.rejections || 0);
+    badge.querySelector('.visually-hidden').textContent = item.tally;
     return place(tile, badge, true);
   }
 
@@ -526,12 +521,13 @@
   function addVoteMark(tile, item, view) {
     if (!view || !view.binary) return null;
     showVote(tile, +item.rate || 0);
-    return tile.querySelector('.wlx-tile-vote-mark');
+    return tile.querySelector('.wlx-chip-vote');
   }
 
   /** The file's comments in the contest on its tile (gallery.scala.html's data-comments and
-    * -comments-label), as snippets/commentBadge.scala.html draws them on the other thumbnails: a
-    * speech bubble and the number, hidden from screen readers; none for a file without them. The
+    * -comments-label), the comment chip (snippets.commentChip, as the other thumbnails, the large
+    * view and the comments list have it): a speech bubble and the number, hidden from screen
+    * readers; none for a file without them. The
     * last of the tile's chips, after the vote or the tally, or alone ([[chips]]), and the one
     * chip that is a link (the maintainer, 2026-11-15): to the file's large view at its comments
     * section (the tile's own data-largeUrl, its list kept, and #comments). Screen readers and its
@@ -545,26 +541,16 @@
     var label = item.commentsLabel || String(count);
     var holder = document.querySelector('[data-csrf-token]');
     var pattern = holder && holder.getAttribute('data-comments-open');
-    var name = pattern ? pattern.replace('{0}', label) : label;
-    var badge = document.createElement(item.largeUrl ? 'a' : 'span');
-    badge.className = 'badge wlx-tile-chip wlx-tile-comments';
+    var name = item.largeUrl ? (pattern ? pattern.replace('{0}', label) : label) : label;
+    var badge = chipFrom(item.largeUrl ? 'comments-link' : 'comments');
+    if (!badge) return null;
     if (item.largeUrl) {
-      badge.href = item.largeUrl + '#comments';
+      badge.setAttribute('href', item.largeUrl + '#comments');
       badge.addEventListener('click', function (e) { e.stopPropagation(); });
     }
-    badge.title = item.largeUrl ? name : label;
-    var icon = document.createElement('i');
-    icon.className = 'bi bi-chat-left-text-fill';
-    icon.setAttribute('aria-hidden', 'true');
-    var shown = document.createElement('span');
-    shown.setAttribute('aria-hidden', 'true');
-    shown.textContent = String(count);
-    var text = document.createElement('span');
-    text.className = 'visually-hidden';
-    text.textContent = item.largeUrl ? name : label;
-    badge.appendChild(icon);
-    badge.appendChild(shown);
-    badge.appendChild(text);
+    badge.setAttribute('title', name);
+    badge.querySelector('.wlx-chip-shown').textContent = String(count);
+    badge.querySelector('.visually-hidden').textContent = name;
     return place(tile, badge, false);
   }
 

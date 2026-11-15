@@ -1,0 +1,10 @@
+@()(implicit messages: Messages)
+@* The tiles' chips as the server draws them (snippets.voteChip, binaryTally's chip,
+   snippets.commentChip), each once in a <template> on the gallery page: tile-votes.js clones
+   them and sets their marks, numbers, times, links and words (text and attributes only), so a
+   tile's chip is the same element as the server's (javascript-test/chips.test.js compares them).
+   The values here are placeholders *@
+<template id="wlx-chip-vote-template">@snippets.voteChip(1, Some(None))</template>
+<template id="wlx-chip-tally-template">@binaryTally(0, 0, chip = true)</template>
+<template id="wlx-chip-comments-link-template">@snippets.commentChip(1, Some("#comments"))</template>
+<template id="wlx-chip-comments-template">@snippets.commentChip(1)</template>

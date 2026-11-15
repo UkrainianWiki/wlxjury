@@ -17,9 +17,10 @@ import scala.jdk.CollectionConverters._
 /** The comments report's filter by author ([[RoundList.commenter]], `commenter=<user id>`): only
   * the files with a comment by that account in the scope, counted, ordered by the latest of
   * theirs and exported by it, combined with the list's juror, tab, region, scope and order, kept
-  * by its links and the large view's neighbours; a chip naming them that removes it; each
-  * comment's icon links to the filter and to its author's one-juror gallery of the comment's
-  * round (a juror of it the viewer may see); the organisers' only, as the report.
+  * by its links and the large view's neighbours; chosen in the navbar's "Comments by" menu, which
+  * lists every author of the report's comments with the number the list filtered by them counts;
+  * each comment's icon link to its author's one-juror gallery of the comment's round (a juror of it
+  * the viewer may see); the organisers' only, as the report.
   */
 class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
 
@@ -121,6 +122,23 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
     val folded = row.select("details.wlx-comments-others .wlx-comment-body").asScala.map(_.text).toSeq
     (row.select(".wlx-comment-body").asScala.map(_.text).toSeq.filterNot(folded.contains), folded)
   }
+
+  /** The Comments menu's "Comments by" section's items: (name, count, href, current). */
+  private def menu(doc: Document): Seq[(String, Int, String, Boolean)] =
+    doc.select("#comments-menu .wlx-comments-by-item").asScala.map { a =>
+      (a.ownText.trim, a.selectFirst(".wlx-menu-count").text.toInt, a.attr("href"), a.attr("aria-current") == "true")
+    }.toSeq
+
+  /** The Comments button's text, as screen readers read it ("Comments list · Juror 1"). */
+  private def menuButton(doc: Document): String = doc.selectFirst("#comments-menu > button").text
+
+  /** The number of comments the report's heading counts ("· 3 files, 4 comments[ by …]"). */
+  private def headingComments(doc: Document): Int =
+    """, (\d+) comments?""".r.findFirstMatchIn(doc.selectFirst("#comments-report-count").text).map(_.group(1).toInt).getOrElse(-1)
+
+  /** The comments a report shows unfolded: with the filter by author, theirs. */
+  private def unfolded(doc: Document): Int =
+    doc.select("article.wlx-comments-row .msg").asScala.count(_.parents.asScala.forall(_.tagName != "details"))
 
   /** The icon links after a comment's author: (kind, href, title, aria-label, text). */
   private def links(msg: Element): Seq[(String, String, String, String, String)] =
@@ -227,25 +245,23 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         val doc = page(app, f.organizer, path(f, 0, "?scope=contest"))
         val j1 = links(msgOf(doc, "j1 on one"))
-        j1.map(_._1) === Seq("filter", "gallery")
-        j1.head._2 === report(f, Some(f.juror1.getId), scope = CommentScope.AllRounds).pageUrl(1)
-        j1.head._2 must startWith(s"/comments/round/${f.round.getId}/user/0/page/1?")
-        j1(1)._2 === s"/gallery/round/${f.round.getId}/user/${f.juror1.getId}/page/1"
-        // icons only: the words in title and aria-label
+        // the gallery only: the filter by author is the navbar's "Comments by" menu, no funnel
+        j1.map(_._1) === Seq("gallery")
+        j1.head._2 === s"/gallery/round/${f.round.getId}/user/${f.juror1.getId}/page/1"
+        // an icon only: the words in title and aria-label
         forall(j1)(l => (l._5 === "") and (l._3 === l._4))
-        j1.head._3 === "Only the comments by Juror 1"
-        j1(1)._3 === "Gallery of juror Juror 1 in round Round 2"
-        msgOf(doc, "j1 on one").select("a.wlx-comment-author-link i[aria-hidden=true]").size === 2
+        j1.head._3 === "Gallery of juror Juror 1 in round Round 2"
+        msgOf(doc, "j1 on one").select("a.wlx-comment-author-link i[aria-hidden=true]").size === 1
+        doc.select(".wlx-comment-filter-link, .bi-funnel, .bi-funnel-fill, #comments-report-commenter").size === 0
         // the author's name stays text
         msgOf(doc, "j1 on one").select(".wlx-comment-meta strong a").size === 0
         msgOf(doc, "j1 on one").selectFirst(".wlx-comment-meta strong").text === "Juror 1"
         // the pre-screener's gallery is the earlier round's, where they are a juror
         links(msgOf(doc, "pre on three")).map(l => l._1 -> l._2) === Seq(
-          "filter" -> report(f, Some(f.prescreener.getId), scope = CommentScope.AllRounds).pageUrl(1),
           "gallery" -> s"/gallery/round/${f.earlier.getId}/user/${f.prescreener.getId}/page/1")
-        links(msgOf(doc, "pre on three"))(1)._3 === "Gallery of juror Pre in round Pre-screening"
-        // an organizer who commented: the filter only; a comment without an account: neither
-        links(msgOf(doc, "org on one")).map(_._1) === Seq("filter")
+        links(msgOf(doc, "pre on three")).head._3 === "Gallery of juror Pre in round Pre-screening"
+        // an organizer who commented, a comment without an account: none
+        links(msgOf(doc, "org on one")) === Nil
         links(msgOf(doc, "legacy on six")) === Nil
         msgOf(doc, "legacy on six").selectFirst(".wlx-comment-meta strong").text === "Legacy"
       }
@@ -259,72 +275,150 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
         // juror 2 on a file of the earlier round, which they are no juror of
         CommentJdbc.create(f.juror2.getId, "Juror 2", f.earlier.getId, Some(f.contest.getId), 3, "j2 in pre")
         val doc = page(app, f.organizer, path(f, 0, "?scope=contest"))
-        links(msgOf(doc, "j1 in B's round")).map(_._1) === Seq("filter")
-        links(msgOf(doc, "j2 in pre")).map(_._1) === Seq("filter")
+        links(msgOf(doc, "j1 in B's round")) === Nil
+        links(msgOf(doc, "j2 in pre")) === Nil
         doc.select(s"a[href^=/gallery/round/${f.roundB.getId}/]").size === 0
       }
     }
 
-    "show the filter as a chip removing it, their comments first and the others folded" in {
+    "show the filter in the Comments by menu, their comments first and the others folded" in {
       testDbApp { app =>
         val f = fixture()
         val doc = page(app, f.organizer, path(f, 0, s"?scope=contest&filter=selected&commenter=${f.juror1.getId}"))
         // the selected files (1, 2, 5, 7) with a comment of juror 1's
         rows(doc) === Seq(7L, 1L, 5L)
         doc.selectFirst("#comments-report-count").text === "· 3 files, 3 comments by Juror 1"
-        val chip = doc.selectFirst("#comments-report-commenter")
-        chip.ownText.trim === "Comments by Juror 1"
-        val remove = chip.selectFirst("a.wlx-commenter-chip-remove")
-        remove.attr("aria-label") === "Show everyone's comments"
-        remove.attr("title") === "Show everyone's comments"
-        remove.attr("href") must not(contain("commenter="))
-        forall(Seq("scope=contest", "filter=selected", "sort=latest-comment"))(remove.attr("href") must contain(_))
-        rows(page(app, f.organizer, remove.attr("href"))) === Seq(5L, 7L, 1L)
+        // the Comments menu's "Comments by" section (no menu of its own: the maintainer's decision
+        // of 2026-11-15), after a divider and its header: the author current; the button naming
+        // them after its words (cut short if long, whole in its title)
+        doc.select("#commenters-menu").size === 0
+        doc.select("#comments-menu .dropdown-header").asScala.map(_.text) === Seq("Comments by")
+        doc.select("#comments-menu .dropdown-header").first.parent.previousElementSibling.select("hr.dropdown-divider").size === 1
+        menuButton(doc) === "Comments list · Juror 1"
+        doc.selectFirst("#comments-menu > button").attr("title") === "Comments list · Juror 1"
+        doc.select("#comments-menu > button .wlx-comments-by-name.wlx-truncate").text === "Juror 1"
+        doc.select("#comments-menu > button > i.bi[aria-hidden=true]").size === 1
+        val items = menu(doc)
+        items.filter(_._4).map(_._1) === Seq("Juror 1")
+        doc.select("#comments-menu .wlx-comments-by-item.active").size === 1
+        // a group named by its header; its current item aria-current="true", the menu's own list
+        // item the one "page" (one page, one current page)
+        doc.select("#comments-menu [role=group][aria-labelledby=comments-by-header] > ul > li > .wlx-comments-by-item").size === items.size
+        doc.select("#comments-menu [aria-current=page]").asScala.map(_.text) === Seq("Recent comments list")
+        doc.select("#comments-menu .wlx-comments-by-item[aria-current]").asScala.map(_.attr("aria-current")) === Seq("true")
+        // each item's text as read: the name, a space, the count ("Juror 1 3", not "Juror 13")
+        doc.select("#comments-menu .wlx-comments-by-item").asScala.map(_.text).toSeq ===
+          items.map { case (name, n, _, _) => s"$name $n" }
+        // the menu's own states: the list current, as before
+        NavMenus.comments(doc).map(i => (i.name, i.active)) ===
+          Seq(("All files", false), ("Only with comments", false), ("Recent comments list", true))
+        // everyone's: the filter removed, the scope, votes choice and order kept
+        val everyone = items.head
+        everyone._1 === "Everyone"
+        everyone._3 must not(contain("commenter="))
+        forall(Seq("scope=contest", "filter=selected", "sort=latest-comment"))(everyone._3 must contain(_))
+        rows(page(app, f.organizer, everyone._3)) === Seq(5L, 7L, 1L)
         // juror 1's comments shown, the others folded under them, each in the order written
         shown(doc.getElementById("7")) === ((Seq("j1 on seven"), Seq("j2 on seven")))
         shown(doc.getElementById("5")) === ((Seq("j1 on five"), Seq("pre on five", "org on five")))
         doc.getElementById("5").selectFirst("details.wlx-comments-others summary").text === "2 other comments on this file"
         doc.getElementById("5").select("details[open]").size === 0
-        // the filtered author's comments have no filter link, only their gallery's
-        links(msgOf(doc, "j1 on five")).map(_._1) === Seq("gallery")
-        links(msgOf(doc, "org on five")).map(_._1) === Seq("filter")
+        // no chip and no funnels: the menu replaces them
+        doc.select("#comments-report-commenter, .wlx-commenter-chip, .wlx-comment-filter-link, .bi-funnel, .bi-funnel-fill").size === 0
         // the order and scope menus, the CSV, the region menu and the files' large views keep it
         forall(Seq("#comments-report-order a", "#comments-report-scope a", "#comments-report-csv",
           "article.wlx-comments-row h2 a")) { sel =>
           forall(doc.select(sel).asScala.map(_.attr("href")))(_ must contain(s"commenter=${f.juror1.getId}"))
         }
-        // without the filter: no chip, nothing folded
+        // without the filter: everyone current, nothing folded
         val plain = page(app, f.organizer, path(f, 0, "?scope=contest"))
-        plain.select("#comments-report-commenter").size === 0
+        // on everyone's: the button's words alone
+        menuButton(plain) must startWith("Comments list")
+        plain.select("#comments-menu > button .wlx-comments-by-name").size === 0
+        // the comments list's results bar marked, for its tighter compact form (main.css), the gallery's not
+        plain.select("nav.navbar.wlx-nav-results.wlx-nav-comments").size === 1
+        page(app, f.organizer, s"/gallery/round/${f.round.getId}/user/0/page/1").select("nav.navbar.wlx-nav-comments").size === 0
+        menu(plain).filter(_._4).map(_._1) === Seq("Everyone")
         plain.select("details.wlx-comments-others").size === 0
       }
     }
 
-    "escape the author's name in the chip and the links' titles" in {
+    "count all the report's comments as its authors' together, and one author's as theirs" in {
+      testDbApp { _ =>
+        val f = fixture()
+        val lists = Seq(report(f, None), report(f, None, scope = CommentScope.AllRounds),
+          report(f, None, scope = CommentScope.AllRounds, filter = VoteFilter.Rate(1)), report(f, None, filter = VoteFilter.Rate(-1)),
+          report(f, None, asUserId = f.juror2.getId), report(f, None, scope = CommentScope.AllRounds, region = Some("80")))
+        forall(lists) { l =>
+          val authors = l.commentAuthors()
+          (authors.map(_._2).sum aka s"${l.query}" must_== l.commentCount()) and
+            forall(authors.filter(_._1 > 0)) { case (id, n, _) => l.withCommenter(Some(id)).commentCount() must_== n }
+        }
+      }
+    }
+
+    "list every author in the menu with the number the list filtered by them counts, the most first" in {
+      testDbApp { app =>
+        val f = fixture()
+        val urls = Seq(path(f, 0, ""), path(f, 0, "?scope=contest"), path(f, 0, "?scope=contest&filter=selected"),
+          path(f, 0, "?filter=rejected"), path(f, f.juror2.getId, ""),
+          s"/comments/round/${f.round.getId}/user/0/region/80/page/1?scope=contest")
+        forall(urls) { url =>
+          val doc = page(app, f.organizer, url)
+          val items = menu(doc)
+          // everyone's: all the report's comments, a comment without an account included
+          (items.head._2 aka s"$url everyone" must_== headingComments(doc)) and
+            // each author: what the list filtered by them counts and shows, the most first, then by name
+            forall(items.tail) { case (name, n, href, _) =>
+              val filtered = page(app, f.organizer, href)
+              (headingComments(filtered) aka s"$url $name" must_== n) and
+                (unfolded(filtered) aka s"$url $name shown" must_== n) and
+                (menu(filtered).find(_._4).map(_._1) must_== Some(name))
+            } and
+            (items.tail.map(i => (-i._2, i._1.toLowerCase)) must_== items.tail.map(i => (-i._2, i._1.toLowerCase)).sorted)
+        }
+        // this round's: juror 1 (3), juror 2 (2, under their latest comment's name), the organizer,
+        // who has no files of their own (2); not the pre-screener (theirs are the earlier
+        // round's); the comment without an account in everyone's only
+        menu(page(app, f.organizer, path(f, 0, ""))).map(i => (i._1, i._2)) ===
+          Seq("Everyone" -> 8, "Juror 1" -> 3, EvilName -> 2, "Org" -> 2)
+        // all the contest's: the pre-screener too
+        menu(page(app, f.organizer, path(f, 0, "?scope=contest"))).map(i => (i._1, i._2)) ===
+          Seq("Everyone" -> 10, "Juror 1" -> 3, EvilName -> 2, "Org" -> 2, "Pre" -> 2)
+        // juror 2's list (files 5-8): every author's comments on them
+        menu(page(app, f.organizer, path(f, f.juror2.getId, ""))).map(i => (i._1, i._2)) ===
+          Seq("Everyone" -> 5, "Juror 1" -> 2, EvilName -> 1, "Org" -> 1)
+      }
+    }
+
+    "escape the author's name in the menu and the links' titles" in {
       testDbApp { app =>
         val f = fixture()
         val html = contentAsString(get(app, f.organizer, path(f, 0, s"?commenter=${f.juror2.getId}")))
         html must not(contain("<b>x</b>"))
         val doc = Jsoup.parse(html)
-        doc.select("#comments-report-commenter b").size === 0
+        doc.select("#comments-menu b").size === 0
         // juror 2's latest comment is signed with it
-        doc.selectFirst("#comments-report-commenter").ownText.trim === s"Comments by $EvilName"
+        menuButton(doc) === s"Comments list · $EvilName"
+        doc.selectFirst("#comments-menu > button").attr("title") === s"Comments list · $EvilName"
+        menu(doc).filter(_._4).map(_._1) === Seq(EvilName)
         val evil = msgOf(page(app, f.organizer, path(f, 0, "")), "j2 on four")
-        evil.selectFirst("a.wlx-comment-filter-link").attr("title") === s"Only the comments by $EvilName"
+        evil.selectFirst("a.wlx-comment-gallery-link").attr("title") === s"Gallery of juror $EvilName in round Round 2"
         evil.select(".wlx-comment-meta b").size === 0
       }
     }
 
-    "say in the page's language what the icons and the chip do" in {
+    "say in the page's language what the menu and the icons do" in {
       testDbApp { app =>
         val f = fixture()
         val doc = page(app, f.organizer, path(f, 0, s"?commenter=${f.juror1.getId}"), "Accept-Language" -> "uk")
-        doc.selectFirst("#comments-report-commenter").ownText.trim === "Коментарі: Juror 1"
+        menuButton(doc) === "Список коментарів · Juror 1"
+        doc.select("#comments-menu .dropdown-header").text === "Коментарі від"
+        menu(doc).head._1 === "Усіх"
+        menuButton(page(app, f.organizer, path(f, 0, ""), "Accept-Language" -> "uk")) must startWith("Список коментарів")
         doc.selectFirst("#comments-report-count").text === "· 3 файли, 3 коментарі, автор: Juror 1"
-        doc.selectFirst("a.wlx-commenter-chip-remove").attr("aria-label") === "Показати коментарі всіх"
         val msg = msgOf(doc, "j2 on seven")
         links(msg).map(l => (l._3, l._4, l._5)) === Seq(
-          ("Лише коментарі: Juror 2", "Лише коментарі: Juror 2", ""),
           ("Галерея члена журі Juror 2 у раунді Round 2", "Галерея члена журі Juror 2 у раунді Round 2", ""))
         doc.getElementById("7").selectFirst("details summary").text === "Ще 1 коментар до цього файлу"
       }
@@ -337,17 +431,19 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
         rows(pre) === Nil
         pre.selectFirst("#comments-report-empty").text ===
           "No file in this list has a comment by Pre written in this round."
-        pre.selectFirst("#comments-report-commenter").ownText.trim === "Comments by Pre"
+        // still named in the menu, current, with none here
+        menuButton(pre) === "Comments list · Pre"
+        menu(pre).filter(_._4).map(i => (i._1, i._2)) === Seq("Pre" -> 0)
         // an account with no comment in the contest: never named from the users table
         val unknown = page(app, f.organizer, path(f, 0, s"?scope=contest&commenter=${f.organizer.getId + 1000}"))
-        unknown.selectFirst("#comments-report-commenter").ownText.trim === s"Comments by account #${f.organizer.getId + 1000}"
+        menuButton(unknown) === s"Comments list · account #${f.organizer.getId + 1000}"
         unknown.selectFirst("#comments-report-empty").text must contain("in this contest")
         // a real account of contest B, whose comments are all B's: not named from the users table
         val other = userDao.create(User("Other Person", "other@example.com", None, Set("jury"),
           contestId = Some(f.roundB.contestId)))
         CommentJdbc.create(other.getId, "Other Person", f.roundB.getId, Some(f.roundB.contestId), 2, "only in B")
         val html = contentAsString(get(app, f.organizer, path(f, 0, s"?scope=contest&commenter=${other.getId}")))
-        Jsoup.parse(html).selectFirst("#comments-report-commenter").ownText.trim === s"Comments by account #${other.getId}"
+        menuButton(Jsoup.parse(html)) === s"Comments list · account #${other.getId}"
         html must not(contain("Other Person"))
         html must not(contain("only in B"))
       }
@@ -380,9 +476,9 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
           status(result) aka p must_== FORBIDDEN
           contentAsString(result) must not(contain("j2 on seven"))
         }
-        // their own report: the filter ignored, no chip, no filter links
+        // their own report: the filter ignored, no "Comments by" menu, no filter links
         val own = page(app, f.juror1, path(f, f.juror1.getId, s"?commenter=${f.juror1.getId}"))
-        own.select("#comments-report-commenter, .wlx-comment-filter-link, a[href*=commenter=]").size === 0
+        own.select("#commenters-menu, #comments-by-header, .wlx-comments-by-item, .wlx-comments-by-name, #comments-report-commenter, .wlx-comment-filter-link, a[href*=commenter=]").size === 0
         val gallery = page(app, f.juror1, s"/gallery/round/${f.round.getId}/user/${f.juror1.getId}/page/1?commenter=${f.juror2.getId}")
         gallery.select("a[href*=commenter=]").size === 0
         val large = page(app, f.juror1,
