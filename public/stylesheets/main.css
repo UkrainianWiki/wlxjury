@@ -408,6 +408,11 @@ a:has(> .btn) { text-decoration: none; }
 /* the large views (large/large.scala.html, large/contestFile.scala.html): a side column with
    the buttons, stars, the file's details and the files after it, and the image beside it */
 .large-view { padding-left: 5px; }
+/* the large image's box before the file arrives (Global.largeImageBox: its width and height
+   attributes, which large-view.js removes once it has loaded): its height follows its width in the
+   attributes' proportions, so mw-100 mh-100 make it as tall as the loaded file; a file drawn while
+   it loads, in them, at the box's start */
+#large_image[width][height] { height: auto; object-fit: contain; object-position: left top; }
 .large-side { min-width: 220px; }
 /* the side column's links (the jury's names, the file's details) on the light image grey: Bootstrap's
    link blue is 3.5:1 on #e3e3e3, its hover blue (#0a58ca) 5.0:1, its pressed one (#084298) 7.3:1 */

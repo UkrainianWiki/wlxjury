@@ -45,9 +45,11 @@ object LargeViewRenders {
   def pageIdAt(i: Int): Long = 101L + i
 
   /** The files in the juror's view: `rated` maps an index to the juror's rate there; those at
-    * `videos` are videos (webm, 1920 × 1080), the rest images.
+    * `videos` are videos (webm, 1920 × 1080), the rest images, of unknown size unless `sizes`
+    * has the index's (width, height).
     */
-  def files(rated: Map[Int, Int] = Map.empty, videos: Set[Int] = Set.empty): Seq[ImageWithRating] =
+  def files(rated: Map[Int, Int] = Map.empty, videos: Set[Int] = Set.empty,
+      sizes: Map[Int, (Int, Int)] = Map.empty): Seq[ImageWithRating] =
     (0 until fileCount).map { i =>
       val pageId = pageIdAt(i)
       ImageWithRating(
@@ -63,7 +65,9 @@ object LargeViewRenders {
           Image(
             pageId = pageId,
             title = s"File:Image $pageId.jpg",
-            url = Some(s"https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_$pageId.jpg")
+            url = Some(s"https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_$pageId.jpg"),
+            width = sizes.get(i).fold(0)(_._1),
+            height = sizes.get(i).fold(0)(_._2)
           ),
         // a juror's view has the juror's row for each file, rated or not
         votes = Seq(Vote(pageId, juror.getId, 1, rated.getOrElse(i, 0)))
@@ -102,9 +106,10 @@ object LargeViewRenders {
       rate: Option[Int] = None,
       cookies: Seq[Cookie] = Nil,
       criteriaRates: Option[Map[Int, Int]] = None,
-      videos: Set[Int] = Set.empty
+      videos: Set[Int] = Set.empty,
+      sizes: Map[Int, (Int, Int)] = Map.empty
   ): String = {
-    val fs = files(rated, videos)
+    val fs = files(rated, videos, sizes)
     implicit val req: Request[AnyContentAsEmpty.type] =
       request(s"/large/round/${round.getId}/user/$asUserId/pageid/${fs(index).pageId}", cookies)
     implicit val msgs: Messages = messages
@@ -130,9 +135,9 @@ object LargeViewRenders {
 
   /** A contest files page's large view (GalleryController.contestFileLarge) of index `index`. */
   def contestFile(index: Int, cookies: Seq[Cookie] = Nil, videos: Set[Int] = Set.empty,
-      deleted: Set[Int] = Set.empty): String = {
+      deleted: Set[Int] = Set.empty, sizes: Map[Int, (Int, Int)] = Map.empty): String = {
     val view = ContestFilesView(contest, deletedOnly = false, round = None)
-    val stored = files(videos = videos).zipWithIndex.map { case (f, i) =>
+    val stored = files(videos = videos, sizes = sizes).zipWithIndex.map { case (f, i) =>
       ImageJdbc.StoredFile(f.image, deletedAt = Option.when(deleted(i))(java.time.ZonedDateTime.parse("2026-11-01T00:00:00Z")))
     }
     implicit val req: Request[AnyContentAsEmpty.type] = request(view.largeUrl(stored(index).image.pageId), cookies)

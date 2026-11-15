@@ -262,6 +262,24 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   too faint for a 2 px outline). Jurors get no funnels, and `commenter=` stays ignored in their
   own list. The keys `comments.report.author.filter` and `comments.report.commenter.remove` are
   back (en, fr, ru, uk), with new words. Organizer guide.
+- **A link to a file's comments stays at the comments while the file loads** (the maintainer's
+  report of 2026-11-15; developed 2026-11-15, `stack/160-large-image-size`): the tiles', the
+  large view's and the comments list's 💬 chips open the large view at its comments
+  (`#comments`); while the file hadn't loaded, its image had no size, so the page scrolled to the
+  comments, then the file arrived and pushed them out of view. The large view's image (in a round
+  and on the contest files page) now has its box at its loaded height before the file arrives,
+  from the stored width and height (`Global.largeImageBox`: `width` and `height` attributes at the
+  `sizes` width, the height following the width in main.css, so that `mw-100 mh-100` fit it as
+  they fit the file; no inline style); once loaded they go (`large-view.js`) and the view's rules
+  size the file exactly as before.
+  A file of unknown size, not on Commons, of other proportions than the stored ones, or that fails
+  to load, and the browser's own scroll cut short (Bootstrap makes it smooth; WebKit stopped it
+  partway when the image loaded): the page scrolls back to the comments, instantly, when the image
+  loads or fails and when the page has loaded (once the browser's own scroll has settled, then
+  only if their heading isn't in view or the image is still loading), unless the user has
+  scrolled (a wheel, touch, key, click or pointer) since. Not on a reload or Back
+  (the view is no-store, so Back loads it again): the browser restores where the user was. A
+  video's box was already the column's (100% × 100%); the strip's thumbnails have fixed boxes.
 
 **Development**
 

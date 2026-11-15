@@ -13,6 +13,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { test, expect } from '../lib/fixtures.js';
 import { galleryPath, largePath, one } from '../lib/actions.js';
+import { png } from '../lib/placeholder.js';
 
 test.use({ role: 'juror' });
 
@@ -292,5 +293,139 @@ test.describe('the large view\'s comments link', () => {
     await rowChip.click();
     await page.waitForURL(new RegExp(`/large/round/${fixture.roundBinaryId}/user/${other.id}/pageid/${other.pageId}.*#comments$`));
     await expect(page.locator('h2#comments')).toBeInViewport();
+  });
+
+  // Opened at its comments (the chips' links) while the file is still on its way: the file's box
+  // has its loaded height before it arrives (Global.largeImageBox), so the comments are in view at
+  // once and stay where they are when it does. A file of other proportions than the stored ones
+  // takes another height once loaded (large-view.js removes the box): the page scrolls back to the
+  // comments (keepCommentsInView), unless the user has scrolled since, and not on a reload, where
+  // the place is the browser's. The upload host's answer is held until the test serves it.
+  test('keeps the comments in view while the file loads', { tag: '@J-25' }, async ({ contextAs, fixture }) => {
+    const context = await contextAs('admin');
+    const page = await context.newPage();
+    const other = { id: fixture.commentFile.juror, pageId: fixture.commentFile.pageId };
+    expect(other.pageId, 'server.json has a file for the comment (restart the fixture)').toBeGreaterThan(0);
+    const url = largePath(fixture.roundBinaryId, other.id, other.pageId);
+    // lower than the file, which so has the comments below it; narrow, so that a landscape file's
+    // box is narrower than the column and a portrait one's as tall (another file's height then differs)
+    await page.setViewportSize({ width: 700, height: 500 });
+    const PLACEHOLDER = png(64, 48, [120, 140, 160]);
+    let stored;
+    let serve;
+    let held;
+    let requested;
+    // the large image (the view's only file from the upload host), served when the test says
+    await page.route((u) => u.hostname === 'upload.wikimedia.org', async (route) => {
+      requested = route.request().url();
+      const body = await held;
+      await route.fulfill({ status: 200, contentType: 'image/png', body }).catch(() => {});
+    });
+    // a fresh load each time: from the view to the view at #comments would only move to the comments
+    const open = async (path) => {
+      if (serve) serve(PLACEHOLDER);
+      await page.goto('about:blank');
+      held = new Promise((resolve) => { serve = resolve; });
+      requested = null;
+      await page.goto(path, { waitUntil: 'domcontentloaded' });
+    };
+    // the file the page asked for, `tall` times as tall as the stored proportions make it: as wide as
+    // its srcset says (the browser shows it the srcset's width over the sizes' wide)
+    const file = async (tall) => {
+      await expect.poll(() => requested, { message: 'the page asked for the file' }).toBeTruthy();
+      const width = await image.evaluate((img, url) => {
+        const candidate = img.srcset.split(/,\s+/).map((c) => c.trim().split(/\s+/))
+          .find(([u]) => new URL(u, location.href).href === url);
+        return candidate ? parseInt(candidate[1], 10) : 0;
+      }, requested);
+      expect(width, `the file asked for is in the srcset: ${requested}`).toBeGreaterThan(0);
+      return png(width, Math.round(tall * width * stored.height / stored.width), [120, 140, 160]);
+    };
+    const image = page.locator('#large_image');
+    const heading = page.locator('h2#comments');
+    const box = () => image.evaluate((img) => { const r = img.getBoundingClientRect(); return { width: r.width, height: r.height }; });
+    const loaded = () => page.waitForFunction(() => document.getElementById('large_image').complete);
+    // how far the page is from where a link to the comments scrolls it: the heading at the top, or
+    // as near as the page's end lets it
+    const offComments = () => heading.evaluate((h) => {
+      const root = document.scrollingElement;
+      const target = Math.min(h.getBoundingClientRect().top + root.scrollTop, root.scrollHeight - root.clientHeight);
+      return Math.abs(root.scrollTop - target);
+    });
+
+    // the stored proportions, in the box's width and height
+    await open(url);
+    stored = { width: Number(await image.getAttribute('width')), height: Number(await image.getAttribute('height')) };
+    expect(stored.width, "the fixture's file has a stored size: its box has a width").toBeGreaterThan(0);
+    expect(stored.height).toBeGreaterThan(0);
+
+    // a file of the stored proportions: its box as tall before it arrives as the file after, so the
+    // comments below don't move (where the engine scrolls to #comments before the file arrives is
+    // its own: WebKit at times only once the page has loaded), and the page at them once loaded
+    await open(`${url}#comments`);
+    expect(await image.evaluate((img) => img.complete), 'the file is held').toBe(false);
+    const before = await box();
+    expect(before.height, 'the box has its height before the file arrives').toBeGreaterThan(100);
+    serve(await file(1));
+    await loaded();
+    await expect(image).not.toHaveAttribute('width');
+    await expect(image).not.toHaveAttribute('height');
+    // as tall as its box (which may be wider while the file is on its way: object-fit, main.css)
+    expect(Math.abs((await box()).height - before.height), 'the loaded file as tall as its box').toBeLessThanOrEqual(1);
+    await page.waitForLoadState('load');
+    await expect(heading).toBeInViewport();
+    // polled: a smooth scroll may still be on its way at the page's load
+    await expect.poll(offComments, { message: 'the page at the comments' }).toBeLessThanOrEqual(1.5);
+
+    // a file of other proportions than the stored ones (twice as tall, or, for a box as tall as the
+    // column already, half as tall): another height once loaded, the page back at the comments
+    await open(`${url}#comments`);
+    const reserved = await box();
+    const columnHeight = await page.locator('#mainContent').evaluate((c) => c.clientHeight);
+    const taller = reserved.height < columnHeight * 0.75;
+    serve(await file(taller ? 2 : 0.5));
+    await loaded();
+    expect(Math.abs((await box()).height - reserved.height), 'the file of another height than its box').toBeGreaterThan(50);
+    // once the page has loaded, the comments in view (a few px from the top: at the page's load it
+    // scrolls only while their heading is out of view)
+    await page.waitForLoadState('load');
+    await expect(heading).toBeInViewport();
+
+    // from here the page's own scrolls to the comments are counted (its scrollIntoView of them): where
+    // the engine puts the page is its own (on a reload Chromium restores the user's place, WebKit goes
+    // to #comments)
+    await page.addInitScript(() => {
+      const scrollIntoView = Element.prototype.scrollIntoView;
+      window.wlxCommentsScrolls = 0;
+      Element.prototype.scrollIntoView = function (...args) {
+        if (this.id === 'comments') window.wlxCommentsScrolls += 1;
+        return scrollIntoView.apply(this, args);
+      };
+    });
+    const commentsScrolls = () => page.evaluate(() => window.wlxCommentsScrolls);
+
+    // the user scrolls (a wheel) before the file (of other proportions) arrives: the page doesn't
+    // scroll back to the comments
+    await open(`${url}#comments`);
+    await page.mouse.move(400, 250);
+    await page.mouse.wheel(0, -300);
+    const otherFile = await file(taller ? 2 : 0.5);
+    serve(otherFile);
+    await loaded();
+    await page.waitForLoadState('load');
+    expect(await commentsScrolls(), 'no scroll back to the comments after the user scrolled').toBe(0);
+
+    // a reload (Back too: the view is no-store): no scroll to the comments, the place is the browser's
+    held = Promise.resolve(otherFile);
+    await page.reload({ waitUntil: 'load' });
+    await loaded();
+    expect(await commentsScrolls(), 'no scroll to the comments on a reload').toBe(0);
+
+    // a control: opened at #comments with no user action, the page does scroll to them
+    await open(`${url}#comments`);
+    serve(otherFile);
+    await loaded();
+    await page.waitForLoadState('load');
+    expect(await commentsScrolls(), 'the page scrolls to the comments when the file loads').toBeGreaterThan(0);
   });
 });

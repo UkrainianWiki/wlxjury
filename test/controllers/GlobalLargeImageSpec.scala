@@ -24,6 +24,7 @@ class GlobalLargeImageSpec extends Specification {
       large.srcset === s"${thumb(1280)} 1280w, ${thumb(1920)} 1920w, ${thumb(3840)} 3840w"
       large.sizes must beSome("1280px")
       large.fallback must beSome("/wikipedia/commons/thumb/a/ab/Photo.jpg/1280px-Photo.jpg")
+      large.width must beSome(1280)
     }
 
     "fit a tall image into the box by its height" in {
@@ -31,6 +32,7 @@ class GlobalLargeImageSpec extends Specification {
 
       large.srcset === s"${thumb(960)} 960w, ${thumb(1280)} 1280w, ${thumb(1920)} 1920w"
       large.sizes must beSome("825px")
+      large.width must beSome(825)
     }
 
     "offer the file itself in place of the sizes no narrower than it" in {
@@ -57,10 +59,30 @@ class GlobalLargeImageSpec extends Specification {
       val other = image(4000, 3000, url = Some("https://upload.wikimedia.org/wikipedia/uk/a/ab/Photo.jpg"))
       Global.largeImage(other).fallback must beNone
       Global.largeImage(other).sizes must beNone
+      // shown at the density of the screen's srcset candidate: a width not known here
+      Global.largeImage(other).width must beNone
 
       val unknown = image(0, 0)
       Global.largeImage(unknown).src === Global.resizeTo(unknown, Global.largeSizeX, Global.largeSizeY)
       Global.largeImage(unknown).fallback must beNone
+    }
+  }
+
+  "largeImageBox" should {
+
+    "be the width and the height of the stored proportions" in {
+      Global.largeImageBox(image(4000, 3000), Some(1280)) must beSome((1280, 960))
+      Global.largeImageBox(image(3300, 4400), Some(825)) must beSome((825, 1100))
+      Global.largeImageBox(image(6000, 4001), Some(1280)) must beSome((1280, 854)) // rounded
+      Global.largeImageBox(image(100000, 10), Some(1280)) must beSome((1280, 1)) // never 0
+    }
+
+    "be none without a width or a stored size" in {
+      Global.largeImageBox(image(4000, 3000), None) must beNone
+      Global.largeImageBox(image(4000, 3000), Some(0)) must beNone
+      Global.largeImageBox(image(0, 0), Some(1280)) must beNone
+      Global.largeImageBox(image(4000, 0), Some(1280)) must beNone
+      Global.largeImageBox(image(0, 3000), Some(1280)) must beNone
     }
   }
 

@@ -23,7 +23,8 @@ function chunk(type, data) {
   return Buffer.concat([length, body, crc]);
 }
 
-function png(width, height, [r, g, b]) {
+/** A `width` × `height` PNG of one colour (voting.spec.js: a file of given proportions). */
+export function png(width, height, [r, g, b]) {
   const header = Buffer.alloc(13);
   header.writeUInt32BE(width, 0);
   header.writeUInt32BE(height, 4);

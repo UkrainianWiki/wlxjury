@@ -3,11 +3,12 @@
  */
 "use strict";
 
-// large-view.js: votes posted by the vote form, and the image failure listener that replaced
-// the large views' onerror attributes (one listener on the document, in the capture phase).
+// large-view.js: votes posted by the vote form, the image failure listener that replaced
+// the large views' onerror attributes (one listener on the document, in the capture phase), and
+// the scroll back to the comments of a page opened at #comments once its image has loaded.
 
 window.jQuery = require("jquery");
-const { vote, imageFailed } = require("../public/javascripts/large-view");
+const { vote, imageFailed, imageLoaded, keepCommentsInView } = require("../public/javascripts/large-view");
 
 let submits;
 
@@ -95,5 +96,230 @@ describe("a failed image", () => {
         document.querySelector("video").dispatchEvent(new Event("error"));
         expect(document.querySelector(".wlx-thumb-failed, .wlx-large-failed")).toBeNull();
         expect(() => imageFailed({ target: null })).not.toThrow();
+    });
+});
+
+describe("the large image's box until it loads", () => {
+    test("goes once the file has loaded, from the document's capture-phase listener", () => {
+        document.body.innerHTML = '<a><img id="large_image" src="https://upload.wikimedia.org/a.jpg" class="mw-100 mh-100" ' +
+            'width="1280" height="960" data-fallback="/wikipedia/commons/a.jpg" data-failed-mark="large"></a>';
+        const img = document.getElementById("large_image");
+        fail(img); // a failure keeps it while the fallback loads
+        expect([img.getAttribute("width"), img.getAttribute("height")]).toEqual(["1280", "960"]);
+        img.dispatchEvent(new Event("load", { bubbles: false }));
+        expect(img.hasAttribute("width")).toBe(false);
+        expect(img.hasAttribute("height")).toBe(false);
+        expect(img.className).toBe("mw-100 mh-100");
+    });
+
+    test("other images keep theirs", () => {
+        document.body.innerHTML = '<img id="other" width="10" height="10"><div id="large_image" width="10"></div>';
+        document.getElementById("other").dispatchEvent(new Event("load"));
+        imageLoaded({ target: document.getElementById("large_image") });
+        expect(document.querySelectorAll("[width]")).toHaveLength(2);
+        expect(() => imageLoaded({ target: null })).not.toThrow();
+    });
+});
+
+describe("a page opened at its comments", () => {
+    let scrolls;
+    const jsdomScrollY = Object.getOwnPropertyDescriptor(window, "pageYOffset");
+    const INSTANT = { block: "start", behavior: "instant" };
+
+    /** The large view's image, and its comments below, their heading `top` px down the view
+      * (below jsdom's 768 px high view by default). */
+    function page({ hash = "#comments", comments = true, image = true, top = 900 } = {}) {
+        document.body.innerHTML = (image ? '<a><img id="large_image" src="https://upload.wikimedia.org/a.jpg" ' +
+            'data-failed-mark="large" data-fallback="/wikipedia/commons/a.jpg"></a>' : "") +
+            (comments ? '<section><h2 id="comments">Comments</h2></section>' : "");
+        const heading = document.getElementById("comments");
+        if (heading) heading.getBoundingClientRect = () => ({ top, bottom: top + 20, left: 0, right: 100, width: 100, height: 20 });
+        window.history.replaceState(null, "", hash || window.location.pathname);
+        return document.getElementById("large_image");
+    }
+
+    /** The page reached by `type` ('navigate', 'reload', 'back_forward'): the navigation timing's,
+      * or, with `legacy`, only performance.navigation's (0, 1, 2). */
+    function reachedBy(type, { legacy = false } = {}) {
+        window.performance.getEntriesByType = jest.fn(() => (legacy ? [] : [{ type }]));
+        if (legacy) {
+            Object.defineProperty(window.performance, "navigation", {
+                value: { type: ["navigate", "reload", "back_forward"].indexOf(type) }, configurable: true });
+        }
+    }
+
+    /** The page's load event, then the wait for the scroll position to settle (jsdom's stays put). */
+    function pageLoad() {
+        window.dispatchEvent(new Event("load"));
+        jest.advanceTimersByTime(200);
+    }
+
+    beforeEach(() => {
+        jest.useFakeTimers();
+        scrolls = [];
+        // jsdom has no scrollIntoView
+        Element.prototype.scrollIntoView = function (options) { scrolls.push([this.id, options]); };
+    });
+
+    afterEach(() => {
+        // the page's load ends any watch a test left
+        pageLoad();
+        jest.useRealTimers();
+        delete Element.prototype.scrollIntoView;
+        delete window.performance.getEntriesByType;
+        delete window.performance.navigation;
+        // jsdom's own scroll position (0) back, after a test's moving one
+        Object.defineProperty(window, "pageYOffset", jsdomScrollY);
+        window.history.replaceState(null, "", window.location.pathname);
+    });
+
+    test("scrolls to the comments again, instantly, when the image loads and when the page has loaded, then no more", () => {
+        const img = page();
+        expect(keepCommentsInView(document, window)).toBe(true);
+        expect(scrolls).toEqual([]);
+        img.dispatchEvent(new Event("load"));
+        expect(scrolls).toEqual([["comments", INSTANT]]);
+        pageLoad();
+        expect(scrolls).toEqual([["comments", INSTANT], ["comments", INSTANT]]);
+        img.dispatchEvent(new Event("load"));
+        pageLoad();
+        expect(scrolls).toHaveLength(2);
+    });
+
+    test("not when the page has loaded with the comments' heading in view and the image loaded", () => {
+        const img = page({ top: 10 });
+        Object.defineProperty(img, "complete", { value: true, configurable: true });
+        keepCommentsInView(document, window);
+        pageLoad();
+        expect(scrolls).toEqual([]);
+    });
+
+    test("when the page has loaded with the heading in view but the image still loading, or the heading above the view", () => {
+        const img = page({ top: 10 });
+        Object.defineProperty(img, "complete", { value: false, configurable: true });
+        keepCommentsInView(document, window);
+        pageLoad();
+        expect(scrolls).toHaveLength(1);
+        page({ top: -40 });
+        keepCommentsInView(document, window);
+        pageLoad();
+        expect(scrolls).toHaveLength(2);
+    });
+
+    test("also when the browser says the image is complete before its load event (WebKit)", () => {
+        const img = page();
+        Object.defineProperty(img, "complete", { value: true, configurable: true });
+        expect(keepCommentsInView(document, window)).toBe(true);
+        img.dispatchEvent(new Event("load"));
+        expect(scrolls).toHaveLength(1);
+    });
+
+    test("watches from the page's DOMContentLoaded", () => {
+        page();
+        document.dispatchEvent(new Event("DOMContentLoaded"));
+        pageLoad();
+        expect(scrolls).toHaveLength(1);
+    });
+
+    test("when the image fails, and again when its fallback loads", () => {
+        const img = page();
+        keepCommentsInView(document, window);
+        fail(img); // the capture listener loads the fallback
+        expect(img.getAttribute("src")).toBe("/wikipedia/commons/a.jpg");
+        expect(scrolls).toHaveLength(1);
+        img.dispatchEvent(new Event("load"));
+        expect(scrolls).toHaveLength(2);
+    });
+
+    test("without the scroll-behavior a browser may not know: then as the page's CSS says", () => {
+        const img = page();
+        Element.prototype.scrollIntoView = function (options) {
+            if (options.behavior === "instant") throw new TypeError("'instant' is not a valid value");
+            scrolls.push([this.id, options]);
+        };
+        keepCommentsInView(document, window);
+        img.dispatchEvent(new Event("load"));
+        expect(scrolls).toEqual([["comments", { block: "start" }]]);
+    });
+
+    test("on a page without the large image (a video), when the page has loaded", () => {
+        page({ image: false });
+        expect(keepCommentsInView(document, window)).toBe(true);
+        pageLoad();
+        expect(scrolls).toEqual([["comments", INSTANT]]);
+    });
+
+    test.each(["wheel", "touchmove", "keydown", "mousedown", "pointerdown"])("not after the user's %s", (type) => {
+        const img = page();
+        keepCommentsInView(document, window);
+        document.body.dispatchEvent(new Event(type, { bubbles: true }));
+        img.dispatchEvent(new Event("load"));
+        fail(img);
+        pageLoad();
+        expect(scrolls).toEqual([]);
+    });
+
+    test("not once the page left its comments (another hash)", () => {
+        const img = page();
+        keepCommentsInView(document, window);
+        window.history.replaceState(null, "", "#top");
+        img.dispatchEvent(new Event("load"));
+        pageLoad();
+        expect(scrolls).toEqual([]);
+    });
+
+    test.each([
+        ["reload", false], ["back_forward", false], ["reload", true], ["back_forward", true],
+    ])("not on a %s (legacy API only: %s): the browser restores where the user was", (type, legacy) => {
+        reachedBy(type, { legacy });
+        const img = page();
+        expect(keepCommentsInView(document, window)).toBe(false);
+        img.dispatchEvent(new Event("load"));
+        pageLoad();
+        expect(scrolls).toEqual([]);
+    });
+
+    test("on a link's navigation, by either API", () => {
+        reachedBy("navigate");
+        page();
+        expect(keepCommentsInView(document, window)).toBe(true);
+        pageLoad();
+        reachedBy("navigate", { legacy: true });
+        page();
+        expect(keepCommentsInView(document, window)).toBe(true);
+        pageLoad();
+        expect(scrolls).toHaveLength(2);
+    });
+
+    test("once the page has loaded, after the browser's own scroll has settled", () => {
+        page({ top: -300 }); // above the view: the browser's smooth scroll went past it
+        let y = 0;
+        Object.defineProperty(window, "pageYOffset", { get: () => y, configurable: true });
+        keepCommentsInView(document, window);
+        window.dispatchEvent(new Event("load"));
+        for (let i = 0; i < 5; i++) { y += 40; jest.advanceTimersByTime(50); }
+        expect(scrolls).toEqual([]); // still moving
+        jest.advanceTimersByTime(150);
+        expect(scrolls).toEqual([["comments", INSTANT]]);
+    });
+
+    test("not when the user scrolls while it settles", () => {
+        page();
+        keepCommentsInView(document, window);
+        window.dispatchEvent(new Event("load"));
+        document.body.dispatchEvent(new Event("wheel", { bubbles: true }));
+        jest.advanceTimersByTime(500);
+        expect(scrolls).toEqual([]);
+    });
+
+    test("watches nothing without #comments or without the comments", () => {
+        page({ hash: "" });
+        expect(keepCommentsInView(document, window)).toBe(false);
+        page({ hash: "#top" });
+        expect(keepCommentsInView(document, window)).toBe(false);
+        page({ comments: false });
+        expect(keepCommentsInView(document, window)).toBe(false);
+        pageLoad();
+        expect(scrolls).toEqual([]);
     });
 });

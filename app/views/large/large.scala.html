@@ -90,15 +90,19 @@
                     <a href="https://commons.wikimedia.org/wiki/@hood.file.title" target="_blank">
                         @if(image.isImage) {
                             @* From Wikimedia, at its sizes; if that fails, once from this server, which
-                               finds a file renamed or deleted on Commons; if that fails too, a grey box *@
+                               finds a file renamed or deleted on Commons; if that fails too, a grey box.
+                               Its box at its size before the file arrives (Global.largeImageBox), so
+                               that the comments below stay where a link to #comments scrolled *@
                             @defining(Global.largeImage(image)) { large =>
                             <img id="large_image" alt="@hood.file.title"
                                 src="@large.src" class="mw-100 mh-100"
+                                @for((width, height) <- Global.largeImageBox(image, large.width)) {width="@width" height="@height"}
                                 srcset="@large.srcset" @large.sizes.map { sizes => sizes="@sizes" }
                                 @large.fallback.map { fallback => data-fallback="@fallback" }
                                 data-failed-mark="large">
                             }
                         }
+                        @* a video's box is the column's (100% × 100%) before it loads, too *@
                         @if(image.isVideo) {
                             <video width="100%" height="100%" preload="auto" controls>
                                 <source src="@image.url" type="video/webm">

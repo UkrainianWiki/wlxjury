@@ -93,7 +93,11 @@ object Global {
     * gone. None if there is none.
     */
   def largestCachedThumbnail(image: Image): Option[String] =
-    thumbnailWidths(image.width, image.height).filter(_ < image.width).lastOption.map(resizeToPx(image, _))
+    largestCachedWidth(image).map(resizeToPx(image, _))
+
+  /** The width of [[largestCachedThumbnail]], which the proxy serves it at. */
+  def largestCachedWidth(image: Image): Option[Int] =
+    thumbnailWidths(image.width, image.height).filter(_ < image.width).lastOption
 
   /** The file's page on Commons (with its deletion log, if it was deleted there). */
   def commonsPageUrl(image: Image): String =
@@ -123,8 +127,12 @@ object Global {
     * @param fallback the image's thumbnail on this server, to load if Wikimedia doesn't have
     *                 it (`onerror`): the file may have been renamed or deleted on Commons,
     *                 which the proxy finds out ([[ImageProxyController]])
+    * @param width    the width the browser shows it at before the large box fits it, whichever
+    *                 of `srcset` it loads: `sizes`'s. None where that isn't known (the srcset's
+    *                 densities, whose widths depend on the screen): [[largeImageBox]]
     */
-  final case class LargeImage(src: String, srcset: String, sizes: Option[String], fallback: Option[String])
+  final case class LargeImage(src: String, srcset: String, sizes: Option[String], fallback: Option[String],
+      width: Option[Int] = None)
 
   /** [[LargeImage]] of a Commons file of known width: Wikimedia's sizes from the one the
     * large box needs to twice that, the file itself in place of those no narrower than it
@@ -148,8 +156,25 @@ object Global {
         src = candidates.head._2,
         srcset = candidates.map { case (width, url) => s"$url ${width}w" }.mkString(", "),
         sizes = Some(s"${px}px"),
-        fallback = Some(legacyThumbUrl(image, from))
+        fallback = Some(legacyThumbUrl(image, from)),
+        width = Some(px)
       )
+    }
+
+  /** The large views' image's `width` and `height` attributes (large.scala.html,
+    * large/contestFile.scala.html): its box at its loaded height before the file arrives, so
+    * that what is below it (the comments, which a link to #comments scrolls to) doesn't move when
+    * it does. Shown `width` wide in the stored proportions, which the attributes give; main.css
+    * makes the height follow the width (`height: auto`), so that `mw-100 mh-100` fit the box
+    * into the column as they fit the loaded file: as tall, if wider while the file is on its way
+    * (`object-fit: contain` for a file drawn while it loads). large-view.js removes them once
+    * the file has loaded: the view's rules then size the file as they did before, also one
+    * whose proportions differ from the stored ones. None, the box empty until the file arrives,
+    * without a width or a stored size. Attributes, not a style (UI practices §2.1).
+    */
+  def largeImageBox(image: Image, width: Option[Int]): Option[(Int, Int)] =
+    width.filter(_ > 0 && image.width > 0 && image.height > 0).map { w =>
+      w -> math.max(1L, math.round(w.toDouble * image.height / image.width)).toInt
     }
 
   /** The width of the large view's [[LargeImage.fallback]], on this server: the narrowest of

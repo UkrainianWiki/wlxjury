@@ -106,13 +106,15 @@
                     @* the file's page on Commons, in a new tab. A deleted file, gone from Wikimedia: the
                        largest thumbnail the cache keeps, else a grey box. Another, as large.scala.html
                        shows it: from Wikimedia, at its sizes; if that fails, once from this server; if
-                       that fails too, a grey box. *@
+                       that fails too, a grey box. Either with its box at its size before the file
+                       arrives (Global.largeImageBox); a video's box is the column's. *@
                     @defining(if (file.deletedAt.isDefined) Global.largestCachedThumbnail(image) else None) { cached =>
                     <a id="commons-link" href="@Global.commonsPageUrl(image)" target="_blank" rel="noopener" title="@image.title"
                         @if(image.isImage && file.deletedAt.isDefined && cached.isEmpty) {class="wlx-large-failed"}>
                         @if(image.isImage && file.deletedAt.isDefined) {
                             @for(src <- cached) {
                                 <img id="large_image" alt="@image.title" src="@src" class="mw-100 mh-100"
+                                    @for((width, height) <- Global.largeImageBox(image, Global.largestCachedWidth(image))) {width="@width" height="@height"}
                                     data-failed-mark="large">
                             }
                         }
@@ -120,6 +122,7 @@
                             @defining(Global.largeImage(image)) { large =>
                             <img id="large_image" alt="@image.title"
                                 src="@large.src" class="mw-100 mh-100"
+                                @for((width, height) <- Global.largeImageBox(image, large.width)) {width="@width" height="@height"}
                                 srcset="@large.srcset" @large.sizes.map { sizes => sizes="@sizes" }
                                 @large.fallback.map { fallback => data-fallback="@fallback" }
                                 data-failed-mark="large">
