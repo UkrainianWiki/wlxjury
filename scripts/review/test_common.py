@@ -216,9 +216,18 @@ class LockTest(unittest.TestCase):
 
 
 class LoopTaskTest(unittest.TestCase):
+    def setUp(self):
+        # version_of runs git, which the CI container (python:3.8-slim, no network) does not have;
+        # these tests are about install, register and launch, not the version string
+        patch = mock.patch.object(loop_task, "version_of", return_value="test-version")
+        patch.start()
+        self.addCleanup(patch.stop)
+
     def launch(self, folder):
         out = []
-        with mock.patch.object(loop_task.subprocess, "Popen") as popen:
+        # version_of runs git, which the CI container (python:3.8-slim, no network) does not have;
+        # these tests are about the launch, not the version string
+        with mock.patch.object(loop_task.subprocess, "Popen") as popen,                 mock.patch.object(loop_task, "version_of", return_value="test-version"):
             code = loop_task.launch(folder, out=out.append)
         return code, out, popen
 
