@@ -106,6 +106,7 @@ a guide or a test needs them.
 | A-18 | An admin signs in with login and password | – | |
 | A-19 | An admin creates a link to share for an invitation or a password reset, copies it once, and sees whether it was used, expired or revoked; only for accounts that are theirs alone | – | |
 | A-20 | An admin exports the thumbnail URLs of the contest's or a round's files | – | |
+| A-21 | An admin reviews a new round's images before distribution: creates it without jurors, re-applies its filters, picks its jurors and distributes it | [Reviewing a round's images](../user/admin-guide.md#reviewing-a-rounds-images) | *Part:* disqualify / put back and the D18 warning in service and controller specs only |
 
 ## Root
 

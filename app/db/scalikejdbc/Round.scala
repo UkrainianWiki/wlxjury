@@ -216,8 +216,9 @@ case class Round(
   /** [[excludeRounds]] as stored (`exclude_rounds`, V95): the ids comma-separated, NULL for none. */
   def excludeRoundsStored: Option[String] = Option.when(excludeRounds.nonEmpty)(excludeRounds.mkString(","))
 
+  /** The monument ids filter: comma-separated, each trimmed (the form's "a, b"), empty parts left out. */
   def monumentIds: Seq[String] =
-    monuments.map(_.split(",").toSeq).getOrElse(Nil)
+    monuments.map(_.split(",").toSeq.map(_.trim).filter(_.nonEmpty)).getOrElse(Nil)
 
   def fixCategory(name: String): String = {
     if (!name.toLowerCase().startsWith("category:")) {
@@ -457,11 +458,34 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     * mark too: turned off, the ✗ votes given stay (shown, and counted as 0), and no new one is
     * taken.
     */
-  def updateRound(id: Long, round: Round): Unit =
+  def updateRound(id: Long, round: Round)(implicit session: DBSession = AutoSession): Unit =
     // created_at set to itself: production's has ON UPDATE CURRENT_TIMESTAMP (V86)
     sql"""UPDATE round SET name = ${round.name}, average_rule = ${round.averageRule.param},
             worst_mark = ${round.worstMark}, created_at = created_at
           WHERE id = $id""".update(): Unit
+
+  /** A re-apply's filters (P3-5): the settings that choose a round's files, as the round form posts
+    * them, written before its `fill` job is queued, under the round's lock
+    * ([[services.RoundService.reapplyFilters]]). The rating, the jurors and the distribution aren't
+    * filters.
+    */
+  def updateFilters(id: Long, round: Round)(implicit session: DBSession): Unit =
+    // created_at set to itself: production's has ON UPDATE CURRENT_TIMESTAMP (V86)
+    sql"""UPDATE round SET previous = ${round.previous}, prev_selected_by = ${round.prevSelectedBy},
+            prev_rejected_by = ${round.prevRejectedBy}, prev_rejected_mode = ${round.prevRejectedMode.param},
+            prev_min_avg_rate = ${round.prevMinAvgRate}, category = ${round.category},
+            exclude_category = ${round.excludeCategory}, category_clause = ${round.categoryClause},
+            regions = ${round.regions}, min_image_size = ${round.minImageSize}, min_mpx = ${round.minMpx},
+            monuments = ${round.monuments}, top_images = ${round.topImages},
+            top_binary_order = ${round.topBinaryOrder.map(_.param)}, special_nomination = ${round.specialNomination},
+            media_type = ${round.mediaType}, exclude_rounds = ${round.excludeRoundsStored}, created_at = created_at
+          WHERE id = $id""".update(): Unit
+
+  /** "Leave out conflicts of interest" written in the caller's transaction (a re-apply's, P3-5: its
+    * fill leaves them out as a filter).
+    */
+  def writeExcludeCoi(id: Long, excludeCoi: Boolean)(implicit session: DBSession): Unit =
+    sql"UPDATE round SET exclude_coi = $excludeCoi, created_at = created_at WHERE id = $id".update(): Unit
 
   /** The round form's "Leave out conflicts of interest", for a round with none of them to
     * take out, or to stop leaving them out ([[RoundConflicts.disqualify]] sets it for

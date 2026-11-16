@@ -124,34 +124,51 @@ object RoundConflicts {
           setFlag()
           refused
         case Left(refused) => refused
-        case Right(contestId) =>
-          setFlag()
-          val conflicts = CoiMembers.roundFiles(roundId, CoiMembers.forContest(contestId))
-            .filter { case (pageId, _, _) => only.forall(_.contains(pageId)) }
-          val pageIds = conflicts.map(_._1)
-          // their statuses before (`in`, or `deleted` with the votes aside already), for the
-          // events: read under the round's lock, before the move makes them `deleted`
-          val prior = RoundImageJdbc.statuses(roundId, pageIds)
-          // the round (above), then the files' votes moved aside (vote, vote_aside,
-          // criteria_rate, their rows `deleted` for now), then the rows marked `dq`, then their
-          // events: round_image, then round_image_event, last
-          ImageJdbc.moveVotesAsideInRound(roundId, pageIds)
-          RoundImageJdbc.disqualify(roundId, conflicts.map { case (p, _, m) => p -> m.describe }.toMap, DqCode.Coi,
-            by.id, prior)
-          Outcome.Disqualified(conflicts)
+        case Right(contestId) => Outcome.Disqualified(disqualifyLocked(roundId, contestId, by, only, excludeCoi))
       }
     }
     outcome match {
-      case Outcome.Disqualified(files) if files.nonEmpty =>
-        RoundImageCounts.invalidate(roundId)
-        logger.info(
-          s"Round $roundId: disqualified ${files.size} files as conflicts of interest, by user ${by.getId}: " +
-            files.map { case (pageId, _, m) => s"$pageId (user ${m.userId}, ${m.role})" }.mkString(", ")
-        )
+      case Outcome.Disqualified(files) => logDisqualified(roundId, by, files)
       case _ =>
     }
     outcome
   }
+
+  /** [[disqualify]]'s writes, for a caller that holds the round's lock and has checked what [[gate]]
+    * checks or its equivalent (a re-apply of a round held in review: no job, no vote, P3-5): the
+    * flag (`excludeCoi`), the conflicts' votes moved aside, their rows `dq` (code `coi`) with their
+    * events. The caller logs and invalidates the counts after its commit ([[logDisqualified]]).
+    *
+    * @return the files disqualified: page id, title, the member they match
+    */
+  def disqualifyLocked(roundId: Long, contestId: Long, by: User, only: Option[Set[Long]] = None,
+      excludeCoi: Boolean = false)(implicit session: DBSession): Seq[(Long, String, CoiMembers.Member)] = {
+    RoundWrites.lock(Seq(roundId)) // held already: recorded for the writes below
+    if (excludeCoi) sql"UPDATE round SET exclude_coi = TRUE WHERE id = $roundId".update()
+    val conflicts = CoiMembers.roundFiles(roundId, CoiMembers.forContest(contestId))
+      .filter { case (pageId, _, _) => only.forall(_.contains(pageId)) }
+    val pageIds = conflicts.map(_._1)
+    // their statuses before (`in`, or `deleted` with the votes aside already), for the
+    // events: read under the round's lock, before the move makes them `deleted`
+    val prior = RoundImageJdbc.statuses(roundId, pageIds)
+    // the round (above), then the files' votes moved aside (vote, vote_aside,
+    // criteria_rate, their rows `deleted` for now), then the rows marked `dq`, then their
+    // events: round_image, then round_image_event, last
+    ImageJdbc.moveVotesAsideInRound(roundId, pageIds)
+    RoundImageJdbc.disqualify(roundId, conflicts.map { case (p, _, m) => p -> m.describe }.toMap, DqCode.Coi,
+      by.id, prior)
+    conflicts
+  }
+
+  /** After a disqualify's commit: the round's counts invalidated and the files logged. */
+  def logDisqualified(roundId: Long, by: User, files: Seq[(Long, String, CoiMembers.Member)]): Unit =
+    if (files.nonEmpty) {
+      RoundImageCounts.invalidate(roundId)
+      logger.info(
+        s"Round $roundId: disqualified ${files.size} files as conflicts of interest, by user ${by.getId}: " +
+          files.map { case (pageId, _, m) => s"$pageId (user ${m.userId}, ${m.role})" }.mkString(", ")
+      )
+    }
 
   /** Requalifies the round's disqualified files among `pageIds` (D8), in one transaction with
     * the round locked first, while the round is not open ([[gate]]): each back to its status

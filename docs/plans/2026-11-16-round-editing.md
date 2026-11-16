@@ -538,6 +538,49 @@ rows above), the writers in step (lineage §2.6), `Round.lifecycle` / `inReview`
 - Specs: `RoundReviewFlowSpec` (service), `RoundImagesReviewSpec` (D20 authorization, CSRF, jurors
   never see a round in review, the form), and the form specs that now tick `distributeAfter`.
 
+**Built (jurors at Distribute and P3-5, `stack/169-review-jurors-reapply`, the maintainer's 26.11.9 RC
+report: "Create and review images" refused a round without jurors):**
+- Jurors optional until distribution: the form's `jurors` has no required check; only "Distribute as
+  soon as the images are ready" (D4) refuses none (under the field). `RoundService.submit(review)`
+  takes no jurors; a fill skips `checkJury` (the context's `checkJurors`), as do "Count new files" and
+  "Distribute new files" on a round in review. The review page's Distribute carries the round form's
+  juror picker and file distribution (round-form.js), the round's jurors chosen, else the contest's;
+  `distributeReviewed(jurors, distribution, confirmPrevChanged)` writes them under the round's lock
+  before queueing, refused (`Refused`, nothing written) with no juror, more per file than jurors, a
+  change once the round has a vote (a partial distribute), or D18 unconfirmed. A POST without the
+  picker (the rounds list's button) uses the round's jurors. The add juror page takes a first juror for
+  a round in review without `round_user` rows and no vote (no longer "legacy").
+- Re-apply (P3-5): `RoundService.reapplyFilters` (only the filter columns, `Round.updateFilters`,
+  written under the round's lock after the in-review, no-job and no-vote checks) queues a `fill` with
+  `reapply`; the job's `scan` phase (after Rank) deletes the round's `in` `fill` rows from before it
+  that no longer pass (`RoundImageJdbc.prune`, refused at each step if a vote exists), then the usual
+  fill adds new matches (`fill` rows); the count check subtracts `pruned.count`. Top-N re-ranked with
+  the round's `dq` files skipped (D17). The fill's end records `prevFingerprint` (count, sum and a
+  CRC32 checksum of the previous rounds' votes); the review page warns when it changed and Distribute
+  needs "Distribute anyway" (D18). The review page shows `+added / −removed` and the first 100 removed
+  titles. Not built: the filter that rejects each removed file (only the titles are listed).
+- After the independent review of `f448687d`:
+  - Distribute posts the jury as shown (`RoundService.jurySignature`); a juror change is refused when the
+    round's jurors changed since (a juror added would otherwise be dropped).
+  - A failed or cancelled re-apply blocks Distribute (refused under the lock, warned on the page) until
+    re-applied again or retried.
+  - The D18 fingerprint is read on the review's main view only (page 1, all regions, files in), and
+    recorded only by a fill that leaves the round in review.
+  - The scan reads its window's files only (`page_id IN`).
+  - The diff's removed count runs across Retries (`Pruned.total`).
+  - Prune also takes `new_files` rows (the maintainer, 2026-11-16) and never a row with a vote.
+  - Distribute re-reads the round in its transaction.
+  - Previous rounds on a re-apply are rounds created before it (lower ids).
+  - Deleted accounts are never jurors.
+  - A review fill's Retry is refused once the round left review.
+  - A refused re-apply saves nothing of the form (name, score rule, CoI flag are written with the filters
+    under the lock) and keeps the pasted list in the form.
+  - The monument ids filter trims spaces after commas.
+- Follow-ups: a `round_image_event` per pruned file needs a new action in V88's CHECK (a migration),
+  not added; the filter that rejects each removed file.
+- Specs: `RoundReviewJurorsReapplySpec` (service), `RoundReviewJurorsReapplyPageSpec` (pages, D20,
+  CSRF).
+
 ## 7. Step 3: reassign a juror's unrated files
 
 **[user]** One action, unrated files only, votes always stay, the juror ends stopped, running

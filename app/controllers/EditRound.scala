@@ -46,7 +46,11 @@ object EditRound {
       if (o.nonEmpty) Valid else Invalid(ValidationError("error.required"))
     }
 
-  private val jurorsMappingKV = "jurors" -> seq(text).verifying(nonEmptySeq)
+  /** The round's jurors: optional on the form (P3, D3): a round created for review gets them on its
+    * review page, before Distribute; "Distribute as soon as the images are ready" (D4) needs them
+    * ([[JurorsForDistributeAfter]], `RoundController`'s check, shown under the field).
+    */
+  private val jurorsMappingKV = "jurors" -> seq(text)
   val jurorsMapping: Mapping[Seq[String]] = single(jurorsMappingKV)
 
   /** Extra fields live outside the 22-field mapping: category operation, conflicts of interest,
@@ -114,6 +118,14 @@ object EditRound {
   }
 
   val WorstMarkRatedOnly = "error.worst.mark.rated.only"
+
+  /** A new round with "Distribute as soon as the images are ready" (D4) and no jurors: refused
+    * under the jurors' field; without the box the round waits in review and gets its jurors there.
+    */
+  val JurorsForDistributeAfter = "error.round.jurors.distribute.after"
+
+  /** Whether the new round's jurors are missing for "Distribute as soon as the images are ready". */
+  def jurorsMissing(edit: EditRound): Boolean = edit.round.id.isEmpty && edit.distributeAfter && edit.jurors.isEmpty
 
   /** "Leave out files that are in round(s)" (V95): other rounds of the round's contest, found there,
     * none of its previous rounds and none being distributed now
@@ -224,7 +236,9 @@ object EditRound {
       "contest" -> longNumber,
       // the hidden field is always "jury" (editRound.scala.html); a contest role, never root or a list (G1)
       "roles" -> text.verifying("error.invalid", User.isContestRole(_)),
-      "distribution" -> number,
+      // absent when no juror is chosen (round-form.js disables the select, which then sends nothing):
+      // each file to all jurors, the only choice then
+      "distribution" -> default(number, 0),
       "rates" -> number,
       "fileList" -> optional(text),
       "minMpx" -> text,
@@ -294,7 +308,8 @@ object EditRound {
       excludeCategory = excludeCategory,
       regions = if (regions.nonEmpty) Some(regions.mkString(",")) else None,
       minImageSize = Try(minImageSize.toInt).toOption,
-      monuments = monumentIds,
+      // whitespace only is no filter (None), as empty is
+      monuments = monumentIds.filter(_.trim.nonEmpty),
       topImages = topImages,
       specialNomination = specialNomination.filter { name =>
         ContestJuryJdbc.findById(contest).exists { c =>

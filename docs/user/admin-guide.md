@@ -461,7 +461,9 @@ Press **Add round**. The page **Create round** has these parts, from the top:
 - **Leave out conflicts of interest**: see [Leaving them out of a round](#a-leave-out-conflicts).
 - **Add files**: a list of files to add, see [Adding files by name](#a-add-files).
 - **Jurors**: the people who vote in this round. Choose them in the list, which shows the
-  contest's jurors.
+  contest's jurors. You can leave them for later: a round created for review gets its jurors on
+  its review page, before you distribute it. Only **Distribute as soon as the images are ready**
+  needs them on this form.
 - **File distribution**: **Each file to all jurors**, or **Each file to N juror(s)**, for
   contests with so many files that each juror takes a part. The files are shared out so that
   each file goes to the number of jurors you chose.
@@ -628,15 +630,33 @@ list, ...), and the round's conflicts of interest, if it has any.
 - **Distribute to jurors** gives each juror their share and opens the round to them when it has
   finished. Until then the round is hidden from the jurors: they don't see it in their menus, its
   gallery or its large view.
-- To change the files, use the round form: **Distribute N new files** adds the files that now pass
-  its filters; the round stays in review.
+- **Jurors** and **File distribution**, above the button, choose who gets the files and how many
+  jurors each file goes to. They show the round's jurors, or, for a round created without jurors,
+  all the contest's jurors; change them as you need before pressing **Distribute to jurors**. With
+  no juror chosen the tool refuses and says so. If the contest has no jurors yet, the page links
+  the contest's users: add them first. The rounds list's **Distribute to jurors** distributes to the
+  round's jurors as they are, so for a round without jurors use the review page.
+- To change the files, open **Edit the round**. While the round waits for review and has no votes,
+  its filters (previous rounds, categories, regions, sizes, ...) can be changed and the main button
+  is **Re-apply filters**: the images are selected again. Files the filters chose before (also those
+  **Distribute new files** added) that no longer pass are taken out, new matches are added, a top-N is chosen again from scratch (files you
+  disqualified don't take a place in it). Files added from a list and disqualified files stay as
+  they are. The review page then shows how many files were added and removed, and the first
+  removed files by name. Check the files again, and re-apply again if needed. If a re-apply fails or
+  is cancelled, the review page says so and **Distribute to jurors** waits until you re-apply the
+  filters again or retry its job. The other settings of the form (its name, ...) are saved only with a
+  re-apply that starts.
+- If votes in the previous round(s) change after the images were selected, the review page warns
+  you. Re-apply the filters to select by the current votes, or tick **Distribute anyway** to give
+  out the images as they are.
 - A file deleted on Commons while the round waits is never given to a juror.
 - If you cancel a round's creation on its job, the round is cancelled. **Distribute new files** on
   its form reinstates it: its images are selected again and it waits for review again, or is
   distributed straight away if it was created with **Distribute as soon as the images are
   ready**. The tool records who did it.
 
-The contest's organizers see the review page too, without the Distribute button.
+The contest's organizers see the review page too, without the Distribute button; they can't
+change the jurors or re-apply the filters.
 
 <a id="a-distribute-new-files"></a>
 ### Distributing new files

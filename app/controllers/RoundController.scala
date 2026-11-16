@@ -136,6 +136,9 @@ class RoundController @Inject() (
   )(implicit request: RequestHeader): Html = {
     val contestId = round.contestId
     val rounds = knownRounds.getOrElse(Round.findByContest(contestId))
+    // a round held in review with no vote and no job: its filters editable, "Re-apply filters" (P3-5)
+    val reapply = round.id.flatMap(id => rounds.find(_.id.contains(id)).orElse(Round.findById(id)))
+      .exists(roundsService.reapplyable)
     views.html.editRound(
       user,
       form,
@@ -153,7 +156,8 @@ class RoundController @Inject() (
       round.id.flatMap(id => RoundController.ScoreRuleWarning.of(id, rounds)),
       // the check is queued by the contest's admins (and root): this page is theirs
       round.id.flatMap(id =>
-        JobJdbc.latestBySubjects(RoundImageCheckHandler.Kind, RoundImageCheckHandler.SubjectType, Seq(id)).get(id))
+        JobJdbc.latestBySubjects(RoundImageCheckHandler.Kind, RoundImageCheckHandler.SubjectType, Seq(id)).get(id)),
+      reapply = reapply
     )
   }
 
@@ -360,6 +364,57 @@ class RoundController @Inject() (
             def unreadableLines: Result =
               reRender(round, "files.list.unreadable", unreadable.size, unreadable.take(5).mkString(" · "))
 
+            // "Re-apply filters" (P3-5): a round held in review, with no vote and no job, gets the
+            // posted filters and a re-apply fill; to its review page, which shows the result. The form's
+            // other settings (name, score rule, worst mark, criteria, "Leave out conflicts of interest":
+            // newly ticked, the round's conflicts disqualified as on a stopped round) are written with
+            // the filters, under the round's lock, only if the re-apply is queued: a refusal saves
+            // nothing and shows the form again, its input (the pasted list included) kept
+            def reapplyFilters(stored: Round): Result = {
+              val roundId = stored.getId
+              val toReview = Redirect(routes.RoundReviewController.review(roundId))
+              val messages = messagesApi.preferred(request)
+              val previous = if (round.previousIds.isEmpty) Nil else Round.findByIds(contestId, round.previousIds)
+              val edited = round.copy(
+                averageRule = if (editForm.averageRuleShown) round.averageRule else stored.averageRule,
+                worstMark = if (editForm.worstMarkShown) round.worstMark else stored.worstMark)
+              // "rejected by at least N" needs a previous round whose votes may reject, as for a new round
+              if (!EditRound.rejectedByHasSource(round.copy(id = None), previous)) reRender(round, EditRound.RejectedByNoSource)
+              else
+                try {
+                  var disqualified = Seq.empty[(Long, String, CoiMembers.Member)]
+                  roundsService.reapplyFilters(round, user.id, titles, alsoWrite = { s =>
+                    // after the first vote criteria are only replaced in their places (U10): a re-apply
+                    // has none, but a refusal rolls everything back
+                    if (editForm.criteriaShown)
+                      RoundCriterion.updateIn(roundId, round.criterionIds)(s).left.foreach(r =>
+                        throw RoundController.CriteriaRefused(r.messageKey))
+                    Round.updateRound(roundId, edited)(s)
+                    // newly ticked: the conflicts disqualified (dq, code coi, their events) under the held
+                    // lock, before the job; the fill leaves out later ones by the flag
+                    if (round.excludeCoi && !stored.excludeCoi)
+                      disqualified = RoundConflicts.disqualifyLocked(roundId, stored.contestId, user, excludeCoi = true)(s)
+                    else Round.writeExcludeCoi(roundId, round.excludeCoi)(s)
+                  }) match {
+                    case RoundService.ReviewDistribution.Started(_) =>
+                      RoundConflicts.logDisqualified(roundId, user, disqualified)
+                      val coi = if (disqualified.isEmpty) "" else " " + messages("coi.disqualified", disqualified.size, stored.number)
+                      toReview.flashing("success" -> (messages("round.reapply.started", stored.number) + coi))
+                    case RoundService.ReviewDistribution.Running(_) =>
+                      reRender(round, "round.distribute.running", stored.number)
+                    case RoundService.ReviewDistribution.NotInReview =>
+                      reRender(round, "round.reapply.not.in.review", stored.number)
+                    case RoundService.ReviewDistribution.Refused(key, args) =>
+                      reRender(round, key, args: _*)
+                  }
+                } catch {
+                  case RoundController.CriteriaRefused(key) => reRender(round, key)
+                  case NonFatal(e) =>
+                    failed(round, "round.reapply.failed", "round.reapply.failed.reference", e,
+                      s"Round $roundId: could not re-apply its filters")
+                }
+            }
+
             // the edit of an existing round, its criteria saved
             def saveEdit(stored: Round): Result = {
               val roundId = stored.getId
@@ -406,6 +461,20 @@ class RoundController @Inject() (
               case None if !EditRound.rejectedByHasSource(round,
                   if (round.previousIds.isEmpty) Nil else Round.findByIds(contestId, round.previousIds)) =>
                 reRender(round, EditRound.RejectedByNoSource)
+              // "Distribute as soon as the images are ready" (D4) needs the jurors now; without it the
+              // round waits in review and gets them there: refused under the jurors' field
+              case None if EditRound.jurorsMissing(editForm) =>
+                BadRequest(
+                  roundFormView(
+                    user,
+                    round,
+                    editRoundForm
+                      .fill(EditRound(round, editForm.jurors, editForm.fileList, editForm.newImages, editForm.criteriaShown,
+                        distributeAfter = editForm.distributeAfter))
+                      .withError("jurors", EditRound.JurorsForDistributeAfter),
+                    submitToken = RoundController.submitToken(request)
+                  )
+                )
               case None =>
                 try {
                   // "Create and review images" (D3): the round waits in review unless "Distribute as
@@ -446,9 +515,14 @@ class RoundController @Inject() (
                   case stored if editForm.worstMarkShown && round.worstMark && (!stored.isRated ||
                       (if (editForm.criteriaShown) round.criterionIds else RoundCriterion.idsOf(roundId)).nonEmpty) =>
                     reRender(round, EditRound.WorstMarkRatedOnly)
+                  // the form in its re-apply state (posted `reapply`): checked under the round's lock,
+                  // refused with a message if the round left review or got a vote or a job since; its
+                  // criteria are written in the re-apply's transaction
+                  case stored if RoundController.reapplyPosted(request) => reapplyFilters(stored)
                   case stored =>
                     // first: after the first vote criteria are only replaced in their places
-                    // (U10), and a refused change saves nothing of the form
+                    // (U10), and a refused change saves nothing of the form; a plain save, whose filters
+                    // aren't changed
                     val criteria =
                       if (editForm.criteriaShown) RoundCriterion.update(roundId, round.criterionIds) else Right(false)
                     criteria.fold(refused => reRender(round, refused.messageKey), _ => saveEdit(stored))
@@ -671,6 +745,13 @@ object RoundController {
       t.setDaemon(true)
       t
     })
+
+  /** A re-apply's criteria refused in its transaction (rolled back): the message key. */
+  final case class CriteriaRefused(messageKey: String) extends RuntimeException(messageKey, null, false, false)
+
+  /** The round form was posted in its re-apply state (its hidden `reapply` field, P3-5). */
+  def reapplyPosted(request: Request[AnyContent]): Boolean =
+    request.body.asFormUrlEncoded.flatMap(_.get("reapply")).exists(_.contains("true"))
 
   /** The text of a refusal by our own checks of a round's settings (`require`, in
     * [[RoundService]] and the distribution), without its prefix; None for any other failure.

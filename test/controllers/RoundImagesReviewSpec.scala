@@ -170,9 +170,11 @@ class RoundImagesReviewSpec extends PlaySpecification with PlayTestDb {
       testDbApp { app =>
         val (round, _, _) = setUp()
         val r = round.getId
+        // one after the other: two POSTs sent at once race for the round's lock, and either may be first
         val done = post(app, Some("admin@example.com"), distribute(r))
+        val doneStatus = status(done)
         val again = post(app, Some("admin@example.com"), distribute(r))
-        (status(done) === SEE_OTHER) and (redirectLocation(done) === Some(review(r))) and
+        (doneStatus === SEE_OTHER) and (redirectLocation(done) === Some(review(r))) and
           (flash(done).get("success") must beSome) and
           (Round.findById(r).get.openToJurors must beTrue) and (votes(r) === 4) and
           (status(again) === SEE_OTHER) and (flash(again).get("error") must beSome)

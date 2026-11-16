@@ -419,8 +419,8 @@ fallback covers.
 `webkit`), each depending on its sign-in project (`setup-<engine>`, `tests/auth.setup.js`), which
 signs in through the login form once per role (juror, organizer, admin, root) and saves the
 session to `target/browser-test/auth/<engine>-<role>.json`. A test takes a role with
-`test.use({ role: 'juror' })`, or opens another session with `contextAs(role)`. 55 tests per
-engine (165 in all), 4 of them its sign-ins:
+`test.use({ role: 'juror' })`, or opens another session with `contextAs(role)`. 56 tests per
+engine (168 in all), 4 of them its sign-ins:
 
 | Spec | What it shows | Stories |
 |---|---|---|
@@ -431,6 +431,7 @@ engine (165 in all), 4 of them its sign-ins:
 | `theme` | the login page's switch (no request), the navbar's CSRF POST; `auto` in both schemes with every frame, from the first, in the scheme's mode: the `data-bs-theme` attribute, the root's computed `color-scheme` and the page's computed background (the "Firefox theme flash" check) | J-30 |
 | `access` | a juror refused another juror's votes (gallery, large view, all jurors) and the admin pages, an organizer the round form: the 403 page with its reference | J-27, J-35, S-01 |
 | `organizer` | the organizer role's round statistics and by-rate list; the admin's rounds list, round form with its jurors' table, edit-then-cancel (nothing saved, no job), new round form; root's contests page | O-01, O-02, A-01, A-02, R-01 |
+| `review` | a round's review before distribution, as the admin: created with no jurors and held in review; the picker with the contest's jurors, Distribute refused with none; Edit the round's "Re-apply filters" (a monument filter of ids separated by ", ") takes files out and the page shows how many; two jurors picked, one per file, Distribute opens the round. Writes one round per engine to the fixture, distributed to jurors no other test signs in as | A-21, A-01 |
 | `pages` | a tour of 17 pages (each role's): status 200, one `h1`; in Chromium an axe-core scan per page (§10.5) | S-04 |
 
 **10.2 Every page passes** (`lib/fixtures.js`, for every context of every test): images and

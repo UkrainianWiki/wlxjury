@@ -25,6 +25,8 @@ class StructuralWritesSpec extends Specification {
     "app/db/scalikejdbc/RoundImageJdbc.scala#syncChunk" -> "its caller sync requireRounds",
     "app/db/scalikejdbc/RoundImageJdbc.scala#syncMonumentId" -> "requireFiles",
     "app/db/scalikejdbc/RoundImageJdbc.scala#addFilled" -> "requireRounds (the fill's chunk locks the round first)",
+    "app/db/scalikejdbc/RoundImageJdbc.scala#prune" ->
+      "requireRounds (a re-apply's scan step locks the round first, checks it has no vote, P3-5)",
     "app/db/scalikejdbc/RoundImageJdbc.scala#setStatus" -> "its callers markVotelessDeleted / restoreVoteless requireRounds",
     "app/db/scalikejdbc/RoundCounts.scala#writeCounts" ->
       "requireRounds (the recompute's window: the round FOR UPDATE first, then its rows, then their dirty entries)",

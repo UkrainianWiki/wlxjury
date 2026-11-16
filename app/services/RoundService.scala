@@ -3,11 +3,12 @@ package services
 import controllers.RoundStat
 import db.RoundRepo
 import db.scalikejdbc.Round.RoundStatRow
-import db.scalikejdbc.{ImageJdbc, Round, RoundImageCounts, RoundUser, VoteJdbc, User, WriteTx}
+import db.scalikejdbc.{ImageJdbc, Round, RoundImageCounts, RoundImageJdbc, RoundUser, VoteJdbc, User, WriteTx}
 import org.intracer.wmua.cmd.DistributeImages
 import play.api.Logging
 import play.api.libs.json.{JsObject, JsString, Json}
 import scalikejdbc.{DB, DBSession}
+import scalikejdbc._
 import services.distribution.RoundDistributionHandler
 import services.jobs.{Job, JobError, JobJdbc, JobScheduler, NewJob, Progress}
 
@@ -69,9 +70,11 @@ class RoundService @Inject() (
         RoundDistributionHandler.excludedRounds(canonical)
         val configuredRound = canonical.withExplicitTopOrder(prevRounds.exists(_.isBinary))
         val jurors = User.loadJurors(round.contestId, jurorIds).distinct
-        require(jurors.nonEmpty, "no jurors selected for the round; nothing to distribute")
+        // a round created for review may have no jurors yet: they are chosen on its review page,
+        // before Distribute (P3, D3); distributing as soon as it is filled (D4) needs them now
+        require(jurors.nonEmpty || review, "no jurors selected for the round; nothing to distribute")
         require(
-          round.distribution <= jurors.size,
+          jurors.isEmpty || round.distribution <= jurors.size,
           s"${round.distribution} jurors per image, but only ${jurors.size} jurors selected"
         )
         insert(configuredRound, jurors, submitToken, createdBy, titles, review) match {
@@ -156,6 +159,10 @@ class RoundService @Inject() (
     * @param fromReview queued on a round in review: it stays in review (`paused`)
     * @param requireInReview a distribute: refused ([[NotInReviewRefused]]) unless the round, read under the
     *                 locks below, is in review
+    * @param reapply  a fill re-applying the round's filters in review (P3-5): it scans the round's
+    *                 `fill` files first and deletes those no longer passing (D16)
+    * @param underLocks run under the locks, after the checks above and before the job is queued: the
+    *                 caller's own checks (refusing by an exception, which rolls back) and writes
     */
   private def enqueueOrFail(
       round: Round,
@@ -166,7 +173,9 @@ class RoundService @Inject() (
       mode: String = RoundDistributionHandler.Mode.Fill,
       distributeAfter: Boolean = false,
       fromReview: Boolean = false,
-      requireInReview: Boolean = false
+      requireInReview: Boolean = false,
+      reapply: Boolean = false,
+      underLocks: DBSession => Unit = _ => ()
   )(implicit session: DBSession): Job = {
     val distribute = mode == RoundDistributionHandler.Mode.Distribute
     // the round first, with the rounds it freezes: "Leave out conflicts of interest now"
@@ -183,6 +192,7 @@ class RoundService @Inject() (
     // refused here, before an insert whose duplicate key would lock the running job's row, which
     // its step holds before the round (break 11 of the write-path plan)
     JobJdbc.activeByDedupeKey(RoundDistributionHandler.dedupeKey(round.getId)).foreach(active => throw AlreadyDistributing(active))
+    underLocks(session)
     // under those locks: no round it leaves out, nor one leaving it out, being distributed now
     // (refused, rolling back; the round form shows the message). The job checks again as it runs.
     // a distribute reads no candidates and adds no row: neither applies to it
@@ -193,7 +203,7 @@ class RoundService @Inject() (
     // nor a previous round having a juror added (its votes moving), read under its lock: a
     // rebalance is queued and ends under it. A distribute too: it freezes and closes them
     if (!listOnly) RoundDistributionHandler.requireNoPreviousRebalance(round)
-    val state = distribution.initialState(round, listOnly, distribute, completingCreation)
+    val state = distribution.initialState(round, listOnly, distribute, completingCreation, reapply)
     // a creation's fill (or one finished by "Distribute new files") is `draft` while it runs, by
     // who queued it (round lineage §2.6); a round in review stays `paused`, its distribute too (the
     // two-step plan's §4); under the round's lock, taken above
@@ -228,7 +238,8 @@ class RoundService @Inject() (
           "completingCreation" -> completingCreation,
           "mode" -> mode
         ) ++ (if (distribute) Json.obj() else Json.obj("distributeAfter" -> distributeAfter)) ++
-          (if (fromReview) Json.obj("fromReview" -> true) else Json.obj()) ++ Json.obj(
+          (if (fromReview) Json.obj("fromReview" -> true) else Json.obj()) ++
+          (if (reapply) Json.obj("reapply" -> true) else Json.obj()) ++ Json.obj(
           // for the record: the job reads the round, whose settings don't change once created;
           // but prevAverageRule(s) and prevRejectedMode, which the job reads from here
           // (RoundDistributionHandler.context)
@@ -319,17 +330,18 @@ class RoundService @Inject() (
         RoundDistributionHandler.previousRounds(round)
         RoundDistributionHandler.requireNoExcluderBusy(round)
         RoundDistributionHandler.excludedRounds(round)
-        DistributeImages.checkJury(round, User.distributionJurors(roundId))
+        // a round in review gets the new files only: distributing stays the review's action
+        // (round-editing plan §6.2). A creation never completed keeps its intent: held in review
+        // after its fill, or distributed after it (D4); a cancelled one is so reinstated (round
+        // lineage decision 7), by `createdBy`. A distributed round gets them distributed after.
+        val distributeAfter =
+          if (round.inReview) false
+          else if (round.distributing) RoundService.creationIntent(latest)
+          else true
+        // the jurors only where the files go to them now: a fill held in review needs none yet
+        if (distributeAfter) DistributeImages.checkJury(round, User.distributionJurors(roundId))
         try {
-          // a round in review gets the new files only: distributing stays the review's action
-          // (round-editing plan §6.2). A creation never completed keeps its intent: held in review
-          // after its fill, or distributed after it (D4); a cancelled one is so reinstated (round
-          // lineage decision 7), by `createdBy`. A distributed round gets them distributed after.
           val reinstating = round.distributing && round.lifecycle == Round.Status.Cancelled
-          val distributeAfter =
-            if (round.inReview) false
-            else if (round.distributing) RoundService.creationIntent(latest)
-            else true
           val job = WriteTx.write { implicit session =>
             enqueueOrFail(round, completingCreation = round.distributing, createdBy, titles,
               listOnly = titles.nonEmpty && !newFiles && !round.distributing,
@@ -349,26 +361,167 @@ class RoundService @Inject() (
   /** The review page's Distribute (P3): the round's files given to its jurors, as a job of mode
     * `distribute`; the round opens to them when it ends. Only a round in review
     * ([[Round.inReview]], read under its lock) with no job queued or running.
+    *
+    * The jurors are chosen there (a round created for review may have none yet): `jurors` and
+    * `distribution` (jurors per file, 0 for all), when given, replace the round's (its `round_user`
+    * rows and `distribution`) under its lock, in the job's transaction; without them the round's
+    * own. Refused ([[RoundService.ReviewDistribution.Refused]], nothing written) with no juror, more
+    * jurors per file than jurors, a change of jurors once the round has a vote (a partial
+    * distribution: Retry it instead), a change of jurors when the round's jurors are no longer those
+    * the page showed (`shownJury`, [[RoundService.jurySignature]]: a juror added since would be
+    * dropped), a re-apply of its filters not finished (failed or cancelled: its files half chosen),
+    * or, unless `confirmPrevChanged`, previous rounds' votes changed since the fill (D18).
     */
-  def distributeReviewed(roundId: Long, createdBy: Option[Long]): RoundService.ReviewDistribution =
+  def distributeReviewed(
+      roundId: Long,
+      createdBy: Option[Long],
+      jurors: Option[Seq[Long]] = None,
+      distribution: Option[Int] = None,
+      confirmPrevChanged: Boolean = false,
+      shownJury: Option[String] = None
+  ): RoundService.ReviewDistribution =
     dao.findById(roundId) match {
       case None => RoundService.ReviewDistribution.NotInReview
       case Some(round) =>
         try {
-          // the round's state checked under enqueueOrFail's locks, taken in id order
-          val job = WriteTx.write { implicit session =>
-            enqueueOrFail(round, completingCreation = true, createdBy, mode = RoundDistributionHandler.Mode.Distribute,
-              requireInReview = true)
-          }
+          // the contest's jurors among those posted, deleted accounts left out (as the picker lists them)
+          val chosen = jurors.map(ids => User.loadJurors(round.contestId, ids).filter(_.deletedAt.isEmpty).distinct
+            .sortBy(_.getId))
+          // the round as read in the transaction, its previous rounds locked with it (enqueueOrFail, id
+          // order); read again under the locks: changed in between (a re-apply ending), once more
+          def attempt(left: Int): Job =
+            try WriteTx.write { implicit session =>
+              val fresh = dao.findById(roundId).getOrElse(throw NotInReviewRefused)
+              val perFile = distribution.getOrElse(fresh.distribution)
+              enqueueOrFail(fresh.copy(distribution = perFile), completingCreation = true, createdBy,
+                mode = RoundDistributionHandler.Mode.Distribute, requireInReview = true,
+                underLocks = s => reviewJury(fresh, chosen, perFile, confirmPrevChanged, shownJury)(s))
+            } catch {
+              case StaleRound if left > 0 => attempt(left - 1)
+            }
+          val job = attempt(1)
           logger.info(s"Round $roundId: distributing its reviewed images (job ${job.id}), by user ${createdBy.orNull}")
           jobs.started(job.id)
           RoundService.ReviewDistribution.Started(JobJdbc.findById(job.id).getOrElse(job))
         } catch {
           case AlreadyDistributing(active) => RoundService.ReviewDistribution.Running(active)
           case NotInReviewRefused          => RoundService.ReviewDistribution.NotInReview
+          case ReviewRefused(key, args)    => RoundService.ReviewDistribution.Refused(key, args)
+          case StaleRound                  =>
+            distributionJob(roundId).fold[RoundService.ReviewDistribution](RoundService.ReviewDistribution.NotInReview)(
+              RoundService.ReviewDistribution.Running(_))
           // a previous round having a juror added (its rebalance would fail on the freeze)
           case refused: RoundDistributionHandler.ExcludeRoundsRefused =>
             RoundService.ReviewDistribution.Refused(refused.refusal.key, refused.refusal.args)
+        }
+    }
+
+  /** Under the round's lock, before its distribute is queued: the jurors it goes to (`chosen`, else
+    * the round's), refused ([[ReviewRefused]]) as [[distributeReviewed]] says, then the chosen ones
+    * and `perFile` written.
+    */
+  private def reviewJury(locked: Round, chosen: Option[Seq[User]], perFile: Int, confirmPrevChanged: Boolean,
+      shownJury: Option[String])(implicit session: DBSession): Unit = {
+    val roundId = locked.getId
+    val round = dao.findById(roundId).getOrElse(throw NotInReviewRefused)
+    // what enqueueOrFail locked and freezes must be the round's now
+    if (round.previousIds != locked.previousIds) throw StaleRound
+    val number = round.number.toString
+    // a re-apply that didn't finish (failed or cancelled) left its filters saved and its files half
+    // chosen: re-apply again or Retry it first (an active one is refused as running)
+    RoundService.latestJob(round).filter(j => RoundDistributionHandler.reapplyMode(j) && !j.isDone && !j.isActive)
+      .foreach(_ => throw ReviewRefused(ReapplyUnfinishedKey, Seq(number)))
+    val stored = User.distributionJurors(roundId).sortBy(_.getId)
+    val jury = chosen.getOrElse(stored)
+    if (jury.isEmpty) throw ReviewRefused(NoJurorsKey, Seq(number))
+    if (perFile < 0 || perFile > jury.size) throw ReviewRefused(TooManyPerFileKey, Seq(perFile.toString, jury.size.toString))
+    val changed = chosen.exists(_.flatMap(_.id) != stored.flatMap(_.id)) || perFile != round.distribution
+    // the page showed other jurors than the round has now (a juror added since): its picker would drop them
+    if (chosen.exists(_.flatMap(_.id) != stored.flatMap(_.id)) && shownJury.exists(_ != RoundService.jurySignature(roundId)))
+      throw ReviewRefused(JurorsChangedKey, Seq(number))
+    // a partial distribution (a failed or cancelled distribute) gave files to the jurors: they stay
+    if (changed && RoundImageJdbc.hasVotes(roundId)) throw ReviewRefused(JurorsLockedKey, Seq(number))
+    if (!confirmPrevChanged && RoundService.prevChanged(round)) throw ReviewRefused(PrevChangedKey, Seq(number))
+    chosen.filter(_ => changed).foreach { users =>
+      val ids = users.flatMap(_.id)
+      sql"DELETE FROM round_user WHERE round_id = $roundId AND user_id NOT IN ($ids)".update()
+      users.foreach { u =>
+        sql"""INSERT INTO round_user (user_id, round_id, role, active)
+              VALUES (${u.getId}, $roundId, ${u.contestRole.getOrElse(User.JURY_ROLE)}, TRUE)
+              ON DUPLICATE KEY UPDATE active = TRUE""".update()
+      }
+    }
+    if (perFile != round.distribution)
+      sql"UPDATE round SET distribution = $perFile, created_at = created_at WHERE id = $roundId".update()
+    if (changed)
+      logger.info(s"Round $roundId: jurors set on its review to ${jury.flatMap(_.id).mkString(",")}, $perFile per file")
+  }
+
+  /** Whether the round can have its filters re-applied now (P3-5): in review, no vote in it, no job
+    * of it queued or running. A plain read: [[reapplyFilters]] checks again under the round's lock.
+    */
+  def reapplyable(round: Round): Boolean =
+    round.inReview && !RoundImageJdbc.hasVotes(round.getId) &&
+      JobJdbc.activeByDedupeKey(RoundDistributionHandler.dedupeKey(round.getId)).isEmpty
+
+  /** "Re-apply filters" (P3-5): the round held in review gets the filters of `updated` (the round
+    * form's), and a `fill` job in re-apply mode: the round's `fill` files that no longer pass are
+    * deleted (D16), the new matches added, a top-N ranked again from scratch (D17); the round stays
+    * in review. Only the filters of `updated` are taken (the settings that choose files,
+    * [[Round.updateFilters]]'s); the rest stays the stored round's. Under the round's lock (and its
+    * new previous rounds', in id order):
+    * refused unless it is in review with no job ([[RoundService.ReviewDistribution.NotInReview]],
+    * [[RoundService.ReviewDistribution.Running]]) and no vote; previous rounds of another contest, of
+    * mixed rating, the round itself or a round taking files from it are refused before anything is
+    * written. Authorization is the caller's: the round's contest's admins and root (D20).
+    *
+    * @param titles a pasted list of files ("Add files"), added after the filters' files
+    * @param alsoWrite the caller's other writes of the round, under its lock: done only if the re-apply
+    *                  is queued
+    */
+  def reapplyFilters(updated: Round, createdBy: Option[Long], titles: Seq[String] = Nil,
+      alsoWrite: DBSession => Unit = _ => ()): RoundService.ReviewDistribution =
+    dao.findById(updated.getId) match {
+      case None => RoundService.ReviewDistribution.NotInReview
+      case Some(stored) =>
+        val roundId = stored.getId
+        val u = updated
+        val merged = stored.copy(previous = u.previous, prevSelectedBy = u.prevSelectedBy,
+          prevRejectedBy = u.prevRejectedBy, prevRejectedMode = u.prevRejectedMode, prevMinAvgRate = u.prevMinAvgRate,
+          category = u.category, excludeCategory = u.excludeCategory, categoryClause = u.categoryClause,
+          regions = u.regions, minImageSize = u.minImageSize, minMpx = u.minMpx, monuments = u.monuments,
+          topImages = u.topImages, topBinaryOrder = u.topBinaryOrder, specialNomination = u.specialNomination,
+          mediaType = u.mediaType, excludeRounds = u.excludeRounds)
+        val canonical = merged.withFixedCategories.withCanonicalCategoryRule
+        // previous rounds of its contest, one rating (refused by a requirement, which the form shows)
+        val prevRounds = RoundDistributionHandler.previousRounds(canonical)
+        // as at creation, only rounds created before it: never itself, nor a round taking files from it
+        if (canonical.previousIds.exists(_ >= roundId))
+          RoundService.ReviewDistribution.Refused(PreviousSelfKey, Seq(stored.number.toString))
+        else {
+          val configured = canonical.withExplicitTopOrder(prevRounds.exists(_.isBinary))
+          try {
+            val job = WriteTx.write { implicit session =>
+              // the new previous rounds are locked and frozen while it runs; the old ones were released
+              // at the fill's end (D18) and aren't read
+              enqueueOrFail(configured,
+                completingCreation = true, createdBy, titles, fromReview = true, requireInReview = true, reapply = true,
+                underLocks = { s =>
+                  // D16: no file is deleted once the round has a vote
+                  if (RoundImageJdbc.hasVotes(roundId)(s)) throw ReviewRefused(ReapplyVotedKey, Seq(stored.number.toString))
+                  Round.updateFilters(roundId, configured)(s)
+                  // the caller's other changes (the form's name, score rule), committed only with the job
+                  alsoWrite(s)
+                })
+            }
+            logger.info(s"Round $roundId: filters re-applied in review (job ${job.id}), by user ${createdBy.orNull}")
+            jobs.started(job.id)
+            RoundService.ReviewDistribution.Started(JobJdbc.findById(job.id).getOrElse(job))
+          } catch {
+            case AlreadyDistributing(active) => RoundService.ReviewDistribution.Running(active)
+            case NotInReviewRefused          => RoundService.ReviewDistribution.NotInReview
+            case ReviewRefused(key, args)    => RoundService.ReviewDistribution.Refused(key, args)
+          }
         }
     }
 
@@ -475,6 +628,58 @@ object RoundService {
 
   /** enqueueOrFail's refusal of a distribute of a round not in review (read under its locks). */
   private case object NotInReviewRefused extends RuntimeException("not in review", null, false, false)
+
+  /** distributeReviewed's round changed between its read and its locks: read again. */
+  private case object StaleRound extends RuntimeException("stale round", null, false, false)
+
+  /** A review action refused under the round's lock: its message key and arguments. */
+  private final case class ReviewRefused(key: String, args: Seq[String])
+      extends RuntimeException(key, null, false, false)
+
+  /** Distribute refused: the round has no juror (chosen, or its own). */
+  val NoJurorsKey = "round.review.distribute.no.jurors"
+  /** Distribute refused: more jurors per file than jurors. */
+  val TooManyPerFileKey = "round.review.distribute.too.many.per.file"
+  /** Distribute refused: the round's jurors changed since the page showed them (M1 of the review). */
+  val JurorsChangedKey = "round.review.distribute.jurors.changed"
+  /** Distribute refused: a re-apply of the filters failed or was cancelled. */
+  val ReapplyUnfinishedKey = "round.review.distribute.reapply.unfinished"
+  /** Distribute refused: the jurors changed after a partial distribution gave them files. */
+  val JurorsLockedKey = "round.review.distribute.jurors.locked"
+  /** Distribute refused: previous rounds' votes changed since the fill, not confirmed (D18). */
+  val PrevChangedKey = "round.review.prev.changed.confirm"
+  /** Re-apply refused: the round has a vote (D16). */
+  val ReapplyVotedKey = "round.reapply.voted"
+  /** Re-apply refused: the round itself, or one taking files from it, as a previous round. */
+  val PreviousSelfKey = "round.reapply.previous.self"
+
+  /** The round's latest distribution job, if any. */
+  def latestJob(round: Round): Option[Job] =
+    JobJdbc.latestBySubjects(RoundDistributionHandler.Kind, RoundDistributionHandler.SubjectType, Seq(round.getId))
+      .get(round.getId)
+
+  /** The round's latest fill, if its latest distribution job is one, done: what the review shows of
+    * it (the re-apply diff, the previous rounds' fingerprint).
+    */
+  def latestFill(round: Round): Option[Job] =
+    latestJob(round).filter(j => j.isDone && RoundDistributionHandler.fillOnly(j))
+
+  /** The round's jurors as the review page shows them, active and stopped ids
+    * ([[services.distribution.RoundRebalanceService.signature]]'s form): its Distribute posts it back.
+    */
+  def jurySignature(roundId: Long): String = {
+    val (active, stopped) = RoundUser.byRoundId(roundId).partition(_.active)
+    active.map(_.userId).distinct.sorted.mkString(",") + "|" + stopped.map(_.userId).distinct.sorted.mkString(",")
+  }
+
+  /** D18: the round is in review and its previous rounds' votes changed since its latest fill read
+    * them ([[RoundDistributionHandler.prevFingerprint]]). False without previous rounds, or for a
+    * fill from before the fingerprint was recorded.
+    */
+  def prevChanged(round: Round)(implicit session: DBSession = scalikejdbc.AutoSession): Boolean =
+    round.inReview && round.previousIds.nonEmpty &&
+      latestFill(round).flatMap(j => RoundDistributionHandler.stateOf(j).prevFingerprint).exists(recorded =>
+        !RoundDistributionHandler.prevFingerprint(round.previousIds).contains(recorded))
 
   /** What a creation never completed wanted after its fill, by its latest job (`latest`): held in
     * review (D3), or distributed after it (D4); a job from before P3 (no mode) distributed in one

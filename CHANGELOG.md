@@ -40,6 +40,18 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   (admins, root) gives them out and opens the round. Organizers see the page read only. The rounds
   list shows **Images ready: N — Review / Distribute to jurors**. Admin and organizer guides.
 
+- **Jurors chosen at Distribute; re-apply filters in review** (P3-5 of the round-editing plan;
+  developed 2026-11-16, `stack/169`, after the 26.11.9 RC report that a round couldn't be created
+  for review without jurors): a round created for review needs no jurors; its review page's
+  **Distribute to jurors** has the juror picker and the file distribution. While the round waits
+  for review with no votes, its form's filters are editable and **Re-apply filters** selects its
+  images again (files that no longer pass removed, new matches added, a top-N ranked again; files
+  from a list and disqualified ones kept), and the review page shows how many were added and
+  removed. The review page warns when previous rounds' votes changed since the images were
+  selected. **Changed meaning:** the monument ids filter now trims spaces after its commas: a
+  round whose filter reads `a, b` matched only `a` before (` b` matched nothing) and now matches
+  both; such a round's next distribution or "Distribute new files" can add `b`'s files.
+
 - **Monument page** (the maintainer's decisions D5-D9 of 2026-11-13; developed 2026-11-13,
   `stack/140-monuments`): the monument box of a file's large view (in a round and on the contest
   files page; jurors see it too) has one link, **Monument** and its id, to a page with the

@@ -91,7 +91,22 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
     * (GatlingSmokeSpec's fixture app had made its pool ScalikeJDBC's default), whose
     * INNODB_TRX was empty.
     */
-  private def lockWait(waiter: Future[_]): String = {
+  private def lockWait(waiter: Future[_]): String = lockWaitOf(waiter, None)
+
+  /** A waiter's database connection, recorded by the waiter as its transaction begins
+    * ([[record]]): [[lockWaitOf]] then counts only that connection's lock wait. Any other
+    * transaction of the server in LOCK WAIT (another spec's or app's, in the full suite) would
+    * otherwise end the wait before the waiter even ran: CI's failure of 2026-11-16, the restore
+    * started after the removal had committed, and found nothing to restore.
+    */
+  private final class Waiter {
+    @volatile private var id: Option[Long] = None
+    def record()(implicit session: DBSession): Unit = id = sql"SELECT CONNECTION_ID()".map(_.long(1)).single()
+    def connection: Option[Long] = id
+  }
+
+  /** [[lockWait]], counting only `of`'s connection when given (none until it has recorded it). */
+  private def lockWaitOf(waiter: Future[_], of: Option[Waiter]): String = {
     // the pool's URL without its options: they name the pool's user
     val url = DB.readOnly(implicit s => s.connection.getMetaData.getURL).takeWhile(_ != '?')
     val root = java.sql.DriverManager.getConnection(url, "root", SharedTestDb.password)
@@ -106,7 +121,9 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
       var outcome = Option.empty[String]
       while (outcome.isEmpty) {
         val now = transactions
-        if (now.exists(_.contains(" LOCK WAIT "))) outcome = Some("LOCK WAIT")
+        val waiting = now.filter(_.contains(" LOCK WAIT "))
+          .filter(row => of.forall(_.connection.exists(id => row.startsWith(s"$id "))))
+        if (waiting.nonEmpty) outcome = Some("LOCK WAIT")
         else if (waiter.isCompleted) outcome = Some(s"done without waiting: ${waiter.value}")
         else if (deadline.isOverdue()) outcome = Some(s"no lock wait in 20 s: $now")
         // InnoDB refreshes INNODB_TRX's cache only when it wasn't read for 100 ms: polled more
@@ -542,10 +559,12 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
           } finally sql"SET SESSION innodb_lock_wait_timeout = DEFAULT".execute.apply(): Unit
         })
         held.await(30, TimeUnit.SECONDS) must beTrue
-        val restore = Future(DB.localTx { implicit s => RoundWrites.lock(Seq(round.getId)); ImageJdbc.restoreVotes(Seq(1L)) })
+        val waiter = new Waiter
+        val restore = Future(DB.localTx { implicit s =>
+          waiter.record(); RoundWrites.lock(Seq(round.getId)); ImageJdbc.restoreVotes(Seq(1L)) })
         // the restore waits at the file's votes, holding nothing aside: the holder locks those
         // next without waiting (the restore that locked vote_aside first deadlocked here)
-        lockWait(restore) === "LOCK WAIT"
+        lockWaitOf(restore, Some(waiter)) === "LOCK WAIT"
         lockAside.countDown()
         Await.result(holder, 30.seconds) === 1
         Await.result(restore, 30.seconds) === Seq(round.getId)
@@ -576,11 +595,12 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
           } finally sql"SET SESSION innodb_lock_wait_timeout = DEFAULT".execute.apply(): Unit
         })
         held.await(30, TimeUnit.SECONDS) must beTrue
-        val restore = Future(DB.localTx(implicit s => DeletedFiles.restore(Seq(1L))))
+        val waiter = new Waiter
+        val restore = Future(DB.localTx { implicit s => waiter.record(); DeletedFiles.restore(Seq(1L)) })
         // the restore waits at the round, holding none of the file's votes: the removal takes
         // them without waiting (the restore that read the round last, after locking the votes,
         // deadlocked here)
-        lockWait(restore) === "LOCK WAIT"
+        lockWaitOf(restore, Some(waiter)) === "LOCK WAIT"
         removeVotes.countDown()
         Await.result(holder, 30.seconds) === 1
         // no votes back; the file's row, kept with none (P3-1), is `in` again

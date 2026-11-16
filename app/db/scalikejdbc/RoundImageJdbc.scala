@@ -7,7 +7,8 @@ import scalikejdbc._
   * (docs/plans/2026-11-02-round-images-two-step.md, §5 and P1).
   *
   * A row is never deleted by a write here (P3-1, invariant 8 ended: a round is filled before
-  * it is distributed, so a filled file has no votes yet). Its status follows the pair's votes:
+  * it is distributed, so a filled file has no votes yet), but by a re-apply's Prune of a round in
+  * review with no vote (D16, [[prune]]). Its status follows the pair's votes:
   * `in` while it has `vote` rows, `deleted` while its votes are only in `vote_aside` (a file
   * deleted on Commons in an open round); a pair with no votes keeps its row and its status (a
   * file filled and not distributed yet, or one whose votes were deleted). A vote-less file
@@ -444,6 +445,48 @@ object RoundImageJdbc {
             AND NOT EXISTS (SELECT 1 FROM vote v WHERE v.round_id = ri.round_id AND v.page_id = ri.page_id)
             AND NOT EXISTS (SELECT 1 FROM vote_aside d WHERE d.round_id = ri.round_id AND d.page_id = ri.page_id)
           ORDER BY ri.page_id LIMIT $limit""".map(_.long(1)).list()
+
+  /** Whether the round has a vote, in `vote` or aside (`vote_aside`): a re-apply deletes no file
+    * then (D16). Read under the round's lock by the writers that depend on it.
+    */
+  def hasVotes(roundId: Long)(implicit session: DBSession = AutoSession): Boolean =
+    sql"""SELECT 1 FROM vote WHERE round_id = $roundId
+          UNION ALL SELECT 1 FROM vote_aside WHERE round_id = $roundId LIMIT 1""".map(_ => ()).first().isDefined
+
+  /** How the rows a re-apply checks against the filters were added (P3-5): by the filters, of the
+    * creation's fill or of "Distribute new files" in review (the maintainer, 2026-11-16).
+    */
+  val Prunable: Seq[String] = Seq(AddedHow.Fill, AddedHow.NewFiles)
+
+  /** The next window after `cursor`, by page id, of the round's files a re-apply checks against the
+    * filters (P3-5): `in`, added by the filters ([[Prunable]]), not by the job `jobId`. At most
+    * `limit` page ids.
+    */
+  def filledWindow(roundId: Long, jobId: Long, cursor: Long, limit: Int)(implicit session: DBSession): Seq[Long] =
+    sql"""SELECT page_id FROM round_image
+          WHERE round_id = $roundId AND page_id > $cursor AND status = ${Status.In} AND added_how IN ($Prunable)
+            AND NOT (added_by_job_id <=> $jobId)
+          ORDER BY page_id LIMIT $limit""".map(_.long(1)).list()
+
+  /** Deletes the round's `in` rows of `pageIds` the filters added ([[Prunable]]; a re-apply's Prune,
+    * D16: of a round with no vote; the caller holds the round's lock and has checked that). A row of
+    * any other status or origin, or with a vote or one aside, is never deleted here.
+    *
+    * @return the rows deleted
+    */
+  def prune(roundId: Long, pageIds: Seq[Long])(implicit session: DBSession): Int =
+    if (pageIds.isEmpty) 0
+    else {
+      RoundWrites.requireRounds(Seq(roundId))
+      pageIds.distinct.sorted.grouped(Chunk).map { chunk =>
+        sql"""DELETE FROM round_image
+              WHERE round_id = $roundId AND page_id IN ($chunk) AND status = ${Status.In} AND added_how IN ($Prunable)
+                AND NOT EXISTS (SELECT 1 FROM vote v WHERE v.round_id = round_image.round_id AND v.page_id = round_image.page_id)
+                AND NOT EXISTS (SELECT 1 FROM vote_aside d
+                                WHERE d.round_id = round_image.round_id AND d.page_id = round_image.page_id)"""
+          .update()
+      }.sum
+    }
 
   /** The round's files, whatever their status: those with votes moved aside too. */
   def countAll(roundId: Long)(implicit session: DBSession = AutoSession): Long =

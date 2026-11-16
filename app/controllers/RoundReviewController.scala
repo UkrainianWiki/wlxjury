@@ -2,6 +2,8 @@ package controllers
 
 import db.scalikejdbc.{ImageJdbc, MonumentJdbc, Round, RoundImageJdbc, RoundStatLinks, User}
 import modules.BlockingExecutionContext
+import play.api.data.Form
+import play.api.data.Forms.{boolean, mapping, number, optional, seq, text}
 import play.api.mvc.{AnyContent, ControllerComponents, EssentialAction, Request, Result}
 import services.RoundService
 import services.distribution.RoundDistributionHandler
@@ -21,6 +23,14 @@ import javax.inject.Inject
   * none; Distribute for its admins and root, a POST with the CSRF token, never switching the
   * session's contest, refused unless the round is in review ([[Round.inReview]]) with no job.
   * Jurors never see a round in review: it is `distributing`, hidden from them everywhere.
+  *
+  * Distribute picks the jurors (P3: a round created for review may have none yet): the round
+  * form's juror picker and "file distribution" select ([[distributeForm]]), the round's jurors
+  * chosen (else the contest's, as the new-round form has them), saved with the distribute under
+  * the round's lock ([[RoundService.distributeReviewed]]); read only once the round has a vote (a
+  * partial distribution). A POST without the picker (the rounds list's button) distributes to the
+  * round's jurors, refused if it has none. The re-apply diff (P3-5) and the previous rounds'
+  * warning (D18, with its confirmation) show here.
   */
 class RoundReviewController @Inject() (
     cc: ControllerComponents,
@@ -49,14 +59,36 @@ class RoundReviewController @Inject() (
           val files = ImageJdbc.listFiles(list, view.region, pager.pageSize, pager.offset)
           val job = JobJdbc.latestBySubjects(RoundDistributionHandler.Kind, RoundDistributionHandler.SubjectType,
             Seq(round.getId)).get(round.getId)
+          val distributable = mayDistribute(user, round) && round.inReview && !job.exists(_.isActive)
+          val roundJurors = User.distributionJurors(round.getId).sortBy(_.getId)
+          // the picker's choices, for those who may distribute: the contest's jurors
+          val contestJurors = if (distributable) User.loadJurors(round.contestId).filter(_.deletedAt.isEmpty) else Nil
+          val chosen = if (roundJurors.nonEmpty) roundJurors.flatMap(_.id) else contestJurors.flatMap(_.id)
+          val lastFill = job.filter(j => j.isDone && RoundDistributionHandler.fillOnly(j))
+          // D18's check reads the previous rounds' votes: once per page view, on the review's main view only
+          // (its first page of the round's files in all regions), not on every page or region of the list
+          val mainView = page <= 1 && region == "all" && status == RoundImageJdbc.Status.In
           val summary = RoundReview(
             round = round,
             statusCounts = counts,
             addedHow = RoundImageJdbc.addedHowCounts(round.getId),
             conflicts = RoundStatLinks.counts(round).conflicts,
             job = job,
-            mayDistribute = mayDistribute(user, round) && round.inReview && !job.exists(_.isActive),
-            mayEdit = mayDistribute(user, round)
+            mayDistribute = distributable,
+            mayEdit = mayDistribute(user, round),
+            roundJurors = roundJurors,
+            contestJurors = contestJurors,
+            jurorsEditable = distributable && !RoundImageJdbc.hasVotes(round.getId),
+            prevChanged = mainView && round.inReview && RoundService.prevChanged(round),
+            reapplied = lastFill.filter(RoundDistributionHandler.reapplyMode).map { j =>
+              val st = RoundDistributionHandler.stateOf(j)
+              ReapplyDiff(st.imagesAdded, st.removedTotal, st.removedTitles)
+            },
+            // a re-apply failed or cancelled: its filters saved, its files half chosen (Distribute refuses)
+            reapplyUnfinished = round.inReview &&
+              job.exists(j => RoundDistributionHandler.reapplyMode(j) && !j.isDone && !j.isActive),
+            distributeForm = distributeForm.fill(DistributeChoice(jurorsShown = true, chosen.map(_.toString),
+              Some(round.distribution), confirmPrevChanged = false, jury = Some(RoundService.jurySignature(round.getId))))
           )
           Secured.switchingContest(sessionUser, user)(
             Ok(views.html.contestFiles(user, files, pager, view, Some(summary))))
@@ -122,8 +154,16 @@ class RoundReviewController @Inject() (
           val user = Secured.inContest(sessionUser, round.contestId)
           val messages = messagesApi.preferred(request)
           val back = Redirect(routes.RoundReviewController.review(round.getId))
+          // the jurors as picked (the picker shown: none picked is refused as no jurors), else the round's
+          val bound = distributeForm.bindFromRequest().fold(_ => None, Some(_))
+          val choice = bound.getOrElse(DistributeChoice())
           if (!mayDistribute(user, round)) onUnAuthorized(sessionUser, request, Secured.Denial.round(round, User.ADMIN_ROLES))
-          else roundsService.distributeReviewed(round.getId, user.id) match {
+          else if (bound.isEmpty) back.flashing("error" -> messages("error.invalid"))
+          else roundsService.distributeReviewed(round.getId, user.id,
+            jurors = Option.when(choice.jurorsShown)(choice.jurors.flatMap(_.toLongOption)),
+            distribution = choice.distribution.filter(_ => choice.jurorsShown),
+            confirmPrevChanged = choice.confirmPrevChanged,
+            shownJury = choice.jury.filter(_ => choice.jurorsShown)) match {
             case RoundService.ReviewDistribution.Started(_) =>
               back.flashing("success" -> messages("round.review.distribute.started", round.number))
             case RoundService.ReviewDistribution.Running(_) =>
@@ -170,7 +210,34 @@ object RoundReviewController {
 
   /** The review list's tabs: the round's files `in` it, deleted on Commons, disqualified. */
   val Statuses: Seq[String] = Seq(RoundImageJdbc.Status.In, RoundImageJdbc.Status.Deleted, RoundImageJdbc.Status.Dq)
+
+  /** Distribute's form: the round form's juror picker (`jurors[]`, ids) and "file distribution"
+    * select (jurors per file, 0 for all), `jurorsShown` when the page had them (a POST without, the
+    * rounds list's, keeps the round's jurors), and the D18 confirmation.
+    */
+  val distributeForm: Form[DistributeChoice] = Form(mapping(
+    "jurorsShown" -> boolean,
+    "jurors" -> seq(text).verifying("error.invalid", _.size <= 10000),
+    "distribution" -> optional(number(min = 0)),
+    "confirmPrevChanged" -> boolean,
+    // the round's jurors as the page showed them (RoundService.jurySignature)
+    "jury" -> optional(text(maxLength = 20000))
+  )(DistributeChoice.apply)(DistributeChoice.unapply))
 }
+
+/** What Distribute's form posted ([[RoundReviewController.distributeForm]]). */
+final case class DistributeChoice(
+    jurorsShown: Boolean = false,
+    jurors: Seq[String] = Nil,
+    distribution: Option[Int] = None,
+    confirmPrevChanged: Boolean = false,
+    jury: Option[String] = None
+)
+
+/** A re-apply's result (P3-5): files added, files removed (no longer passing, D16) and the first
+  * of those removed.
+  */
+final case class ReapplyDiff(added: Long, removed: Long, removedTitles: Seq[String])
 
 /** The review page's summary: the round's files by status and by how they were added, its
   * conflicts of interest, its latest distribution job, and whether the viewer may distribute it
@@ -183,7 +250,14 @@ final case class RoundReview(
     conflicts: Int,
     job: Option[services.jobs.Job],
     mayDistribute: Boolean,
-    mayEdit: Boolean = false
+    mayEdit: Boolean = false,
+    roundJurors: Seq[User] = Nil,
+    contestJurors: Seq[User] = Nil,
+    jurorsEditable: Boolean = false,
+    prevChanged: Boolean = false,
+    reapplied: Option[ReapplyDiff] = None,
+    reapplyUnfinished: Boolean = false,
+    distributeForm: Form[DistributeChoice] = RoundReviewController.distributeForm
 ) {
   def count(status: String): Int = statusCounts.getOrElse(status, 0)
 }

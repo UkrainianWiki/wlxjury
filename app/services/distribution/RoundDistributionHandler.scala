@@ -55,6 +55,10 @@ import scala.collection.mutable
   *                       with the person it is by and their role
   * @param rescanned      a distribute found files still to give at its end (a file restored on
   *                       Commons below its cursor) and went over the round once more
+  * @param pruned         a re-apply's files removed ([[Pruned]])
+  * @param prevFingerprint a fill's end: the previous rounds' votes as it read them
+  *                       ([[RoundDistributionHandler.prevFingerprint]]); the review page warns when
+  *                       they changed since (D18)
   */
 final case class DistributionState(
     phase: String,
@@ -76,8 +80,34 @@ final case class DistributionState(
     missingTitles: Seq[String] = Nil,
     coiLeftOut: Long = 0L,
     coiTitles: Seq[String] = Nil,
-    rescanned: Boolean = false
-)
+    rescanned: Boolean = false,
+    pruned: Pruned = Pruned(),
+    prevFingerprint: Option[String] = None
+) {
+  /** [[Pruned.count]]: the count check's. */
+  def removed: Long = pruned.count
+
+  /** [[Pruned.total]]: the review page's. */
+  def removedTotal: Long = pruned.total
+
+  /** [[Pruned.titles]]. */
+  def removedTitles: Seq[String] = pruned.titles
+}
+
+/** A re-apply's files removed (P3-5): the round's `fill` and `new_files` rows from before it that no
+  * longer pass the filters, deleted by its "scan" phase (D16).
+  *
+  * @param count  since `imagesBefore` was last counted (the count check subtracts them; a Retry after a
+  *               failed count check starts it again)
+  * @param titles the first [[RoundDistributionHandler.MaxMissingTitles]] of them: the review page's
+  *               re-apply diff
+  * @param total  all of them, across Retries: the review page's
+  */
+final case class Pruned(count: Long = 0L, titles: Seq[String] = Nil, total: Long = 0L)
+
+object Pruned {
+  implicit val format: OFormat[Pruned] = Json.using[Json.WithDefaultValues].format[Pruned]
+}
 
 object DistributionState {
   implicit val format: OFormat[DistributionState] = Json.using[Json.WithDefaultValues].format[DistributionState]
@@ -195,7 +225,8 @@ class RoundDistributionHandler @Inject() (
       case None =>
         try Right(contexts.getOrElseUpdate(job.id,
             context(roundIdOf(job), Some(jobAverageRules(job)), Some(jobRejectedMode(job)),
-              distribute = distributeMode(job), checkPrevious = !listOnly(job) && !distributeMode(job))))
+              distribute = distributeMode(job), checkPrevious = !listOnly(job) && !distributeMode(job),
+              checkJurors = !fillOnly(job))))
         catch { case refusal: ExcludeRoundsRefused => Left(refusal) }
     }
 
@@ -215,6 +246,8 @@ class RoundDistributionHandler @Inject() (
 
   /** Hooks for tests: run in a chunk's transaction before and after its rows are inserted. */
   protected def beforeInsert(round: Round, images: Seq[Image])(implicit session: DBSession): Unit = ()
+  /** A hook for tests: run in a re-apply's scan step, after its vote check, before its rows are pruned. */
+  protected def beforePrune(round: Round, pageIds: Seq[Long])(implicit session: DBSession): Unit = ()
   protected def afterInsert(round: Round, rows: Seq[Vote])(implicit session: DBSession): Unit = ()
 
   /** What the steps need. Rated previous rounds score their files by `averageRules` if given (a
@@ -224,7 +257,7 @@ class RoundDistributionHandler @Inject() (
     */
   private def context(roundId: Long, averageRules: Option[Long => AverageRule],
       rejectedMode: Option[RejectedMode] = None, countOnly: Boolean = false, distribute: Boolean = false,
-      checkPrevious: Boolean = true): Context = {
+      checkPrevious: Boolean = true, checkJurors: Boolean = true): Context = {
     val round = Round.findById(roundId).getOrElse(throw new NoSuchElementException(s"Round $roundId not found"))
     val prevRounds = RoundDistributionHandler.previousRounds(round)
       .map(p => averageRules.filterNot(_ => p.isBinary).fold(p)(rules => p.copy(averageRule = rules(p.getId))))
@@ -239,7 +272,9 @@ class RoundDistributionHandler @Inject() (
     // queueing, this is the backstop (a distribute reads no votes of them)
     if (!countOnly && checkPrevious) RoundDistributionHandler.requireNoPreviousRebalance(round)
     val jurors = User.distributionJurors(roundId).sortBy(_.getId).toIndexedSeq
-    DistributeImages.checkJury(round, jurors)
+    // a fill (P3) gives no file to a juror: a round held in review may have none yet (they are
+    // chosen before its Distribute, which checks them); "Count new files" only counts
+    if (checkJurors && !countOnly) DistributeImages.checkJury(round, jurors)
     val categoryRule = round.categoryRule
     if (!distribute) categoryRule.requireValid()
     // from Commons: a distribute applies no filter, so it fetches none (and runs while Commons is down)
@@ -330,7 +365,7 @@ class RoundDistributionHandler @Inject() (
     * and freezes nothing.
     */
   def initialState(round: Round, listOnly: Boolean = false, distribute: Boolean = false,
-      completingCreation: Boolean = true)(implicit session: DBSession): JsObject =
+      completingCreation: Boolean = true, reapply: Boolean = false)(implicit session: DBSession): JsObject =
     if (listOnly) Json.toJsObject(DistributionState(phase = Phase.List))
     else if (distribute) {
       // a distribute reads no votes: it freezes them only to close them at its end, as a creation
@@ -343,7 +378,9 @@ class RoundDistributionHandler @Inject() (
       // a fill reads them
       Round.freeze(prevIds)
       val topN = prevIds.headOption.flatMap(_ => round.topImages)
-      Json.toJsObject(DistributionState(phase = if (topN.isDefined) Phase.Rank else Phase.Distribute, frozen = prevIds))
+      // a re-apply (P3-5) scans the round's files first (after the top-N's ranking)
+      val first = if (topN.isDefined) Phase.Rank else if (reapply) Phase.Scan else Phase.Distribute
+      Json.toJsObject(DistributionState(phase = first, frozen = prevIds))
     }
 
   override def onFailed(job: Job, ctx: StepContext): JsObject = end(job, ctx)
@@ -410,6 +447,11 @@ class RoundDistributionHandler @Inject() (
       else Round.findById(roundId).map(_.previousIds).getOrElse(Nil)
     // the round too, as creating the job locks it (RoundConflicts.disqualify)
     Round.lock((st.frozen ++ prevIds) :+ roundId)
+    // a fill queued on a round in review (a re-apply, "Distribute new files" there) only while it still is:
+    // distributed since, its files would go to no juror, and a re-apply would delete files of an open round
+    if (fillOnly(job) && fromReview(job)) Round.findById(roundId).filterNot(_.inReview).foreach { round =>
+      throw JobScheduler.RetryRefusal(ReviewGoneKey, Seq(round.number.toString))
+    }
     // not while a previous round is having a juror added (its votes moving; its rebalance would fail
     // on the freeze below): refused, rolling the Retry back, the job staying failed
     if (!listOnly(job)) Round.findById(roundId).foreach { round =>
@@ -421,8 +463,9 @@ class RoundDistributionHandler @Inject() (
     val resumed =
       if (!st.verifyFailed) st.copy(rebase = true)
       else
-        st.copy(phase = if (distributeMode(job)) Phase.Assign else if (listOnly(job)) Phase.List else Phase.Distribute,
-          cursor = 0L, candidatesSeen = 0L,
+        st.copy(phase = if (distributeMode(job)) Phase.Assign else if (listOnly(job)) Phase.List
+            else if (reapplyMode(job)) Phase.Scan else Phase.Distribute,
+          cursor = 0L, candidatesSeen = 0L, pruned = st.pruned.copy(count = 0L),
           imagesAdded = 0L, rowsAdded = 0L, imagesBefore = None, othersBefore = None, ownBefore = None,
           rebase = false, verifyFailed = false, listIndex = 0, missing = 0L,
           missingTitles = Nil, coiLeftOut = 0L, coiTitles = Nil)
@@ -433,7 +476,8 @@ class RoundDistributionHandler @Inject() (
   private def rebaseline(st: DistributionState, roundId: Long, jobId: Long)(implicit session: DBSession) =
     (st.imagesBefore, st.othersBefore) match {
       case (Some(before), Some(others)) =>
-        val now = RoundImageJdbc.countNotAddedBy(roundId, jobId)
+        // the rows a re-apply pruned since the baseline aren't others' change (`removed` counts them)
+        val now = RoundImageJdbc.countNotAddedBy(roundId, jobId) + st.removed
         st.copy(imagesBefore = Some(before + now - others), othersBefore = Some(now), rebase = false)
       case _ => st.copy(rebase = false)
     }
@@ -451,7 +495,7 @@ class RoundDistributionHandler @Inject() (
       case s if s.imagesBefore.isEmpty =>
         val total = imageCount(roundId)
         val own = RoundImageJdbc.countAddedBy(roundId, job.id)
-        s.copy(imagesBefore = Some(total - s.imagesAdded), othersBefore = Some(total - own),
+        s.copy(imagesBefore = Some(total - s.imagesAdded + s.removed), othersBefore = Some(total - own + s.removed),
           ownBefore = Some(own - s.imagesAdded), rebase = false)
       // the first step after a Retry: what others changed since the baseline isn't a mismatch
       case s if s.rebase => rebaseline(s, roundId, job.id)
@@ -460,11 +504,40 @@ class RoundDistributionHandler @Inject() (
 
     st.phase match {
       case Phase.Rank =>
+        // a re-apply ranks from scratch, the round's disqualified files skipped (D17)
         val ranked = DistributionSource.rank(c.prevRounds.flatMap(_.id), c.votes, c.denominators, c.topN.get, c.filter,
-          c.topOrder, c.excluded)
-        val next = st.copy(phase = Phase.Distribute, ranked = ranked.sorted,
+          c.topOrder, c.excluded, skipDqOf = Option.when(reapplyMode(job))(roundId))
+        val next = st.copy(phase = if (reapplyMode(job)) Phase.Scan else Phase.Distribute, ranked = ranked.sorted,
           total = Some(ranked.size.toLong + titleCountOf(job)), cursor = 0L)
         continue(next)
+
+      case Phase.Scan =>
+        // a re-apply (P3-5, D16): the round's `fill` files from before this job, a window by page id,
+        // checked against the filters as they are now; those that no longer pass are deleted, only
+        // while the round has no vote (read under its lock, which every vote writer takes first).
+        // `list`, `new_files`, `manual` and disqualified rows, and those this job adds, stay.
+        RoundWrites.lock(Seq(roundId))
+        if (RoundImageJdbc.hasVotes(roundId))
+          StepResult.Failed(JobError(ReapplyVotedKey, Seq(c.round.number.toString)), Json.toJsObject(st), progress(st))
+        else {
+          val ids = RoundImageJdbc.filledWindow(roundId, job.id, st.cursor, c.windowSize)
+          if (ids.isEmpty) continue(st.copy(phase = Phase.Distribute, cursor = 0L))
+          else {
+            val passing: Set[Long] =
+              if (c.topN.isDefined) st.ranked.toSet
+              else c.filter(candidates(c, roundId, st.cursor, ids.max, restrictTo = Some(ids))).map(_.pageId).toSet
+            val gone = ids.filterNot(passing.contains)
+            val titles =
+              if (gone.isEmpty || st.removedTitles.size >= MaxMissingTitles) Nil
+              else ImageJdbc.findByPageIds(gone.take(MaxMissingTitles - st.removedTitles.size)).values.map(_.title).toSeq.sorted
+            beforePrune(c.round, gone)
+            val pruned = RoundImageJdbc.prune(roundId, gone)
+            if (pruned > 0) ctx.afterCommit(RoundImageCounts.invalidate(roundId))
+            continue(st.copy(cursor = ids.max,
+              pruned = Pruned(st.removed + pruned, (st.removedTitles ++ titles).take(MaxMissingTitles),
+                st.removedTotal + pruned)))
+          }
+        }
 
       case Phase.Distribute =>
         val st1 = if (st.total.isDefined) st else st.copy(total = Some(estimate(c, st) + titleCountOf(job)))
@@ -550,7 +623,7 @@ class RoundDistributionHandler @Inject() (
 
       case Phase.Verify =>
         val count = imageCount(roundId)
-        val expected = st.imagesBefore.getOrElse(0L) + st.imagesAdded
+        val expected = st.imagesBefore.getOrElse(0L) + st.imagesAdded - st.removed
         // its own files exactly: what it added is all there, whatever others changed
         val own = st.ownBefore.map(_ => RoundImageJdbc.countAddedBy(roundId, job.id))
         val ownExpected = st.ownBefore.map(_ + st.imagesAdded)
@@ -622,6 +695,12 @@ class RoundDistributionHandler @Inject() (
     if (distributing) Round.setStatus(roundId, Round.Status.Paused, job.createdBy)
     settleFiles(roundId)
     ctx.afterCommit(RoundImageCounts.invalidate(roundId))
+    // the previous rounds' votes as this fill read them (they were frozen while it ran): the review
+    // page warns when they change before Distribute (D18)
+    // only for a round held in review (one distributed after the fill, or already open, never reads it)
+    val fingerprint =
+      if (!distributing || distributeAfter(job)) None
+      else prevFingerprint(Round.findById(roundId).map(_.previousIds).getOrElse(Nil))
     // its state as initialState gives it, the freeze done only once the scheduler has queued it: if
     // another job held the key, nothing is left frozen (the round stays held in review)
     val followUp = Option.when(distributeAfter(job))(
@@ -630,9 +709,10 @@ class RoundDistributionHandler @Inject() (
         state = Json.toJsObject(DistributionState(phase = Phase.Assign, frozen = prevIds)),
         progress = Progress(unit = Some("images")), createdBy = job.createdBy))
     logger.info(s"Round $roundId: selected ${st.imagesAdded} images" +
+      (if (reapplyMode(job)) s" (filters re-applied: ${st.removed} no longer passing removed)" else "") +
       (if (titleCountOf(job) > 0) s", with a list of ${titleCountOf(job)} files (${st.missing} not found)" else "") +
       (if (followUp.isDefined) "; distributing them next" else if (distributing) "; held for review" else ""))
-    StepResult.Done(Json.toJsObject(st.copy(frozen = Nil)), progress(st), followUp,
+    StepResult.Done(Json.toJsObject(st.copy(frozen = Nil, prevFingerprint = fingerprint)), progress(st), followUp,
       onFollowUpQueued = s => Round.freeze(prevIds)(s))
   }
 
@@ -727,10 +807,11 @@ class RoundDistributionHandler @Inject() (
     */
   private def origin(job: Job, listed: Boolean): RoundImageJdbc.Origin = {
     // files a round in review gets from "Distribute new files" are new files (§6), not its fill
+    // a re-apply's files are the round's fill (P3-5): a later re-apply checks them as such
     val creating = (job.params \ "completingCreation").asOpt[Boolean].getOrElse(false) && !fromReview(job)
     val how =
       if (listed) RoundImageJdbc.AddedHow.List
-      else if (creating) RoundImageJdbc.AddedHow.Fill
+      else if (creating || reapplyMode(job)) RoundImageJdbc.AddedHow.Fill
       else RoundImageJdbc.AddedHow.NewFiles
     RoundImageJdbc.Origin(how, Some(job.id))
   }
@@ -748,12 +829,17 @@ class RoundDistributionHandler @Inject() (
       DistributionSource.previousWindow(c.prevRounds.flatMap(_.id), c.votes, st.cursor, c.windowSize, c.excluded)
     else c.categoryId.fold(Window.empty)(DistributionSource.categoryWindow(_, st.cursor, c.windowSize, c.excluded))
 
-  private def candidates(c: Context, roundId: Long, from: Long, to: Long)(implicit
+  /** The candidates in (from, to], those already in the round left out; with `restrictTo`, only those
+    * files, whether in the round or not (a re-apply's scan checks the round's own files against the
+    * filters).
+    */
+  private def candidates(c: Context, roundId: Long, from: Long, to: Long, restrictTo: Option[Seq[Long]] = None)(implicit
       session: DBSession
   ): Seq[ImageWithRating] =
     if (c.prevRounds.nonEmpty)
-      DistributionSource.previousCandidates(c.prevRounds.flatMap(_.id), c.votes, from, to, roundId, c.excluded)
-    else c.categoryId.fold(Seq.empty[ImageWithRating])(DistributionSource.categoryCandidates(_, from, to, roundId, c.excluded))
+      DistributionSource.previousCandidates(c.prevRounds.flatMap(_.id), c.votes, from, to, roundId, c.excluded, restrictTo)
+    else c.categoryId.fold(Seq.empty[ImageWithRating])(
+      DistributionSource.categoryCandidates(_, from, to, roundId, c.excluded, restrictTo))
 
   /** Whatever a distribution of the round would add now ("Count new files"), without
     * adding it: the same windows and filters as the job, read only.
@@ -847,6 +933,8 @@ object RoundDistributionHandler {
     val Verify = "verify"
     val Assign = "assign"
     val Complete = "complete"
+    /** A re-apply (P3-5): the round's own `fill` files checked against the filters, before the fill. */
+    val Scan = "scan"
   }
 
   /** The job's pasted list of files to add to the round (`params.titles`), if it has one. */
@@ -913,7 +1001,7 @@ object RoundDistributionHandler {
 
   /** The distribute job a fill queues: its params, mode `distribute`, without the fill's list. */
   def distributeParams(job: Job): JsObject =
-    (job.params - "distributeAfter" - "titles" - "titleCount" - "listOnly" - "fromReview") ++
+    (job.params - "distributeAfter" - "titles" - "titleCount" - "listOnly" - "fromReview" - "reapply") ++
       Json.obj("mode" -> Mode.Distribute)
 
   /** The review's Distribute: mode `distribute`. */
@@ -921,6 +1009,29 @@ object RoundDistributionHandler {
 
   /** Queued on a round in review ("Distribute new files" there): its end leaves it in review. */
   def fromReview(job: Job): Boolean = (job.params \ "fromReview").asOpt[Boolean].getOrElse(false)
+
+  /** A fill re-applying the round's filters in review (P3-5): it scans the round's `fill` files
+    * first and deletes those that no longer pass (D16).
+    */
+  def reapplyMode(job: Job): Boolean = (job.params \ "reapply").asOpt[Boolean].getOrElse(false)
+
+  /** A Retry refused: the review fill's round is no longer in review. */
+  val ReviewGoneKey = "job.error.review.not.in.review"
+
+  /** A re-apply refused at its scan: the round has a vote now (D16: no file is deleted then). */
+  val ReapplyVotedKey = "job.error.reapply.voted"
+
+  /** The previous rounds' votes as a short text (their count, rate sum and a checksum of each
+    * vote's file, juror, round and rate), None without previous rounds: a fill records it as it
+    * ends, the review page compares it with the current one (D18). One read of their votes.
+    */
+  def prevFingerprint(prevIds: Seq[Long])(implicit session: DBSession = AutoSession): Option[String] =
+    if (prevIds.isEmpty) None
+    else
+      sql"""SELECT COUNT(*), COALESCE(SUM(rate), 0),
+                   COALESCE(BIT_XOR(CRC32(CONCAT_WS(':', page_id, jury_id, round_id, COALESCE(rate, 0)))), 0)
+            FROM vote WHERE round_id IN (${prevIds.distinct.sorted})"""
+        .map(rs => s"${rs.long(1)}:${rs.long(2)}:${rs.long(3)}").single()
 
   def roundIdOf(job: Job): Long =
     (job.params \ "roundId").asOpt[Long].orElse(job.subjectId).getOrElse(
@@ -1168,6 +1279,20 @@ object DistributionSource {
     if (excluded.isEmpty) sqls""
     else sqls"AND NOT EXISTS (SELECT 1 FROM round_image xe WHERE xe.round_id IN ($excluded) AND xe.page_id = $pageId)"
 
+  /** A candidate query's files: those not in the round ([[notInRound]]), or, `restrictTo`, only those
+    * files, in the round or not (a re-apply's scan window).
+    */
+  private def inWindow(roundId: Long, restrictTo: Option[Seq[Long]], pageId: SQLSyntax): SQLSyntax =
+    restrictTo.fold(notInRound(roundId, pageId)) { ids =>
+      if (ids.isEmpty) sqls"FALSE" else sqls"$pageId IN ($ids)"
+    }
+
+  /** Not a disqualified file of `roundId` (a re-apply's top-N, D17); nothing without it. */
+  private def notDqIn(roundId: Option[Long], pageId: SQLSyntax): SQLSyntax =
+    roundId.fold(sqls"")(id =>
+      sqls"""AND NOT EXISTS (SELECT 1 FROM round_image xq
+                             WHERE xq.round_id = $id AND xq.page_id = $pageId AND xq.status = ${RoundImageJdbc.Status.Dq})""")
+
   /** No vote filter: the previous rounds' files are those `in` them (round_image), read
     * one row per file instead of per vote.
     */
@@ -1188,12 +1313,13 @@ object DistributionSource {
       .single()
       .getOrElse(Window.empty)
 
-  def categoryCandidates(categoryId: Long, from: Long, to: Long, roundId: Long, excluded: Seq[Long])(implicit
+  def categoryCandidates(categoryId: Long, from: Long, to: Long, roundId: Long, excluded: Seq[Long],
+      restrictTo: Option[Seq[Long]] = None)(implicit
       session: DBSession
   ): Seq[ImageWithRating] =
     sql"""SELECT ${i.result.*} FROM category_members cm JOIN images i ON i.page_id = cm.page_id
           WHERE cm.category_id = $categoryId AND cm.page_id > $from AND cm.page_id <= $to
-            AND i.deleted_at IS NULL AND ${notInRound(roundId, sqls"cm.page_id")}
+            AND i.deleted_at IS NULL AND ${inWindow(roundId, restrictTo, sqls"cm.page_id")}
             ${notInExcluded(excluded, sqls"cm.page_id")}
           ORDER BY cm.page_id"""
       .map(rs => new ImageWithRating(ImageJdbc(i)(rs), Seq.empty))
@@ -1243,11 +1369,12 @@ object DistributionSource {
     * ([[org.intracer.wmua.cmd.DistributeImages.perImageFilters]]). By page id, then round id.
     */
   def previousCandidates(prevIds: Seq[Long], votes: PrevVotes, from: Long, to: Long, roundId: Long,
-      excluded: Seq[Long])(implicit session: DBSession): Seq[ImageWithRating] =
+      excluded: Seq[Long], restrictTo: Option[Seq[Long]] = None)(implicit session: DBSession): Seq[ImageWithRating] =
     sql"""SELECT g.page_id, g.round_id, g.rs, g.c, g.v, ${i.result.*} FROM (
               SELECT s.page_id, s.round_id, ${roundAggregates(votes)} FROM vote s
               WHERE s.round_id IN ($prevIds) ${votesCond(votes)} AND s.page_id > $from AND s.page_id <= $to
-                AND ${notInRound(roundId, sqls"s.page_id")} ${notInExcluded(excluded, sqls"s.page_id")}
+                AND ${inWindow(roundId, restrictTo, sqls"s.page_id")}
+                ${notInExcluded(excluded, sqls"s.page_id")}
               GROUP BY s.page_id, s.round_id) g
             JOIN images i ON i.page_id = g.page_id
             WHERE i.deleted_at IS NULL
@@ -1293,15 +1420,17 @@ object DistributionSource {
       filter: Seq[ImageWithRating] => Seq[ImageWithRating],
       binaryOrder: Option[BinaryOrder],
       // the rounds whose files are left out before the ranking ([[notInExcluded]]): a top-N of the rest
-      excluded: Seq[Long]
+      excluded: Seq[Long],
+      // a re-apply's round (D17): its disqualified files take no place in the top-N
+      skipDqOf: Option[Long] = None
   )(implicit session: DBSession): Seq[Long] = {
     val picked = mutable.LinkedHashSet.empty[Long]
     var offset = 0
     var pageSize = math.max(n, 100)
     var exhausted = n <= 0
     while (!exhausted && picked.size < n) {
-      val page = binaryOrder.fold(ratedPage(prevIds, votes, denominators, pageSize, offset, excluded))(
-        binaryPage(prevIds, votes, _, pageSize, offset, excluded))
+      val page = binaryOrder.fold(ratedPage(prevIds, votes, denominators, pageSize, offset, excluded, skipDqOf))(
+        binaryPage(prevIds, votes, _, pageSize, offset, excluded, skipDqOf))
       val ids = page.map(_._1).distinct
       val images = if (page.isEmpty) Map.empty[Long, Image] else
         sql"SELECT ${i.result.*} FROM images i WHERE i.page_id IN ($ids) AND i.deleted_at IS NULL"
@@ -1324,7 +1453,8 @@ object DistributionSource {
     * ([[ImageWithRating.sourceRound]]).
     */
   private def ratedPage(prevIds: Seq[Long], votes: PrevVotes, denominators: Seq[(Long, Denominator)], pageSize: Int,
-      offset: Int, excluded: Seq[Long])(implicit session: DBSession): Seq[(Long, Image => ImageWithRating)] = {
+      offset: Int, excluded: Seq[Long], skipDqOf: Option[Long])(implicit
+      session: DBSession): Seq[(Long, Image => ImageWithRating)] = {
     // one row's score in its round (t.round_id), by that round's denominator
     def rowScore(d: Denominator): SQLSyntax = d match {
       case Denominator.Const(n)      => sqls"IF($n = 0, 0, GREATEST(t.rs, 0) * 1e0 / $n)"
@@ -1337,6 +1467,7 @@ object DistributionSource {
     sql"""SELECT t.page_id, t.round_id, GREATEST(t.rs, 0) rate_sum, t.c, t.v FROM (
             SELECT s.page_id, s.round_id, ${roundAggregates(votes)} FROM vote s
             WHERE s.round_id IN ($prevIds) ${votesCond(votes)} ${notInExcluded(excluded, sqls"s.page_id")}
+              ${notDqIn(skipDqOf, sqls"s.page_id")}
             GROUP BY s.page_id, s.round_id) t
           ORDER BY $score DESC, GREATEST(t.rs, 0) DESC, t.rs DESC, t.page_id ASC, t.round_id ASC
           LIMIT $pageSize OFFSET $offset"""
@@ -1358,7 +1489,8 @@ object DistributionSource {
     * has its approvals as its rate, so "selected by at least" compares them.
     */
   private def binaryPage(prevIds: Seq[Long], votes: PrevVotes, order: BinaryOrder, pageSize: Int,
-      offset: Int, excluded: Seq[Long])(implicit session: DBSession): Seq[(Long, Image => ImageWithRating)] = {
+      offset: Int, excluded: Seq[Long], skipDqOf: Option[Long])(implicit
+      session: DBSession): Seq[(Long, Image => ImageWithRating)] = {
     val conditions = Option.when(votes.rated)(sqls"SUM(${VoteSql.positive()}) > 0").toSeq ++
       votes.rejectedBy.map(n => votes.rejectedMode match {
         case RejectedMode.Exclude => sqls"SUM(${VoteSql.rejected()}) < $n"
@@ -1372,7 +1504,7 @@ object DistributionSource {
     sql"""SELECT s.page_id, s.round_id, SUM(${VoteSql.positive()}) approvals, SUM(${VoteSql.rejected()}) rejections,
             COUNT(*) cnt
           FROM vote s
-          WHERE s.round_id IN ($prevIds) ${notInExcluded(excluded, sqls"s.page_id")}
+          WHERE s.round_id IN ($prevIds) ${notInExcluded(excluded, sqls"s.page_id")} ${notDqIn(skipDqOf, sqls"s.page_id")}
           GROUP BY s.page_id, s.round_id $having
           ORDER BY $orderBy
           LIMIT $pageSize OFFSET $offset"""

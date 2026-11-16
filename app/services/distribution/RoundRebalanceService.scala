@@ -121,11 +121,13 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
     }
   }
 
-  /** Why adding `jurorId` to a round held in review is refused, if it is: a legacy round, or not an
-    * active jury member of the contest. Nothing moves, so nothing else refuses it.
+  /** Why adding `jurorId` to a round held in review is refused, if it is: a legacy round (jurors only
+    * by their votes), or not an active jury member of the contest. A round created for review with
+    * no juror yet (no `round_user` row, no vote) isn't legacy: its first juror is added. Nothing
+    * moves, so nothing else refuses it.
     */
   private def reviewRefusal(round: Round, jurorId: Long)(implicit session: DBSession): Option[JobError] =
-    if (!hasRoundUsers(round.getId)) Some(JobError(LegacyKey, Seq(round.number.toString)))
+    if (!hasRoundUsers(round.getId) && RoundImageJdbc.hasVotes(round.getId)) Some(JobError(LegacyKey, Seq(round.number.toString)))
     else if (eligibleJuror(round.contestId, jurorId).isEmpty) Some(JobError(NotJurorKey, Seq(jurorId.toString)))
     else None
 }

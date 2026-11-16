@@ -1,10 +1,15 @@
 @import controllers.{ContestFilesView, RoundReview, RoundReviewController}
 @import db.scalikejdbc.{Round, RoundImageJdbc}
 @(r: RoundReview, view: ContestFilesView)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+@implicitLayout = @{ bs.Layout.horizontal("col-md-3", "col-md-9") }
+@fillRunning = @{ r.job.exists(j => j.isActive && services.distribution.RoundDistributionHandler.fillOnly(j)) }
 
 @* A round's review page's head (P3, RoundReviewController): its state, its files by how they were
    added, its conflicts of interest, the tabs of its files by status, and for its admins the
-   Distribute form (a CSRF POST, sent once). Organizers see the same, without the form (D20). *@
+   Distribute form (a CSRF POST, sent once) with the jurors to distribute to (the round form's picker
+   and file distribution, round-form.js; read only once the round has a vote) and, when previous
+   rounds' votes changed since the fill, the warning and its confirmation (D18). A re-apply's diff
+   (P3-5). Organizers see the same, without the form (D20). *@
 <div id="round-review">
     <h2 class="h4" id="round-review-title">@Messages("round.review.title", r.round.number, r.round.description)</h2>
 
@@ -13,6 +18,7 @@
 
     <p id="round-review-state">@{
         if (r.job.exists(_.isActive) && r.round.distributing && r.round.lifecycle == Round.Status.Draft) Messages("round.review.filling")
+        else if (fillRunning && r.round.inReview) Messages("round.review.filling")
         else if (r.job.exists(_.isActive) && r.round.inReview) Messages("round.review.distributing")
         else if (r.round.inReview) Messages("round.review.ready", r.count(RoundImageJdbc.Status.In))
         else if (r.round.distributing) Messages("round.review.filling")
@@ -34,6 +40,25 @@
         <li>@Messages(s"round.review.added.$how", n)</li>
     }
     </ul>
+    @* the latest re-apply's result (P3-5): files added and removed, the first of those removed *@
+    @for(d <- r.reapplied) {
+        <div id="round-review-reapplied" class="mb-2">
+            <p class="mb-1">@Messages("round.review.reapplied", d.added, d.removed)</p>
+            @if(d.removedTitles.nonEmpty) {
+                <details><summary>@Messages("round.review.reapplied.removed.list", d.removedTitles.size)</summary>
+                    <ul class="small mb-0" id="round-review-removed">@for(t <- d.removedTitles) {<li>@t</li>}</ul>
+                </details>
+            }
+        </div>
+    }
+    @* a re-apply failed or cancelled: Distribute refuses until it is re-applied again or retried *@
+    @if(r.reapplyUnfinished) {
+        <div class="alert alert-warning" role="alert" id="round-review-reapply-unfinished">@Messages("round.review.reapply.unfinished")</div>
+    }
+    @* D18: the previous rounds' votes changed since the fill: shown to all who see the page *@
+    @if(r.prevChanged) {
+        <div class="alert alert-warning" role="alert" id="round-review-prev-changed">@Messages("round.review.prev.changed")</div>
+    }
     @if(r.conflicts > 0) {
         <p id="round-review-conflicts"><a href="@routes.RoundConflictsController.page(r.round.getId)">@Messages("round.review.conflicts", r.conflicts)</a></p>
     }
@@ -41,10 +66,46 @@
     @if(r.mayDistribute) {
         <form method="post" action="@routes.RoundReviewController.distribute(r.round.getId)" class="mb-2" id="round-review-distribute" data-submit-once>
             @csrfField()
+            @if(r.jurorsEditable) {
+                @* the round form's juror picker and file distribution (round-form.js: #jurors, #distribution) *@
+                <input type="hidden" name="jurorsShown" value="true">
+                @for(jury <- r.distributeForm("jury").value) { <input type="hidden" name="jury" value="@jury"> }
+                @if(r.contestJurors.isEmpty) {
+                    <p class="alert alert-warning" id="round-review-no-contest-jurors">@Messages("round.review.jurors.none.in.contest")
+                        <a href="@routes.UserController.users(Some(r.round.contestId))">@Messages("round.review.jurors.invite")</a></p>
+                } else {
+                    @bs.select(r.distributeForm("jurors"),
+                        r.contestJurors.map(u => (u.getId.toString, u.description)),
+                        Symbol("_label") -> Messages("jurors"), Symbol("multiple") -> true,
+                        Symbol("_help") -> Messages("round.review.jurors.help"))
+                    @defining(r.distributeForm("jurors").indexes.size) { chosen =>
+                        @bs.select(r.distributeForm("distribution"),
+                            Seq(("0", Messages("each.file.to.all.jurors"))) ++
+                                (1 until chosen).map(x => (x.toString, Messages("each.file.to.i.juror.s", x))),
+                            Symbol("_label") -> Messages("file.distribution"),
+                            Symbol("disabled") -> (chosen == 0))
+                    }
+                }
+            } else {
+                <p id="round-review-jurors">@Messages("jurors"): @if(r.roundJurors.isEmpty) {
+                    <span id="round-review-jurors-none">@Messages("round.review.jurors.none")</span>
+                } else { @r.roundJurors.map(_.fullname).mkString(", ") }</p>
+            }
+            @if(r.prevChanged) {
+                @bs.checkbox(field = r.distributeForm("confirmPrevChanged"),
+                    Symbol("_text") -> Messages("round.review.prev.changed.confirm.box"))
+            }
             <button type="submit" class="btn btn-primary">@Messages("round.review.distribute")</button>
             <span class="form-text ms-2">@Messages("round.review.distribute.help")</span>
         </form>
         <script src="@routes.Assets.versioned("javascripts/submit-once.js")"></script>
+        @if(r.jurorsEditable && r.contestJurors.nonEmpty) {
+            <script type="application/json" id="round-form-texts">{"multiSelect": @views.JsTexts.multiSelect, "distribution": @views.JsTexts(
+                "all" -> Messages("each.file.to.all.jurors"),
+                "some" -> Messages("each.file.to.i.juror.s", "$X"))}</script>
+            @snippets.multiSelectScripts()
+            <script src="@routes.Assets.versioned("javascripts/round-form.js")"></script>
+        }
     }
 
     <ul class="nav nav-tabs mb-2" id="round-review-tabs">
