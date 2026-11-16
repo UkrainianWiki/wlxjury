@@ -310,9 +310,12 @@ To jump to a page, click the numbers in the middle, type a page number in the bo
 
 ### Voting in a yes/no round's gallery
 
-Point at a file's tile and its buttons appear: ✓ to select it, ✗ to reject it. Pointed at, a
-button fills with its colour; the button of the file's vote is pressed (filled, with a ring of
-the page's colour inside its border), as in the large view.
+Point at a file's tile and its buttons appear: the magnifier above opens the file's large view
+(as a click on the tile does), and below it ✓ selects the file and ✗ rejects it. They are the
+large view's buttons, the same size and look. Pointed at, a button fills with its colour; the
+button of the file's vote is pressed (filled, with a ring of the page's colour inside its border),
+as in the large view. On a touch screen, the first tap on a tile shows its buttons and votes
+nothing; then tap a button.
 A selected file gets a green ✓ in its tile's lower-left corner, a rejected one a red ✗, with the
 file's comments (💬 3) right after it. The picture below shows tiles at rest, with the marks of
 earlier votes.

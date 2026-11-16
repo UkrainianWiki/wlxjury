@@ -703,16 +703,9 @@ img.ug-sepia-effect{
 	background-image:url('../images/icon-link32.png');	
 }
 
-/* wlxjury: the binary round's select (✓) and reject (✗) on a juror's tiles are Bootstrap Icons
-   glyphs, styled in main.css (issue #6) */
-
-.ug-thumb-wrapper.ug-tile .ug-tile-icon.ug-icon-zoom{
-	background-image:url('../images/icon-zoom32.png');	
-}
-
-.ug-thumb-wrapper.ug-tile .ug-tile-icon.ug-icon-play{
-	background-image:url('../images/icon-play32.png');	
-}
+/* wlxjury: the binary round's select (✓) and reject (✗) on a juror's tiles, and the zoom (or a
+   video's play), are Bootstrap Icons glyphs on buttons styled in main.css (wlx-tile-btn; issue #6),
+   no longer the white icon-zoom32.png and icon-play32.png sprites, hard to see on a light photo */
 
 .ug-thumb-wrapper.ug-tile .ug-tile-icon:hover{
 	background-position:0 -38px;

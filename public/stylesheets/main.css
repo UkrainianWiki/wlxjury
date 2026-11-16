@@ -333,77 +333,83 @@ a.wlx-large-failed img {
 }
 /* A binary round's vote buttons, ✓ (select, bi-check-lg) and ✗ (reject, bi-x-lg), one design on
    the juror's own gallery tiles (unitegallery.js P11, tile-votes.js) and in their large view
-   (large/navigationButtons buttonSelect), the maintainer's notes of 2026-11-16: the gallery's
-   border (3 px in the vote's colour, more noticeable than the large view's 1 px outline) and the
-   large view's fill pointed at (the vote's colour, the glyph in the page's background colour).
-   The button of the file's vote is pressed (aria-pressed="true"; a click on it undoes the vote):
-   filled, with a ring of the page's colour inside its border, so it reads as pressed by its shape
-   too, not by its colour alone. One radius (6 px) and focus ring (two tones outside the border,
-   3:1 or more) for both; each button its own complete border in every state (never a group's shared
-   one). Through Bootstrap's button variables, which the large view's .btn reads in each of its
-   states, and which the tile's own rules below read the same way. The vote colours are
-   --wlx-vote-* (3:1 or more for icons on the page and on its background colour). */
-.wlx-vote-btn {
-    --wlx-vote: var(--wlx-vote-selected);
-    --wlx-vote-bg: transparent;
-    --wlx-vote-inset: 0 0 0 0 transparent;
-    --bs-btn-border-width: 3px;
+   (large/navigationButtons buttonSelect), the maintainer's notes of 2026-11-16: a border in the
+   vote's colour, filled with it pointed at (the glyph in the page's background colour). The button
+   of the file's vote is pressed (aria-pressed="true"; a click on it undoes the vote): filled, with
+   a ring of the page's colour inside its border, so it reads as pressed by its shape too, not by
+   its colour alone. One size, border, radius (6 px) and focus ring (two tones outside the border,
+   3:1 or more) everywhere: those of the large view's navigation buttons (btn btn-sm, Bootstrap's
+   border width; the maintainer's notes on 26.11.11: the 3 px border made them much heavier than
+   the buttons beside them, and the tiles' were larger); each button its own complete border in
+   every state (never a group's shared one). A tile's zoom (or play) button is drawn the same way
+   in a neutral tone, the text colour (.wlx-tile-btn-neutral). Through Bootstrap's button
+   variables, which .btn reads in each of its states. The vote colours are --wlx-vote-* (3:1 or
+   more for icons on the page and on its background colour). */
+.wlx-vote-btn, .wlx-tile-btn {
+    --wlx-btn-tone: var(--wlx-vote-selected);
+    --wlx-btn-bg: transparent;
+    --wlx-btn-inset: 0 0 0 0 transparent;
+    --wlx-btn-halo: 0 0 0 0 transparent;
     --bs-btn-border-radius: 6px;
-    --bs-btn-color: var(--wlx-vote);
-    --bs-btn-bg: var(--wlx-vote-bg);
-    --bs-btn-border-color: var(--wlx-vote);
+    --bs-btn-color: var(--wlx-btn-tone);
+    --bs-btn-bg: var(--wlx-btn-bg);
+    --bs-btn-border-color: var(--wlx-btn-tone);
     --bs-btn-hover-color: var(--bs-body-bg);
-    --bs-btn-hover-bg: var(--wlx-vote);
-    --bs-btn-hover-border-color: var(--wlx-vote);
+    --bs-btn-hover-bg: var(--wlx-btn-tone);
+    --bs-btn-hover-border-color: var(--wlx-btn-tone);
     --bs-btn-active-color: var(--bs-body-bg);
-    --bs-btn-active-bg: var(--wlx-vote);
-    --bs-btn-active-border-color: var(--wlx-vote);
+    --bs-btn-active-bg: var(--wlx-btn-tone);
+    --bs-btn-active-border-color: var(--wlx-btn-tone);
     /* the focus ring in two tones, a ring of the page's colour then one of its text colour, 3:1 or
        more on any background in both modes (Bootstrap's 25% tint is about 1.5:1) */
-    --bs-btn-focus-box-shadow: var(--wlx-vote-inset), 0 0 0 2px var(--bs-body-bg), 0 0 0 4px var(--bs-body-color);
-    box-shadow: var(--wlx-vote-inset);
+    --bs-btn-focus-box-shadow: var(--wlx-btn-inset), 0 0 0 2px var(--bs-body-bg), 0 0 0 4px var(--bs-body-color);
+    box-shadow: var(--wlx-btn-inset), var(--wlx-btn-halo);
 }
-.wlx-vote-btn.wlx-vote-btn-reject { --wlx-vote: var(--wlx-vote-rejected); }
+.wlx-vote-btn.wlx-vote-btn-reject { --wlx-btn-tone: var(--wlx-vote-rejected); }
+.wlx-tile-btn.wlx-tile-btn-neutral { --wlx-btn-tone: var(--bs-body-color); }
 .wlx-vote-btn[aria-pressed=true] {
     --bs-btn-color: var(--bs-body-bg);
-    --bs-btn-bg: var(--wlx-vote);
-    --wlx-vote-inset: inset 0 0 0 2px var(--bs-body-bg);
+    --bs-btn-bg: var(--wlx-btn-tone);
+    --wlx-btn-inset: inset 0 0 0 2px var(--bs-body-bg);
 }
 /* with the keyboard focus, its state as it is (Bootstrap draws a focused button as pointed at, which
    would make an unpressed vote button look pressed) and the focus ring around it */
-.btn.wlx-vote-btn:focus-visible:not(:hover) {
+.btn.wlx-vote-btn:focus-visible:not(:hover), .btn.wlx-tile-btn:focus-visible:not(:hover) {
     color: var(--bs-btn-color);
     background-color: var(--bs-btn-bg);
     border-color: var(--bs-btn-border-color);
 }
-/* in the large view's row (navigationButtons): as high and wide as the navigation buttons beside
-   them (btn-sm, a 1 px border): 2 px less padding for the 2 px more border */
-.btn.btn-sm.wlx-vote-btn {
-    --bs-btn-padding-y: calc(.25rem - 2px);
-    --bs-btn-padding-x: calc(.5rem - 2px);
+/* its glyph at the centre of the button, both ways (the maintainer's report on 26.11.11: the marks
+   sat off centre, the ✗ most): the icon a box of a text line's height (a text button's, so the
+   button is as high as one), which centres its glyph's em square (line-height 1, without Bootstrap
+   Icons' -.125em text alignment). Where the glyph sits no longer depends on a line's baseline, set
+   by the text font's ascent and descent, which differ by platform and font (Arial on the tiles,
+   the system font in the large view). An em wide, the glyph's advance, so the button's size and
+   place don't wait for the icon font to load */
+.wlx-vote-btn > .bi, .wlx-tile-btn > .bi {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1em;
+    height: calc(var(--bs-btn-line-height) * 1em);
+    line-height: 1;
 }
-/* on a tile: the same, on a chip of the page's background over the photo (readable on any photo,
-   however dark or bright), 38 px square with its border, above the tile's chips */
-.ug-thumb-wrapper.ug-tile .ug-tile-icon.wlx-vote-btn {
-    --wlx-vote-bg: rgba(var(--bs-body-bg-rgb), .85);
-    box-sizing: border-box;
-    border: var(--bs-btn-border-width) solid var(--bs-btn-border-color);
-    border-radius: var(--bs-btn-border-radius);
-    background-color: var(--bs-btn-bg);
-    color: var(--bs-btn-color);
-    font-size: 26px;
-    line-height: calc(38px - 2 * var(--bs-btn-border-width));
-    text-align: center;
+.wlx-vote-btn > .bi::before, .wlx-tile-btn > .bi::before {
+    display: block;
+    line-height: 1;
+    vertical-align: 0;
 }
-.ug-thumb-wrapper.ug-tile .ug-tile-icon.wlx-vote-btn:hover {
-    background-color: var(--bs-btn-hover-bg);
-    border-color: var(--bs-btn-hover-border-color);
-    color: var(--bs-btn-hover-color);
-}
-/* a ✓ or ✗ with the keyboard focus (tile-votes.js): the large view's focus ring */
-.ug-thumb-wrapper.ug-tile .ug-tile-icon.wlx-vote-btn:focus-visible {
-    outline: 0;
-    box-shadow: var(--bs-btn-focus-box-shadow);
+/* on a tile: the same button (unitegallery.js gives it btn btn-sm and places it), above the
+   tile's chips, its size the button's (not unite-gallery's 38 px icon box), on a backing of the
+   page's colour over the photo and with a 1 px ring of the text colour around its border: one of
+   the two 3:1 or more against any photo, however dark or bright (also under the tile's darkening
+   while pointed at), in both modes (the maintainer's notes on 26.11.11: the zoom was hard to see on
+   a light photo). Its focus ring (Bootstrap's .btn:focus-visible) takes the ring's place */
+.ug-thumb-wrapper.ug-tile .ug-tile-icon.wlx-tile-btn {
+    --wlx-btn-bg: rgba(var(--bs-body-bg-rgb), .85);
+    --wlx-btn-halo: 0 0 0 1px var(--bs-body-color);
+    width: auto;
+    height: auto;
 }
 /* The read-only large view's thumbnails (large/contestFile.scala.html): the link fills the
    box, so a thumbnail that failed to load, hidden, still opens its file; that one is the
@@ -633,8 +639,10 @@ a:has(> .btn) { text-decoration: none; }
    font's 16 units with 1.5-unit strokes, the cross 12 × 12 with 1-unit strokes, so the check is
    drawn 12% larger and the cross 8% smaller with its strokes thickened to the check's (a .05em
    outline). Drawn scaled, not set larger: their boxes, the lines they sit on and the buttons'
-   tap targets stay as they are */
-.bi-check-lg::before { transform: scale(1.12); }
+   tap targets stay as they are. The check's ink is x 3 to 14 of its 16 units, half a unit right of
+   its box's centre: moved back by that (1/32 em), so it is centred where its box is (the
+   maintainer's report on 26.11.11) */
+.bi-check-lg::before { transform: scale(1.12) translateX(-.03125em); }
 .bi-x-lg::before {
     transform: scale(.92);
     -webkit-text-stroke: .05em currentcolor;

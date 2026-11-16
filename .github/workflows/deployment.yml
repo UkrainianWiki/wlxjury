@@ -70,7 +70,11 @@ jobs:
           java-version: 17
           cache: sbt
           cache-jdk: false   # as v4 (ci.yml)
+      # sbt 1.x: without setup-sbt's sbt 2.x disk cache, whose post step hashes the whole
+      # checkout (it failed on a file sbt was removing as it exited: browser tests, #358, #359)
       - uses: sbt/setup-sbt@ecad189dd245444b9ae0a0cd5922fd938b88906f # v1.5.12
+        with:
+          disk-cache: false
       - name: scalawiki (interim, from source)
         uses: ./.github/actions/scalawiki
         with:

@@ -10704,18 +10704,26 @@ function UGTileDesign(){
 			//add zoom icon
 			if(g_options.tile_as_link == false && g_options.tile_enable_action == true){
 				var iconPlayClass = "ug-button-play ug-icon-zoom";
-				if(objItem.type != "image")
+				//wlxjury: the zoom (a magnifier, bi-zoom-in) or a video's play (bi-play-fill) as a
+				//button of the vote buttons' design in a neutral tone (main.css wlx-tile-btn): the
+				//upstream white sprite was hard to see on a light photo (the maintainer's notes on
+				//26.11.11)
+				var iconPlayGlyph = "bi-zoom-in";
+				if(objItem.type != "image"){
 					iconPlayClass = "ug-button-play ug-icon-play";
+					iconPlayGlyph = "bi-play-fill";
+				}
 
-				htmlAdd += "<div class='ug-tile-icon " + iconPlayClass + "' style='display:none'></div>";
+				htmlAdd += "<div class='ug-tile-icon " + iconPlayClass + " btn btn-sm wlx-tile-btn wlx-tile-btn-neutral' style='display:none'><i class='bi " + iconPlayGlyph + "' aria-hidden='true'></i></div>";
 
 				//wlxjury: select (a check, bi-check-lg) and reject (a cross, bi-x-lg) on a juror's
-				//tiles in a binary round (options jury and binary, gallery-init.js; issue #6), drawn as
-				//the large view's vote buttons (main.css wlx-vote-btn)
+				//tiles in a binary round (options jury and binary, gallery-init.js; issue #6), the
+				//large view's vote buttons (btn btn-sm, main.css wlx-vote-btn), on a tile
+				//(wlx-tile-btn)
 				if(g_options.jury) {
 					if(g_options.binary) {
-						htmlAdd += "<div class='ug-tile-icon ug-icon-select wlx-vote-btn wlx-vote-btn-select' style='display:none'><i class='bi bi-check-lg' aria-hidden='true'></i></div>";
-						htmlAdd += "<div class='ug-tile-icon ug-icon-reject wlx-vote-btn wlx-vote-btn-reject' style='display:none'><i class='bi bi-x-lg' aria-hidden='true'></i></div>";
+						htmlAdd += "<div class='ug-tile-icon ug-icon-select btn btn-sm wlx-vote-btn wlx-vote-btn-select wlx-tile-btn' style='display:none'><i class='bi bi-check-lg' aria-hidden='true'></i></div>";
+						htmlAdd += "<div class='ug-tile-icon ug-icon-reject btn btn-sm wlx-vote-btn wlx-vote-btn-reject wlx-tile-btn' style='display:none'><i class='bi bi-x-lg' aria-hidden='true'></i></div>";
 					}
 				}
 			}
@@ -11307,18 +11315,21 @@ function UGTileDesign(){
 		}
 
 		if(objButtonZoom && objButtonSelect){
-			var sizeZoom = g_functions.getElementSize(objButtonZoom);
+			// wlxjury: the zoom above, at a third of the tile's height, and the select (✓) and
+			// reject (✗) below it at two thirds, side by side at a third of its width from each
+			// other, the zoom centred over them, all one size (main.css wlx-tile-btn; the
+			// maintainer's decision on 26.11.11). On a small tile (a tall portrait file's, issue
+			// #6) at least 8 px apart both ways, around its middle. The ✓ and ✗ level, their boxes
+			// and glyphs (they were 8 px apart, the ✓ above: the maintainer's note of 2026-11-16)
 			var sizeSelect = g_functions.getElementSize(objButtonSelect);
-			var spaceBetween = g_options.tile_space_between_icons;
+			var gap = 8;
+			var across = Math.max(sizeTile.width / 3, sizeSelect.width + gap);
+			var down = Math.max(sizeTile.height / 3, sizeSelect.height + gap);
 
-			var buttonsWidth = sizeZoom.width + spaceBetween + sizeSelect.width;
-			var buttonsX = Math.floor(sizeTile.width / 3);
-
-			g_functions.placeElement(objButtonZoom, sizeTile.width/2 - 24, sizeTile.height/3, 0, gapVert);
-			// wlxjury: the select (✓) and reject (✗) side by side at one height, their boxes and
-			// glyphs level (they were 8 px apart, the ✓ above: the maintainer's note of 2026-11-16)
-			g_functions.placeElement(objButtonSelect, buttonsX - 16, sizeTile.height*2/3, 0, gapVert);
-			g_functions.placeElement(objButtonReject, buttonsX*2 - 16, sizeTile.height*2/3, 0, gapVert);
+			g_functions.placeElement(objButtonZoom, "center", "middle", 0, Math.round(gapVert - down / 2));
+			g_functions.placeElement(objButtonSelect, "center", "middle", Math.round(-across / 2), Math.round(gapVert + down / 2));
+			if(objButtonReject)
+				g_functions.placeElement(objButtonReject, "center", "middle", Math.round(across / 2), Math.round(gapVert + down / 2));
 
 		}else{
 
@@ -11691,10 +11702,14 @@ function UGTileDesign(){
 		if(g_temp.funcParentApproveClick && g_temp.funcParentApproveClick() == false)
 			event.preventDefault();
 
-		//allow click only from over style
-		if(isOverStyle(objTile) == false && g_options.tile_as_link == false){
+		//allow click only from over style; wlxjury: a tap on a tile not pointed at (a touch screen's
+		//first tap) shows its buttons and votes nothing (it voted as well: the review of 2026-11-16).
+		//Only a pointer's click (detail 1 or more): a screen reader's or a script's activation
+		//(detail 0) of the button votes at once, the tile never being pointed at
+		if(isOverStyle(objTile) == false && g_options.tile_as_link == false && event.detail !== 0){
 			event.preventDefault();
 			onMobileClick(objTile);
+			return;
 		}
 
 		g_objThis.trigger(t.events.SELECT_CLICK, objTile);
@@ -11709,10 +11724,14 @@ function UGTileDesign(){
 		if(g_temp.funcParentApproveClick && g_temp.funcParentApproveClick() == false)
 			event.preventDefault();
 
-		//allow click only from over style
-		if(isOverStyle(objTile) == false && g_options.tile_as_link == false){
+		//allow click only from over style; wlxjury: a tap on a tile not pointed at (a touch screen's
+		//first tap) shows its buttons and votes nothing (it voted as well: the review of 2026-11-16).
+		//Only a pointer's click (detail 1 or more): a screen reader's or a script's activation
+		//(detail 0) of the button votes at once, the tile never being pointed at
+		if(isOverStyle(objTile) == false && g_options.tile_as_link == false && event.detail !== 0){
 			event.preventDefault();
 			onMobileClick(objTile);
+			return;
 		}
 
 		g_objThis.trigger(t.events.REJECT_CLICK, objTile);

@@ -149,7 +149,8 @@ describe("the thumbnail's alt and src (setHtmlThumb): escaped for the quoted att
         const [tile] = await gallery([{ alt: caption, src: loaded("/t/b.jpg") }]);
         const img = tile.querySelector("img.ug-thumb-image");
         expect(img.getAttribute("alt")).toBe("File:A & B <i>c</i> d'e.jpg");
-        expect(tile.querySelectorAll("i, a[href*='commons']")).toHaveLength(0);
+        // (the zoom button's glyph, i.bi, is the tile's own)
+        expect(tile.querySelectorAll("i:not(.bi), a[href*='commons']")).toHaveLength(0);
     });
 
     test("a src with quotes stays the src", async () => {
@@ -293,9 +294,12 @@ describe("the binary round's select and reject icons (issue #6)", () => {
             // screen readers (tile-votes.js names the buttons)
             expect(t.querySelectorAll(".ug-icon-select > i.bi.bi-check-lg[aria-hidden=true]")).toHaveLength(1);
             expect(t.querySelectorAll(".ug-icon-reject > i.bi.bi-x-lg[aria-hidden=true]")).toHaveLength(1);
-            // drawn as the large view's vote buttons (main.css wlx-vote-btn, one design for both)
-            expect(t.querySelectorAll(".ug-icon-select.wlx-vote-btn.wlx-vote-btn-select")).toHaveLength(1);
-            expect(t.querySelectorAll(".ug-icon-reject.wlx-vote-btn.wlx-vote-btn-reject")).toHaveLength(1);
+            // the large view's vote buttons (btn btn-sm, main.css wlx-vote-btn, one design and size
+            // for both) on a tile (wlx-tile-btn)
+            expect(t.querySelectorAll(".ug-icon-select.btn.btn-sm.wlx-vote-btn.wlx-vote-btn-select.wlx-tile-btn")).toHaveLength(1);
+            expect(t.querySelectorAll(".ug-icon-reject.btn.btn-sm.wlx-vote-btn.wlx-vote-btn-reject.wlx-tile-btn")).toHaveLength(1);
+            // the zoom the same button in a neutral tone, a magnifier (no longer the white sprite)
+            expect(t.querySelectorAll(".ug-icon-zoom.btn.btn-sm.wlx-tile-btn.wlx-tile-btn-neutral > i.bi.bi-zoom-in[aria-hidden=true]")).toHaveLength(1);
         });
         expect(window.wlxTileVotes.addVote).toHaveBeenCalledTimes(2);
         const [el, item] = window.wlxTileVotes.addVote.mock.calls[0];
@@ -304,17 +308,59 @@ describe("the binary round's select and reject icons (issue #6)", () => {
         expect([item.rate, item.pageId, item.roundId]).toEqual(["1", "42", "7"]);
     });
 
-    test("select and reject sit below the zoom icon, select left of reject (positionElements)", async () => {
-        const [t] = await gallery([tile()], { jury: true, binary: true });
-        const at = (sel) => {
-            const s = t.querySelector(sel).style;
-            return { left: parseFloat(s.left), top: parseFloat(s.top) };
+    // positionElements, with the buttons' size (btn btn-sm, which jsdom doesn't lay out) 32 × 31,
+    // and with `tileWidth` and `tileHeight` the tile's size as positionElements reads it (else as
+    // laid out)
+    const placed = async (tileWidth, tileHeight) => {
+        const original = { width: jQuery.fn.outerWidth, height: jQuery.fn.outerHeight };
+        const sized = (fn, size, tileSize) => function () {
+            if (this.hasClass && this.hasClass("ug-tile-icon")) return size;
+            if (tileSize && this.hasClass && this.hasClass("ug-tile")) return tileSize;
+            return fn.apply(this, arguments);
         };
-        const zoom = at(".ug-icon-zoom"), select = at(".ug-icon-select"), reject = at(".ug-icon-reject");
-        [zoom, select, reject].forEach((p) => { expect(Number.isFinite(p.left)).toBe(true); expect(Number.isFinite(p.top)).toBe(true); });
+        const spyW = jest.spyOn(jQuery.fn, "outerWidth").mockImplementation(sized(original.width, 32, tileWidth));
+        const spyH = jest.spyOn(jQuery.fn, "outerHeight").mockImplementation(sized(original.height, 31, tileHeight));
+        try {
+            const [t] = await gallery([tile()], { jury: true, binary: true });
+            const at = (sel) => {
+                const st = t.querySelector(sel).style;
+                return { left: parseFloat(st.left), top: parseFloat(st.top) };
+            };
+            const all = { zoom: at(".ug-icon-zoom"), select: at(".ug-icon-select"), reject: at(".ug-icon-reject") };
+            Object.values(all).forEach((p) => { expect(Number.isFinite(p.left)).toBe(true); expect(Number.isFinite(p.top)).toBe(true); });
+            return all;
+        } finally {
+            spyW.mockRestore();
+            spyH.mockRestore();
+        }
+    };
+
+    test("select and reject sit below the zoom icon, select left of reject, the zoom centred over them (positionElements)", async () => {
+        const { zoom, select, reject } = await placed();
         expect(select.top).toBeGreaterThan(zoom.top);
-        expect(reject.top).toBeGreaterThan(zoom.top);
+        expect(reject.top).toBe(select.top);
         expect(select.left).toBeLessThan(reject.left);
+        expect(zoom.left - select.left).toBe(reject.left - zoom.left);
+    });
+
+    test("on a 300 × 240 tile: the zoom's centre at a third of its height, the ✓'s and ✗'s at two thirds and at a third and two thirds of its width", async () => {
+        const { zoom, select, reject } = await placed(300, 240);
+        const centre = (p) => ({ x: p.left + 32 / 2, y: p.top + 31 / 2 });
+        const [z, s, r] = [centre(zoom), centre(select), centre(reject)];
+        expect(Math.abs(s.x - 300 / 3)).toBeLessThanOrEqual(1);
+        expect(Math.abs(r.x - 2 * 300 / 3)).toBeLessThanOrEqual(1);
+        expect(Math.abs(z.x - 300 / 2)).toBeLessThanOrEqual(1);
+        expect(Math.abs(z.y - 240 / 3)).toBeLessThanOrEqual(1);
+        expect(Math.abs(s.y - 2 * 240 / 3)).toBeLessThanOrEqual(1);
+        expect(Math.abs(r.y - 2 * 240 / 3)).toBeLessThanOrEqual(1);
+    });
+
+    test("on a small tile they keep 8 px apart, the zoom above (issue #6)", async () => {
+        const { zoom, select, reject } = await placed(60, 60);
+        expect(select.top - zoom.top).toBeGreaterThanOrEqual(31 + 8);
+        expect(reject.top).toBe(select.top);
+        expect(reject.left - select.left).toBeGreaterThanOrEqual(32 + 8);
+        expect(Math.abs((zoom.left - select.left) - (reject.left - zoom.left))).toBeLessThanOrEqual(1);
     });
 
     test("no select or reject for an organiser, nor in a rated round", async () => {
@@ -330,12 +376,44 @@ describe("the binary round's select and reject icons (issue #6)", () => {
         ["reject", "0", -1], ["reject", "1", -1], ["reject", "-1", 0]
     ])("a %s click on a file rated %s votes %d, without opening the large view", async (icon, rate, vote) => {
         const [t] = await gallery([tile({ "data-rate": rate })], { jury: true, binary: true });
+        // pointed at first, as a mouse does (the tile's over state)
+        jQuery(t).trigger("mouseenter");
+        expect(t.classList.contains("ug-thumb-over")).toBe(true);
         t.querySelector(".ug-icon-" + icon).dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
         expect(window.wlxTileVotes.vote).toHaveBeenCalledTimes(1);
         const [el, item, r] = window.wlxTileVotes.vote.mock.calls[0];
         expect(el).toBe(t);
         expect(item.rate).toBe(rate);
         expect(r).toBe(vote);
+        expect(window.open).not.toHaveBeenCalled();
+    });
+
+    // a touch screen's first tap on a tile lands on a ✓ or ✗ it doesn't show yet: it shows the
+    // tile's buttons (its over state) and votes nothing, nor opens the large view (the review of
+    // 2026-11-16: it voted); a second tap, the tile pointed at, votes
+    test.each(["select", "reject"])("a tap on the %s of a tile not pointed at votes nothing, a second one votes", async (icon) => {
+        const [t] = await gallery([tile({ "data-rate": "0" })], { jury: true, binary: true });
+        expect(t.classList.contains("ug-thumb-over")).toBe(false);
+        const button = t.querySelector(".ug-icon-" + icon);
+        // a pointer's click: detail, the click count, 1
+        const tap = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+        button.dispatchEvent(tap);
+        expect(window.wlxTileVotes.vote).not.toHaveBeenCalled();
+        expect(tap.defaultPrevented).toBe(true);
+        expect(window.open).not.toHaveBeenCalled();
+        expect(t.classList.contains("ug-thumb-over")).toBe(true);
+        button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+        expect(window.wlxTileVotes.vote).toHaveBeenCalledTimes(1);
+    });
+
+    // a screen reader's (or a script's) activation of the button is a click of detail 0, on a tile
+    // never pointed at: it votes at once
+    test.each([["select", 1], ["reject", -1]])("an assistive click (detail 0) on the %s of a tile not pointed at votes %d at once", async (icon, vote) => {
+        const [t] = await gallery([tile({ "data-rate": "0" })], { jury: true, binary: true });
+        expect(t.classList.contains("ug-thumb-over")).toBe(false);
+        t.querySelector(".ug-icon-" + icon).dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 }));
+        expect(window.wlxTileVotes.vote).toHaveBeenCalledTimes(1);
+        expect(window.wlxTileVotes.vote.mock.calls[0][2]).toBe(vote);
         expect(window.open).not.toHaveBeenCalled();
     });
 });

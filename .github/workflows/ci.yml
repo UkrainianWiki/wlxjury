@@ -77,7 +77,11 @@ jobs:
           # cache has Temurin 17 (dependencies practices §2.2)
           cache-jdk: false
 
+      # sbt 1.x: without setup-sbt's sbt 2.x disk cache, whose post step hashes the whole
+      # checkout (it failed on a file sbt was removing as it exited: browser tests, #358, #359)
       - uses: sbt/setup-sbt@ecad189dd245444b9ae0a0cd5922fd938b88906f # v1.5.12
+        with:
+          disk-cache: false
 
       # build.sbt's jsTest runs `npm ci` in javascript-test/ when node_modules is missing. Node 22:
       # eslint-plugin-compat 7 needs it (dependencies practices §9, T5)

@@ -47,6 +47,27 @@ The next release is `26.11.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything d
   mailed; the report and each Keep separate are logged by ids only (`security.account`). Joining
   comes with J-2. Admin guide.
 
+**Fixes**
+
+- **Vote buttons: marks centred, one size, a visible zoom** (the maintainer's report on 26.11.11;
+  developed 2026-11-16, `stack/177-vote-marks-centred`): the ✓ and ✗ sat off centre in their
+  buttons, the ✗ most. The glyph's place came from the line's baseline, set by the text font's
+  ascent and descent (Arial on the tiles, the system font in the large view; 2.5-3 px off with
+  another font), plus Bootstrap Icons' -.125em text alignment; each icon is now a box of a text
+  line's height that centres its glyph (flex, `line-height: 1`), and the ✓, whose ink is half a
+  unit right of its box's centre, is moved back by that everywhere it is shown. Within 1 px of the
+  button's centre on both axes, in Chromium and Firefox, both modes. The large view's ✓ and ✗ have
+  the navigation buttons' weight (Bootstrap's border width, no longer 3 px), and the gallery tiles'
+  ✓ and ✗ are the large view's buttons (`btn btn-sm`, 32 × 31 px, no longer 38 px with a 3 px
+  border), with a backing of the page's colour and a 1 px ring of the text colour over the photo. The
+  tile's zoom (a video's play), a white sprite hard to see on a light photo, is the same button in
+  the text colour with a magnifier (`bi-zoom-in`; `bi-play-fill`), still above the ✓ and ✗ (the
+  maintainer's decision), centred over them; on a small tile the three stay 8 px apart. One design
+  through `main.css` `wlx-vote-btn` and its tile variant `wlx-tile-btn`; the icon box an em wide,
+  so sizes don't wait for the icon font. A first tap on a tile not pointed at (a touch screen's)
+  that landed on its ✓ or ✗ voted as well as showing the buttons: it now only shows them
+  (`unitegallery.js` select and reject clicks). Juror guide.
+
 **Development**
 
 - **`account_join_request` and `account_joined` (V106)** (the account join plan's J-1; developed

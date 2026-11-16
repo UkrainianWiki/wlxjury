@@ -23,6 +23,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SHOTS = path.join(ROOT, 'target', 'ui-shots');
 const SERVER_JSON = path.join(SHOTS, 'server.json');
 const STOP_FILE = path.join(SHOTS, 'server.stop');
+// the sbt process's id, which `stop` waits for: the server removes server.json before it shuts
+// down (the app, its database container, sbt's own exit writing and removing files under target/)
+const PID_FILE = path.join(SHOTS, 'server.pid');
 const LOG = path.join(SHOTS, 'server-browser-test.log');
 const WINDOWS_LAUNCHER = 'C:/Program Files (x86)/sbt/bin/sbt-launch.jar';
 // a cold compile plus building the fixture from the CSVs; a cached fixture takes a few minutes
@@ -100,6 +103,7 @@ async function start() {
   });
   let exited = null;
   child.on('exit', (code) => { exited = code ?? 'signal'; });
+  fs.writeFileSync(PID_FILE, String(child.pid));
   while (true) {
     if (exited !== null) throw new Error(`the server exited (${exited}) before it was ready; see ${LOG}`);
     if (Date.now() - started > START_TIMEOUT_MS) {
@@ -127,7 +131,26 @@ async function stop() {
     if (Date.now() - started > STOP_TIMEOUT_MS) throw new Error('the server did not stop in 3 minutes');
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
-  console.log('[fixture-server] stopped');
+  // then sbt's exit: until it is gone it still writes and removes files in the checkout (a CI
+  // step hashing the checkout right after failed on a file gone under it), and a new sbt in the
+  // same directory is refused ("server already booting")
+  const pid = Number(fs.existsSync(PID_FILE) ? fs.readFileSync(PID_FILE, 'utf8') : 0);
+  while (pid > 0 && alive(pid)) {
+    if (Date.now() - started > STOP_TIMEOUT_MS) throw new Error(`sbt (pid ${pid}) did not exit in 3 minutes`);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  fs.rmSync(PID_FILE, { force: true });
+  console.log(`[fixture-server] stopped after ${Math.round((Date.now() - started) / 1000)} s`);
+}
+
+/** Whether the process `pid` still runs (signal 0 only checks; EPERM: it runs as another user). */
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === 'EPERM';
+  }
 }
 
 const action = process.argv[2];

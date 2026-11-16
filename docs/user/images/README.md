@@ -12,7 +12,8 @@ numbered examples before each shot, and the link to share shows a neutral host.
 **Platform of the current set:** Windows 11 Pro (10.0.26200), Playwright 1.64.1 with its bundled
 Chromium (156), the app's own font stack, 2026-11-13; the three large views of a juror (yes/no,
 rated, worst mark) and the by-rate results again on 2026-11-16 on the same platform, for the vote
-buttons and the by-rate line (`stack/175`). Text rendering depends on the operating system, so
+buttons and the by-rate line (`stack/175`), and the yes/no large view once more that day, for
+the vote buttons' weight (`stack/177`). Text rendering depends on the operating system, so
 regenerate all the images together on one platform and update this line.
 
 **Size:** 28 images, about 4.5 MiB in all. The largest are the two galleries (about 640 and 610

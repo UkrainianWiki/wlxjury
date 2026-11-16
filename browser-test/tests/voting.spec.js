@@ -19,6 +19,17 @@ test.use({ role: 'juror' });
 
 const selectButton = (page) => page.getByRole('button', { name: /^Select image/ });
 const rejectButton = (page) => page.getByRole('button', { name: /^Reject image/ });
+/** A tile pointed at away from its buttons (around its middle) and chips (at its foot). */
+const TILE_CORNER = { position: { x: 4, y: 4 } };
+/** Bootstrap's border width (a btn's, the navigation buttons'), as computed: "1px". */
+const bootstrapBorder = (page) => page.evaluate(() => {
+  const probe = document.createElement('span');
+  probe.style.borderTop = 'var(--bs-border-width) solid';
+  document.body.append(probe);
+  const width = getComputedStyle(probe).borderTopWidth;
+  probe.remove();
+  return width;
+});
 
 /** The binary round's vote the large view shows, by its pressed button: 1 (✓ pressed), -1 (✗
   * pressed), 0 (neither); both buttons always there (the maintainer's notes of 2026-11-16). */
@@ -94,6 +105,116 @@ async function largeView(routelessAs, url) {
   return page;
 }
 
+/** How far the glyph of the vote button `button` is from its content box's centre, { dx, dy } in
+  * CSS px, the glyph as drawn: its pixels in a screenshot of the button, those at least half way
+  * from the button's background (the commonest colour inside its border) to the glyph's colour
+  * (its icon's `color`), their bounding box's centre. Not the icon's box: a font's glyph sits in it by
+  * the font's metrics and the line's baseline, which is what put the marks off centre. The
+  * screenshot's pixels are the device's (WebKit's Desktop Safari has 2 to a CSS pixel). */
+async function glyphOffset(page, button) {
+  const g = await button.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const c = getComputedStyle(el);
+    const px = (v) => parseFloat(v) || 0;
+    return {
+      outer: r.toJSON(),
+      left: r.left + px(c.borderLeftWidth) + px(c.paddingLeft), right: r.right - px(c.borderRightWidth) - px(c.paddingRight),
+      top: r.top + px(c.borderTopWidth) + px(c.paddingTop), bottom: r.bottom - px(c.borderBottomWidth) - px(c.paddingBottom),
+      // inside the border, less the pressed button's ring of the glyph's colour (2 px, main.css
+      // --wlx-btn-inset) and a pixel for the ring's rounded corners: where the glyph is looked for
+      inner: {
+        left: r.left + px(c.borderLeftWidth) + 3, right: r.right - px(c.borderRightWidth) - 3,
+        top: r.top + px(c.borderTopWidth) + 3, bottom: r.bottom - px(c.borderBottomWidth) - 3,
+      },
+      glyph: getComputedStyle(el.querySelector('i')).color,
+    };
+  });
+  const x0 = Math.floor(g.outer.left);
+  const y0 = Math.floor(g.outer.top);
+  const clip = { x: x0, y: y0, width: Math.ceil(g.outer.right) - x0, height: Math.ceil(g.outer.bottom) - y0 };
+  const shot = await page.screenshot({ clip, animations: 'disabled' });
+  const ink = await page.evaluate(async ({ png, inner, width, glyph }) => {
+    const image = new Image();
+    image.src = `data:image/png;base64,${png}`;
+    await image.decode();
+    // the device's pixels to a CSS pixel; the box in the screenshot's pixels, those wholly inside it
+    const scale = image.width / width;
+    const box = {
+      left: Math.ceil(inner.left * scale), right: Math.floor(inner.right * scale),
+      top: Math.ceil(inner.top * scale), bottom: Math.floor(inner.bottom * scale),
+    };
+    // a page's canvas, not an OffscreenCanvas (WebKit on Windows has none)
+    const canvas = Object.assign(document.createElement('canvas'), { width: image.width, height: image.height });
+    const context = canvas.getContext('2d');
+    context.drawImage(image, 0, 0);
+    const data = context.getImageData(0, 0, image.width, image.height).data;
+    const at = (x, y) => Array.from(data.subarray((y * image.width + x) * 4, (y * image.width + x) * 4 + 3));
+    const counts = new Map();
+    for (let y = box.top; y < box.bottom; y++) {
+      for (let x = box.left; x < box.right; x++) {
+        const key = at(x, y).join();
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+    }
+    const bg = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0].split(',').map(Number);
+    const fg = glyph.match(/[\d.]+/g).slice(0, 3).map(Number);
+    const v = fg.map((f, i) => f - bg[i]);
+    const vv = v.reduce((s, d) => s + d * d, 0);
+    let [left, right, top, bottom] = [Infinity, -Infinity, Infinity, -Infinity];
+    for (let y = box.top; y < box.bottom; y++) {
+      for (let x = box.left; x < box.right; x++) {
+        const p = at(x, y);
+        if (p.reduce((s, c, i) => s + (c - bg[i]) * v[i], 0) / vv >= 0.5) {
+          [left, right, top, bottom] = [Math.min(left, x), Math.max(right, x + 1), Math.min(top, y), Math.max(bottom, y + 1)];
+        }
+      }
+    }
+    // back in CSS pixels
+    return { left: left / scale, right: right / scale, top: top / scale, bottom: bottom / scale, vv };
+  }, {
+    png: shot.toString('base64'),
+    glyph: g.glyph,
+    width: clip.width,
+    // in CSS pixels from the screenshot's corner
+    inner: { left: g.inner.left - x0, right: g.inner.right - x0, top: g.inner.top - y0, bottom: g.inner.bottom - y0 },
+  });
+  expect(ink.vv, 'the glyph\'s colour apart from the button\'s background').toBeGreaterThan(0);
+  expect(ink.right - ink.left, 'the glyph found in the button').toBeGreaterThan(4);
+  return {
+    dx: x0 + (ink.left + ink.right) / 2 - (g.left + g.right) / 2,
+    dy: y0 + (ink.top + ink.bottom) / 2 - (g.top + g.bottom) / 2,
+  };
+}
+
+/** WCAG's contrast ratios against the photo beside the tile button `button` (5 px above its
+  * middle) of what edges it, as drawn: the ring just outside its border, its border, and its
+  * backing (4 px inside its top edge, above the glyph); and that photo's colour. Each read at
+  * the middle of its CSS pixel, in the screenshot's device pixels (2 to one in WebKit). */
+async function edgeContrast(page, button) {
+  const b = await button.boundingBox();
+  const x0 = Math.floor(b.x) - 8;
+  const y0 = Math.floor(b.y) - 8;
+  const width = Math.ceil(b.width) + 16;
+  const shot = await page.screenshot({ clip: { x: x0, y: y0, width, height: Math.ceil(b.height) + 16 }, animations: 'disabled' });
+  return page.evaluate(async ({ png, x, top, width }) => {
+    const image = new Image();
+    image.src = `data:image/png;base64,${png}`;
+    await image.decode();
+    const scale = image.width / width;
+    // a page's canvas, not an OffscreenCanvas (WebKit on Windows has none)
+    const canvas = Object.assign(document.createElement('canvas'), { width: image.width, height: image.height });
+    const context = canvas.getContext('2d');
+    context.drawImage(image, 0, 0);
+    // the colour at CSS row `y` (from the screenshot's top), in the middle of its pixel
+    const at = (y) => Array.from(context.getImageData(Math.floor(x * scale), Math.floor((y + 0.5) * scale), 1, 1).data.subarray(0, 3));
+    const lum = (rgb) => rgb.map((v) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; })
+      .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+    const ratio = (a, b) => { const [l1, l2] = [lum(a), lum(b)].sort((p, q) => q - p); return (l1 + 0.05) / (l2 + 0.05); };
+    const photo = at(top - 5);
+    return { photo, ring: ratio(at(top - 1), photo), border: ratio(at(top), photo), backing: ratio(at(top + 4), photo) };
+  }, { png: shot.toString('base64'), x: b.x + b.width / 2 - x0, top: b.y - y0, width });
+}
+
 test.describe('a juror votes', () => {
   test('in the binary round\'s large view by key, then Back shows the vote', { tag: ['@J-21', '@J-24'] }, async ({ routelessAs, fixture, baseURL, browserName }) => {
     const { juror } = fixture.accounts;
@@ -148,10 +269,11 @@ test.describe('a juror votes', () => {
   // The juror's large view of a yes/no file (the maintainer's notes of 2026-11-16): every button
   // of its row (gallery, previous, next, ✓, ✗) with its own complete border, all four sides one
   // colour at rest and pointed at, none overlapping another (a Bootstrap button group shared their
-  // borders); the ✓ and ✗ with the gallery tiles' border (3 px in the vote's colour), filled with
-  // it pointed at, as high as the navigation buttons and with their radius; at rest, pointed at
-  // and focused, in both colour modes
-  test('the large view\'s buttons each have their own border, the ✓ and ✗ the tiles\' design', { tag: '@J-20' }, async ({ page, fixture }) => {
+  // borders); the ✓ and ✗ with the navigation buttons' border width, height and radius (the
+  // maintainer's notes on 26.11.11: their 3 px border was much heavier than the buttons beside
+  // them), the border in the vote's colour, filled with it pointed at; at rest, pointed at and
+  // focused, in both colour modes
+  test('the large view\'s buttons each have their own border, the ✓ and ✗ the navigation buttons\' weight', { tag: '@J-20' }, async ({ page, fixture }) => {
     const { juror } = fixture.accounts;
     await page.goto(largePath(fixture.roundBinaryId, juror.id, juror.pageId));
     const nav = page.locator('.large-nav [data-nav=gallery]');
@@ -197,7 +319,7 @@ test.describe('a juror votes', () => {
             }
           }
           if (isVote) {
-            expect(b.widths[0], `${where}: the tiles' 3 px border`).toBe('3px');
+            expect(b.widths[0], `${where}: the navigation buttons' border width`).toBe(reference.widths[0]);
             expect(b.colours[0], `${where}: its border in the vote's colour, not the navigation's grey`).not.toBe(reference.colours[0]);
             const pressed = (await button.getAttribute('aria-pressed')) === 'true';
             if (state === 'focused') {
@@ -219,8 +341,9 @@ test.describe('a juror votes', () => {
     }
   });
 
-  // A tile's ✓ and ✗ as the large view's: the 3 px border in the vote's colour, its radius,
-  // filled with the vote's colour pointed at (the maintainer's notes of 2026-11-16), both modes
+  // A tile's ✓ and ✗ as the large view's: the border in the vote's colour, Bootstrap's width (the
+  // maintainer's notes on 26.11.11), its radius, filled with the vote's colour pointed at (the
+  // notes of 2026-11-16), both modes
   test('a tile\'s ✓ and ✗ are filled with the vote\'s colour pointed at', { tag: '@J-16' }, async ({ page, fixture }) => {
     const { juror } = fixture.accounts;
     await page.goto(galleryPath(fixture.roundBinaryId, juror.id));
@@ -238,11 +361,11 @@ test.describe('a juror votes', () => {
     for (const mode of ['dark', 'light']) {
       await page.evaluate((m) => document.documentElement.setAttribute('data-bs-theme', m), mode);
       for (const button of [select, reject]) {
-        await tile.hover();
+        await tile.hover(TILE_CORNER);
         await page.waitForTimeout(200);
         const pressed = (await button.getAttribute('aria-pressed')) === 'true';
         const rest = await style(button);
-        expect(rest.width, `${mode}: the 3 px border`).toBe('3px');
+        expect(rest.width, `${mode}: Bootstrap's border width`).toBe(await bootstrapBorder(page));
         expect(rest.radius, `${mode}: the large view's radius`).toBe('6px');
         if (!pressed) expect(rest.background, `${mode}: not filled at rest`).not.toBe(rest.border);
         await button.hover();
@@ -315,34 +438,125 @@ test.describe('a juror votes', () => {
     expect(seen).toEqual(['✓ ✗', '✓* ✗', '✓ ✗*']);
   });
 
-  // A tile's ✓ and ✗ buttons side by side at one height, the same size, their glyphs level (the
-  // maintainer's note of 2026-11-16: the ✓ sat 8 px above the ✗; unitegallery.js placed them so),
-  // pointed at and not, in both colour modes; the ✓ to the left of the ✗
-  test('a tile\'s ✓ and ✗ buttons are level and the same size', { tag: '@J-16' }, async ({ page, fixture }) => {
+  // A tile's zoom above its ✓ and ✗, centred over them, the ✓ and ✗ side by side at one height,
+  // their glyphs level (the maintainer's note of 2026-11-16: the ✓ sat 8 px above the ✗;
+  // unitegallery.js placed them so), each button the size of the large view's vote buttons (the
+  // maintainer's notes and decision on 26.11.11: one button size everywhere, 24 × 24 px or more,
+  // the zoom above), pointed at and not, in both colour modes; the ✓ to the left of the ✗
+  test('a tile\'s ✓ and ✗ buttons are level under its zoom, the large view\'s size', { tag: '@J-16' }, async ({ page, fixture }) => {
     const { juror } = fixture.accounts;
+    await page.goto(largePath(fixture.roundBinaryId, juror.id, juror.pageId));
+    const large = await page.locator('.large-nav a[data-vote-url]').first().boundingBox();
+    expect(large.width, 'the large view\'s vote button at least 24 px wide').toBeGreaterThanOrEqual(24);
+    expect(large.height, 'the large view\'s vote button at least 24 px high').toBeGreaterThanOrEqual(24);
     await page.goto(galleryPath(fixture.roundBinaryId, juror.id));
     const select = page.getByRole('button', { name: 'Selected' }).first();
     await expect(select).toBeVisible();
     const tile = select.locator('xpath=ancestor::*[contains(concat(" ", @class, " "), " ug-tile ")][1]');
     const reject = tile.getByRole('button', { name: 'Rejected' });
+    const zoom = tile.locator('.ug-icon-zoom');
     const boxes = async () => ({
-      select: await select.boundingBox(), reject: await reject.boundingBox(),
+      zoom: await zoom.boundingBox(), select: await select.boundingBox(), reject: await reject.boundingBox(),
       check: await select.locator('i.bi-check-lg').boundingBox(), cross: await reject.locator('i.bi-x-lg').boundingBox(),
     });
     const centreY = (b) => b.y + b.height / 2;
     for (const mode of ['dark', 'light']) {
       await page.evaluate((m) => document.documentElement.setAttribute('data-bs-theme', m), mode);
       for (const state of ['at rest', 'pointed at']) {
-        if (state === 'pointed at') await tile.hover(); else await page.mouse.move(1, 1);
+        if (state === 'pointed at') await tile.hover(TILE_CORNER); else await page.mouse.move(1, 1);
         await page.waitForTimeout(300);
         const b = await boxes();
         const where = `${mode} mode, ${state}`;
-        expect(Math.abs(b.select.y - b.reject.y), `${where}: the buttons' tops`).toBeLessThanOrEqual(1);
-        expect(Math.abs(b.select.height - b.reject.height), `${where}: the buttons' heights`).toBeLessThanOrEqual(1);
-        expect(Math.abs(b.select.width - b.reject.width), `${where}: the buttons' widths`).toBeLessThanOrEqual(1);
+        for (const name of ['zoom', 'select', 'reject']) {
+          expect(Math.abs(b[name].width - large.width), `${where}: the ${name} button as wide as the large view's`).toBeLessThanOrEqual(1);
+          expect(Math.abs(b[name].height - large.height), `${where}: the ${name} button as high as the large view's`).toBeLessThanOrEqual(1);
+        }
+        expect(Math.abs(b.select.y - b.reject.y), `${where}: the ✓'s and ✗'s tops`).toBeLessThanOrEqual(1);
         expect(Math.abs(centreY(b.check) - centreY(b.cross)), `${where}: the glyphs' centres`).toBeLessThanOrEqual(1);
         expect(Math.abs(b.check.height - b.cross.height), `${where}: the glyphs' heights`).toBeLessThanOrEqual(1);
         expect(b.select.x + b.select.width, `${where}: the ✓ left of the ✗`).toBeLessThan(b.reject.x);
+        expect(b.zoom.y + b.zoom.height, `${where}: the zoom above the ✓ and ✗`).toBeLessThan(b.select.y);
+        const centreX = (box) => box.x + box.width / 2;
+        expect(Math.abs(centreX(b.zoom) - (centreX(b.select) + centreX(b.reject)) / 2), `${where}: the zoom centred over them`)
+          .toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  // Each ✓ and ✗ glyph at the centre of its own button, both axes (the maintainer's report on
+  // 26.11.11: the marks sat off centre, the ✗ most; the level test above compares the two buttons
+  // with each other only), and the tile's zoom's: on a tile and in the large view, at rest and
+  // pointed at, in both colour modes; the glyph as drawn (glyphOffset), within 1 px
+  test('each ✓, ✗ and zoom glyph is centred in its button', { tag: ['@J-16', '@J-20'] }, async ({ page, fixture }) => {
+    const { juror } = fixture.accounts;
+    const centred = async (button, where) => {
+      const { dx, dy } = await glyphOffset(page, button);
+      expect(Math.abs(dx), `${where}: the glyph's centre across (${dx.toFixed(2)} px off)`).toBeLessThanOrEqual(1);
+      expect(Math.abs(dy), `${where}: the glyph's centre down (${dy.toFixed(2)} px off)`).toBeLessThanOrEqual(1);
+    };
+    await page.goto(galleryPath(fixture.roundBinaryId, juror.id));
+    const select = page.getByRole('button', { name: 'Selected' }).first();
+    await expect(select).toBeVisible();
+    const tile = select.locator('xpath=ancestor::*[contains(concat(" ", @class, " "), " ug-tile ")][1]');
+    const reject = tile.getByRole('button', { name: 'Rejected' });
+    for (const mode of ['dark', 'light']) {
+      await page.evaluate((m) => document.documentElement.setAttribute('data-bs-theme', m), mode);
+      for (const [name, button] of [['✓', select], ['✗', reject], ['zoom', tile.locator('.ug-icon-zoom')]]) {
+        await tile.hover(TILE_CORNER);
+        await page.waitForTimeout(300);
+        await centred(button, `${mode} mode, the tile's ${name} at rest`);
+        await button.hover();
+        await page.waitForTimeout(300);
+        await centred(button, `${mode} mode, the tile's ${name} pointed at`);
+      }
+    }
+    await page.goto(largePath(fixture.roundBinaryId, juror.id, juror.pageId));
+    const votes = page.locator('.large-nav a[data-vote-url]');
+    await expect(votes).toHaveCount(2);
+    for (const mode of ['dark', 'light']) {
+      await page.evaluate((m) => document.documentElement.setAttribute('data-bs-theme', m), mode);
+      for (const [i, name] of [[0, '✓'], [1, '✗']]) {
+        await page.mouse.move(1, 1);
+        await page.waitForTimeout(300);
+        await centred(votes.nth(i), `${mode} mode, the large view's ${name} at rest`);
+        await votes.nth(i).hover();
+        await page.waitForTimeout(300);
+        await centred(votes.nth(i), `${mode} mode, the large view's ${name} pointed at`);
+      }
+    }
+  });
+
+  // A tile's buttons read on a light photo (the maintainer's notes on 26.11.11: the zoom, a white
+  // sprite, was hard to see on a light, uniform one): on a white photo, under the tile's darkening
+  // while it is pointed at, each of the zoom, ✓ and ✗ has its outer ring, its border or its
+  // backing 3:1 or more against the photo beside it (edgeContrast: the pixels as drawn), and its
+  // glyph centred, in both colour modes
+  test('a tile\'s zoom, ✓ and ✗ stand out on a white photo', { tag: '@J-16' }, async ({ page, fixture }) => {
+    const { juror } = fixture.accounts;
+    const WHITE = png(640, 480, [255, 255, 255]);
+    await page.route((u) => u.pathname.startsWith('/wikipedia/commons/thumb/') || u.hostname === 'upload.wikimedia.org',
+      (route) => route.fulfill({ status: 200, contentType: 'image/png', body: WHITE }));
+    await page.goto(galleryPath(fixture.roundBinaryId, juror.id));
+    const select = page.getByRole('button', { name: 'Selected' }).first();
+    await expect(select).toBeVisible();
+    const tile = select.locator('xpath=ancestor::*[contains(concat(" ", @class, " "), " ug-tile ")][1]');
+    await expect.poll(() => tile.locator('img.ug-thumb-image').evaluate((img) => img.complete && img.naturalWidth),
+      { message: 'the white photo loaded' }).toBe(640);
+    const buttons = [['zoom', tile.locator('.ug-icon-zoom')], ['✓', select], ['✗', tile.getByRole('button', { name: 'Rejected' })]];
+    for (const mode of ['dark', 'light']) {
+      await page.evaluate((m) => document.documentElement.setAttribute('data-bs-theme', m), mode);
+      await tile.hover(TILE_CORNER);
+      await page.waitForTimeout(400);
+      for (const [name, button] of buttons) {
+        const where = `${mode} mode, the tile's ${name}`;
+        const c = await edgeContrast(page, button);
+        expect(c.photo.every((v) => v > 100), `${where}: beside it the light photo (${c.photo})`).toBe(true);
+        expect(Math.max(c.ring, c.border, c.backing),
+          `${where}: its ring (${c.ring.toFixed(2)}:1), border (${c.border.toFixed(2)}:1) or backing (${c.backing.toFixed(2)}:1) against the photo`)
+          .toBeGreaterThanOrEqual(3);
+        const { dx, dy } = await glyphOffset(page, button);
+        expect(Math.abs(dx), `${where}: the glyph's centre across (${dx.toFixed(2)} px off)`).toBeLessThanOrEqual(1);
+        expect(Math.abs(dy), `${where}: the glyph's centre down (${dy.toFixed(2)} px off)`).toBeLessThanOrEqual(1);
       }
     }
   });
