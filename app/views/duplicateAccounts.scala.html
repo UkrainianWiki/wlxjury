@@ -1,0 +1,143 @@
+@(
+        user: db.scalikejdbc.User,
+        contest: Option[org.intracer.wmua.ContestJury],
+        report: services.DuplicateAccounts.Report
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@* The duplicates report (the account join plan's J-1, DuplicateAccountsController): groups of
+   accounts that share a normalised wiki account or a verified email, a contest's for its admins
+   and root, all of them for root. Read-only but for "Keep separate" (a form POST with the CSRF
+   token). Addresses outside the viewer's contests are masked (services.DuplicateAccounts) *@
+@contestId = @{ contest.flatMap(_.id) }
+@keepAction = @{ routes.DuplicateAccountsController.keepSeparate(contestId) }
+@roles(set: Set[String]) = @{ set.toSeq.sorted.map(r => Messages("role." + r)).mkString(", ") }
+@* the group's pairs kept apart that its other pairs still link: "A (#1) and B (#2); ..." *@
+@keptText(group: services.DuplicateAccounts.Group) = @{
+    group.found.keptApart.toSeq.sorted.map { case (x, y) =>
+        Messages("duplicates.pair", group.nameOf(x), x.toString, group.nameOf(y), y.toString)
+    }.mkString("; ")
+}
+@mainAdmin("users", user, user.getId, contestId = contestId) {
+    <div class="row duplicates-report">
+        <h1 class="h3">@Messages("duplicates.title")</h1>
+        @for(c <- contest) {
+            <p class="text-body-secondary">@Messages("contest") @c.fullName.</p>
+        }
+        <p>@Messages("duplicates.explain")@if(services.AccountSearch.isRoot(user)) { @Messages("duplicates.explain.email")}</p>
+        <p>@Messages("duplicates.keep.explain")</p>
+        <p>
+            @contest match {
+                case Some(c) => {<a href="@routes.UserController.users(c.id)">@Messages("account.changes.back")</a>}
+                case None => {<a href="@routes.UserController.allUsers()">@Messages("account.changes.back")</a>}
+            }
+        </p>
+
+        @for(key <- flash.get("duplicates").filter(Set("duplicates.kept.apart", "duplicates.changed"))) {
+            <div class="alert alert-info" role="status">@Messages(key)</div>
+        }
+
+        @if(report.groups.isEmpty) {
+            <p class="duplicates-none">@Messages("duplicates.none")</p>
+        } else {
+            <p class="duplicates-summary">@Messages("duplicates.summary", report.groups.size, report.accounts)</p>
+        }
+
+        @for(group <- report.groups) {
+            <section class="card mb-3 duplicates-group" aria-labelledby="dup-@group.id">
+                <div class="card-body">
+                    <h2 class="h5 card-title" id="dup-@group.id">
+                        @group.found.criterion match {
+                            case services.DuplicateAccounts.SameWikiAccount => {@Messages("duplicates.same.wiki", group.shared)}
+                            case services.DuplicateAccounts.SameEmail => {@Messages("duplicates.same.email", group.shared)}
+                        }
+                        <span class="text-body-secondary fw-normal">· @Messages("duplicates.accounts", group.accounts.size)</span>
+                    </h2>
+                    <div class="table-responsive position-relative">
+                    <table class="table table-sm align-middle mb-2">
+                        <thead>
+                            <tr>
+                                <th scope="col">@Messages("duplicates.account")</th>
+                                <th scope="col">@Messages("full.name")</th>
+                                <th scope="col">@Messages("wiki.account")</th>
+                                <th scope="col">@Messages("email")</th>
+                                <th scope="col">@if(contest.isEmpty) {@Messages("account.search.contests")} else {@Messages("account.search.your.contests")}</th>
+                                @if(group.mayKeepSeparate && group.accounts.size > 2) {
+                                    <th scope="col"><span class="visually-hidden">@Messages("duplicates.keep.one.column")</span></th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for(a <- group.accounts) {
+                                <tr>
+                                    <td>#@a.account.getId</td>
+                                    <td>
+                                        @if(a.editable) {
+                                            <a href="@routes.UserController.editUser(a.account.getId, contestId)">@a.name</a>
+                                        } else {
+                                            @a.name
+                                        }
+                                    </td>
+                                    <td>
+                                        @a.wikiAccount.getOrElse("")
+                                        @if(a.wikiAccount.nonEmpty && a.account.wikiAccountVerified) {
+                                            <span class="badge text-bg-success">@Messages("account.search.verified")</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @a.email match {
+                                            case Some(e) => {
+                                                @e
+                                                @* whether it is verified: only with the full address, as the search *@
+                                                @if(a.emailFull) {
+                                                    @if(a.account.emailVerified) {
+                                                        <span class="badge text-bg-success">@Messages("account.search.verified")</span>
+                                                    } else {
+                                                        <span class="badge text-bg-secondary">@Messages("unverified")</span>
+                                                    }
+                                                }
+                                            }
+                                            case None => {<span class="text-body-secondary">@Messages("account.search.no.email")</span>}
+                                        }
+                                    </td>
+                                    <td>
+                                        @for((id, c, r) <- a.contests) {
+                                            <div>@c.fold(id.toString)(_.fullName): @roles(r)</div>
+                                        }
+                                    </td>
+                                    @if(group.mayKeepSeparate && group.accounts.size > 2) {
+                                        <td>
+                                            <form method="post" action="@keepAction" class="m-0">
+                                                @csrfField()
+                                                @for(other <- group.found.ids) {
+                                                    <input type="hidden" name="account" value="@other">
+                                                }
+                                                <input type="hidden" name="apartFrom" value="@a.account.getId">
+                                                <button type="submit" class="btn btn-outline-secondary btn-sm">@Messages("duplicates.keep.one")</button>
+                                            </form>
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    </div>
+
+                    @if(group.found.keptApart.nonEmpty) {
+                        <p class="text-body-secondary small mb-2 duplicates-kept">@Messages("duplicates.kept.pairs", keptText(group))</p>
+                    }
+
+                    @if(group.mayKeepSeparate) {
+                        <form method="post" action="@keepAction" class="m-0">
+                            @csrfField()
+                            @for(id <- group.found.ids) {
+                                <input type="hidden" name="account" value="@id">
+                            }
+                            <button type="submit" class="btn btn-outline-secondary btn-sm">@if(group.accounts.size > 2) {@Messages("duplicates.keep.all")} else {@Messages("duplicates.keep")}</button>
+                        </form>
+                    } else {
+                        <p class="text-body-secondary small mb-0 duplicates-not-yours">@Messages("duplicates.keep.not.allowed")</p>
+                    }
+                </div>
+            </section>
+        }
+    </div>
+}

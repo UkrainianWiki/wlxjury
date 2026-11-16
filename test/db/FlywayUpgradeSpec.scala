@@ -694,6 +694,62 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+  /** V106's rollback SQL after reopen (the account join plan's J-1, as the script's last comment
+    * gives it): the `account_joined` rows (none before J-2), V96's field CHECK back, the table
+    * dropped (the pairs kept apart forgotten).
+    */
+  private val v106Rollback = Seq(
+    "DELETE FROM account_change WHERE field = 'account_joined'",
+    "ALTER TABLE account_change DROP CONSTRAINT IF EXISTS account_change_field_chk, ADD CONSTRAINT account_change_field_chk " +
+      "CHECK (BINARY field IN ('email', 'password', 'role', 'name', 'wiki_account', 'root', 'account_created', " +
+      "'invitation', 'invitation_cancelled', 'password_link', 'share_link', 'sessions_ended'))",
+    "DROP TABLE IF EXISTS account_join_request",
+    "DELETE FROM flyway_schema_history WHERE version = '106'")
+
+  "V106's account join requests" should {
+    "run after V105, keep a pair apart once, take account_joined, refuse other values, rerun as a no-op, and roll back" in {
+      emptyDb("fw_v106_prev")
+      flyway("fw_v106_prev", production.copy(target = Some("105"))).migrate()
+      emptyDb("fw_v106")
+      flyway("fw_v106", production.copy(target = Some("105"))).migrate().success must beTrue
+      Using.resource(connect("fw_v106"))(c => run(c, Seq(
+        "INSERT INTO users (id, fullname, email) VALUES (1, 'A', 'a@example.com'), (2, 'B', 'b@example.com'), " +
+          "(3, 'C', 'c@example.com')")))
+      flyway("fw_v106", production.copy(target = Some("106"))).migrate().success must beTrue
+      val once = schema("fw_v106")
+      def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+      def refused(sql: String): Boolean = Using.resource(connect("fw_v106"))(c => scala.util.Try(run(c, Seq(sql))).isFailure)
+      val insert = "INSERT INTO account_join_request (first_account_id, second_account_id, state, requested_by) VALUES "
+      Using.resource(connect("fw_v106"))(c => run(c, Seq(
+        insert + "(1, 2, 'kept_apart', 1)", insert + "(1, 2, 'pending', 1)", insert + "(1, 2, 'cancelled', 1)",
+        insert + "(1, 3, 'kept_apart', 2)",
+        "UPDATE account_join_request SET first_proof = 'mail_link', second_proof = 'session' WHERE state = 'pending'",
+        "INSERT INTO account_change (user_id, actor_id, field, comment) VALUES (1, 3, 'account_joined', '2')")))
+      (history("fw_v106").map(_.split(" \\| ")(1)) === upTo("106")) and
+        // a pair kept apart once; ordered; the states and proofs as listed, byte for byte
+        (refused(insert + "(1, 2, 'kept_apart', 3)") must beTrue) and
+        (refused(insert + "(2, 1, 'pending', 1)") must beTrue) and
+        (refused(insert + "(2, 2, 'pending', 1)") must beTrue) and
+        (refused(insert + "(1, 2, 'Kept_apart', 1)") must beTrue) and
+        (refused(insert + "(1, 2, 'merged', 1)") must beTrue) and
+        (refused("UPDATE account_join_request SET first_proof = 'mail' WHERE id = 1") must beTrue) and
+        (refused(insert + "(1, 9, 'pending', 1)") must beTrue) and
+        (refused("INSERT INTO account_change (user_id, actor_id, field) VALUES (1, 3, 'Account_joined')") must beTrue) and {
+          Using.resource(connect("fw_v106"))(c => run(c, Seq("DELETE FROM account_join_request",
+            "DELETE FROM account_change")))
+          val reset = schema("fw_v106")
+          Using.resource(connect("fw_v106"))(c => run(c, statements("V106__Account_join_request.sql")))
+          schema("fw_v106") === reset
+        } and {
+          Using.resource(connect("fw_v106"))(c => run(c, v106Rollback))
+          (history("fw_v106").map(_.split(" \\| ")(1)) === upTo("105")) and
+            (tablesOnly(schema("fw_v106")) === tablesOnly(schema("fw_v106_prev"))) and
+            (flyway("fw_v106", production.copy(target = Some("106"))).migrate().success must beTrue) and
+            (tablesOnly(schema("fw_v106")) === tablesOnly(once))
+        }
+    }
+  }
+
   /** V96's rollback SQL after reopen (CHANGELOG, the account change log): the live unsent
     * invitations revoked first, since an older release would show one as mailed; the log dropped.
     */

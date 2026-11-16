@@ -213,9 +213,37 @@ editing step 3 starts when the maintainer says, alongside.
 
 | # | PR | Size |
 |---|---|---|
-| J-1 | `account_join_request` (with `kept_apart`) and `account_change`'s `account_joined`, the next free migration (V107 if the existing-accounts plan's A-4 takes V106); the duplicates report (read-only; per contest for its admins, in full for root) with Keep separate | M, ~2–3 days |
+| J-1 | `account_join_request` (with `kept_apart`) and `account_change`'s `account_joined`, the next free migration (V106; A-4 then takes V107); the duplicates report (read-only; per contest for its admins, in full for root) with Keep separate | M, ~2–3 days |
 | J-2 | The preview and the `account_join` job (steps under the lock order above, the votes sweep, collisions refused (J1), one active join per account, A-4's retirement reused, notices, the audit line, the change log rows), per J1–J3; db practices §7.1's addition; the edit panel's "Join" link | L, ~6–8 days |
 | J-3 | Requests: the chooser's and the own profile's "I have another account", the proofs, cancel and expiry | M, ~3 days |
+
+**J-1 as built (2026-11-16, `stack/173-duplicates-report`, V106).** `services.DuplicateAccounts`,
+`DuplicateAccountsController` (`/admin/duplicates?contestId=`, root's `/admin/duplicates/all`,
+`POST /admin/duplicates/keep-separate`). How the build reads the rules above, for J-2 to keep:
+
+- **The same verified email** (an interpretation by the builder, put to the maintainer and not answered yet; kept until they decide): `users.email` is unique, so two accounts never hold one address;
+  the report pairs an account whose address is verified (not set by an admin) with the accounts
+  whose linked Google or Wikimedia sign-in (`user_identity.email`, not unlinked) has that address.
+  None exist in production while OAuth is off. Until the maintainer confirms the reading, these
+  groups are in root's report only (the independent review of J-1): an admin's report has the
+  wiki-name groups.
+- **The same wiki account:** `CoiMembers.normalize` (the stored names' normalisation), then lower
+  case (the column's case-insensitive comparison); non-deleted accounts with a non-blank name.
+- **A contest's report:** the groups with an account that is a member of the contest or worked in
+  it (`User.contestsWorkedIn`); every account of such a group is shown, by A1's rules (the email in
+  full within the admin's contests, its contests only theirs, root accounts never).
+- **Keep separate** is the performer's (root, or an admin, active, of every contest each account of
+  the group is in or worked in), checked again under the accounts' users rows (ascending id, the
+  lock order above), then one `kept_apart` row per pair (`requested_by` = `decided_by` = the
+  performer, `contest_id` the report's, NULL for root's full report). The page offers it per group
+  ("Keep separate"; "Keep all separate" for three or more) and per account of a group of three or
+  more ("Keep separate from the others": that account against each other one, a screening
+  portion). A group is what its pairs not kept apart still link, so one account kept apart from
+  all the others leaves it, and two kept apart stay while a third links them (the page says so).
+  A group that changed since the page was shown records nothing. No undo in the tool.
+- **Audit:** `security.account` INFO lines by ids only, `duplicates_report byAccountId= contestId=
+  groups= accounts=` and `accounts_kept_apart byAccountId= contestId= pairs=a:b,...`. Nothing is
+  mailed.
 
 J-2 changes who may act on accounts: negative cases (an admin of only one of the two accounts'
 contests; an organizer; a root account) and the job's restart and Retry cases.

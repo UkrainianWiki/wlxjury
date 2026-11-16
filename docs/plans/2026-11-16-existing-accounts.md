@@ -269,10 +269,11 @@ instead". *Considered:* no retire (role `no` only), root only.
 
 ## Migrations
 
-- **A-4** (retire): `account_change`'s field CHECK (V96) gains `account_retired`, the next free
-  number at merge (V106 today).
-- The join plan's own migration (`account_join_request`, the field `account_joined`) takes the
-  next number after it.
+- **A-4** (retire): `account_change`'s field CHECK (V96, widened by J-1's V106 with
+  `account_joined`, which it keeps) gains `account_retired`, the next free number at merge (V107
+  today).
+- The join plan's J-1 took V106 (`account_join_request`, the field `account_joined`); A-4 takes
+  the next free number (V107 today).
 - A-1..A-3 need no migration (the role and comment columns exist).
 
 ## PRs (both plans, in order)
@@ -282,8 +283,8 @@ instead". *Considered:* no retire (role `no` only), root only.
 | A-1 | Users page search for every account (POST, CSRF, escaped `LIKE`, whole-address email match outside the actor's contests, masked emails, INFO log by ids) and "Add to this contest" by id (`addAccountToContest`, the deleted check under the lock); secure coding §14's residual risk updated; negative specs: signed out, organizer, juror, inactive member get nothing; no full address of an account outside the actor's contests; no part-of-address match outside them | this, a | M (~2–3 days) | – |
 | A-2 | Edit user's `wiki.account.taken` panel: the other account(s), counts within the actor's contests, "Add that account instead" (A-1's add by id), "Keep separate" | this, c | M (~2 days) | – |
 | A-3 | Adding by an unverified wiki account (A2): matches by name, the pick and confirmation, then A-1's add; placeholders the same way; the `security.account` line; secure coding §14's new rule and its risk | this, b | M (~2 days) | – |
-| A-4 | Retiring an account (A3, opt-in): guards, the round-job refusal, one transaction, email cleared, `round_user` inserts re-checking the account, the deleted-row readers, the CoI change shown; the panel's "Retire" | this, c | M (~2–3 days) | next free, V106 today |
-| J-1 | Duplicates report (read-only, groups of 2 to 11 accounts), "Keep separate" per pair; `account_join_request` | join | M (~2–3 days) | next free |
+| A-4 | Retiring an account (A3, opt-in): guards, the round-job refusal, one transaction, email cleared, `round_user` inserts re-checking the account, the deleted-row readers, the CoI change shown; the panel's "Retire" | this, c | M (~2–3 days) | next free, V107 today |
+| J-1 | Duplicates report (read-only, groups of 2 to 11 accounts), "Keep separate" per pair; `account_join_request` | join | M (~2–3 days) | V106 (`stack/173-duplicates-report`) |
 | J-2 | Join preview, the `account_join` job (reusing A-4's retirement), notices, audit; the edit panel's "Join" link | join | L (~6–8 days) | – |
 | J-3 | Requests from the chooser and the own profile, with proofs | join | M (~3 days) | – |
 

@@ -419,8 +419,8 @@ fallback covers.
 `webkit`), each depending on its sign-in project (`setup-<engine>`, `tests/auth.setup.js`), which
 signs in through the login form once per role (juror, organizer, admin, root) and saves the
 session to `target/browser-test/auth/<engine>-<role>.json`. A test takes a role with
-`test.use({ role: 'juror' })`, or opens another session with `contextAs(role)`. 113 tests per
-engine (339 in all; `playwright test --list`, 2026-11-16, with the jurors form's review test and tour page, and the "wiki account taken" panel's test), 4 of them its sign-ins, besides the 7 opt-in docs screenshots:
+`test.use({ role: 'juror' })`, or opens another session with `contextAs(role)`. 116 tests per
+engine (348 in all; `playwright test --list`, 2026-11-16, with the jurors form's review test and tour page, the "wiki account taken" panel's test, and the duplicates report's test and two tour pages), 4 of them its sign-ins, besides the 7 opt-in docs screenshots:
 
 | Spec | What it shows | Stories |
 |---|---|---|
@@ -433,7 +433,8 @@ engine (339 in all; `playwright test --list`, 2026-11-16, with the jurors form's
 | `organizer` | the organizer role's round statistics and by-rate list; the admin's rounds list, round form with its jurors' table, edit-then-cancel (nothing saved, no job), new round form; root's contests page | O-01, O-02, A-01, A-02, R-01 |
 | `review` | a round's review before distribution, as the admin: the new-round form without jurors or file distribution; "Review images first" holds it in review; the review page's Distribute opens the jurors form, the contest's jurors chosen, refused with none; Edit the round's "Re-apply filters" (a monument filter of ids separated by ", ") takes files out and the page shows how many; a comment in the review's large view; two jurors picked, one per file, Distribute opens the round. "Choose jurors next" lands on the jurors form, which waits for the selection, then shows the images and the form (nothing distributed). Writes two rounds per engine to the fixture: one distributed to jurors no other test signs in as, one left in review | A-21, A-01 |
 | `users` | the users page's search for existing accounts: a script's POST (the text in its body, never the URL), a part of an address outside the admin's contests finding nothing, the engine's own account found by its name with a masked address, added to the contest (an invitation, cancelled again so a rerun starts over); Edit user's "wiki account taken" panel: a save giving the engine's member another account's wiki account refused, that account shown masked, Keep them separate putting the wiki account back without a request, then Add that account instead (an invitation, cancelled again) | A-22, A-23 |
-| `pages` | a tour of 27 pages (each role's, a round's jurors form among them): status 200, one `h1`; in Chromium an axe-core scan per page (§10.5) | S-04 |
+| `duplicates` | the duplicates report (the account join plan's J-1), as the admin: opened from the users page, the engine's first group still listed (a wiki account written three ways), the contest member's address in full with its edit link, the others masked; one account kept apart from the others, then the remaining pair, each a form POST with its token; the group gone, also after a reload. Uses one of the engine's four fixture groups per run; skipped in the guides' screenshot mode (no groups) | A-24 |
+| `pages` | a tour of 28 pages (each role's, a round's jurors form and the duplicates report's two among them): status 200, one `h1`; in Chromium an axe-core scan per page (§10.5) | S-04 |
 
 **10.2 Every page passes** (`lib/fixtures.js`, for every context of every test): images and
 videos from `upload.wikimedia.org` (requests of type image or media only) and this host's

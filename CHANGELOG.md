@@ -26,8 +26,56 @@ with `.N` for an extra deploy in the same month (`26.11.1`), and release heading
 
 ## Unreleased (developed, not yet deployed)
 
-Developed after `26.11.10` (#355 on): the next release is `26.11.11` (`build.sbt` says
-`26.12-SNAPSHOT` between releases).
+The next release is `26.11.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything developed up to
+2026-11-16 before the entries below was deployed in `26.11.11`.
+
+**Features**
+
+- **Possible duplicate accounts** (J-1 of the account join plan; developed 2026-11-16,
+  `stack/173-duplicates-report`): **Possible duplicates** on the users page lists the groups of
+  accounts that share a wiki account (in any letter case, with or without `User:`, underscores
+  as spaces) or, in root's report only for now, a verified email (one account's proven address on
+  another's Google or Wikimedia sign-in), nothing else (not a name, not a shared round); a
+  contest's groups for its admins (a
+  group with an account that is a member of it or worked in it; addresses masked outside their
+  contests, only their contests shown, root accounts never), every group for root (from the
+  Users page of all contests). **Keep separate** (a form POST with the CSRF token) records a pair
+  as different people, or one person's accounts kept apart on purpose (a screening portion:
+  **Keep separate from the others** on its row), and hides the pair for good; only root or an
+  admin of every contest the group's accounts are in or worked in may, and a group that changed
+  since the page was shown records nothing. Read-only otherwise: no account changes, nothing is
+  mailed; the report and each Keep separate are logged by ids only (`security.account`). Joining
+  comes with J-2. Admin guide.
+
+**Development**
+
+- **`account_join_request` and `account_joined` (V106)** (the account join plan's J-1; developed
+  2026-11-16): a table of join requests and pairs kept apart (an ordered pair, a state of
+  `pending`, `done`, `refused`, `cancelled`, `kept_apart` with a unique key on the pairs kept
+  apart, the proofs and the kept address for J-3's requests, who asked and decided, the contest),
+  and `account_change`'s field CHECK gains `account_joined` (for J-2). Rerunnable (`IF NOT
+  EXISTS`, the CHECK dropped and added), each statement under a 60 s `lock_wait_timeout`; the
+  rollback is in the script's last comment (FlywayUpgradeSpec "V106's account join requests").
+  The report on production's size (2,800 accounts, 280 in 86 groups, DuplicateAccountsSpec in the
+  test container): 94 ms; the names one read of `users` (a range of its wiki account index, 280
+  rows), the email path from `user_identity` with `users` by its keys.
+
+## 26.11.11 (2026-11-16)
+
+Deployed 2026-11-16, build `26.11.11-e0eaece3372c` (release commit `e0eaece3` on
+`release/26.11.11`), schema V105, from `26.11.10`, PRs #355-#358. **No migration**: the schema
+stays V105, so going back to `26.11.10` is the app alone. Deploy record: roadmap, "26.11.11 deploy
+record". Changes to know about:
+- **Creating a round:** the new-round form has the filters only and ends with **Review images
+  first** or **Choose jurors next**; the jurors and the file distribution are chosen on the
+  round's jurors form, and nothing is distributed until it is submitted.
+- **Removed:** the checkbox "Distribute as soon as the images are ready" (a job queued with it
+  before still distributes after its fill).
+- **Comments on a round in review** (its admins and organizers can now write them on the review's
+  images) are hidden from jurors, also from those of other rounds with the same file, until the
+  round is distributed.
+- **Votes:** a juror's large view always shows both ✓ and ✗; a click on the pressed one undoes
+  the vote.
 
 **Features**
 
@@ -83,6 +131,14 @@ Developed after `26.11.10` (#355 on): the next release is `26.11.11` (`build.sbt
     then in any comment read (the large view, the comments report, the comment badges, "Only
     with comments" and its counts, the latest-comment order), one rule for all of them
     (`RoundList.hiddenCommentRounds`, the contest's rounds not yet distributed). Admin guide.
+- **"Wiki account taken" on Edit user** (A-2 of the existing accounts plan; developed 2026-11-16,
+  `stack/172-wiki-taken-panel`): a save refused because other accounts have the wiki account typed
+  now shows those accounts (up to 10 of a legacy group, none preselected) as the search shows them:
+  the email masked outside the admin's contests, the contests of theirs each is in, and its votes,
+  comments and rounds counted in those contests only (root: all). **Add that account to this
+  contest instead** is the search's add by id, with the form's role and both mail boxes unticked;
+  **Keep them separate** puts the wiki account back in the form (nothing recorded). Root accounts
+  are never shown to admins. Each panel is logged by ids only. Admin guide.
 
 **Fixes**
 
@@ -182,14 +238,6 @@ users page's search sends **no email unless the admin ticks** "Send an invitatio
 
 **Development**
 
-- **"Wiki account taken" on Edit user** (A-2 of the existing accounts plan; developed 2026-11-16,
-  `stack/172-wiki-taken-panel`): a save refused because other accounts have the wiki account typed
-  now shows those accounts (up to 10 of a legacy group, none preselected) as the search shows them:
-  the email masked outside the admin's contests, the contests of theirs each is in, and its votes,
-  comments and rounds counted in those contests only (root: all). **Add that account to this
-  contest instead** is the search's add by id, with the form's role and both mail boxes unticked;
-  **Keep them separate** puts the wiki account back in the form (nothing recorded). Root accounts
-  are never shown to admins. Each panel is logged by ids only. Admin guide.
 - **Plans (docs only):** adding existing accounts (search, the "wiki account already taken"
   panel, adding by an unverified wiki name) and the account join plan brought up to date with
   the maintainer's decisions of 2026-11-16 (`docs/plans/2026-11-16-existing-accounts.md`,

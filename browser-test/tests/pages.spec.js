@@ -71,6 +71,9 @@ const TOUR = [
   // adding a juror to a running round: the contest's jurors outside it (none may be left), its jurors
   ['add juror page', 'admin', (f) => `/admin/rounds/${f.roundBinaryId}/add-juror`],
   ['users', 'admin', (f) => `/admin/users?contestId=${f.contestId}`],
+  // the duplicates report (the account join plan's J-1): the contest's, and root's of every account
+  ['duplicates report', 'admin', (f) => `/admin/duplicates?contestId=${f.contestId}`],
+  ['duplicates report, all', 'root', () => '/admin/duplicates/all'],
   ['contest images', 'admin', (f) => `/contest/${f.contestId}/images`],
   ['contests', 'root', () => '/contests'],
 ];

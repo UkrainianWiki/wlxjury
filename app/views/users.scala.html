@@ -30,6 +30,12 @@
             @if(contests.nonEmpty) {
                 @contestsTable(contests)
             }
+            @* root's list of every account: the full duplicates report *@
+            @if(contestOpt.isEmpty) {
+                <div class="mb-2">
+                    <a href="@routes.DuplicateAccountsController.all()" class="btn btn-outline-secondary duplicates-link">@Messages("duplicates.link")</a>
+                </div>
+            }
 
             @for(contest <- contestOpt) {
                 <h1 class="h3">@Messages("contest") @contest.fullName</h1>
@@ -42,7 +48,8 @@
                     <a href="@routes.UserController.importUsers(contest.id)" class="btn btn-outline-secondary me-1">@Messages("mass.import")</a>
                     <a href="@routes.UserController.editGreeting(contest.id)" class="btn btn-outline-secondary me-1">@Messages("edit.greeting.message")</a>
                     @for(id <- contest.id) {
-                        <a href="@routes.AccountChangeController.changes(id)" class="btn btn-outline-secondary account-changes-link">@Messages("account.changes.title")</a>
+                        <a href="@routes.AccountChangeController.changes(id)" class="btn btn-outline-secondary me-1 account-changes-link">@Messages("account.changes.title")</a>
+                        <a href="@routes.DuplicateAccountsController.report(id)" class="btn btn-outline-secondary duplicates-link">@Messages("duplicates.link")</a>
                     }
                 </div>
             }

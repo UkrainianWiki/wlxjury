@@ -109,6 +109,7 @@ a guide or a test needs them.
 | A-21 | An admin reviews a new round's images before distribution: creates it without jurors ("Review images first" or "Choose jurors next"), checks each country's or region's count, re-applies its filters, comments on a file, picks its jurors on the jurors form and distributes it | [Reviewing a round's images](../user/admin-guide.md#reviewing-a-rounds-images), [Choosing the jurors](../user/admin-guide.md#choosing-the-jurors) | *Part:* the country counts (an international contest), disqualify / put back and the D18 warning in service and controller specs only (`ReviewPlacesJurorsFormSpec` …) |
 | A-22 | An admin finds an existing account by a part of its name or wiki account, or its whole email (masked outside their contests), and adds it to the contest | [admin guide](../user/admin-guide.md#finding-an-existing-account) | |
 | A-23 | An admin whose Edit user save is refused because another account has the wiki account sees that account (masked outside their contests, counts within them), keeps them separate, or adds that account to the contest instead | [admin guide](../user/admin-guide.md#a-wiki-account-another-account-has) | |
+| A-24 | An admin lists the contest's possible duplicate accounts (the same wiki account, or a verified email on another account's sign-in; masked outside their contests) and keeps accounts separate, for good | [admin guide](../user/admin-guide.md#possible-duplicate-accounts) | Keep separate only where they administer every contest of the accounts |
 
 ## Root
 
@@ -119,6 +120,7 @@ a guide or a test needs them.
 | R-03 | Root lists all users across contests and makes an account root | – | *Part:* making an account root only |
 | R-04 | Root signs in with login and password | – | |
 | R-05 | Root mails a reset-password link to an account, or ends all its sessions | – | |
+| R-06 | Root lists the possible duplicate accounts of every contest and outside them, and keeps accounts separate | [admin guide](../user/admin-guide.md#possible-duplicate-accounts) | |
 
 ## System and security
 

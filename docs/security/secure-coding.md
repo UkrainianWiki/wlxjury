@@ -477,6 +477,18 @@ to root only), with their votes, comments and rounds counted within the editor's
 (root: all), to whoever passed `editableUser` (root, or an admin of the page's contest); "Add that
 account instead" is the search's add by id (`addExistingAccount`, CSRF, both mails unticked).
 Logged as `wiki_taken_panel byAccountId= accountId= contestId= shown= notShown=`.
+**Since J-1** (the duplicates report, [account join plan](../plans/2026-11-03-account-join.md)):
+a contest's admins see the groups of accounts that share a normalised wiki account (the groups by
+a verified address on another account's sign-in are root's only for now), where one account of
+the group is in their contest; the
+others by A-1's rules (masked addresses, their contests only, no root account). What it adds to the
+search: which accounts share a name (the search by that name shows the same), and one bit about an
+account's other contests: **Keep separate** is offered only to root or an admin of every contest
+of the group's accounts (the performer's rule of a join), so its absence says an account is also
+elsewhere, as the edit form's Join link will. Keep separate only hides a pair from the report; it
+changes no account and mails no one, is checked again under the accounts' users rows, and is
+logged at INFO on `security.account` by ids only (`accounts_kept_apart byAccountId= contestId=
+pairs=`), as is each report (`duplicates_report byAccountId= contestId= groups= accounts=`).
 
 **Example.** `UserService.addToContest` (results `NewAccount`, `JoinedContest`, `Invited`,
 `WikiAccountUnverified`); `UserService.addAccountToContest` (the search's add by id: the account
@@ -485,7 +497,8 @@ looked up once before its row lock and checked again under it, a deleted or unkn
 with the token row locked; `ShareLinkService.refusal` (who may share a link, or set a password).
 
 **Guards.** `AccountInvitationSpec`, `ShareLinkSpec`, `AdminSetPasswordSpec`, `OwnAccountSpec`, `AccountReviewFixesSpec`, `SetupSpec`,
-`db.AccountVerificationMigrationSpec`, `MultiContestUserSpec`, `UserControllerSpec`, `AccountSearchSpec`, `WikiTakenPanelSpec`.
+`db.AccountVerificationMigrationSpec`, `MultiContestUserSpec`, `UserControllerSpec`, `AccountSearchSpec`, `WikiTakenPanelSpec`,
+`DuplicateAccountsSpec`.
 
 A Google or Wikimedia identity's first sign-in links to an account by the same rule
 (`services.oauth.IdentityLinker`): by an email the provider is authoritative for (Google: Gmail or

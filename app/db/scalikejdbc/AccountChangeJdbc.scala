@@ -48,10 +48,12 @@ object AccountChangeJdbc {
   val PasswordLink = "password_link"
   val ShareLink = "share_link"
   val SessionsEnded = "sessions_ended"
+  /** Two accounts joined (the account join plan's J-2; V106 allows it, nothing writes it yet). */
+  val AccountJoined = "account_joined"
 
-  /** The fields V96's check allows. */
+  /** The fields the check allows (V96's, and V106's `account_joined`). */
   val Fields: Seq[String] = Seq(Email, Password, Role, Name, WikiAccount, Root, AccountCreated, Invitation,
-    InvitationCancelled, PasswordLink, ShareLink, SessionsEnded)
+    InvitationCancelled, PasswordLink, ShareLink, SessionsEnded, AccountJoined)
 
   /** The longest old or new value, and comment, the columns take: longer ones are cut. */
   val ValueMaxLength = 255

@@ -23,8 +23,9 @@ import java.nio.file.Files
   * (an admin of the contest), a root account (created here) and the juror's first page id in the binary and the rated round;
   * for the browser tests (browser-test/), an account with the contest's organizer role (created here) and up to
   * eight jurors with files in both rounds, each with its first page id in each, three accounts
-  * in no contest for the users page's search (one per engine), and three pairs for the Edit user
-  * form's "wiki account taken" panel (one per engine).
+  * in no contest for the users page's search (one per engine), three pairs for the Edit user
+  * form's "wiki account taken" panel (one per engine), and per engine four groups of
+  * possible duplicates for the duplicates report (their shared wiki accounts; none in docs mode).
   * Then it serves until `target/ui-shots/server.stop` exists (or the process is killed) and exits,
   * stopping the server and the container.
   *
@@ -145,6 +146,27 @@ object UiShotsServer {
       s"""{"edited": {"id": $edited, "name": ${q(s"Taken Edited $n")}}, "target": {"id": $target, """ +
         s""""name": ${q(targetName)}, "login": ${q(targetEmail)}, "wiki": ${q(wiki)}}}"""
     }
+    // possible duplicates for the duplicates report (duplicates.spec.js), per engine four groups of
+    // three accounts with one wiki account written three ways (the account join plan's J-1): the
+    // first a member of the contest without a role (so the contest's report lists the group, its
+    // email in full), the others in no contest (masked). A test keeps one group apart, so a rerun
+    // takes the next. Not in the guides' screenshot mode (-Dui.images=docs), whose users page
+    // shows the contest's members; in this run's container only
+    val duplicateGroups = (1 to 3).map { n =>
+      val names = (1 to 4).map { k =>
+        val wiki = s"Dup Target $n-$k"
+        Seq(("a", wiki, Some(f.contestId)), ("b", s"dup_target $n-$k", None), ("c", s"User:$wiki", None))
+          .foreach { case (x, stored, contest) =>
+            val email = s"dup-$n-$k-$x@ui-shots.test"
+            if (f.docsPhotos.isEmpty && db.scalikejdbc.User.findByEmail(email).isEmpty)
+              db.scalikejdbc.User.create(db.scalikejdbc.User(s"Duplicate $n-$k ${x.toUpperCase}", email, None,
+                if (contest.isDefined) Set("no") else Set.empty,
+                Some(services.PasswordHasher.default.hash(s"dup-$n-$k-$x-pass")), contest, wikiAccount = Some(stored)))
+          }
+        q(wiki)
+      }
+      if (f.docsPhotos.isEmpty) names.mkString("[", ", ", "]") else "[]"
+    }
     // in one transaction: as autocommitted statements (a commit per row) it took about 2.5 minutes
     val filled = DB.localTx { tx => CommonsFileUrl.fillMissing()(tx) }
     println(s"[ui-shots] set the Commons url of $filled images")
@@ -194,6 +216,7 @@ object UiShotsServer {
          |  "jurors": [${jurors.mkString(", ")}],
          |  "searchTargets": [${searchTargets.mkString(", ")}],
          |  "wikiTaken": [${wikiTaken.mkString(", ")}],
+         |  "duplicateGroups": [${duplicateGroups.mkString(", ")}],
          |  "commentFile": {"juror": $commentJuror, "pageId": $commentPage, "otherRounds": $commentOthers},
          |  "pageId": $pageId,
          |  "ratedPageId": $ratedPageId

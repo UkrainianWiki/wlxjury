@@ -249,6 +249,40 @@ person's **Edit user** page lists theirs. Only the contest's admins and root see
 email addresses. Root sees every change of an account on its edit page, also those made in other
 contests.
 
+<a id="a-duplicates"></a>
+### Possible duplicate accounts
+
+The same person may have several accounts: one from an earlier year or another contest, created
+under another email. **Possible duplicates**, on the users page, lists the groups of accounts that
+look like one person's by one of two signs only:
+
+- the **same wiki account**, written in any letter case, with or without `User:` and with
+  underscores or spaces (`Anna K`, `anna_k`);
+- the **same verified email**: one account's proven address is the address of another account's
+  Google or Wikimedia sign-in. Root's report only, for now.
+
+Nothing else pairs accounts: not the same name, and not working in the same round. A group is
+listed in your contest's report if one of its accounts is a member of the contest or worked in it;
+the report shows every account of the group, as the search shows it (see [Finding an existing
+account](#finding-an-existing-account)): the email in full only for accounts in your contests,
+masked otherwise, only the contests of yours each is in with its role there, and a link to the
+edit page of the contest's members. Root accounts are not shown. Root sees every group, across
+the contests and outside them, from the **Users** page of all contests. The report changes no
+account and mails no one.
+
+**Keep separate** records that the accounts are different people, or that one person keeps
+several accounts on purpose (a screening round may give one person several juror accounts, each
+with its own share of the files): the pair is then never listed again, for you or anyone else, and
+there is no undo in the tool. In a group of three or more, **Keep separate from the others** on an
+account's row keeps that account apart from the rest of the group (a screening portion), and
+**Keep all separate** keeps every pair apart; the others stay listed while any pair of them is not
+kept apart. Two accounts kept apart can stay in a group while a third account links them; the
+report then says so. Only root, or an admin of every contest the group's accounts are in or worked
+in, can keep them separate: an account that is also in a contest you don't administer shows the
+group without the buttons. If the group changed since you opened the page (someone kept a pair
+apart meanwhile), nothing is recorded and the page says so. Each Keep separate is logged with
+your account and the accounts' ids.
+
 <a id="a-invitations"></a>
 ## Invitations
 
@@ -979,6 +1013,8 @@ stopped.
   once, as an admin does, see [Changing a person](#a-edit-person)).
 - Send **Reset password** links and use **End sessions** on any account, and see and revoke
   any account's API tokens.
+- See the [possible duplicate accounts](#a-duplicates) of every contest and outside them, and
+  keep any of them separate.
 - Run **Check every round's images**, on the rounds list: it checks that every round's list of
   files matches its votes, and repairs any drift.
 - Run **Normalize stored authors**, on the rounds list, see [below](#a-normalize-authors).

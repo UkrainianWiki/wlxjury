@@ -103,6 +103,10 @@ POST        /admin/users/search                                                 
 POST        /admin/users/add-existing                                               @controllers.UserController.addExistingAccount(contestId: Option[Long] ?= None)
 # the contest's account change log (V96): its admins and root only
 GET         /admin/account-changes                                                  @controllers.AccountChangeController.changes(contestId: Long, page: Int ?= 1)
+# the duplicates report (the account join plan's J-1): a contest's for its admins and root, all for root
+GET         /admin/duplicates                                                       @controllers.DuplicateAccountsController.report(contestId: Long)
+GET         /admin/duplicates/all                                                   @controllers.DuplicateAccountsController.all()
+POST        /admin/duplicates/keep-separate                                         @controllers.DuplicateAccountsController.keepSeparate(contestId: Option[Long] ?= None)
 GET         /admin/allUsers                                                         @controllers.UserController.allUsers()
 GET         /admin/importusers                                                      @controllers.UserController.showImportUsers(contestId: Option[Long] ?= None)
 POST        /admin/importusers                                                      @controllers.UserController.importUsers(contestId: Option[Long] ?= None)
