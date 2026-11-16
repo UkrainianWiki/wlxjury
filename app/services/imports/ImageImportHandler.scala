@@ -369,7 +369,8 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     val storedOthers = ImageJdbc.existingIds(page.countries.map(_._1).filterNot(written).toSet).toSet
     val countriesJoined =
       CategoryLinkJdbc.addCountries(page.countries.filter { case (id, _) => written(id) || storedOthers(id) })
-    if (countriesJoined.nonEmpty) ctx.afterCommit(RegionCountCache.invalidateCategory(countriesJoined: _*))
+    // the contest's files' countries too (db.scalikejdbc.CountryFilesCache: its files joined country categories)
+    if (countriesJoined.nonEmpty) ctx.afterCommit(RegionCountCache.invalidateCategory(categoryId +: countriesJoined: _*))
     changed.foreach { image =>
       ImageJdbc.updateIn(image)
       stored.get(image.pageId).map(_._1.title).filter(_ != image.title).foreach(ImageJdbc.recordRename(_, image.pageId))

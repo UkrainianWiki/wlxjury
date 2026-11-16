@@ -145,16 +145,22 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "show our own check's refusal of the settings" in {
+    "show our own check's refusal of the settings, on the new round's jurors form" in {
       testDbApp { implicit app =>
         val (contest, admin, round) = fixture()
         val jurors = User.findRoundJurors(round.getId).map(_.getId)
         val token = java.util.UUID.randomUUID().toString
-        // three jurors per image, of two
-        val result = route(app, saveNewRound(contest.getId, jurors, token, admin, Seq("distribution" -> "3"))).get
-        status(result) must_== BAD_REQUEST
-        contentAsString(result) must contain("Could not create the round: 3 jurors per image, but only 2 jurors selected")
-        contentAsString(result) must not(contain("requirement failed"))
+        // the new-round form has no jurors (2026-11-16): the round waits in review, its jurors form
+        // refuses three jurors per image of two, back to it with the message
+        status(route(app, saveNewRound(contest.getId, Nil, token, admin)).get) must_== SEE_OTHER
+        val created = roundDao.findByContest(contest.getId).find(_.name.contains("Round 2")).get
+        val result = route(app, FakeRequest(POST, s"/admin/rounds/${created.getId}/distribute")
+          .withSession(Secured.UserName -> admin.email)
+          .withFormUrlEncodedBody(Seq("jurorsShown" -> "true", "distribution" -> "3") ++
+            jurors.zipWithIndex.map { case (id, i) => s"jurors[$i]" -> id.toString }: _*).withCSRFToken).get
+        redirectLocation(result) must beSome(s"/admin/rounds/${created.getId}/jurors")
+        flash(result).get("error") must beSome("Each file can't go to 3 jurors: only 2 jurors are chosen.")
+        Round.findById(created.getId).map(_.inReview) must beSome(true)
       }
     }
 

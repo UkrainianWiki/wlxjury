@@ -123,12 +123,21 @@ object CommentJdbc extends SQLSyntaxSupport[Comment] {
     * show them ([[findBySubjectAndContest]]): one grouped query on comment's (contest_id, room)
     * index (V101); a file without comments is absent.
     */
-  def countsByRoom(contestId: Long, rooms: Seq[Long])(implicit session: DBSession = autoSession): Map[Long, Int] =
+  def countsByRoom(contestId: Long, rooms: Seq[Long], excludeRounds: Seq[Long] = Nil)(implicit
+      session: DBSession = autoSession
+  ): Map[Long, Int] =
     if (rooms.isEmpty) Map.empty
     else
       sql"""select room, count(*) from comment
-            where contest_id = $contestId and room in (${rooms.distinct}) group by room"""
+            where contest_id = $contestId and room in (${rooms.distinct})${notInRounds(excludeRounds)} group by room"""
         .map(rs => rs.long(1) -> rs.int(2)).list().toMap
+
+  /** ` and round_id not in (...)` of the rounds whose comments a juror doesn't see yet (the
+    * contest's rounds not yet distributed, controllers.RoundList.hiddenCommentRounds); nothing for
+    * none.
+    */
+  private def notInRounds(rounds: Seq[Long]): SQLSyntax =
+    if (rounds.isEmpty) sqls"" else sqls" and round_id not in (${rounds.distinct})"
 
   /** The comments report's totals for a round's files ([[roundCounts]]): this round's comments
     * and the files they are on (its default scope, "this round"), and all the contest's comments
@@ -158,7 +167,8 @@ object CommentJdbc extends SQLSyntaxSupport[Comment] {
     * (`userId`) if given, in the order written (by id): a page of the comments report's files at
     * once, on comment's (contest_id, room) index (V101).
     */
-  def findByRooms(contestId: Long, rooms: Seq[Long], roundId: Option[Long] = None, userId: Option[Long] = None)(implicit
+  def findByRooms(contestId: Long, rooms: Seq[Long], roundId: Option[Long] = None, userId: Option[Long] = None,
+      excludeRounds: Seq[Long] = Nil)(implicit
       session: DBSession = autoSession
   ): List[Comment] =
     if (rooms.isEmpty) Nil
@@ -170,6 +180,7 @@ object CommentJdbc extends SQLSyntaxSupport[Comment] {
           .in(c.room, rooms.distinct)
           .and(roundId.map(r => sqls.eq(c.roundId, r)))
           .and(userId.map(u => sqls.eq(c.userId, u)))
+          .and(Option.when(excludeRounds.nonEmpty)(sqls.notIn(c.roundId, excludeRounds.distinct)))
           .orderBy(c.id)
       }.map(CommentJdbc(c)).list()
 

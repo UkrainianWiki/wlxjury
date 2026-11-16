@@ -195,7 +195,7 @@ class LargeViewController @Inject() (
     // (decision 1 = A of the round filters proposal): the card's line into the list filtered by it
     lazy val monumentLine = list.monumentLine(hood.file)
 
-    val comments = CommentJdbc.findBySubjectAndContest(pageId, round.contestId)
+    val comments = LargeViewController.visibleComments(list, CommentJdbc.findBySubjectAndContest(pageId, round.contestId))
     // the names of the other rounds the comments were written in, for their badges, where the
     // viewer is shown them (LargeViewController.showsCommentRounds)
     lazy val otherRounds =
@@ -205,7 +205,7 @@ class LargeViewController @Inject() (
       if (otherRounds.isEmpty) Map.empty[Long, String]
       else Round.findByIds(round.contestId, otherRounds).map(r => r.getId -> r.description).toMap
     // the comments of the files the strip shows, for their badges (one grouped query)
-    lazy val commentCounts = CommentJdbc.countsByRoom(round.contestId, hood.following.map(_.pageId))
+    lazy val commentCounts = CommentJdbc.countsByRoom(round.contestId, hood.following.map(_.pageId), list.hiddenCommentRounds)
 
     render {
       case Accepts.Html() =>
@@ -257,4 +257,16 @@ object LargeViewController {
     * round lineage keeps from jurors (decision 11). Jurors see the comment itself.
     */
   def showsCommentRounds(user: User, round: Round): Boolean = user.canViewOrgInfo(round)
+
+  /** A file's comments in the contest as the viewer of the round's large view sees them: all of
+    * them for its staff; for a juror, not those written in a round not yet distributed (its
+    * review, P3, where its staff comment), which they see once it is distributed, as any of its
+    * comments: the list's [[RoundList.hiddenCommentRounds]], as every comment read of the list.
+    */
+  def visibleComments(list: RoundList, comments: Seq[Comment]): Seq[Comment] =
+    if (list.hiddenCommentRounds.isEmpty) comments
+    else {
+      val hidden = list.hiddenCommentRounds.toSet
+      comments.filterNot(c => hidden.contains(c.roundId))
+    }
 }

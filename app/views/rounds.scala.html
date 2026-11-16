@@ -77,15 +77,13 @@
                                     job.kind == services.distribution.RoundRebalanceHandler.Kind) {
                                 @snippets.jobStatus(job, req.uri)
                             }
-                            @* a round in review (P3): its images ready, to review and distribute *@
+                            @* a round in review (P3): its images ready, to review, and its jurors form, where it
+                               is distributed (RoundReviewController.jurors) *@
                             @if(round.inReview && !jobs.get(round.getId).exists(_.isActive)) {
                                 <div class="round-review" id="round-review-@round.getId">
                                     @Messages("rounds.images.ready", roundsStat.getOrElse(round.getId, 0))
                                     <a href="@routes.RoundReviewController.review(round.getId)">@Messages("rounds.review")</a>
-                                    <form method="post" action="@routes.RoundReviewController.distribute(round.getId)" class="d-inline" data-submit-once>
-                                        @csrfField()
-                                        <button type="submit" class="btn btn-primary btn-sm">@Messages("round.review.distribute")</button>
-                                    </form>
+                                    <a class="btn btn-primary btn-sm round-jurors-link" href="@routes.RoundReviewController.jurors(round.getId)">@Messages("round.review.distribute")</a>
                                 </div>
                             }
                             @* frozen with no job holding it (RoundFreezes): flagged; root releases it *@

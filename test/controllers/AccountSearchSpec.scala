@@ -95,7 +95,7 @@ class AccountSearchSpec extends PlaySpecification with PlayTestDb with AccountTe
         (m \ "member").as[String] === "Juror"
         (m \ "editUrl").as[String] === routes.UserController.editUser(member.getId, Some(10)).url
         (m \ "contests").as[JsArray].value.map(c => ((c \ "name").as[String], (c \ "role").as[String])) ===
-          Seq(("contest10 2010 in country10", "Juror"))
+          Seq(("contest10 2010 in Andorra", "Juror"))
 
         val o = byId(found, outside)
         (o \ "name").as[String] === "Anna Kovalenko"
@@ -156,7 +156,7 @@ class AccountSearchSpec extends PlaySpecification with PlayTestDb with AccountTe
         val found = results(search(root, 10, "outside@exa"))
         ids(found) === Seq(outside.getId)
         (found.head \ "email").as[String] === "petro.outside@example.org"
-        (found.head \ "contests").as[JsArray].value.map(c => (c \ "name").as[String]) === Seq("contest20 2020 in country20")
+        (found.head \ "contests").as[JsArray].value.map(c => (c \ "name").as[String]) === Seq("contest20 2020 in Andorra")
         (found.head \ "editUrl").as[String] === routes.UserController.editUser(outside.getId, Some(10)).url
       }
     }
@@ -400,7 +400,7 @@ class AccountSearchSpec extends PlaySpecification with PlayTestDb with AccountTe
         lines === Seq(s"account_added_notice accountId=${verified.getId} byAccountId=${admin.getId} contestId=10 " +
           "outcome=not_sent inApp=true")
         services.AccountNotices.pending(verified.getId, 0L).map(n => (n.contestName, n.role, n.byName, n.invited)) ===
-          Seq(("contest10 2010 in country10", "jury", "Admin Ten", false))
+          Seq(("contest10 2010 in Andorra", "jury", "Admin Ten", false))
 
         // ticked: from the tool's sender; an invitation's sentence
         service.addAccountToContest(admin, unverified.getId, contest, "organizer", tellOwner = true).notice ===
@@ -464,7 +464,7 @@ class AccountSearchSpec extends PlaySpecification with PlayTestDb with AccountTe
         val profile = contentAsString(route(app, FakeRequest(GET, s"/users/edit/${owner.getId}").withSession(signedIn: _*)).get)
         profile must not(contain("account-notices-bar"))
         profile must contain("id=\"account-notices\"")
-        profile must contain("You were added to contest10 2010 in country10 by Admin Ten, an admin of the contest, " +
+        profile must contain("You were added to contest10 2010 in Andorra by Admin Ten, an admin of the contest, " +
           "with the role Juror.")
         profile must contain("You can open the contest the next time you sign in.")
 

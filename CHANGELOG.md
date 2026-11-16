@@ -55,6 +55,34 @@ Developed after `26.11.10` (#355 on): the next release is `26.11.11` (`build.sbt
   comments chip a link of its own to the large view at `#comments` with the list kept, and a
   juror's own new vote time there at once (`tile-votes.js listVoteTimeAfter`, into the rank
   line). Gallery tiles unchanged. Juror and organizer guides.
+- **Round review: one place filter, a jurors form, comments** (the maintainer's decisions of
+  2026-11-16; developed 2026-11-16, `stack/176-review-places-jurors-form`):
+  - **One place filter of one level** (`services.places.PlaceScheme`): a contest with a
+    monument id template (a national one, whatever its free-text country) by **region**
+    (monument ids, Ukraine's regions for now), else an international contest (of many countries,
+    with a category) by **country** (its country categories), with one menu template and script and one way of
+    counting a list's files by country (the countries cached per contest, read only when needed). The contest files page shows one menu (no longer both);
+    a round's **review page** has the contest's menu, its counts those of the status tab shown, to
+    check each country's (region's) number of files before distributing; a round's gallery,
+    by-rate gallery and file list have the **country menu for its admins and organizers** (jurors
+    get none, nor its JSON, and a juror's `country=` is ignored; they keep the region menu where
+    the contest has regions).
+  - **The jurors form** (`/admin/rounds/:id/jurors`, the round's admins): the jurors picker and
+    the file distribution, with the number of images that passed the filters and per place, and
+    Distribute (its refusals as before: no jurors, more per file than jurors, the jury changed
+    since shown, an unfinished re-apply, the previous rounds' votes changed). The **new-round
+    form has filters only**, ending with **Review images first** (the rounds list, then the
+    review page) and **Choose jurors next** (the jurors form, which waits for the selection);
+    nothing is distributed until the jurors form is submitted. "Distribute as soon as the images
+    are ready" (D4) is gone (a job queued with it before still distributes after its fill). The
+    review page's and the rounds list's **Distribute to jurors** open the jurors form. Editing a
+    distributed round keeps its jurors as before.
+  - **Comments on a round in review**: its admins and organizers write them in the review's
+    large view; they are the round's ordinary comments, which jurors see once it is
+    distributed, not before: a juror of another round with the same file doesn't get them until
+    then in any comment read (the large view, the comments report, the comment badges, "Only
+    with comments" and its counts, the latest-comment order), one rule for all of them
+    (`RoundList.hiddenCommentRounds`, the contest's rounds not yet distributed). Admin guide.
 
 **Fixes**
 

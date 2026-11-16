@@ -1,0 +1,113 @@
+@import controllers.JurorsFormView
+@import db.scalikejdbc.User
+@(user: User, v: JurorsFormView, waited: Int = 0)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+
+@* A round's jurors form (RoundReviewController.jurors; the maintainer's decision of 2026-11-16,
+   superseding D4's checkbox): for the round's contest's admins. While its fill runs, the job's
+   status (the page reloads as it ends: a new round's "Choose jurors next" lands here). Once the round
+   waits in review: the number of images that passed its filters, and in each of the contest's places
+   (countries, regions), the round form's juror picker and file distribution (round-form.js: #jurors,
+   #distribution; read only once the round has a vote), the previous rounds' warning and its
+   confirmation (D18), and Distribute (a CSRF POST, sent once). Nothing is distributed before. *@
+@implicitLayout = @{ bs.Layout.horizontal("col-md-3", "col-md-9") }
+@noJob = @{ v.filling && !v.job.exists(_.isActive) }
+@polling = @{ noJob && waited < controllers.RoundReviewController.MaxWaits }
+@gaveUp = @{ noJob && !polling }
+@scripts = {
+    @* being selected with no job to poll yet (its row not written, or none running): the page reloads
+       itself, counting its reloads (`waited`), at most RoundReviewController.MaxWaits times *@
+    @if(polling) { <meta http-equiv="refresh" content="@controllers.RoundReviewController.WaitSeconds;url=@routes.RoundReviewController.jurors(v.round.getId, waited + 1)"> }
+    <script src="@routes.Assets.versioned("javascripts/submit-once.js")"></script>
+    @if(v.ready && v.jurorsEditable && v.contestJurors.nonEmpty) {
+        @snippets.multiSelectScripts()
+        <script src="@routes.Assets.versioned("javascripts/round-form.js")"></script>
+    }
+}
+@mainAdmin("round.jurors.page", user, user.getId, contestId = Some(v.round.contestId), head = scripts) {
+    <div class="row">
+        <div class="col-md-10" id="round-jurors">
+            <h1 class="h3" id="round-jurors-title">@Messages("round.jurors.heading", v.round.number, v.round.description)</h1>
+
+            @flash.get("success").map { msg => <div class="alert alert-info" id="flash-success">@msg</div> }
+            @flash.get("error").map { msg => <div class="alert alert-danger" id="flash-error">@msg</div> }
+
+            @if(v.filling && !gaveUp) { <p class="mb-1" id="round-jurors-filling">@Messages("round.jurors.filling")</p> }
+            @for(job <- v.job if !job.isDone) {
+                <div class="card card-body p-2 mb-3" id="round-jurors-job">
+                    @snippets.jobStatus(job, req.uri)
+                </div>
+                <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
+            }
+
+            @* distributed (or being distributed): no form; a failed fill shows its job's Retry above *@
+            @if(gaveUp || (!v.ready && !v.filling && (!v.round.distributing || v.job.exists(j => j.isActive && services.distribution.RoundDistributionHandler.distributeMode(j))))) {
+                <p id="round-jurors-not-in-review">@Messages("round.jurors.not.in.review", v.round.number)</p>
+            }
+
+            @if(v.ready) {
+                <p id="round-jurors-images">@Messages("round.jurors.images")@snippets.count(v.inCount)</p>
+                @for(label <- v.placeLabel if v.places.nonEmpty) {
+                    <details class="mb-3" id="round-jurors-places" open>
+                        <summary>@Messages("round.jurors.places", Messages(label))</summary>
+                        <ul class="list-unstyled mb-0 mt-1 round-jurors-places">
+                        @for(place <- v.places) {
+                            <li data-place="@place.id">@place.name@for(n <- place.count) {@snippets.count(n)}</li>
+                        }
+                        </ul>
+                    </details>
+                }
+                @if(v.reapplyUnfinished) {
+                    <div class="alert alert-warning" role="alert" id="round-jurors-reapply-unfinished">@Messages("round.review.reapply.unfinished")</div>
+                }
+                @if(v.prevChanged) {
+                    <div class="alert alert-warning" role="alert" id="round-jurors-prev-changed">@Messages("round.review.prev.changed")</div>
+                }
+
+                <form method="post" action="@routes.RoundReviewController.distribute(v.round.getId)" class="mb-2" id="round-jurors-form" data-submit-once>
+                    @csrfField()
+                    @if(v.jurorsEditable) {
+                        <input type="hidden" name="jurorsShown" value="true">
+                        @for(jury <- v.form("jury").value) { <input type="hidden" name="jury" value="@jury"> }
+                        @if(v.contestJurors.isEmpty) {
+                            <p class="alert alert-warning" id="round-jurors-none-in-contest">@Messages("round.review.jurors.none.in.contest")
+                                <a href="@routes.UserController.users(Some(v.round.contestId))">@Messages("round.review.jurors.invite")</a></p>
+                        } else {
+                            @bs.select(v.form("jurors"),
+                                v.contestJurors.map(u => (u.getId.toString, u.description)),
+                                Symbol("_label") -> Messages("jurors"), Symbol("multiple") -> true,
+                                Symbol("_help") -> Messages("round.review.jurors.help"))
+                            @defining(v.form("jurors").indexes.size) { chosen =>
+                                @bs.select(v.form("distribution"),
+                                    Seq(("0", Messages("each.file.to.all.jurors"))) ++
+                                        (1 until chosen).map(x => (x.toString, Messages("each.file.to.i.juror.s", x))),
+                                    Symbol("_label") -> Messages("file.distribution"),
+                                    Symbol("disabled") -> (chosen == 0))
+                            }
+                        }
+                    } else {
+                        @* a partial distribution gave files to the jurors: they stay *@
+                        <p id="round-jurors-fixed">@Messages("jurors"): @if(v.roundJurors.isEmpty) {
+                            <span id="round-jurors-fixed-none">@Messages("round.review.jurors.none")</span>
+                        } else { @v.roundJurors.map(_.fullname).mkString(", ") }</p>
+                    }
+                    @if(v.prevChanged) {
+                        @bs.checkbox(field = v.form("confirmPrevChanged"),
+                            Symbol("_text") -> Messages("round.review.prev.changed.confirm.box"))
+                    }
+                    <button type="submit" class="btn btn-primary">@Messages("round.review.distribute")</button>
+                    <span class="form-text ms-2">@Messages("round.review.distribute.help")</span>
+                </form>
+                @if(v.jurorsEditable && v.contestJurors.nonEmpty) {
+                    <script type="application/json" id="round-form-texts">{"multiSelect": @views.JsTexts.multiSelect, "distribution": @views.JsTexts(
+                        "all" -> Messages("each.file.to.all.jurors"),
+                        "some" -> Messages("each.file.to.i.juror.s", "$X"))}</script>
+                }
+            }
+
+            <p class="mt-3">
+                <a id="round-jurors-review" href="@routes.RoundReviewController.review(v.round.getId)">@Messages("round.jurors.review")</a>
+                · <a id="round-jurors-rounds" href="@routes.RoundController.rounds(Some(v.round.contestId))">@Messages("rounds")</a>
+            </p>
+        </div>
+    </div>
+}

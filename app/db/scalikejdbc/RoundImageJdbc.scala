@@ -421,6 +421,13 @@ object RoundImageJdbc {
     sql"SELECT status, COUNT(*) FROM round_image WHERE round_id = $roundId GROUP BY status"
       .map(rs => rs.string(1) -> rs.int(2)).list().toMap
 
+  /** The round's files of `status`, by page id: what its review page and jurors form count by
+    * country (services.places.PlaceScheme.Countries.counts). One range of the primary key.
+    */
+  def pageIds(roundId: Long, status: String)(implicit session: DBSession = AutoSession): Seq[Long] =
+    sql"SELECT page_id FROM round_image WHERE round_id = $roundId AND status = $status ORDER BY page_id"
+      .map(_.long(1)).list()
+
   /** The round's files `in` it by how they were added ([[AddedHow]]): its review page's summary. */
   def addedHowCounts(roundId: Long)(implicit session: DBSession = AutoSession): Map[String, Int] =
     sql"""SELECT added_how, COUNT(*) FROM round_image WHERE round_id = $roundId AND status = ${Status.In}

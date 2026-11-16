@@ -21,8 +21,6 @@ import scala.util.Try
   *                      it leaves an existing round's rule as it is
   * @param worstMarkShown the form had the worst mark checkbox (`round.worstMark`): a client
   *                      without it leaves an existing round's option as it is
-  * @param distributeAfter a new round's "Distribute as soon as the images are ready" (D4 of the
-  *                      two-step plan, off by default): without it the round waits in review
   */
 case class EditRound(
     round: Round,
@@ -35,8 +33,7 @@ case class EditRound(
     // the rejected-by choices as posted (V93), for the form's checks: the mode select's value
     // (None: a client without it) and X (None: empty)
     rejectedModeChoice: Option[String] = None,
-    rejectedByChoice: Option[Int] = None,
-    distributeAfter: Boolean = false
+    rejectedByChoice: Option[Int] = None
 )
 
 object EditRound {
@@ -46,9 +43,8 @@ object EditRound {
       if (o.nonEmpty) Valid else Invalid(ValidationError("error.required"))
     }
 
-  /** The round's jurors: optional on the form (P3, D3): a round created for review gets them on its
-    * review page, before Distribute; "Distribute as soon as the images are ready" (D4) needs them
-    * ([[JurorsForDistributeAfter]], `RoundController`'s check, shown under the field).
+  /** The round's jurors: an existing round's, as they are (the new-round form has none: a new round
+    * gets them on its jurors form, the maintainer's decision of 2026-11-16, superseding D4).
     */
   private val jurorsMappingKV = "jurors" -> seq(text)
   val jurorsMapping: Mapping[Seq[String]] = single(jurorsMappingKV)
@@ -119,14 +115,6 @@ object EditRound {
 
   val WorstMarkRatedOnly = "error.worst.mark.rated.only"
 
-  /** A new round with "Distribute as soon as the images are ready" (D4) and no jurors: refused
-    * under the jurors' field; without the box the round waits in review and gets its jurors there.
-    */
-  val JurorsForDistributeAfter = "error.round.jurors.distribute.after"
-
-  /** Whether the new round's jurors are missing for "Distribute as soon as the images are ready". */
-  def jurorsMissing(edit: EditRound): Boolean = edit.round.id.isEmpty && edit.distributeAfter && edit.jurors.isEmpty
-
   /** "Leave out files that are in round(s)" (V95): other rounds of the round's contest, found there,
     * none of its previous rounds and none being distributed now
     * ([[RoundDistributionHandler.excludedRoundsError]], which the service and the job check again).
@@ -177,11 +165,9 @@ object EditRound {
       "rejectedMode" -> optional(text).verifying("error.invalid",
         _.forall(m => m == EditRound.NoRejectedFilter || RejectedMode.parse(m).isDefined)),
       // "Leave out files that are in round(s)" (V95): round ids, checked by validExcludedRounds
-      "excludeRounds" -> seq(text),
-      // a new round's "Distribute as soon as the images are ready" (P3, D4): off, it waits in review
-      "distributeAfter" -> boolean
+      "excludeRounds" -> seq(text)
     )((edit, excludeCoi, selected, topOrder, rejectedBy, criteria, criteriaShown, halfStar, averageRule, worstMark,
-        worstMarkShown, rejectedMode, excludeRounds, distributeAfter) => {
+        worstMarkShown, rejectedMode, excludeRounds) => {
       val configured = selected match {
         case None => edit.round // Older clients omitted the clause; retain their inference.
         case Some(value) =>
@@ -200,13 +186,13 @@ object EditRound {
         criterionIds = criterionIdsOf(criteria), halfStar = halfStar,
         averageRule = averageRule.flatMap(AverageRule.parse).getOrElse(AverageRule.Default),
         worstMark = worstMark && worstMarkShown, excludeRounds = excludeRoundIdsOf(excludeRounds)),
-        averageRuleShown = averageRule.isDefined, worstMarkShown = worstMarkShown, distributeAfter = distributeAfter)
+        averageRuleShown = averageRule.isDefined, worstMarkShown = worstMarkShown)
     })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue),
       edit.round.topImages.filter(_ > 0).map(_ => edit.round.topOrderParam), edit.round.rejectedByFilter.map(_.toString),
       edit.round.criterionIds.map(_.toString), edit.criteriaShown, edit.round.halfStar,
       Some(edit.round.averageRule.param), edit.round.worstMark, edit.worstMarkShown,
       Some(edit.round.rejectedByFilter.fold(NoRejectedFilter)(_ => edit.round.prevRejectedMode.param)),
-      edit.round.excludeRounds.map(_.toString), edit.distributeAfter)))
+      edit.round.excludeRounds.map(_.toString))))
       .verifying(validCategories)
       .verifying(validCriteria)
       .verifying(validRejectedBy)

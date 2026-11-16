@@ -1,15 +1,14 @@
 @import controllers.{ContestFilesView, RoundReview, RoundReviewController}
 @import db.scalikejdbc.{Round, RoundImageJdbc}
 @(r: RoundReview, view: ContestFilesView)(implicit flash: Flash, messages: Messages, request: RequestHeader)
-@implicitLayout = @{ bs.Layout.horizontal("col-md-3", "col-md-9") }
 @fillRunning = @{ r.job.exists(j => j.isActive && services.distribution.RoundDistributionHandler.fillOnly(j)) }
 
 @* A round's review page's head (P3, RoundReviewController): its state, its files by how they were
-   added, its conflicts of interest, the tabs of its files by status, and for its admins the
-   Distribute form (a CSRF POST, sent once) with the jurors to distribute to (the round form's picker
-   and file distribution, round-form.js; read only once the round has a vote) and, when previous
-   rounds' votes changed since the fill, the warning and its confirmation (D18). A re-apply's diff
-   (P3-5). Organizers see the same, without the form (D20). *@
+   added, its conflicts of interest, its jurors, the tabs of its files by status, and for its admins
+   Distribute, which opens the round's jurors form (RoundReviewController.jurors: the jurors, the file
+   distribution and the previous rounds' confirmation, D18, are chosen there); when previous rounds'
+   votes changed since the fill, the warning. A re-apply's diff (P3-5). Organizers see the same,
+   without Distribute (D20). *@
 <div id="round-review">
     <h2 class="h4" id="round-review-title">@Messages("round.review.title", r.round.number, r.round.description)</h2>
 
@@ -63,49 +62,16 @@
         <p id="round-review-conflicts"><a href="@routes.RoundConflictsController.page(r.round.getId)">@Messages("round.review.conflicts", r.conflicts)</a></p>
     }
 
+    <p id="round-review-jurors">@Messages("jurors"): @if(r.roundJurors.isEmpty) {
+        <span id="round-review-jurors-none">@Messages("round.review.jurors.none")</span>
+    } else { @r.roundJurors.map(_.fullname).mkString(", ") }</p>
+    @* Distribute: the round's jurors form, where its admins choose the jurors and the file
+       distribution (RoundReviewController.jurors) *@
     @if(r.mayDistribute) {
-        <form method="post" action="@routes.RoundReviewController.distribute(r.round.getId)" class="mb-2" id="round-review-distribute" data-submit-once>
-            @csrfField()
-            @if(r.jurorsEditable) {
-                @* the round form's juror picker and file distribution (round-form.js: #jurors, #distribution) *@
-                <input type="hidden" name="jurorsShown" value="true">
-                @for(jury <- r.distributeForm("jury").value) { <input type="hidden" name="jury" value="@jury"> }
-                @if(r.contestJurors.isEmpty) {
-                    <p class="alert alert-warning" id="round-review-no-contest-jurors">@Messages("round.review.jurors.none.in.contest")
-                        <a href="@routes.UserController.users(Some(r.round.contestId))">@Messages("round.review.jurors.invite")</a></p>
-                } else {
-                    @bs.select(r.distributeForm("jurors"),
-                        r.contestJurors.map(u => (u.getId.toString, u.description)),
-                        Symbol("_label") -> Messages("jurors"), Symbol("multiple") -> true,
-                        Symbol("_help") -> Messages("round.review.jurors.help"))
-                    @defining(r.distributeForm("jurors").indexes.size) { chosen =>
-                        @bs.select(r.distributeForm("distribution"),
-                            Seq(("0", Messages("each.file.to.all.jurors"))) ++
-                                (1 until chosen).map(x => (x.toString, Messages("each.file.to.i.juror.s", x))),
-                            Symbol("_label") -> Messages("file.distribution"),
-                            Symbol("disabled") -> (chosen == 0))
-                    }
-                }
-            } else {
-                <p id="round-review-jurors">@Messages("jurors"): @if(r.roundJurors.isEmpty) {
-                    <span id="round-review-jurors-none">@Messages("round.review.jurors.none")</span>
-                } else { @r.roundJurors.map(_.fullname).mkString(", ") }</p>
-            }
-            @if(r.prevChanged) {
-                @bs.checkbox(field = r.distributeForm("confirmPrevChanged"),
-                    Symbol("_text") -> Messages("round.review.prev.changed.confirm.box"))
-            }
-            <button type="submit" class="btn btn-primary">@Messages("round.review.distribute")</button>
-            <span class="form-text ms-2">@Messages("round.review.distribute.help")</span>
-        </form>
-        <script src="@routes.Assets.versioned("javascripts/submit-once.js")"></script>
-        @if(r.jurorsEditable && r.contestJurors.nonEmpty) {
-            <script type="application/json" id="round-form-texts">{"multiSelect": @views.JsTexts.multiSelect, "distribution": @views.JsTexts(
-                "all" -> Messages("each.file.to.all.jurors"),
-                "some" -> Messages("each.file.to.i.juror.s", "$X"))}</script>
-            @snippets.multiSelectScripts()
-            <script src="@routes.Assets.versioned("javascripts/round-form.js")"></script>
-        }
+        <p id="round-review-distribute">
+            <a class="btn btn-primary" id="round-review-distribute-link" href="@routes.RoundReviewController.jurors(r.round.getId)">@Messages("round.review.distribute")</a>
+            <span class="form-text ms-2">@Messages("round.review.distribute.jurors.help")</span>
+        </p>
     }
 
     <ul class="nav nav-tabs mb-2" id="round-review-tabs">

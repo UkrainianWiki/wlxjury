@@ -142,7 +142,7 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
 
         status === Helpers.FORBIDDEN
         html must contain("This page is for: Admin, Root.")
-        html must contain("Your role in contest2025 4025 in country2025: Juror.")
+        html must contain("Your role in contest2025 4025 in Andorra: Juror.")
         html must contain("If you need access, ask your contest admin.")
         html must beMatching("""(?s).*Reference: [0-9a-f]{8}, \d{4}-\d\d-\d\d \d\d:\d\d UTC.*""")
         html must not(contain("has been deactivated"))
@@ -162,7 +162,7 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
 
         status === Helpers.FORBIDDEN
         html must contain("The requested page belongs to a contest in which this account has no role.")
-        html must contain("<li>Juror in “contest2025 4025 in country2025”</li>")
+        html must contain("<li>Juror in “contest2025 4025 in Andorra”</li>")
         html must contain("If you need this page, ask an admin of that contest to add this account to it.")
         html must beMatching("""(?s).*Reference: [0-9a-f]{8}, \d{4}-\d\d-\d\d \d\d:\d\d UTC.*""")
         // contest 603 is not the user's: not named; nor what the page needs there

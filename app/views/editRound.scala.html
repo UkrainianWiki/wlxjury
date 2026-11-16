@@ -103,12 +103,17 @@
                                 Symbol("rows") -> 8)
                         }
 
-                        <div @if(noEdit) {class="d-none"}>
+                        @* a new round has no jurors here: they are chosen on its jurors form (the maintainer's
+                           decision of 2026-11-16, RoundReviewController.jurors); an existing round's stay as
+                           they are (hidden, read only) *@
+                        @if(!newRound) {
+                        <div class="d-none">
                             @bs.select(
                                 editRoundForm("jurors"),
                                 jurors.map(u => (u.getId.toString, u.description)),
                                 Symbol("_label") -> Messages("jurors"), Symbol("multiple") -> true, Symbol("readonly") -> noEdit)
                         </div>
+                        }
 
                         @if(!newRound) {
                             @snippets.collapsible("jurors", "headingJurors", "collapseJurors") {
@@ -120,11 +125,14 @@
                         }
 
                     @defining(jurorsMapping.bind(editRoundForm.data).getOrElse(Nil).size) { numJurors =>
+                        @* the file distribution is the jurors form's for a new round *@
+                        @if(!newRound) {
                         @bs.select(editRoundForm("distribution"),
                             Seq(("0", Messages("each.file.to.all.jurors"))) ++
                                     (1 until numJurors).map(x => (x.toString, Messages("each.file.to.i.juror.s", x))),
                             Symbol("_label") -> Messages("file.distribution"),
                             Symbol("readonly") -> (noEdit || numJurors == 0))
+                        }
 
                         @bs.select(
                             editRoundForm("rates"),
@@ -216,17 +224,22 @@
                         }
                     }
                     }
-                    @* a new round waits in review until distributed (P3, D3/D4): the checkbox, off by
-                       default, distributes its images as soon as they are selected *@
-                    @if(newRound) {
-                        @bs.checkbox(field = editRoundForm("distributeAfter"),
-                            Symbol("_text") -> Messages("round.form.distribute.after"),
-                            Symbol("_help") -> Messages("round.form.distribute.after.help"))
-                    }
                 </fieldset>
 
+                @* a new round's images are selected first, nothing distributed (the maintainer's decision
+                   of 2026-11-16): then its review page ("Review images first", the rounds list showing the
+                   selection) or its jurors form ("Choose jurors next", which waits for the selection);
+                   the button pressed is posted as `next` (RoundController.saveRound) *@
+                @if(newRound) {
+                    <p class="form-text" id="round-form-next-help">@Messages("round.form.next.help")</p>
+                }
                 <div class="form-actions mt-2">
-                    @snippets.submit(if (newRound) "round.form.create.review" else if (reapply) "round.form.reapply" else "save")
+                    @if(newRound) {
+                        <button type="submit" name="next" value="@controllers.RoundController.NextReview" class="btn btn-primary form-action-wide me-2" id="round-form-review-first">@Messages("round.form.review.first")</button>
+                        <button type="submit" name="next" value="@controllers.RoundController.NextJurors" class="btn btn-primary form-action-wide me-2" id="round-form-jurors-next">@Messages("round.form.jurors.next")</button>
+                    } else {
+                    @snippets.submit(if (reapply) "round.form.reapply" else "save")
+                    }
                     @snippets.button(routes.RoundController.rounds(editRoundForm("contest").value.map(_.toLong)), "cancel")
                     @* a round waiting for review: its review page *@
                     @for(rid <- editRoundForm("id").value.flatMap(v => scala.util.Try(v.toLong).toOption) if !newRound) {

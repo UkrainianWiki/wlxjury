@@ -17,7 +17,7 @@ import scala.concurrent.Future
   * root, checked in the round's contest, a POST with the CSRF token, refused unless the round is in
   * review; another contest's admin refused, a missing round 404, signed out to the login page or a
   * JSON 401. Jurors never see a round in review: its gallery, large view and votes are refused, and
-  * the round is in no menu of theirs. The round form's "Create and review images" makes one.
+  * the round is in no menu of theirs. The new-round form makes one (always held in review).
   */
 class RoundImagesReviewSpec extends PlaySpecification with PlayTestDb {
 
@@ -143,12 +143,13 @@ class RoundImagesReviewSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "be linked from the rounds list with Distribute, the round form and the round's statistics" in {
+    "be linked from the rounds list with Distribute (its jurors form), the round form and the round's statistics" in {
       testDbApp { app =>
         val (round, _, _) = setUp()
         val r = round.getId
         val list = contentAsString(get(app, "admin@example.com", s"/admin/rounds?contestId=$contestId"))
-        (list must contain(s"id=\"round-review-$r\"")) and (list must contain(distribute(r))) and
+        (list must contain(s"id=\"round-review-$r\"")) and (list must contain(s"/admin/rounds/$r/jurors")) and
+          (list must not(contain(distribute(r)))) and
           (contentAsString(get(app, "admin@example.com", s"/admin/rounds/edit?contestId=$contestId&id=$r")) must
             contain("id=\"round-review-link\"")) and
           (contentAsString(get(app, "organizer@example.com", s"/roundstat/$r")) must contain(review(r)))
@@ -263,7 +264,7 @@ class RoundImagesReviewSpec extends PlaySpecification with PlayTestDb {
 
   "the round form" should {
 
-    "create a round for review with \"Create and review images\", and distribute at once with the box ticked" in {
+    "create a round for review, an older page's \"Distribute as soon as the images are ready\" ignored" in {
       testDbApp { app =>
         val (_, _, juror) = setUp()
         def create(name: String, extra: (String, String)*) = route(app, request(POST, Some("admin@example.com"),
@@ -274,11 +275,11 @@ class RoundImagesReviewSpec extends PlaySpecification with PlayTestDb {
         val reviewed = create("Reviewed")
         val atOnce = create("At once", "distributeAfter" -> "true")
         def named(n: String) = Round.findByContest(contestId).find(_.name.contains(n)).get
-        (form must contain("name=\"distributeAfter\"")) and (form must contain("Create and review images")) and
+        (form must not(contain("name=\"distributeAfter\""))) and (form must contain("Review images first")) and
           (status(reviewed) === SEE_OTHER) and (named("Reviewed").inReview must beTrue) and
           (votes(named("Reviewed").getId) === 0) and
-          (status(atOnce) === SEE_OTHER) and (named("At once").openToJurors must beTrue) and
-          (votes(named("At once").getId) === 4)
+          (status(atOnce) === SEE_OTHER) and (named("At once").inReview must beTrue) and
+          (votes(named("At once").getId) === 0)
       }
     }
   }

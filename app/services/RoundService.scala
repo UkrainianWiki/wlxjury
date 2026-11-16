@@ -29,7 +29,7 @@ class RoundService @Inject() (
     *                                              distribution failed
     */
   def createNewRound(round: Round, jurorIds: Seq[Long], submitToken: Option[String] = None): Round = {
-    val submitted = submit(round, jurorIds, submitToken)
+    val submitted = submit(round, jurorIds, submitToken, review = false)
     submitted.job.foreach(j => checkFinished(submitted.round.getId, awaitWithFollowUp(submitted.round.getId, j.id)))
     dao.findById(submitted.round.getId).getOrElse(submitted.round)
   }
@@ -53,6 +53,9 @@ class RoundService @Inject() (
     *
     * @param titles a pasted list of files ("Add files"), added to the round after the
     *               images its filters choose
+    * @param review the round waits in review after its fill (the new-round form's, always: its jurors
+    *               are chosen on its jurors form); without, it is distributed to `jurorIds` at once
+    *               (services, tests). Required: no caller gets either by default
     */
   def submit(
       round: Round,
@@ -60,7 +63,7 @@ class RoundService @Inject() (
       submitToken: Option[String] = None,
       createdBy: Option[Long] = None,
       titles: Seq[String] = Nil,
-      review: Boolean = false
+      review: Boolean
   ): Submitted =
     submitToken.flatMap(submitted(_, round.contestId)) match {
       case Some(existing) => resubmitted(existing)

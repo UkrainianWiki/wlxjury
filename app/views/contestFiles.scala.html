@@ -13,7 +13,7 @@
 @* a tab's link: the page's own marked active *@
 @tab(active: Boolean) = @{ if (active) Html(""" class="nav-link active" aria-current="page"""") else Html(""" class="nav-link"""") }
 @main("contest.files", user, gallery = true, pager = pagerNav(pager, view.pageUrl), contestId = view.contest.id,
-    filters = regionMenu(view.countryMenu.toSeq ++ view.regionMenu), head = snippets.galleryScripts()) {
+    filters = regionMenu(view.placeMenu), head = snippets.galleryScripts()) {
 
     <div class="contest-files-head" id="contest-files-head">
         <h1 class="h4">@Messages("contest") @view.contest.fullName

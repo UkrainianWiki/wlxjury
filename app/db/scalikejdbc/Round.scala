@@ -576,6 +576,13 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       .orderBy(r.id)
       .apply()
 
+  /** The ids of the contest's rounds not yet distributed (`distributing`: being created, held in
+    * review): their comments are their staff's until they are, so a juror's comment reads leave
+    * them out (controllers.RoundList.hiddenCommentRounds). One read of the round table.
+    */
+  def undistributedIds(contestId: Long)(implicit session: DBSession = AutoSession): Seq[Long] =
+    sql"SELECT id FROM round WHERE contest_id = $contestId AND distributing = 1 ORDER BY id".map(_.long(1)).list()
+
   /** The rounds of these ids, whatever their contest (the caller checks it), by id. */
   def findByIdsInAnyContest(roundIds: Seq[Long]): Seq[Round] =
     if (roundIds.isEmpty) Nil else where(sqls.in(r.id, roundIds)).orderBy(r.id).apply()

@@ -73,10 +73,17 @@ class RoundCriteriaSpec extends PlaySpecification with PlayTestDb {
   private def hasCriteria(round: Long): Option[Boolean] = roundDao.findById(round).map(_.hasCriteria)
   private def ratesCount: Long = DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM criteria_rate".map(_.long(1)).single().get)
 
-  /** A criteria round of the jurors over the contest's files, as the form creates it. */
+  /** A criteria round of the jurors over the contest's files, as the form creates it (held in
+    * review) and its jurors form distributes it.
+    */
   private def created(app: Application, contest: ContestJury, jurors: Seq[User], criteria: Seq[Long]): Round = {
     status(save(app, "admin@example.com", contest.getId, roundForm(contest.getId, jurors, criteria))) === SEE_OTHER
-    roundDao.findByContest(contest.getId).last
+    val round = roundDao.findByContest(contest.getId).last
+    status(route(app, session(FakeRequest(POST, s"/admin/rounds/${round.getId}/distribute"), "admin@example.com",
+      contest.getId).withHeaders(ACCEPT -> "text/html").withFormUrlEncodedBody(
+        Seq("jurorsShown" -> "true", "distribution" -> "0") ++
+          jurors.zipWithIndex.map { case (u, i) => s"jurors[$i]" -> u.getId.toString }: _*).withCSRFToken).get) === SEE_OTHER
+    roundDao.findById(round.getId).get
   }
 
   /** The selected value of each criteria select, by position. */

@@ -69,6 +69,8 @@ GET         /gallery/round/:round/user/:user/page/:page                         
 GET         /gallery/round/:round/user/:user/region/:region/page/:page              controllers.GalleryController.list(user: Long, page: Int, region: String, round: Long)
 GET         /gallery/round/:round/user/:user/region/:region/pageid/:pageid          controllers.GalleryController.listAtId(user: Long, pageid: Long, region: String, round: Long)
 GET         /regions/round/:round/user/:user/region/:region                         controllers.GalleryController.regions(user: Long, region: String, round: Long)
+# a round's list's countries, of an international contest: its staff's country menu (jurors get none)
+GET         /countries/round/:round/user/:user/region/:region                       controllers.GalleryController.countries(user: Long, region: String, round: Long)
 GET         /gallery/page/:page                                                     controllers.GalleryController.listCurrent(page: Int, region: String = "all")
 GET         /gallery/region/:region/page/:page                                      controllers.GalleryController.listCurrent(page: Int, region: String)
 
@@ -144,9 +146,12 @@ GET         /admin/rounds/:id/conflicts                                         
 POST        /admin/rounds/:id/conflicts/disqualify                                  @controllers.RoundConflictsController.disqualify(id: Long)
 POST        /admin/rounds/:id/conflicts/requalify                                   @controllers.RoundConflictsController.requalify(id: Long)
 # a round's review before distribution (P3): its files by status, their large view, Distribute
-GET         /admin/rounds/:id/review                                                @controllers.RoundReviewController.review(id: Long, status: String ?= "in", page: Int ?= 1, region: String ?= "all")
-GET         /admin/rounds/:id/review/regions                                        @controllers.RoundReviewController.regions(id: Long, status: String ?= "in")
-GET         /admin/rounds/:id/review/file/:pageId                                   @controllers.RoundReviewController.file(id: Long, pageId: Long, status: String ?= "in", region: String ?= "all")
+# the review list's place (P3; the maintainer's decision of 2026-11-16): a region of a national contest, a country of an international one
+GET         /admin/rounds/:id/review                                                @controllers.RoundReviewController.review(id: Long, status: String ?= "in", page: Int ?= 1, region: String ?= "all", country: Option[String] ?= None)
+GET         /admin/rounds/:id/review/regions                                        @controllers.RoundReviewController.regions(id: Long, status: String ?= "in", region: String ?= "all", country: Option[String] ?= None)
+GET         /admin/rounds/:id/review/file/:pageId                                   @controllers.RoundReviewController.file(id: Long, pageId: Long, status: String ?= "in", region: String ?= "all", country: Option[String] ?= None)
+# a round's jurors form (2026-11-16, superseding D4): its jurors and file distribution, posted to Distribute
+GET         /admin/rounds/:id/jurors                                                @controllers.RoundReviewController.jurors(id: Long, waited: Int ?= 0)
 POST        /admin/rounds/:id/distribute                                            @controllers.RoundReviewController.distribute(id: Long)
 # adding a juror to a running round (round_rebalance jobs): the page and its POST, by the round's contest's admins and root
 GET         /admin/rounds/:id/add-juror                                             @controllers.RoundJurorsController.addPage(id: Long, juror: Option[Long] ?= None)

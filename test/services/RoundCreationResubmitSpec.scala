@@ -71,9 +71,9 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
     "not create a second round for a resubmit of the same form" in {
       val (contest, jurors) = setUp()
       val form = token()
-      val first = service.submit(newRound(contest, "Round 1"), jurors, form)
+      val first = service.submit(newRound(contest, "Round 1"), jurors, form, review = false)
       first must beAnInstanceOf[RoundService.Created]
-      service.submit(newRound(contest, "Round 1"), jurors, form) must beLike {
+      service.submit(newRound(contest, "Round 1"), jurors, form, review = false) must beLike {
         case r: RoundService.Resubmitted => (r.round.id === first.round.id) and (r.imagesAdded === 0)
       }
       rounds(contest).size === 1
@@ -82,8 +82,8 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
 
     "create two rounds from two forms with the same settings (a split jury)" in {
       val (contest, jurors) = setUp()
-      val a = service.submit(newRound(contest, "Round 1").copy(distribution = 1), jurors.take(2), token())
-      val b = service.submit(newRound(contest, "Round 1").copy(distribution = 1), jurors.drop(2), token())
+      val a = service.submit(newRound(contest, "Round 1").copy(distribution = 1), jurors.take(2), token(), review = false)
+      val b = service.submit(newRound(contest, "Round 1").copy(distribution = 1), jurors.drop(2), token(), review = false)
       rounds(contest).size === 2
       selectionRows(a.round.getId).map(_.juryId).toSet === jurors.take(2).toSet
       selectionRows(b.round.getId).map(_.juryId).toSet === jurors.drop(2).toSet
@@ -93,8 +93,8 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
       val (contest, jurors) = setUp()
       val form = token()
       val empty = newRound(contest, "Videos only").copy(mediaType = Some("video")) // the contest has none
-      service.submit(empty, jurors, form).imagesAdded === 0
-      service.submit(empty, jurors, form) must beAnInstanceOf[RoundService.Resubmitted]
+      service.submit(empty, jurors, form, review = false).imagesAdded === 0
+      service.submit(empty, jurors, form, review = false) must beAnInstanceOf[RoundService.Resubmitted]
       rounds(contest).size === 1
     }
 
@@ -106,14 +106,14 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
       val form = token()
       val next = newRound(contest, "Round 2").copy(previous = Some(previous.getId.toString))
 
-      failedStatus(flakyService(flaky).submit(next, jurors, form))
+      failedStatus(flakyService(flaky).submit(next, jurors, form, review = false))
       val failed = rounds(contest).find(_.name.contains("Round 2")).get
       selectionRows(failed.getId) must beEmpty
       failed.distributing must beTrue // still hidden from its jurors
       failed.active must beFalse
       roundDao.findById(previous.getId).map(_.active) === Some(true) // restored after the failure
 
-      flakyService(flaky).submit(next, jurors, form) must beLike {
+      flakyService(flaky).submit(next, jurors, form, review = false) must beLike {
         case r: RoundService.Resubmitted => (r.round.id === failed.id) and (r.imagesAdded === 20)
       }
       rounds(contest).size === 2 // the previous round and the resumed one: no stray round
@@ -127,11 +127,11 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
       val (contest, jurors) = setUp()
       val flaky = flakyService(new FlakyHandler(failures = 1))
       val form = token()
-      failedStatus(flaky.submit(newRound(contest, "Round 1"), jurors, form))
+      failedStatus(flaky.submit(newRound(contest, "Round 1"), jurors, form, review = false))
       val failed = rounds(contest).head
       RoundUser.setActive(failed.getId, jurors.last, active = false)
 
-      flaky.submit(newRound(contest, "Round 1"), jurors, form).imagesAdded === 20
+      flaky.submit(newRound(contest, "Round 1"), jurors, form, review = false).imagesAdded === 20
       selectionRows(failed.getId).map(_.juryId).toSet === jurors.init.toSet
     }
 
@@ -139,7 +139,7 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
       val (contest, jurors) = setUp()
       implicit val ec: ExecutionContext = ExecutionContext.global
       val form = token()
-      val attempts = (1 to 3).map(_ => Future(Try(service.submit(newRound(contest, "Round 1"), jurors, form))))
+      val attempts = (1 to 3).map(_ => Future(Try(service.submit(newRound(contest, "Round 1"), jurors, form, review = false))))
       val results = Await.result(Future.sequence(attempts), 1.minute)
       results.forall(_.isSuccess) must beTrue
       results.map(_.get).count(_.isInstanceOf[RoundService.Created]) === 1
@@ -152,11 +152,11 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
     "fill a round once from a concurrent resubmit and \"Distribute new files\"" in {
       val (contest, jurors) = setUp()
       val form = token()
-      failedStatus(flakyService(new FlakyHandler(failures = 1)).submit(newRound(contest, "Round 1"), jurors, form))
+      failedStatus(flakyService(new FlakyHandler(failures = 1)).submit(newRound(contest, "Round 1"), jurors, form, review = false))
       val failed = rounds(contest).head
 
       implicit val ec: ExecutionContext = ExecutionContext.global
-      val resubmit = Future(service.submit(newRound(contest, "Round 1"), jurors, form).imagesAdded)
+      val resubmit = Future(service.submit(newRound(contest, "Round 1"), jurors, form, review = false).imagesAdded)
       val newFiles = Future(service.distributeNewImages(failed.getId))
       Await.result(resubmit, 1.minute) + Await.result(newFiles, 1.minute) === 20
       rounds(contest).size === 1
@@ -166,10 +166,10 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
     "refuse a form token of another contest's round" in {
       val (contest, jurors) = setUp()
       val form = token()
-      service.submit(newRound(contest, "Round 1"), jurors, form)
+      service.submit(newRound(contest, "Round 1"), jurors, form, review = false)
       implicit val other: ContestJury = createContests(11).head
       val otherJurors = createUsers("jury", 4).map(_.getId)
-      service.submit(newRound(other, "Round 1"), otherJurors, form) must throwA[IllegalArgumentException]
+      service.submit(newRound(other, "Round 1"), otherJurors, form, review = false) must throwA[IllegalArgumentException]
       rounds(other) must beEmpty
     }
 

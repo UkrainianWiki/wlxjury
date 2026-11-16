@@ -185,7 +185,7 @@ class RoundFileListSpec extends Specification with TestDb with BeforeAll with Be
 
     "fill a new round with the files its filters choose and the list" in {
       val (contest, jurors) = setUp()
-      val submitted = service.submit(newRound(contest), jurors.map(_.getId), titles = ImportSource.titles(list))
+      val submitted = service.submit(newRound(contest), jurors.map(_.getId), titles = ImportSource.titles(list), review = false)
       val created = Round.findById(submitted.round.getId).get
 
       created.distributing must beFalse

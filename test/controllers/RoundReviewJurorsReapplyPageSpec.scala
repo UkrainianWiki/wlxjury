@@ -13,8 +13,8 @@ import services.TestRoundServices
 import scala.concurrent.Future
 
 /** A round held in review without jurors (P3) and its filters re-applied (P3-5), through the pages:
-  * the round form creates one with "Create and review images" and refuses "Distribute as soon as the
-  * images are ready" without jurors (under the field); the review page's Distribute picks the jurors
+  * the round form creates one (an older page's "Distribute as soon as the images are ready" ignored);
+  * the jurors form picks the jurors
   * (its admins only, D20), refused with none; the round form of a round in review offers "Re-apply
   * filters" to its admins, whose POST re-applies them and the review page shows the result; an
   * organizer, a juror and another contest's admin are refused, and the CSRF token is needed.
@@ -72,7 +72,7 @@ class RoundReviewJurorsReapplyPageSpec extends PlaySpecification with PlayTestDb
 
   "the round form" should {
 
-    "create a round for review with no juror, and refuse \"Distribute as soon as ready\" without one" in {
+    "create a round for review with no juror, an older page's \"Distribute as soon as ready\" ignored" in {
       testDbApp { app =>
         setUp()
         def create(name: String, extra: (String, String)*) = post(app, "admin@example.com", "/admin/rounds/save",
@@ -85,19 +85,17 @@ class RoundReviewJurorsReapplyPageSpec extends PlaySpecification with PlayTestDb
         def named(n: String) = Round.findByContest(contestId).find(_.name.contains(n))
         (reviewedStatus === SEE_OTHER) and (named("No jury").map(_.inReview) must beSome(true)) and
           (roundUsers(named("No jury").get.getId) must beEmpty) and
-          (status(atOnce) === BAD_REQUEST) and
-          (contentAsString(atOnce) must contain("Choose the jurors to distribute as soon as the images are ready")) and
-          (named("At once") must beNone)
+          (status(atOnce) === SEE_OTHER) and (named("At once").map(_.inReview) must beSome(true))
       }
     }
   }
 
-  "the review page of a round without jurors" should {
+  "the jurors form of a round without jurors" should {
 
     "offer its admin the jurors to pick (the contest's, chosen), and its organizer no form" in {
       testDbApp { app =>
         val (round, jurors) = setUp()
-        val admin = contentAsString(get(app, "admin@example.com", review(round.getId)))
+        val admin = contentAsString(get(app, "admin@example.com", s"/admin/rounds/${round.getId}/jurors"))
         val organizer = contentAsString(get(app, "organizer@example.com", review(round.getId)))
         (admin must contain("name=\"jurorsShown\"")) and (admin must contain("name=\"jury\" value=\"|\"")) and (admin must contain("id=\"jurors\"")) and
           (admin must contain(s"""<option value="${jurors.head.getId}" selected>""")) and

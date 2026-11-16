@@ -80,11 +80,20 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       // rows (keyed, counted without a join); a hard condition, never OR'ed with [[withPageId]]:
       // a vote doesn't change a file's author
       author: Option[String] = None,
+      // only these files, by page id (a staff list's country, controllers.RoundList.country: an
+      // international contest's files of one country, services.places.PlaceScheme); a hard
+      // condition, never OR'ed with [[withPageId]]: a vote doesn't change a file's country.
+      // Empty: no file
+      pageIds: Option[Seq[Long]] = None,
+      // the comments of these rounds are left out of every comment condition, count and order
+      // (a juror's list, controllers.RoundList.hiddenCommentRounds: the contest's rounds not yet
+      // distributed, whose review comments are their staff's until then)
+      hiddenCommentRounds: Seq[Long] = Nil,
       driver: String = "mysql"
   ) {
 
     /** The conditions on a comment `c` (after its contest's) of [[commentsRound]] and [[commentsBy]]. */
-    private def commentScope: String = SelectionQuery.inRound(commentsRound, commentsBy)
+    private def commentScope: String = SelectionQuery.inRound(commentsRound, commentsBy, hiddenCommentRounds)
 
     /** A grouped row's rate: the sum of the file's rates, or of a rated round's grades. */
     private def rateSum: String = SelectionQuery.rateSum(grades)
@@ -269,8 +278,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         val images = sql"select ${i.result.*} from images i where i.page_id in ($pageIds)"
           .map(ImageJdbc(i)(_)).list().map(image => image.pageId -> image).toMap
         val conditions =
-          copy(regions = Set.empty, keyset = None, withPageId = None, commentsIn = None, monumentId = None, author = None)
-            .where()
+          copy(regions = Set.empty, keyset = None, withPageId = None, commentsIn = None, monumentId = None, author = None,
+            pageIds = None).where()
         val inPage = if (conditions.value.isEmpty) sqls"where" else sqls"$conditions and"
         val votes = sql"select ${VoteJdbc.resultAll(s)} from vote s $inPage s.page_id in ($pageIds) order by s.id"
           .map(VoteJdbc(s)(_)).list().groupBy(_.pageId)
@@ -291,6 +300,15 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         inner +
         SQLSyntax.createUnsafely(s") t group by ${keys.mkString(", ")}${orderSql(keys.zip(columns.map(_._2)))}")
       sql"$outer".map(rs => (keys.indices.map(n => rs.long(n + 1)), rs.int(keys.size + 1))).list()
+    }
+
+    /** All the list's files' page ids, each once, in no order: what a list's places are counted
+      * from by country (services.places.PlaceScheme.Countries.counts), the same files [[count]]
+      * counts.
+      */
+    def allPageIds()(implicit session: DBSession = autoSession): Seq[Long] = {
+      val listed = (if (groupWithDetails) files else this).copy(order = Nil, limit = None, keyset = None, withPageId = None)
+      sql"${listed.query(idOnly = true, noLimit = true)}".map(_.long(1)).list().distinct
     }
 
     /** The list's files: a file list's or CSV's too, one per file whatever its votes. */
@@ -330,12 +348,13 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       commentsIn.fold(Seq.empty[(Long, Int, Option[String])]) { contestId =>
         val ids = copy(commentsBy = None, order = Nil, limit = None, withPageId = None, keyset = None)
           .query(idOnly = true, noLimit = true)
-        val inRound = SQLSyntax.createUnsafely(SelectionQuery.inRound(commentsRound))
+        val inRound = SQLSyntax.createUnsafely(SelectionQuery.inRound(commentsRound, None, hiddenCommentRounds))
         sql"""select g.uid, g.n, named.username
               from (select coalesce(c.user_id, 0) uid, count(*) n
                     from ($ids) t straight_join comment c on c.contest_id = $contestId and c.room = t.pi_on_i$inRound
                     group by coalesce(c.user_id, 0)) g
-              left join (select user_id, max(id) mid from comment where contest_id = $contestId group by user_id) latest
+              left join (select c.user_id, max(c.id) mid from comment c where c.contest_id = $contestId${
+                SQLSyntax.createUnsafely(SelectionQuery.inRound(None, None, hiddenCommentRounds))} group by c.user_id) latest
                 on latest.user_id = g.uid
               left join comment named on named.id = latest.mid"""
           .map(rs => (rs.long(1), rs.int(2), rs.stringOpt(3))).list()
@@ -417,7 +436,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
                $monumentJoin
                WHERE $region IS NOT NULL
                  AND s.jury_id = $id
-                 AND s.round_id = $round ${ofMonument("s")} ${ofAuthor("s")}"""
+                 AND s.round_id = $round ${ofMonument("s")} ${ofAuthor("s")} ${ofFiles("s")}"""
         case None =>
           val (region, monumentJoin) =
             if (subRegions) (SQLSyntax.createUnsafely(s"m.$regionColumn"), sqls"JOIN monument m ON m.id = ri.monument_id")
@@ -426,7 +445,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
                FROM round_image ri
                $monumentJoin
                WHERE $region IS NOT NULL
-                 AND ri.round_id = $round AND ri.status = 'in' ${ofMonument("ri")} ${ofAuthor("ri")}"""
+                 AND ri.round_id = $round AND ri.status = 'in' ${ofMonument("ri")} ${ofAuthor("ri")} ${ofFiles("ri")}"""
       }
       query
         .map(rs => rs.string(1) -> Option.empty[Int])
@@ -453,14 +472,14 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         case Some(juror) =>
           sql"""SELECT ${SQLSyntax.createUnsafely(regionOf("s.monument_id"))} AS region, SUM($hit$commentedHit) FROM vote s
                ${commentedJoin(sqls"s.page_id")}
-               WHERE s.jury_id = $juror AND s.round_id = $round ${ofMonument("s")} ${ofAuthor("s")}
+               WHERE s.jury_id = $juror AND s.round_id = $round ${ofMonument("s")} ${ofAuthor("s")} ${ofFiles("s")}
                GROUP BY region ORDER BY NULL"""
         case None =>
           // the monument's and the author's conditions on the votes, in the inner select
           // (vote_round_monument_id_idx; images' author index, V104)
           sql"""SELECT ${SQLSyntax.createUnsafely(regionOf("i.monument_id"))} AS region, SUM(p.hit$commentedHit)
                FROM (SELECT s.page_id, MAX($hit) AS hit FROM vote s
-                     WHERE s.round_id = $round ${ofMonument("s")} ${ofAuthor("s")}
+                     WHERE s.round_id = $round ${ofMonument("s")} ${ofAuthor("s")} ${ofFiles("s")}
                      GROUP BY s.page_id) p
                JOIN images i FORCE INDEX (images_page_monument_idx) ON i.page_id = p.page_id
                ${commentedJoin(sqls"p.page_id")}
@@ -482,7 +501,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       sql"""SELECT ${SQLSyntax.createUnsafely(regionOf("s.monument_id"))} AS region, s.rate, $count FROM vote s
            ${commentedJoin(sqls"s.page_id")}
            WHERE s.jury_id = ${userId.get} AND s.round_id = ${roundId.get} AND s.page_id IS NOT NULL ${ofMonument("s")}
-             ${ofAuthor("s")}
+             ${ofAuthor("s")} ${ofFiles("s")}
            GROUP BY region, s.rate ORDER BY NULL"""
         .map(rs => (rs.stringOpt(1), rs.int(2)) -> rs.int(3))
         .list()
@@ -496,7 +515,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     private def commentedJoin(pageId: SQLSyntax): SQLSyntax =
       commentsIn.fold(sqls"")(contestId =>
         sqls"""LEFT JOIN (SELECT DISTINCT c.room FROM comment c WHERE c.contest_id = $contestId${
-          SelectionQuery.inRoundBound(commentsRound, commentsBy)}) cm ON cm.room = $pageId""")
+          SelectionQuery.inRoundBound(commentsRound, commentsBy, hiddenCommentRounds)}) cm ON cm.room = $pageId""")
 
     /** A factor of a count's term: 1 for a commented file, else 0 ([[commentedJoin]]); nothing without it. */
     private def commentedHit: SQLSyntax = commentsIn.fold(sqls"")(_ => sqls" * (cm.room IS NOT NULL)")
@@ -517,6 +536,12 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       */
     private def ofAuthor(table: String): SQLSyntax =
       author.fold(sqls"")(a => sqls"AND ${SelectionQuery.byAuthor(SQLSyntax.createUnsafely(s"$table.page_id"), a)}")
+
+    /** The files filter's condition ([[pageIds]]) on a table's file (`s`, vote's; `ri`,
+      * round_image's page id), after a condition before it; nothing without the filter.
+      */
+    private def ofFiles(table: String): SQLSyntax =
+      pageIds.fold(sqls"")(ids => sqls"AND ${SelectionQuery.inFiles(SQLSyntax.createUnsafely(s"$table.page_id"), ids)}")
 
     /** A single sub-region (adm1) filter, which the monument table has. */
     private def subRegionFilter: Boolean = subRegions && regions.size == 1 && regions.head.length > 2
@@ -561,7 +586,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       */
     private def commentsFilter: Option[SQLSyntax] =
       commentsIn.map { contestId =>
-        val commented = SelectionQuery.commented(contestId, commentsRound, commentsBy)
+        val commented = SelectionQuery.commented(contestId, commentsRound, commentsBy, hiddenCommentRounds)
         pageWithoutComments.fold(commented)(pageId => sqls"($commented or s.page_id = $pageId)")
       }
 
@@ -622,6 +647,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         },
         monumentId.map(m => sqls"s.monument_id = $m and binary s.monument_id = $m"),
         author.map(a => SelectionQuery.byAuthor(sqls"s.page_id", a)),
+        pageIds.map(ids => SelectionQuery.inFiles(sqls"s.page_id", ids)),
         commentsFilter,
         Option.when(withPage)(sqls"s.page_id is not null")
       ).flatten
@@ -702,16 +728,28 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       * `userId`, if given): what [[SelectionQuery.commentsIn]], [[SelectionQuery.commentsRound]]
       * and [[SelectionQuery.commentsBy]] keep.
       */
-    def commented(contestId: Long, roundId: Option[Long] = None, userId: Option[Long] = None): SQLSyntax =
+    def commented(contestId: Long, roundId: Option[Long] = None, userId: Option[Long] = None,
+        hidden: Seq[Long] = Nil): SQLSyntax =
       sqls"s.page_id in (select c.room from comment c where c.contest_id = $contestId${
-        SQLSyntax.createUnsafely(inRound(roundId, userId))})"
+        SQLSyntax.createUnsafely(inRound(roundId, userId, hidden))})"
 
     /** Conditions on a comment `c` (after its contest's): written in the round, by the account
-      * (`user_id`), each if given. Both read on the rows comment's (contest_id, room) index
-      * (V101) finds: at most a contest's comments (~2,000 on production's copy).
+      * (`user_id`), each if given, and not in the `hidden` rounds (a juror's: the contest's rounds
+      * not yet distributed, [[controllers.RoundList.hiddenCommentRounds]]). All read on the rows
+      * comment's (contest_id, room) index (V101) finds: at most a contest's comments (~2,000 on
+      * production's copy). The ids are numbers, written as such.
       */
-    def inRound(roundId: Option[Long], userId: Option[Long] = None): String =
-      roundId.fold("")(r => s" and c.round_id = ${r.toLong}") + userId.fold("")(u => s" and c.user_id = ${u.toLong}")
+    def inRound(roundId: Option[Long], userId: Option[Long] = None, hidden: Seq[Long] = Nil): String =
+      roundId.fold("")(r => s" and c.round_id = ${r.toLong}") + userId.fold("")(u => s" and c.user_id = ${u.toLong}") +
+        notHidden(hidden)
+
+    /** ` and c.round_id not in (...)`: a comment `c` not written in one of the `hidden` rounds. */
+    def notHidden(hidden: Seq[Long]): String =
+      if (hidden.isEmpty) "" else s" and c.round_id not in (${hidden.map(_.toLong).distinct.mkString(", ")})"
+
+    /** The file of `pageId` is one of `ids` (none if empty). */
+    def inFiles(pageId: SQLSyntax, ids: Seq[Long]): SQLSyntax =
+      if (ids.isEmpty) sqls"false" else sqls"$pageId in ($ids)"
 
     /** A file (its page id, `pageId`) whose stored author is `author` exactly: `images.author`
       * byte for byte (`BINARY`: the column is `utf8mb4_general_ci`, where "Ivan" would also be
@@ -725,8 +763,9 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       sqls"$pageId in (select ia.page_id from images ia where ia.author = $author and binary ia.author = $author)"
 
     /** [[inRound]] with its values bound. */
-    def inRoundBound(roundId: Option[Long], userId: Option[Long] = None): SQLSyntax =
-      roundId.fold(sqls"")(r => sqls" and c.round_id = $r") + userId.fold(sqls"")(u => sqls" and c.user_id = $u")
+    def inRoundBound(roundId: Option[Long], userId: Option[Long] = None, hidden: Seq[Long] = Nil): SQLSyntax =
+      roundId.fold(sqls"")(r => sqls" and c.round_id = $r") + userId.fold(sqls"")(u => sqls" and c.user_id = $u") +
+        (if (hidden.isEmpty) sqls"" else sqls" and c.round_id not in (${hidden.distinct})")
 
     /** A file's (a vote row `s`'s) latest comment in the contest, in the round and by the account
       * (`userId`, the comments report's filter by author) if given:
@@ -735,9 +774,10 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       * view's place in the order needs ([[Keyset]]). An order column ([[controllers.ListOrder.LatestComment]]):
       * a read of comment's (contest_id, room) index (V101) per file.
       */
-    def latestComment(contestId: Long, roundId: Option[Long], userId: Option[Long] = None): String =
+    def latestComment(contestId: Long, roundId: Option[Long], userId: Option[Long] = None,
+        hidden: Seq[Long] = Nil): String =
       s"(SELECT COALESCE(MAX(c.id), 0) FROM comment c WHERE c.contest_id = ${contestId.toLong}" +
-        s" AND c.room = s.page_id${inRound(roundId, userId)})"
+        s" AND c.room = s.page_id${inRound(roundId, userId, hidden)})"
   }
 
 }

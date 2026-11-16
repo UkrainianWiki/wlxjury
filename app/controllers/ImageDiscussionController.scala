@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{Round, VoteJdbc, User}
+import db.scalikejdbc.{Round, RoundImageJdbc, VoteJdbc, User}
 import org.intracer.wmua.CommentJdbc
 import play.api.data.Form
 import play.api.data.Forms._
@@ -28,6 +28,13 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
     * contest ([[Secured.inContest]]); the session's contest is not switched (a POST). Only
     * while the round is open (`active`), as the large view offers the form: a stopped round's
     * is refused to everyone, staff included ([[ImageDiscussionController.RoundStopped]]).
+    *
+    * A round not yet distributed (`distributing`: held in review, P3) takes comments from its
+    * staff ([[ImageDiscussionController.mayCommentInReview]]) on its files (`round_image`, any
+    * status), from its review page's large view ([[RoundReviewController.file]]), which they go
+    * back to (its tab and place from the request: [[ImageDiscussionController.ReviewParam]],
+    * `country`); anyone else is refused. They are ordinary round comments: its jurors see them
+    * once it is distributed, as any of its comments.
     */
   def addComment(pageId: Long,
                  region: String = "all",
@@ -42,7 +49,12 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
         .fold(onUnAuthorized(sessionUser, request, Secured.Denial(
           requested.map(_.contestId).orElse(contestId), round.map(id => s"round:$id"), commenterRoles))) { targetRound =>
           val user = Secured.inContest(sessionUser, targetRound.contestId)
-          if (!mayComment(user, targetRound, pageId, commenterRoles))
+          if (targetRound.distributing) {
+            if (ImageDiscussionController.mayCommentInReview(user, targetRound) &&
+                RoundImageJdbc.find(targetRound.getId, pageId).isDefined)
+              addReviewComment(user, targetRound, pageId, region)
+            else onUnAuthorized(user, request, Secured.Denial.round(targetRound, RoundReviewController.ViewRoles))
+          } else if (!mayComment(user, targetRound, pageId, commenterRoles))
             onUnAuthorized(user, request, Secured.Denial.round(targetRound, commenterRoles))
           else if (!targetRound.active) {
             val denial = Secured.Denial.round(targetRound, commenterRoles)
@@ -73,6 +85,27 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
   ): RoundList = {
     val viewed = asUserId.filter(id => galleryService.viewAs(user, round, id) == GalleryService.ViewAs.Allowed)
     RoundList.of(round, user, viewed.getOrElse(user.getId), region, GalleryView.of(request))
+  }
+
+  /** Adds the comment on a file of a round in review, then goes back to the file's large view on
+    * the review page, in the tab and place it was made in.
+    */
+  private def addReviewComment(user: User, targetRound: Round, pageId: Long, region: String)(implicit
+      request: Request[AnyContent]
+  ): Result = {
+    val status = request.getQueryString(ImageDiscussionController.ReviewParam)
+      .filter(RoundReviewController.Statuses.contains).getOrElse(db.scalikejdbc.RoundImageJdbc.Status.In)
+    val country = request.getQueryString(RoundList.CountryParam).filter(_.nonEmpty)
+    val back = routes.RoundReviewController.file(targetRound.getId, pageId, status, region, country).url
+    editCommentForm.bindFromRequest().fold(
+      _ => Redirect(back),
+      commentBody => {
+        if (commentBody.text.trim.nonEmpty)
+          CommentJdbc.create(user.getId, user.fullname, targetRound.getId, Some(targetRound.contestId), pageId,
+            commentBody.text)
+        Redirect(back + "#comments")
+      }
+    )
   }
 
   /** Adds the comment, then goes back to the file's large view in the list it was made in
@@ -106,4 +139,13 @@ object ImageDiscussionController {
 
   /** The denial reason of a comment on a stopped round's file ([[Secured.Denial]]). */
   val RoundStopped = "round_stopped"
+
+  /** A review comment's URL parameter: the review page's tab (status) it goes back to. */
+  val ReviewParam = "review"
+
+  /** Whether the user may comment on the files of a round not yet distributed (held in review):
+    * its staff, those who see its review page (root, its contest's admins and organizers:
+    * [[User.canViewOrgInfo]], `user` in the round's contest).
+    */
+  def mayCommentInReview(user: User, round: Round): Boolean = user.canViewOrgInfo(round)
 }

@@ -318,7 +318,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       }))
       h.failBeforeChunk = Some(3)
       val service = inlineService(h)
-      val roundId = service.submit(newRound(contest, "R1"), jurors.map(_.getId), None).round.getId
+      val roundId = service.submit(newRound(contest, "R1"), jurors.map(_.getId), None, review = false).round.getId
       jobOf(roundId).status === JobStatus.Failed
       pageIds(roundId) === (2L to 6L).toSet
 
@@ -339,7 +339,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
           scala.concurrent.ExecutionContext.global))))
       h.failBeforeChunk = Some(3)
       val service = inlineService(h)
-      val submitted = service.submit(newRound(contest, "R1"), jurors.map(_.getId), Some(java.util.UUID.randomUUID().toString))
+      val submitted = service.submit(newRound(contest, "R1"), jurors.map(_.getId), Some(java.util.UUID.randomUUID().toString), review = false)
       Await.result(deletion.future, 60.seconds)
       val roundId = submitted.round.getId
 
@@ -449,7 +449,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       val service = new RoundService(Round, scheduler, h)
       val token = java.util.UUID.randomUUID().toString
       val form = newRound(contest, "R1")
-      val roundId = service.submit(form, jurors.map(_.getId), Some(token)).round.getId
+      val roundId = service.submit(form, jurors.map(_.getId), Some(token), review = false).round.getId
       val job = jobOf(roundId)
       val givenUp = JobError.attemptsExhausted(5, "ref123")
       sql"UPDATE job SET status = 'failed', attempts = 5, error = ${givenUp.encode} WHERE id = ${job.id}".update()(AutoSession)
@@ -457,7 +457,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       service.distributeNewFiles(roundId) must beLike {
         case g: RoundService.GivenUp => (g.job.id === job.id) and (g.reference === "ref123")
       }
-      service.submit(form, jurors.map(_.getId), Some(token)) must beLike {
+      service.submit(form, jurors.map(_.getId), Some(token), review = false) must beLike {
         case r: RoundService.Resubmitted =>
           (r.resumed must beFalse) and (r.givenUp must beTrue) and (r.messageKey === "round.resubmitted.attempts") and
             (r.reference === "ref123")
@@ -491,7 +491,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       val h = new TestHandler(chunkRows = 3) // 3 images per chunk
       h.failBeforeChunk = Some(3)
       val service = inlineService(h)
-      val submitted = service.submit(newRound(contest, "R1"), jurors.map(_.getId), Some(java.util.UUID.randomUUID().toString))
+      val submitted = service.submit(newRound(contest, "R1"), jurors.map(_.getId), Some(java.util.UUID.randomUUID().toString), review = false)
       submitted.job.map(_.status) === Some(JobStatus.Failed)
       val roundId = submitted.round.getId
       pageIds(roundId).size === 6 // a fill: the files' rows, no votes yet
@@ -528,7 +528,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       val h = new TestHandler(chunkRows = 3)
       h.failBeforeChunk = Some(2)
       val service = inlineService(h)
-      val roundId = service.submit(newRound(contest, "R1"), jurors.map(_.getId), None).round.getId
+      val roundId = service.submit(newRound(contest, "R1"), jurors.map(_.getId), None, review = false).round.getId
       RoundUser.setActive(roundId, jurors.last.getId, active = false)
       service.distributeNewImages(roundId)
       VoteJdbc.byRound(roundId).filter(_.pageId > 3).map(_.juryId).toSet === jurors.init.map(_.getId).toSet
@@ -546,7 +546,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       val h = new TestHandler(chunkRows = 3)
       h.failBeforeChunk = Some(2)
       val service = inlineService(h)
-      val roundId = service.submit(newRound(contest, "R1"), jurors.map(_.getId), None).round.getId
+      val roundId = service.submit(newRound(contest, "R1"), jurors.map(_.getId), None, review = false).round.getId
       val hidden = roundDao.findById(roundId).get
       hidden.distributing must beTrue
       hidden.active must beFalse
@@ -574,7 +574,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       h.failBeforeChunk = Some(2)
       val service = inlineService(h)
       val next = newRound(contest, "Next").copy(previous = Some(prev.getId.toString), prevSelectedBy = Some(1))
-      val roundId = service.submit(next, jurors.map(_.getId), None).round.getId
+      val roundId = service.submit(next, jurors.map(_.getId), None, review = false).round.getId
       roundDao.findById(prev.getId).get.active must beTrue // restored after the failure
       roundDao.findById(prev.getId).get.freezeCount === 0
 
@@ -629,7 +629,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       h.sleepMs = 100
       val (service, scheduler) = backgroundService(h)
       val next = newRound(contest, "Next").copy(previous = Some(prev.getId.toString), prevSelectedBy = Some(1))
-      val submitted = service.submit(next, jurors.map(_.getId), None)
+      val submitted = service.submit(next, jurors.map(_.getId), None, review = false)
       val roundId = submitted.round.getId
       eventually(50, 100.millis)(stateOf(roundId).imagesAdded must beGreaterThan(0L))
       roundDao.findById(prev.getId).get.active must beFalse
@@ -662,7 +662,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       val dying = new TestHandler(chunkRows = 3)
       dying.crashAtChunk = Some(3)
       val next = newRound(contest, "Next").copy(previous = Some(prev.getId.toString), prevSelectedBy = Some(1))
-      inlineService(dying).submit(next, jurors.map(_.getId), None) must throwA[InterruptedException]
+      inlineService(dying).submit(next, jurors.map(_.getId), None, review = false) must throwA[InterruptedException]
       val roundId = roundDao.findByContest(contest.getId).find(_.name.contains("Next")).get.getId
       jobOf(roundId).status === JobStatus.Running // its instance "died" holding it
       pageIds(roundId).size === 6
@@ -692,7 +692,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
         newRound(contest, "Region 12", distribution = 1).copy(regions = Some("12")),
         newRound(contest, "Every juror", distribution = 0),
         newRound(contest, "Videos", distribution = 1).copy(mediaType = Some("video"))
-      ).map(r => service.submit(r, jurors.map(_.getId), None))
+      ).map(r => service.submit(r, jurors.map(_.getId), None, review = false))
       submitted.map(s => settled(scheduler, s.round.getId).status).toSet === Set(JobStatus.Done)
       val ids = submitted.map(_.round.getId)
       VoteJdbc.byRound(ids(0)).size === 80
@@ -1101,7 +1101,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       val h = new TestHandler(chunkRows = 3)
       h.failAfterInsertOfChunk = Some(3) // after its votes and rows are inserted, in its transaction
       val service = inlineService(h)
-      val submitted = service.submit(newRound(contest, "R1"), jurors.map(_.getId), Some(java.util.UUID.randomUUID().toString))
+      val submitted = service.submit(newRound(contest, "R1"), jurors.map(_.getId), Some(java.util.UUID.randomUUID().toString), review = false)
       val roundId = submitted.round.getId
       (submitted.job.map(_.status) === Some(JobStatus.Failed)) and
         (rows(roundId).map(_.pageId) === pageIds(roundId).toSeq.sorted) and (rows(roundId).size === 6) and

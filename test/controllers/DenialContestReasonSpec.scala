@@ -72,7 +72,7 @@ class DenialContestReasonSpec extends PlaySpecification with PlayTestDb {
         html must contain("You are signed in as ann@example.com.")
         html must contain("The requested page belongs to a contest in which this account has no role.")
         html must contain("This account’s roles:")
-        html must contain("<li>Admin in “contest10 2010 in country10”</li>")
+        html must contain("<li>Admin in “contest10 2010 in Andorra”</li>")
         html must contain("If you need this page, ask an admin of that contest to add this account to it.")
         html must beMatching("""(?s).*Reference: [0-9a-f]{8}, \d{4}-\d\d-\d\d \d\d:\d\d UTC.*""")
         // what the page needs in the other contest beside the account's role was the contradiction
@@ -103,24 +103,24 @@ class DenialContestReasonSpec extends PlaySpecification with PlayTestDb {
           contentAsString(get(gallery(round), user, Some(10L), "Accept-Language" -> lang))
 
         page("en") must beMatching(
-          """(?s).*<li>Juror in “contest10 2010 in country10”</li>\s*<li>Organizer in “contest30 2030 in country30”</li>.*""")
+          """(?s).*<li>Juror in “contest10 2010 in Andorra”</li>\s*<li>Organizer in “contest30 2030 in Andorra”</li>.*""")
         val uk = page("uk")
         uk must contain("Запитана сторінка належить конкурсу, у якому цей обліковий запис не має ролі.")
         uk must contain("Ролі цього облікового запису:")
-        uk must contain("<li>Член журі у «contest10 2010 in country10»</li>")
-        uk must contain("<li>Організатор у «contest30 2030 in country30»</li>")
+        uk must contain("<li>Член журі у «contest10 2010 in Andorra»</li>")
+        uk must contain("<li>Організатор у «contest30 2030 in Andorra»</li>")
         uk must contain("Якщо вам потрібна ця сторінка, попросіть адміністратора того конкурсу додати до нього цей обліковий запис.")
         val ru = page("ru")
         ru must contain("Запрошенная страница относится к конкурсу, в котором у этой учётной записи нет роли.")
         ru must contain("Роли этой учётной записи:")
-        ru must contain("<li>Член жюри в «contest10 2010 in country10»</li>")
-        ru must contain("<li>Организатор в «contest30 2030 in country30»</li>")
+        ru must contain("<li>Член жюри в «contest10 2010 in Andorra»</li>")
+        ru must contain("<li>Организатор в «contest30 2030 in Andorra»</li>")
         ru must contain("Если вам нужна эта страница, попросите администратора того конкурса добавить в него эту учётную запись.")
         val fr = page("fr")
         fr must contain("La page demandée appartient à un concours dans lequel ce compte n’a aucun rôle.")
         fr must contain("Rôles de ce compte :")
-        fr must contain("<li>Juré dans « contest10 2010 in country10 »</li>")
-        fr must contain("<li>Organisateur dans « contest30 2030 in country30 »</li>")
+        fr must contain("<li>Juré dans « contest10 2010 in Andorra »</li>")
+        fr must contain("<li>Organisateur dans « contest30 2030 in Andorra »</li>")
         fr must contain("Si vous avez besoin de cette page, demandez à un administrateur de ce concours d’y ajouter ce compte.")
         Seq(uk, ru, fr).foreach(_ must not(contain("contest20")))
         ok
@@ -136,7 +136,7 @@ class DenialContestReasonSpec extends PlaySpecification with PlayTestDb {
         html must contain("The requested page belongs to a contest in which this account has no role.")
         html must contain("Your membership in this contest has been deactivated.")
         html must contain("This account’s roles:")
-        html must contain("<li>Admin in “contest10 2010 in country10”</li>")
+        html must contain("<li>Admin in “contest10 2010 in Andorra”</li>")
         html must not(contain("contest20"))
       }
     }
@@ -187,7 +187,7 @@ class DenialContestReasonSpec extends PlaySpecification with PlayTestDb {
 
         status(result) === FORBIDDEN
         html must contain("This page is for: Admin, Root.")
-        html must contain("Your role in contest20 2020 in country20: Juror.")
+        html must contain("Your role in contest20 2020 in Andorra: Juror.")
         html must contain("If you need access, ask your contest admin.")
         html must not(contain("Your role in contest10"))
         html must not(contain("belongs to a contest in which this account has no role"))
@@ -284,7 +284,7 @@ class DenialContestReasonSpec extends PlaySpecification with PlayTestDb {
         result.header.status === FORBIDDEN
         // the rest of the page as before: the reason, the account's roles, signing out
         html must contain("The requested page belongs to a contest in which this account has no role.")
-        html must contain("<li>Admin in “contest10 2010 in country10”</li>")
+        html must contain("<li>Admin in “contest10 2010 in Andorra”</li>")
         html must contain("Sign out and sign in with another account")
         html must not(contain(routes.GalleryController.contestFiles(10).url))
         html must not(contain("database down"))

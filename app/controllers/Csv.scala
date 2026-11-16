@@ -118,7 +118,7 @@
         Source.fromIterator(() => pageIds.grouped(chunk))
           .mapAsync(1)(ids => Future {
             (ids, ImageJdbc.findByPageIds(ids),
-              CommentJdbc.findByRooms(list.round.contestId, ids, list.commentsRound, list.commentsBy).groupBy(_.room))
+              CommentJdbc.findByRooms(list.round.contestId, ids, list.commentsRound, list.commentsBy, list.hiddenCommentRounds).groupBy(_.room))
           })
           .mapConcat { case (ids, images, comments) =>
             for {

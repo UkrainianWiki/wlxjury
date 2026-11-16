@@ -1,6 +1,6 @@
 package gatling.simulations
 
-import gatling.setup.{GatlingConfig, GatlingTestFixture, HeapWatcher}
+import gatling.setup.{GatlingConfig, GatlingTestFixture, HeapWatcher, ReviewDistribute}
 import io.gatling.core.Predef._
 import io.gatling.http.Predef._
 import scalikejdbc._
@@ -73,7 +73,7 @@ class RoundDistributionSimulation extends Simulation {
   private def newRoundForm(name: String, extra: (String, Any)*): Seq[(String, Any)] =
     Seq[(String, Any)](
       "number" -> "0", "name" -> name, "contest" -> contestId.toString, "roles" -> "jury",
-      "distributeAfter" -> "true", "distribution" -> cfg.jurorsPerImage.toString, "rates" -> "1",
+      "distribution" -> cfg.jurorsPerImage.toString, "rates" -> "1",
       "minMpx" -> "", "minSize" -> "", "mediaType" -> "all",
       // the new-round form's one-time token (ignored when saving an existing round)
       "submitToken" -> java.util.UUID.randomUUID().toString
@@ -123,6 +123,8 @@ class RoundDistributionSimulation extends Simulation {
           .exec(http("job status").get("/admin/jobs/#{jobId}")
             .check(status.is(200), jsonPath("$.status").saveAs("jobStatus")))
       }
+      // a new round waits in review after its fill: its jurors form distributes it
+      .exec(ReviewDistribute.chain(title, jurorIds, cfg.jurorsPerImage, timeout, cfg.pollMillis))
       .exec { s =>
         val mem       = HeapWatcher.end()
         val millis    = System.currentTimeMillis() - s("t0").as[Long]

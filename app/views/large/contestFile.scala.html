@@ -8,13 +8,17 @@
         index: Int,
         following: Seq[ImageJdbc.StoredFile],
         page: Int,
-        monument: Option[Monument])(implicit flash: Flash, request: Request[Any], messages: Messages)
+        monument: Option[Monument],
+        comments: Option[controllers.ReviewComments] = None)(implicit flash: Flash, request: Request[Any], messages: Messages)
 
 @* The large view of a contest files page's file (GalleryController.contestFileLarge), laid out
    as a round's (large.scala.html), read-only: its details (author, monument, its page on
    Commons), then the files after it in the same list (`following`, closed by default), and
    it moves among `files`, around it. A deleted file shows its cached thumbnail, or a grey
-   box, and links its page and its undeletion on Commons. *@
+   box, and links its page and its undeletion on Commons. A round's review list's file
+   (RoundReviewController.file) shows its comments in the contest (`comments`), as a round's large
+   view does (each other round's named), and the form for its staff: ordinary round comments
+   (ImageDiscussionController.addComment), its jurors' to see once it is distributed. *@
 
 @urlAt(i: Int) = @{ view.largeUrl(files(i).image.pageId) }
 
@@ -135,6 +139,25 @@
                             </video>
                         }
                     </a>
+                    }
+                    @for(c <- comments if c.mayComment || c.comments.nonEmpty) {
+                        <section class="large-box large-comments" aria-labelledby="comments">
+                            <h2 id="comments" class="h6 mb-2">@Messages("comments")</h2>
+                            @for(msg <- c.comments) {
+                                @snippets.comment(msg, view.round.filter(_.id.exists(_ != msg.roundId)).map(_ => c.rounds.getOrElse(msg.roundId, msg.roundId.toString)))
+                            }
+                            @for(url <- view.commentUrl(image.pageId) if c.mayComment) {
+                                <form method="post" action="@url" id="addComment">
+                                    @csrfField()
+                                    <input type="hidden" name="id" value="0" />
+                                    <label for="text" class="visually-hidden">@Messages("your.comment")</label>
+                                    <textarea class="form-control imageComment" id="text" name="text" rows="3" placeholder="@Messages("your.comment.here")"></textarea>
+                                    <div class="mt-2">
+                                        <input type="submit" class="btn btn-primary btn-sm" id="saySomething" value="@Messages("submit.comment")" />
+                                    </div>
+                                </form>
+                            }
+                        </section>
                     }
                 </div>
             </div>

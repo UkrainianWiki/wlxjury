@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{PlayTestDb, Round, User, VoteJdbc}
+import db.scalikejdbc.{PlayTestDb, Round, RoundImageJdbc, User, VoteJdbc}
 import org.intracer.wmua.{ContestJury, Image}
 import org.jsoup.Jsoup
 import play.api.test.CSRFTokenHelper._
@@ -85,7 +85,9 @@ class RoundExcludeRoundsFormSpec extends PlaySpecification with PlayTestDb {
         val created = roundDao.findByContest(contest.getId).find(_.name.contains("Round 3"))
         (saved must_== SEE_OTHER) and (error must beNone) and
           (created.map(_.excludeRounds) must beSome(Seq(second.getId))) and
-          (created.map(r => VoteJdbc.byRound(r.getId).map(_.pageId).toSet) === Some(Set(3L, 4L)))
+          // held in review (the new-round form, 2026-11-16): its files chosen, none given out yet
+          (created.map(r => RoundImageJdbc.byRound(r.getId).filter(_.status == RoundImageJdbc.Status.In).map(_.pageId).toSet) ===
+            Some(Set(3L, 4L)))
       }
     }
 
@@ -95,6 +97,11 @@ class RoundExcludeRoundsFormSpec extends PlaySpecification with PlayTestDb {
         status(route(app, save(contest.getId, jurors, admin,
           Seq("previousRound[]" -> first.getId.toString, "excludeRounds[]" -> second.getId.toString))).get)
         val round = roundDao.findByContest(contest.getId).find(_.name.contains("Round 3")).get
+        // distributed from its jurors form: a round held in review has its filters editable (re-apply)
+        status(route(app, FakeRequest(POST, s"/admin/rounds/${round.getId}/distribute")
+          .withSession(Secured.UserName -> admin.email)
+          .withFormUrlEncodedBody(Seq("jurorsShown" -> "true", "distribution" -> "1") ++
+            jurors.zipWithIndex.map { case (id, i) => s"jurors[$i]" -> id.toString }: _*).withCSRFToken).get) must_== SEE_OTHER
         val (options, selected, disabled, _) = select(contentAsString(route(app,
           get(s"/admin/rounds/edit?contestId=${contest.getId}&id=${round.getId}", admin)).get))
         (options.map(_._1) === Seq(first.getId.toString, second.getId.toString)) and

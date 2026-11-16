@@ -54,11 +54,14 @@ class UserOrderSpec extends PlaySpecification with PlayTestDb with AccountTestSu
       }
     }
 
-    "be offered in account id order as the round form's jurors" in {
+    "be offered in account id order as a round's jurors (its jurors form)" in {
       testDbApp { implicit app =>
         val (admin, jurors) = fixture()
+        // a round held in review: the new-round form has no jurors (2026-11-16), its jurors form has
+        val round = services.TestRoundServices.roundService()
+          .submit(db.scalikejdbc.Round(None, 0, Some("R"), 10, active = true), Nil, None, review = true).round
         val html = contentAsString(route(app, as(admin, Some(10))(
-          FakeRequest(GET, "/admin/rounds/edit?contestId=10")).withCSRFToken).get)
+          FakeRequest(GET, s"/admin/rounds/${round.getId}/jurors")).withCSRFToken).get)
         val options = Jsoup.parse(html).select("select[name^=jurors] option").asScala.map(_.attr("value"))
           .filter(_.nonEmpty).toSeq
         options === jurors.map(_.getId.toString)

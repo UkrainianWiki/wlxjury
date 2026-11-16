@@ -230,3 +230,25 @@ test("works without jQuery: Bootstrap 5 then dispatches its events natively only
 
     expect(fetch).toHaveBeenCalledTimes(1);
 });
+
+// The same menu as a country menu (the shared place menu, services.places.PlaceScheme): an
+// international contest's countries for its staff, on a round's review page or gallery, one kind,
+// so no divider; the country shown (its name as id) active.
+test("lists a country menu's countries by the same rules, the country shown active, no divider", async () => {
+    fetch.mockReturnValue(answer(200, {
+        current: "Bénin",
+        all: { name: "All countries", url: "/admin/rounds/5/review?status=in" },
+        regions: [
+            { id: "Armenia", name: "Armenia", count: 3, kind: "Country", url: "/admin/rounds/5/review?country=Armenia" },
+            { id: "Bénin", name: "Bénin", count: 2, kind: "Country", url: "/admin/rounds/5/review?country=B%C3%A9nin" }
+        ]
+    }));
+
+    await open();
+
+    expect(items()).toEqual([
+        { text: "All countries", href: "/admin/rounds/5/review?status=in", classes: "" },
+        { text: "Armenia 3", href: "/admin/rounds/5/review?country=Armenia", classes: "" },
+        { text: "Bénin 2", href: "/admin/rounds/5/review?country=B%C3%A9nin", classes: "active" }
+    ]);
+});

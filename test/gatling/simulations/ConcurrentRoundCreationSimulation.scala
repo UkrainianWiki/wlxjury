@@ -1,6 +1,6 @@
 package gatling.simulations
 
-import gatling.setup.{GatlingConfig, GatlingTestFixture, HeapWatcher}
+import gatling.setup.{GatlingConfig, GatlingTestFixture, HeapWatcher, ReviewDistribute}
 import io.gatling.core.Predef._
 import io.gatling.core.structure.ChainBuilder
 import io.gatling.http.Predef._
@@ -66,7 +66,7 @@ class ConcurrentRoundCreationSimulation extends Simulation {
   private def newRoundForm(name: String, extra: (String, Any)*): Seq[(String, Any)] =
     Seq[(String, Any)](
       "number" -> "0", "name" -> name, "contest" -> contestId.toString, "roles" -> "jury",
-      "distributeAfter" -> "true", "distribution" -> cfg.jurorsPerImage.toString, "rates" -> "1",
+      "distribution" -> cfg.jurorsPerImage.toString, "rates" -> "1",
       "minMpx" -> "", "minSize" -> "", "mediaType" -> "all",
       "submitToken" -> java.util.UUID.randomUUID().toString
     ) ++ extra ++ jurorParams
@@ -147,6 +147,8 @@ class ConcurrentRoundCreationSimulation extends Simulation {
           .exec(http("job status").get("/admin/jobs/#{jobId}")
             .check(status.is(200), jsonPath("$.status").saveAs("jobStatus")))
       }
+      // a new round waits in review after its fill: its jurors form distributes it
+      .exec(ReviewDistribute.chain(s"$phase: ${job.name}", jurorIds, cfg.jurorsPerImage, timeout, cfg.pollMillis))
       .exec { s =>
         val millis = System.currentTimeMillis() - s("t0").as[Long]
         results.put(s"$phase/${job.name}", millis)

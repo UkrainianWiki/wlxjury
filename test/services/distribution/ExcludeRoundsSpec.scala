@@ -182,10 +182,10 @@ class ExcludeRoundsSpec extends Specification with TestDb with BeforeAll with Be
       val s = setUp(failing)
       val form = Some(UUID.randomUUID().toString)
       failing.arm()
-      val first = s.service.submit(s.q001Settings, s.jurors.map(_.getId), form)
+      val first = s.service.submit(s.q001Settings, s.jurors.map(_.getId), form, review = false)
       val failed = roundDao.findById(first.round.getId).get
       // the form submitted again with other rounds to leave out (none): the stored ones apply
-      val again = s.service.submit(s.q001Settings.copy(excludeRounds = Nil), s.jurors.map(_.getId), form)
+      val again = s.service.submit(s.q001Settings.copy(excludeRounds = Nil), s.jurors.map(_.getId), form, review = false)
       (first.job.map(_.status) must beSome(JobStatus.Failed)) and (failed.excludeRounds === Seq(s.q01.getId)) and
         (roundDao.findById(first.round.getId).get.excludeRounds === Seq(s.q01.getId)) and
         (again must beAnInstanceOf[RoundService.Resubmitted]) and (again.round.id === first.round.id) and
@@ -198,7 +198,7 @@ class ExcludeRoundsSpec extends Specification with TestDb with BeforeAll with Be
       val other = roundDao.create(Round(None, 1, Some("Other"), createContests(2).head.getId))
       val before = roundDao.findByContest(s.contest.getId).size
       def refused(excluded: Seq[Long]) =
-        s.service.submit(s.q001Settings.copy(excludeRounds = excluded), s.jurors.map(_.getId)) must
+        s.service.submit(s.q001Settings.copy(excludeRounds = excluded), s.jurors.map(_.getId), review = false) must
           throwA[IllegalArgumentException](message = "must be other rounds of contest")
       // a stored round that leaves out its own files (only SQL makes one): its distribution refused
       val self = roundDao.create(s.q001Settings.copy(number = 9, excludeRounds = Nil))
@@ -224,7 +224,7 @@ class ExcludeRoundsSpec extends Specification with TestDb with BeforeAll with Be
 
     "refuse a previous round of the round, which would leave it empty" in {
       val s = setUp()
-      (s.service.submit(s.q001Settings.copy(excludeRounds = Seq(s.q00.getId)), s.jurors.map(_.getId)) must
+      (s.service.submit(s.q001Settings.copy(excludeRounds = Seq(s.q00.getId)), s.jurors.map(_.getId), review = false) must
         throwA[H.ExcludeRoundsRefused].like { case e: H.ExcludeRoundsRefused =>
           e.refusal.key === H.ExcludeRoundsPrevious }) and
         (refusalKey(s.q001Settings.copy(excludeRounds = Seq(s.q01.getId, s.q00.getId))) must beSome(H.ExcludeRoundsPrevious))
@@ -233,7 +233,7 @@ class ExcludeRoundsSpec extends Specification with TestDb with BeforeAll with Be
     "refuse a round being distributed (being created, or with a queued or running job), its files still coming" in {
       val s = setUp()
       Round.updateById(s.q01.getId).withAttributes("distributing" -> true)
-      val creating = s.service.submit(s.q001Settings, s.jurors.map(_.getId)) must
+      val creating = s.service.submit(s.q001Settings, s.jurors.map(_.getId), review = false) must
         throwA[H.ExcludeRoundsRefused].like { case e: H.ExcludeRoundsRefused =>
           (e.refusal.key === H.ExcludeRoundsBusy) and (e.refusal.args === Seq("Q-01")) }
       // "Count new files" only reads: it counts by Q-01's files as they are, busy or not
@@ -250,7 +250,7 @@ class ExcludeRoundsSpec extends Specification with TestDb with BeforeAll with Be
       val s = setUp(h)
       // a queued distribution of Q-01 (another instance's, or one queued between the checks)
       val q01Job = DB.localTx(implicit session => JobJdbc.insert(distributionJob(h, s.q01), owner = None))
-      val atService = s.service.submit(s.q001Settings, s.jurors.map(_.getId)) must
+      val atService = s.service.submit(s.q001Settings, s.jurors.map(_.getId), review = false) must
         throwA[H.ExcludeRoundsRefused].like { case e: H.ExcludeRoundsRefused =>
           (e.refusal.key === H.ExcludeRoundsBusy) and (e.refusal.args === Seq("Q-01")) }
       // Q-00-1 stored (as by a run that passed the service's check before Q-01's job was queued),
@@ -277,7 +277,7 @@ class ExcludeRoundsSpec extends Specification with TestDb with BeforeAll with Be
       val q01Files = roundFiles(s.q01.getId)
       // Q-00-1 created with a scheduler that runs nothing here: its creation's job stays queued
       val parked = new RoundService(Round, new JobScheduler(Seq(h), JobScheduler.Settings()), h)
-      val q001 = parked.submit(s.q001Settings, s.jurors.map(_.getId))
+      val q001 = parked.submit(s.q001Settings, s.jurors.map(_.getId), review = false)
       def excluderBusy(call: => Any) = call must throwA[H.ExcludeRoundsRefused].like { case e: H.ExcludeRoundsRefused =>
         (e.refusal.key === H.ExcludeRoundsExcluderBusy) and (e.refusal.args === Seq("Q-00-1")) }
       // "Distribute new files" on Q-01 resumes its failed job: refused, the job left failed

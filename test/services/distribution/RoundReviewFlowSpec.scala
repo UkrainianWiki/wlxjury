@@ -285,7 +285,7 @@ class RoundReviewFlowSpec extends Specification with TestDb with BeforeAll with 
       val (contest, jurors) = setUp(6)
       val (h, scheduler, service) = failing(chunkRows = 4)
       h.arm(2)
-      val r = service.submit(newRound(contest, "R"), jurors.map(_.getId), None).round.getId
+      val r = service.submit(newRound(contest, "R"), jurors.map(_.getId), None, review = false).round.getId
       scheduler.cancel(job(r).id, Some(5L))
       h.failAt = None
       service.distributeNewFiles(r, Some(6L))
@@ -392,7 +392,7 @@ class RoundReviewFlowSpec extends Specification with TestDb with BeforeAll with 
       val titles = listed.map(_.title)
       val (h, scheduler, service) = failing(chunkRows = 4)
       val onePass = legacy(h, scheduler, newRound(contest, "Old"), jurors, titles)
-      val twoSteps = service.submit(newRound(contest, "New"), jurors.map(_.getId), None, titles = titles).round.getId
+      val twoSteps = service.submit(newRound(contest, "New"), jurors.map(_.getId), None, titles = titles, review = false).round.getId
       val perJuror = VoteJdbc.byRound(twoSteps).groupBy(_.juryId).values.map(_.size)
       (pairs(twoSteps).map(_._1) === pairs(onePass).map(_._1)) and (pairs(twoSteps).size === 18) and
         (VoteJdbc.byRound(twoSteps).groupBy(_.pageId).values.map(_.size).toSet === Set(2)) and
@@ -415,7 +415,7 @@ class RoundReviewFlowSpec extends Specification with TestDb with BeforeAll with 
       val (h, scheduler, service) = failing(chunkRows = 4) // fill: 3 inserts, distribute: 3
       val prev = prevRound(contest, jurors, service)
       h.arm(5)
-      val r = service.submit(newRound(contest, "R").copy(previous = Some(prev.getId.toString)), jurors.map(_.getId), None)
+      val r = service.submit(newRound(contest, "R").copy(previous = Some(prev.getId.toString)), jurors.map(_.getId), None, review = false)
         .round.getId
       val failed = job(r)
       val held = (round(r).inReview, freezeOf(prev.getId))
@@ -431,7 +431,7 @@ class RoundReviewFlowSpec extends Specification with TestDb with BeforeAll with 
       val (contest, jurors) = setUp(6)
       val (h, scheduler, service) = failing(chunkRows = 4)
       h.arm(5)
-      val r = service.submit(newRound(contest, "R"), jurors.map(_.getId), None).round.getId
+      val r = service.submit(newRound(contest, "R"), jurors.map(_.getId), None, review = false).round.getId
       scheduler.cancel(job(r).id, Some(5L))
       val held = (round(r).inReview, round(r).status)
       h.failAt = None

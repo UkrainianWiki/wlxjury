@@ -224,8 +224,9 @@ class GalleryController @Inject() (
       list.pageSize)
     lazy val files = list.files(pager)
 
-    // the region menu, whose regions are read when it is opened (regions)
-    lazy val menu = regionMenu(list, contest)
+    // the place menu, whose places are read when it is opened (regions, countries): the staff's
+    // countries in an international contest, else the regions
+    lazy val menu = placeMenu(user, list, contest)
 
     // the Votes menu's counts: the list's juror's (the viewer's own, or one juror's as the
     // organisers view them; none for all the jurors' votes together), each choice counting what it
@@ -237,7 +238,7 @@ class GalleryController @Inject() (
 
     // the page's files' comments in the contest, for their badges (one grouped query)
     def commentCounts(files: Seq[ImageWithRating]): Map[Long, Int] =
-      CommentJdbc.countsByRoom(round.contestId, files.map(_.pageId))
+      CommentJdbc.countsByRoom(round.contestId, files.map(_.pageId), list.hiddenCommentRounds)
 
     lazy val jurors =
       if (user.canViewOrgInfo(round) && asUserId == 0) User.findByRoundSelection(round.getId)
@@ -357,6 +358,50 @@ class GalleryController @Inject() (
       RegionMenu.regions(current, list.withRegion("all").pageUrl(1), list.pageUrl(1), list.regionsUrl)
     }
 
+  /** A round's list's place menu ([[services.places.PlaceScheme]]): in an international contest
+    * the countries, for the round's staff only (User.canViewOrgInfo: jurors get no country menu);
+    * else the region menu ([[regionMenu]]), for everyone, where the contest has regions.
+    */
+  private def placeMenu(user: User, list: RoundList, contest: ContestJury)(implicit
+      messages: play.api.i18n.Messages
+  ): Option[RegionMenu] =
+    if (user.canViewOrgInfo(list.round) && services.places.PlaceScheme.byCountries(contest))
+      Some(RegionMenu.countries(list.country, list.withCountry(None).pageUrl(1), list.pageUrl(1), list.countriesUrl))
+    else regionMenu(list, contest)
+
+  /** The countries of a round's list in an international contest ([[RoundList.countriesUrl]]:
+    * its viewer, filter, order and view), with its files of each (without its country filter),
+    * counted as every page counts them ([[services.places.PlaceScheme.Countries.counts]]): the
+    * staff's country menu's, read when it is first opened. For the round's staff only
+    * (User.canViewOrgInfo; a juror gets JSON 403, as the menu isn't theirs), by the gallery's
+    * rules otherwise (the round's contest, whose votes); a script request, never switching the
+    * session's contest.
+    */
+  def countries(asUserId: Long, region: String, roundId: Long): EssentialAction =
+    withAuthJsonOn(blocking)() { sessionUser => implicit request =>
+      import play.api.libs.json.Json
+      Round.findById(roundId).fold[Result](NotFound(Json.obj("error" -> "round_not_found"))) { round =>
+        val user = Secured.inContest(sessionUser, round.contestId)
+        if (!galleryService.mayViewRound(user, round) || !user.canViewOrgInfo(round))
+          onUnAuthorizedJson(user, request, Secured.Denial.round(round, User.ADMIN_ROLES ++ User.ORG_COM_ROLES))
+        else
+          galleryService.viewAs(user, round, asUserId) match {
+            case refusal if refusal != GalleryService.ViewAs.Allowed => viewAsRefused(user, round, refusal, json = true)
+            case _ =>
+              ContestJuryJdbc.findById(round.contestId).flatMap(services.places.PlaceScheme.countries)
+                .fold[Result](NotFound(Json.obj("error" -> "not_found"))) { countries =>
+                  val messages: play.api.i18n.Messages = messagesApi.preferred(request)
+                  val view = request.getQueryString("module").flatMap(GalleryView.parse).getOrElse(GalleryView.Gallery)
+                  val list = RoundList.of(round, user, asUserId, region, view).withCountsRead(countsRead)
+                  val counts = countries.counts(list.pageIdsOfAllCountries())
+                  Ok(PlaceMenu.json(list.country, messages("country.all"), list.withCountry(None).pageUrl(1),
+                    countries.places(counts.map { case (c, n) => c -> Some(n) })(messages),
+                    name => list.withCountry(Some(name)).pageUrl(1)))
+                }
+          }
+      }
+    }
+
   /** The list's regions (without its region filter), named by the contest's kind, with the
     * files the list's filter has in each where they are counted (`gallery.regionCounts`; not
     * sub-regions): from a juror's counts, else the whole round's. None in a contest whose files
@@ -401,9 +446,10 @@ class GalleryController @Inject() (
                 val view = request.getQueryString("module").flatMap(GalleryView.parse).getOrElse(GalleryView.Gallery)
                 val list = RoundList.of(round, user, asUserId, region, view).withCountsRead(countsRead)
                 val regions = listRegions(list, contest, list.jurorCounts())
-                Ok(placesJson(list.region, messagesApi.preferred(request)("region.all"),
+                Ok(PlaceMenu.json(list.region, messagesApi.preferred(request)("region.all"),
                   list.withRegion("all").pageUrl(1),
-                  regions.map(r => Place(r.id, r.name, r.count, r.kind.toString, list.withRegion(r.id).pageUrl(1)))))
+                  regions.map(r => services.places.Place(r.id, r.name, r.count, r.kind.toString)),
+                  id => list.withRegion(id).pageUrl(1)))
               }
           }
       }
@@ -562,13 +608,12 @@ class GalleryController @Inject() (
       monument: Option[String] = None): EssentialAction =
     withAuthJsonOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId))) { user => implicit request =>
       contestFilesView(user, contestId, deleted, round, region, country, coi, author, monument).fold(notFoundJson, { view =>
-        val messages = messagesApi.preferred(request)
+        val messages: play.api.i18n.Messages = messagesApi.preferred(request)
         val regions =
-          if (!view.byMonuments) Seq.empty[Region]
-          else RegionScheme.of(view.contest).regions(
+          if (!view.byMonuments) Seq.empty[services.places.Place]
+          else services.places.PlaceScheme.Regions(view.contest).places(
             fileRegionCounts(view, categoryCountsOf(view)).map { case (id, n) => id -> Some(n) })(messages)
-        Ok(placesJson(view.region, messages("region.all"), view.regionUrl("all"),
-          regions.map(r => Place(r.id, r.name, r.count, r.kind.toString, view.regionUrl(r.id)))))
+        Ok(PlaceMenu.json(view.region, messages("region.all"), view.regionUrl("all"), regions, view.regionUrl))
       })
     }
 
@@ -580,10 +625,10 @@ class GalleryController @Inject() (
     withAuthJsonOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId))) { user => implicit request =>
       contestFilesView(user, contestId, deleted, round, region, country, author = author, monument = monument)
         .fold(notFoundJson, { view =>
-        val collator = java.text.Collator.getInstance(java.util.Locale.ROOT)
-        val countries = countryCounts(view).sortWith((a, b) => collator.compare(a._1, b._1) < 0)
-        Ok(placesJson(view.country, messagesApi.preferred(request)("country.all"), view.countryUrl("all"),
-          countries.map { case (name, n) => Place(name, name, Some(n), "Country", view.countryUrl(name)) }))
+        val messages: play.api.i18n.Messages = messagesApi.preferred(request)
+        val countries = view.countries.fold(Seq.empty[services.places.Place])(cs =>
+          cs.places(countryCounts(view, cs).map { case (name, n) => name -> Some(n) })(messages))
+        Ok(PlaceMenu.json(view.country, messages("country.all"), view.countryUrl("all"), countries, view.countryUrl))
       })
     }
 
@@ -601,12 +646,12 @@ class GalleryController @Inject() (
     }
 
   /** The contest's files of each country (of the author's and the monument's files, with
-    * them), for a contest of many countries.
+    * them), for a contest of many countries: counted as every page counts a list's files by
+    * country ([[services.places.PlaceScheme.Countries.counts]]).
     */
-  private def countryCounts(view: ContestFilesView): Seq[(String, Int)] = {
+  private def countryCounts(view: ContestFilesView, countries: services.places.PlaceScheme.Countries): Map[String, Int] = {
     val narrowed = Seq(view.authorFiles, view.monumentFiles).flatten.map(_.toSet)
-    val files = view.countryFiles.filter { case (pageId, _) => narrowed.forall(_(pageId)) }
-    files.values.groupMapReduce(identity)(_ => 1)(_ + _).toSeq
+    countries.counts(countries.byFile.keys.filter(pageId => narrowed.forall(_(pageId))))
   }
 
   /** The large view of a file of the contest files page ([[contestFiles]]), in the same list
@@ -666,19 +711,16 @@ class GalleryController @Inject() (
         CoiMembers.files(_, CoiMembers.forContest(contestId)))
     }
     val chosenCountry = country.filter(_ => maybeRound.isEmpty && coiFiles.isEmpty)
-    // the countries of a contest of many: of its files' links to its country categories
-    val countryFiles = (for {
-      c <- contest.filter(c => maybeRound.isEmpty && ContestCountries.ofManyCountries(c))
-      categoryId <- c.categoryId
-    } yield ContestCountries.fileCountries(c, ImageJdbc.categoryCountryLinks(categoryId, ContestCountries.prefixes(c))))
-      .getOrElse(Map.empty[Long, String])
+    // the countries of an international contest (services.places.PlaceScheme): its files' links
+    // to its country categories, read once
+    val countries = contest.filter(_ => maybeRound.isEmpty).flatMap(services.places.PlaceScheme.countries)
     if (contest.isEmpty) Left("error.contest.not.found")
     else if (round.isDefined && maybeRound.isEmpty) Left("error.round.not.found")
-    else if (chosenCountry.exists(c => !countryFiles.values.exists(_ == c)))
+    else if (chosenCountry.exists(c => !countries.exists(_.has(c))))
       Left("error.not.found")
     else
       Right(ContestFilesView(contest.get, deletedOnly = deleted || maybeRound.isDefined, maybeRound,
-        Some(region).filter(_ != "all"), chosenCountry, countryFiles, coiFiles = coiFiles, author = chosenAuthor,
+        Some(region).filter(_ != "all"), chosenCountry, countries, coiFiles = coiFiles, author = chosenAuthor,
         authorFiles = authorFiles, monument = chosenMonument, monumentFiles = monumentFiles))
   }
 
@@ -688,20 +730,6 @@ class GalleryController @Inject() (
   /** A script request's 404: the message key as its error code (`contest_not_found`, ...). */
   private def notFoundJson(messageKey: String): Result =
     NotFound(play.api.libs.json.Json.obj("error" -> messageKey.stripPrefix("error.").replace('.', '_')))
-
-  /** A place menu's places ([[RegionMenu]], region-menu.js): the place shown (None: all), all of
-    * them, and each with its files' count and its list's URL.
-    */
-  private def placesJson(current: Option[String], allName: String, allUrl: String, places: Seq[Place])
-      : play.api.libs.json.JsObject = {
-    import play.api.libs.json.Json
-    Json.obj(
-      "current" -> current,
-      "all" -> Json.obj("name" -> allName, "url" -> allUrl),
-      "regions" -> places.map(p => Json.obj("id" -> p.id, "name" -> p.name, "count" -> p.count, "kind" -> p.kind,
-        "url" -> p.url))
-    )
-  }
 
   def thumbnailUrls(contestId: Long, roundId: Option[Long]): EssentialAction =
     withAuth(contestPermission(Set(User.ADMIN_ROLE), Some(contestId))) { user => implicit request =>
@@ -724,10 +752,12 @@ class GalleryController @Inject() (
 
 /** What [[GalleryController.contestFiles]] shows: the contest's files, all or only those
   * deleted on Commons, or a round's deleted ones; in a region or all; and how many there are.
+  * A round's review list too ([[RoundReviewController]]: `reviewStatus`), of a country or all.
   *
   * @param region         the region's id ([[db.scalikejdbc.rewrite.ImageDbNew.regionOf]]), if one is chosen
   * @param country        the country ([[ContestCountries]]), if one is chosen
-  * @param countryFiles   the countries of the contest's files, by page id, of a contest of many
+  * @param countries      the countries of the contest's files, of an international contest
+  *                       ([[services.places.PlaceScheme.countries]]), if read
   * @param countedInRound of the round's deleted files, those still in its galleries and results
   * @param coiFiles       the conflicts of interest, if they are the list: by page id, with the
   *                       person each file is by
@@ -745,7 +775,7 @@ final case class ContestFilesView(
     round: Option[Round],
     region: Option[String] = None,
     country: Option[String] = None,
-    countryFiles: Map[Long, String] = Map.empty,
+    countries: Option[services.places.PlaceScheme.Countries] = None,
     allCount: Int = 0,
     deletedCount: Int = 0,
     countedInRound: Int = 0,
@@ -765,22 +795,23 @@ final case class ContestFilesView(
   /** The list is the conflicts of interest. */
   def coi: Boolean = coiFiles.isDefined
 
+  /** The chosen country's files, by page id, if one is chosen. */
+  private def countryFiles: Option[Seq[Long]] = country.map(c => countries.fold(Seq.empty[Long])(_.filesOf(c)))
+
   /** The files listed, if there are any: none for a contest without a category. */
   def list: Option[ImageJdbc.FileList] =
     round.map(r => reviewStatus.fold[ImageJdbc.FileList](ImageJdbc.FileList.RoundDeleted(r.getId))(
-      ImageJdbc.FileList.RoundImages(r.getId, _)))
+      ImageJdbc.FileList.RoundImages(r.getId, _, countryFiles.map(ImageJdbc.CountryFilter(_)))))
       .orElse(contest.categoryId.map(ImageJdbc.FileList.Category(_, deletedOnly, countryFilter)))
 
   /** The files the list is narrowed to ([[ImageJdbc.CountryFilter]]): the conflicts of
     * interest or the chosen country's, the chosen author's and the chosen monument's; those in
     * all of them.
     */
-  def countryFilter: Option[ImageJdbc.CountryFilter] = {
-    val ofCountry = country.map(c => countryFiles.collect { case (pageId, `c`) => pageId }.toSeq)
-    Seq(coiFiles.map(_.keys.toSeq).orElse(ofCountry), authorFiles, monumentFiles).flatten
+  def countryFilter: Option[ImageJdbc.CountryFilter] =
+    Seq(coiFiles.map(_.keys.toSeq).orElse(countryFiles), authorFiles, monumentFiles).flatten
       .reduceOption { (a, b) => val inB = b.toSet; a.filter(inB) }
       .map(ids => ImageJdbc.CountryFilter(ids.sorted))
-  }
 
   /** The people whose files are the conflicts of interest, with their numbers of files, by
     * account; none if they aren't the list.
@@ -815,7 +846,7 @@ final case class ContestFilesView(
 
   private def pageUrl(page: Int, region: String, country: Option[String]): String =
     (round, reviewStatus) match {
-      case (Some(r), Some(status)) => routes.RoundReviewController.review(r.getId, status, page, region).url
+      case (Some(r), Some(status)) => routes.RoundReviewController.review(r.getId, status, page, region, country).url
       case _ =>
         routes.GalleryController.contestFiles(contest.getId, page, deletedOnly, roundId, region, country, coi, author,
           monument).url
@@ -824,14 +855,32 @@ final case class ContestFilesView(
   /** The large view of a file in this list. */
   def largeUrl(pageId: Long): String =
     (round, reviewStatus) match {
-      case (Some(r), Some(status)) => routes.RoundReviewController.file(r.getId, pageId, status, region.getOrElse("all")).url
+      case (Some(r), Some(status)) =>
+        routes.RoundReviewController.file(r.getId, pageId, status, region.getOrElse("all"), country).url
       case _ =>
         routes.GalleryController.contestFileLarge(contest.getId, pageId, deletedOnly, roundId, region.getOrElse("all"),
           country, coi, author, monument).url
     }
 
-  /** A contest of monuments, whose files are in regions. */
-  def byMonuments: Boolean = ContestKind.monumentIdTemplate(contest).isDefined
+  /** A comment on the file of a round's review list, from its large view, going back to it there
+    * ([[ImageDiscussionController.addComment]]: its tab and country as query parameters).
+    */
+  def commentUrl(pageId: Long): Option[String] =
+    for {
+      r      <- round
+      status <- reviewStatus
+    } yield {
+      val path = routes.ImageDiscussionController.addComment(pageId, region.getOrElse("all"), r.id, None, None).url
+      val params = (ImageDiscussionController.ReviewParam -> status) +: country.map(RoundList.CountryParam -> _).toSeq
+      path + (if (path.contains('?')) "&" else "?") +
+        params.map { case (k, v) => k + "=" + java.net.URLEncoder.encode(v, java.nio.charset.StandardCharsets.UTF_8) }
+          .mkString("&")
+    }
+
+  /** A contest of monuments, whose files are in regions: of one country (the one level of
+    * places, [[services.places.PlaceScheme]]: an international contest's are countries).
+    */
+  def byMonuments: Boolean = services.places.PlaceScheme.byRegions(contest)
 
   /** The region menu of a contest of monuments, in the navbar: of the conflicts of interest
     * too, their regions counted.
@@ -840,52 +889,28 @@ final case class ContestFilesView(
     Option.when(byMonuments)(RegionMenu.regions(region.map(RegionScheme.of(contest).region(_, None).name),
       regionUrl("all"), pageUrl(1),
       (round, reviewStatus) match {
-        case (Some(r), Some(status)) => routes.RoundReviewController.regions(r.getId, status).url
+        case (Some(r), Some(status)) => routes.RoundReviewController.regions(r.getId, status, region.getOrElse("all"), country).url
         case _ =>
           routes.GalleryController.contestFileRegions(contest.getId, deletedOnly, roundId, "all", country, coi,
             author, monument).url
       }))
 
-  /** The country menu of a contest of many countries (not of a round's files), in the navbar. */
+  /** The country menu of an international contest ([[services.places.PlaceScheme.byCountries]]),
+    * in the navbar: of its files (not of a round's deleted ones, nor the conflicts of interest),
+    * or of a round's review list ([[RoundReviewController.regions]] serves its places).
+    */
   def countryMenu: Option[RegionMenu] =
-    Option.when(round.isEmpty && !coi && ContestCountries.ofManyCountries(contest))(RegionMenu.countries(country,
-      countryUrl("all"), pageUrl(1),
-      routes.GalleryController.contestFileCountries(contest.getId, deletedOnly, roundId, region.getOrElse("all"),
-        country, author, monument).url))
-}
+    Option.when((round.isEmpty || review) && !coi && services.places.PlaceScheme.byCountries(contest))(
+      RegionMenu.countries(country, countryUrl("all"), pageUrl(1),
+        (round, reviewStatus) match {
+          case (Some(r), Some(status)) => routes.RoundReviewController.regions(r.getId, status, region.getOrElse("all"), country).url
+          case _ =>
+            routes.GalleryController.contestFileCountries(contest.getId, deletedOnly, roundId, region.getOrElse("all"),
+              country, author, monument).url
+        }))
 
-/** A place of a place menu's ([[RegionMenu]]): a region or a country, with its files' count, if
-  * counted, and its list's URL.
-  */
-final case class Place(id: String, name: String, count: Option[Int], kind: String, url: String)
-
-/** A gallery's menu of the places its files are in, regions or countries (regionMenu.scala.html,
-  * in the navbar): the place shown (its name; None: all), the list in all of them and in this
-  * one, and the URL of the places with their files' counts, read when the menu is first opened
-  * ([[GalleryController.regions]], [[GalleryController.contestFileRegions]],
-  * [[GalleryController.contestFileCountries]]).
-  *
-  * @param id       the menu's element id
-  * @param label    its label's message key
-  * @param allLabel the message key of all the places
-  */
-final case class RegionMenu(
-    id: String,
-    label: String,
-    allLabel: String,
-    current: Option[String],
-    allUrl: String,
-    currentUrl: String,
-    optionsUrl: String
-)
-
-object RegionMenu {
-
-  def regions(current: Option[String], allUrl: String, currentUrl: String, optionsUrl: String): RegionMenu =
-    RegionMenu("regionmenu", "region.menu", "region.all", current, allUrl, currentUrl, optionsUrl)
-
-  def countries(current: Option[String], allUrl: String, currentUrl: String, optionsUrl: String): RegionMenu =
-    RegionMenu("countrymenu", "country", "country.all", current, allUrl, currentUrl, optionsUrl)
+  /** The page's place menu: its contest's one level of places, countries or regions. */
+  def placeMenu(implicit messages: play.api.i18n.Messages): Option[RegionMenu] = countryMenu.orElse(regionMenu)
 }
 
 /** A list's files by the Votes menu's choices (navbar.scala.html votesMenu): what each choice

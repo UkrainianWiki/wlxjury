@@ -337,8 +337,7 @@ class RoundController @Inject() (
                   user,
                   r,
                   editRoundForm
-                    .fill(EditRound(r, editForm.jurors, editForm.fileList, editForm.newImages, editForm.criteriaShown,
-                      distributeAfter = editForm.distributeAfter))
+                    .fill(EditRound(r, editForm.jurors, editForm.fileList, editForm.newImages, editForm.criteriaShown))
                     .withGlobalError(message, args: _*),
                   // a creation rejected before anything was created keeps the form's token
                   submitToken = RoundController.submitToken(request).filter(_ => r.id.isEmpty)
@@ -469,28 +468,19 @@ class RoundController @Inject() (
               case None if !EditRound.rejectedByHasSource(round,
                   if (round.previousIds.isEmpty) Nil else Round.findByIds(contestId, round.previousIds)) =>
                 reRender(round, EditRound.RejectedByNoSource)
-              // "Distribute as soon as the images are ready" (D4) needs the jurors now; without it the
-              // round waits in review and gets them there: refused under the jurors' field
-              case None if EditRound.jurorsMissing(editForm) =>
-                BadRequest(
-                  roundFormView(
-                    user,
-                    round,
-                    editRoundForm
-                      .fill(EditRound(round, editForm.jurors, editForm.fileList, editForm.newImages, editForm.criteriaShown,
-                        distributeAfter = editForm.distributeAfter))
-                      .withError("jurors", EditRound.JurorsForDistributeAfter),
-                    submitToken = RoundController.submitToken(request)
-                  )
-                )
               case None =>
                 try {
-                  // "Create and review images" (D3): the round waits in review unless "Distribute as
-                  // soon as the images are ready" (D4) is ticked
-                  roundsService.submit(round.copy(active = true), editForm.jurors, RoundController.submitToken(request), user.id,
-                    titles, review = !editForm.distributeAfter) match {
-                    // the distribution runs in the background: the rounds list shows its progress
-                    case _: RoundService.Created => toRoundsList
+                  // a new round's images are selected and it waits in review, without jurors (the
+                  // maintainer's decision of 2026-11-16, superseding D4's "Distribute as soon as the
+                  // images are ready"): its jurors are chosen on its jurors form, which distributes it
+                  roundsService.submit(round.copy(active = true), Nil, RoundController.submitToken(request), user.id,
+                    titles, review = true) match {
+                    // the selection runs in the background: "Choose jurors next" waits for it on the
+                    // round's jurors form; "Review images first", on the rounds list, which shows its progress
+                    case created: RoundService.Created =>
+                      if (RoundController.nextPosted(request) == RoundController.NextJurors)
+                        Redirect(routes.RoundReviewController.jurors(created.round.getId))
+                      else toRoundsList
                     // The same form submitted again (a double click, or Back and Submit):
                     // no second round; a failed distribution of the first was resumed.
                     case resubmitted: RoundService.Resubmitted =>
@@ -761,6 +751,23 @@ object RoundController {
   /** The round form was posted in its re-apply state (its hidden `reapply` field, P3-5). */
   def reapplyPosted(request: Request[AnyContent]): Boolean =
     request.body.asFormUrlEncoded.flatMap(_.get("reapply")).exists(_.contains("true"))
+
+  /** The new-round form's "Review images first" (`next=review`): the rounds list, then the round's
+    * review page.
+    */
+  val NextReview = "review"
+
+  /** The new-round form's "Choose jurors next" (`next=jurors`): the round's jurors form, which
+    * waits for its images' selection.
+    */
+  val NextJurors = "jurors"
+
+  /** The new-round form's button pressed (`next`): [[NextJurors]], else [[NextReview]] (a client
+    * without the buttons: the rounds list, as before).
+    */
+  def nextPosted(request: Request[AnyContent]): String =
+    request.body.asFormUrlEncoded.flatMap(_.get("next")).flatMap(_.headOption).filter(_ == NextJurors)
+      .getOrElse(NextReview)
 
   /** The text of a refusal by our own checks of a round's settings (`require`, in
     * [[RoundService]] and the distribution), without its prefix; None for any other failure.

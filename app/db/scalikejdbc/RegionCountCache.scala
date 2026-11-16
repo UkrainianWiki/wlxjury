@@ -60,9 +60,13 @@ object RegionCountCache {
   }
 
   /** Drops the categories' counts (files joined them), and any load of them still running. */
-  def invalidateCategory(categoryIds: Long*): Unit = categoryIds.foreach { id =>
-    version(id).incrementAndGet()
-    entries.remove(id)
+  def invalidateCategory(categoryIds: Long*): Unit = {
+    categoryIds.foreach { id =>
+      version(id).incrementAndGet()
+      entries.remove(id)
+    }
+    // the files joining a category change its files' countries too
+    CountryFilesCache.invalidate(categoryIds: _*)
   }
 
   /** Drops every category's counts: a file's monument id changed. */
@@ -76,5 +80,6 @@ object RegionCountCache {
     entries.clear()
     versions.clear()
     monumentVersion.incrementAndGet()
+    CountryFilesCache.clear()
   }
 }

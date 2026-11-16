@@ -251,6 +251,18 @@ final case class RoundList(
     // those who may see authors only (User.canViewAuthors), [[RoundList.of]] drops it for anyone
     // else; it only narrows the list, a hard condition with the others ([[withAuthor]])
     author: Option[String] = None,
+    // only the files of this country (an international contest's, services.places.PlaceScheme;
+    // [[RoundList.CountryParam]]): for the round's staff only (User.canViewOrgInfo), [[RoundList.of]]
+    // drops it for anyone else; a hard condition with the others ([[withCountry]]), its files
+    // `countryFiles` (by page id, read with the country)
+    country: Option[String] = None,
+    countryFiles: Seq[Long] = Nil,
+    // the rounds whose comments this list's viewer doesn't see yet: for a juror, the contest's rounds
+    // not yet distributed (db.scalikejdbc.Round.undistributedIds), whose review comments are their
+    // staff's until then; left out of every comment read of the list (its filter, counts, order,
+    // report, badges, large view). None for the round's staff ([[RoundList.of]]). Read once, at the
+    // first comment read, for the list's copies ([[HiddenCommentRounds]])
+    hiddenComments: HiddenCommentRounds = HiddenCommentRounds.None,
     // `roundImage.read` (P2b): all the jurors' list from round_image's counts ([[countsQuery]])
     countsRead: Boolean = false,
     // which source this request's statements read, shared by the list's copies ([[CountsSession]])
@@ -258,6 +270,9 @@ final case class RoundList(
 ) {
 
   def roundId: Long = round.getId
+
+  /** The rounds whose comments the viewer doesn't see yet ([[hiddenComments]]): read here, at a comment read only. */
+  def hiddenCommentRounds: Seq[Long] = hiddenComments.ids
 
   /** The region of a URL's path: "all" for all of them. */
   def regionParam: String = region.getOrElse("all")
@@ -320,7 +335,8 @@ final case class RoundList(
     */
   private def orderColumns: Seq[(String, Int)] =
     if (order == ListOrder.LatestComment && view.comments)
-      (SelectionQuery.latestComment(round.contestId, commentsRound, commentsBy) -> -1) +: ListOrder.FileOrder.columns
+      (SelectionQuery.latestComment(round.contestId, commentsRound, commentsBy, hiddenCommentRounds) -> -1) +:
+        ListOrder.FileOrder.columns
     else if (withDetails) rankKey.columns ++ (if (round.isBinary) Seq("s.page_id" -> 1) else ListOrder.FileOrder.columns)
     else if (aggregateBinary && order != ListOrder.FileOrder) ListOrder.Binary(binaryOrder).columns
     // all the jurors' votes on a rated round by rate: by the average under the round's rule, as
@@ -375,7 +391,11 @@ final case class RoundList(
       commentsRound = commentsRound,
       commentsBy = commentsBy,
       monumentId = monument,
-      author = author
+      author = author,
+      pageIds = country.map(_ => countryFiles),
+      // only a query with the comments filter reads comments (the order by the latest comment is
+      // the comments report's, which has it): the hidden rounds read only then
+      hiddenCommentRounds = if (commentsOnly) hiddenCommentRounds else Nil
     )
 
   /** The list over `round_image`'s counts ([[RoundImageQuery]]), if it may be read from them:
@@ -385,7 +405,7 @@ final case class RoundList(
     */
   def countsQuery: Option[RoundImageQuery] =
     // a monument's or an author's list is read from the votes, as with the comments filter: it is small
-    if (!countsRead || asUserId != 0 || commentsOnly || monument.isDefined || author.isDefined ||
+    if (!countsRead || asUserId != 0 || commentsOnly || monument.isDefined || author.isDefined || country.isDefined ||
         countsSession.fellBack(roundId)) None
     else RoundImageQuery.of(query, round.isBinary, rankKey.columns.map(_._1))
 
@@ -651,7 +671,8 @@ final case class RoundList(
     * comments the report shows, the others' folded under them (commentsReport).
     */
   def commentsOf(files: Seq[ImageWithRating]): Map[Long, Seq[org.intracer.wmua.Comment]] =
-    org.intracer.wmua.CommentJdbc.findByRooms(round.contestId, files.map(_.pageId), commentsRound).groupBy(_.room)
+    org.intracer.wmua.CommentJdbc.findByRooms(round.contestId, files.map(_.pageId), commentsRound,
+      excludeRounds = hiddenCommentRounds).groupBy(_.room)
 
   /** The comments report of only the comments by the account, or (None) of everyone's. */
   def withCommenter(userId: Option[Long]): RoundList = copy(commenter = userId.filter(_ > 0))
@@ -673,6 +694,17 @@ final case class RoundList(
     * authors, and only their pages build a list with one.
     */
   def withAuthor(stored: Option[String]): RoundList = copy(author = stored.flatMap(RoundList.validAuthor))
+
+  /** The list of only the country's files (`files`, by page id), or (None) of every country's.
+    * Not a permission check: [[RoundList.of]] keeps a request's country only for the round's staff.
+    */
+  def withCountry(country: Option[String], files: Seq[Long] = Nil): RoundList =
+    copy(country = country, countryFiles = if (country.isDefined) files else Nil)
+
+  /** All the list's files' page ids, without its country: what its country menu counts by
+    * country (services.places.PlaceScheme.Countries.counts).
+    */
+  def pageIdsOfAllCountries(): Seq[Long] = withCountry(None).withRegion("all").query.allPageIds()
 
   def withViewer(asUserId: Long): RoundList = copy(asUserId = asUserId)
 
@@ -717,7 +749,8 @@ final case class RoundList(
         .toSeq ++
       commentsBy.map(RoundList.CommenterParam -> _.toString).toSeq ++
       monument.map(RoundList.MonumentParam -> _).toSeq ++
-      author.map(RoundList.AuthorParam -> _).toSeq :+
+      author.map(RoundList.AuthorParam -> _).toSeq ++
+      country.map(RoundList.CountryParam -> _).toSeq :+
       ("sort" -> order.param)
 
   private def withParams(path: String, params: Seq[(String, String)]): String =
@@ -773,12 +806,38 @@ final case class RoundList(
     withParams(routes.GalleryController.regions(asUserId, regionParam, roundId).url,
       Option.when(view != GalleryView.Gallery)("module" -> view.name).toSeq ++ params(module = false))
 
+  /** The list's countries, for its staff's country menu ([[GalleryController.countries]]): as
+    * [[regionsUrl]], the country it is of.
+    */
+  def countriesUrl: String =
+    withParams(routes.GalleryController.countries(asUserId, regionParam, roundId).url,
+      Option.when(view != GalleryView.Gallery)("module" -> view.name).toSeq ++ params(module = false))
+
   /** A comment on the file in its large view, going back to it in this list: whose votes
     * (`user`, as the large view's path has them) with the rest of its parameters.
     */
   def commentUrl(pageId: Long): String =
     withParams(routes.ImageDiscussionController.addComment(pageId, regionParam, Some(roundId), None, Some(asUserId)).url,
       params(module = true))
+}
+
+/** The rounds whose comments a list's viewer doesn't see yet ([[RoundList.hiddenComments]]), read
+  * at the first comment read and shared by the list's copies (`copy` keeps it), as
+  * [[CountsSession]]; equal to any other, so a list's equality is its parameters'.
+  */
+final class HiddenCommentRounds private (load: () => Seq[Long]) {
+  lazy val ids: Seq[Long] = load()
+  override def equals(other: Any): Boolean = other.isInstanceOf[HiddenCommentRounds]
+  override def hashCode: Int = 1
+  override def toString: String = "HiddenCommentRounds"
+}
+
+object HiddenCommentRounds {
+  /** The contest's rounds not yet distributed, read when first needed. */
+  def apply(ids: => Seq[Long]): HiddenCommentRounds = new HiddenCommentRounds(() => ids)
+
+  /** None hidden: the round's staff. */
+  val None: HiddenCommentRounds = new HiddenCommentRounds(() => Nil)
 }
 
 /** Which source one request's statements of all the jurors' list read (P2b), per round:
@@ -965,6 +1024,23 @@ object RoundList {
   def authorParam(request: RequestHeader, viewer: User, round: Round): Option[String] =
     request.getQueryString(AuthorParam).flatMap(validAuthor).filter(_ => viewer.canViewAuthors(round.contestId))
 
+  /** A list URL's parameter of its country filter ([[RoundList.country]]): `country=<name>`. */
+  val CountryParam = "country"
+
+  /** A request's country filter ([[CountryParam]]) with its files, only for the round's staff
+    * (User.canViewOrgInfo: its admins, organizers and root) in an international contest
+    * (services.places.PlaceScheme.byCountries); for anyone else none, silently, as the author
+    * filter: never used, echoed in a link or shown. A country without files in the contest is
+    * an empty list.
+    */
+  def countryParam(request: RequestHeader, viewer: User, round: Round): Option[(String, Seq[Long])] =
+    request.getQueryString(CountryParam).map(_.trim).filter(c => c.nonEmpty && c.length <= 255)
+      .filter(_ => viewer.canViewOrgInfo(round))
+      .flatMap { country =>
+        db.scalikejdbc.ContestJuryJdbc.findById(round.contestId).flatMap(services.places.PlaceScheme.countries)
+          .map(cs => country -> cs.filesOf(country))
+      }
+
   /** The list a request is for: the round, whose votes, the region from its path ("all" or
     * [[GroupedRegion]] for all of them; all of them with a monument filter); the view
     * from its path or, for a large view, its `module`; the filter, the comments toggle
@@ -988,7 +1064,7 @@ object RoundList {
     // the monument filter, for everyone: it only narrows what the viewer may see; it drops the
     // region (a monument is in one region, so a region of another would list nothing)
     val monument = monumentParam(request)
-    val list = RoundList(
+    val listed = RoundList(
       round,
       asUserId,
       Some(region).filterNot(r => r == "all" || r == GroupedRegion || monument.isDefined),
@@ -1008,6 +1084,11 @@ object RoundList {
       monument = monument,
       author = authorParam(request, viewer, round)
     )
+    // the staff's country filter, its files read once
+    val country = countryParam(request, viewer, round)
+    // a juror's comment reads leave out the rounds not yet distributed (their staff's review comments)
+    val list = listed.withCountry(country.map(_._1), country.fold(Seq.empty[Long])(_._2))
+      .copy(hiddenComments = if (staff) HiddenCommentRounds.None else HiddenCommentRounds(Round.undistributedIds(round.contestId)))
     list.order match {
       case ListOrder.ByRate if list.aggregateBinary => list.withOrder(ListOrder.Binary(rememberedBinary))
       // by vote time is a juror's list's: all the jurors' votes by rate

@@ -644,9 +644,10 @@ object ImageJdbc extends CRUDMapper[Image]
     final case class RoundDeleted(roundId: Long) extends FileList
 
     /** A round's files of one status (`round_image`, V84: `in`, `deleted`, `dq`), by page id:
-      * its review page (P3, [[controllers.RoundReviewController]]), votes or none.
+      * its review page (P3, [[controllers.RoundReviewController]]), votes or none; of one
+      * country (an international contest's, services.places.PlaceScheme) or all.
       */
-    final case class RoundImages(roundId: Long, status: String) extends FileList
+    final case class RoundImages(roundId: Long, status: String, country: Option[CountryFilter] = None) extends FileList
   }
 
   /** The list's files from `offset` on, in the region or all of them. */
@@ -657,7 +658,7 @@ object ImageJdbc extends CRUDMapper[Image]
       case FileList.Category(categoryId, deletedOnly, country) =>
         categoryFiles(categoryId, deletedOnly, limit, offset, region, country)
       case FileList.RoundDeleted(roundId)             => roundDeletedFiles(roundId, limit, offset, region)
-      case FileList.RoundImages(roundId, status)      => roundImageFiles(roundId, status, limit, offset, region)
+      case FileList.RoundImages(roundId, status, country) => roundImageFiles(roundId, status, limit, offset, region, country)
     }
 
   /** The number of the list's files in each region, those without one left out: for all a
@@ -669,8 +670,8 @@ object ImageJdbc extends CRUDMapper[Image]
       case FileList.Category(categoryId, false, country) =>
         sql"""SELECT ${regionOf(sqls"r")} AS region, COUNT(*) FROM ${categoryMembers(categoryId, Some(sqls"r"), country)}
               GROUP BY region"""
-      case FileList.RoundImages(roundId, status) =>
-        sql"""SELECT ${regionOf(sqls"i")} AS region, COUNT(*) ${roundImages(roundId, status)} GROUP BY region"""
+      case FileList.RoundImages(roundId, status, country) =>
+        sql"""SELECT ${regionOf(sqls"i")} AS region, COUNT(*) ${roundImages(roundId, status, country)} GROUP BY region"""
       case _ =>
         sql"SELECT ${regionOf(sqls"i")} AS region, COUNT(*) ${deletedFiles(list)} GROUP BY region"
     }
@@ -783,8 +784,8 @@ object ImageJdbc extends CRUDMapper[Image]
         val r = region.map(_ => sqls"r")
         sql"""SELECT COUNT(*) FROM ${categoryMembers(categoryId, r, country)} ${inRegion(r, region)}
               AND m.page_id < $pageId"""
-      case FileList.RoundImages(roundId, status) =>
-        sql"""SELECT COUNT(*) ${roundImages(roundId, status)} ${inRegion(Some(sqls"i"), region)} AND ri.page_id < $pageId"""
+      case FileList.RoundImages(roundId, status, country) =>
+        sql"""SELECT COUNT(*) ${roundImages(roundId, status, country)} ${inRegion(Some(sqls"i"), region)} AND ri.page_id < $pageId"""
       case _ =>
         val deletedAt = sqls"(SELECT f.deleted_at FROM images f WHERE f.page_id = $pageId)"
         sql"""SELECT COUNT(*) ${deletedFiles(list)} ${inRegion(Some(sqls"i"), region)}
@@ -843,19 +844,31 @@ object ImageJdbc extends CRUDMapper[Image]
   /** The round's files of `status` (`round_image`), by page id, in the region or all of them:
     * a range of the round's primary key, each joined to its image.
     */
-  def roundImageFiles(roundId: Long, status: String, limit: Int, offset: Int, region: Option[String] = None)(implicit
-      session: DBSession = AutoSession
-  ): Seq[StoredFile] =
+  def roundImageFiles(roundId: Long, status: String, limit: Int, offset: Int, region: Option[String] = None,
+      country: Option[CountryFilter] = None)(implicit session: DBSession = AutoSession): Seq[StoredFile] =
     sql"""SELECT ${i.result.*}, UNIX_TIMESTAMP(i.deleted_at) AS file_deleted_at
-          ${roundImages(roundId, status)} ${inRegion(Some(sqls"i"), region)}
+          ${roundImages(roundId, status, country)} ${inRegion(Some(sqls"i"), region)}
           ORDER BY ri.page_id LIMIT $limit OFFSET $offset"""
       .map(storedFile)
       .list()
 
-  /** `FROM ... WHERE` of the round's files of `status` (`ri`, joined to their images `i`). */
-  private def roundImages(roundId: Long, status: String): SQLSyntax =
+  /** The number of the round's files of `status`, of the country or all of them: the review
+    * list's pager total for a country (one range of the round's primary key, each joined to its
+    * image, as [[roundImageFiles]] reads them).
+    */
+  def roundImageCount(roundId: Long, status: String, country: Option[CountryFilter])(implicit
+      session: DBSession = AutoSession
+  ): Int =
+    sql"SELECT COUNT(*) ${roundImages(roundId, status, country)}".map(_.int(1)).single().getOrElse(0)
+
+  /** `FROM ... WHERE` of the round's files of `status` (`ri`, joined to their images `i`), of
+    * the country or all of them.
+    */
+  private def roundImages(roundId: Long, status: String, country: Option[CountryFilter] = None): SQLSyntax = {
+    val inCountry = country.fold(sqls"")(c => sqls"AND ${ofCountry(c, sqls"ri")}")
     sqls"""FROM round_image ri STRAIGHT_JOIN images i ON i.page_id = ri.page_id
-           WHERE ri.round_id = $roundId AND ri.status = $status"""
+           WHERE ri.round_id = $roundId AND ri.status = $status $inCountry"""
+  }
 
   /** The number of [[roundDeletedFiles]], and of those still counted in the round: with
     * votes in vote, which its galleries and results read.
@@ -895,7 +908,7 @@ object ImageJdbc extends CRUDMapper[Image]
                WHERE i.deleted_at IS NOT NULL $inCountry"""
       case FileList.RoundDeleted(roundId) =>
         sqls"FROM images i WHERE i.deleted_at IS NOT NULL AND ${inRound(roundId)}"
-      case FileList.RoundImages(roundId, status) => roundImages(roundId, status)
+      case FileList.RoundImages(roundId, status, country) => roundImages(roundId, status, country)
     }
 
   /** The file of `alias` (its page_id) is of the country: one of its files. */

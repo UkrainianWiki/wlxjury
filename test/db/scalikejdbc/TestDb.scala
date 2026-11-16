@@ -41,7 +41,10 @@ trait TestDb {
 
   def createContests(contestIds: Long*)(implicit session: DBSession = AutoSession): Seq[ContestJury] =
     contestIds.map { id =>
-      val contest = ContestJuryJdbc.create(Some(id), s"contest$id", 2000 + id.toInt, s"country$id")
+      // a contest of one country (a real one without regions in scalawiki, so its regions are named
+      // by their ids): "country10" would make every test contest international
+      // (services.places.PlaceScheme.byCountries), with countries for places
+      val contest = ContestJuryJdbc.create(Some(id), s"contest$id", 2000 + id.toInt, TestDb.Country)
       ContestJuryJdbc.setImagesSource(id, Some(s"Images from ${contest.name}"))
       contest
     }
@@ -78,4 +81,7 @@ trait TestDb {
 
 object TestDb {
   def now: ZonedDateTime = ZonedDateTime.now.withNano(0)
+
+  /** The test contests' country ([[TestDb.createContests]]): one real country, without regions in scalawiki. */
+  val Country = "Andorra"
 }
