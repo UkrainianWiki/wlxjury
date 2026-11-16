@@ -10,7 +10,8 @@
 //   take files out of it (data-coi-round-files, data-coi-confirm);
 // - a new round's criteria (#round-criteria), hidden and disabled (so not sent) for a yes/no
 //   or comments-only rating (#rates 1 or 0); an existing round's rating is fixed (its select
-//   disabled), and its criteria stay as they are;
+//   disabled), and its criteria stay as they are; an existing yes/no or comments-only round's
+//   page has neither the criteria nor the worst mark (editRound.scala.html);
 // - the worst mark's checkbox (#round-worst-mark), hidden and disabled (so not sent) for a
 //   yes/no or comments-only rating; "rejected by at least" (#rejectFilters, classes "round<id>"
 //   of the binary rounds and the rated ones with the worst mark) shown when one is chosen;

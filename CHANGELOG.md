@@ -361,6 +361,18 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   (the view is no-store, so Back loads it again): the browser restores where the user was. A
   video's box was already the column's (100% × 100%); the strip's thumbnails have fixed boxes.
 
+**Fixes**
+
+- **No criteria on a yes/no round's edit page** (reported on production; developed 2026-11-16,
+  `stack/174-binary-round-no-criteria`): the edit page of an existing yes/no or comments-only
+  round showed the **Criteria** section (`round-form.js` hides it only while a new round's rating
+  is chosen; an existing round's rating is fixed). The page now leaves out the criteria and the
+  worst mark, with their hidden markers (`criteriaShown`, `worstMarkShown`), by the round's stored
+  rating, also when the form comes back with an error, so a save keeps the round's stored criteria
+  (a legacy one's, V83) and worst mark. A rated round's page is unchanged. A post that still sends
+  `criteriaShown` with the selects empty (no longer the page's) is refused for such a round, as an
+  added criterion was, instead of removing its legacy criteria, on a save and a re-apply. Admin guide.
+
 **Development**
 
 - **`round.status` (V105) and rows kept without votes** (round-editing plan P3-1, P3-2; developed

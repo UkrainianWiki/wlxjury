@@ -721,8 +721,9 @@ round by its score keeps the rule it started with.
 Open the round from the rounds list: its number is a link. On an existing round you can change:
 
 - the round's name;
-- the [file score](#a-score-rule) and the [worst mark](#a-worst-mark), at any time;
-- the criteria, only by replacing one in its place once the round has votes;
+- the [file score](#a-score-rule) and, in a rated round, the [worst mark](#a-worst-mark), at any time;
+- in a rated round, the criteria, only by replacing one in its place once the round has votes
+  (a yes/no or comments-only round's form has neither);
 - **Leave out conflicts of interest**, see [Leaving them out of a round](#a-leave-out-conflicts);
 - **Add files** and **Distribute N new files**.
 

@@ -56,6 +56,25 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
     (options.map(_.attr("value")), options.filter(_.hasAttr("selected")).map(_.attr("value")))
   }
 
+  /** The fields a browser sends from the round form: inputs (a checkbox only if checked), selects'
+    * chosen options, textareas.
+    */
+  private def sent(doc: org.jsoup.nodes.Document): Seq[(String, String)] = {
+    import scala.jdk.CollectionConverters._
+    val form = doc.getElementById("round-form")
+    val inputs = form.select("input[name]").asScala.toSeq
+      .filterNot(i => Set("checkbox", "radio")(i.attr("type")) && !i.hasAttr("checked"))
+      .filterNot(_.attr("type") == "submit")
+      .map(i => i.attr("name") -> i.attr("value"))
+    val selects = form.select("select[name]").asScala.toSeq.filterNot(_.hasAttr("disabled")).flatMap { s =>
+      val chosen = s.select("option[selected]").asScala.toSeq
+      (if (chosen.nonEmpty || s.hasAttr("multiple")) chosen else s.select("option").asScala.toSeq.take(1))
+        .map(o => s.attr("name") -> o.attr("value"))
+    }
+    val texts = form.select("textarea[name]").asScala.toSeq.map(t => t.attr("name") -> t.text)
+    inputs ++ selects ++ texts
+  }
+
   "the new-round form [A-01]" should {
 
     "carry a fresh submission token" in {
@@ -211,21 +230,6 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
           previous = Some(previous.getId.toString), topImages = Some(0), active = true))
         def page(query: String = "") = org.jsoup.Jsoup.parse(contentAsString(route(app,
           get(s"/admin/rounds/edit?id=${round.getId}&contestId=${contest.getId}$query", admin)).get))
-        // the fields a browser sends: inputs (a checkbox only if checked), selects' chosen options, textareas
-        def sent(doc: org.jsoup.nodes.Document): Seq[(String, String)] = {
-          val form = doc.getElementById("round-form")
-          val inputs = form.select("input[name]").asScala.toSeq
-            .filterNot(i => Set("checkbox", "radio")(i.attr("type")) && !i.hasAttr("checked"))
-            .filterNot(_.attr("type") == "submit")
-            .map(i => i.attr("name") -> i.attr("value"))
-          val selects = form.select("select[name]").asScala.toSeq.filterNot(_.hasAttr("disabled")).flatMap { s =>
-            val chosen = s.select("option[selected]").asScala.toSeq
-            (if (chosen.nonEmpty || s.hasAttr("multiple")) chosen else s.select("option").asScala.toSeq.take(1))
-              .map(o => s.attr("name") -> o.attr("value"))
-          }
-          val texts = form.select("textarea[name]").asScala.toSeq.map(t => t.attr("name") -> t.text)
-          inputs ++ selects ++ texts
-        }
         val stored = page()
         // the round's jurors, as its select has them selected once it has some (this one is new)
         val jurors = User.findRoundJurors(previous.getId).map(_.getId).zipWithIndex.map { case (id, i) => s"jurors[$i]" -> id.toString }
@@ -404,6 +408,103 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         results.map(status(_)) must_== Seq(NOT_FOUND, NOT_FOUND, NOT_FOUND)
         results.map(contentAsString(_)) must contain(not(contain(missing))).forall
         results.map(contentAsString(_)) must contain(contain("There is no such round.")).forall
+      }
+    }
+  }
+
+  "the round edit page's criteria and worst mark, by the round's stored rating" should {
+
+    /** The edit page of a round of the contest, parsed. */
+    def editPage(contest: ContestJury, admin: User, round: Round)(implicit app: play.api.Application) =
+      org.jsoup.Jsoup.parse(contentAsString(route(app,
+        get(s"/admin/rounds/edit?id=${round.getId}&contestId=${contest.getId}", admin)).get))
+
+    /** How many of each the page has: the criteria section, its selects, its hidden marker; the
+      * worst mark's box, its checkbox, its hidden marker.
+      */
+    def sections(doc: org.jsoup.nodes.Document): Seq[Int] =
+      Seq("#round-criteria", "select[name^=criteria]", "input[name=criteriaShown]",
+        "#round-worst-mark", "input[name=worstMark]", "input[name=worstMarkShown]").map(doc.select(_).size)
+
+    /** The page's own form posted as a browser sends it, renamed, with the jurors of `jurorsOf`
+      * and the `extra` fields.
+      */
+    def saveSent(doc: org.jsoup.nodes.Document, admin: User, name: String, jurorsOf: Round,
+        extra: Seq[(String, String)] = Nil)(implicit app: play.api.Application) = {
+      val jurors = User.findRoundJurors(jurorsOf.getId).map(_.getId).zipWithIndex.map { case (id, i) =>
+        s"jurors[$i]" -> id.toString }
+      route(app, FakeRequest(POST, "/admin/rounds/save")
+        .withSession(Secured.UserName -> admin.email)
+        // a field posted twice binds by its first value: the page's left out for those replaced
+        .withFormUrlEncodedBody(sent(doc).filterNot(f => f._1.startsWith("jurors") || f._1 == "name" ||
+          extra.exists(_._1 == f._1)) ++
+          jurors ++ Seq("name" -> name) ++ extra: _*).withCSRFToken).get
+    }
+
+    val none = Seq.fill(6)(0)
+
+    "leave both out of a yes/no round's page, its own form saved with its criteria and worst mark kept" in {
+      testDbApp { implicit app =>
+        val (contest, admin, voted) = fixture()
+        // a legacy yes/no round with criteria (V83): the form neither shows nor changes them
+        val legacy = roundDao.create(Round(None, 2, Some("Legacy"), contest.getId, rates = Round.binaryRound,
+          criterionIds = Seq(6L, 7L), active = true))
+        val votedPage = editPage(contest, admin, voted)
+        val legacyPage = editPage(contest, admin, legacy)
+        val savedVoted = saveSent(votedPage, admin, "Voted, renamed", voted)
+        val savedLegacy = saveSent(legacyPage, admin, "Legacy, renamed", voted)
+        (sections(votedPage) === none) and (sections(legacyPage) === none) and
+          // the rest of the form as before: the rating shown, fixed
+          (votedPage.select("select#rates[disabled] option[selected]").attr("value") === "1") and
+          (status(savedVoted) === SEE_OTHER) and (flash(savedVoted).get("error") must beNone) and
+          (status(savedLegacy) === SEE_OTHER) and (flash(savedLegacy).get("error") must beNone) and
+          (roundDao.findById(voted.getId).map(r => (r.name, r.worstMark)) must beSome((Some("Voted, renamed"), false))) and
+          (roundDao.findById(legacy.getId).map(r => (r.name, r.worstMark)) must beSome((Some("Legacy, renamed"), false))) and
+          (db.scalikejdbc.RoundCriterion.idsOf(voted.getId) must beEmpty) and
+          (db.scalikejdbc.RoundCriterion.idsOf(legacy.getId) === Seq(6L, 7L))
+      }
+    }
+
+    "leave both out of a comments-only round's page, its own form saved" in {
+      testDbApp { implicit app =>
+        val (contest, admin, voted) = fixture()
+        val round = roundDao.create(Round(None, 2, Some("Comments"), contest.getId, rates = Round.commentsOnlyRound,
+          active = true))
+        val page = editPage(contest, admin, round)
+        val saved = saveSent(page, admin, "Comments, renamed", voted)
+        (sections(page) === none) and (status(saved) === SEE_OTHER) and
+          (flash(saved).get("error") must beNone) and
+          (roundDao.findById(round.getId).flatMap(_.name) must beSome("Comments, renamed"))
+      }
+    }
+
+    "leave both out of a yes/no round's form shown again with an error" in {
+      testDbApp { implicit app =>
+        val (contest, admin, voted) = fixture()
+        // refused when bound (an unknown rejected-by mode), and by the controller (criteria posted)
+        val refusedBinding = saveSent(editPage(contest, admin, voted), admin, "R", voted,
+          Seq("rejectedMode" -> "everything"))
+        val refusedCriteria = saveSent(editPage(contest, admin, voted), admin, "R", voted,
+          Seq("criteriaShown" -> "true", "criteria[0]" -> "6", "criteria[1]" -> "7"))
+        (status(refusedBinding) === BAD_REQUEST) and
+          (sections(org.jsoup.Jsoup.parse(contentAsString(refusedBinding))) === none) and
+          (status(refusedCriteria) === BAD_REQUEST) and
+          (contentAsString(refusedCriteria) must contain("Criteria are for rated rounds only.")) and
+          (sections(org.jsoup.Jsoup.parse(contentAsString(refusedCriteria))) === none) and
+          (db.scalikejdbc.RoundCriterion.idsOf(voted.getId) must beEmpty)
+      }
+    }
+
+    "show both on a rated round's page, its own form saved" in {
+      testDbApp { implicit app =>
+        val (contest, admin, voted) = fixture()
+        val round = roundDao.create(Round(None, 2, Some("Rated"), contest.getId, rates = Round.ratesById(5),
+          active = true))
+        val page = editPage(contest, admin, round)
+        val saved = saveSent(page, admin, "Rated, renamed", voted)
+        (sections(page) === Seq(1, org.intracer.wmua.Criterion.MaxPerRound, 1, 1, 1, 1)) and
+          (status(saved) === SEE_OTHER) and (flash(saved).get("error") must beNone) and
+          (roundDao.findById(round.getId).flatMap(_.name) must beSome("Rated, renamed"))
       }
     }
   }

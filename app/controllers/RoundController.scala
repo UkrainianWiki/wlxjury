@@ -137,8 +137,8 @@ class RoundController @Inject() (
     val contestId = round.contestId
     val rounds = knownRounds.getOrElse(Round.findByContest(contestId))
     // a round held in review with no vote and no job: its filters editable, "Re-apply filters" (P3-5)
-    val reapply = round.id.flatMap(id => rounds.find(_.id.contains(id)).orElse(Round.findById(id)))
-      .exists(roundsService.reapplyable)
+    val stored = round.id.flatMap(id => rounds.find(_.id.contains(id)).orElse(Round.findById(id)))
+    val reapply = stored.exists(roundsService.reapplyable)
     views.html.editRound(
       user,
       form,
@@ -157,7 +157,10 @@ class RoundController @Inject() (
       // the check is queued by the contest's admins (and root): this page is theirs
       round.id.flatMap(id =>
         JobJdbc.latestBySubjects(RoundImageCheckHandler.Kind, RoundImageCheckHandler.SubjectType, Seq(id)).get(id)),
-      reapply = reapply
+      reapply = reapply,
+      // an existing yes/no or comments-only round, by its stored rating (the form's is not
+      // editable): no criteria, no worst mark
+      unratedRound = stored.exists(!_.isRated)
     )
   }
 
@@ -295,21 +298,26 @@ class RoundController @Inject() (
             // the form lists the contest's rounds and jurors: only for its own admins
             if (!contestPermission(User.ADMIN_ROLES, contestId)(user))
               onUnAuthorized(user, request, Secured.Denial.contest(contestId, User.ADMIN_ROLES))
-            else
+            else {
+              val rounds = contestId.map(Round.findByContest).getOrElse(Nil)
+              val roundId = formWithErrors.data.get("id").flatMap(_.toLongOption)
               BadRequest(
                 views.html.editRound(
                   user,
                   formWithErrors,
                   newRound = !formWithErrors.data.get("id").exists(_.nonEmpty),
-                  rounds = contestId.map(Round.findByContest).getOrElse(Nil),
+                  rounds = rounds,
                   contestId = contestId,
                   jurors = contestId.map(User.loadJurors).getOrElse(Nil),
                   jurorsMapping = jurorsMapping,
                   // keep the form's token: nothing was created from this submission
                   submitToken = RoundController.submitToken(request),
-                  criteria = CriterionJdbc.all()
+                  criteria = CriterionJdbc.all(),
+                  // an existing yes/no or comments-only round: by its stored rating, as on its page
+                  unratedRound = roundId.flatMap(id => rounds.find(_.id.contains(id))).exists(!_.isRated)
                 )
               )
+            }
           },
           editForm => {
             // a new round starts once distributed; an edit leaves it started or stopped
@@ -506,8 +514,9 @@ class RoundController @Inject() (
                       Secured.Denial.round(stored, User.ADMIN_ROLES).copy(reason = Some("round_in_other_contest")))
                   case _ if unreadable.nonEmpty => unreadableLines
                   // the stored round's rating decides (the form's is not editable), for criteria
-                  // changed: those posted as stored stay, whatever they are (legacy rounds)
-                  case stored if editForm.criteriaShown && round.criterionIds.nonEmpty && !stored.isRated &&
+                  // changed, removed ones too: those posted as stored stay, whatever they are (legacy
+                  // rounds). Before the re-apply case, which writes them too
+                  case stored if editForm.criteriaShown && !stored.isRated &&
                       round.criterionIds != RoundCriterion.idsOf(roundId) =>
                     reRender(round, "error.criteria.rated.only")
                   // the worst mark only in a rated round without criteria, by the stored rating and

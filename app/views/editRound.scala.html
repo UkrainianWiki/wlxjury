@@ -17,11 +17,15 @@
         criteria: Seq[org.intracer.wmua.Criterion] = Nil,
         scoreRuleWarning: Option[controllers.RoundController.ScoreRuleWarning] = None,
         imageCheckJob: Option[services.jobs.Job] = None,
-        reapply: Boolean = false
+        reapply: Boolean = false,
+        unratedRound: Boolean = false
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 @* `reapply`: a round held in review with no vote and no job (P3-5): its filters editable, the main
    button "Re-apply filters" (the hidden `reapply` field), "Distribute new files" left out (a re-apply
-   adds the new matches) *@
+   adds the new matches);
+   `unratedRound`: an existing yes/no or comments-only round (by its stored rating, which the form
+   doesn't change): its form has no criteria and no worst mark, nor their hidden `criteriaShown` and
+   `worstMarkShown`, so a save leaves its stored ones as they are *@
 
 @implicitLayout = @{ bs.Layout.horizontal("col-md-4", "col-md-8") }
 @import helper._
@@ -156,21 +160,27 @@
                         @* a rated round's worst mark (rate -1, V92): off by default, editable on an existing
                            round; the hidden field says the form had the checkbox (an unchecked box sends
                            nothing). Hidden and not sent for a yes/no or comments-only rating of a new round
-                           (round-form.js); a criteria round refuses it (EditRound, RoundController) *@
+                           (round-form.js), left out for an existing one (`unratedRound`); a criteria round
+                           refuses it (EditRound, RoundController) *@
+                        @if(!unratedRound) {
                         <div id="round-worst-mark">
                             <input type="hidden" name="worstMarkShown" value="true" />
                             @bs.checkbox(field = editRoundForm("worstMark"),
                                 Symbol("_text") -> Messages("round.worst.mark"),
                                 Symbol("_help") -> Messages("round.worst.mark.help"))
                         </div>
+                        }
 
                         @* a rated round's criteria, from the catalogue, by position: the empty
                            selects left out (EditRound.criterionIdsOf); after the round's first
-                           vote only replaced in their places (RoundCriterion.update) *@
-                        <input type="hidden" name="criteriaShown" value="true" />
+                           vote only replaced in their places (RoundCriterion.update). Left out for an
+                           existing yes/no or comments-only round (`unratedRound`), with `criteriaShown`:
+                           a save keeps its stored criteria (a legacy one's, V83) *@
                         @* half stars: not in the form, but a new round prefilled from a criteria
                            round takes its (RoundController.editRound) *@
                         <input type="hidden" name="halfStar" value="@editRoundForm("halfStar").value.getOrElse("false")" />
+                        @if(!unratedRound) {
+                        <input type="hidden" name="criteriaShown" value="true" />
                         @defining(editRoundForm("criteria").indexes.flatMap(i => editRoundForm(s"criteria[$i]").value).exists(_.nonEmpty)) { chosen =>
                         @* one select per criterion: 10, or a legacy round's more (V83), kept as they are *@
                         @defining((org.intracer.wmua.Criterion.MaxPerRound +: editRoundForm("criteria").indexes.map(_ + 1)).max) { selects =>
@@ -188,6 +198,7 @@
                             }
                         }
                         </div>
+                        }
                         }
                         }
 

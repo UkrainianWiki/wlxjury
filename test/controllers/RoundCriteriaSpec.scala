@@ -304,11 +304,39 @@ class RoundCriteriaSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "keep the criteria of a yes/no round with has_criteria = 1" in {
+    "keep the criteria of a yes/no round with has_criteria = 1, its page without criteria" in {
       testDbApp { app =>
         val (a, _, jurors) = fixture()
-        keptOnSave(app, a, jurors, roundDao.create(Round(None, 1, Some("Legacy"), a.getId,
-          rates = Round.binaryRound, criterionIds = Seq(6L, 7L))))
+        val round = roundDao.create(Round(None, 1, Some("Legacy"), a.getId,
+          rates = Round.binaryRound, criterionIds = Seq(6L, 7L)))
+        val doc = Jsoup.parse(contentAsString(page(app, "admin@example.com", a.getId,
+          s"/admin/rounds/edit?contestId=${a.getId}&id=${round.getId}")))
+        // saved as its page posts it: no selects, no criteriaShown
+        val result = save(app, "admin@example.com", a.getId,
+          roundForm(a.getId, jurors, Nil, rates = 1, id = round.id, name = "Renamed", shown = false)
+            .filterNot(_._1.startsWith("criteria")))
+        (doc.select("select[name^=criteria], input[name=criteriaShown]").size === 0) and
+          (status(result) === SEE_OTHER) and (criteriaOf(round.getId) === Seq(6L, 7L)) and
+          (roundDao.findById(round.getId).flatMap(_.name) must beSome("Renamed"))
+      }
+    }
+
+    "refuse removing the criteria of a yes/no round with has_criteria = 1 by a posted criteriaShown" in {
+      testDbApp { app =>
+        val (a, _, jurors) = fixture()
+        val round = roundDao.create(Round(None, 1, Some("Legacy"), a.getId,
+          rates = Round.binaryRound, criterionIds = Seq(6L, 7L)))
+        // a hand-made post: the marker with every select empty, as a save, and as a re-apply
+        val result = save(app, "admin@example.com", a.getId,
+          roundForm(a.getId, jurors, Nil, rates = 1, id = round.id, name = "Renamed"))
+        val reapply = save(app, "admin@example.com", a.getId,
+          roundForm(a.getId, jurors, Nil, rates = 1, id = round.id, name = "Renamed") :+ ("reapply" -> "true"))
+        (status(result) === BAD_REQUEST) and
+          (contentAsString(result) must contain("Criteria are for rated rounds only.")) and
+          (status(reapply) === BAD_REQUEST) and
+          (contentAsString(reapply) must contain("Criteria are for rated rounds only.")) and
+          (criteriaOf(round.getId) === Seq(6L, 7L)) and (hasCriteria(round.getId) must beSome(true)) and
+          (roundDao.findById(round.getId).flatMap(_.name) must beSome("Legacy"))
       }
     }
   }
