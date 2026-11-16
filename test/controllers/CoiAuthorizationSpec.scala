@@ -151,7 +151,7 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
     */
   private def saveRound(round: Round, excludeCoi: Boolean): Seq[(String, String)] =
     Seq("id" -> round.getId.toString, "number" -> round.number.toString, "name" -> "R",
-      "contest" -> round.contestId.toString, "roles" -> "jury", "distribution" -> "0", "rates" -> "1",
+      "contest" -> round.contestId.toString, "roles" -> "jury", "distributeAfter" -> "true", "distribution" -> "0", "rates" -> "1",
       "minMpx" -> "", "minSize" -> "", "mediaType" -> "all") ++
       User.findRoundJurors(round.getId).zipWithIndex.map { case (u, i) => s"jurors[$i]" -> u.getId.toString } ++
       (if (excludeCoi) Seq("excludeCoi" -> "true") else Nil)

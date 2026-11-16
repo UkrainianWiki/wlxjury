@@ -142,7 +142,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
     "show any other failure of the creation as a reference, not its text" in {
       val failing = org.mockito.Mockito.mock(classOf[services.RoundService])
       import org.mockito.ArgumentMatchers.any
-      org.mockito.Mockito.when(failing.submit(any(), any(), any(), any(), any()))
+      org.mockito.Mockito.when(failing.submit(any(), any(), any(), any(), any(), any()))
         .thenThrow(new IllegalStateException("Duplicate entry 'secret' for key 'round.name'"))
       testDbAppWith(bind[services.RoundService].toInstance(failing)) { implicit app =>
         val (contest, admin, round) = fixture()

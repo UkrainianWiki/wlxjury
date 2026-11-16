@@ -73,7 +73,7 @@ class RoundDistributionSimulation extends Simulation {
   private def newRoundForm(name: String, extra: (String, Any)*): Seq[(String, Any)] =
     Seq[(String, Any)](
       "number" -> "0", "name" -> name, "contest" -> contestId.toString, "roles" -> "jury",
-      "distribution" -> cfg.jurorsPerImage.toString, "rates" -> "1",
+      "distributeAfter" -> "true", "distribution" -> cfg.jurorsPerImage.toString, "rates" -> "1",
       "minMpx" -> "", "minSize" -> "", "mediaType" -> "all",
       // the new-round form's one-time token (ignored when saving an existing round)
       "submitToken" -> java.util.UUID.randomUUID().toString

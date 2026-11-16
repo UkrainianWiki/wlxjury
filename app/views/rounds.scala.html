@@ -70,11 +70,23 @@
                             <td>@round.limits.recommended.fold("")(_.toString) </td> -->
                             <td>@snippets.startStop(round.active, round.getId, contest.getId, routes.RoundController.setRound)</td>
                             <td>@roundsStat.getOrElse(round.getId, 0) </td>
-                            @* a distribution's job while it matters; a juror's add (round_rebalance) also done, with
-                               the files it gave, until the round's next job *@
-                            <td>@for(job <- jobs.get(round.getId) if !job.isDone || round.distributing ||
+                            @* a distribution's job while it matters (a fill that left the round in review: the
+                               review line below instead); a juror's add (round_rebalance) also done, with the files it
+                               gave, until the round's next job *@
+                            <td>@for(job <- jobs.get(round.getId) if !job.isDone || (round.distributing && !round.inReview) ||
                                     job.kind == services.distribution.RoundRebalanceHandler.Kind) {
                                 @snippets.jobStatus(job, req.uri)
+                            }
+                            @* a round in review (P3): its images ready, to review and distribute *@
+                            @if(round.inReview && !jobs.get(round.getId).exists(_.isActive)) {
+                                <div class="round-review" id="round-review-@round.getId">
+                                    @Messages("rounds.images.ready", roundsStat.getOrElse(round.getId, 0))
+                                    <a href="@routes.RoundReviewController.review(round.getId)">@Messages("rounds.review")</a>
+                                    <form method="post" action="@routes.RoundReviewController.distribute(round.getId)" class="d-inline" data-submit-once>
+                                        @csrfField()
+                                        <button type="submit" class="btn btn-primary btn-sm">@Messages("round.review.distribute")</button>
+                                    </form>
+                                </div>
                             }
                             @* frozen with no job holding it (RoundFreezes): flagged; root releases it *@
                             @for(n <- leftFrozen.get(round.getId)) {
@@ -95,6 +107,7 @@
                 </table>
                 </div>
                 <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
+                <script src="@routes.Assets.versioned("javascripts/submit-once.js")"></script>
             }
         </div>
 

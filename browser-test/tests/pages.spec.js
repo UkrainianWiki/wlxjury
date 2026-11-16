@@ -63,6 +63,9 @@ const TOUR = [
   ['rounds', 'admin', (f) => `/admin/rounds?contestId=${f.contestId}`],
   ['round form', 'admin', (f) => `/admin/rounds/edit?id=${f.roundBinaryId}&contestId=${f.contestId}`],
   ['new round form', 'admin', (f) => `/admin/rounds/edit?contestId=${f.contestId}`],
+  // a round's review page (P3): the organizer's read-only view, and a file's large view there
+  ['round review', 'organizer', (f) => `/admin/rounds/${f.roundBinaryId}/review`],
+  ['round review, a file', 'admin', (f) => `/admin/rounds/${f.roundBinaryId}/review/file/${f.accounts.juror.pageId}`],
   // adding a juror to a running round: the contest's jurors outside it (none may be left), its jurors
   ['add juror page', 'admin', (f) => `/admin/rounds/${f.roundBinaryId}/add-juror`],
   ['users', 'admin', (f) => `/admin/users?contestId=${f.contestId}`],

@@ -695,8 +695,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     }
 
   /** A round's creation has passed its count check: it is shown to its jurors, `active`. */
-  def completeCreation(id: Long)(implicit session: DBSession): Unit =
-    sql"""UPDATE round SET ${statusWrite(Status.Active, None)}, distributing = 0, active = 1, created_at = created_at
+  def completeCreation(id: Long, by: Option[Long] = None)(implicit session: DBSession): Unit =
+    sql"""UPDATE round SET ${statusWrite(Status.Active, by)}, distributing = 0, active = 1, created_at = created_at
           WHERE id = $id""".update(): Unit
 
   /** Writes the round's status, with who (None: a job's write) and when: a creation job queued

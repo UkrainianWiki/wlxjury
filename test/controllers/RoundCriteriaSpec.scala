@@ -58,7 +58,7 @@ class RoundCriteriaSpec extends PlaySpecification with PlayTestDb {
   private def roundForm(contest: Long, jurors: Seq[User], criteria: Seq[Long], rates: Int = 10,
       id: Option[Long] = None, name: String = "Criteria", shown: Boolean = true): Seq[(String, String)] =
     Seq("number" -> "0", "name" -> name, "contest" -> contest.toString, "roles" -> "jury",
-      "distribution" -> "0", "rates" -> rates.toString, "minMpx" -> "", "minSize" -> "", "mediaType" -> "all") ++
+      "distributeAfter" -> "true", "distribution" -> "0", "rates" -> rates.toString, "minMpx" -> "", "minSize" -> "", "mediaType" -> "all") ++
       id.map("id" -> _.toString) ++
       jurors.zipWithIndex.map { case (u, i) => s"jurors[$i]" -> u.getId.toString } ++
       (if (shown) Seq("criteriaShown" -> "true") else Nil) ++

@@ -140,6 +140,11 @@ POST        /admin/authors/normalize                                            
 GET         /admin/rounds/:id/conflicts                                             @controllers.RoundConflictsController.page(id: Long)
 POST        /admin/rounds/:id/conflicts/disqualify                                  @controllers.RoundConflictsController.disqualify(id: Long)
 POST        /admin/rounds/:id/conflicts/requalify                                   @controllers.RoundConflictsController.requalify(id: Long)
+# a round's review before distribution (P3): its files by status, their large view, Distribute
+GET         /admin/rounds/:id/review                                                @controllers.RoundReviewController.review(id: Long, status: String ?= "in", page: Int ?= 1, region: String ?= "all")
+GET         /admin/rounds/:id/review/regions                                        @controllers.RoundReviewController.regions(id: Long, status: String ?= "in")
+GET         /admin/rounds/:id/review/file/:pageId                                   @controllers.RoundReviewController.file(id: Long, pageId: Long, status: String ?= "in", region: String ?= "all")
+POST        /admin/rounds/:id/distribute                                            @controllers.RoundReviewController.distribute(id: Long)
 # adding a juror to a running round (round_rebalance jobs): the page and its POST, by the round's contest's admins and root
 GET         /admin/rounds/:id/add-juror                                             @controllers.RoundJurorsController.addPage(id: Long, juror: Option[Long] ?= None)
 POST        /admin/rounds/:id/add-juror                                             @controllers.RoundJurorsController.add(id: Long)

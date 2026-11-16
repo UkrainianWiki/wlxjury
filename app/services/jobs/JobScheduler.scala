@@ -431,7 +431,18 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
             val result = step(j, ctx)
             result match {
               case StepResult.Continue(state, p) => JobJdbc.update(jobId, JobStatus.Running, state, p, None)
-              case StepResult.Done(state, p)     => JobJdbc.update(jobId, JobStatus.Done, state, p, None)
+              case done: StepResult.Done =>
+                JobJdbc.update(jobId, JobStatus.Done, done.state, done.progress, None)
+                // queued once this job is done, in its transaction: the dedupe key is free now
+                done.followUp.foreach { next =>
+                  enqueue(next) match {
+                    case Right(queued) =>
+                      done.onFollowUpQueued(s)
+                      ctx.afterCommit(started(queued.id))
+                    case Left(active) =>
+                      logger.warn(s"Job $jobId: its follow-up was not queued, job ${active.id} holds its key")
+                  }
+                }
               case StepResult.Failed(error, state, p) =>
                 val after = h.onFailed(j.copy(state = state), ctx)
                 JobJdbc.update(jobId, JobStatus.Failed, after, p, Some(error.encode), giveBackClaim = true)

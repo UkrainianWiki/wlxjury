@@ -88,6 +88,8 @@ class MessagesCompletenessSpec extends Specification {
     "coi.code." -> db.scalikejdbc.RoundImageJdbc.DqCode.All,                        // round/conflicts.scala.html
     "coi.event." -> db.scalikejdbc.RoundImageEventJdbc.Action.All,                  // round/conflicts.scala.html
     "coi.status." -> (db.scalikejdbc.RoundImageJdbc.Status.All :+ "removed"),       // round/conflicts.scala.html
+    "round.review.added." -> db.scalikejdbc.RoundImageJdbc.AddedHow.All,             // roundReviewHead.scala.html
+    "round.review.tab." -> controllers.RoundReviewController.Statuses,               // roundReviewHead.scala.html
     // linkStatus.scala.html: AccountToken.Status.key, and its time's text
     "link.status." -> Seq("active", "used", "expired", "revoked").flatMap(s => Seq(s, s"$s.at")),
     "link.purpose." -> db.scalikejdbc.AccountTokenJdbc.SetsPassword,                // editUser's set-password links

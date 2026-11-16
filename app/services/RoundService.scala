@@ -29,7 +29,7 @@ class RoundService @Inject() (
     */
   def createNewRound(round: Round, jurorIds: Seq[Long], submitToken: Option[String] = None): Round = {
     val submitted = submit(round, jurorIds, submitToken)
-    submitted.job.foreach(j => checkFinished(submitted.round.getId, jobs.await(j.id)))
+    submitted.job.foreach(j => checkFinished(submitted.round.getId, awaitWithFollowUp(submitted.round.getId, j.id)))
     dao.findById(submitted.round.getId).getOrElse(submitted.round)
   }
 
@@ -58,7 +58,8 @@ class RoundService @Inject() (
       jurorIds: Seq[Long],
       submitToken: Option[String] = None,
       createdBy: Option[Long] = None,
-      titles: Seq[String] = Nil
+      titles: Seq[String] = Nil,
+      review: Boolean = false
   ): Submitted =
     submitToken.flatMap(submitted(_, round.contestId)) match {
       case Some(existing) => resubmitted(existing)
@@ -73,7 +74,7 @@ class RoundService @Inject() (
           round.distribution <= jurors.size,
           s"${round.distribution} jurors per image, but only ${jurors.size} jurors selected"
         )
-        insert(configuredRound, jurors, submitToken, createdBy, titles) match {
+        insert(configuredRound, jurors, submitToken, createdBy, titles, review) match {
           case Left(existing) => resubmitted(existing)
           case Right((created, job)) =>
             logger.info(
@@ -97,7 +98,9 @@ class RoundService @Inject() (
     */
   private def resubmitted(existing: Round): Submitted =
     distributionJob(existing.getId) match {
-      case Some(j) if j.isFailed =>
+      // a failed distribute (P3) is retried on its job page or by the review's Distribute, not by
+      // the creation's form posted again
+      case Some(j) if j.isFailed && !RoundDistributionHandler.distributeMode(j) =>
         // not while a round leaving out its files is being distributed (refused: the form says so)
         RoundDistributionHandler.requireNoExcluderBusy(existing)
         jobs.retry(j.id, explicit = false) match {
@@ -118,7 +121,8 @@ class RoundService @Inject() (
       jurors: Seq[User],
       submitToken: Option[String],
       createdBy: Option[Long],
-      titles: Seq[String]
+      titles: Seq[String],
+      review: Boolean
   ): Either[Round, (Round, Job)] = {
     val number = dao.countByContest(round.contestId) + 1
     try
@@ -127,7 +131,8 @@ class RoundService @Inject() (
           round.copy(number = number, submitToken = submitToken, active = false, distributing = true)
         )
         created.addUsersIn(jurors.map(u => RoundUser(created.getId, u.getId, u.contestRole.getOrElse(User.JURY_ROLE), active = true)))
-        val job = enqueueOrFail(created, completingCreation = true, createdBy, titles)
+        // "Create and review images" (D3): a fill that ends in review; else one pass (D4)
+        val job = enqueueOrFail(created, completingCreation = true, createdBy, titles, distributeAfter = !review)
         (created, job)
       })
     catch {
@@ -144,14 +149,26 @@ class RoundService @Inject() (
     *
     * @param titles   a pasted list of files the job adds to the round
     * @param listOnly the job adds only `titles`, not the images the round's filters choose
+    * @param mode     the job's step (P3, [[RoundDistributionHandler.Mode]]): `fill` (the round's
+    *                 files), or `distribute` (a round in review given to its jurors)
+    * @param distributeAfter a fill queues the distribute as it ends (D4; "Distribute new files" on a
+    *                 distributed round); without, a round being created ends held in review
+    * @param fromReview queued on a round in review: it stays in review (`paused`)
+    * @param requireInReview a distribute: refused ([[NotInReviewRefused]]) unless the round, read under the
+    *                 locks below, is in review
     */
   private def enqueueOrFail(
       round: Round,
       completingCreation: Boolean,
       createdBy: Option[Long],
       titles: Seq[String] = Nil,
-      listOnly: Boolean = false
+      listOnly: Boolean = false,
+      mode: String = RoundDistributionHandler.Mode.Fill,
+      distributeAfter: Boolean = false,
+      fromReview: Boolean = false,
+      requireInReview: Boolean = false
   )(implicit session: DBSession): Job = {
+    val distribute = mode == RoundDistributionHandler.Mode.Distribute
     // the round first, with the rounds it freezes: "Leave out conflicts of interest now"
     // checks for its active job under the round's lock (RoundConflicts.disqualify). And the rounds
     // it leaves out and those leaving it out (V95), in one id order: two such rounds queued at once
@@ -159,6 +176,8 @@ class RoundService @Inject() (
     val excluders = Round.findByContest(round.contestId)
       .filter(r => !r.id.contains(round.getId) && r.excludeRounds.contains(round.getId)).flatMap(_.id)
     Round.lock(round.previousIds ++ round.excludeRounds ++ excluders :+ round.getId)
+    // read under that lock: in review still, with no job (checked next)
+    if (requireInReview && !Round.findById(round.getId).exists(_.inReview)) throw NotInReviewRefused
     // an active distribution of the round, read plainly under the round's lock (READ
     // COMMITTED: the latest committed; jobs of the round are queued and end under this lock):
     // refused here, before an insert whose duplicate key would lock the running job's row, which
@@ -166,15 +185,19 @@ class RoundService @Inject() (
     JobJdbc.activeByDedupeKey(RoundDistributionHandler.dedupeKey(round.getId)).foreach(active => throw AlreadyDistributing(active))
     // under those locks: no round it leaves out, nor one leaving it out, being distributed now
     // (refused, rolling back; the round form shows the message). The job checks again as it runs.
-    RoundDistributionHandler.excludedRounds(round)
-    RoundDistributionHandler.requireNoExcluderBusy(round)
+    // a distribute reads no candidates and adds no row: neither applies to it
+    if (!distribute) {
+      RoundDistributionHandler.excludedRounds(round)
+      RoundDistributionHandler.requireNoExcluderBusy(round)
+    }
     // nor a previous round having a juror added (its votes moving), read under its lock: a
-    // rebalance is queued and ends under it
+    // rebalance is queued and ends under it. A distribute too: it freezes and closes them
     if (!listOnly) RoundDistributionHandler.requireNoPreviousRebalance(round)
-    val state = distribution.initialState(round, listOnly)
-    // a creation (or one finished by "Distribute new files") is `draft` while it runs (round
-    // lineage §2.6); under the round's lock, taken above
-    if (completingCreation) Round.setStatus(round.getId, Round.Status.Draft, createdBy)
+    val state = distribution.initialState(round, listOnly, distribute, completingCreation)
+    // a creation's fill (or one finished by "Distribute new files") is `draft` while it runs, by
+    // who queued it (round lineage §2.6); a round in review stays `paused`, its distribute too (the
+    // two-step plan's §4); under the round's lock, taken above
+    if (completingCreation && !distribute && !fromReview) Round.setStatus(round.getId, Round.Status.Draft, createdBy)
     // the top-N's order and the rejected-by filter only where they apply: from a yes/no
     // previous round, and the rejected-by from a rated one without criteria too (its ✗, whether
     // its option is on now or not): from any such previous round, as the job and the form have it
@@ -203,6 +226,9 @@ class RoundService @Inject() (
         params = Json.obj(
           "roundId" -> round.getId,
           "completingCreation" -> completingCreation,
+          "mode" -> mode
+        ) ++ (if (distribute) Json.obj() else Json.obj("distributeAfter" -> distributeAfter)) ++
+          (if (fromReview) Json.obj("fromReview" -> true) else Json.obj()) ++ Json.obj(
           // for the record: the job reads the round, whose settings don't change once created;
           // but prevAverageRule(s) and prevRejectedMode, which the job reads from here
           // (RoundDistributionHandler.context)
@@ -247,7 +273,11 @@ class RoundService @Inject() (
       .latestBySubjects(RoundDistributionHandler.Kind, RoundDistributionHandler.SubjectType, Seq(roundId))
       .get(roundId)
 
-  /** "Distribute new files": distributes to the round, in the background, the images that
+  /** Authorization is the caller's: only the round's contest's admins and root may call it
+    * ([[controllers.RoundController.saveRound]] checks it), as it also reinstates a cancelled
+    * creation.
+    *
+    * "Distribute new files": distributes to the round, in the background, the images that
     * qualify for it but aren't in it yet, and/or ("Add files") the files of a pasted list.
     * A failed distribution of the round is resumed instead (without the list); a running
     * one goes on. One given up after its attempts is not resumed ([[GivenUp]]): only the job
@@ -264,9 +294,12 @@ class RoundService @Inject() (
       newFiles: Boolean = true
   ): DistributionStart = {
     val round = dao.findById(roundId).getOrElse(throw new NoSuchElementException(s"Round $roundId not found"))
-    distributionJob(roundId) match {
+    val latest = distributionJob(roundId)
+    latest match {
       case Some(j) if j.isActive => AlreadyRunning(j)
-      case Some(j) if j.isFailed =>
+      // a failed distribute (P3) is retried on its job page or by the review's Distribute, never
+      // from here: in review "Distribute new files" only fills (round-editing plan §6.2)
+      case Some(j) if j.isFailed && !RoundDistributionHandler.distributeMode(j) =>
         // not while a round leaving out its files is being distributed (refused: the form says so;
         // the job checks again as it runs)
         RoundDistributionHandler.requireNoExcluderBusy(round)
@@ -288,10 +321,23 @@ class RoundService @Inject() (
         RoundDistributionHandler.excludedRounds(round)
         DistributeImages.checkJury(round, User.distributionJurors(roundId))
         try {
+          // a round in review gets the new files only: distributing stays the review's action
+          // (round-editing plan §6.2). A creation never completed keeps its intent: held in review
+          // after its fill, or distributed after it (D4); a cancelled one is so reinstated (round
+          // lineage decision 7), by `createdBy`. A distributed round gets them distributed after.
+          val reinstating = round.distributing && round.lifecycle == Round.Status.Cancelled
+          val distributeAfter =
+            if (round.inReview) false
+            else if (round.distributing) RoundService.creationIntent(latest)
+            else true
           val job = WriteTx.write { implicit session =>
             enqueueOrFail(round, completingCreation = round.distributing, createdBy, titles,
-              listOnly = titles.nonEmpty && !newFiles && !round.distributing)
+              listOnly = titles.nonEmpty && !newFiles && !round.distributing,
+              distributeAfter = distributeAfter, fromReview = round.inReview)
           }
+          if (reinstating)
+            logger.info(s"Round $roundId: reinstated from cancelled by user ${createdBy.orNull} (job ${job.id}, " +
+              (if (distributeAfter) "distributed after its fill)" else "held for review after its fill)"))
           jobs.started(job.id)
           Started(JobJdbc.findById(job.id).getOrElse(job))
         } catch {
@@ -299,6 +345,32 @@ class RoundService @Inject() (
         }
     }
   }
+
+  /** The review page's Distribute (P3): the round's files given to its jurors, as a job of mode
+    * `distribute`; the round opens to them when it ends. Only a round in review
+    * ([[Round.inReview]], read under its lock) with no job queued or running.
+    */
+  def distributeReviewed(roundId: Long, createdBy: Option[Long]): RoundService.ReviewDistribution =
+    dao.findById(roundId) match {
+      case None => RoundService.ReviewDistribution.NotInReview
+      case Some(round) =>
+        try {
+          // the round's state checked under enqueueOrFail's locks, taken in id order
+          val job = WriteTx.write { implicit session =>
+            enqueueOrFail(round, completingCreation = true, createdBy, mode = RoundDistributionHandler.Mode.Distribute,
+              requireInReview = true)
+          }
+          logger.info(s"Round $roundId: distributing its reviewed images (job ${job.id}), by user ${createdBy.orNull}")
+          jobs.started(job.id)
+          RoundService.ReviewDistribution.Started(JobJdbc.findById(job.id).getOrElse(job))
+        } catch {
+          case AlreadyDistributing(active) => RoundService.ReviewDistribution.Running(active)
+          case NotInReviewRefused          => RoundService.ReviewDistribution.NotInReview
+          // a previous round having a juror added (its rebalance would fail on the freeze)
+          case refused: RoundDistributionHandler.ExcludeRoundsRefused =>
+            RoundService.ReviewDistribution.Refused(refused.refusal.key, refused.refusal.args)
+        }
+    }
 
   /** [[distributeNewFiles]], waiting for it (scripts, tests).
     *
@@ -308,11 +380,19 @@ class RoundService @Inject() (
   def distributeNewImages(roundId: Long): Int = {
     val start = distributeNewFiles(roundId)
     val done = jobs.await(start.job.id)
-    checkFinished(roundId, done)
+    checkFinished(roundId, awaitWithFollowUp(roundId, start.job.id))
     start match {
       case _: AlreadyRunning => 0
       case _                 => RoundDistributionHandler.imagesAdded(done).toInt
     }
+  }
+
+  /** The job, waited for, and then the distribute its fill queued as it ended (D4), if any. */
+  private def awaitWithFollowUp(roundId: Long, jobId: Long): Job = {
+    val done = jobs.await(jobId)
+    if (done.isDone && RoundDistributionHandler.distributeAfter(done))
+      distributionJob(roundId).filter(_.id > jobId).fold(done)(next => jobs.await(next.id))
+    else done
   }
 
   private def checkFinished(roundId: Long, job: Job): Unit =
@@ -392,6 +472,25 @@ class RoundService @Inject() (
 }
 
 object RoundService {
+
+  /** enqueueOrFail's refusal of a distribute of a round not in review (read under its locks). */
+  private case object NotInReviewRefused extends RuntimeException("not in review", null, false, false)
+
+  /** What a creation never completed wanted after its fill, by its latest job (`latest`): held in
+    * review (D3), or distributed after it (D4); a job from before P3 (no mode) distributed in one
+    * pass, so after; none known, held in review (the form's default).
+    */
+  def creationIntent(latest: Option[Job]): Boolean =
+    latest.exists(j => (j.params \ "distributeAfter").asOpt[Boolean].getOrElse(RoundDistributionHandler.modeOf(j).isEmpty))
+
+  /** What the review page's Distribute did ([[RoundService.distributeReviewed]]). */
+  sealed trait ReviewDistribution
+  object ReviewDistribution {
+    final case class Started(job: Job) extends ReviewDistribution
+    final case class Running(job: Job) extends ReviewDistribution
+    case object NotInReview extends ReviewDistribution
+    final case class Refused(messageKey: String, args: Seq[Any]) extends ReviewDistribution
+  }
 
   /** The outcome of a round form submission. */
   sealed trait Submitted {

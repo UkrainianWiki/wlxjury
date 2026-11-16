@@ -44,10 +44,10 @@ class RoundFileListSpec extends Specification with TestDb with BeforeAll with Be
 
   private def pageIds(roundId: Long): Set[Long] = VoteJdbc.byRound(roundId).map(_.pageId).toSet
 
-  private def jobOf(roundId: Long) = {
-    val latest = JobJdbc.latestBySubjects(RoundDistributionHandler.Kind, RoundDistributionHandler.SubjectType, Seq(roundId))
-    latest(roundId)
-  }
+  /** The round's latest fill (P3: the job that adds files; the distribute it queues adds none). */
+  private def jobOf(roundId: Long) =
+    DB.readOnly(implicit s => sql"SELECT id FROM job WHERE subject_type = 'round' AND subject_id = $roundId ORDER BY id DESC"
+      .map(_.long(1)).list()).flatMap(JobJdbc.findById(_)).find(j => !RoundDistributionHandler.distributeMode(j)).get
 
   private val list = Seq(
     "File:Image_3.jpg",                                        // stored

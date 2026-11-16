@@ -197,11 +197,22 @@
                         }
                     }
                     }
+                    @* a new round waits in review until distributed (P3, D3/D4): the checkbox, off by
+                       default, distributes its images as soon as they are selected *@
+                    @if(newRound) {
+                        @bs.checkbox(field = editRoundForm("distributeAfter"),
+                            Symbol("_text") -> Messages("round.form.distribute.after"),
+                            Symbol("_help") -> Messages("round.form.distribute.after.help"))
+                    }
                 </fieldset>
 
                 <div class="form-actions mt-2">
-                    @snippets.submit("save")
+                    @snippets.submit(if (newRound) "round.form.create.review" else "save")
                     @snippets.button(routes.RoundController.rounds(editRoundForm("contest").value.map(_.toLong)), "cancel")
+                    @* a round waiting for review: its review page *@
+                    @for(rid <- editRoundForm("id").value.flatMap(v => scala.util.Try(v.toLong).toOption) if !newRound) {
+                        <a id="round-review-link" class="btn btn-outline-secondary" href="@routes.RoundReviewController.review(rid)">@Messages("round.review")</a>
+                    }
                 </div>
             </div>
 

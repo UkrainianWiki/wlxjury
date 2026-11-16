@@ -746,15 +746,21 @@ final case class ContestFilesView(
     author: Option[String] = None,
     authorFiles: Option[Seq[Long]] = None,
     monument: Option[String] = None,
-    monumentFiles: Option[Seq[Long]] = None
+    monumentFiles: Option[Seq[Long]] = None,
+    // the round's review list (P3, RoundReviewController): its files of this status, all of them
+    reviewStatus: Option[String] = None
 ) {
+
+  /** The page is a round's review ([[RoundReviewController]]), not the contest's files. */
+  def review: Boolean = reviewStatus.isDefined && round.isDefined
 
   /** The list is the conflicts of interest. */
   def coi: Boolean = coiFiles.isDefined
 
   /** The files listed, if there are any: none for a contest without a category. */
   def list: Option[ImageJdbc.FileList] =
-    round.map(r => ImageJdbc.FileList.RoundDeleted(r.getId))
+    round.map(r => reviewStatus.fold[ImageJdbc.FileList](ImageJdbc.FileList.RoundDeleted(r.getId))(
+      ImageJdbc.FileList.RoundImages(r.getId, _)))
       .orElse(contest.categoryId.map(ImageJdbc.FileList.Category(_, deletedOnly, countryFilter)))
 
   /** The files the list is narrowed to ([[ImageJdbc.CountryFilter]]): the conflicts of
@@ -800,13 +806,21 @@ final case class ContestFilesView(
       coi, author).url
 
   private def pageUrl(page: Int, region: String, country: Option[String]): String =
-    routes.GalleryController.contestFiles(contest.getId, page, deletedOnly, roundId, region, country, coi, author,
-      monument).url
+    (round, reviewStatus) match {
+      case (Some(r), Some(status)) => routes.RoundReviewController.review(r.getId, status, page, region).url
+      case _ =>
+        routes.GalleryController.contestFiles(contest.getId, page, deletedOnly, roundId, region, country, coi, author,
+          monument).url
+    }
 
   /** The large view of a file in this list. */
   def largeUrl(pageId: Long): String =
-    routes.GalleryController.contestFileLarge(contest.getId, pageId, deletedOnly, roundId, region.getOrElse("all"),
-      country, coi, author, monument).url
+    (round, reviewStatus) match {
+      case (Some(r), Some(status)) => routes.RoundReviewController.file(r.getId, pageId, status, region.getOrElse("all")).url
+      case _ =>
+        routes.GalleryController.contestFileLarge(contest.getId, pageId, deletedOnly, roundId, region.getOrElse("all"),
+          country, coi, author, monument).url
+    }
 
   /** A contest of monuments, whose files are in regions. */
   def byMonuments: Boolean = ContestKind.monumentIdTemplate(contest).isDefined
@@ -817,8 +831,12 @@ final case class ContestFilesView(
   def regionMenu(implicit messages: play.api.i18n.Messages): Option[RegionMenu] =
     Option.when(byMonuments)(RegionMenu.regions(region.map(RegionScheme.of(contest).region(_, None).name),
       regionUrl("all"), pageUrl(1),
-      routes.GalleryController.contestFileRegions(contest.getId, deletedOnly, roundId, "all", country, coi,
-        author, monument).url))
+      (round, reviewStatus) match {
+        case (Some(r), Some(status)) => routes.RoundReviewController.regions(r.getId, status).url
+        case _ =>
+          routes.GalleryController.contestFileRegions(contest.getId, deletedOnly, roundId, "all", country, coi,
+            author, monument).url
+      }))
 
   /** The country menu of a contest of many countries (not of a round's files), in the navbar. */
   def countryMenu: Option[RegionMenu] =

@@ -325,7 +325,8 @@ class RoundController @Inject() (
                   user,
                   r,
                   editRoundForm
-                    .fill(EditRound(r, editForm.jurors, editForm.fileList, editForm.newImages, editForm.criteriaShown))
+                    .fill(EditRound(r, editForm.jurors, editForm.fileList, editForm.newImages, editForm.criteriaShown,
+                      distributeAfter = editForm.distributeAfter))
                     .withGlobalError(message, args: _*),
                   // a creation rejected before anything was created keeps the form's token
                   submitToken = RoundController.submitToken(request).filter(_ => r.id.isEmpty)
@@ -407,7 +408,10 @@ class RoundController @Inject() (
                 reRender(round, EditRound.RejectedByNoSource)
               case None =>
                 try {
-                  roundsService.submit(round.copy(active = true), editForm.jurors, RoundController.submitToken(request), user.id, titles) match {
+                  // "Create and review images" (D3): the round waits in review unless "Distribute as
+                  // soon as the images are ready" (D4) is ticked
+                  roundsService.submit(round.copy(active = true), editForm.jurors, RoundController.submitToken(request), user.id,
+                    titles, review = !editForm.distributeAfter) match {
                     // the distribution runs in the background: the rounds list shows its progress
                     case _: RoundService.Created => toRoundsList
                     // The same form submitted again (a double click, or Back and Submit):

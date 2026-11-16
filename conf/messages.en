@@ -1004,6 +1004,36 @@ authors.not.voted = Not voted yet
 authors.approval.rate = Approval rate
 authors.rated.note = Rated: files with at least one rating. ✗: files with at least one worst mark. Average: the average score of the author''s rated files, in stars, as the round scores a file (per criterion in a round with criteria).
 
+# a round's review before distribution (P3: RoundReviewController, roundReviewHead.scala.html)
+round.review = Review images
+round.review.title = Round {0} ({1}): its images before distribution
+round.review.ready = Images ready: {0}. The jurors don''t see the round until you distribute it.
+round.review.filling = The round''s images are being selected.
+round.review.distributing = The images are being distributed to the jurors. The round opens to them when it has finished.
+round.review.distributed = The round''s images have been distributed.
+round.review.added.fill = By the round''s filters: {0}
+round.review.added.list = From the pasted list: {0}
+round.review.added.new_files = Added as new files: {0}
+round.review.added.manual = Added by hand: {0}
+round.review.added.repair = Added by the image check: {0}
+round.review.added.legacy = From before the review existed: {0}
+round.review.conflicts = Conflicts of interest among them: {0}
+round.review.distribute = Distribute to jurors
+round.review.distribute.help = Gives each juror their share of these images and opens the round to them.
+round.review.distribute.started = Round {0}: its images are being distributed to the jurors. It opens to them when done.
+round.review.distribute.not.in.review = Round {0} isn''t waiting for review: there is nothing to distribute.
+round.review.tab.in = In the round
+round.review.tab.deleted = Deleted on Commons
+round.review.tab.dq = Disqualified
+round.review.edit = Edit the round
+round.form.create.review = Create and review images
+round.form.distribute.after = Distribute as soon as the images are ready
+round.form.distribute.after.help = Off: the round waits on its review page until you distribute it. On: the jurors get the images as soon as they are selected.
+rounds.images.ready = Images ready: {0}
+rounds.review = Review
+round.review.job.failed = Its last job failed. The contest''s admins can retry it.
+round.juror.add.review = {0} is now a juror of round {1}. They get their share when the round is distributed.
+round.juror.add.review.note = The round is held for review: the juror is added to it now and gets their share when it is distributed.
 # adding a juror to a running round (round_rebalance; docs/plans/2026-11-16-round-editing.md, step 1)
 job.error.rebalance.missing=Round {0} no longer exists.
 job.error.rebalance.not.running=Round {0} isn''t running: start it first. A juror is added only to a round open to its jurors.

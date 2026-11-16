@@ -980,6 +980,36 @@ authors.not.voted = Ще не оцінені
 authors.approval.rate = Частка схвалень
 authors.rated.note = Оцінені: файли з принаймні однією оцінкою. ✗: файли з принаймні однією найгіршою оцінкою. Середня: середня оцінка оцінених файлів автора в зірках, як раунд оцінює файл (за критерієм у раунді з критеріями).
 
+# a round's review before distribution (P3: RoundReviewController, roundReviewHead.scala.html)
+round.review = Переглянути зображення
+round.review.title = Раунд {0} ({1}): його зображення до розподілу
+round.review.ready = Зображення готові: {0}. Члени журі не бачать раунд, доки ви його не розподілите.
+round.review.filling = Зображення раунду відбираються.
+round.review.distributing = Зображення розподіляються між членами журі. Раунд відкриється для них, коли це завершиться.
+round.review.distributed = Зображення раунду розподілено.
+round.review.added.fill = За фільтрами раунду: {0}
+round.review.added.list = Зі вставленого списку: {0}
+round.review.added.new_files = Додані як нові файли: {0}
+round.review.added.manual = Додані вручну: {0}
+round.review.added.repair = Додані перевіркою зображень: {0}
+round.review.added.legacy = З часу, коли перегляду ще не було: {0}
+round.review.conflicts = Конфлікти інтересів серед них: {0}
+round.review.distribute = Розподілити між членами журі
+round.review.distribute.help = Дає кожному членові журі його частку цих зображень і відкриває для них раунд.
+round.review.distribute.started = Раунд {0}: його зображення розподіляються між членами журі. Раунд відкриється для них після завершення.
+round.review.distribute.not.in.review = Раунд {0} не чекає перегляду: розподіляти нічого.
+round.review.tab.in = У раунді
+round.review.tab.deleted = Вилучені з ВікіСховища
+round.review.tab.dq = Дискваліфіковані
+round.review.edit = Редагувати раунд
+round.form.create.review = Створити й переглянути зображення
+round.form.distribute.after = Розподілити, щойно зображення будуть готові
+round.form.distribute.after.help = Вимкнено: раунд чекає на сторінці перегляду, доки ви його не розподілите. Увімкнено: члени журі отримують зображення одразу після відбору.
+rounds.images.ready = Зображення готові: {0}
+rounds.review = Переглянути
+round.review.job.failed = Його остання задача завершилася помилкою. Адміністратори конкурсу можуть її повторити.
+round.juror.add.review = {0} тепер член журі раунду {1}. Свою частку отримає під час розподілу раунду.
+round.juror.add.review.note = Раунд чекає перегляду: члена журі додано зараз, свою частку він отримає під час розподілу.
 # adding a juror to a running round (round_rebalance; docs/plans/2026-11-16-round-editing.md, step 1)
 job.error.rebalance.missing=Раунду {0} більше немає.
 job.error.rebalance.not.running=Раунд {0} не триває: спершу запустіть його. Члена журі можна додати лише до раунду, відкритого для журі.

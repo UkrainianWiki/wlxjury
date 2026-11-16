@@ -1,0 +1,60 @@
+@import controllers.{ContestFilesView, RoundReview, RoundReviewController}
+@import db.scalikejdbc.{Round, RoundImageJdbc}
+@(r: RoundReview, view: ContestFilesView)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+
+@* A round's review page's head (P3, RoundReviewController): its state, its files by how they were
+   added, its conflicts of interest, the tabs of its files by status, and for its admins the
+   Distribute form (a CSRF POST, sent once). Organizers see the same, without the form (D20). *@
+<div id="round-review">
+    <h2 class="h4" id="round-review-title">@Messages("round.review.title", r.round.number, r.round.description)</h2>
+
+    @flash.get("success").map { msg => <div class="alert alert-info" id="flash-success">@msg</div> }
+    @flash.get("error").map { msg => <div class="alert alert-danger" id="flash-error">@msg</div> }
+
+    <p id="round-review-state">@{
+        if (r.job.exists(_.isActive) && r.round.distributing && r.round.lifecycle == Round.Status.Draft) Messages("round.review.filling")
+        else if (r.job.exists(_.isActive) && r.round.inReview) Messages("round.review.distributing")
+        else if (r.round.inReview) Messages("round.review.ready", r.count(RoundImageJdbc.Status.In))
+        else if (r.round.distributing) Messages("round.review.filling")
+        else Messages("round.review.distributed")
+    }</p>
+    @* the job's status with Retry / Cancel (and its poll) for those who may act on it; organizers
+       (D20, read only) get the state above, and a failure as text *@
+    @for(job <- r.job if !job.isDone) {
+        @if(r.mayEdit) {
+            @snippets.jobStatus(job, request.uri)
+            <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
+        } else {
+            @if(job.isFailed) { <p id="round-review-job-failed">@Messages("round.review.job.failed")</p> }
+        }
+    }
+
+    <ul class="list-unstyled mb-2" id="round-review-added">
+    @for(how <- RoundImageJdbc.AddedHow.All; n <- r.addedHow.get(how) if n > 0) {
+        <li>@Messages(s"round.review.added.$how", n)</li>
+    }
+    </ul>
+    @if(r.conflicts > 0) {
+        <p id="round-review-conflicts"><a href="@routes.RoundConflictsController.page(r.round.getId)">@Messages("round.review.conflicts", r.conflicts)</a></p>
+    }
+
+    @if(r.mayDistribute) {
+        <form method="post" action="@routes.RoundReviewController.distribute(r.round.getId)" class="mb-2" id="round-review-distribute" data-submit-once>
+            @csrfField()
+            <button type="submit" class="btn btn-primary">@Messages("round.review.distribute")</button>
+            <span class="form-text ms-2">@Messages("round.review.distribute.help")</span>
+        </form>
+        <script src="@routes.Assets.versioned("javascripts/submit-once.js")"></script>
+    }
+
+    <ul class="nav nav-tabs mb-2" id="round-review-tabs">
+    @for(status <- RoundReviewController.Statuses) {
+        <li class="nav-item">
+            <a class="nav-link @if(view.reviewStatus.contains(status)) {active}" @if(view.reviewStatus.contains(status)) {aria-current="page"} id="round-review-tab-@status" href="@routes.RoundReviewController.review(r.round.getId, status)">@Messages(s"round.review.tab.$status") (@r.count(status))</a>
+        </li>
+    }
+    </ul>
+    @if(r.mayEdit) {
+        <p><a id="round-review-edit" href="@routes.RoundController.editRound(id = r.round.id, contestId = r.round.contestId)">@Messages("round.review.edit")</a></p>
+    }
+</div>

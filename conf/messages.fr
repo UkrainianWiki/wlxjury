@@ -988,6 +988,36 @@ authors.not.voted = Pas encore votés
 authors.approval.rate = Taux d''approbation
 authors.rated.note = Notées : les fichiers avec au moins une note. ✗ : les fichiers avec au moins une pire note. Moyenne : la note moyenne des fichiers notés de l''auteur, en étoiles, comme le tour note un fichier (par critère dans un tour avec critères).
 
+# a round's review before distribution (P3: RoundReviewController, roundReviewHead.scala.html)
+round.review = Vérifier les images
+round.review.title = Tour {0} ({1}) : ses images avant la distribution
+round.review.ready = Images prêtes : {0}. Les jurés ne voient pas le tour tant que vous ne l''avez pas distribué.
+round.review.filling = Les images du tour sont en cours de sélection.
+round.review.distributing = Les images sont en cours de distribution aux jurés. Le tour leur sera ouvert à la fin.
+round.review.distributed = Les images du tour ont été distribuées.
+round.review.added.fill = Par les filtres du tour : {0}
+round.review.added.list = De la liste collée : {0}
+round.review.added.new_files = Ajoutées comme nouveaux fichiers : {0}
+round.review.added.manual = Ajoutées à la main : {0}
+round.review.added.repair = Ajoutées par la vérification des images : {0}
+round.review.added.legacy = D''avant la vérification : {0}
+round.review.conflicts = Conflits d''intérêts parmi elles : {0}
+round.review.distribute = Distribuer aux jurés
+round.review.distribute.help = Donne à chaque juré sa part de ces images et lui ouvre le tour.
+round.review.distribute.started = Tour {0} : ses images sont en cours de distribution aux jurés. Il leur sera ouvert à la fin.
+round.review.distribute.not.in.review = Le tour {0} n''attend pas de vérification : il n''y a rien à distribuer.
+round.review.tab.in = Dans le tour
+round.review.tab.deleted = Supprimées de Commons
+round.review.tab.dq = Disqualifiées
+round.review.edit = Modifier le tour
+round.form.create.review = Créer et vérifier les images
+round.form.distribute.after = Distribuer dès que les images sont prêtes
+round.form.distribute.after.help = Décoché : le tour attend sur sa page de vérification jusqu''à ce que vous le distribuiez. Coché : les jurés reçoivent les images dès qu''elles sont sélectionnées.
+rounds.images.ready = Images prêtes : {0}
+rounds.review = Vérifier
+round.review.job.failed = Sa dernière tâche a échoué. Les administrateurs du concours peuvent la relancer.
+round.juror.add.review = {0} est maintenant juré du tour {1}. Sa part lui sera donnée à la distribution du tour.
+round.juror.add.review.note = Le tour attend sa vérification : le juré y est ajouté maintenant et recevra sa part à la distribution.
 # adding a juror to a running round (round_rebalance; docs/plans/2026-11-16-round-editing.md, step 1)
 job.error.rebalance.missing=Le tour {0} n''existe plus.
 job.error.rebalance.not.running=Le tour {0} n''est pas en cours : démarrez-le d''abord. Un juré n''est ajouté qu''à un tour ouvert à ses jurés.

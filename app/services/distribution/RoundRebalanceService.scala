@@ -40,15 +40,15 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
     val j = jury(round)
     val ticked = donors.getOrElse(j.jurors.filter(_.active).map(_.user.getId)).distinct.filterNot(_ == jurorId)
     val refused = busy.map(j => JobError(BusyKey, Seq(round.number.toString)))
-      .orElse(refusal(round, run, jurorId, ticked, frozenByUs = false))
+      .orElse(if (round.inReview) reviewRefusal(round, jurorId) else refusal(round, run, jurorId, ticked, frozenByUs = false))
     // the donors' files the receiver could take (not those of pages they hold), and the receiver's own
     val unrated = unratedCounts(round.getId, j.jurors.map(_.user.getId).filterNot(_ == jurorId), receiver = Some(jurorId)) ++
       unratedCounts(round.getId, Seq(jurorId))
     val share =
-      if (refused.isDefined || round.distribution == 0) Map.empty[Long, Long]
+      if (refused.isDefined || round.distribution == 0 || round.inReview) Map.empty[Long, Long]
       else quotas(unrated.getOrElse(jurorId, 0L), ticked.map(d => d -> unrated.getOrElse(d, 0L)))
     val files =
-      if (refused.isDefined) 0L
+      if (refused.isDefined || round.inReview) 0L
       else if (round.distribution == 0) toGiveCount(round.getId, jurorId)
       else share.values.sum
     Preview(round, juror, refused, files, j, signature(j.jurors), ticked, unrated, share,
@@ -72,6 +72,16 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
           // running job's row, which its step holds before the round
           JobJdbc.activeByDedupeKey(RoundDistributionHandler.dedupeKey(fresh.getId)) match {
             case Some(active) => Busy(active)
+            // held in review (P3): only the juror's round_user row; the review's Distribute gives
+            // them their share (plan §5)
+            case None if fresh.inReview =>
+              reviewRefusal(fresh, jurorId) match {
+                case Some(error) => Refused(error)
+                case None =>
+                  sql"""INSERT INTO round_user (user_id, round_id, role, active) VALUES ($jurorId, ${fresh.getId}, ${User.JURY_ROLE}, TRUE)
+                        ON DUPLICATE KEY UPDATE active = TRUE""".update()
+                  AddedToReview
+              }
             case None =>
               refusal(fresh, run, jurorId, ticked, frozenByUs = false) match {
                 case Some(error) => Refused(error)
@@ -103,9 +113,21 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
           s"jurorId=$jurorId donors=${ticked.mkString(",")} jobId=${job.id} state=queued")
         jobs.started(job.id)
         Queued(JobJdbc.findById(job.id).getOrElse(job))
+      case AddedToReview =>
+        adminLog.info(s"action=juror_add accountId=${by.getId} contestId=${round.contestId} roundId=${round.getId} " +
+          s"jurorId=$jurorId state=review")
+        AddedToReview
       case other => other
     }
   }
+
+  /** Why adding `jurorId` to a round held in review is refused, if it is: a legacy round, or not an
+    * active jury member of the contest. Nothing moves, so nothing else refuses it.
+    */
+  private def reviewRefusal(round: Round, jurorId: Long)(implicit session: DBSession): Option[JobError] =
+    if (!hasRoundUsers(round.getId)) Some(JobError(LegacyKey, Seq(round.number.toString)))
+    else if (eligibleJuror(round.contestId, jurorId).isEmpty) Some(JobError(NotJurorKey, Seq(jurorId.toString)))
+    else None
 }
 
 object RoundRebalanceService {
@@ -165,4 +187,6 @@ object RoundRebalanceService {
   final case class Refused(error: JobError) extends Outcome
   final case class Busy(job: Job) extends Outcome
   case object JuryChanged extends Outcome
+  /** Added to a round held in review: its round_user row only (P3). */
+  case object AddedToReview extends Outcome
 }

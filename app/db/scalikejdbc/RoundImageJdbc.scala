@@ -153,6 +153,23 @@ object RoundImageJdbc {
     RoundCounts.markRounds(pairs.map(_._1))
   }
 
+  /** Adds the files to the round, `in` with no votes (P3: a round filled before it is
+    * distributed), with the images' monument ids; a file with a row already keeps it. The round
+    * is locked for update by the caller (the fill's chunk; checked).
+    *
+    * @return the rows added
+    */
+  def addFilled(roundId: Long, pageIds: Seq[Long], origin: Origin)(implicit session: DBSession): Int =
+    if (pageIds.isEmpty) 0
+    else {
+      RoundWrites.requireRounds(Seq(roundId))
+      pageIds.distinct.sorted.grouped(Chunk).map { chunk =>
+        sql"""INSERT IGNORE INTO round_image (round_id, page_id, status, added_how, added_by_job_id, added_at, monument_id)
+              SELECT r.id, i.page_id, ${Status.In}, ${origin.how}, ${origin.jobId}, NOW(3), i.monument_id
+              FROM round r JOIN images i ON i.page_id IN ($chunk) WHERE r.id = $roundId ORDER BY i.page_id""".update()
+      }.sum
+    }
+
   /** Brings the rows of the round's files `pageIds` in line with their votes, after a bulk
     * write of those votes in the same transaction: `in` where the pair has `vote` rows; else
     * `deleted` where it has `vote_aside` rows; a row of a pair with neither stays as it is (P3-1:
@@ -397,6 +414,36 @@ object RoundImageJdbc {
   def countIn(roundId: Long)(implicit session: DBSession = AutoSession): Long =
     sql"SELECT COUNT(*) FROM round_image WHERE round_id = $roundId AND status = ${Status.In}"
       .map(_.long(1)).single().getOrElse(0L)
+
+  /** The round's files by status (`in`, `deleted`, `dq`): its review page's tabs. */
+  def statusCounts(roundId: Long)(implicit session: DBSession = AutoSession): Map[String, Int] =
+    sql"SELECT status, COUNT(*) FROM round_image WHERE round_id = $roundId GROUP BY status"
+      .map(rs => rs.string(1) -> rs.int(2)).list().toMap
+
+  /** The round's files `in` it by how they were added ([[AddedHow]]): its review page's summary. */
+  def addedHowCounts(roundId: Long)(implicit session: DBSession = AutoSession): Map[String, Int] =
+    sql"""SELECT added_how, COUNT(*) FROM round_image WHERE round_id = $roundId AND status = ${Status.In}
+          GROUP BY added_how""".map(rs => rs.string(1) -> rs.int(2)).list().toMap
+
+  /** The round's files `in` it with no votes, in `vote` or aside, whose image isn't deleted on
+    * Commons: those a distribution still has to give its jurors (P3's `distribute` step).
+    */
+  def undistributedCount(roundId: Long)(implicit session: DBSession = AutoSession): Long =
+    sql"""SELECT COUNT(*) FROM round_image ri JOIN images i ON i.page_id = ri.page_id
+          WHERE ri.round_id = $roundId AND ri.status = ${Status.In} AND i.deleted_at IS NULL
+            AND NOT EXISTS (SELECT 1 FROM vote v WHERE v.round_id = ri.round_id AND v.page_id = ri.page_id)
+            AND NOT EXISTS (SELECT 1 FROM vote_aside d WHERE d.round_id = ri.round_id AND d.page_id = ri.page_id)"""
+      .map(_.long(1)).single().getOrElse(0L)
+
+  /** The next window of [[undistributedCount]]'s files after `cursor`, by page id: at most
+    * `limit` page ids. Read under the round's lock (the distribute step holds it).
+    */
+  def undistributedWindow(roundId: Long, cursor: Long, limit: Int)(implicit session: DBSession): Seq[Long] =
+    sql"""SELECT ri.page_id FROM round_image ri JOIN images i ON i.page_id = ri.page_id
+          WHERE ri.round_id = $roundId AND ri.status = ${Status.In} AND ri.page_id > $cursor AND i.deleted_at IS NULL
+            AND NOT EXISTS (SELECT 1 FROM vote v WHERE v.round_id = ri.round_id AND v.page_id = ri.page_id)
+            AND NOT EXISTS (SELECT 1 FROM vote_aside d WHERE d.round_id = ri.round_id AND d.page_id = ri.page_id)
+          ORDER BY ri.page_id LIMIT $limit""".map(_.long(1)).list()
 
   /** The round's files, whatever their status: those with votes moved aside too. */
   def countAll(roundId: Long)(implicit session: DBSession = AutoSession): Long =

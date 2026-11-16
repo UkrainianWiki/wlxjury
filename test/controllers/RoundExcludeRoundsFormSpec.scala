@@ -47,7 +47,7 @@ class RoundExcludeRoundsFormSpec extends PlaySpecification with PlayTestDb {
       .withSession(Secured.UserName -> user.email)
       .withFormUrlEncodedBody(
         Seq("number" -> "0", "name" -> "Round 3", "contest" -> contestId.toString, "roles" -> "jury",
-          "distribution" -> "1", "rates" -> "1", "minMpx" -> "", "minSize" -> "", "mediaType" -> "all",
+          "distributeAfter" -> "true", "distribution" -> "1", "rates" -> "1", "minMpx" -> "", "minSize" -> "", "mediaType" -> "all",
           "submitToken" -> java.util.UUID.randomUUID().toString).filterNot(f => extra.exists(_._1 == f._1)) ++ extra ++
           jurors.zipWithIndex.map { case (id, i) => s"jurors[$i]" -> id.toString }: _*)
       .withCSRFToken

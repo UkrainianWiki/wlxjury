@@ -470,8 +470,11 @@ Press **Add round**. The page **Create round** has these parts, from the top:
 - **Worst mark**: see [The worst mark](#a-worst-mark).
 - **Criteria**: see [Kinds of rounds](#a-round-kinds).
 
-Press **Save**. You go to the rounds list, where the round shows its distribution.
-**Cancel** leaves the form without saving anything.
+Press **Create and review images**. You go to the rounds list, where the round shows the
+selection of its images. The round then waits for you on its review page, hidden from the jurors:
+see [Reviewing a round's images](#a-review). To skip the review, tick **Distribute as soon as the
+images are ready** before pressing the button: the jurors then get the images as soon as they are
+selected. **Cancel** leaves the form without saving anything.
 
 If you press Save twice, or send the form again from the browser's Back button, the tool makes
 one round, not two, and tells you.
@@ -608,6 +611,32 @@ it takes the job up again by itself.
 
 A round has one distribution job at a time. Starting a second one for the same round, for
 example from another browser tab, tells you that its images are already being distributed.
+
+<a id="a-review"></a>
+### Reviewing a round's images
+
+A new round's images are selected first and wait on the round's **review page**, so a wrong filter
+is caught before any juror gets a file. When they are ready, the rounds list shows **Images ready:
+N** with **Review** and **Distribute to jurors**; the round form and the round's statistics link
+the page too.
+
+The review page shows the round's files as the contest's files page does (tiles, pages, the region
+menu, the large view), with tabs for the files **In the round**, **Deleted on Commons** and
+**Disqualified**. Above them: how the files were added (by the round's filters, from a pasted
+list, ...), and the round's conflicts of interest, if it has any.
+
+- **Distribute to jurors** gives each juror their share and opens the round to them when it has
+  finished. Until then the round is hidden from the jurors: they don't see it in their menus, its
+  gallery or its large view.
+- To change the files, use the round form: **Distribute N new files** adds the files that now pass
+  its filters; the round stays in review.
+- A file deleted on Commons while the round waits is never given to a juror.
+- If you cancel a round's creation on its job, the round is cancelled. **Distribute new files** on
+  its form reinstates it: its images are selected again and it waits for review again, or is
+  distributed straight away if it was created with **Distribute as soon as the images are
+  ready**. The tool records who did it.
+
+The contest's organizers see the review page too, without the Distribute button.
 
 <a id="a-distribute-new-files"></a>
 ### Distributing new files

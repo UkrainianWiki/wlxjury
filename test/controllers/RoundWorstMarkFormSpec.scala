@@ -41,7 +41,7 @@ class RoundWorstMarkFormSpec extends PlaySpecification with PlayTestDb {
     */
   private def form(round: Round, worst: Boolean, shown: Boolean = true, extra: Seq[(String, String)] = Nil) =
     Seq("id" -> round.getId.toString, "number" -> round.number.toString, "name" -> "R",
-      "contest" -> round.contestId.toString, "roles" -> "jury", "distribution" -> "0",
+      "contest" -> round.contestId.toString, "roles" -> "jury", "distributeAfter" -> "true", "distribution" -> "0",
       "rates" -> round.rates.id.toString, "minMpx" -> "", "minSize" -> "", "mediaType" -> "all") ++
       User.findRoundJurors(round.getId).zipWithIndex.map { case (u, i) => s"jurors[$i]" -> u.getId.toString } ++
       Option.when(worst)("worstMark" -> "true").toSeq ++ Option.when(shown)("worstMarkShown" -> "true").toSeq ++ extra
@@ -127,7 +127,7 @@ class RoundWorstMarkFormSpec extends PlaySpecification with PlayTestDb {
         VoteJdbc.rate(1, juror.getId, rated.getId, -1) // the file's ✗, which "only" keeps
         def newRound(previous: Seq[Round], mode: String) =
           Seq("number" -> "3", "name" -> "Next", "contest" -> contestId.toString, "roles" -> "jury",
-            "distribution" -> "0", "rates" -> "5", "minMpx" -> "", "minSize" -> "", "mediaType" -> "all",
+            "distributeAfter" -> "true", "distribution" -> "0", "rates" -> "5", "minMpx" -> "", "minSize" -> "", "mediaType" -> "all",
             "jurors[0]" -> juror.getId.toString, "rejectedMode" -> mode, "rejectedBy" -> "1") ++
             previous.zipWithIndex.map { case (r, i) => s"previousRound[$i]" -> r.getId.toString }
         val fromCriteria = save(app, "admin@example.com", newRound(Seq(criteriaRound), "only"))

@@ -30,6 +30,16 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
 
 **Features**
 
+- **Review a round's images before distribution** (P3 of the two-step plan, P3-1 to P3-3 of the
+  round-editing plan; developed 2026-11-16, `stack/164`–`166`): a new round's images are selected
+  first and wait on the round's review page (`/admin/rounds/:id/review`), hidden from its jurors;
+  the round form's main button is **Create and review images**, and **Distribute as soon as the
+  images are ready** (off) skips the review. The page shows the round's files as the contest files
+  page does (tiles, region menu, large view) by status (in the round, deleted on Commons,
+  disqualified), how they were added and its conflicts of interest; **Distribute to jurors**
+  (admins, root) gives them out and opens the round. Organizers see the page read only. The rounds
+  list shows **Images ready: N — Review / Distribute to jurors**. Admin and organizer guides.
+
 - **Monument page** (the maintainer's decisions D5-D9 of 2026-11-13; developed 2026-11-13,
   `stack/140-monuments`): the monument box of a file's large view (in a round and on the contest
   files page; jurors see it too) has one link, **Monument** and its id, to a page with the
@@ -283,6 +293,13 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
 
 **Development**
 
+- **`round.status` (V105) and rows kept without votes** (round-editing plan P3-1, P3-2; developed
+  2026-11-16): a sync no longer deletes a `round_image` row whose pair has no votes (invariant 8
+  ended; the deletion paths mark a vote-less file `deleted` and restore it); V105 adds
+  `round.status` / `status_changed_at` / `_by` with a CHECK and a backfill (rerunnable after a
+  rollback), written in step with `active` and `distributing`; the distribution job has modes
+  (`fill`, `distribute`; a job without one runs one pass). Rollback: finish or cancel rounds in
+  review first; forward again: rerun V105's UPDATE and the repair job.
 - **Width tests with Linux's fonts** (developed 2026-11-15, `stack/156-all-votes-icon`):
   `browser-test/linux-fonts.mjs` runs Playwright in the official image of its version
   (`mcr.microsoft.com/playwright:v<version>-noble`) with DejaVu Sans, CI's `system-ui`, against

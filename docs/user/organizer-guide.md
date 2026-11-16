@@ -98,6 +98,9 @@ Under the table:
   number of comments written in this round on its files. When the round's files also have
   comments from other rounds of the contest, **all rounds (M)** follows with all of them, and
   opens the report with **All rounds of the contest**;
+- for a round whose images wait for review before distribution, the link **Review images**: the
+  round's files as they will go to the jurors, by status (in the round, deleted on Commons,
+  disqualified), read only; an admin distributes them,
 - the link **Conflicts of interest of this round**, see [The conflicts page](#o-conflicts-page),
   with the number of the round's files that are conflicts of interest now and of its
   disqualified files, for example "(3 files · 2 disqualified)". With neither it says "none",

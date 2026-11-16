@@ -31,7 +31,13 @@ object StepResult {
   final case class Continue(state: JsObject, progress: Progress) extends StepResult
 
   /** Finished. */
-  final case class Done(state: JsObject, progress: Progress) extends StepResult
+  /** @param followUp a job the scheduler queues in the same transaction, once this one is done (its
+    *                 dedupe key freed): e.g. a round's distribution after its fill (P3, D4)
+    * @param onFollowUpQueued run in that transaction once the follow-up is queued, never if it isn't
+    *                 (another job holds its key): what holds only with it (a distribute's freeze)
+    */
+  final case class Done(state: JsObject, progress: Progress, followUp: Option[NewJob] = None,
+      onFollowUpQueued: DBSession => Unit = _ => ()) extends StepResult
 
   /** Finished with a failure the step detected itself (e.g. a count check). Its state and
     * the handler's [[JobHandler.onFailed]] are committed with it; a Retry resumes it.

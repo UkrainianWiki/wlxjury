@@ -86,7 +86,8 @@ class RoundStatusSpec extends Specification with TestDb with BeforeAll with Befo
       }
       val created = TestRoundServices.roundService(handler)
         .createNewRound(Round(None, 1, Some("R"), contest.getId, distribution = 1, active = true), jurors.map(_.getId))
-      (seen.toSeq.distinct === Seq(Some("draft"))) and (status(created.getId) === Some("active")) and
+      // draft while its fill runs; held (paused) while the distribute it queued runs (D4)
+      (seen.toSeq.distinct === Seq(Some("draft"), Some("paused"))) and (status(created.getId) === Some("active")) and
         (roundDao.findById(created.getId).get.lifecycle === Round.Status.Active)
     }
 

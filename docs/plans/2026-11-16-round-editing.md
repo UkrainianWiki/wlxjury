@@ -190,7 +190,7 @@ The maintainer's order (2026-11-16):
 | 2 | P3-1 | End invariant 8 (§6.1): `sync` keeps rows, repair job, invariant list, deleted-file paths for vote-less rows, the readers audit | M, ~3 days | – | – |
 | 2 | P3-2 | `round.status` (lineage §2.6), with §6.2's held-round rows | M, ~2–3 days | next free (V105 today) | – |
 | 2 | P3-3 | **The first review:** `fill` and `distribute` modes, the round held in review after fill (status `paused`, `distributing = 1`), the form's "Create and review images" and "Distribute as soon as ready" (D3/D4), the review page (`FileList.RoundImages`, summary, organizers' view), the Distribute action, §6.2's reader changes | L, ~5–6 days | – | P3-1, P3-2 |
-| 2 | P3-4 | Remove / Put back a file held in review (D16a's `dq` manual, the gate change) | S, ~1.5 days | – | P3-3 |
+| 2 | P3-4 | Remove / Put back a file held in review (D16a's `dq` manual, the gate change); the review page's "new, not distributed" list for a distributed round (§6 "Distribute new files", left out of P3-3) | S, ~2 days | – | P3-3 |
 | 2 | P3-5 | Re-apply filters, Prune, top-N on re-apply (D16, D17), the D18 warning | M, ~3 days | – | P3-3 |
 | 2 | P3-6 | Threshold preview | S, ~1.5 days | – | P3-3 |
 | 3 | 3 | Reassign unrated files (§7): the page with the receivers list, moves, aside rows; the waiting count and the opt-in top-up | M, ~4–5 days | – | 1a, 1b (water-filling and row moves), P3-1 |
@@ -493,6 +493,50 @@ For P3-2 and P3-3 to handle, each with a spec:
 | Lineage Reinstate | `cancelled` → `draft` if `distributing = 1` | → status `paused` (held in review) when the round's last fill job is done. Amend lineage §2.6 |
 | Lineage backfill (and its rerun) | no row for `distributing = 1` with a finished job | add: latest job done in mode `fill` → `paused` |
 | Adding a juror (step 1) | – | on a round held in review: only the `round_user` row (an allowed exception to "running rounds only"); the distribute step gives files |
+
+**Built (P3-2, `stack/165-round-status`):** V105 (`round.status`, its CHECK and backfill with the
+rows above), the writers in step (lineage §2.6), `Round.lifecycle` / `inReview`. Gatling's
+`FixtureVersion` is fixture-v9 (`GatlingDbSetup.load`'s `Round.create` writes the status).
+
+**Built (P3-3, `stack/166-round-review`):**
+- Job modes (`RoundDistributionHandler.Mode`): every new round is a `fill` (`RoundImageJdbc.addFilled`,
+  no votes) that ends with the round held in review (`endFill`: previous rounds released, the round
+  `paused`); with `distributeAfter` (D4, and "Distribute new files" on a distributed round) it queues
+  the `distribute` job as it ends (`StepResult.Done.followUp`, enqueued by the scheduler in the
+  same transaction). `distribute` walks the round's undistributed `in` files (`undistributedWindow`:
+  no vote, none aside, image not deleted) from the running position; `complete` takes the round's
+  lock, goes over the round once more if a file is left (a restore below the cursor), else fails,
+  and opens the round. A distribute skips the exclusion checks and the Commons category fetch (it
+  reads no candidates). Only a job without a mode (queued before P3) runs one pass. With a pasted
+  list the jurors differ from the old one pass (the distribute walks page order; the list came
+  last), every file still gets its jurors, balanced (spec'd).
+- `RoundService.submit(review = …)`, `distributeReviewed` (refused unless `inReview`, read under
+  `enqueueOrFail`'s sorted locks, with no job: `NotInReview`, `Running`). `distributeNewFiles`: on a
+  round in review a fill only (`fromReview`, files `new_files`, the round stays `paused`; a failed
+  distribute is never retried from there); on a creation never completed a fill with its intent (a
+  cancelled one so reinstated, logged, who recorded); on a distributed round a fill then a
+  distribute, which also gives out its files with no votes (a file restored after a deletion in
+  review; a requalified one). The "new, not distributed" list is P3-4's (§3).
+- §6.2 rows: `Verify` (fill → review, one pass → open); `distributingNow` treats a round in review
+  as not busy; `distributeNewFiles` as above; the backfill row; `RoundCounts.roundWindow` unchanged
+  (it keeps skipping `distributing = 1`; the distribute's end makes the round dirty). The gate change
+  is P3-4's. A cancelled or failed `distribute` (or review fill) leaves the round `paused`.
+- UI: the form's "Create and review images" (D3) and "Distribute as soon as the images are ready"
+  (D4, off); the rounds list's "Images ready: N — Review / Distribute to jurors"; the review page
+  (`RoundReviewController`: the contest files page with `FileList.RoundImages` by status, its
+  region menu and large view at `/admin/rounds/:id/review…`, the summary by `added_how`, conflicts,
+  the job, Distribute for admins and root); links from the round form and, for organizers, the
+  round's statistics. Not built here (later P3 PRs or open): the CSV export and "why is this image
+  here", the re-apply diff and D18 warning (P3-5), Remove / Put back (P3-4), the threshold preview
+  (P3-6).
+- After the second review and the merge of step 1: a fill's follow-up distribute freezes the
+  previous rounds only once the scheduler has queued it (`onFollowUpQueued`; nothing frozen if another
+  job held the key), and only for a creation; the creation form posted again never retries a failed
+  distribute; adding a juror to a round held in review writes only their `round_user` row (no job, the
+  review's Distribute gives them a share; `RoundRebalanceService.AddedToReview`); a previous round's
+  rebalance refuses the review's Distribute as a flash.
+- Specs: `RoundReviewFlowSpec` (service), `RoundImagesReviewSpec` (D20 authorization, CSRF, jurors
+  never see a round in review, the form), and the form specs that now tick `distributeAfter`.
 
 ## 7. Step 3: reassign a juror's unrated files
 

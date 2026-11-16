@@ -19,7 +19,9 @@ import scala.collection.mutable
   *
   * @param phase          "rank" (top-N: rank the previous rounds' images, the first step),
   *                       "distribute" (chunks), "list" (chunks of the pasted list's files),
-  *                       "verify" (the final count check)
+  *                       "verify" (the fill's count check, and a one-pass job's end); a job of
+  *                       mode `distribute` (P3): "assign" (chunks of the round's files with no
+  *                       votes yet, given to the jurors), "complete" (none left, the end)
   * @param cursor         the keyset cursor: the last candidate page_id a committed chunk read
   *                       (of the phase's candidates)
   * @param position       images assigned so far: the juror rotation continues from it
@@ -51,6 +53,8 @@ import scala.collection.mutable
   *                       ([[Round.excludeCoi]])
   * @param coiTitles      the first [[RoundDistributionHandler.MaxMissingTitles]] of them, each
   *                       with the person it is by and their role
+  * @param rescanned      a distribute found files still to give at its end (a file restored on
+  *                       Commons below its cursor) and went over the round once more
   */
 final case class DistributionState(
     phase: String,
@@ -71,7 +75,8 @@ final case class DistributionState(
     missing: Long = 0L,
     missingTitles: Seq[String] = Nil,
     coiLeftOut: Long = 0L,
-    coiTitles: Seq[String] = Nil
+    coiTitles: Seq[String] = Nil,
+    rescanned: Boolean = false
 )
 
 object DistributionState {
@@ -117,6 +122,18 @@ object DistributionState {
   * change it. The previous rounds stay frozen ([[Round.freeze]]) from the job's creation
   * until it ends; a creation then closes them, anything else restores them.
   *
+  * Two steps (P3 of docs/plans/2026-11-02-round-images-two-step.md, §6 "Job"), by `params.mode`:
+  *  - `fill`: the chunks add the files to the round (`round_image`, no votes) and the count check
+  *    ends the job; a round being created is then `paused`, held in review, still hidden from its
+  *    jurors, and its previous rounds are released (D18: not frozen during the review). With
+  *    `distributeAfter` ("Distribute as soon as ready", D4; "Distribute new files" on a round
+  *    already distributed) it queues the `distribute` job as it ends ([[StepResult.Done.followUp]]);
+  *  - `distribute` (the review page's Distribute): its windows are the round's `in` files with no
+  *    votes yet whose image isn't deleted ([[RoundImageJdbc.undistributedWindow]]), given to the
+  *    jurors from the running position; when none is left the round opens, as a creation did;
+  *  - a job without a mode (queued before P3): one pass, the files given to the jurors as they are
+  *    added, as before.
+  *
   * Held in memory per job: at most one window of candidates (the chunk) or one chunk of the
   * pasted list's files, the jurors and the Commons category file ids of the round's
   * category filters (fetched once per job run, in [[prepare]], outside any transaction).
@@ -144,7 +161,9 @@ class RoundDistributionHandler @Inject() (
 
   override def title(job: Job): String = {
     val round = job.subjectId.getOrElse("?")
-    titleCountOf(job) match {
+    if (distributeMode(job)) s"Distributing the reviewed images of round $round"
+    else if (fillOnly(job)) s"Selecting the images of round $round for review"
+    else titleCountOf(job) match {
       case 0                  => s"Distributing images to round $round"
       case n if listOnly(job) => s"Adding $n listed files to round $round"
       case n                  => s"Distributing images and $n listed files to round $round"
@@ -155,7 +174,7 @@ class RoundDistributionHandler @Inject() (
     val st = stateOf(job)
     Json.obj("roundId" -> roundIdOf(job), "imagesAdded" -> st.imagesAdded, "rowsAdded" -> st.rowsAdded,
       "phase" -> st.phase, "missing" -> st.missing, "missingTitles" -> st.missingTitles,
-      "coiLeftOut" -> st.coiLeftOut, "coiTitles" -> st.coiTitles)
+      "coiLeftOut" -> st.coiLeftOut, "coiTitles" -> st.coiTitles, "mode" -> modeOf(job))
   }
 
   override def prepare(job: Job): Unit =
@@ -176,7 +195,7 @@ class RoundDistributionHandler @Inject() (
       case None =>
         try Right(contexts.getOrElseUpdate(job.id,
             context(roundIdOf(job), Some(jobAverageRules(job)), Some(jobRejectedMode(job)),
-              checkPrevious = !listOnly(job))))
+              distribute = distributeMode(job), checkPrevious = !listOnly(job) && !distributeMode(job))))
         catch { case refusal: ExcludeRoundsRefused => Left(refusal) }
     }
 
@@ -204,25 +223,28 @@ class RoundDistributionHandler @Inject() (
     * job's, [[jobRejectedMode]]), else by the round's own mode.
     */
   private def context(roundId: Long, averageRules: Option[Long => AverageRule],
-      rejectedMode: Option[RejectedMode] = None, countOnly: Boolean = false, checkPrevious: Boolean = true): Context = {
+      rejectedMode: Option[RejectedMode] = None, countOnly: Boolean = false, distribute: Boolean = false,
+      checkPrevious: Boolean = true): Context = {
     val round = Round.findById(roundId).getOrElse(throw new NoSuchElementException(s"Round $roundId not found"))
     val prevRounds = RoundDistributionHandler.previousRounds(round)
       .map(p => averageRules.filterNot(_ => p.isBinary).fold(p)(rules => p.copy(averageRule = rules(p.getId))))
     // a job's run refuses a round to leave out that is being distributed itself (its files still
     // coming); "Count new files" only reads, and counts by the files it has now
-    val excluded = RoundDistributionHandler.excludedRounds(round, checkBusy = !countOnly)
+    // a distribute (P3) reads no candidates and adds no row: neither check applies to it
+    val excluded = if (distribute) Nil else RoundDistributionHandler.excludedRounds(round, checkBusy = !countOnly)
     // and the reverse: a round leaving out this one's files being distributed now (its job reads
     // them as they are) refuses this run; the service checks it before queueing, this is the backstop
-    if (!countOnly) RoundDistributionHandler.requireNoExcluderBusy(round)
+    if (!countOnly && !distribute) RoundDistributionHandler.requireNoExcluderBusy(round)
     // and a previous round having a juror added (its votes moving): the service checks it before
-    // queueing, this is the backstop
+    // queueing, this is the backstop (a distribute reads no votes of them)
     if (!countOnly && checkPrevious) RoundDistributionHandler.requireNoPreviousRebalance(round)
     val jurors = User.distributionJurors(roundId).sortBy(_.getId).toIndexedSeq
     DistributeImages.checkJury(round, jurors)
     val categoryRule = round.categoryRule
-    categoryRule.requireValid()
-    val firstCategoryIds = distributeImages.categoryFileIds(categoryRule.first)
-    val secondCategoryIds = distributeImages.categoryFileIds(categoryRule.second)
+    if (!distribute) categoryRule.requireValid()
+    // from Commons: a distribute applies no filter, so it fetches none (and runs while Commons is down)
+    val firstCategoryIds: Iterable[Long] = if (distribute) Nil else distributeImages.categoryFileIds(categoryRule.first)
+    val secondCategoryIds: Iterable[Long] = if (distribute) Nil else distributeImages.categoryFileIds(categoryRule.second)
     val prev = prevRounds.headOption
     val perImage = if (round.distribution == 0) jurors.size else round.distribution
     // read once per job run: a membership changed later applies to the next distribution
@@ -307,15 +329,21 @@ class RoundDistributionHandler @Inject() (
     * that only adds a pasted list (`listOnly`) doesn't read them: it starts with the list,
     * and freezes nothing.
     */
-  def initialState(round: Round, listOnly: Boolean = false)(implicit session: DBSession): JsObject =
+  def initialState(round: Round, listOnly: Boolean = false, distribute: Boolean = false,
+      completingCreation: Boolean = true)(implicit session: DBSession): JsObject =
     if (listOnly) Json.toJsObject(DistributionState(phase = Phase.List))
-    else {
+    else if (distribute) {
+      // a distribute reads no votes: it freezes them only to close them at its end, as a creation
+      // does (§6 "Job"); one that completes no creation leaves them as they are
+      val prevIds = if (completingCreation) round.previousIds else Nil
+      Round.freeze(prevIds)
+      Json.toJsObject(DistributionState(phase = Phase.Assign, frozen = prevIds))
+    } else {
       val prevIds = round.previousIds
+      // a fill reads them
       Round.freeze(prevIds)
       val topN = prevIds.headOption.flatMap(_ => round.topImages)
-      Json.toJsObject(
-        DistributionState(phase = if (topN.isDefined) Phase.Rank else Phase.Distribute, frozen = prevIds)
-      )
+      Json.toJsObject(DistributionState(phase = if (topN.isDefined) Phase.Rank else Phase.Distribute, frozen = prevIds))
     }
 
   override def onFailed(job: Job, ctx: StepContext): JsObject = end(job, ctx)
@@ -335,7 +363,7 @@ class RoundDistributionHandler @Inject() (
 
   /** Cancelling this job cancels its round's creation: a creation's job (or one finishing it). */
   protected def cancelsCreation(job: Job): Boolean =
-    (job.params \ "completingCreation").asOpt[Boolean].getOrElse(false)
+    (job.params \ "completingCreation").asOpt[Boolean].getOrElse(false) && !fromReview(job) && !distributeMode(job)
 
   /** Stores what Commons now has of the chunk's stored files that changed, as an import
     * does, with a former title of a renamed one.
@@ -375,7 +403,11 @@ class RoundDistributionHandler @Inject() (
     forget(job.id) // the jurors and filters are read again
     val st = stateOf(job)
     val roundId = roundIdOf(job)
-    val prevIds = if (listOnly(job)) Nil else Round.findById(roundId).map(_.previousIds).getOrElse(Nil)
+    // as initialState: a list-only fill reads none; a distribute that completes no creation freezes none
+    val completing = (job.params \ "completingCreation").asOpt[Boolean].getOrElse(false)
+    val prevIds =
+      if (listOnly(job) || (distributeMode(job) && !completing)) Nil
+      else Round.findById(roundId).map(_.previousIds).getOrElse(Nil)
     // the round too, as creating the job locks it (RoundConflicts.disqualify)
     Round.lock((st.frozen ++ prevIds) :+ roundId)
     // not while a previous round is having a juror added (its votes moving; its rebalance would fail
@@ -389,7 +421,8 @@ class RoundDistributionHandler @Inject() (
     val resumed =
       if (!st.verifyFailed) st.copy(rebase = true)
       else
-        st.copy(phase = if (listOnly(job)) Phase.List else Phase.Distribute, cursor = 0L, candidatesSeen = 0L,
+        st.copy(phase = if (distributeMode(job)) Phase.Assign else if (listOnly(job)) Phase.List else Phase.Distribute,
+          cursor = 0L, candidatesSeen = 0L,
           imagesAdded = 0L, rowsAdded = 0L, imagesBefore = None, othersBefore = None, ownBefore = None,
           rebase = false, verifyFailed = false, listIndex = 0, missing = 0L,
           missingTitles = Nil, coiLeftOut = 0L, coiTitles = Nil)
@@ -447,15 +480,17 @@ class RoundDistributionHandler @Inject() (
             if (c.topN.isDefined) DistributionSource.imagesIn(window.ids, roundId)
             else c.filter(candidates(c, roundId, st1.cursor, window.last)).map(_.image)
           val passed = withLockedMonumentIds(read)
-          val rows = DistributeImages.assign(c.round, passed, c.jurors, st1.position)
+          // a fill for review adds the files only (no votes); one pass gives them to the jurors too
+          val rows = if (fillOnly(job)) Nil else DistributeImages.assign(c.round, passed, c.jurors, st1.position)
           beforeInsert(c.round, passed)
-          DistributeImages.insertRows(rows, origin(job, listed = false))
+          if (fillOnly(job)) RoundImageJdbc.addFilled(roundId, passed.map(_.pageId), origin(job, listed = false))
+          else DistributeImages.insertRows(rows, origin(job, listed = false))
           afterInsert(c.round, rows)
-          if (rows.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(roundId))
+          if (passed.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(roundId))
           continue(
             st1.copy(
               cursor = window.last,
-              position = st1.position + passed.size,
+              position = st1.position + (if (fillOnly(job)) 0 else passed.size),
               candidatesSeen = st1.candidatesSeen + window.size,
               imagesAdded = st1.imagesAdded + passed.size,
               rowsAdded = st1.rowsAdded + rows.size
@@ -491,15 +526,16 @@ class RoundDistributionHandler @Inject() (
               val conflicts = listed.flatMap(image => CoiMembers.matchOf(c.coi)(image.author).map(image -> _))
               val conflictIds = conflicts.map(_._1.pageId).toSet
               val passed = listed.filterNot(i => conflictIds.contains(i.pageId))
-              val rows = DistributeImages.assign(c.round, passed, c.jurors, st1.position)
+              val rows = if (fillOnly(job)) Nil else DistributeImages.assign(c.round, passed, c.jurors, st1.position)
               beforeInsert(c.round, passed)
-              DistributeImages.insertRows(rows, origin(job, listed = true))
+              if (fillOnly(job)) RoundImageJdbc.addFilled(roundId, passed.map(_.pageId), origin(job, listed = true))
+              else DistributeImages.insertRows(rows, origin(job, listed = true))
               afterInsert(c.round, rows)
-              if (rows.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(roundId))
+              if (passed.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(roundId))
               continue(
                 st1.copy(
                   listIndex = chunk.index + chunk.titles,
-                  position = st1.position + passed.size,
+                  position = st1.position + (if (fillOnly(job)) 0 else passed.size),
                   candidatesSeen = st1.candidatesSeen + chunk.titles,
                   imagesAdded = st1.imagesAdded + passed.size,
                   rowsAdded = st1.rowsAdded + rows.size,
@@ -528,30 +564,104 @@ class RoundDistributionHandler @Inject() (
             Json.toJsObject(st.copy(verifyFailed = true)),
             progress(st)
           )
+        else if (fillOnly(job)) endFill(job, ctx, st)
+        else complete(job, ctx, st, c)
+
+      case Phase.Assign =>
+        val st1 = if (st.total.isDefined) st else st.copy(total = Some(RoundImageJdbc.undistributedCount(roundId)))
+        // the round for update first (RoundWrites): its files and their votes read with every other
+        // structural writer held off; then the files' current monument ids (h6)
+        RoundWrites.lock(Seq(roundId))
+        val ids = RoundImageJdbc.undistributedWindow(roundId, st1.cursor, c.windowSize)
+        if (ids.isEmpty) continue(st1.copy(phase = Phase.Complete, cursor = 0L))
         else {
-          val distributing = lockRounds(st.frozen :+ roundId).getOrElse(roundId, false)
-          val creating = distributing || (job.params \ "completingCreation").asOpt[Boolean].getOrElse(false)
-          if (distributing) Round.completeCreation(roundId)
-          Round.release(st.frozen, close = creating)
-          settleFiles(roundId) // after the rounds' updates: rounds before votes, as DeletedFiles locks them
-          val visible = visibleImageCount(roundId)
-          ctx.afterCommit(RoundImageCounts.refresh(roundId)(visible.toInt))
-          logger.info(
-            s"Round $roundId: distributed ${st.imagesAdded} images (${st.rowsAdded} vote rows) " +
-              s"to ${c.jurors.size} jurors" +
-              (if (c.prevRounds.nonEmpty && !listOnly(job))
-                 s" from previous rounds [${c.prevRounds.flatMap(_.id).mkString(", ")}]"
-               else "") +
-              (if (titleCountOf(job) > 0)
-                 s", with a list of ${titleCountOf(job)} files (${st.missing} not found" +
-                   (if (st.coiLeftOut > 0) s", ${st.coiLeftOut} left out as conflicts of interest" else "") + ")"
-               else "")
-          )
-          StepResult.Done(Json.toJsObject(st.copy(frozen = Nil)), progress(st))
+          val found = ImageJdbc.findByPageIds(ids)
+          val images = withLockedMonumentIds(ids.flatMap(found.get))
+          val rows = DistributeImages.assign(c.round, images, c.jurors, st1.position)
+          beforeInsert(c.round, images)
+          DistributeImages.insertRows(rows, origin(job, listed = false))
+          afterInsert(c.round, rows)
+          if (rows.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(roundId))
+          continue(st1.copy(cursor = ids.max, position = st1.position + images.size,
+            candidatesSeen = st1.candidatesSeen + ids.size, imagesAdded = st1.imagesAdded + images.size,
+            rowsAdded = st1.rowsAdded + rows.size))
         }
+
+      case Phase.Complete =>
+        // per job (§6 "Count checks"): every file this round still has to give is given now, read
+        // under the round's lock (every writer of its files holds it)
+        RoundWrites.lock(Seq(roundId))
+        val left = RoundImageJdbc.undistributedCount(roundId)
+        // a file restored on Commons below the cursor meanwhile: once more over the round
+        if (left > 0 && !st.rescanned) continue(st.copy(phase = Phase.Assign, cursor = 0L, rescanned = true))
+        else if (left > 0)
+          StepResult.Failed(
+            JobError(JobError.CountMismatchKey, Seq(roundId, left, 0L).map(_.toString)),
+            Json.toJsObject(st.copy(verifyFailed = true)),
+            progress(st)
+          )
+        else complete(job, ctx, st, c)
 
       case other => throw new IllegalStateException(s"Job ${job.id}: unknown phase $other")
     }
+  }
+
+  /** The end of a fill: the previous rounds released (not closed: D18), a round being created
+    * `paused`, held in review, still hidden from its jurors ([[Round.inReview]]). With
+    * `distributeAfter` (D4, or "Distribute new files" on a distributed round) the `distribute` job
+    * is queued as this one ends, in its transaction (its previous rounds frozen again by it).
+    */
+  private def endFill(job: Job, ctx: StepContext, st: DistributionState)(implicit session: DBSession): StepResult = {
+    val roundId = roundIdOf(job)
+    // the distribute it queues freezes the previous rounds only to close them, so only for a creation
+    val creating = (job.params \ "completingCreation").asOpt[Boolean].getOrElse(false)
+    val prevIds =
+      if (distributeAfter(job) && creating) Round.findById(roundId).map(_.previousIds).getOrElse(Nil) else Nil
+    val distributing = lockRounds((st.frozen ++ prevIds) :+ roundId).getOrElse(roundId, false)
+    Round.release(st.frozen, close = false)
+    if (distributing) Round.setStatus(roundId, Round.Status.Paused, job.createdBy)
+    settleFiles(roundId)
+    ctx.afterCommit(RoundImageCounts.invalidate(roundId))
+    // its state as initialState gives it, the freeze done only once the scheduler has queued it: if
+    // another job held the key, nothing is left frozen (the round stays held in review)
+    val followUp = Option.when(distributeAfter(job))(
+      NewJob(kind = Kind, contestId = job.contestId, subjectType = job.subjectType, subjectId = job.subjectId,
+        dedupeKey = job.dedupeKey, params = distributeParams(job),
+        state = Json.toJsObject(DistributionState(phase = Phase.Assign, frozen = prevIds)),
+        progress = Progress(unit = Some("images")), createdBy = job.createdBy))
+    logger.info(s"Round $roundId: selected ${st.imagesAdded} images" +
+      (if (titleCountOf(job) > 0) s", with a list of ${titleCountOf(job)} files (${st.missing} not found)" else "") +
+      (if (followUp.isDefined) "; distributing them next" else if (distributing) "; held for review" else ""))
+    StepResult.Done(Json.toJsObject(st.copy(frozen = Nil)), progress(st), followUp,
+      onFollowUpQueued = s => Round.freeze(prevIds)(s))
+  }
+
+  /** The end of a one-pass job or of a distribute: a creation shown to its jurors (`active`), its
+    * previous rounds closed; anything else restores them.
+    */
+  private def complete(job: Job, ctx: StepContext, st: DistributionState, c: Context)(implicit
+      session: DBSession): StepResult = {
+    val roundId = roundIdOf(job)
+    val distributing = lockRounds(st.frozen :+ roundId).getOrElse(roundId, false)
+    val creating = distributing || (job.params \ "completingCreation").asOpt[Boolean].getOrElse(false)
+    // who queued it (the creator, the reviewer who distributed, a reinstating admin): the status's who
+    if (distributing) Round.completeCreation(roundId, job.createdBy)
+    Round.release(st.frozen, close = creating)
+    settleFiles(roundId) // after the rounds' updates: rounds before votes, as DeletedFiles locks them
+    val visible = visibleImageCount(roundId)
+    ctx.afterCommit(RoundImageCounts.refresh(roundId)(visible.toInt))
+    logger.info(
+      s"Round $roundId: distributed ${st.imagesAdded} images (${st.rowsAdded} vote rows) " +
+        s"to ${c.jurors.size} jurors" +
+        (if (c.prevRounds.nonEmpty && !listOnly(job))
+           s" from previous rounds [${c.prevRounds.flatMap(_.id).mkString(", ")}]"
+         else "") +
+        (if (titleCountOf(job) > 0)
+           s", with a list of ${titleCountOf(job)} files (${st.missing} not found" +
+             (if (st.coiLeftOut > 0) s", ${st.coiLeftOut} left out as conflicts of interest" else "") + ")"
+         else "")
+    )
+    StepResult.Done(Json.toJsObject(st.copy(frozen = Nil)), progress(st))
   }
 
   /** The images with their monument ids as committed now, their rows read in share mode in
@@ -616,7 +726,8 @@ class RoundDistributionHandler @Inject() (
     * before (`new_files`, its list `list`).
     */
   private def origin(job: Job, listed: Boolean): RoundImageJdbc.Origin = {
-    val creating = (job.params \ "completingCreation").asOpt[Boolean].getOrElse(false)
+    // files a round in review gets from "Distribute new files" are new files (§6), not its fill
+    val creating = (job.params \ "completingCreation").asOpt[Boolean].getOrElse(false) && !fromReview(job)
     val how =
       if (listed) RoundImageJdbc.AddedHow.List
       else if (creating) RoundImageJdbc.AddedHow.Fill
@@ -734,6 +845,8 @@ object RoundDistributionHandler {
     val Distribute = "distribute"
     val List = "list"
     val Verify = "verify"
+    val Assign = "assign"
+    val Complete = "complete"
   }
 
   /** The job's pasted list of files to add to the round (`params.titles`), if it has one. */
@@ -783,6 +896,31 @@ object RoundDistributionHandler {
 
   /** The job only adds its list: the round's filters choose nothing. */
   def listOnly(job: Job): Boolean = (job.params \ "listOnly").asOpt[Boolean].getOrElse(false)
+
+  /** A job's step of the two (P3): `params.mode`, None for a job queued before P3 (one pass). */
+  object Mode {
+    val Fill = "fill"
+    val Distribute = "distribute"
+  }
+
+  def modeOf(job: Job): Option[String] = (job.params \ "mode").asOpt[String]
+
+  /** A fill (P3): it adds the files with no votes; a distribute gives them out after it. */
+  def fillOnly(job: Job): Boolean = modeOf(job).contains(Mode.Fill)
+
+  /** A fill that queues the distribute as it ends ("Distribute as soon as ready", D4). */
+  def distributeAfter(job: Job): Boolean = (job.params \ "distributeAfter").asOpt[Boolean].getOrElse(false)
+
+  /** The distribute job a fill queues: its params, mode `distribute`, without the fill's list. */
+  def distributeParams(job: Job): JsObject =
+    (job.params - "distributeAfter" - "titles" - "titleCount" - "listOnly" - "fromReview") ++
+      Json.obj("mode" -> Mode.Distribute)
+
+  /** The review's Distribute: mode `distribute`. */
+  def distributeMode(job: Job): Boolean = modeOf(job).contains(Mode.Distribute)
+
+  /** Queued on a round in review ("Distribute new files" there): its end leaves it in review. */
+  def fromReview(job: Job): Boolean = (job.params \ "fromReview").asOpt[Boolean].getOrElse(false)
 
   def roundIdOf(job: Job): Long =
     (job.params \ "roundId").asOpt[Long].orElse(job.subjectId).getOrElse(
@@ -884,9 +1022,12 @@ object RoundDistributionHandler {
     * job, queued or running (V60's `active_dedupe_key`). `distributing` also holds for a round whose
     * creation failed (no active job, until its Retry or resubmit): it is refused too, since it is
     * only partly filled and its Retry adds the rest, files the round leaving it out could take.
+    * A round in review ([[Round.inReview]], P3) isn't busy: its files change only by a job, which
+    * holds the key this checks (round-editing plan §6.2); otherwise a round leaving it out would be
+    * blocked for the whole review.
     */
   def distributingNow(round: Round): Boolean =
-    round.distributing || hasActiveJob(round)
+    (round.distributing && !round.inReview) || hasActiveJob(round)
 
   private def hasActiveJob(round: Round): Boolean =
     round.id.exists(id => JobJdbc.activeByDedupeKey(dedupeKey(id)).isDefined)

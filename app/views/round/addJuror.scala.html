@@ -87,7 +87,10 @@
                     case None => {
                         @for(juror <- p.juror) {
                             <div id="round-juror-add-figures" data-files="@p.files">
-                                @if(shares) {
+                                @* held in review (P3): no file moves now *@
+                                @if(round.inReview) {
+                                    <p id="round-juror-add-review">@Messages("round.juror.add.review.note")</p>
+                                } else { @if(shares) {
                                     @if(p.share.isEmpty) {
                                         <p>@Messages("round.juror.add.share.none", juror.fullname)</p>
                                     } else {
@@ -99,7 +102,7 @@
                                     }
                                 } else {
                                     <p>@Messages("round.juror.add.all", juror.fullname, p.files)</p>
-                                }
+                                } }
                                 @if(p.restart) {
                                     <p class="text-muted" id="round-juror-add-restart">@Messages("round.juror.add.restart", juror.fullname)</p>
                                 }

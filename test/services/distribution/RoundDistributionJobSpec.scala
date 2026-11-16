@@ -149,7 +149,22 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
     round
   }
 
-  private def pageIds(roundId: Long): Set[Long] = VoteJdbc.byRound(roundId).map(_.pageId).toSet
+  /** The round's files `in` it (round_image): a fill adds them with no votes, its distribute gives
+    * them out (P3); after both, those with votes.
+    */
+  private def pageIds(roundId: Long): Set[Long] = RoundImageJdbc.byRound(roundId).filter(_.status == "in").map(_.pageId).toSet
+
+  /** The round's distribution jobs, oldest first: a fill and the distribute it queued (D4), ... */
+  private def jobsOf(roundId: Long): Seq[Job] =
+    DB.readOnly(implicit s => sql"SELECT id FROM job WHERE subject_type = 'round' AND subject_id = $roundId ORDER BY id"
+      .map(_.long(1)).list()).flatMap(JobJdbc.findById(_))
+
+  /** Waits, with a background scheduler, for the round's jobs: its fill and the distribute it queues. */
+  private def settled(scheduler: JobScheduler, roundId: Long): Job = {
+    var job = scheduler.await(jobOf(roundId).id, 30.seconds)
+    while (jobOf(roundId).id != job.id) job = scheduler.await(jobOf(roundId).id, 30.seconds)
+    job
+  }
 
   /** A file leaves the round (its votes and its round_image row, as VoteJdbc.removeImage takes them). */
   private def removeFromRound(roundId: Long, pageId: Long): Unit = DB.autoCommit { implicit s =>
@@ -223,8 +238,11 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       jobOf(created.getId).status === JobStatus.Done
       created.active must beTrue
       pageIds(created.getId) === imgs.map(_.pageId).toSet - 1L
+      // deleted while the fill ran: marked deleted with no votes (P3-1), never given to a juror
       DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM vote_aside WHERE page_id = 1".map(_.int(1)).single()) ===
-        Some(1)
+        Some(0)
+      RoundImageJdbc.find(created.getId, 1L).map(_.status) === Some("deleted")
+      VoteJdbc.byRound(created.getId).map(_.pageId).toSet === imgs.map(_.pageId).toSet - 1L
       RoundImageCounts.get(Seq(created.getId))(ImageJdbc.imageCountByRounds)(created.getId) === 19
     }
 
@@ -239,8 +257,10 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
 
       jobOf(created.getId).status === JobStatus.Done
       pageIds(created.getId) === imgs.map(_.pageId).toSet - 1L
+      // added with no votes as it was marked deleted: marked deleted at the fill's end, never given out
       DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM vote_aside WHERE page_id = 1".map(_.int(1)).single()) ===
-        Some(1)
+        Some(0)
+      RoundImageJdbc.find(created.getId, 1L).map(_.status) === Some("deleted")
       RoundImageCounts.get(Seq(created.getId))(ImageJdbc.imageCountByRounds)(created.getId) === 19
     }
 
@@ -361,7 +381,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       }
 
       service.distributeNewImages(roundId) // resumes the failed job: its count check must pass
-      val done = jobOf(roundId)
+      val done = JobJdbc.findById(failed.id).get // the fill; the distribute it queued ran after it
       done.id === failed.id
       done.status === JobStatus.Done
       done.error must beNone
@@ -398,7 +418,9 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       // the retry after a failed count check rescans: file 101 is added again
       service.distributeNewImages(roundId)
       jobOf(roundId).status === JobStatus.Done
-      pageIds(roundId) === imgs.map(_.pageId).toSet ++ (101L to 106L)
+      // file 200, added by the other path with no votes, is given out by the distribute too
+      pageIds(roundId) === imgs.map(_.pageId).toSet ++ (101L to 106L) + 200L
+      VoteJdbc.byRound(roundId).map(_.pageId).toSet === pageIds(roundId)
     }
 
     "fail once, then pass on a Retry, when a file it added was removed and added again by another job" in {
@@ -422,6 +444,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
     "not resume a distribution given up after its attempts, from \"Distribute new files\" or the form again" in {
       val (contest, _, jurors) = setUp(20, 3)
       val h = new TestHandler(chunkRows = 3)
+      h.failBeforeChunk = Some(2) // its fill fails: the round's latest job
       val scheduler = TestRoundServices.inlineScheduler(h)
       val service = new RoundService(Round, scheduler, h)
       val token = java.util.UUID.randomUUID().toString
@@ -471,9 +494,10 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       val submitted = service.submit(newRound(contest, "R1"), jurors.map(_.getId), Some(java.util.UUID.randomUUID().toString))
       submitted.job.map(_.status) === Some(JobStatus.Failed)
       val roundId = submitted.round.getId
-      VoteJdbc.byRound(roundId).size === 6
+      pageIds(roundId).size === 6 // a fill: the files' rows, no votes yet
+      VoteJdbc.byRound(roundId) must beEmpty
       stateOf(roundId).cursor === 6L
-      stateOf(roundId).position === 6L
+      stateOf(roundId).position === 0L
       val failed = jobOf(roundId)
       (failed.failure.map(_.key) must beSome(_root_.services.jobs.JobError.CrashedKey)) and
         (failed.failure.flatMap(_.reference) must beSome) and (failed.error must not(beSome(contain("simulated failure"))))
@@ -615,7 +639,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       Thread.sleep(400)
       val added = RoundDistributionHandler.imagesAdded(cancelled)
       added must beLessThan(30L)
-      VoteJdbc.byRound(roundId).map(_.pageId).distinct.size.toLong === added // kept, no more after
+      pageIds(roundId).size.toLong === added // kept, no more after (a fill: no votes)
       roundDao.findById(roundId).get.distributing must beTrue // a partial round is never shown
       roundDao.findById(roundId).get.active must beFalse
       roundDao.findById(prev.getId).get.active must beTrue
@@ -641,12 +665,14 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       inlineService(dying).submit(next, jurors.map(_.getId), None) must throwA[InterruptedException]
       val roundId = roundDao.findByContest(contest.getId).find(_.name.contains("Next")).get.getId
       jobOf(roundId).status === JobStatus.Running // its instance "died" holding it
-      VoteJdbc.byRound(roundId).size === 6
+      pageIds(roundId).size === 6
       roundDao.findById(prev.getId).get.active must beFalse // still frozen
       sql"UPDATE job SET heartbeat_at = NOW(3) - INTERVAL 5 MINUTE".update()(AutoSession)
 
       val (_, scheduler) = backgroundService(new TestHandler(chunkRows = 3))
-      val done = scheduler.await(jobOf(roundId).id, 20.seconds)
+      val fill = jobOf(roundId).id
+      settled(scheduler, roundId).status === JobStatus.Done // and the distribute it queued
+      val done = JobJdbc.findById(fill).get
       done.status === JobStatus.Done
       done.owner must beNone
       done.attempts === 2
@@ -667,7 +693,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
         newRound(contest, "Every juror", distribution = 0),
         newRound(contest, "Videos", distribution = 1).copy(mediaType = Some("video"))
       ).map(r => service.submit(r, jurors.map(_.getId), None))
-      submitted.map(s => scheduler.await(s.job.get.id, 30.seconds).status).toSet === Set(JobStatus.Done)
+      submitted.map(s => settled(scheduler, s.round.getId).status).toSet === Set(JobStatus.Done)
       val ids = submitted.map(_.round.getId)
       VoteJdbc.byRound(ids(0)).size === 80
       pageIds(ids(1)) === imgs.filter(_.monumentId.exists(_.startsWith("12"))).map(_.pageId).toSet
@@ -1044,12 +1070,12 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       val (contest, imgs, jurors) = setUp(20, 3)
       val service = inlineService(new TestHandler(chunkRows = 4))
       val created = service.createNewRound(newRound(contest, "R1"), jurors.map(_.getId))
-      val job = jobOf(created.getId)
+      val job = jobsOf(created.getId).head // its fill (the distribute after it adds no row)
       val more = (101 to 103).map(i => Image(i.toLong, s"File:More$i.jpg", None, None, 800, 600, Some(s"12-345-$i")))
       imageDao.batchInsert(more)
       CategoryLinkJdbc.addToCategory(contestDao.findById(contest.getId).get.categoryId.get, more)
       service.distributeNewImages(created.getId) === 3
-      val second = jobOf(created.getId)
+      val second = jobsOf(created.getId).filter(j => RoundDistributionHandler.fillOnly(j)).last
       val all = rows(created.getId)
       (all.map(_.pageId) === (imgs ++ more).map(_.pageId)) and
         (all.map(_.status).distinct === Seq(RoundImageJdbc.Status.In)) and
@@ -1085,14 +1111,16 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
         }
     }
 
-    "keep a file with a row and no votes out of the next distribution (the round_image anti-join)" in {
+    "never add a file with a row twice (the round_image anti-join), and give out one with no votes (P3)" in {
       val (contest, imgs, jurors) = setUp(6, 2)
       val service = inlineService(TestRoundServices.handler())
       val created = service.createNewRound(newRound(contest, "R1"), jurors.map(_.getId))
       // file 1's votes gone by hand, its row left: the anti-join reads round_image too
       DB.autoCommit(implicit s => sql"DELETE FROM vote WHERE round_id = ${created.getId} AND page_id = 1".update())
       (service.newFilesCount(created.getId) === 0L) and (service.distributeNewImages(created.getId) === 0) and
-        (pageIds(created.getId) === imgs.map(_.pageId).toSet - 1L)
+        (RoundImageJdbc.countAll(created.getId) === 6L) and
+        // its distribute gives the vote-less file out again (review finding 4)
+        (VoteJdbc.byRound(created.getId).map(_.pageId).toSet === imgs.map(_.pageId).toSet)
     }
   }
 }

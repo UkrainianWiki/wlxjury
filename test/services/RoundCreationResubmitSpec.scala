@@ -118,7 +118,8 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
       }
       rounds(contest).size === 2 // the previous round and the resumed one: no stray round
       ImageJdbc.imageCountByRounds(Seq(failed.getId)).values.sum === 20
-      flaky.previousActive.toSeq === Seq(false, false) // frozen during both attempts
+      // frozen during both attempts of the fill and the distribute it queued
+      (flaky.previousActive.toSeq.distinct === Seq(false)) and (flaky.previousActive.size must beGreaterThanOrEqualTo(2))
       roundDao.findById(previous.getId).map(_.active) === Some(false) // a creation leaves them frozen
     }
 

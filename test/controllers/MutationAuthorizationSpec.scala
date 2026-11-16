@@ -43,7 +43,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       .withFormUrlEncodedBody(
         Seq(
           "number" -> "1", "name" -> name, "contest" -> contestId.toString, "roles" -> "jury",
-          "distribution" -> "0", "rates" -> "1", "minMpx" -> "", "minSize" -> "",
+          "distributeAfter" -> "true", "distribution" -> "0", "rates" -> "1", "minMpx" -> "", "minSize" -> "",
           "mediaType" -> "all", "jurors[0]" -> "1"
         ) ++ roundId.map(id => "id" -> id.toString): _*
       )

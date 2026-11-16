@@ -56,6 +56,10 @@ class RoundJurorsController @Inject() (
                   if (job.isDone) messages("round.juror.add.done", name, round.number, RoundRebalanceHandler.filesGiven(job))
                   else messages("round.juror.add.queued", name, round.number)
                 Redirect(routes.RoundController.rounds(Some(round.contestId))).flashing("success" -> text)
+              case AddedToReview =>
+                val name = User.findById(jurorId).map(_.fullname).getOrElse(jurorId.toString)
+                Redirect(routes.RoundReviewController.review(round.getId))
+                  .flashing("success" -> messages("round.juror.add.review", name, round.number))
               case JuryChanged =>
                 Conflict(page(user, round, Some(jurorId), notice = Some(messages("round.juror.add.jury.changed")),
                   Some(donors)))

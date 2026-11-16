@@ -38,7 +38,7 @@ class RoundAverageRuleFormSpec extends PlaySpecification with PlayTestDb {
 
   private def form(round: Round, rule: Option[String]): Seq[(String, String)] =
     Seq("id" -> round.getId.toString, "number" -> round.number.toString, "name" -> "R",
-      "contest" -> round.contestId.toString, "roles" -> "jury", "distribution" -> "0", "rates" -> "5",
+      "contest" -> round.contestId.toString, "roles" -> "jury", "distributeAfter" -> "true", "distribution" -> "0", "rates" -> "5",
       "minMpx" -> "", "minSize" -> "", "mediaType" -> "all") ++
       User.findRoundJurors(round.getId).zipWithIndex.map { case (u, i) => s"jurors[$i]" -> u.getId.toString } ++
       rule.map("averageRule" -> _).toSeq

@@ -1,9 +1,10 @@
-@import controllers.{ContestFilesView, Global}
-@import db.scalikejdbc.{ImageJdbc, User}
+@import controllers.{ContestFilesView, Global, RoundReview}
+@import db.scalikejdbc.{ImageJdbc, RoundImageJdbc, User}
 @(user: User,
         files: Seq[ImageJdbc.StoredFile],
         pager: Pager,
-        view: ContestFilesView)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+        view: ContestFilesView,
+        review: Option[RoundReview] = None)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 @* The contest's files, or a round's deleted on Commons, laid out as a round's gallery
    (gallery.scala.html): the country and region menus and the pager in the navbar, justified tiles. A tile
@@ -28,6 +29,10 @@
             }
         </h1>
 
+        @for(r <- review) {
+            @roundReviewHead(r, view)
+        }
+        @if(review.isEmpty) {
         @view.round match {
             case Some(round) => {
                 <h2 class="h4">@Messages("round") @round.description: @Messages("files.deleted.on.commons") (@view.deletedCount)</h2>
@@ -50,6 +55,7 @@
                     </li>
                 </ul>
             }
+        }
         }
 
         @* the author the list is narrowed to (only for those who may see authors: the view has
