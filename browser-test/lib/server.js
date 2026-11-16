@@ -53,6 +53,8 @@ export function fixtureFor(browserName) {
     // a binary round's file none of the listed jurors has, and its juror (id): where a test may
     // write a comment without giving the jurors above one (UiShotsServer)
     commentFile: s.commentFile,
+    // an account in no contest, this engine's, for the users page's search (users.spec.js)
+    searchTarget: (s.searchTargets || [])[i],
   };
 }
 

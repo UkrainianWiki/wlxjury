@@ -91,8 +91,10 @@ account is refused.
 - **Search:** name or wiki account by any part of at least 3 characters, case-insensitive; email
   by the **whole address only** for accounts outside the contests the actor administers (by a part
   of it within them; root: by a part for all), so the masked results can't be used to rebuild an
-  address one character at a time. At most 20 results. `%`, `_` and `\` in the text are escaped
-  before the `LIKE` (a search for `%` matches a literal `%`, never everything). A script endpoint
+  address one character at a time. At most 20 results. `%`, `_` and the escape character `!` in
+  the text are escaped with `!` and every `LIKE` says `ESCAPE '!'` (a search for `%` matches a
+  literal `%`, never everything; a backslash is an ordinary character, under
+  `NO_BACKSLASH_ESCAPES` too: review L2 of A-1). Root accounts are found by root only (L1). A script endpoint
   (`withAuthJson`) taking a **POST with the CSRF token**, so the searched text (a name, an
   address) never lands in access logs, proxy logs or the browser history; the page and the browser
   tests share it. The results link to the edit page only where `editableUser` would open it.
@@ -101,7 +103,9 @@ account is refused.
   administers (they already see it on that users page) and for root; wiki account (with "verified"
   if it is); the contests the actor administers that it is in, with its role there; whether it is
   already in the current contest. Root also sees its other contests. Never shown to an admin: its
-  other contests (not even a count), its identities, sign-in times.
+  other contests (not even a count), its identities, sign-in times. Where the email is masked, an
+  address typed into the name or wiki account is masked too, and such a name or wiki account
+  (with an `@`) is matched by a part only within the actor's contests (L3).
 - **Logged:** each search at INFO on `security.account` by ids only (`account_search
   byAccountId= contestId= results= length=`; never the text), so probing shows up.
 - **Add:** a role select (the add row's) and **Add to this contest**, a POST with the CSRF token
@@ -115,13 +119,34 @@ account is refused.
   `ShareLinkService` allows it, which for an account with ties outside the actor's contests it
   doesn't; `Mail.NotPossible` as today). `AlreadyMember` as today. The account change log records
   the role as an add does (`AccountChangeJdbc.Role`), with the comment `from search`.
-- **Refused** (deleted, an id that doesn't exist): the 404 of a missing resource.
+- **The owner is told, never by a mail nobody chose** (M1 after A-1's security review, as
+  corrected by the maintainer 2026-11-16: "please do not send emails without approval"): every add
+  that gives a membership or an invitation is a notice in the tool for the owner
+  (`services.AccountNotices`, read from the change log row marked `from search`; a bar after their
+  next sign-in, the list on their own profile, dismissed per browser with a cookie, no migration):
+  "You were added to X by Y, with the role R", and what the role does for them. The add form
+  always offers **Tell its owner by email** (unticked by default), for every account (no
+  distinction by the account's other contests, which would tell the admin about them); the mail
+  goes from `UserService.systemSender` only if ticked. Logged on `security.account`
+  (`account_added_notice ... outcome=sent|failed|not_sent|no_email inApp=true`); the page says
+  what happened ("by email" only when it was sent). The contest's greeting on a direct join is
+  mailed only with "Send an invitation email", as on the add row.
+- **Placeholders** (no password, no email) found by search: treated as today, as section c's add
+  by id: the admin picked the account by id, so it joins (`mayTakeAccessRole`: no password) with no
+  wiki-name confirmation; built so in A-1. Section b's confirmation is for the add row's wiki
+  account match, where the admin did not pick the account.
+- **Refused** (deleted, an id that doesn't exist, a root account for anyone but root): the 404 of
+  a missing resource.
 - **Risk of A1, stated:** an admin can now find any account by name or wiki account and add it to
   their contest without knowing its email. Secure coding §14's residual risk (an admin adds a
   verified account with no ties and then shares a reset for it) no longer needs the address;
   `ShareLinkService`'s rule is unchanged, so an account with ties elsewhere still can't be handed a
   link or a password by that admin. An admin also learns which names have accounts, with masked
-  addresses. Accepted by the maintainer (2026-11-16); secure coding §14 records it in A-1.
+  addresses. Accepted by the maintainer (2026-11-16); secure coding §14 records it in A-1. **What
+  remains after M1:** the owner sees a notice in the tool when they sign in (a mail only if the
+  admin ticked it), so an owner who doesn't sign in may not learn of the add; once the account is
+  a member or a live invitee of the admin's contest, the admin sees its full address (on the users
+  page and in the search), as for anyone added by email.
 - **Considered:** members and invitees of the actor's contests only (the earlier recommendation),
   plus contests worked in, active members only.
 - **Screening portions:** a person with several juror accounts in one round is normal (they get
@@ -149,6 +174,10 @@ take the role directly) are what is left between them.
   confirms (POST with CSRF, the account id). Then the masked email is shown with the result (as
   the search shows it anyway, A1), and the add is section a's `addAccountToContest` (the email
   path's rule).
+- **A-3 must route placeholders** found by the add row's wiki account (no password, no email)
+  through this confirmation: today `matchAccount`'s wiki path refuses them only because their wiki
+  account is unverified; A-3's change must not let them join unconfirmed. (A placeholder picked by
+  id from the search joins as in section a.)
 - **Placeholders** (no password, no email, no Wikimedia identity now or before, `deleted_at IS
   NULL`) take the same confirmation; none exist today. After the add, an admin of the new contest
   who doesn't administer the account's other contests can't make a link or set a password for it
@@ -223,6 +252,9 @@ instead". *Considered:* no retire (role `no` only), root only.
   insert included) and `RoundRebalanceHandler`'s "stop" phase; a deleted juror is skipped (round
   creation) or refused (an add). Votes need none: they have no foreign key to `users`, and files
   are assigned only through `round_user`.
+- **`invite` must refuse a deleted row** (A-1's review): it locks the account's row in its own
+  transaction (`UserService.invite`), after an add's join transaction decided on an invitation;
+  it must check `deleted_at` there and refuse, so an account retired in between is never invited.
 - **Readers:** `matchAccount`'s email path and `addToContest` (in the caller, next to `mayJoin`;
   `User.lockRow`'s SQL unchanged) treat a deleted row as none; distribution steps drop deleted
   accounts from a round's jurors. The PR lists every reader of `users` it checked (sign-in by email

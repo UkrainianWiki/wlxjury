@@ -22,7 +22,8 @@ import java.nio.file.Files
   * round ids, a juror with images in both rounds (id, login, password), the organizer
   * (an admin of the contest), a root account (created here) and the juror's first page id in the binary and the rated round;
   * for the browser tests (browser-test/), an account with the contest's organizer role (created here) and up to
-  * eight jurors with files in both rounds, each with its first page id in each.
+  * eight jurors with files in both rounds, each with its first page id in each, and three accounts
+  * in no contest for the users page's search (one per engine).
   * Then it serves until `target/ui-shots/server.stop` exists (or the process is killed) and exits,
   * stopping the server and the container.
   *
@@ -113,6 +114,17 @@ object UiShotsServer {
       db.scalikejdbc.User.create(fullname = "Organizer role", email = orgRoleEmail,
         passwordHash = services.PasswordHasher.default.hash(orgRolePassword),
         roles = db.scalikejdbc.User.ORG_COM_ROLES, contestId = Some(f.contestId))
+    // accounts in no contest, one per engine, for the users page's search (users.spec.js): an
+    // unverified email with a password, so "Add to this contest" invites them (no membership) and
+    // the test cancels the invitation; in this run's container only
+    val searchTargets = (1 to 3).map { n =>
+      val (name, email) = (s"Search Target $n", s"search-target-$n@ui-shots.test")
+      val id = db.scalikejdbc.User.findByEmail(email).headOption.map(_.getId).getOrElse(
+        db.scalikejdbc.User.create(fullname = name, email = email,
+          passwordHash = services.PasswordHasher.default.hash(s"target-$n-pass"), roles = Set.empty,
+          contestId = None).getId)
+      s"""{"id": $id, "name": ${q(name)}, "login": ${q(email)}}"""
+    }
     // in one transaction: as autocommitted statements (a commit per row) it took about 2.5 minutes
     val filled = DB.localTx { tx => CommonsFileUrl.fillMissing()(tx) }
     println(s"[ui-shots] set the Commons url of $filled images")
@@ -160,6 +172,7 @@ object UiShotsServer {
          |  "root": {"login": ${q(rootEmail)}, "password": ${q(rootPassword)}},
          |  "organizerRole": {"login": ${q(orgRoleEmail)}, "password": ${q(orgRolePassword)}},
          |  "jurors": [${jurors.mkString(", ")}],
+         |  "searchTargets": [${searchTargets.mkString(", ")}],
          |  "commentFile": {"juror": $commentJuror, "pageId": $commentPage, "otherRounds": $commentOthers},
          |  "pageId": $pageId,
          |  "ratedPageId": $ratedPageId

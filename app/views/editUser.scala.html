@@ -10,7 +10,8 @@
         maySetPassword: Boolean = false,
         notice: Option[String] = None,
         changes: Seq[services.AccountChangeLog.Row] = Nil,
-        returnTo: Option[String] = None
+        returnTo: Option[String] = None,
+        accountNotices: Seq[services.AccountNotices.Notice] = Nil
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @import helper._
@@ -41,6 +42,25 @@
                 <h1 class="h3">@Messages("edit.user")</h1>
             } else {
                 <h1 class="h3">@Messages("create.user")</h1>
+            }
+
+            @* the own adds from other admins' search (AccountNotices): what each gives, and Dismiss *@
+            @if(ownProfile && accountNotices.nonEmpty) {
+                <section class="alert alert-info" id="account-notices" aria-labelledby="account-notices-title">
+                    <h2 class="h6" id="account-notices-title">@Messages("account.notices.title")</h2>
+                    <ul class="mb-2">
+                        @for(n <- accountNotices) {
+                            <li class="account-notice">@Messages("account.notices.item", n.contestName,
+                                services.AccountNotices.byText(n.byName), Messages("role." + n.role))
+                                @Messages(services.AccountNotices.outcomeKey(n.role, n.invited))</li>
+                        }
+                    </ul>
+                    <form method="post" action="@routes.UserController.dismissNotices()" class="d-inline">
+                        @csrfField()
+                        <input type="hidden" name="upTo" value="@accountNotices.map(_.changeId).max">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm">@Messages("account.notices.dismiss")</button>
+                    </form>
+                </section>
             }
 
             @form(routes.UserController.saveUser(), Symbol("class") -> "form-vertical") {

@@ -53,8 +53,13 @@ trait LoginResults { this: Secured with I18nSupport =>
     val latest = Secured.inCurrentContest(user, contestId.map(_.toString))
     // defensive: inCurrentContest already picks an active membership; kept should its rules change
     val inContest = Secured.permitted(latest, _.hasAnyRole(Secured.ViewerRoles)).getOrElse(latest)
+    // adds from other admins' search the owner hasn't dismissed in this browser: a bar on every
+    // page leads to them (services.AccountNotices)
+    val notices = Secured.orOnFailure("account_notices_unavailable", user, "-", false)(
+      services.AccountNotices.pendingFor(request, user).nonEmpty)
     val sessionData = Secured.signedInSession(user, login, keep) ++
-      inContest.contestId.map(id => Secured.CurrentContestId -> id.toString)
+      inContest.contestId.map(id => Secured.CurrentContestId -> id.toString) ++
+      Option.when(notices)(services.AccountNotices.SessionKey -> "1")
     val nextPage = Secured.safeLocalPath(returnTo).fold(indexRedirect(inContest))(url => Redirect(url))
     val result = nextPage.withSession(sessionData: _*)
     // the user's colour mode, if they chose one, follows them to this browser

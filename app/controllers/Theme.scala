@@ -63,6 +63,9 @@ class ThemeCookies @Inject() (session: SessionConfiguration) {
 
   def set(result: Result, theme: Theme): Result = result.withCookies(cookie(theme))
 
+  /** Whether the session cookie, and so this app's other cookies, are `Secure`. */
+  def secure: Boolean = session.secure
+
   /** The result with the cookie of the user's stored mode, if they ever chose one. */
   def setStored(result: Result, stored: Option[String]): Result =
     stored.flatMap(Theme.find).fold(result)(set(result, _))

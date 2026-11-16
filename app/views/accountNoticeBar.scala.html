@@ -1,0 +1,14 @@
+@(user: db.scalikejdbc.User)(implicit messages: Messages, request: RequestHeader)
+@* the bar of a signed-in owner whose account other admins added from their search since the
+   notices were last dismissed (services.AccountNotices: the session flag set at sign-in): to the
+   list on the own profile, where they are dismissed; not on that profile, which shows the list
+   itself (or, with nothing left, drops the flag) *@
+@if(user != null && user.id.nonEmpty && request.session.get(services.AccountNotices.SessionKey).nonEmpty &&
+        request.path != routes.UserController.editUser(user.getId).url) {
+    <div class="container-fluid">
+        <div class="alert alert-info py-2 my-2" role="status" id="account-notices-bar">
+            @Messages("account.notices.bar")
+            <a href="@routes.UserController.editUser(user.getId)#account-notices">@Messages("account.notices.bar.link")</a>
+        </div>
+    </div>
+}

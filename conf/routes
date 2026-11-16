@@ -97,6 +97,8 @@ GET         /large/pageid/:pageid                                               
 GET         /large/region/:region/pageid/:pageid                                    controllers.LargeViewController.largeCurrentUser(pageid: Long, region: String)
 
 GET         /admin/users                                                            @controllers.UserController.users(contestId: Option[Long] ?= None)
+POST        /admin/users/search                                                     @controllers.UserController.searchAccounts(contestId: Option[Long] ?= None)
+POST        /admin/users/add-existing                                               @controllers.UserController.addExistingAccount(contestId: Option[Long] ?= None)
 # the contest's account change log (V96): its admins and root only
 GET         /admin/account-changes                                                  @controllers.AccountChangeController.changes(contestId: Long, page: Int ?= 1)
 GET         /admin/allUsers                                                         @controllers.UserController.allUsers()
@@ -124,6 +126,7 @@ POST        /switch-contest/:contestId                                          
 # an old link: the contest is switched by the navbar's menu (POST) only
 GET         /switch-contest/:contestId                                              @controllers.UserController.switchContestLink(contestId: Long)
 # the navbar's colour mode switch (light, dark, auto): the user's row and the theme cookie
+POST        /users/notices/dismiss                                                  @controllers.UserController.dismissNotices()
 POST        /theme                                                                  @controllers.UserController.setTheme()
 
 GET         /admin/rounds                                                           @controllers.RoundController.rounds(contestId: Option[Long] ?= None)

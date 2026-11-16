@@ -73,6 +73,87 @@ class UserController @Inject()(cc: ControllerComponents,
         }).getOrElse(Redirect(routes.LoginController.index)) // TODO message
     }
 
+  /** The users page's "Find an existing account" (accounts plan A-1): root and the contest's
+    * admins find every non-deleted account ([[services.AccountSearch]]). A script's POST with the
+    * CSRF token (the `Csrf-Token` header), the text in its body (`q`), so that a searched name or
+    * address never lands in an access log, a proxy's log or the browser's history. Signed out: a
+    * JSON 401; anyone else, an organizer, a juror or an inactive member included, the JSON denial.
+    */
+  def searchAccounts(contestIdParam: Option[Long] = None): EssentialAction =
+    withAuthJsonOn(blocking)(contestPermission(User.ADMIN_ROLES, contestIdParam)) { user => implicit request =>
+      val noStore = CACHE_CONTROL -> "no-store"
+      contestIdParam.orElse(user.contestId).flatMap(ContestJuryJdbc.findById).flatMap(c => c.id.map(c -> _)) match {
+        case None => NotFound(play.api.libs.json.Json.obj("error" -> "contest_not_found")).withHeaders(noStore)
+        case Some((contest, contestId)) =>
+          import play.api.libs.json.Json
+          def rolesText(roles: Set[String]) = roles.toSeq.sorted.map(r => Messages("role." + r)).mkString(", ")
+          val text = request.body.asFormUrlEncoded.flatMap(_.get("q")).flatMap(_.headOption).getOrElse("")
+          val body = services.AccountSearch.search(user, contestId, text) match {
+            case services.AccountSearch.Unsearchable =>
+              Json.obj("results" -> Json.arr(), "more" -> false, "unsearchable" -> true)
+            case services.AccountSearch.Results(found, more) =>
+              Json.obj(
+                "results" -> found.map { f =>
+                  Json.obj(
+                    "id" -> f.account.getId,
+                    "name" -> f.name,
+                    "email" -> f.email,
+                    "emailFull" -> f.emailFull,
+                    "wikiAccount" -> f.wikiAccount,
+                    "wikiVerified" -> f.account.wikiAccountVerified,
+                    "contests" -> f.contests.map { case (id, c, roles) =>
+                      Json.obj("name" -> c.fold(id.toString)(_.fullName), "role" -> rolesText(roles))
+                    },
+                    "member" -> f.member.map(rolesText),
+                    "editUrl" -> Option.when(f.editable)(routes.UserController.editUser(f.account.getId, contest.id).url)
+                  )
+                },
+                "more" -> more,
+                "unsearchable" -> false)
+          }
+          Ok(body).withHeaders(noStore)
+      }
+    }
+
+  /** "Add to this contest" on a result of the users page's search (accounts plan A-1): the
+    * account by its id, with the role and the "Send an invitation email" choice
+    * ([[UserService.addAccountToContest]]: the email path's rule, under the account's row lock).
+    * A form POST with the CSRF token; an id no account has, a deleted account's, or a root
+    * account's for anyone but root, is a 404. Its owner gets a notice in the app; a mail only if
+    * "Tell its owner by email" is ticked (unticked by default); the page says which.
+    */
+  def addExistingAccount(contestIdParam: Option[Long] = None): EssentialAction =
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, contestIdParam)) { user => implicit request =>
+      contestIdParam.orElse(user.contestId).flatMap(ContestJuryJdbc.findById) match {
+        case None => NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))
+        case Some(contest) =>
+          UserController.addExistingForm.bindFromRequest().fold(
+            _ => BadRequest(views.html.errorPage(Some(user), "error.title", "error.bad.request")),
+            { case (accountId, role, sendInvitation, tellOwner) =>
+              try {
+                val result = userService.addAccountToContest(user, accountId, contest, role, sendInvitation, tellOwner)
+                // what its owner learns: the notice in the app, and the mail only if ticked
+                val notice = result.notice match {
+                  case UserService.SearchNotice.NotNeeded => None
+                  case UserService.SearchNotice.NotSent   => Some(Messages("account.added.notice.in.app"))
+                  case UserService.SearchNotice.Sent      => Some(Messages("account.added.notice.sent"))
+                  case UserService.SearchNotice.Failed    => Some(Messages("account.added.notice.failed"))
+                  case UserService.SearchNotice.NoEmail   => Some(Messages("account.added.notice.no.email"))
+                }
+                Redirect(routes.UserController.users(contest.id))
+                  .flashing("users-added" -> (addedMessage(Seq(result.added)) +: notice.toSeq).mkString(" "))
+              } catch {
+                case _: UserService.AccountNotFound =>
+                  NotFound(views.html.errorPage(Some(user), "error.title", "error.user.not.found"))
+                case _: UserService.RoleNotAssignable =>
+                  rolesLogger.warn(s"refused a role that is not assignable accountId=${user.getId} targetId=$accountId")
+                  BadRequest(views.html.errorPage(Some(user), "error.title", "error.bad.request"))
+              }
+            }
+          )
+      }
+    }
+
   def allUsers(): EssentialAction =
     withAuth(rolePermission(Set(User.ROOT_ROLE))) { user => implicit request =>
       val users = User.withMemberships(User.findAll())
@@ -249,9 +330,13 @@ class UserController @Inject()(cc: ControllerComponents,
     val linkNonce = ApiTokensCard.newNonce()
     val linked = LinkedAccountsCard(UserIdentityJdbc.findByUser(user.getId), oauthSettings.providersFor(request.host),
       linkNonce)
+    val notices = services.AccountNotices.pendingFor(request, user)
+    // the session's changes on one session: the nonces, and the bar's flag gone once nothing is
+    // left to see (dismissed in another tab, or past ShownDays)
+    val withNonces = request.session + (ApiTokensCard.NonceKey -> nonce) + (OAuthController.LinkNonceKey -> linkNonce)
     status(views.html.editUser(user, userForm.getOrElse(editUserForm.fill(withTheme)), user.currentContest, card,
-      Some(linked), returnTo = UserController.requestReturnTo(request)))
-      .addingToSession(ApiTokensCard.NonceKey -> nonce, OAuthController.LinkNonceKey -> linkNonce)
+      Some(linked), returnTo = UserController.requestReturnTo(request), accountNotices = notices))
+      .withSession(if (notices.isEmpty) withNonces - services.AccountNotices.SessionKey else withNonces)
   }
 
   /** Creates a personal API token of the signed-in user (a POST of their profile's form, with
@@ -811,6 +896,18 @@ class UserController @Inject()(cc: ControllerComponents,
     theme.fold(withLang)(themeCookies.set(withLang, _))
   }
 
+  /** Dismisses the own notices of adds from search ([[services.AccountNotices]]) in this browser,
+    * up to the newest shown (`upTo`, a change id, never above the newest the account has): a POST
+    * of the own profile's form with the CSRF token; back to the profile. Its cookie is `Secure`
+    * when the session cookie is, as the theme's ([[ThemeCookies]]).
+    */
+  def dismissNotices(): EssentialAction = withAuth(_ => true) { user => implicit request =>
+    val upTo = request.body.asFormUrlEncoded.flatMap(_.get("upTo")).flatMap(_.headOption).flatMap(_.toLongOption)
+    val newest = services.AccountNotices.pending(user.getId, 0L).headOption.map(_.changeId).getOrElse(0L)
+    services.AccountNotices.dismissed(Redirect(routes.UserController.editUser(user.getId)), user.getId,
+      upTo.fold(newest)(math.min(_, newest)), secure = themeCookies.secure)
+  }
+
   /** The navbar's colour mode switch (logged.scala.html): a POST with the CSRF token
     * that stores light, dark or auto in the signed-in user's own row and in the theme
     * cookie, then goes back to `returnTo`, a local path ([[Secured.safeLocalPath]]), else
@@ -842,6 +939,7 @@ class UserController @Inject()(cc: ControllerComponents,
     import UserService._
     val invited = added.count(_.isInstanceOf[Invited])
     val unverifiedWiki = added.count(_.isInstanceOf[WikiAccountUnverified])
+    val noEmail = added.count(_.isInstanceOf[NoEmailToInvite])
     def mailOf(a: Added): Option[Mail] = a match {
       case NewAccount(_, mail) => Some(mail)
       case Invited(_, mail)    => Some(mail)
@@ -856,6 +954,7 @@ class UserController @Inject()(cc: ControllerComponents,
                   added.count(_.isInstanceOf[AlreadyMember]))) ++
       (if (invited > 0) Seq(messages("users.invited", invited)) else Nil) ++
       (if (unverifiedWiki > 0) Seq(messages("users.not.added.wiki.unverified", unverifiedWiki)) else Nil) ++
+      (if (noEmail > 0) Seq(messages("users.not.added.no.email", noEmail)) else Nil) ++
       (if (notSent > 0) Seq(messages("users.invitations.not.sent", notSent)) else Nil) ++
       (if (notAsked > 0) Seq(messages("users.invitations.not.mailed", notAsked)) else Nil) ++
       (if (notPossible > 0) Seq(messages("users.invitations.not.possible", notPossible)) else Nil)).mkString(" ")
@@ -1280,8 +1379,23 @@ object UserController {
   val editExtrasForm: Form[EditExtras] = Form(
     mapping(
       "sendInvitation" -> default(boolean, false),
-      "comment" -> optional(text(maxLength = AccountChangeJdbc.CommentMaxLength))
+      // never the search's marker (UserService.SearchComment), which makes a notice for the owner
+      "comment" -> optional(text(maxLength = AccountChangeJdbc.CommentMaxLength)
+        .verifying("account.change.comment.reserved", c => !UserService.isReservedComment(c)))
     )(EditExtras.apply)(EditExtras.unapply)
+  )
+
+  /** "Add to this contest" on a search result ([[UserController.addExistingAccount]]): the
+    * account's id, the role (one of the add row's, [[User.FORM_ROLES]]), "Send an invitation
+    * email" and "Tell its owner by email" (both unticked by default).
+    */
+  val addExistingForm: Form[(Long, String, Boolean, Boolean)] = Form(
+    tuple(
+      "accountId" -> longNumber,
+      "role" -> nonEmptyText.verifying("error.invalid", User.isContestRole(_)),
+      "sendInvitation" -> default(boolean, false),
+      "tellOwner" -> default(boolean, false)
+    )
   )
 
   /** A save refused inside its transaction (a message key): nothing of it is written. */

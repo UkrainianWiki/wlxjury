@@ -111,6 +111,52 @@ The page tells you how many accounts were created, how many people joined and ho
 members already, how many invitations were not emailed because the box was unticked, and any that
 could not be sent.
 
+<a id="a-find-account"></a>
+### Finding an existing account
+
+Someone may already have an account from another contest, or from an earlier year, under an
+email you don't know. **Find an existing account**, under the add row, searches every account in
+the tool:
+
+- by **any part of a name or wiki account**, at least 3 characters, in any letter case;
+- by a **whole email address**. A part of an address finds only accounts that are in your
+  contests (members, or invited and not yet accepted).
+
+At most 20 accounts are shown; if more match, type more to narrow the search. Each shows its
+**Full name** (a link to its edit page if it is a member of this contest), its **Email**, its
+**Wiki account** (with **verified** if its owner proved it), the contests of yours it is in with
+its role there, and whether it is in this contest already. The email is shown in full only for
+accounts in your contests; for others it is masked, as `a***@example.org`, or **no email** (an
+address typed into a name or wiki account is masked too, and such a name finds the account only by
+its whole email). You never see an account's other contests. Root accounts are not shown.
+
+Several accounts with the same name, or one person with several juror accounts, are normal (a
+screening round may give one person several shares on purpose): the search shows them side by
+side and doesn't suggest joining them.
+
+To add one, pick its **Role** and press **Add to this contest**. It is added as if you had typed
+its email in the add row (see [Adding a person](#a-add-person)): an account whose owner proved the
+email joins at once; another gets an invitation, and the role applies when they accept it. An
+account with a password but no email can't be invited and isn't added: ask root.
+**Send an invitation email**, next to the button, is unticked by default; ticked, the mail goes
+from the tool's own address, not yours. Whether you can then [share a link](#a-share-link) or
+[set a password](#a-passwords) for the account follows the usual rule: not for an account that
+is also in a contest you don't administer.
+
+The account's owner always sees a notice in the tool when they next sign in: that you added them
+to your contest, with the role. **Tell its owner by email**, also unticked by default, mails them
+the same from the tool's own address; nothing is mailed unless you tick one of the two boxes. The
+page says what happened: that the owner will see the notice, and whether the email went out (or
+couldn't, for an account without an email). Once the account is in your contest (or invited to
+it), you see its full email address on the users page and in the search, as for anyone you add by
+email.
+
+A person you added this way sees **An admin added you to a contest** under the top bar after
+signing in; **See the details** opens their profile, which lists each add (the contest, who added
+them, the role and what it lets them do), with **Dismiss**.
+
+Each search is logged with your account and the number of results, never the text you typed.
+
 <a id="a-mass-import"></a>
 ### Adding many people
 

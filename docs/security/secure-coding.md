@@ -443,13 +443,43 @@ set its password (**Set password**, the same rule). The link's holder (or the ad
 unverified, so it can't be pulled into other contests (another contest's add mails an invitation,
 a wiki-account add is refused). Root's mailed reset, or a later mailed invitation, gives the
 address's owner the account back (its acceptance sets the password and ends the holder's sessions).
+**Since A-1** (the users page's search, [accounts plan](../plans/2026-11-16-existing-accounts.md)
+§a, A1 accepted by the maintainer 2026-11-16) **the admin no longer needs the address**: the
+search finds every non-deleted account by any part (3 characters or more) of its name or wiki
+account, and "Add to this contest" adds it by id with the email path's rule
+(`UserService.addAccountToContest`). `ShareLinkService`'s rule is unchanged, so an account with
+ties outside the admin's contests still can't be handed a link or a password by that admin. An
+admin also learns which names have accounts, with masked addresses (`UserService.maskEmail`; the
+full address only for members and live invitees of a contest they administer, and to root), and
+an address outside their contests is found only by the whole of it, never by a part. A name or
+wiki account with an `@` in it is matched by a part only within their contests (outside, the
+address it may hold could be rebuilt a character at a time), and shown masked like the email; only
+root finds root accounts. Each search is logged at INFO on `security.account` by ids only
+(`account_search byAccountId= contestId= results= length=`, never the text), so that probing shows
+up; `LIKE` patterns escape `!`, `%` and `_` with `ESCAPE '!'`, so they mean the same under
+`NO_BACKSLASH_ESCAPES`. **No mail without the admin's choice** (the maintainer, 2026-11-16:
+"please do not send emails without approval"): the invitation only with "Send an invitation
+email", the contest's greeting on a direct join only with it too, and a mail telling the owner only
+with "Tell its owner by email" (both unticked by default), each from `UserService.systemSender`,
+never the admin's address. **The add is never silent:** every add that gives a membership or an
+invitation is a notice in the tool for the owner (`services.AccountNotices`, read from the change
+log row marked `from search`): a bar after their next sign-in and a list on their own profile,
+dismissed per browser (a cookie, no migration). Logged as `account_added_notice accountId=
+byAccountId= contestId= outcome=sent|failed|not_sent|no_email inApp=true`; the page says which.
+The add form offers both choices for every account, so it tells the admin nothing about the
+account's other contests. **What remains:** once the account is a member or a live invitee of
+their contest, the admin sees its full address on the users page and in the search, as for anyone
+they add by email; they learn which names have accounts; and an owner who doesn't sign in learns of
+the add only if the admin ticked the mail.
 
 **Example.** `UserService.addToContest` (results `NewAccount`, `JoinedContest`, `Invited`,
-`WikiAccountUnverified`); `services.AccountTokenService.check`; acceptance in one transaction
+`WikiAccountUnverified`); `UserService.addAccountToContest` (the search's add by id: the account
+looked up once before its row lock and checked again under it, a deleted or unknown id a 404);
+`services.AccountSearch`; `services.AccountTokenService.check`; acceptance in one transaction
 with the token row locked; `ShareLinkService.refusal` (who may share a link, or set a password).
 
 **Guards.** `AccountInvitationSpec`, `ShareLinkSpec`, `AdminSetPasswordSpec`, `OwnAccountSpec`, `AccountReviewFixesSpec`, `SetupSpec`,
-`db.AccountVerificationMigrationSpec`, `MultiContestUserSpec`, `UserControllerSpec`.
+`db.AccountVerificationMigrationSpec`, `MultiContestUserSpec`, `UserControllerSpec`, `AccountSearchSpec`.
 
 A Google or Wikimedia identity's first sign-in links to an account by the same rule
 (`services.oauth.IdentityLinker`): by an email the provider is authoritative for (Google: Gmail or

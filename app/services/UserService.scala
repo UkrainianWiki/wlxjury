@@ -83,68 +83,170 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     val contest = contestOpt.orElse(creator.contestId.flatMap(ContestJuryJdbc.findById))
     val contestId = contest.flatMap(_.id).orElse(creator.contestId)
     val role = person.contestRole.getOrElse(User.JURY_ROLE)
-    val access = User.ACCESS_ROLES.contains(role)
 
     matchAccount(person) match {
       case Some((account, byEmail)) =>
-        contestId.fold[Added](AlreadyMember(account)) { cId =>
-          // matched by email: whoever can sign in owns the address (or nobody can); matched by
-          // wiki account only: only a verified wiki account says who holds it (H1), whatever
-          // the account's email or password: a legacy self-set name, or an admin's typo
-          def mayJoin(a: User) = !access || (if (byEmail) a.mayTakeAccessRole else a.wikiAccountVerified)
-          User.findInContest(account.getId, cId) match {
-            case Some(member) => AlreadyMember(member)
-            case None =>
-              // decided and joined under the account's row lock, read again inside: a shared
-              // link's acceptance, which takes the same lock before checking the account's
-              // contests, either committed (this reads its password and unverified email) or
-              // waits for this membership and then refuses its link (ShareLinkService). The lock
-              // order is the acceptance's: the account's row, then its memberships and links
-              val joined = scalikejdbc.DB.localTx { implicit session =>
-                User.lockRow(account.getId).filter(mayJoin).map { locked =>
-                  val added = UserContestJdbc.createMembership(locked.getId, cId, role)
-                  if (added) AccountChangeLog.record(creator, locked.getId, Some(cId), AccountChangeJdbc.Role,
-                    newValue = Some(role))
-                  added -> locked
-                }
-              }
-              joined match {
-                case Some((added, locked)) =>
-                  val member = User.findInContest(account.getId, cId).getOrElse(account)
-                  // no password, or a retired legacy one (P8): only an invitation lets its owner in
-                  val needsPassword = added && access && byEmail && !locked.hasUsablePassword &&
-                    !locked.isRoot && locked.emailLo.nonEmpty
-                  if (needsPassword)
-                    // no password to "use as before": the invitation sets one (none mailed unless
-                    // asked: the member's row offers to send it, or a link to share)
-                    Invited(member,
-                      if (invitationRefused(creator, member)) Mail.NotPossible
-                      else if (sendInvitation) Mail.of(invite(creator, member, contest, None))
-                      else Mail.NotAsked)
-                  else {
-                    for (c <- contest if sendInvitation && added && c.greeting.use && mayBeGreeted(role))
-                      sendMail(creator, member, c, messages("password.existing"))
-                    if (added) JoinedContest(member) else AlreadyMember(member)
-                  }
-                case None if byEmail && invitationRefused(creator, account) =>
-                  // an address an admin set, of an account this creator may not hand a password to
-                  Invited(account, Mail.NotPossible)
-                case None if byEmail =>
-                  // the role waits for an invitation: kept unsent if no mail was asked for
-                  val sent = invite(creator, account, contest, Some(role), mail = sendInvitation)
-                  Invited(account, if (sendInvitation) Mail.of(sent) else Mail.NotAsked)
-                case None =>
-                  accountLogger.info(
-                    s"add_refused reason=wiki_account_unverified accountId=${account.getId} byAccountId=${creator.getId} contestId=$cId")
-                  WikiAccountUnverified(account)
-              }
-          }
-        }
+        addExisting(creator, account, byEmail, contest, contestId, role, sendInvitation)
 
       case None =>
         // root may give no contest role; anyone else's new user gets one
         val roles = if (creator.hasRole(User.ROOT_ROLE)) person.roles else Set(role)
         createAccount(creator, person.copy(contestId = contestId, roles = roles), contest, sendInvitation)
+    }
+  }
+
+  /** Adds the account picked by id from the users page's search (accounts plan A-1) to the
+    * contest with the role: [[addToContest]]'s cases for an account matched by its email (the
+    * actor picked this account, as when they type its address): it joins if it may take the role
+    * ([[User.mayTakeAccessRole]]), otherwise the role waits for an invitation to its address
+    * ([[Invited]]; [[Mail.NotPossible]] where this creator may send none), mailed only if
+    * `sendInvitation`, from the tool's own sender ([[systemSender]]), never the admin's address.
+    * The account change log records the role or the invitation with the comment
+    * [[UserService.SearchComment]].
+    *
+    * Never silent, and never a mail nobody chose (the maintainer, 2026-11-16: "please do not send
+    * emails without approval"): an add that gives a membership or an invitation is a notice in
+    * the app for the account's owner ([[AccountNotices]], read from the change log row), and a
+    * mail to them from [[systemSender]] only if `tellOwner` (the add form's "Tell its owner by
+    * email", unticked by default); none without an email ([[SearchNotice.NoEmail]]). Logged on
+    * `security.account` (`account_added_notice accountId= byAccountId= contestId=
+    * outcome=sent|failed|not_sent|no_email inApp=true`).
+    *
+    * Throws [[UserService.AccountNotFound]], changing nothing, for an id no account has, a
+    * deleted account, or a root account when `creator` isn't root (only root finds root, L1):
+    * looked up once before the row lock, checked again under it;
+    * [[UserService.RoleNotAssignable]] for a role that is not a contest role.
+    */
+  def addAccountToContest(creator: User, accountId: Long, contest: ContestJury, role: String,
+      sendInvitation: Boolean = false, tellOwner: Boolean = false)(implicit
+      messages: Messages, linkHost: LinkHost = LinkHost.None): SearchAdded = {
+    if (!User.mayAssignRoles(creator, Set(role))) throw new RoleNotAssignable
+    val creatorRoot = creator.isRoot || creator.hasRole(User.ROOT_ROLE)
+    def gone(a: User) = a.deletedAt.nonEmpty || (!creatorRoot && (a.isRoot || a.hasRole(User.ROOT_ROLE)))
+    val account = User.findById(accountId).filterNot(gone).getOrElse(throw new AccountNotFound)
+    val cId = contest.getId
+    val added = addExisting(creator, account, byEmail = true, Some(contest), contest.id, role, sendInvitation,
+      comment = Some(SearchComment), mailFrom = Some(systemSender), goneIf = Some(gone))
+    // what the add gave: a membership (direct, or one waiting for a password), or an invitation
+    // that waits to give the role; nothing where none may be sent
+    val invited = added match {
+      case JoinedContest(_)             => Some(false)
+      case Invited(_, Mail.NotPossible) => Option.when(UserContestJdbc.find(account.getId, cId).nonEmpty)(true)
+      case Invited(_, _)                => Some(true)
+      case _                            => None
+    }
+    val notice = invited.fold[SearchNotice](SearchNotice.NotNeeded) { inv =>
+      val outcome =
+        if (!tellOwner) SearchNotice.NotSent
+        else addedNotice(creator, account, contest, role, inv)
+      accountLogger.info(s"account_added_notice accountId=${account.getId} byAccountId=${creator.getId} " +
+        s"contestId=$cId outcome=${outcome.key} inApp=true")
+      outcome
+    }
+    SearchAdded(added, notice)
+  }
+
+  /** The mail telling an added account's owner (the add form's "Tell its owner by email"): from
+    * [[systemSender]], to its address; none without one. `invited`: the role waits for an
+    * invitation (or a password).
+    */
+  private def addedNotice(creator: User, account: User, contest: ContestJury, role: String, invited: Boolean)(implicit
+      messages: Messages, linkHost: LinkHost): SearchNotice =
+    if (account.emailLo.isEmpty) SearchNotice.NoEmail
+    else {
+      val subject = messages("account.added.notice.subject", contest.name)
+      val body = messages("account.added.notice.body", contest.fullName, messages("role." + role),
+        messages(AccountNotices.outcomeKey(role, invited)), AccountNotices.byText(creator.fullname),
+        linkUrl(controllers.routes.LoginController.index.url))
+      try {
+        sendMail.sendMail(systemSender, account, subject, body)
+        SearchNotice.Sent
+      } catch {
+        case NonFatal(e) =>
+          accountLogger.warn(s"account_added_notice_failed accountId=${account.getId} contestId=${contest.getId} " +
+            s"error=${e.getClass.getName}")
+          SearchNotice.Failed
+      }
+    }
+
+  /** [[addToContest]]'s cases once the account is found: `byEmail`, it was matched by its email
+    * (or picked by id, [[addAccountToContest]]), else by its wiki account. `comment`: the account
+    * change log's, for the role or the invitation; `mailFrom`: the sender of a mail it sends, if
+    * not `creator`; `goneIf`: an account that it holds for gone under its row lock (deleted, say)
+    * is refused ([[UserService.AccountNotFound]]), nothing written.
+    */
+  private def addExisting(
+      creator: User,
+      account: User,
+      byEmail: Boolean,
+      contest: Option[ContestJury],
+      contestId: Option[Long],
+      role: String,
+      sendInvitation: Boolean,
+      comment: Option[String] = None,
+      mailFrom: Option[User] = None,
+      goneIf: Option[User => Boolean] = None)(implicit messages: Messages, linkHost: LinkHost): Added = {
+    val access = User.ACCESS_ROLES.contains(role)
+    contestId.fold[Added](AlreadyMember(account)) { cId =>
+      // matched by email: whoever can sign in owns the address (or nobody can); matched by
+      // wiki account only: only a verified wiki account says who holds it (H1), whatever
+      // the account's email or password: a legacy self-set name, or an admin's typo
+      def mayJoin(a: User) = !access || (if (byEmail) a.mayTakeAccessRole else a.wikiAccountVerified)
+      User.findInContest(account.getId, cId) match {
+        case Some(member) => AlreadyMember(member)
+        case None =>
+          // decided and joined under the account's row lock, read again inside: a shared
+          // link's acceptance, which takes the same lock before checking the account's
+          // contests, either committed (this reads its password and unverified email) or
+          // waits for this membership and then refuses its link (ShareLinkService). The lock
+          // order is the acceptance's: the account's row, then its memberships and links
+          val joined = scalikejdbc.DB.localTx { implicit session =>
+            // an account picked by id and deleted meanwhile is none (checked here, not in
+            // lockRow's SQL, which other callers share)
+            val row = User.lockRow(account.getId).filterNot(l => goneIf.exists(_(l)))
+            if (goneIf.nonEmpty && row.isEmpty) throw new AccountNotFound
+            row.filter(mayJoin).map { locked =>
+              val added = UserContestJdbc.createMembership(locked.getId, cId, role)
+              if (added) AccountChangeLog.record(creator, locked.getId, Some(cId), AccountChangeJdbc.Role,
+                newValue = Some(role), comment = comment)
+              added -> locked
+            }
+          }
+          joined match {
+            case Some((added, locked)) =>
+              val member = User.findInContest(account.getId, cId).getOrElse(account)
+              // no password, or a retired legacy one (P8): only an invitation lets its owner in
+              val needsPassword = added && access && byEmail && !locked.hasUsablePassword &&
+                !locked.isRoot && locked.emailLo.nonEmpty
+              if (needsPassword)
+                // no password to "use as before": the invitation sets one (none mailed unless
+                // asked: the member's row offers to send it, or a link to share)
+                Invited(member,
+                  if (invitationRefused(creator, member)) Mail.NotPossible
+                  else if (sendInvitation) Mail.of(invite(creator, member, contest, None, comment = comment, from = mailFrom))
+                  else Mail.NotAsked)
+              else {
+                for (c <- contest if sendInvitation && added && c.greeting.use && mayBeGreeted(role))
+                  sendMail(creator, member, c, messages("password.existing"), from = mailFrom)
+                if (added) JoinedContest(member) else AlreadyMember(member)
+              }
+            case None if byEmail && account.emailLo.isEmpty =>
+              // picked by id, an account with a password and no address: no invitation can reach it
+              NoEmailToInvite(account)
+            case None if byEmail && invitationRefused(creator, account) =>
+              // an address an admin set, of an account this creator may not hand a password to
+              Invited(account, Mail.NotPossible)
+            case None if byEmail =>
+              // the role waits for an invitation: kept unsent if no mail was asked for
+              val sent = invite(creator, account, contest, Some(role), mail = sendInvitation, comment = comment,
+                from = mailFrom)
+              Invited(account, if (sendInvitation) Mail.of(sent) else Mail.NotAsked)
+            case None =>
+              accountLogger.info(
+                s"add_refused reason=wiki_account_unverified accountId=${account.getId} byAccountId=${creator.getId} contestId=$cId")
+              WikiAccountUnverified(account)
+          }
+      }
     }
   }
 
@@ -212,7 +314,7 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     * shown as failed sent none.
     */
   def invite(creator: User, account: User, contestOpt: Option[ContestJury], role: Option[String],
-      mail: Boolean = true, comment: Option[String] = None)(implicit
+      mail: Boolean = true, comment: Option[String] = None, from: Option[User] = None)(implicit
       messages: Messages, linkHost: LinkHost = LinkHost.None
   ): Boolean = {
     require(!account.isRoot, "a root account is never invited")
@@ -243,7 +345,7 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     val sent = mail && {
       val link = linkUrl(controllers.routes.LoginController.invitation(token).url)
       val (subject, body) = invitationText(creator, account, contestOpt, link)
-      mailLink(creator, account, subject, body, AccountTokenJdbc.Invitation, tokenId)
+      mailLink(from.getOrElse(creator), account, subject, body, AccountTokenJdbc.Invitation, tokenId)
     }
     // once the mail is out (a working link) the invitation stands: a flag that can't be written
     // doesn't fail the add or an import line (shown as failed, it would be imported again: a
@@ -525,14 +627,15 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
   def sendMail(creator: User,
                recipient: User,
                contest: ContestJury,
-               password: String)(implicit messages: Messages): Unit = {
+               password: String,
+               from: Option[User] = None)(implicit messages: Messages): Unit = {
     val greeting = getGreeting(contest)
     val subject = messages("welcome.subject", contest.name)
     val message = fillGreeting(greeting.text.get,
                                contest,
                                creator,
                                recipient.copy(password = Some(password)))
-    sendMail.sendMail(creator, recipient, subject, message)
+    sendMail.sendMail(from.getOrElse(creator), recipient, subject, message)
   }
 
   def getGreeting(contest: ContestJury): Greeting = {
@@ -620,6 +723,31 @@ object UserService {
     */
   final case class EmailChanged(oldEmail: String, changed: Boolean, notifyFormer: Boolean, unlinked: Int)
 
+  /** An add from the users page's search ([[UserService.addAccountToContest]]): what became of the
+    * account, and of the mail to its owner.
+    */
+  final case class SearchAdded(added: Added, notice: SearchNotice)
+
+  /** The mail to an added account's owner ([[UserService.addAccountToContest]]); the notice in the
+    * app is there whenever the add gave something.
+    */
+  sealed abstract class SearchNotice(val key: String)
+  object SearchNotice {
+    /** Nothing given: no notice. */
+    case object NotNeeded extends SearchNotice("not_needed")
+    /** "Tell its owner by email" unticked: the notice in the app only. */
+    case object NotSent extends SearchNotice("not_sent")
+    case object Sent extends SearchNotice("sent")
+    case object Failed extends SearchNotice("failed")
+    /** Ticked, but the account has no email. */
+    case object NoEmail extends SearchNotice("no_email")
+  }
+
+  /** Not added: the account picked by id ([[UserService.addAccountToContest]]) may not take the
+    * role directly and has no email for an invitation.
+    */
+  case class NoEmailToInvite(user: User) extends Added
+
   /** Not added: the wiki account given names an account whose wiki account is unverified. */
   case class WikiAccountUnverified(user: User) extends Added
 
@@ -633,6 +761,22 @@ object UserService {
 
   /** A wiki account name MediaWiki would refuse ([[User.normalizeWikiAccount]]). */
   class InvalidWikiAccount extends IllegalArgumentException("not a valid wiki account")
+
+  /** An account id that no account has, or a deleted account's ([[UserService.addAccountToContest]]):
+    * the 404 of a missing resource.
+    */
+  class AccountNotFound extends NoSuchElementException("no such account")
+
+  /** The account change log's comment on a role or an invitation given from the users page's
+    * search ([[UserService.addAccountToContest]], accounts plan A-1).
+    */
+  val SearchComment = "from search"
+
+  /** Whether a comment typed in the edit form would read as [[SearchComment]], which only the search
+    * writes: the column compares case- and trailing-space-insensitively, so any case and spacing.
+    */
+  def isReservedComment(comment: String): Boolean =
+    comment.trim.replaceAll("\\s+", " ").equalsIgnoreCase(SearchComment)
 
   /** An address with all but its first character before the `@` hidden: `a***@example.org`. */
   def maskEmail(email: String): String = email.indexOf('@') match {

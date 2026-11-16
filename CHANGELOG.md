@@ -30,6 +30,17 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
 
 **Features**
 
+- **Find an existing account** on the users page (A-1 of the existing accounts plan, A1 decided
+  by the maintainer 2026-11-16; developed 2026-11-16, `stack/168-account-search`): root and the
+  contest's admins find every account by any part (3 characters or more) of its name or wiki
+  account, or by its whole email address (a part of one only within their contests), at most 20,
+  each with a masked address outside their contests, its wiki account, the contests of theirs it
+  is in, and **Add to this contest** (by id, the email path's rule: it joins if it proved its
+  email, otherwise an invitation, mailed from the tool's address only if asked). Its owner sees a
+  notice in the tool at their next sign-in (a bar, and the list on their profile, dismissible);
+  **Tell its owner by email** mails it too, only if ticked: nothing is mailed without the admin's
+  choice. The text goes in a POST with the CSRF token, never a URL; each search is logged by ids
+  only. Admin guide.
 - **The staff pages as links in the top bar, and one style for counts** (the maintainer's
   feedback on 26.11.9 and decision of 2026-11-16; developed 2026-11-16, `stack/171`): on a page
   whose top bar has no filters, order or pager and that isn't a gallery (the rounds, the users,

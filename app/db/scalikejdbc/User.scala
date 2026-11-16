@@ -651,6 +651,51 @@ object User extends CRUDMapper[User] {
       .orderBy(u.id)
       .apply()
 
+  /** `text` for a `LIKE ... ESCAPE '!'` pattern matching it literally anywhere: `!`, `%` and `_`
+    * escaped with `!` (a search for `%` matches a literal `%`, never everything). Not the default
+    * backslash, whose meaning depends on `NO_BACKSLASH_ESCAPES` (review L2): with `!` a backslash
+    * is an ordinary character in either mode.
+    */
+  def likeAnywhere(text: String): String =
+    "%" + text.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
+
+  /** The users page's search for existing accounts (accounts plan A-1, A1): the non-deleted
+    * accounts whose name or wiki account contains `text` (case-insensitive), whose email is the
+    * whole of it, or whose email contains it if the account is `within` the actor's contests
+    * (every account for root, `adminOf` None). At most `limit` of them, by id, each with whether it
+    * is within: a member, or a live invitee at its current address, of a contest in `adminOf`
+    * (always true for root). Root accounts only for root (review L1). A name or wiki account with
+    * an `@` in it is matched only within (review L3): outside, the masked address it may hold
+    * could otherwise be rebuilt a character at a time. `text` is the caller's, trimmed; it decides
+    * its least length.
+    */
+  def searchAccounts(text: String, adminOf: Option[Seq[Long]], limit: Int)(implicit
+      session: DBSession = autoSession): Seq[(User, Boolean)] = {
+    val pattern = likeAnywhere(text.toLowerCase(java.util.Locale.ROOT))
+    val whole = LoginText.email(text)
+    val within: SQLSyntax = adminOf match {
+      case None                       => sqls"TRUE"
+      case Some(ids) if ids.isEmpty   => sqls"FALSE"
+      case Some(ids) =>
+        val contests = ids.distinct
+        sqls"""(EXISTS (SELECT 1 FROM user_contest uc WHERE uc.user_id = ${u.id} AND uc.contest_id IN ($contests))
+               OR EXISTS (SELECT 1 FROM account_token t WHERE t.user_id = ${u.id}
+                            AND t.purpose = ${AccountTokenJdbc.Invitation} AND t.contest_id IN ($contests)
+                            AND t.used_at IS NULL AND t.revoked_at IS NULL AND t.expires_at > NOW(3)
+                            AND t.email = COALESCE(${u.email}, '')))"""
+    }
+    val rootShown: SQLSyntax = if (adminOf.isEmpty) sqls"TRUE" else sqls"${u.isRoot} = FALSE"
+    sql"""SELECT ${u.result.*}, $within AS within_actor FROM ${User as u}
+          WHERE ${u.deletedAt} IS NULL AND $rootShown
+            AND ((LOWER(${u.fullname}) LIKE $pattern ESCAPE '!' AND ($within OR ${u.fullname} NOT LIKE '%@%'))
+                 OR (LOWER(${u.wikiAccount}) LIKE $pattern ESCAPE '!' AND ($within OR ${u.wikiAccount} NOT LIKE '%@%'))
+                 OR LOWER(${u.email}) = $whole
+                 OR ($within AND LOWER(${u.email}) LIKE $pattern ESCAPE '!'))
+          ORDER BY ${u.id}
+          LIMIT $limit"""
+      .map(rs => User(u.resultName)(rs) -> rs.boolean("within_actor")).list.apply()
+  }
+
   def create(
       fullname: String,
       email: String,
