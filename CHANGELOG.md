@@ -182,6 +182,14 @@ users page's search sends **no email unless the admin ticks** "Send an invitatio
 
 **Development**
 
+- **"Wiki account taken" on Edit user** (A-2 of the existing accounts plan; developed 2026-11-16,
+  `stack/172-wiki-taken-panel`): a save refused because other accounts have the wiki account typed
+  now shows those accounts (up to 10 of a legacy group, none preselected) as the search shows them:
+  the email masked outside the admin's contests, the contests of theirs each is in, and its votes,
+  comments and rounds counted in those contests only (root: all). **Add that account to this
+  contest instead** is the search's add by id, with the form's role and both mail boxes unticked;
+  **Keep them separate** puts the wiki account back in the form (nothing recorded). Root accounts
+  are never shown to admins. Each panel is logged by ids only. Admin guide.
 - **Plans (docs only):** adding existing accounts (search, the "wiki account already taken"
   panel, adding by an unverified wiki name) and the account join plan brought up to date with
   the maintainer's decisions of 2026-11-16 (`docs/plans/2026-11-16-existing-accounts.md`,

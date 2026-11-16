@@ -659,6 +659,63 @@ object User extends CRUDMapper[User] {
   def likeAnywhere(text: String): String =
     "%" + text.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
 
+  /** Whether the account (alias `u`) is within the actor's contests, `adminOf` (None: root, every
+    * account): a member, or a live invitee at its current address, of one of them (accounts plan
+    * A-1's rule for showing an address in full).
+    */
+  private def withinActorSql(adminOf: Option[Seq[Long]]): SQLSyntax = adminOf match {
+    case None                     => sqls"TRUE"
+    case Some(ids) if ids.isEmpty => sqls"FALSE"
+    case Some(ids) =>
+      val contests = ids.distinct
+      sqls"""(EXISTS (SELECT 1 FROM user_contest uc WHERE uc.user_id = ${u.id} AND uc.contest_id IN ($contests))
+             OR EXISTS (SELECT 1 FROM account_token t WHERE t.user_id = ${u.id}
+                          AND t.purpose = ${AccountTokenJdbc.Invitation} AND t.contest_id IN ($contests)
+                          AND t.used_at IS NULL AND t.revoked_at IS NULL AND t.expires_at > NOW(3)
+                          AND t.email = COALESCE(${u.email}, '')))"""
+  }
+
+  /** Of the accounts `ids`, those within the actor's contests `adminOf` ([[searchAccounts]]'s
+    * rule: a member or a live invitee of one of them; every account for root, None).
+    */
+  def withinActor(ids: Seq[Long], adminOf: Option[Seq[Long]])(implicit
+      session: DBSession = autoSession): Set[Long] =
+    if (ids.isEmpty) Set.empty
+    else if (adminOf.isEmpty) ids.toSet
+    else
+      sql"""SELECT ${u.id} FROM ${User as u} WHERE ${u.id} IN (${ids.distinct}) AND ${withinActorSql(adminOf)}"""
+        .map(_.long(1)).list.apply().toSet
+
+  /** What each of the accounts `ids` did in the contests `adminOf` (None: every contest, root's):
+    * its votes (a `vote` row with a rate), its comments, and the rounds it is a juror of (a
+    * `round_user` row, or votes in a legacy round without one). Accounts with none are left out.
+    * The Edit user form's panel of the other accounts with a wiki account (accounts plan A-2).
+    */
+  def activityIn(ids: Seq[Long], adminOf: Option[Seq[Long]])(implicit
+      session: DBSession = autoSession): Map[Long, (Long, Long, Long)] =
+    if (ids.isEmpty || adminOf.exists(_.isEmpty)) Map.empty
+    else {
+      val accounts = ids.distinct
+      def inContests(column: SQLSyntax): SQLSyntax =
+        adminOf.fold(sqls"TRUE")(c => sqls"$column IN (${c.distinct})")
+      val votes = sql"""SELECT v.jury_id, COUNT(*) FROM vote v JOIN round r ON r.id = v.round_id
+                        WHERE v.jury_id IN ($accounts) AND v.rate <> 0 AND ${inContests(sqls"r.contest_id")}
+                        GROUP BY v.jury_id""".map(rs => rs.long(1) -> rs.long(2)).list.apply().toMap
+      val comments = sql"""SELECT c.user_id, COUNT(*) FROM comment c
+                           WHERE c.user_id IN ($accounts) AND ${inContests(sqls"c.contest_id")}
+                           GROUP BY c.user_id""".map(rs => rs.long(1) -> rs.long(2)).list.apply().toMap
+      val rounds = sql"""SELECT s.user_id, COUNT(*) FROM (
+                           SELECT ru.user_id, ru.round_id FROM round_user ru WHERE ru.user_id IN ($accounts)
+                           UNION
+                           SELECT DISTINCT v.jury_id, v.round_id FROM vote v WHERE v.jury_id IN ($accounts)) s
+                         JOIN round r ON r.id = s.round_id
+                         WHERE ${inContests(sqls"r.contest_id")}
+                         GROUP BY s.user_id""".map(rs => rs.long(1) -> rs.long(2)).list.apply().toMap
+      (votes.keySet ++ comments.keySet ++ rounds.keySet).map { id =>
+        id -> ((votes.getOrElse(id, 0L), comments.getOrElse(id, 0L), rounds.getOrElse(id, 0L)))
+      }.toMap
+    }
+
   /** The users page's search for existing accounts (accounts plan A-1, A1): the non-deleted
     * accounts whose name or wiki account contains `text` (case-insensitive), whose email is the
     * whole of it, or whose email contains it if the account is `within` the actor's contests
@@ -673,17 +730,7 @@ object User extends CRUDMapper[User] {
       session: DBSession = autoSession): Seq[(User, Boolean)] = {
     val pattern = likeAnywhere(text.toLowerCase(java.util.Locale.ROOT))
     val whole = LoginText.email(text)
-    val within: SQLSyntax = adminOf match {
-      case None                       => sqls"TRUE"
-      case Some(ids) if ids.isEmpty   => sqls"FALSE"
-      case Some(ids) =>
-        val contests = ids.distinct
-        sqls"""(EXISTS (SELECT 1 FROM user_contest uc WHERE uc.user_id = ${u.id} AND uc.contest_id IN ($contests))
-               OR EXISTS (SELECT 1 FROM account_token t WHERE t.user_id = ${u.id}
-                            AND t.purpose = ${AccountTokenJdbc.Invitation} AND t.contest_id IN ($contests)
-                            AND t.used_at IS NULL AND t.revoked_at IS NULL AND t.expires_at > NOW(3)
-                            AND t.email = COALESCE(${u.email}, '')))"""
-    }
+    val within = withinActorSql(adminOf)
     val rootShown: SQLSyntax = if (adminOf.isEmpty) sqls"TRUE" else sqls"${u.isRoot} = FALSE"
     sql"""SELECT ${u.result.*}, $within AS within_actor FROM ${User as u}
           WHERE ${u.deletedAt} IS NULL AND $rootShown

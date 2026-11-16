@@ -55,6 +55,9 @@ export function fixtureFor(browserName) {
     commentFile: s.commentFile,
     // an account in no contest, this engine's, for the users page's search (users.spec.js)
     searchTarget: (s.searchTargets || [])[i],
+    // this engine's pair for the Edit user form's "wiki account taken" panel (users.spec.js): a
+    // member with no role and no wiki account, and an account in no contest with the wiki account
+    wikiTaken: (s.wikiTaken || [])[i],
   };
 }
 

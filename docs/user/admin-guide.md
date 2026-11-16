@@ -204,6 +204,32 @@ An account that also works in other contests can't be changed by an admin of one
 admin may change the person's role in their own contest only, unless they administer all of its
 contests.
 
+<a id="a-wiki-account-taken"></a>
+#### A wiki account another account has
+
+If you type a wiki account that another account already has, nothing is saved, and the page shows
+**Other accounts with the wiki account** … above the form: often the same person, who already has
+an account from another contest or an earlier year. Some wiki accounts are on several old
+accounts; up to 10 are shown, none chosen for you. Each shows what the search shows (see [Finding
+an existing account](#a-find-account)): its name, its email (in full only if it is in your
+contests, otherwise masked), its wiki account, the contests of yours it is in with its role, and
+its **votes, comments and rounds in your contests** (root: in all contests), so you can tell an
+account in use from an empty one. Root accounts are not shown to admins; the panel says when some
+accounts are not shown.
+
+- **Add that account to this contest instead** adds the other account, with the role you pick (the
+  form's role is chosen), exactly as **Add to this contest** in the search: an account whose owner
+  proved the email joins at once, another gets an invitation. **Send an invitation email** and
+  **Tell its owner by email** are unticked by default; nothing is mailed unless you tick one. Its
+  owner sees a notice in the tool either way. An account already in this contest shows its role
+  instead.
+- **Keep them separate** puts the account's wiki account back as it was and hides the panel; your
+  other changes in the form stay, and nothing is saved until you press **Save**. Nothing is
+  recorded: the next time someone types that wiki account, the panel shows again.
+
+The account you were editing stays as it was. Each time the panel is shown, the log records your
+account and the number of accounts shown, as for a search.
+
 <img src="images/admin-user-edit.png" alt="The Edit user page of a member, with the role and its help, and the set-password links" width="450">
 
 Root sees more on this page, such as the checkbox **Root (every contest)**: see [What only root

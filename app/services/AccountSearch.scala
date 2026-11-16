@@ -69,6 +69,46 @@ object AccountSearch {
     if (isRoot(actor)) None
     else Some(actor.userContests.filter(m => m.active && m.roles.contains(User.ADMIN_ROLE)).map(_.contestId).distinct)
 
+  /** `accounts` as `actor` may see them ([[Found]], the search's rule), with their membership of
+    * `contestId` if given: the Edit user form's panel of the other accounts with a wiki account
+    * (accounts plan A-2) shows them so. Root accounts are left out unless `actor` is root (L1).
+    */
+  def describe(actor: User, contestId: Option[Long], accounts: Seq[User]): Seq[Found] = {
+    val shown = accounts.filter(a => a.deletedAt.isEmpty && (isRoot(actor) || !(a.isRoot || a.hasRole(User.ROOT_ROLE))))
+    val within = User.withinActor(shown.map(_.getId), administered(actor))
+    described(actor, contestId, shown.map(a => a -> within.contains(a.getId)))
+  }
+
+  /** Each account with whether it is within the actor's contests, as a [[Found]]. */
+  private def described(actor: User, contestId: Option[Long], rows: Seq[(User, Boolean)]): Seq[Found] = {
+    val adminOf = administered(actor)
+    val ids = rows.map(_._1.getId)
+    val memberships = UserContestJdbc.findByUsers(ids)
+    val contestIds = memberships.values.flatten.map(_.contestId).toSeq.distinct
+      .filter(id => adminOf.forall(_.contains(id)))
+    val contests = if (contestIds.isEmpty) Map.empty[Long, ContestJury]
+      else ContestJuryJdbc.findAllBy(scalikejdbc.sqls.in(ContestJuryJdbc.defaultAlias.id, contestIds))
+        .flatMap(c => c.id.map(_ -> c)).toMap
+    val root = adminOf.isEmpty
+    rows.map { case (account, within) =>
+      val own = memberships.getOrElse(account.getId, Nil)
+      val member = contestId.flatMap(c => own.find(_.contestId == c)).map(_.roles)
+      val email = Option(account.emailLo).filter(_.nonEmpty)
+      val full = root || within
+      def shown(text: String) = if (full) text else maskEmailsIn(text)
+      Found(
+        account,
+        name = shown(Option(account.fullname).getOrElse("")),
+        wikiAccount = account.wikiAccount.filter(_.trim.nonEmpty).map(shown),
+        email.map(e => if (full) e else UserService.maskEmail(e)),
+        emailFull = email.nonEmpty && full,
+        contests = own.filter(m => adminOf.forall(_.contains(m.contestId))).sortBy(-_.contestId)
+          .map(m => (m.contestId, contests.get(m.contestId), m.roles)),
+        member = member,
+        editable = root || member.nonEmpty)
+    }
+  }
+
   /** The accounts `actor` finds by `text` from the users page of `contestId`, which the caller
     * checked they administer (or are root). Each search is logged at INFO on `security.account`
     * by ids only (`account_search byAccountId= contestId= results= length=`), never its text, so
@@ -79,34 +119,8 @@ object AccountSearch {
     val outcome =
       if (searched.length < MinLength || searched.length > MaxLength) Unsearchable
       else {
-        val adminOf = administered(actor)
-        val rows = User.searchAccounts(searched, adminOf, MaxResults + 1)
-        val shown = rows.take(MaxResults)
-        val ids = shown.map(_._1.getId)
-        val memberships = UserContestJdbc.findByUsers(ids)
-        val contestIds = memberships.values.flatten.map(_.contestId).toSeq.distinct
-          .filter(id => adminOf.forall(_.contains(id)))
-        val contests = if (contestIds.isEmpty) Map.empty[Long, ContestJury]
-          else ContestJuryJdbc.findAllBy(scalikejdbc.sqls.in(ContestJuryJdbc.defaultAlias.id, contestIds))
-            .flatMap(c => c.id.map(_ -> c)).toMap
-        val root = adminOf.isEmpty
-        Results(shown.map { case (account, within) =>
-          val own = memberships.getOrElse(account.getId, Nil)
-          val member = own.find(_.contestId == contestId).map(_.roles)
-          val email = Option(account.emailLo).filter(_.nonEmpty)
-          val full = root || within
-          def shown(text: String) = if (full) text else maskEmailsIn(text)
-          Found(
-            account,
-            name = shown(Option(account.fullname).getOrElse("")),
-            wikiAccount = account.wikiAccount.filter(_.trim.nonEmpty).map(shown),
-            email.map(e => if (full) e else UserService.maskEmail(e)),
-            emailFull = email.nonEmpty && full,
-            contests = own.filter(m => adminOf.forall(_.contains(m.contestId))).sortBy(-_.contestId)
-              .map(m => (m.contestId, contests.get(m.contestId), m.roles)),
-            member = member,
-            editable = root || member.nonEmpty)
-        }, more = rows.size > MaxResults)
+        val rows = User.searchAccounts(searched, administered(actor), MaxResults + 1)
+        Results(described(actor, Some(contestId), rows.take(MaxResults)), more = rows.size > MaxResults)
       }
     val count = outcome match {
       case Results(found, _) => found.size

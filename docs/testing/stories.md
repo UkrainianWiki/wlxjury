@@ -108,6 +108,7 @@ a guide or a test needs them.
 | A-20 | An admin exports the thumbnail URLs of the contest's or a round's files | – | |
 | A-21 | An admin reviews a new round's images before distribution: creates it without jurors ("Review images first" or "Choose jurors next"), checks each country's or region's count, re-applies its filters, comments on a file, picks its jurors on the jurors form and distributes it | [Reviewing a round's images](../user/admin-guide.md#reviewing-a-rounds-images), [Choosing the jurors](../user/admin-guide.md#choosing-the-jurors) | *Part:* the country counts (an international contest), disqualify / put back and the D18 warning in service and controller specs only (`ReviewPlacesJurorsFormSpec` …) |
 | A-22 | An admin finds an existing account by a part of its name or wiki account, or its whole email (masked outside their contests), and adds it to the contest | [admin guide](../user/admin-guide.md#finding-an-existing-account) | |
+| A-23 | An admin whose Edit user save is refused because another account has the wiki account sees that account (masked outside their contests, counts within them), keeps them separate, or adds that account to the contest instead | [admin guide](../user/admin-guide.md#a-wiki-account-another-account-has) | |
 
 ## Root
 

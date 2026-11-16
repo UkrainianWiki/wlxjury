@@ -11,7 +11,8 @@
         notice: Option[String] = None,
         changes: Seq[services.AccountChangeLog.Row] = Nil,
         returnTo: Option[String] = None,
-        accountNotices: Seq[services.AccountNotices.Notice] = Nil
+        accountNotices: Seq[services.AccountNotices.Notice] = Nil,
+        wikiTaken: Option[services.WikiTakenPanel.Panel] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @import helper._
@@ -26,6 +27,9 @@
 
 @* the token card's scripts (copy-field.js, submit-once.js): only on the own profile, which has the card *@
 @pageScripts = {
+    @if(wikiTaken.nonEmpty) {
+        <script src="@routes.Assets.versioned("javascripts/wiki-taken.js")"></script>
+    }
     @if(tokensCard.nonEmpty) {
         <script src="@routes.Assets.versioned("javascripts/copy-field.js")"></script>
         <script src="@routes.Assets.versioned("javascripts/submit-once.js")"></script>
@@ -42,6 +46,73 @@
                 <h1 class="h3">@Messages("edit.user")</h1>
             } else {
                 <h1 class="h3">@Messages("create.user")</h1>
+            }
+
+            @* a save refused because other accounts have the wiki account typed (accounts plan A-2):
+               those accounts as this editor may see them (WikiTakenPanel), each with "Add that account to
+               this contest instead" (A-1's add by id: its role, and two mails, each only if ticked), and
+               "Keep them separate". Outside the save's form: forms don't nest *@
+            @for(panel <- wikiTaken) {
+                <section class="alert alert-warning" id="wiki-taken" aria-labelledby="wiki-taken-title">
+                    <h2 class="h6" id="wiki-taken-title">@Messages("wiki.taken.title", panel.wikiAccount)</h2>
+                    <p class="small mb-2">@Messages("wiki.taken.intro")</p>
+                    <ul class="list-unstyled mb-2" role="list">
+                    @for(other <- panel.others; f = other.found; id = f.account.getId) {
+                        <li class="wiki-taken-account border-top pt-2 mt-2" data-account-id="@id">
+                            <p class="mb-1 fw-semibold">@if(f.editable) {<a href="@routes.UserController.editUser(id, panel.contestId)">@f.name</a>} else {@f.name}</p>
+                            <dl class="small mb-1 wiki-taken-details">
+                                <dt class="d-inline">@Messages("email"):</dt>
+                                <dd class="d-inline">@f.email.getOrElse(Messages("account.search.no.email"))</dd><br>
+                                <dt class="d-inline">@Messages("wiki.account"):</dt>
+                                <dd class="d-inline">@f.wikiAccount.getOrElse("")@if(f.account.wikiAccountVerified) { <span class="badge text-bg-success">@Messages("account.search.verified")</span>}</dd><br>
+                                <dt class="d-inline">@Messages(if (panel.root) "account.search.contests" else "account.search.your.contests"):</dt>
+                                <dd class="d-inline">@if(f.contests.isEmpty) {@Messages("wiki.taken.no.contests")} else {@{f.contests.map { case (cid, c, roles) => s"${c.fold(cid.toString)(_.fullName)} (${roles.toSeq.sorted.map(r => Messages("role." + r)).mkString(", ")})" }.mkString("; ")}}</dd>
+                            </dl>
+                            <p class="small mb-1 wiki-taken-activity">@if(other.activity.isEmpty) {@Messages(if (panel.root) "wiki.taken.activity.none.all" else "wiki.taken.activity.none")} else {@Messages(if (panel.root) "wiki.taken.activity.all" else "wiki.taken.activity", other.activity.votes, other.activity.comments, other.activity.rounds)}</p>
+                            @for(roles <- f.member) {
+                                <p class="small mb-1 wiki-taken-member">@Messages("wiki.taken.member", roles.toSeq.sorted.map(r => Messages("role." + r)).mkString(", "))</p>
+                            }
+                            @for(addTo <- panel.contestId if f.member.isEmpty) {
+                                <form method="post" action="@routes.UserController.addExistingAccount(Some(addTo))" class="wiki-taken-add">
+                                    @csrfField()
+                                    <input type="hidden" name="accountId" value="@id">
+                                    <div class="d-flex flex-wrap gap-1 align-items-center">
+                                        <label class="visually-hidden" for="wiki-taken-role-@id">@Messages("role")</label>
+                                        <select name="role" id="wiki-taken-role-@id" class="form-select form-select-sm w-auto">
+                                        @for(role <- User.FORM_ROLES) {
+                                            <option value="@role" @if(role == panel.role) {selected}>@Messages("role." + role)</option>
+                                        }
+                                        </select>
+                                        <button type="submit" class="btn btn-primary btn-sm">@Messages("wiki.taken.add")</button>
+                                    </div>
+                                    @* never a mail nobody chose: both unticked; its owner sees a notice in the tool *@
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="sendInvitation" value="true" id="wiki-taken-send-@id">
+                                        <label class="form-check-label" for="wiki-taken-send-@id">@Messages("invitation.send.email")</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="tellOwner" value="true" id="wiki-taken-tell-@id">
+                                        <label class="form-check-label" for="wiki-taken-tell-@id">@Messages("account.search.tell.owner")</label>
+                                    </div>
+                                    @* A-4 (decision A3) goes here: "Retire the account being edited", an unticked
+                                       checkbox sent with this add, only where its rules allow it. Then J-2's "Join the
+                                       two accounts" link, for who may join them, once the join is built *@
+                                </form>
+                            }
+                        </li>
+                    }
+                    </ul>
+                    @if(panel.notShown) {
+                        <p class="small mb-2 wiki-taken-not-shown">@Messages("wiki.taken.not.shown")</p>
+                    }
+                    @* the form again with the wiki account as it was: wiki-taken.js puts it back in this
+                       page's form, keeping the other fields; without the script, the edit page as stored *@
+                    @for(id <- editedAccount.map(_.getId)) {
+                        <a href="@routes.UserController.editUser(id, contestId)" class="btn btn-outline-secondary btn-sm"
+                            id="wiki-taken-keep" data-wiki-account="@panel.storedWikiAccount.getOrElse("")">@Messages("wiki.taken.keep")</a>
+                    }
+                    <p class="form-text mb-0">@Messages("wiki.taken.keep.help")</p>
+                </section>
             }
 
             @* the own adds from other admins' search (AccountNotices): what each gives, and Dismiss *@

@@ -547,17 +547,20 @@ class UserController @Inject()(cc: ControllerComponents,
     // `emailWas`: the address the page shows again as the one it showed (an address changed
     // meanwhile: the stored one), else as sent
     def badRequest(form: Form[User], maySetPassword: => Boolean = passwordRefusal.isEmpty,
-        notice: Option[String] = None, emailWas: Option[String] = None) =
+        notice: Option[String] = None, emailWas: Option[String] = None,
+        wikiTaken: Option[services.WikiTakenPanel.Panel] = None) =
       if (own) ownProfile(BadRequest, user, userForm = Some(form))
       else {
         val kept = keepRootWas(form)
         BadRequest(views.html.editUser(user, emailWas.fold(kept)(was => kept.copy(data = kept.data + ("emailWas" -> was))),
-          contestId = editedUser.contestId, maySetPassword = maySetPassword, notice = notice))
+          contestId = editedUser.contestId, maySetPassword = maySetPassword, notice = notice, wikiTaken = wikiTaken))
       }
     def refused(field: Option[String], key: String, maySetPassword: => Boolean = passwordRefusal.isEmpty,
-        notice: Option[String] = None, emailWas: Option[String] = None) = {
+        notice: Option[String] = None, emailWas: Option[String] = None,
+        wikiTaken: Option[services.WikiTakenPanel.Panel] = None) = {
       val form = editUserForm.fill(formUser.copy(password = None))
-      badRequest(field.fold(form.withGlobalError(key))(form.withError(_, key)), maySetPassword, notice, emailWas)
+      badRequest(field.fold(form.withGlobalError(key))(form.withError(_, key)), maySetPassword, notice, emailWas,
+        wikiTaken)
     }
 
     val userId = editedUser.getId
@@ -565,6 +568,9 @@ class UserController @Inject()(cc: ControllerComponents,
     def wikiAccount(u: User) = u.wikiAccount.map(LoginText.clean).filter(_.nonEmpty)
     val wikiChanged = wikiAccount(formUser) != wikiAccount(editedUser)
     val newWiki = wikiAccount(formUser).fold[Either[String, Option[String]]](Right(None))(User.normalizeWikiAccount)
+    // the other non-deleted accounts that have the new wiki account: the save is refused
+    lazy val wikiTakenBy = newWiki.toOption.flatten.filter(_ => wikiChanged)
+      .map(name => name -> User.otherAccountsWithWikiAccount(userId, name)).filter(_._2.nonEmpty)
     // another account's address as stored (lowercased): a change of case only is none
     val emailChanged =
       if (own) formUser.email != editedUser.emailLo else LoginText.email(formUser.email) != editedUser.emailLo
@@ -617,8 +623,12 @@ class UserController @Inject()(cc: ControllerComponents,
       refused(Some("email"), "error.required")
     } else if (wikiChanged && newWiki.isLeft) {
       refused(Some("wikiAccount"), "wiki.account.invalid")
-    } else if (wikiChanged && newWiki.toOption.flatten.exists(User.otherAccountsWithWikiAccount(userId, _).nonEmpty)) {
-      refused(Some("wikiAccount"), "wiki.account.taken")
+    } else if (wikiTakenBy.nonEmpty) {
+      // the other account(s), as far as this editor may see them, and what they may do instead
+      // (accounts plan A-2): one's own wiki account never gets here (refused above)
+      val (name, others) = wikiTakenBy.get
+      refused(Some("wikiAccount"), "wiki.account.taken", wikiTaken = Option.when(!own)(
+        services.WikiTakenPanel.build(user, editedUser, name, others, formUser.roles.headOption)))
     } else if (!own && emailChanged && editedUser.password.nonEmpty && formUser.email.trim.isEmpty) {
       // an account with a password keeps an address to sign in with
       refused(Some("email"), "error.required")

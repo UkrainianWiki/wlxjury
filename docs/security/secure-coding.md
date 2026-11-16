@@ -470,16 +470,22 @@ The add form offers both choices for every account, so it tells the admin nothin
 account's other contests. **What remains:** once the account is a member or a live invitee of
 their contest, the admin sees its full address on the users page and in the search, as for anyone
 they add by email; they learn which names have accounts; and an owner who doesn't sign in learns of
-the add only if the admin ticked the mail.
+the add only if the admin ticked the mail. **Since A-2** (Edit user's "wiki account taken"
+panel, §c): a save refused as `wiki.account.taken` shows the other accounts with that wiki account
+by the same rule (`AccountSearch.describe`: masked outside the editor's contests, root accounts
+to root only), with their votes, comments and rounds counted within the editor's contests only
+(root: all), to whoever passed `editableUser` (root, or an admin of the page's contest); "Add that
+account instead" is the search's add by id (`addExistingAccount`, CSRF, both mails unticked).
+Logged as `wiki_taken_panel byAccountId= accountId= contestId= shown= notShown=`.
 
 **Example.** `UserService.addToContest` (results `NewAccount`, `JoinedContest`, `Invited`,
 `WikiAccountUnverified`); `UserService.addAccountToContest` (the search's add by id: the account
 looked up once before its row lock and checked again under it, a deleted or unknown id a 404);
-`services.AccountSearch`; `services.AccountTokenService.check`; acceptance in one transaction
+`services.AccountSearch`; `services.WikiTakenPanel`; `services.AccountTokenService.check`; acceptance in one transaction
 with the token row locked; `ShareLinkService.refusal` (who may share a link, or set a password).
 
 **Guards.** `AccountInvitationSpec`, `ShareLinkSpec`, `AdminSetPasswordSpec`, `OwnAccountSpec`, `AccountReviewFixesSpec`, `SetupSpec`,
-`db.AccountVerificationMigrationSpec`, `MultiContestUserSpec`, `UserControllerSpec`, `AccountSearchSpec`.
+`db.AccountVerificationMigrationSpec`, `MultiContestUserSpec`, `UserControllerSpec`, `AccountSearchSpec`, `WikiTakenPanelSpec`.
 
 A Google or Wikimedia identity's first sign-in links to an account by the same rule
 (`services.oauth.IdentityLinker`): by an email the provider is authoritative for (Google: Gmail or

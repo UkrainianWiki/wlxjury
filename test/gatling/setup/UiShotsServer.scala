@@ -22,8 +22,9 @@ import java.nio.file.Files
   * round ids, a juror with images in both rounds (id, login, password), the organizer
   * (an admin of the contest), a root account (created here) and the juror's first page id in the binary and the rated round;
   * for the browser tests (browser-test/), an account with the contest's organizer role (created here) and up to
-  * eight jurors with files in both rounds, each with its first page id in each, and three accounts
-  * in no contest for the users page's search (one per engine).
+  * eight jurors with files in both rounds, each with its first page id in each, three accounts
+  * in no contest for the users page's search (one per engine), and three pairs for the Edit user
+  * form's "wiki account taken" panel (one per engine).
   * Then it serves until `target/ui-shots/server.stop` exists (or the process is killed) and exits,
   * stopping the server and the container.
   *
@@ -125,6 +126,25 @@ object UiShotsServer {
           contestId = None).getId)
       s"""{"id": $id, "name": ${q(name)}, "login": ${q(email)}}"""
     }
+    // pairs, one per engine, for the Edit user form's "wiki account taken" panel (users.spec.js):
+    // a member of the contest with no role (no juror list or count shows it) and no wiki account,
+    // which the test edits, and an account in no contest with the wiki account it types, an
+    // unverified email and a password, so that "Add that account instead" invites it and the test
+    // cancels the invitation; the edited account is never saved. In this run's container only
+    val wikiTaken = (1 to 3).map { n =>
+      def account(name: String, email: String, contestId: Option[Long], roles: Set[String]) =
+        db.scalikejdbc.User.findByEmail(email).headOption.map(_.getId).getOrElse(
+          db.scalikejdbc.User.create(fullname = name, email = email,
+            passwordHash = services.PasswordHasher.default.hash(s"taken-$n-pass"), roles = roles,
+            contestId = contestId).getId)
+      val edited = account(s"Taken Edited $n", s"taken-edited-$n@ui-shots.test", Some(f.contestId),
+        Set(db.scalikejdbc.User.NO_ROLE))
+      val (targetName, targetEmail, wiki) = (s"Taken Target $n", s"taken-target-$n@ui-shots.test", s"Taken Wiki $n")
+      val target = account(targetName, targetEmail, None, Set.empty)
+      db.scalikejdbc.User.setWikiAccount(target, Some(wiki))
+      s"""{"edited": {"id": $edited, "name": ${q(s"Taken Edited $n")}}, "target": {"id": $target, """ +
+        s""""name": ${q(targetName)}, "login": ${q(targetEmail)}, "wiki": ${q(wiki)}}}"""
+    }
     // in one transaction: as autocommitted statements (a commit per row) it took about 2.5 minutes
     val filled = DB.localTx { tx => CommonsFileUrl.fillMissing()(tx) }
     println(s"[ui-shots] set the Commons url of $filled images")
@@ -173,6 +193,7 @@ object UiShotsServer {
          |  "organizerRole": {"login": ${q(orgRoleEmail)}, "password": ${q(orgRolePassword)}},
          |  "jurors": [${jurors.mkString(", ")}],
          |  "searchTargets": [${searchTargets.mkString(", ")}],
+         |  "wikiTaken": [${wikiTaken.mkString(", ")}],
          |  "commentFile": {"juror": $commentJuror, "pageId": $commentPage, "otherRounds": $commentOthers},
          |  "pageId": $pageId,
          |  "ratedPageId": $ratedPageId
