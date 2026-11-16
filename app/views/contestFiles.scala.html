@@ -35,7 +35,7 @@
         @if(review.isEmpty) {
         @view.round match {
             case Some(round) => {
-                <h2 class="h4">@Messages("round") @round.description: @Messages("files.deleted.on.commons") (@view.deletedCount)</h2>
+                <h2 class="h4">@Messages("round") @round.description: @Messages("files.deleted.on.commons")@snippets.count(view.deletedCount)</h2>
                 @if(view.countedInRound > 0) {
                     <p class="text-muted">@Messages("files.deleted.still.counted", view.countedInRound)</p>
                 }
@@ -44,14 +44,15 @@
             case None => {
                 <ul class="nav nav-tabs mb-2" id="file-tabs">
                     <li class="nav-item">
-                        <a@tab(!view.deletedOnly && !view.coi) href="@routes.GalleryController.contestFiles(view.contest.getId)">@Messages("files.all") (@view.allCount)</a>
+                        <a@tab(!view.deletedOnly && !view.coi) href="@routes.GalleryController.contestFiles(view.contest.getId)">@Messages("files.all")@snippets.count(view.allCount)</a>
                     </li>
                     <li class="nav-item">
-                        <a@tab(view.deletedOnly && !view.coi) href="@routes.GalleryController.contestFiles(view.contest.getId, deleted = true)">@Messages("files.deleted.on.commons") (@view.deletedCount)</a>
+                        <a@tab(view.deletedOnly && !view.coi) href="@routes.GalleryController.contestFiles(view.contest.getId, deleted = true)">@Messages("files.deleted.on.commons")@snippets.count(view.deletedCount)</a>
                     </li>
-                    @* the files a round that leaves out conflicts of interest leaves out, and whose they are *@
+                    @* the files a round that leaves out conflicts of interest leaves out, and whose they are;
+                       their count for those who may see authors, on the other tabs too *@
                     <li class="nav-item">
-                        <a id="coi-tab"@tab(view.coi) href="@routes.GalleryController.contestFiles(view.contest.getId, coi = true)">@Messages("coi.files")@for(files <- view.coiFiles) { (@files.size)}</a>
+                        <a id="coi-tab"@tab(view.coi) href="@routes.GalleryController.contestFiles(view.contest.getId, coi = true)">@Messages("coi.files")@for(n <- view.coiCount) {@snippets.count(n)}</a>
                     </li>
                 </ul>
             }
@@ -63,7 +64,7 @@
         @for(author <- view.author.filter(_ => user.canViewAuthors(view.contest.getId))) {
             <div id="author-filter" class="mb-2">
                 <span class="badge rounded-pill text-bg-secondary fs-6 fw-normal author-chip">
-                    @Messages("author.filter.chip", services.imports.StoredAuthors.shown(Some(author)).getOrElse(author), pager.count)
+                    @Messages("author.filter.chip", services.imports.StoredAuthors.shown(Some(author)).getOrElse(author))@snippets.count(pager.count, spoken = Some(views.CommentCount.files(pager.count)))
                     <a id="author-filter-remove" class="link-light text-decoration-none ms-1" href="@view.withoutAuthorUrl"
                        title="@Messages("author.filter.remove")" aria-label="@Messages("author.filter.remove")">&times;</a>
                 </span>
@@ -79,7 +80,7 @@
         @for(monumentId <- view.monument) {
             <div id="monument-filter" class="mb-2">
                 <span class="badge rounded-pill text-bg-secondary fs-6 fw-normal monument-chip">
-                    @Messages("monument.filter.chip", monumentId, pager.count)
+                    @Messages("monument.filter.chip", monumentId)@snippets.count(pager.count, spoken = Some(views.CommentCount.files(pager.count)))
                     <a id="monument-filter-remove" class="link-light text-decoration-none ms-1" href="@view.withoutMonumentUrl"
                        title="@Messages("monument.filter.remove")" aria-label="@Messages("monument.filter.remove")">&times;</a>
                 </span>
@@ -94,7 +95,7 @@
             @for((member, files) <- view.coiPeople) {
                 @* the account as the files are matched (CoiMembers.normalize), never the wiki
                    account as entered: the author filter compares byte for byte *@
-                <li>@snippets.authorLinks(db.scalikejdbc.CoiMembers.normalize(member.account), view.contest.getId) — @member.role (@files)</li>
+                <li>@snippets.authorLinks(db.scalikejdbc.CoiMembers.normalize(member.account), view.contest.getId) — @member.role@snippets.count(files, spoken = Some(views.CommentCount.files(files)))</li>
             }
             </ul>
         }

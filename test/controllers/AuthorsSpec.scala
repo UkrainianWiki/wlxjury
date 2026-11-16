@@ -175,7 +175,19 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
           (Jsoup.parse(coi).select("#coi-people .author-links").asScala.map(_.selectFirst("a.author-files").text) ===
             Seq(Petro)) and
           (authorLinks(coi) === Seq(petroLink(f))) and (tiles(coi) === List(4L)) and
-          (tiles(get(app, f.organizer, authorLinks(coi).head._2)._2) === List(4L))
+          (tiles(get(app, f.organizer, authorLinks(coi).head._2)._2) === List(4L)) and
+          // the counts as the bar's (snippets/count, the maintainer's decision of 2026-11-16): the
+          // tab's on every tab, not only its own, and each person's files, without brackets
+          {
+            val all = Jsoup.parse(get(app, f.organizer, routes.GalleryController.contestFiles(f.contest.getId).url)._2)
+            val coiDoc = Jsoup.parse(coi)
+            (all.select("#coi-tab:not(.active) > span.wlx-count").text === "1") and
+              (coiDoc.select("#coi-tab.active > span.wlx-count").text === "1") and
+              (coiDoc.select("#coi-people > li > span.wlx-count-pill > [aria-hidden=true]").asScala.map(_.text).toList === List("1")) and
+              (coiDoc.select("#coi-people > li > span.wlx-count-pill > .visually-hidden").text === ", 1 file") and
+              (coiDoc.select("#coi-people > li").text must not(contain("("))) and
+              (all.select("#file-tabs a").text must not(contain("(")))
+          }
       }
     }
 
@@ -231,7 +243,10 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
         val chip = Jsoup.parse(page).selectFirst("#author-filter")
         val remove = chip.selectFirst("#author-filter-remove").attr("href")
         val (_, all) = get(app, f.organizer, remove)
-        (code === OK) and (chip.selectFirst(".author-chip").text must startWith("Author: Ivan (2)")) and
+        (code === OK) and (chip.selectFirst(".author-chip").text must startWith("Author: Ivan")) and
+          // the count a pill of its own (a name may end in digits), read as ", 2 files"
+          (chip.select(".author-chip > span.wlx-count-pill > [aria-hidden=true]").text === "2") and
+          (chip.select(".author-chip > span.wlx-count-pill > .visually-hidden").text === ", 2 files") and
           (remove === filesUrl(f)) and (tiles(all) === List(1L, 2L, 3L, 4L, 5L, 6L, 7L)) and
           (all must not(contain("author-filter")))
       }

@@ -51,18 +51,43 @@ body.gallery {
 /* in the Votes menu each item's icon in a box as wide as "All"'s, so the labels line up */
 .wlx-votes-menu .dropdown-item > .wlx-lead-icon { display: inline-block; width: 1.15em; margin-right: .25rem; }
 /* counts without brackets (the maintainer's decision of 2026-11-15): a menu item's at its right
-   edge (navbar.scala.html itemCount, region-menu.js), a closed button's after its name
-   (wlx-nav-count), muted (--bs-secondary-color: 4.5:1 and more on the navbar and the menus in
-   both modes), the digits of a menu's counts lined up in one column; on the active item in its
-   text colour, on a greyed-out one greyed out with it. A button's text after its count (the Votes
-   button's "· 12 unrated", wlx-nav-suffix) muted as the count, in every state of the button (at
-   rest, pointed at, focused, open): never brighter than the count, which the button's own colour
-   on hover made it (the maintainer's note of 2026-11-16) */
+   edge (navbar.scala.html itemCount, region-menu.js), any other after its name, a space before
+   it (wlx-count: snippets/count.scala.html, roundstat-counts.js; the maintainer's decision of
+   2026-11-16, one style for the bar's buttons, the page tabs, the lists and the statistics'
+   links, shown on an inactive tab too), muted (--bs-secondary-color: 4.5:1 and more on the
+   navbar, the page and the menus in both modes), the digits of a menu's counts lined up in one
+   column; on the active item in its text colour, on a greyed-out one greyed out with it. A
+   button's text after its count (the Votes button's "· 12 unrated", wlx-nav-suffix) muted as the
+   count, in every state of the button (at rest, pointed at, focused, open): never brighter than
+   the count, which the button's own colour on hover made it (the maintainer's note of 2026-11-16) */
 .wlx-menu-item { display: flex; align-items: center; }
 .wlx-menu-count { margin-inline-start: auto; padding-inline-start: 1rem; }
-.wlx-menu-count, .wlx-nav-count { color: var(--bs-secondary-color); font-variant-numeric: tabular-nums; }
+.wlx-menu-count, .wlx-count { color: var(--bs-secondary-color); font-variant-numeric: tabular-nums; }
 .wlx-nav-suffix { color: var(--bs-secondary-color); }
 .dropdown-item.active .wlx-menu-count, .dropdown-item.disabled .wlx-menu-count { color: inherit; }
+/* a count after a name that is data and may end in digits (snippets/count.scala.html `spoken`:
+   the contest files page's author and monument chips, the conflicts of interest's people, the
+   comments list's "Comments by" items): a pill of its
+   own, so "Ivan2015 3" never reads as one name; the body's text on the secondary background
+   (13.7:1 light, 9.9:1 dark), on a chip's grey badge the body's background (15:1, 12:1). In a
+   menu item still at its right edge, a transparent border keeping it 1rem from the name */
+.wlx-count.wlx-count-pill {
+    display: inline-block;
+    margin-inline-start: .4em;
+    padding: 0 .45em;
+    border-radius: 10rem;
+    background-color: var(--bs-secondary-bg);
+    color: var(--bs-body-color);
+    font-size: .875em;
+    line-height: 1.4;
+}
+.badge .wlx-count.wlx-count-pill { background-color: var(--bs-body-bg); }
+.wlx-menu-item > .wlx-count.wlx-count-pill {
+    margin-inline-start: auto;
+    border-inline-start: 1rem solid transparent;
+    background-clip: padding-box;
+}
+.dropdown-item.active > .wlx-count.wlx-count-pill { color: var(--bs-body-color); }
 /* the icon before a menu's choice that says which menu it is (the Votes menu's vote, the organisers'
    juror menu's people: decision C of 2026-11-14), close to its text */
 .wlx-lead-icon { margin-right: .25rem; }
@@ -73,6 +98,19 @@ body.gallery {
    account menus out */
 .wlx-nav-groups {
     min-width: 0;
+}
+
+/* a bar without filters, order or pager (navbar.scala.html pageLinks' inline: the rounds, the
+   users, the statistics, the forms): its pages as links, this page's highlighted (.nav-link.active
+   above), from the width at which root's five pages and the account menus, with a long contest
+   name, fit on one line in Ukrainian and French (the longest) with Linux's fonts (browser-test
+   navbar.spec.js) with 10 px to spare: 1280 px, as the results bar's one line (at 1200 px root's
+   had 9 px left in Ukrainian with Linux's fonts, at 992 px they wrapped); narrower, the Pages menu
+   instead, as on the other bars */
+.wlx-nav-pages-inline > .wlx-page-link { display: none; }
+@media (min-width: 1280px) {
+    .wlx-nav-pages-inline > .wlx-page-link { display: block; }
+    .wlx-nav-pages-inline > #pages-menu { display: none; }
 }
 
 /* a long name in the navbar cut with an ellipsis, whole in its title: the organisers' juror menu

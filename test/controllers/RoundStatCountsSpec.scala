@@ -133,8 +133,11 @@ class RoundStatCountsSpec extends PlaySpecification with PlayTestDb {
         val (thisRound, allRounds) = (links.head, links(1))
         def header(href: String) = page(app, f.organizer, href).selectFirst("#comments-report-count").text
         (links.size === 2) and
-          (thisRound.text === "Comments on the round's files (3)") and
-          (allRounds.text === "all rounds (5)") and
+          // the counts as the bar's (snippets/count): after the name, without brackets
+          (thisRound.text === "Comments on the round's files 3") and
+          (thisRound.select("> span.wlx-count").text === "3") and
+          (allRounds.text === "all rounds 5") and
+          (allRounds.select("> span.wlx-count").text === "5") and
           (allRounds.attr("href") must contain("scope=contest")) and
           // "· 2 files, 3 comments": the comments, and the files of the same statement
           (numbers(header(thisRound.attr("href"))) === Seq(2, 3)) and
@@ -153,7 +156,8 @@ class RoundStatCountsSpec extends PlaySpecification with PlayTestDb {
         (none.map(a => (a.text, a.hasAttr("href"), a.attr("aria-disabled"), a.attr("tabindex"))) ===
           List(("Comments on the round's files: none", false, "true", "-1"))) and
           (history.map(a => (a.text, a.hasAttr("href"))) ===
-            List(("Comments on the round's files: none", false), ("all rounds (4)", true))) and
+            List(("Comments on the round's files: none", false), ("all rounds 4", true))) and
+          (empty.select("#round-comments-link span.wlx-count").size === 0) and
           // the deferred links keep their href at render, whatever their counts
           (empty.selectFirst("#round-authors-link a").hasAttr("href") must beTrue) and
           (empty.selectFirst("#round-conflicts-link a").hasAttr("href") must beTrue)

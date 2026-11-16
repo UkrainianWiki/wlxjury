@@ -118,8 +118,8 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         val (code, page) = get(s"/contest/${f.contest.getId}/files", f.admin)
 
         code === OK
-        page must contain("All files (2)")
-        page must contain("Deleted on Commons (1)")
+        page must contain("All files<span class=\"wlx-count\"> 2</span>")
+        page must contain("Deleted on Commons<span class=\"wlx-count\"> 1</span>")
         page must contain("Kept.jpg")
         page must contain("Gone.jpg")
         tiles(page) === List(1L, 2L)
@@ -205,7 +205,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         val (_, first) = get(s"/contest/${f.contest.getId}/files", f.admin)
         val (_, second) = get(s"/contest/${f.contest.getId}/files?page=2", f.admin)
 
-        first must contain("All files (18)")
+        first must contain("All files<span class=\"wlx-count\"> 18</span>")
         tiles(first) === (1L to 15L).toList
         tiles(second) === List(16L, 17L, 18L)
         second must contain(s"""href="/contest/${f.contest.getId}/files" rel="prev"""") // to page 1
@@ -398,8 +398,8 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         val (_, first) = get(s"/contest/${f.contest.getId}/files", f.admin)
         val (_, second) = get(s"/contest/${f.contest.getId}/files?region=07", f.admin)
         RegionCountCache.loads.get === before + 1
-        first must contain("All files (8)")
-        second must contain("All files (8)")
+        first must contain("All files<span class=\"wlx-count\"> 8</span>")
+        second must contain("All files<span class=\"wlx-count\"> 8</span>")
       }
     }
 

@@ -81,6 +81,21 @@ object CoiMembers {
         .flatMap { case (pageId, author) => matchOf(members)(Some(author)).map(pageId -> _) }
         .toMap
 
+  /** How many of the category's files [[files]] finds, counted in the database: the authors'
+    * index finds the candidates (`IN`, case-insensitive), `BINARY` keeps the exact matches, as
+    * [[matchOf]] does; for the conflicts of interest's tab on the contest files page's other tabs.
+    */
+  def filesCount(categoryId: Long, members: Map[String, Member])(implicit
+      session: DBSession = AutoSession
+  ): Int =
+    if (members.isEmpty) 0
+    else {
+      val accounts = members.keys.toSeq
+      sql"""SELECT COUNT(DISTINCT cm.page_id) FROM category_members cm JOIN images i ON i.page_id = cm.page_id
+            WHERE cm.category_id = $categoryId AND i.author IN ($accounts) AND BINARY i.author IN ($accounts)"""
+        .map(_.int(1)).single().getOrElse(0)
+    }
+
   /** The round's files that are conflicts of interest and not disqualified (P1b), those with
     * votes moved aside as deleted on Commons too: every file with a row in the round
     * (round_image, V84) of one of `statuses` (`in` and `deleted` by default): page id, title

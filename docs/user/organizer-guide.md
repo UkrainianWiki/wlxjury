@@ -44,9 +44,13 @@ open round, or the latest round if none is open. A contest with no round yet sho
 configured yet**.
 
 - The row of round names above the statistics table switches round.
-- **Contest files** in the pages menu at the start of the top bar opens the contest's files.
-- **Statistics** in the same menu, on every page of the contest, opens the statistics of the
+- **Contest files** at the start of the top bar opens the contest's files.
+- **Statistics** next to it, on every page of the contest, opens the statistics of the
   round you are looking at, or else of the latest open round (once the contest has a round).
+- These pages are links in the top bar, the page you are on highlighted. On a page whose bar also
+  has filters, an order or pages (a gallery, the contest files) they are in the pages menu at the
+  start of the bar (its button the menu icon and the page you are on), and so they are in a window
+  narrower than 1280 pixels.
 - The contest menu at the top of the page switches contest, if you are in more than one.
 
 There is no **Rounds** or **Users** menu for you: those are the admins'. The admins create the
@@ -94,21 +98,21 @@ columns of the totals can add up to more than the files.
 Under the table:
 
 - for a rated round, the round's **File score** rule, see [The score](#o-score);
-- **Comments on the round's files (N)**, the [comments report](#o-comments-report): N is the
+- **Comments on the round's files N**, the [comments report](#o-comments-report): N is the
   number of comments written in this round on its files. When the round's files also have
-  comments from other rounds of the contest, **all rounds (M)** follows with all of them, and
+  comments from other rounds of the contest, **all rounds M** follows with all of them, and
   opens the report with **All rounds of the contest**;
 - for a round whose images wait for review before distribution, the link **Review images**: the
   round's files as they will go to the jurors, by status (in the round, deleted on Commons,
   disqualified), read only; an admin distributes them,
 - the link **Conflicts of interest of this round**, see [The conflicts page](#o-conflicts-page),
   with the number of the round's files that are conflicts of interest now and of its
-  disqualified files, for example "(3 files · 2 disqualified)". With neither it says "none",
-  and while the round has a history of disqualified and requalified files, "none · history (N)"
+  disqualified files, for example "3 files · 2 disqualified". With neither it says "none",
+  and while the round has a history of disqualified and requalified files, "none · history N"
   (500+ when it has more than the 500 latest events the page lists);
 - the link **Authors of this round**, see [The authors list](#o-authors-list), with the number of
-  authors the list shows and of the files without a stored author, for example "(148 · 12 files
-  without an author)". "None stored" can mean that the files were imported without their
+  authors the list shows and of the files without a stored author, for example "148 · 12 files
+  without an author". "None stored" can mean that the files were imported without their
   authors; the link then still opens the list while some files have no author, for example
   "none stored · 12 files without an author";
 - **Deleted on Commons**, when some of the round's files were deleted on Commons: the number
@@ -319,13 +323,15 @@ that a spreadsheet would read as a formula are changed so that they don't run as
 <a id="o-contest-files"></a>
 ### The contest's files
 
-**Contest files** in the pages menu at the start of the top bar shows all the files of the contest in a gallery, with the region
-menu of a monuments contest, and a large view of each file. It has three tabs:
+**Contest files** at the start of the top bar shows all the files of the contest in a gallery, with the region
+menu of a monuments contest, and a large view of each file. It has three tabs, each with its
+number of files after its name (the conflicts of interest's for those who may see authors):
 
 - **All files**;
 - **Deleted on Commons**: the files that were deleted on Commons;
 - **Conflicts of interest**: the contest's files that are conflicts of interest, each with
-  whose it is, see [What a conflict of interest is](#o-conflicts).
+  whose it is, see [What a conflict of interest is](#o-conflicts); above them the people whose
+  files they are, each with their role and number of files.
 
 The **Import and cache** button next to the contest's name is only for admins, who bring the
 files in with it, see [Importing the contest's files](admin-guide.md#a-import-files).
@@ -340,14 +346,14 @@ a monument's files in their own round instead (see below).
 ### Monuments
 
 In a monuments contest, the monument's box in a file's large view (in a round and on the contest
-files page) ends with one line, for example `46-233-0012 · Gallery (2) · Page →`: the
-monument's id, **Gallery (N)** in a round (see below), and **Page →**, which opens the monument's
+files page) ends with one line, for example `46-233-0012 · Gallery 2 · Page →`: the
+monument's id, **Gallery N** in a round (see below), and **Page →**, which opens the monument's
 page. The page shows the monument as its Wikipedia list has it, links to its list row on
 Wikipedia, its Commons category and its Wikidata item where the list has them, and under
 **Files**:
 
 - **In the contest: N →**: the contest's files of this monument. The link opens the contest files
-  page with only them, under a chip **Monument: … (N)**; the **×** on the chip shows all the files
+  page with only them, under a chip **Monument: …** with their number in a small pill of its own; the **×** on the chip shows all the files
   again. The filter takes the monument's id exactly and keeps to the pages, the region and
   country menus, the author filter and the large view.
 - **In round …: N →**: the round's files of this monument, those any juror has (for a juror: only
@@ -360,11 +366,11 @@ filter too, with a compact chip **Monument: …** in the bar's filters, where th
 only the monument's files, the region menu is hidden while the filter is on (a monument is in one
 region), and the filter keeps to the pages, the votes choices, orders, views, the round and juror
 menus and the large view, whose next and previous files and votes by keys stay among the
-monument's files. In the large view, the monument's line has **Gallery (N)**, which opens the list
+monument's files. In the large view, the monument's line has **Gallery N**, which opens the list
 you are in (the same juror, votes choice and order) with only the
 monument's N files; it is left out while the list already has only them and when the file is the
 list's only one of the monument. For a file whose monument isn't in the tool's monument lists
-the box shows the id and **Gallery (N)**, or just the id when the file is the list's only one of
+the box shows the id and **Gallery N**, or just the id when the file is the list's only one of
 the monument or the list already has only the monument's files.
 
 The page counts files only in a contest you are a member of, and a round you may see; opened
@@ -394,8 +400,8 @@ Each author's name links to their files. Where it leads depends on where you are
 - **In the contest** (the contest's authors list, the contest files page's large view and its
   conflicts of interest): the contest files page with only that author's files.
 
-The contest files page shows a chip **Author: … (N)** above the files, N being the number of
-files in the current tab; a round's lists show a compact chip **Author: …** in the bar's filters,
+The contest files page shows a chip **Author: …** above the files, with the number of files in
+the current tab in a small pill of its own (a name may end in digits); a round's lists show a compact chip **Author: …** in the bar's filters,
 after the monument's, a long name cut short (point at it to see it whole). The **×** on the chip
 shows the files of all authors again. On the contest files page the pages, the region and country
 menus and the large view keep the author; the tabs show all the contest's files again. In a

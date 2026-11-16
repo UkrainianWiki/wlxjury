@@ -532,7 +532,12 @@ class GalleryController @Inject() (
             listed.copy(deletedCount = deletedCount, countedInRound = counted)
           case None =>
             listed.copy(allCount = all.fold(0)(_.total),
-              deletedCount = listed.contest.categoryId.fold(0)(ImageJdbc.categoryDeletedCount(_)))
+              deletedCount = listed.contest.categoryId.fold(0)(ImageJdbc.categoryDeletedCount(_)),
+              // the conflicts of interest's tab's count on every tab (the maintainer, 2026-11-16),
+              // for those who may see their list (canViewAuthors, as coiFiles: today everyone who
+              // may open this page); on their own tab the list's size, else counted in the database
+              coiCount = listed.coiFiles.map(_.size).orElse(Option.when(user.canViewAuthors(contestId))(
+                listed.contest.categoryId.fold(0)(CoiMembers.filesCount(_, CoiMembers.forContest(contestId))))))
         }
         // of the country (the monument, ...): its files, or its files deleted on Commons
         val listCount = view.countryFilter.fold(if (view.deletedOnly) view.deletedCount else view.allCount) { country =>
@@ -726,6 +731,8 @@ class GalleryController @Inject() (
   * @param countedInRound of the round's deleted files, those still in its galleries and results
   * @param coiFiles       the conflicts of interest, if they are the list: by page id, with the
   *                       person each file is by
+  * @param coiCount       the number of conflicts of interest, for their tab, on every tab, if
+  *                       the viewer may see authors
   * @param author         the author whose files the list is narrowed to, as stored, if one is
   *                       chosen (only for those who see authors, [[User.canViewAuthors]])
   * @param authorFiles    the author's files in the contest, by page id, if one is chosen
@@ -743,6 +750,7 @@ final case class ContestFilesView(
     deletedCount: Int = 0,
     countedInRound: Int = 0,
     coiFiles: Option[Map[Long, CoiMembers.Member]] = None,
+    coiCount: Option[Int] = None,
     author: Option[String] = None,
     authorFiles: Option[Seq[Long]] = None,
     monument: Option[String] = None,

@@ -1,0 +1,13 @@
+@(n: Long, kind: String = "", spoken: Option[String] = None)(implicit messages: Messages)
+@* A count after a name, the same everywhere (the maintainer's decision of 2026-11-16): the bar's menu
+   buttons (the Votes and Comments buttons, navbar.scala.html), the page tabs (the contest files'
+   tabs, a round's review tabs), the lists' counts and the statistics page's links
+   (roundstat-counts.js draws its live ones the same way): the number after a space, without
+   brackets, muted (main.css wlx-count), always shown, read after the name as it is shown
+   ("Conflicts of interest 725"), grouped in the page's language (38,367; 38 367: views.Count, as
+   roundstat-counts.js's toLocaleString). `kind`: a class of its own (wlx-votes-count, ...).
+   `spoken`: after a name that is data and may end in digits (a monument id or address, an author's
+   or a commenter's account: "Ivan2015", "вул. Шевченка, 12"), the count as a pill of its own
+   (wlx-count-pill: its own background, never just a space after the name), read by screen readers
+   as these words after a comma ("Author: Ivan2015, 3 files"; "Juror 1, 3 comments") instead of the bare number. No white
+   space around it *@@if(spoken.isEmpty) {<span class="wlx-count@if(kind.nonEmpty) { @kind}"> @views.Count.format(n)</span>} else {<span class="wlx-count wlx-count-pill@if(kind.nonEmpty) { @kind}"><span class="visually-hidden">, @spoken</span><span aria-hidden="true">@views.Count.format(n)</span></span>}

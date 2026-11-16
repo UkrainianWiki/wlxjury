@@ -86,7 +86,7 @@ class ContestFilesMonumentSpec extends PlaySpecification with PlayTestDb {
         val (code, page) = get(s"${f.base}?monument=07-101-0001", f.organizer)
         code === OK
         tiles(page) === List(1L, 2L, 5L) // the deleted one too, for organizers
-        page must contain("Monument: 07-101-0001 (3)")
+        page must contain("Monument: 07-101-0001<span class=\"wlx-count wlx-count-pill\"><span class=\"visually-hidden\">, 3 files</span><span aria-hidden=\"true\">3</span></span>")
         page must contain(s"""id="monument-filter-remove" class="link-light text-decoration-none ms-1" href="${f.base}"""")
         page must contain(s"""href="/monuments/id/07-101-0001?contest=${f.contest.getId}"""")
         page must contain(s"""data-largeUrl="${f.base}/1?monument=07-101-0001"""")
@@ -95,7 +95,7 @@ class ContestFilesMonumentSpec extends PlaySpecification with PlayTestDb {
         tiles(get(s"${f.base}?monument=07-101-000A", f.organizer)._2) === List(4L)
         tiles(get(s"${f.base}?monument=07-101-000a", f.organizer)._2) === Nil
         tiles(get(s"${f.base}?monument=07-101-000", f.organizer)._2) === Nil
-        get(s"${f.base}?monument=07-101-000", f.organizer)._2 must contain("Monument: 07-101-000 (0)")
+        get(s"${f.base}?monument=07-101-000", f.organizer)._2 must contain("Monument: 07-101-000<span class=\"wlx-count wlx-count-pill\"><span class=\"visually-hidden\">, 0 files</span><span aria-hidden=\"true\">0</span></span>")
         // empty: no filter
         tiles(get(s"${f.base}?monument=", f.admin)._2) === (1L to 6L).toList
       }
@@ -195,7 +195,7 @@ class ContestFilesMonumentSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         Seq(f.admin, f.organizer).map { u =>
           val (code, page) = get(f.base, u)
-          (code, tiles(page), page.contains("file-tabs"), page.contains("All files (6)"), page.contains("Deleted on Commons (1)"))
+          (code, tiles(page), page.contains("file-tabs"), page.contains("All files<span class=\"wlx-count\"> 6</span>"), page.contains("Deleted on Commons<span class=\"wlx-count\"> 1</span>"))
         } === Seq.fill(2)((OK, (1L to 6L).toList, true, true, true))
         get(s"${f.base}?deleted=true", f.organizer)._2 must contain("data-deleted")
       }

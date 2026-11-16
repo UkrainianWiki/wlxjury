@@ -63,7 +63,7 @@ that contest. Admins manage only the contests in which they are admins.
 <a id="a-users-page"></a>
 ### The users page
 
-Open **Users** in the pages menu at the start of the top bar. The page lists the members of the current contest: **Full name**,
+Open **Users** at the start of the top bar (in a gallery, or in a window narrower than 1280 pixels, in the pages menu there). The page lists the members of the current contest: **Full name**,
 **Wiki account**, **Email**, **Role**, and a pencil to edit. Next to a wiki account there may be
 two buttons that write to the person on Commons, a message on their talk page and an email.
 
@@ -443,7 +443,7 @@ form. After the round's first vote you can only replace a criterion by another i
 <a id="a-rounds-list"></a>
 ### The rounds list
 
-Open **Rounds** in the pages menu at the start of the top bar. The list shows, for each round: its **Number** (a link to the
+Open **Rounds** at the start of the top bar (or in the pages menu there). The list shows, for each round: its **Number** (a link to the
 round form), its **Name**, the **File distribution**, the **Rating type**, whether it is
 **Active** (started), the number of **Images** and the state of its distribution.
 
@@ -624,7 +624,7 @@ the page too.
 
 The review page shows the round's files as the contest's files page does (tiles, pages, the region
 menu, the large view), with tabs for the files **In the round**, **Deleted on Commons** and
-**Disqualified**. Above them: how the files were added (by the round's filters, from a pasted
+**Disqualified**, each with its number of files after its name. Above them: how the files were added (by the round's filters, from a pasted
 list, ...), and the round's conflicts of interest, if it has any.
 
 - **Distribute to jurors** gives each juror their share and opens the round to them when it has

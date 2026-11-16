@@ -18,6 +18,16 @@ object CommentCount {
     Messages(s"comments.report.files.${Plural.form(n, messages.lang.language)}", n)
 }
 
+/** A count as the pages show it (snippets/count.scala.html, the Votes button's suffix): grouped
+  * in the page's language ("38,367", "38 367"), as MessageFormat's `{0}` and roundstat-counts.js's
+  * `toLocaleString` group it.
+  */
+object Count {
+
+  def format(n: Long)(implicit messages: Messages): String =
+    java.text.NumberFormat.getIntegerInstance(messages.lang.toLocale).format(n)
+}
+
 /** The plural forms (CLDR's) of the app's languages for a whole number: Ukrainian and Russian
   * `one` (1, 21, 101…, not 11), `few` (2-4, 22-24…, not 12-14) and `many` (the rest); French
   * `one` for 0 and 1; English `one` for 1; `other` for the rest. Java's MessageFormat choice

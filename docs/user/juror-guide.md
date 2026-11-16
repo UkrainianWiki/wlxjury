@@ -374,7 +374,7 @@ Videos play in the large view.
 ### The monument's page
 
 In a monuments contest, the monument's box in **File details** ends with one line: the
-monument's id, **Gallery (N)** and **Page →**, for example `46-233-0012 · Gallery (2) · Page →`.
+monument's id, **Gallery N** and **Page →**, for example `46-233-0012 · Gallery 2 · Page →`.
 **Page →** opens the monument's page:
 
 - its name, place, year and type, as its Wikipedia list has them;
@@ -384,11 +384,11 @@ monument's id, **Gallery (N)** and **Page →**, for example `46-233-0012 · Gal
   linked to your gallery with only those files. Other jurors' files and votes are never counted
   for you.
 
-**Gallery (N)** opens your gallery (your choice in the votes menu) with only the monument's N files. It
+**Gallery N** opens your gallery (your choice in the votes menu) with only the monument's N files. It
 isn't shown when your gallery already shows only this monument, or when this is its only file
 of the monument; the line is then `46-233-0012 · Page →`. Files whose monument isn't in the
 tool's monument lists (for example in Wiki Loves Earth) get a small box with the monument's id
-and **Gallery (N)**, without a link to a monument's page; just the id when this is the only file
+and **Gallery N**, without a link to a monument's page; just the id when this is the only file
 of the monument or your gallery already shows only this monument.
 
 You see only the files of your rounds: the contest's other files aren't shown to jurors.

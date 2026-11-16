@@ -111,7 +111,7 @@
     <ul class="nav nav-tabs mb-2" id="round-review-tabs">
     @for(status <- RoundReviewController.Statuses) {
         <li class="nav-item">
-            <a class="nav-link @if(view.reviewStatus.contains(status)) {active}" @if(view.reviewStatus.contains(status)) {aria-current="page"} id="round-review-tab-@status" href="@routes.RoundReviewController.review(r.round.getId, status)">@Messages(s"round.review.tab.$status") (@r.count(status))</a>
+            <a class="nav-link @if(view.reviewStatus.contains(status)) {active}" @if(view.reviewStatus.contains(status)) {aria-current="page"} id="round-review-tab-@status" href="@routes.RoundReviewController.review(r.round.getId, status)">@Messages(s"round.review.tab.$status")@snippets.count(r.count(status))</a>
         </li>
     }
     </ul>

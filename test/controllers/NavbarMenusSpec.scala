@@ -109,7 +109,7 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
         all.select("#votes-menu .dropdown-item.wlx-menu-item > .wlx-menu-count").asScala.map(_.text).toList ===
           List("8", "4", "3", "1")
         all.select("#votes-menu .dropdown-item").asScala.map(_.text).toList === List("All 8", "Unrated 4", "Selected 3", "Rejected 1")
-        all.select("#votes-menu > button > .wlx-votes-count.wlx-nav-count").text === "8"
+        all.select("#votes-menu > button > .wlx-votes-count.wlx-count").text === "8"
         all.select("#votes-menu").text must not(contain("("))
         // no visible word: "Votes" read by screen readers and in the title
         NavMenus.button(all, "votes-menu") === Some("Votes: All 8 · 4 unrated")
@@ -353,6 +353,57 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
           } and
           // a juror has none of these pages: no menu
           (page(app, f.juror, gallery(f.round, f.juror.getId)).select("#pages-menu, .wlx-nav-links").size === 0)
+      }
+    }
+
+    "be links in a bar without filters, order or pager, the menu kept for narrow windows (26.11.9 feedback)" in {
+      testDbApp { app =>
+        val f = fixture()
+        val c = f.contest.getId
+        // the links: (id, name, href, current), and the menu's items the same way, in order
+        def links(doc: Document) = doc.select(".wlx-nav-pages-inline > li.wlx-page-link > a.nav-link").asScala.toList
+          .map(a => (a.id, a.text.trim, a.attr("href"), a.hasClass("active") && a.attr("aria-current") == "page"))
+        def menu(doc: Document) = doc.select("#pages-menu a.dropdown-item").asScala.toList
+          .map(a => (a.id.replaceFirst("^menu-", "page-"), a.text.trim, a.attr("href"), a.hasClass("active") && a.attr("aria-current") == "page"))
+        def current(doc: Document) = links(doc).filter(_._4).map(_._1)
+        val rounds = page(app, f.admin, s"/admin/rounds?contestId=$c")
+        val users = page(app, f.admin, s"/admin/users?contestId=$c")
+        val stat = page(app, f.organizer, s"/roundstat/${f.round.getId}")
+        val rootUsers = page(app, f.root, s"/admin/users?contestId=$c")
+        val orgGallery = page(app, f.organizer, gallery(f.round, f.juror.getId))
+        (links(rounds).map(_._1) === List("page-contest-files", "page-users", "page-rounds", "page-statistics")) and
+          (links(rounds).map(_._2) === List("Contest files", "Users", "Rounds", "Statistics")) and
+          (current(rounds) === List("page-rounds")) and
+          (current(users) === List("page-users")) and
+          (current(stat) === List("page-statistics")) and
+          (links(stat).map(_._1) === List("page-contest-files", "page-statistics")) and
+          // the same items, order, names, links and current page as the Pages menu, still there
+          // for narrow windows (main.css shows one of the two)
+          forall(Seq(rounds, users, stat, rootUsers))(doc => (links(doc) must not(beEmpty)) and (links(doc) === menu(doc))) and
+          (links(rootUsers).map(_._1).take(2) === List("page-contests", "page-contest-files")) and
+          // one group, the links before the menu, no ids twice
+          (rounds.select(".wlx-nav-groups > ul").size === 1) and
+          (rounds.select(".wlx-nav-pages-inline > li").last.id === "pages-menu") and
+          (rounds.select("nav.navbar [id]").asScala.map(_.id).groupBy(identity).collect { case (id, s) if s.size > 1 => id } must beEmpty) and
+          // a bar with filters, order and pager (a round's gallery) keeps the menu alone
+          (orgGallery.select(".wlx-nav-pages-inline, .wlx-page-link").size === 0) and
+          (orgGallery.select("#pages-menu").size === 1) and
+          // a juror has no pages: no links either
+          (page(app, f.juror, gallery(f.round, f.juror.getId)).select(".wlx-page-link, #pages-menu").size === 0) and
+          // a gallery-type page whose bar happens to be empty (the contest files of a contest
+          // without files: one page, no region menu) keeps the menu alone: pagesInline
+          {
+            val empty = contestDao.create(None, "WLE", 2026, "Ukraine")
+            val files = page(app, f.root, s"/contest/${empty.getId}/files")
+            (files.select(".wlx-nav-filters, .wlx-nav-order, .wlx-nav-pager").size === 0) and
+              (files.select(".wlx-nav-pages-inline, .wlx-page-link").size === 0) and
+              (files.select("#pages-menu").size === 1)
+          } and
+          // a form whose page isn't one of them: the links, none marked current
+          {
+            val edit = page(app, f.admin, s"/users/edit/${f.juror.getId}?contestId=$c")
+            (links(edit) must not(beEmpty)) and (edit.select(".wlx-nav-pages-inline [aria-current]").size === 0)
+          }
       }
     }
 

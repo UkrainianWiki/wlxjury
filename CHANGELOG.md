@@ -30,6 +30,28 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
 
 **Features**
 
+- **The staff pages as links in the top bar, and one style for counts** (the maintainer's
+  feedback on 26.11.9 and decision of 2026-11-16; developed 2026-11-16, `stack/171`): on a page
+  whose top bar has no filters, order or pager and that isn't a gallery (the rounds, the users,
+  the statistics, the forms),
+  the pages of the Pages menu (**Contests**, **Contest files**, **Users**, **Rounds**,
+  **Statistics**: the same items, order and permissions) are links in the bar, the page's own
+  highlighted and `aria-current`, from 1280 px; narrower, and on the galleries' grouped bar, the
+  Pages menu as before. Counts after a name are drawn by one snippet (`snippets/count`, CSS
+  `wlx-count`, also from `roundstat-counts.js`): a space and the number grouped in the page's
+  language (`views.Count`, as the menus' counts and `toLocaleString`), without brackets, muted,
+  as the Votes button's count, on the bar's buttons, the contest files tabs (the conflicts of
+  interest's count now on every tab, for those who may see authors, by a count-only query,
+  `CoiMembers.filesCount`), a round's review tabs, the
+  conflicts of interest's people, the statistics page's comments, conflicts and authors links and
+  the large view's monument **Gallery N** and the contest files page's **Monument: … N** and
+  **Author: …** chips. After a name that is data and may end in digits (a monument id, an
+  author's or commenter's account: the chips and the conflicts of interest's people, read as
+  ", 3 files", and the comments list's "Comments by" items, read as ", 3 comments") the count is a
+  pill of its own. Messages no
+  longer embed the count (`*.link.count` keys removed, the chips' `({1})` dropped, in all four
+  languages).
+
 - **By rate: the comment chip opens the comments, the chips as on the gallery's tiles** (the
   maintainer's report on 26.11.9; developed 2026-11-16, `stack/170`): a file's comment chip on
   the by-rate gallery was a plain badge inside the thumbnail's link, so a click opened the file's

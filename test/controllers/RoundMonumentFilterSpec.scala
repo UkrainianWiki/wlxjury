@@ -177,14 +177,14 @@ class RoundMonumentFilterSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         val body = page(f.large(f.juror.getId, 1L, "?sort=file"), f.juror)
         href(body, "monument-round-list") must beSome(f.gallery(f.juror.getId, s"?monument=$M&sort=file"))
-        body must contain("Gallery (3)</a>")
+        body must contain("""Gallery<span class="wlx-count"> 3</span></a>""")
         href(body, "monument-page") must beSome(s"/monuments/id/$M?contest=${f.contest.getId}&round=${f.round.getId}")
         // a juror's card links the round's list and the monument page, never the contest's files
         body must not contain "/contest/"
         // the tab is kept: on the unrated tab, 2 (selected) is off it
         val unrated = page(f.large(f.juror.getId, 1L, "?filter=unrated&sort=file"), f.juror)
         href(unrated, "monument-round-list") must beSome(f.gallery(f.juror.getId, s"?filter=unrated&monument=$M&sort=file"))
-        unrated must contain("Gallery (2)</a>")
+        unrated must contain("""Gallery<span class="wlx-count"> 2</span></a>""")
         // without a monument row: the id and the gallery, no monument page
         val bare = page(f.large(f.juror.getId, 5L, "?sort=file"), f.juror)
         bare must contain("""<span id="monument-id">07-101-9999</span> &middot; <a id="monument-round-list"""")

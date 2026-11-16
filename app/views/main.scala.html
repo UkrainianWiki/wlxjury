@@ -31,7 +31,8 @@
         @head
 } {
         @navbar(title, user, asUserId, selectedRound, rounds, list, pager,
-            contestId = contestId.orElse(selectedRound.map(_.contestId)), rates, filters, backHere, commented, commentsBy, commentsByName)
+            contestId = contestId.orElse(selectedRound.map(_.contestId)), rates, filters, backHere, commented, commentsBy, commentsByName,
+            pagesInline = !gallery)
 
      <div class="container-fluid">
 

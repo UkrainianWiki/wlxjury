@@ -314,7 +314,7 @@ class MonumentControllerSpec extends Specification with PlayTestDb {
         val linked = views.html.large.monumentInfo(image, monument, f.contest.id, Some(f.round),
           Some(MonumentLine(Id, 3, Some("/gallery/round/1/user/2/page/1?monument=07-101-0001&sort=file")))).body
         linked must contain(
-          """<span id="monument-id">07-101-0001</span> &middot; <a id="monument-round-list" href="/gallery/round/1/user/2/page/1?monument=07-101-0001&amp;sort=file" title="Show only this monument&#x27;s photos in the gallery">Gallery (3)</a> &middot; """ + page)
+          """<span id="monument-id">07-101-0001</span> &middot; <a id="monument-round-list" href="/gallery/round/1/user/2/page/1?monument=07-101-0001&amp;sort=file" title="Show only this monument&#x27;s photos in the gallery">Gallery<span class="wlx-count"> 3</span></a> &middot; """ + page)
         // the id once, "Monument" nowhere
         linked.split("07-101-0001</span>").length === 2
         linked must not contain "Monument 07"
@@ -331,7 +331,7 @@ class MonumentControllerSpec extends Specification with PlayTestDb {
         val minimal = views.html.large.monumentInfo(bare, None, f.contest.id, Some(f.round),
           Some(MonumentLine("07-101-9999", 2, Some("/x")))).body
         minimal must contain("""id="monument-card"""")
-        minimal must contain("""<span id="monument-id">07-101-9999</span> &middot; <a id="monument-round-list" href="/x" title="Show only this monument&#x27;s photos in the gallery">Gallery (2)</a></div>""")
+        minimal must contain("""<span id="monument-id">07-101-9999</span> &middot; <a id="monument-round-list" href="/x" title="Show only this monument&#x27;s photos in the gallery">Gallery<span class="wlx-count"> 2</span></a></div>""")
         minimal must not contain "monument-page"
         // its only file, or the list filtered to it: just the id
         views.html.large.monumentInfo(bare, None, f.contest.id, Some(f.round), Some(MonumentLine("07-101-9999", 1, None))).body must

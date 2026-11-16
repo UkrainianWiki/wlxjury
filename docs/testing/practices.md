@@ -419,8 +419,8 @@ fallback covers.
 `webkit`), each depending on its sign-in project (`setup-<engine>`, `tests/auth.setup.js`), which
 signs in through the login form once per role (juror, organizer, admin, root) and saves the
 session to `target/browser-test/auth/<engine>-<role>.json`. A test takes a role with
-`test.use({ role: 'juror' })`, or opens another session with `contextAs(role)`. 91 tests per
-engine (273 in all; `playwright test --list`, 2026-11-16), 4 of them its sign-ins, besides the opt-in docs screenshots:
+`test.use({ role: 'juror' })`, or opens another session with `contextAs(role)`. 111 tests per
+engine (333 in all; `playwright test --list`, 2026-11-16), 4 of them its sign-ins, besides the opt-in docs screenshots:
 
 | Spec | What it shows | Stories |
 |---|---|---|

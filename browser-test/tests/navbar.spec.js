@@ -39,7 +39,7 @@ test.describe('a juror\'s navbar menus by keyboard', () => {
     await page.goto(galleryPath(fixture.roundBinaryId, fixture.accounts.juror.id));
     const votes = page.locator('#votes-menu');
     // no visible word: the current choice and its count, "Votes" its accessible name's start
-    await expect(votes.locator('> button')).toHaveAccessibleName(/^Votes: All \d+ · \d+ unrated$/);
+    await expect(votes.locator('> button')).toHaveAccessibleName(/^Votes: All \d{1,3}(,\d{3})* · \d{1,3}(,\d{3})* unrated$/);
 
     let button = await openBySpace(page, votes);
     await page.keyboard.press('Escape');
@@ -50,12 +50,12 @@ test.describe('a juror\'s navbar menus by keyboard', () => {
     await arrowTo(page, 'Unrated');
     await Promise.all([page.waitForURL(/filter=unrated/), page.keyboard.press('Enter')]);
     button = votes.locator('> button');
-    await expect(button).toHaveAccessibleName(/^Votes: Unrated \d+$/);
+    await expect(button).toHaveAccessibleName(/^Votes: Unrated \d{1,3}(,\d{3})*$/);
     // in the menu shown (Playwright gives the closed menu's hidden items an empty name), the page's
     // item marked, the items' counts without brackets, read after the name ("Unrated 120")
     await openBySpace(page, votes);
-    await expect(votes.getByRole('link', { name: /^Unrated \d+$/ })).toHaveAttribute('aria-current', 'page');
-    await expect(votes.getByRole('link', { name: /^All \d+$/ })).toBeVisible();
+    await expect(votes.getByRole('link', { name: /^Unrated \d{1,3}(,\d{3})*$/ })).toHaveAttribute('aria-current', 'page');
+    await expect(votes.getByRole('link', { name: /^All \d{1,3}(,\d{3})*$/ })).toBeVisible();
     await page.keyboard.press('Escape');
   });
 
@@ -154,7 +154,7 @@ async function widest(page) {
     let count = button.querySelector('.wlx-comments-count');
     if (!count) {
       count = document.createElement('span');
-      count.className = 'wlx-comments-count wlx-nav-count';
+      count.className = 'wlx-comments-count wlx-count';
       button.appendChild(count);
     }
     count.textContent = ' 31';
@@ -196,7 +196,7 @@ for (const [view, pageName, pathOf] of VIEWS) {
       }
       // on all files, the widest Votes button: its unrated read by screen readers only in the
       // compact bar, shown in the full one; the count always. The Pages menu: its icon alone when compact
-      await expect(page.locator('#votes-menu > button')).toHaveAccessibleName(/^Голоси: Усі \d+ · \d+ без оцінки$/);
+      await expect(page.locator('#votes-menu > button')).toHaveAccessibleName(/^Голоси: Усі \d{1,3}(\s\d{3})* · \d{1,3}(\s\d{3})* без оцінки$/);
       await expect(page.locator('#pages-menu > button')).toHaveAccessibleName(pageName ? `Перейти до: ${pageName}` : /^Перейти до: /);
       // the juror menu's people icon (decision C of 2026-11-14) and the Votes button's icon, on All
       // the round's marks together (circle, ✓, ✗: the maintainer's decision of 2026-11-15) squeezed
@@ -250,3 +250,115 @@ for (const [view, pageName, pathOf] of VIEWS) {
     });
   }
 }
+
+// A bar without filters, order or pager (the rounds, the users: the maintainer's feedback on
+// 26.11.9, its strip was empty with the pages behind the Pages menu): the staff pages as links,
+// this page's marked, from 1280 px (main.css wlx-nav-pages-inline) on one line with the account
+// menus, for root (the most pages: contests, contest files, users, rounds, statistics) with a long
+// contest in the contest menu (put in when the account has none), in Ukrainian and in French (the
+// longest names), with a classic scrollbar, also with Linux's fonts (node linux-fonts.mjs);
+// narrower, the Pages menu instead.
+const INLINE_FROM = 1280;
+const LONG_CONTEST = 'Wiki Loves Monuments 2026 in Ukraine';
+const INLINE_PAGES = {
+  uk: { rounds: 'Раунди', users: 'Користувачі', pages: 'Перейти до' },
+  fr: { rounds: 'Tours', users: 'Utilisateurs', pages: 'Aller à' },
+};
+
+/** The account menus' contest menu with a long contest, as logged.scala.html draws it, if the
+  * account has no contest menu (one contest). */
+async function longContestMenu(page) {
+  await page.locator('nav .container-fluid > .navbar-nav').last().evaluate((ul, name) => {
+    if (ul.querySelector('.bi-shuffle')) {
+      const button = ul.querySelector('.bi-shuffle').closest('button');
+      button.lastChild.textContent = ` ${name} `;
+      return;
+    }
+    const li = document.createElement('li');
+    li.className = 'nav-item dropdown';
+    li.innerHTML = '<button type="button" class="nav-link dropdown-toggle"><i class="bi bi-shuffle"></i></button>';
+    li.querySelector('button').append(` ${name} `);
+    ul.prepend(li);
+  }, LONG_CONTEST);
+}
+
+for (const [lang, names] of Object.entries(INLINE_PAGES)) {
+  for (const [role, which] of [['admin', 'rounds'], ['root', 'users']]) {
+    for (const width of [INLINE_FROM, 1440, INLINE_FROM - 1]) {
+      const inline = width >= INLINE_FROM;
+      test(`the ${role}'s ${which} bar in ${lang} at ${width} px: the pages ${inline ? 'as links on one line' : 'in the Pages menu'}`, { tag: '@O-03' }, async ({ contextAs, fixture }, testInfo) => {
+        const context = await contextAs(role, { viewport: { width, height: 900 } });
+        await context.addCookies([{ name: 'PLAY_LANG', value: lang, url: fixture.baseUrl }]);
+        const page = await context.newPage();
+        await page.goto(`/admin/${which}?contestId=${fixture.contestId}`);
+        await expect(page.locator('html')).toHaveAttribute('lang', lang);
+        const group = page.locator('.wlx-nav-links.wlx-nav-pages-inline');
+        const links = group.locator('> li.wlx-page-link');
+        const menu = page.locator('#pages-menu');
+        const here = group.getByRole('link', { name: names[which], exact: true });
+        if (!inline) {
+          await expect(links.first()).toBeHidden();
+          await expect(menu.locator('> button')).toBeVisible();
+          await expect(menu.locator('> button')).toHaveAccessibleName(`${names.pages}: ${names[which]}`);
+          await context.close();
+          return;
+        }
+        await expect(menu).toBeHidden();
+        await expect(links).toHaveCount(role === 'root' ? 5 : 4);
+        for (const link of await links.all()) await expect(link).toBeVisible();
+        await expect(here).toHaveAttribute('aria-current', 'page');
+        await expect(links.locator('a[aria-current]')).toHaveCount(1);
+        await longContestMenu(page);
+        await page.evaluate((px) => { document.documentElement.style.marginRight = `${px}px`; }, SCROLLBAR);
+        const boxes = await links.evaluateAll((lis) => lis.map((li) => li.getBoundingClientRect().toJSON()));
+        const logged = await page.locator('nav .container-fluid > .navbar-nav').last().boundingBox();
+        const middle = (box) => box.y + box.height / 2;
+        const oneLine = boxes.every((b) => Math.abs(middle(b) - middle(logged)) < 4);
+        const free = Math.round(logged.x - Math.max(...boxes.map((b) => b.right)));
+        const line = `${role} ${which} ${lang} ${width - SCROLLBAR} px: ${oneLine ? `${free} px free before the account menus` : 'the links wrap'}`;
+        testInfo.annotations.push({ type: 'width', description: line });
+        console.log(`[width] ${line}`);
+        expect(oneLine, `the links on the account menus' line: ${line}`).toBe(true);
+        expect(free, `at least 10 px free before the account menus: ${line}`).toBeGreaterThanOrEqual(10);
+        // a link opens its page, marked there
+        const other = which === 'rounds' ? 'users' : 'rounds';
+        await Promise.all([page.waitForURL(new RegExp(`/admin/${other}`)), group.getByRole('link', { name: names[other], exact: true }).click()]);
+        await expect(page.locator('.wlx-nav-pages-inline').getByRole('link', { name: names[other], exact: true })).toHaveAttribute('aria-current', 'page');
+        await context.close();
+      });
+    }
+  }
+}
+
+// One count style (snippets/count.scala.html, main.css wlx-count; the maintainer's decision of
+// 2026-11-16): the contest files page's tabs show their counts whether active or not, the
+// conflicts of interest's too, without brackets, in the muted colour and figures of the Votes
+// button's count in the bar.
+test('the contest files tabs\' counts are shown on inactive tabs, styled as the bar\'s', { tag: '@O-03' }, async ({ contextAs, fixture }) => {
+  const context = await contextAs('admin');
+  const page = await context.newPage();
+  await page.goto(galleryPath(fixture.roundBinaryId, fixture.accounts.juror.id));
+  const style = (locator) => locator.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { color: s.color, figures: s.fontVariantNumeric, size: s.fontSize };
+  });
+  const bar = await style(page.locator('#votes-menu .wlx-votes-count'));
+  await page.goto(`/contest/${fixture.contestId}/files`);
+  const tabs = page.locator('#file-tabs a.nav-link');
+  await expect(tabs).toHaveCount(3);
+  await expect(page.locator('#coi-tab')).not.toHaveClass(/active/);
+  for (const tab of await tabs.all()) {
+    const count = tab.locator('> span.wlx-count');
+    await expect(count).toBeVisible();
+    // grouped as the page's language (en: 38,367), as roundstat-counts.js's toLocaleString
+    await expect(count).toHaveText(/^\s\d{1,3}(,\d{3})*$/);
+    await expect(tab).not.toContainText('(');
+    expect(await style(count)).toEqual(bar);
+  }
+  // on its own tab the conflicts of interest's count stays the same
+  const coiCount = (await page.locator('#coi-tab > span.wlx-count').textContent()).trim();
+  await page.locator('#coi-tab').click();
+  await expect(page.locator('#coi-tab')).toHaveClass(/active/);
+  await expect(page.locator('#coi-tab > span.wlx-count')).toHaveText(` ${coiCount}`);
+  await context.close();
+});

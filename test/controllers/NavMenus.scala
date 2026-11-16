@@ -15,10 +15,11 @@ object NavMenus {
   final case class Item(name: String, count: Option[Int], href: Option[String], active: Boolean, disabled: Boolean)
 
   private def item(e: Element): Item = {
-    val count = Option(e.selectFirst(".wlx-menu-count")).map(_.text.trim.toInt)
-    val text = e.text.trim
+    // the count shown: a pill's number (snippets/count `spoken`), else the count's text, grouped
+    val shown = Option(e.selectFirst(".wlx-menu-count [aria-hidden=true]")).orElse(Option(e.selectFirst(".wlx-menu-count")))
+    val count = shown.map(_.text.replaceAll("[^0-9]", "").toInt)
     // the name: the text before the count, which follows it after a space ("Unrated 19")
-    val name = count.fold(text)(n => text.stripSuffix(n.toString).trim)
+    val name = { val c = e.clone(); c.select(".wlx-menu-count").remove(); c.text.trim }
     Item(name, count, Option(e.attr("href")).filter(_.nonEmpty), e.hasClass("active"), e.hasClass("disabled"))
   }
 

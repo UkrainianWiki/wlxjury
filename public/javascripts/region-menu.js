@@ -21,7 +21,12 @@
       a.appendChild(document.createTextNode(' '));
       var number = document.createElement('span');
       number.className = 'wlx-menu-count';
-      number.textContent = String(count);
+      // grouped in the page's language, as the server's counts (views.Count)
+      try {
+        number.textContent = Number(count).toLocaleString(document.documentElement.lang || undefined);
+      } catch (e) {
+        number.textContent = String(count);
+      }
       a.appendChild(number);
     }
     li.appendChild(a);

@@ -78,6 +78,12 @@ class RoundImagesReviewSpec extends PlaySpecification with PlayTestDb {
         (status(admin) === OK) and (contentAsString(admin) must contain("id=\"round-review-distribute\"")) and
           (contentAsString(admin) must contain("data-pageId=\"2\"")) and
           (contentAsString(admin) must contain(s"/admin/rounds/$r/review/file/3")) and
+          // each tab's count after its name as the bar's (snippets/count), without brackets
+          {
+            val tabs = contentAsString(admin).split("id=\"round-review-tabs\"")(1).split("</ul>")(0)
+            ("""<a [^>]*id="round-review-tab-[a-z]+"[^>]*>[^<(]+<span class="wlx-count"> \d+</span></a>""".r
+              .findAllIn(tabs).size === RoundReviewController.Statuses.size) and (tabs must not(contain("(")))
+          } and
           (status(organizer) === OK) and (contentAsString(organizer) must contain("data-pageId=\"4\"")) and
           (contentAsString(organizer) must not(contain(distribute(r)))) and
           (status(get(app, "organizer@example.com", s"/admin/rounds/$r/review/file/2")) === OK) and

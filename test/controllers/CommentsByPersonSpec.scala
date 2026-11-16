@@ -127,7 +127,9 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
   /** The Comments menu's "Comments by" section's items: (name, count, href, current). */
   private def menu(doc: Document): Seq[(String, Int, String, Boolean)] =
     doc.select("#comments-menu .wlx-comments-by-item").asScala.map { a =>
-      (a.ownText.trim, a.selectFirst(".wlx-menu-count").text.toInt, a.attr("href"), a.attr("aria-current") == "true")
+      // the count shown (a person's in its pill: its number, aria-hidden, after their words for screen readers)
+      val count = Option(a.selectFirst(".wlx-menu-count [aria-hidden=true]")).getOrElse(a.selectFirst(".wlx-menu-count"))
+      (a.ownText.trim, count.text.toInt, a.attr("href"), a.attr("aria-current") == "true")
     }.toSeq
 
   /** The Comments button's text, as screen readers read it ("Comments list · Juror 1"). */
@@ -311,6 +313,9 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
     "show the filter in the Comments by menu, their comments first and the others folded" in {
       testDbApp { app =>
         val f = fixture()
+        // the organizer's second comment on file 1: three comments on two files, so the menu's
+        // count (comments, not files) tells them apart
+        CommentJdbc.create(f.organizer.getId, "Org", f.round.getId, Some(f.contest.getId), 1, "org again on one")
         val doc = page(app, f.organizer, path(f, 0, s"?scope=contest&filter=selected&commenter=${f.juror1.getId}"))
         // the selected files (1, 2, 5, 7) with a comment of juror 1's
         rows(doc) === Seq(7L, 1L, 5L)
@@ -333,9 +338,15 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
         doc.select("#comments-menu [role=group][aria-labelledby=comments-by-header] > ul > li > .wlx-comments-by-item").size === items.size
         doc.select("#comments-menu [aria-current=page]").asScala.map(_.text) === Seq("Recent comments list")
         doc.select("#comments-menu .wlx-comments-by-item[aria-current]").asScala.map(_.attr("aria-current")) === Seq("true")
-        // each item's text as read: the name, a space, the count ("Juror 1 3", not "Juror 13")
-        doc.select("#comments-menu .wlx-comments-by-item").asScala.map(_.text).toSeq ===
-          items.map { case (name, n, _, _) => s"$name $n" }
+        // each item's text as read: everyone's the words and the count; a person's (a name may end
+        // in digits) the name, a comma and their comments in words ("Juror 1, 3 comments", not
+        // "Juror 13"), shown as a pill of its own (snippets/count `spoken`)
+        def read(e: org.jsoup.nodes.Element) = { val c = e.clone(); c.select("[aria-hidden=true]").remove(); c.text }
+        doc.select("#comments-menu .wlx-comments-by-item").asScala.map(read).toSeq ===
+          items.zipWithIndex.map { case ((name, n, _, _), i) =>
+            if (i == 0) s"$name $n" else s"$name, $n ${if (n == 1) "comment" else "comments"}" }
+        items.find(_._1 == "Org").map(_._2) === Some(3)
+        doc.select("#comments-menu .wlx-comments-by-item").asScala.drop(1).forall(_.select("> .wlx-menu-count.wlx-count-pill").size == 1) must beTrue
         // the menu's own states: the list current, as before
         NavMenus.comments(doc).map(i => (i.name, i.active)) ===
           Seq(("All files", false), ("Only with comments", false), ("Recent comments list", true))
@@ -344,7 +355,8 @@ class CommentsByPersonSpec extends PlaySpecification with PlayTestDb {
         everyone._1 === "Everyone"
         everyone._3 must not(contain("commenter="))
         forall(Seq("scope=contest", "filter=selected", "sort=latest-comment"))(everyone._3 must contain(_))
-        rows(page(app, f.organizer, everyone._3)) === Seq(5L, 7L, 1L)
+        // the latest comment first: the organizer's second on file 1 (written above), then 5 and 7
+        rows(page(app, f.organizer, everyone._3)) === Seq(1L, 5L, 7L)
         // juror 1's comments shown, the others folded under them, each in the order written
         shown(doc.getElementById("7")) === ((Seq("j1 on seven"), Seq("j2 on seven")))
         shown(doc.getElementById("5")) === ((Seq("j1 on five"), Seq("pre on five", "org on five")))

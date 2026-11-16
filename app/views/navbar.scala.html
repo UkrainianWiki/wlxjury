@@ -15,7 +15,8 @@
         backHere: Boolean = true,
         commented: Option[Int] = None,
         commentsBy: Html = Html(""),
-        commentsByName: Option[String] = None)(implicit messages: Messages, request: RequestHeader)
+        commentsByName: Option[String] = None,
+        pagesInline: Boolean = true)(implicit messages: Messages, request: RequestHeader)
 
 @* The organisers' bar of a round's results (another's votes, or all together): with its round,
    juror, filter, order, view and region menus and the pager it is the most crowded, so its links
@@ -90,11 +91,11 @@
     @defining(rates.hasFiles && l.asUserId != 0) { counted =>
     @defining(VoteFilter.ofRound(l.round)) { choices =>
     @defining(if (choices.contains(l.filter)) l.filter else VoteFilter.All) { current =>
-    @defining(if (counted) " " + rates.count(current) else "") { count =>
-    @defining(if (counted && current == VoteFilter.All) " " + Messages("votes.unrated.suffix", rates.unrated.toString) else "") { suffix =>
+    @defining(if (counted) " " + views.Count.format(rates.count(current)) else "") { count =>
+    @defining(if (counted && current == VoteFilter.All) " " + Messages("votes.unrated.suffix", views.Count.format(rates.unrated)) else "") { suffix =>
     <li class="nav-item dropdown wlx-votes-menu@current match { case VoteFilter.Rate(1) => { vote-selected} case VoteFilter.Rate(-1) => { vote-rejected} case _ => {}}" id="votes-menu">
         <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"
-            title="@Messages("votes.menu"): @Messages(current.param)@count@suffix">@voteIcon(current, choices)<span class="visually-hidden">@Messages("votes.menu"): </span><span class="wlx-nav-choice">@Messages(current.param)</span>@if(count.nonEmpty) {<span class="wlx-votes-count wlx-nav-count">@count</span>}@if(suffix.nonEmpty) {<span class="wlx-nav-suffix wlx-votes-unrated">@suffix</span>}</button>
+            title="@Messages("votes.menu"): @Messages(current.param)@count@suffix">@voteIcon(current, choices)<span class="visually-hidden">@Messages("votes.menu"): </span><span class="wlx-nav-choice">@Messages(current.param)</span>@if(counted) {@snippets.count(rates.count(current), "wlx-votes-count")}@if(suffix.nonEmpty) {<span class="wlx-nav-suffix wlx-votes-unrated">@suffix</span>}</button>
         <ul class="dropdown-menu">
             @for(filter <- choices) {
             @defining(filter == current) { active =>
@@ -116,7 +117,7 @@
    so that its name reads "All 539", at the item's right edge in the muted colour, its digits
    lined up (wlx-menu-item, wlx-menu-count: main.css; region-menu.js draws the region menu's
    alike) *@
-@itemCount(count: Option[Int]) = {@for(n <- count) { <span class="wlx-menu-count">@n</span>}}
+@itemCount(count: Option[Int]) = {@for(n <- count) { <span class="wlx-menu-count">@views.Count.format(n)</span>}}
 
 @* An item of the Comments menu: the current state's marked as this page; one with no file (and
    not the current state) greyed out and not a link, which the menu's arrow keys skip; its count
@@ -154,12 +155,12 @@
 @commentsMenu(l: RoundList) = {
     @if(list.isDefined && (commented.isDefined || l.view.comments)) {
     @defining(if (l.view.comments) "list" else if (l.comments) "on" else "off") { state =>
-    @defining(commented.filter(n => (state != "off" || n > 0) && !(staffBar(l.round) && l.asUserId == 0))
-        .fold("")(n => " " + n)) { count =>
+    @defining(commented.filter(n => (state != "off" || n > 0) && !(staffBar(l.round) && l.asUserId == 0))) { shownCount =>
+    @defining(shownCount.fold("")(n => " " + views.Count.format(n))) { count =>
     @defining(state match { case "list" => "comments.menu.list" case "on" => "comments.menu.on" case _ => "comments" }) { words =>
     <li class="nav-item dropdown wlx-comments-menu" id="comments-menu">
         <button type="button" class="nav-link dropdown-toggle@if(state != "off") { active}" data-bs-toggle="dropdown" aria-expanded="false"
-            title="@Messages(words)@count@for(n <- commentsByName) { · @n}"><i class="bi bi-chat-left-text" aria-hidden="true"></i> <span class="wlx-nav-label">@Messages(words)</span>@for(n <- commentsByName) {<span class="wlx-nav-label"> · </span><span class="wlx-truncate wlx-comments-by-name">@n</span>}@if(count.nonEmpty) {<span class="wlx-comments-count wlx-nav-count">@count</span>}</button>
+            title="@Messages(words)@count@for(n <- commentsByName) { · @n}"><i class="bi bi-chat-left-text" aria-hidden="true"></i> <span class="wlx-nav-label">@Messages(words)</span>@for(n <- commentsByName) {<span class="wlx-nav-label"> · </span><span class="wlx-truncate wlx-comments-by-name">@n</span>}@for(n <- shownCount) {@snippets.count(n, "wlx-comments-count")}</button>
         <ul class="dropdown-menu">
             @defining(if (l.view.comments) RoundList.galleryOfReport(l, user) else l.withComments(true)) { withComments =>
             @commentsItem(state == "off", withComments.withComments(false).pageUrl(1), Messages("files.all"), empty = false)
@@ -171,6 +172,7 @@
             @commentsBy
         </ul>
     </li>
+    }
     }
     }
     }
@@ -365,11 +367,25 @@
    pages the viewer may open (pageItems), this page's marked aria-current="page"; none for a
    juror, who has no such pages. In the organisers' results bar below its full width (main.css) the button is the
    icon alone, the page's name read by screen readers and in its title (wlx-nav-label, main.css).
+   `inline` (a bar without filters, order or pager on a page that isn't a gallery, `pagesInline`:
+   the rounds, the users, the statistics, the forms; never the galleries' or the contest files'
+   bar, also when it happens to be empty; the maintainer's feedback on 26.11.9, the strip was empty and the pages hidden behind a
+   click): the same items also as links in the bar, this page's marked aria-current="page" and
+   highlighted as the bar's active link, shown from the width they fit on one line
+   (wlx-nav-pages-inline, main.css), the Pages menu below it; each link's id its item's with
+   "page-" for "menu-" (page-users for menu-users).
    Signed out: the application's name *@
-@pageLinks = {
+@pageLinks(inline: Boolean) = {
     @if(user != null) {
         @defining(pageItems) { items =>
         @if(items.nonEmpty) {
+        @if(inline) {
+        @for((url, key, icon, itemId) <- items) {
+        @defining(isCurrent(url, key)) { current =>
+        <li class="nav-item wlx-page-link"><a class="nav-link@if(current) { active}" id="page-@itemId.stripPrefix("menu-")" @if(current) {aria-current="page" }href="@url"><i class="bi @icon" aria-hidden="true"></i> @Messages(key)</a></li>
+        }
+        }
+        }
         @defining(items.find(item => isCurrent(item._1, item._2)).fold(Messages(title))(item => Messages(item._2))) { here =>
         <li class="nav-item dropdown" id="pages-menu">
             <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"
@@ -462,15 +478,17 @@
 
 @* The bar (the navigation proposal v3 §2): its groups, each a list that wraps as a whole, left to
    right: the pages to go to, the filters, after a divider the order (and view), the pager; the
-   account menus (logged) on the right. A group with nothing is left out *@
+   account menus (logged) on the right. A group with nothing is left out; without filters, order
+   and pager the pages are links (pageLinks' `inline`) *@
 <nav class="navbar navbar-expand bg-body-tertiary border-bottom mb-2 py-1@if(resultsBar) { wlx-nav-results}@if(resultsBar && list.exists(_.view.comments)) { wlx-nav-comments}">
     <div class="container-fluid px-2">
-        @defining(pageLinks) { links =>
         @defining(filterGroup) { filterItems =>
         @defining(orderGroup) { orderItems =>
+        @defining(pagesInline && !nonEmpty(filterItems) && !nonEmpty(orderItems) && !nonEmpty(pager)) { inline =>
+        @defining(pageLinks(inline)) { links =>
         <div class="d-flex flex-wrap align-items-center column-gap-2 me-auto wlx-nav-groups">
             @if(nonEmpty(links)) {
-            <ul class="navbar-nav flex-wrap align-items-center wlx-nav-links" aria-label="@Messages("nav.group.links")">@links</ul>
+            <ul class="navbar-nav flex-wrap align-items-center wlx-nav-links@if(inline) { wlx-nav-pages-inline}" aria-label="@Messages("nav.group.links")">@links</ul>
             }
             @if(nonEmpty(filterItems)) {
             <ul class="navbar-nav flex-wrap align-items-center wlx-nav-filters@if(nonEmpty(links)) { border-start ps-2}" aria-label="@Messages("nav.group.filters")">@filterItems</ul>
@@ -482,6 +500,7 @@
             <ul class="navbar-nav flex-wrap align-items-center wlx-nav-pager" aria-label="@Messages("nav.group.pager")">@pager</ul>
             }
         </div>
+        }
         }
         }
         }

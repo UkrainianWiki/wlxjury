@@ -25,7 +25,7 @@
    (listMonument, the list's monument filter) *@
 @gallery = @{ roundLine.flatMap(l => l.url.map(l.count -> _)) }
 @idLine(id: String, page: Option[Call], spaced: Boolean) = {
-        <div class="small@if(spaced){ mt-1}" id="monument-line"><span id="monument-id">@id</span>@for((count, url) <- gallery) { &middot; <a id="monument-round-list" href="@url" title="@Messages("monument.card.gallery.title")">@Messages("monument.card.gallery", count)</a>}@for(p <- page) { &middot; <a id="monument-page" href="@p" title="@Messages("monument.card.page.title")">@Messages("monument.card.page") &rarr;</a>}</div>
+        <div class="small@if(spaced){ mt-1}" id="monument-line"><span id="monument-id">@id</span>@for((count, url) <- gallery) { &middot; <a id="monument-round-list" href="@url" title="@Messages("monument.card.gallery.title")">@Messages("monument.card.gallery")@snippets.count(count)</a>}@for(p <- page) { &middot; <a id="monument-page" href="@p" title="@Messages("monument.card.page.title")">@Messages("monument.card.page") &rarr;</a>}</div>
 }
 @monument match {
     case Some(m) => {

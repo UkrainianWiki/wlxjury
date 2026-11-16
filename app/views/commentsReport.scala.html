@@ -85,7 +85,8 @@
    current (aria-current="true": the menu's list item is this page's). A group named by its header
    (a list in it, so its items stay list items), the header in the muted text colour (4.5:1 on
    the menu: Bootstrap's grey is 4.4:1 there);
-   the count after a space, read as "Juror 1 3". Filtered, the Comments button adds their name
+   each person's count of comments a pill of its own (a name may end in digits: snippets/count),
+   read as "Juror 1, 3 comments". Filtered, the Comments button adds their name
    (`filteredName`, navbar.scala.html) *@
 @authorItems = @{
     val listed = commentAuthors.filter(_._1 > 0).map { case (id, n, name) =>
@@ -100,11 +101,11 @@
     <li><h6 class="dropdown-header text-body-secondary" id="comments-by-header">@Messages("comments.by")</h6></li>
     <li><div role="group" aria-labelledby="comments-by-header"><ul class="list-unstyled mb-0">
     @defining(list.commentsBy.isEmpty) { active =>
-    <li><a class="dropdown-item wlx-menu-item wlx-comments-by-item@if(active) { active}" @if(active) {aria-current="true" }href="@list.withCommenter(None).pageUrl(1)">@Messages("comments.by.all") <span class="wlx-menu-count">@commentAuthors.map(_._2).sum</span></a></li>
+    <li><a class="dropdown-item wlx-menu-item wlx-comments-by-item@if(active) { active}" @if(active) {aria-current="true" }href="@list.withCommenter(None).pageUrl(1)">@Messages("comments.by.all") <span class="wlx-menu-count">@views.Count.format(commentAuthors.map(_._2).sum)</span></a></li>
     }
     @for((id, n, name) <- authorItems) {
     @defining(list.commentsBy.contains(id)) { active =>
-    <li><a class="dropdown-item wlx-menu-item wlx-comments-by-item@if(active) { active}" @if(active) {aria-current="true" }href="@list.withCommenter(Some(id)).pageUrl(1)">@name <span class="wlx-menu-count">@n</span></a></li>
+    <li><a class="dropdown-item wlx-menu-item wlx-comments-by-item@if(active) { active}" @if(active) {aria-current="true" }href="@list.withCommenter(Some(id)).pageUrl(1)">@name@snippets.count(n, "wlx-menu-count", Some(views.CommentCount.label(n)))</a></li>
     }
     }
     </ul></div></li>

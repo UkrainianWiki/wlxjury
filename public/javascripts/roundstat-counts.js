@@ -5,19 +5,23 @@
  * neither a conflict nor a disqualified file).
  *
  * Each link carries data-roundstat-counts (the URL), data-kind ("authors" or "conflicts"),
- * data-lang and its label templates, `{0}` for a number: data-label-count, data-label-none,
- * data-label-none-unknown (no author stored, but files without one), the plural forms
- * data-files-* / data-disqualified-* / data-unknown-* (one, few, many, other), data-history and
- * data-history-limit (the conflicts page lists that many of the latest events: more is shown as
- * "500+", and the answer counts no further than one more). The page renders the links enabled, without counts; this script changes a
- * link's text, and disables it (no href, aria-disabled, out of the tab order) only when the
- * answer says its count is 0 (for the conflicts link: and no history). On a refusal, an error
- * or a failed fetch the links stay as they are.
+ * data-lang and its labels, `{0}` for a number in a template: data-label-count (the name the
+ * counts follow), data-label-none, data-label-none-unknown (no author stored, but files without
+ * one), the plural forms data-files-* / data-disqualified-* / data-unknown-* (one, few, many,
+ * other), data-history (the word its count follows) and data-history-limit (the conflicts page
+ * lists that many of the latest events: more is shown as "500+", and the answer counts no further
+ * than one more). The page renders the links enabled, without counts; this script changes a
+ * link's text, its counts after the name as snippets/count.scala.html draws a count (a space,
+ * no brackets, muted: span.wlx-count; the maintainer's decision of 2026-11-16), and disables it
+ * (no href, aria-disabled, out of the tab order) only when the answer says its count is 0 (for
+ * the conflicts link: and no history). On a refusal, an error or a failed fetch the links stay
+ * as they are.
  *
  * pluralForm(n, lang) – the app's plural forms (views.Plural): uk/ru one, few, many; fr one
  *   for 0 and 1; others one for 1; other for the rest.
- * conflictsLabel(counts, t) / authorsLabel(counts, t) – pure: { text, enabled } for a link's
- *   templates `t` (its data attributes), or null if the answer lacks what the rule needs.
+ * conflictsLabel(counts, t) / authorsLabel(counts, t) – pure: { text, count, enabled } for a
+ *   link's templates `t` (its data attributes): its text and the counts after it (null: none), or
+ *   null if the answer lacks what the rule needs.
  * applyCounts(doc, counts) – fills in the links of the document.
  * loadRoundStatCounts(doc) – fetches each URL once and applies its answer.
  */
@@ -63,15 +67,15 @@
         if (counts.disqualified > 0) {
             parts.push(fill(t.disqualified[pluralForm(counts.disqualified, lang)], formatNumber(counts.disqualified, lang)));
         }
-        if (parts.length > 0) return { text: fill(t.labelCount, parts.join(" · ")), enabled: true };
+        if (parts.length > 0) return { text: t.labelCount, count: parts.join(" · "), enabled: true };
         // neither: the link stays while the round has a history, which its page lists
         if (!isCount(counts.history)) return null;
         if (counts.history > 0) {
             var limit = t.historyLimit;
             var shown = limit > 0 && counts.history > limit ? formatNumber(limit, lang) + "+" : formatNumber(counts.history, lang);
-            return { text: t.labelNone + " · " + fill(t.history, shown), enabled: true };
+            return { text: t.labelNone + " · " + t.history, count: shown, enabled: true };
         }
-        return { text: t.labelNone, enabled: false };
+        return { text: t.labelNone, count: null, enabled: false };
     }
 
     function authorsLabel(counts, t) {
@@ -82,11 +86,11 @@
             : null;
         if (counts.authors === 0) {
             // none stored, but files without one: the list shows those, so the link stays
-            return unknown === null ? { text: t.labelNone, enabled: false }
-                : { text: fill(t.labelNoneUnknown, unknown), enabled: true };
+            return unknown === null ? { text: t.labelNone, count: null, enabled: false }
+                : { text: fill(t.labelNoneUnknown, unknown), count: null, enabled: true };
         }
         var inner = formatNumber(counts.authors, lang) + (unknown === null ? "" : " · " + unknown);
-        return { text: fill(t.labelCount, inner), enabled: true };
+        return { text: t.labelCount, count: inner, enabled: true };
     }
 
     var PLURAL_FORMS = ["one", "few", "many", "other"];
@@ -113,6 +117,12 @@
     function applyLabel(link, label) {
         if (!label) return;
         link.textContent = label.text;
+        if (label.count !== null && label.count !== undefined) {
+            var count = link.ownerDocument.createElement("span");
+            count.className = "wlx-count";
+            count.textContent = " " + label.count;
+            link.appendChild(count);
+        }
         if (!label.enabled) {
             link.removeAttribute("href");
             link.setAttribute("aria-disabled", "true");
