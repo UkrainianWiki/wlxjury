@@ -27,18 +27,32 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
     Jury(jurors, candidates.sortBy(_.getId))
   }
 
-  /** What adding `jurorId` would do now: the refusal if any, else the files to give. Plain reads
-    * (the POST checks again under the round's lock).
+  /** What adding `jurorId` would do now: the refusal if any, else the files to give (every file
+    * to every juror) or each ticked donor's share (N > 0). `donors`: those ticked, by default the
+    * round's active jurors (D1: the stopped ones listed unticked). Plain reads (the POST checks
+    * again under the round's lock).
     */
-  def preview(round: Round, jurorId: Long): Preview = DB.readOnly { implicit session =>
+  def preview(round: Round, jurorId: Long, donors: Option[Seq[Long]] = None): Preview = DB.readOnly { implicit session =>
     val juror = User.findById(jurorId).filter(_ => eligibleJuror(round.contestId, jurorId).isDefined)
     val busy = JobJdbc.activeByDedupeKey(RoundDistributionHandler.dedupeKey(round.getId))
     val run = RoundRun(round.active, round.distributing, round.freezeCount,
       activeBeforeFreeze = false)
-    val refused = busy.map(j => JobError(BusyKey, Seq(round.number.toString)))
-      .orElse(refusal(round, run, jurorId, frozenByUs = false))
     val j = jury(round)
-    Preview(round, juror, refused, if (refused.isEmpty) toGiveCount(round.getId, jurorId) else 0L, j, signature(j.jurors),
+    val ticked = donors.getOrElse(j.jurors.filter(_.active).map(_.user.getId)).distinct.filterNot(_ == jurorId)
+    val refused = busy.map(j => JobError(BusyKey, Seq(round.number.toString)))
+      .orElse(refusal(round, run, jurorId, ticked, frozenByUs = false))
+    // the donors' files the receiver could take (not those of pages they hold), and the receiver's own
+    val unrated = unratedCounts(round.getId, j.jurors.map(_.user.getId).filterNot(_ == jurorId), receiver = Some(jurorId)) ++
+      unratedCounts(round.getId, Seq(jurorId))
+    val share =
+      if (refused.isDefined || round.distribution == 0) Map.empty[Long, Long]
+      else quotas(unrated.getOrElse(jurorId, 0L), ticked.map(d => d -> unrated.getOrElse(d, 0L)))
+    val files =
+      if (refused.isDefined) 0L
+      else if (round.distribution == 0) toGiveCount(round.getId, jurorId)
+      else share.values.sum
+    Preview(round, juror, refused, files, j, signature(j.jurors), ticked, unrated, share,
+      restart = j.jurors.exists(r => r.user.id.contains(jurorId) && !r.active),
       topUp = j.jurors.exists(r => r.user.id.contains(jurorId) && r.active))
   }
 
@@ -46,7 +60,8 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
     * [[signature]]) and nothing refuses it, all under the round's lock; the job runs once this
     * has committed.
     */
-  def add(round: Round, jurorId: Long, by: User, shownJury: String): Outcome = {
+  def add(round: Round, jurorId: Long, by: User, shownJury: String, donors: Seq[Long] = Nil): Outcome = {
+    val ticked = donors.distinct.filterNot(_ == jurorId).sorted
     val outcome = WriteTx.write { implicit session =>
       val run = lockRun(round.getId)
       val fresh = Round.findById(round.getId)
@@ -58,7 +73,7 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
           JobJdbc.activeByDedupeKey(RoundDistributionHandler.dedupeKey(fresh.getId)) match {
             case Some(active) => Busy(active)
             case None =>
-              refusal(fresh, run, jurorId, frozenByUs = false) match {
+              refusal(fresh, run, jurorId, ticked, frozenByUs = false) match {
                 case Some(error) => Refused(error)
                 case None if signature(jury(fresh).jurors) != shownJury => JuryChanged
                 case None =>
@@ -68,7 +83,7 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
                     subjectType = Some(RoundDistributionHandler.SubjectType),
                     subjectId = fresh.id,
                     dedupeKey = Some(RoundDistributionHandler.dedupeKey(fresh.getId)),
-                    params = Json.obj("roundId" -> fresh.getId, "add" -> jurorId, "donors" -> Seq.empty[Long],
+                    params = Json.obj("roundId" -> fresh.getId, "add" -> jurorId, "donors" -> ticked,
                       "by" -> by.getId),
                     state = Json.toJsObject(RebalanceState()),
                     progress = Progress(unit = Some("files")),
@@ -85,7 +100,7 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
     outcome match {
       case Queued(job) =>
         adminLog.info(s"action=juror_add accountId=${by.getId} contestId=${round.contestId} roundId=${round.getId} " +
-          s"jurorId=$jurorId jobId=${job.id} state=queued")
+          s"jurorId=$jurorId donors=${ticked.mkString(",")} jobId=${job.id} state=queued")
         jobs.started(job.id)
         Queued(JobJdbc.findById(job.id).getOrElse(job))
       case other => other
@@ -118,11 +133,24 @@ object RoundRebalanceService {
   /** The round's jurors, and the contest's jurors not in it. */
   final case class Jury(jurors: Seq[JurorRow], candidates: Seq[User])
 
-  /** @param topUp the juror is already an active juror of the round: the add gives only what they
-    *              lack
+  /** What the add page shows for the juror chosen.
+    *
+    * @param files   what the juror gets: every file they don't have (every file to every juror), or
+    *                the sum of the donors' shares
+    * @param donors  the jurors ticked as donors (N > 0)
+    * @param unrated each round juror's (and the new juror's) unrated files
+    * @param share   each donor's share (water-filling, [[RoundRebalanceHandler.quotas]])
+    * @param restart the juror is a stopped juror of the round, started again by the add
+    * @param topUp   the juror is already an active juror of the round: the add gives only what they
+    *                lack (N = 0), or a share counting their own unrated files (N > 0)
     */
   final case class Preview(round: Round, juror: Option[User], refusal: Option[JobError], files: Long, jury: Jury,
-      signature: String, topUp: Boolean = false)
+      signature: String, donors: Seq[Long] = Nil, unrated: Map[Long, Long] = Map.empty, share: Map[Long, Long] = Map.empty,
+      restart: Boolean = false, topUp: Boolean = false) {
+
+    /** The ticked donors' unrated files. */
+    def donorsUnrated: Long = donors.map(unrated.getOrElse(_, 0L)).sum
+  }
 
   /** The jury as the page showed it: active and stopped jurors' ids. A change between the page and
     * its POST shows the page again with fresh figures.

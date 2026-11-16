@@ -398,6 +398,21 @@ Where the build chose the safer option than the text above (details in
 - There is no job page: the rounds list's job column shows the newer of the two kinds' jobs, and
   keeps a done rebalance with its count.
 
+### Build notes (PR 1b, 2026-11-16)
+
+- Quotas are water-filling over the ticked donors and the new juror (`RoundRebalanceHandler.quotas`):
+  the largest k donors give, each ending at the level's floor, the remainder one more each, the
+  largest first; fixed by the `stop` step and kept on Retry (recomputed only after a failed count
+  check). The page's figures use the same function.
+- `move` takes candidates per donor by descending vote id (a plain read), reads their images in
+  share mode, then locks the rows `FOR UPDATE` in id order; a row rated meanwhile or holding a
+  criterion above 0 is skipped. Two donors holding the same file: one row moves, the other donor
+  continues below it. The per-step check (each file's vote rows unchanged) throws, so the whole
+  step rolls back and the job fails with a logged reference; Retry resumes.
+- `verify` also checks each donor lost exactly the rows it gave (`job.error.rebalance.donor.verify`).
+- The add page lists the round's stopped jurors in its select too, so "Start and give a fair
+  share…" (the stat table's stopped-juror link) is the same page with the juror chosen.
+
 ## 6. Step 2: P3 as decided
 
 Build P3 as `round-images-two-step.md` decides it: §4 "`round.status` (P3)"; §6 (job modes, count

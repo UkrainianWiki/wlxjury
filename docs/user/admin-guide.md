@@ -742,9 +742,19 @@ is done. The person must first be a juror of the contest (**Users**).
 
 - Only a running round takes a juror: started, its distribution done, and not held by another
   round's distribution. Start the round first.
-- For now this works in rounds where every file goes to every juror: the new juror gets every
-  file of the round they don't have yet, unrated, except files deleted on Commons. Votes already
-  given never move.
+- In a round where every file goes to every juror, the new juror gets every file of the round
+  they don't have yet, unrated, except files deleted on Commons.
+- In a round where each file goes to a set number of jurors, the new juror takes unrated files
+  from the jurors ticked on the page, so that they all end with about as many unrated files; the
+  page shows how many from each ("Y gets about 1,520: from A 410, B 390 …"). The round's active
+  jurors are ticked; stopped ones are listed unticked and marked: a ticked stopped juror gives
+  their unrated files and stays stopped. Each juror gives the files assigned to them last first.
+  Choose the jurors and **Show what this does** again to see the new figures.
+- Votes already given never move: only unrated files do (in a round with criteria, a file with
+  any criterion rated counts as rated).
+- A stopped juror's row in the table has **Start and give a fair share…**: the same page for
+  them, which starts them again with a share of the others' unrated files (their own unrated
+  files counted). They can then change their earlier votes in the round, as after a plain Start.
 - The round pauses for a few seconds while the files are given: its jurors see a page saying so
   ("Reload shortly") and their votes are refused meanwhile; then the round is open again.
 - If the job fails, the round is open again and **Retry** resumes it. **Cancel** also opens the

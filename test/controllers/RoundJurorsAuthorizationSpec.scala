@@ -281,4 +281,60 @@ class RoundJurorsAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
   }
+
+  /** A round of one juror per file (N = 1) in contest 10: files 1-3 the juror's, 4-6 juror2's
+    * (the files of [[setUp]], three more).
+    */
+  private def roundOfOne(users: Map[String, User]): Round = {
+    imageDao.batchInsert(Seq(4L, 5L, 6L).map(i => Image(i, s"File:Image$i.jpg", None, None, 640, 480, Some(s"12-345-$i"))))
+    val round = roundDao.create(Round(None, 2, Some("N1"), contestId, distribution = 1, active = true))
+    round.addUsers(Seq("juror", "juror2").map(k => RoundUser(round.getId, users(k).getId, "jury", active = true)))
+    Seq(1L, 2L, 3L).foreach(p => VoteJdbc.create(p, 0, users("juror").getId, round.getId))
+    Seq(4L, 5L, 6L).foreach(p => VoteJdbc.create(p, 0, users("juror2").getId, round.getId))
+    round
+  }
+
+  "adding a juror to a round of N jurors per file" should {
+
+    "show the donors ticked and the shares, and move the ticked donors' unrated files" in {
+      testDbApp { app =>
+        val (_, _, users) = setUp()
+        val round = roundOfOne(users)
+        val r = round.getId
+        val y = users("newjuror")
+        val shown = get(app, Some("admin@example.com"), page(r) + s"?juror=${y.getId}")
+        val body = contentAsString(shown)
+        val result = post(app, Some("admin@example.com"), page(r), "juror" -> y.getId.toString, "jury" -> jury(r),
+          "donor[]" -> users("juror").getId.toString, "donor[]" -> users("juror2").getId.toString)
+        (status(shown) === OK) and (body must contain("name=\"donor\"")) and (body must contain("data-files=\"2\"")) and
+          (body must contain("name=\"donor[]\"")) and
+          (status(result) === SEE_OTHER) and (files(r, y) === 2) and (files(r, users("juror")) === 2) and
+          (files(r, users("juror2")) === 2) and (RoundImageInvariants.violations(r) must beEmpty)
+      }
+    }
+
+    "refuse a ticked donor who isn't a juror of the round, with nothing queued" in {
+      testDbApp { app =>
+        val (_, _, users) = setUp()
+        val round = roundOfOne(users)
+        val r = round.getId
+        val result = post(app, Some("admin@example.com"), page(r), "juror" -> users("newjuror").getId.toString,
+          "jury" -> jury(r), "donor[]" -> users("organizer").getId.toString)
+        (status(result) === CONFLICT) and (rebalanceJobs() === 0)
+      }
+    }
+
+    "offer a stopped juror's Start with a fair share to the round's admin only" in {
+      testDbApp { app =>
+        val (round, _, users) = setUp()
+        val r = round.getId
+        RoundUser.setActive(r, users("juror2").getId, active = false)
+        val link = page(r) + s"?juror=${users("juror2").getId}"
+        val stat = s"/roundstat/$r"
+        (contentAsString(get(app, Some("admin@example.com"), stat)) must contain(link.replace("?", "?"))) and
+          (contentAsString(get(app, Some("organizer@example.com"), stat)) must not(contain(link))) and
+          (contentAsString(get(app, Some("admin@example.com"), link)) must contain("round-juror-add-restart"))
+      }
+    }
+  }
 }

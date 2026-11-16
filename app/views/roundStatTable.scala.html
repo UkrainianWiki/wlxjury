@@ -32,7 +32,12 @@
             <td> @juror.fullname </td>
             <td> @juror.email </td>
             @if(mayPause) {
-                <td>@snippets.startStop(juror.active.getOrElse(true), juror.getId, round.getId, routes.RoundController.setRoundUser, withText = false, what = "juror")</td>
+                <td>@snippets.startStop(juror.active.getOrElse(true), juror.getId, round.getId, routes.RoundController.setRoundUser, withText = false, what = "juror")
+                    @* a stopped juror: started again with a fair share of the others' unrated files (the add page) *@
+                    @if(!juror.active.getOrElse(true)) {
+                        <a class="btn btn-sm btn-outline-secondary round-juror-share" href="@routes.RoundJurorsController.addPage(round.getId, juror.id)" title="@Messages("round.juror.share")" aria-label="@Messages("round.juror.share")"><i class="bi bi-person-plus" aria-hidden="true"></i></a>
+                    }
+                </td>
             } else {
                 @if(juror.active.getOrElse(true)) {
                     <td class="juror-voting" data-state="active">@Messages("juror.voting.active")</td>

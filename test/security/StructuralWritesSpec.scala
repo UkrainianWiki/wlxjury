@@ -28,6 +28,8 @@ class StructuralWritesSpec extends Specification {
       "requireRounds (the recompute's window: the round FOR UPDATE first, then its rows, then their dirty entries)",
     "app/db/scalikejdbc/RoundImageEventJdbc.scala#record" ->
       "requireRounds (its callers RoundImageJdbc.disqualify / requalifyRows, after the rows: last)",
+    "app/services/distribution/RoundRebalanceHandler.scala#move" ->
+      "requireRounds (an added juror's move: the round FOR UPDATE first, lockRun, then images shared, then the votes by id)",
     // their own round lock, recorded
     "app/db/scalikejdbc/CriterionJdbc.scala#updateIn" -> "the round FOR UPDATE first, then its votes (RoundCriterion.update)",
     "app/db/scalikejdbc/CriterionJdbc.scala#insert" -> "a new round's criteria, in its creating transaction (the inserted round row)",

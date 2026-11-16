@@ -994,7 +994,6 @@ job.error.rebalance.not.running=Le tour {0} n''est pas en cours : démarrez-le d
 job.error.rebalance.frozen=Le tour {0} est retenu par une autre tâche (une distribution qui lit ses votes) : réessayez quand elle sera terminée.
 job.error.rebalance.legacy=Le tour {0} n''a pas de liste de jurés (un ancien tour) : on ne peut pas y ajouter de juré.
 job.error.rebalance.not.juror=Le compte {0} n''est pas un juré actif de ce concours.
-job.error.rebalance.distribution=Dans le tour {0}, chaque fichier va à un nombre fixe de jurés : l''ajout d''un juré à un tel tour n''est pas encore disponible.
 job.error.rebalance.busy=Le tour {0} a une tâche en cours (une distribution, ou l''ajout d''un juré) : réessayez quand elle sera terminée.
 job.error.rebalance.verify=Tour {0} : le nouveau juré a {1} fichiers au lieu de {2}. Réessayer vérifie à nouveau.
 error.previous.round.rebalancing=Un juré est en cours d''ajout au tour précédent {0} : créez ou distribuez ce tour à nouveau quand ce sera terminé.
@@ -1026,3 +1025,14 @@ round.freeze.released=Tour {0} libéré : il est de nouveau actif s''il l''étai
 round.freeze.none=Le tour {0} n''avait rien à libérer.
 round.juror.add.in.round=dans le tour
 round.juror.add.topup={0} est déjà juré de ce tour : il ne reçoit que ce qui lui manque.
+
+# adding a juror with a fair share of the donors' unrated files (round_rebalance, PR 1b)
+round.juror.add.donors.help=Les jurés cochés donnent une partie de leurs fichiers non notés au nouveau juré, pour que tous finissent avec à peu près autant de fichiers non notés. Les jurés arrêtés sont listés non cochés ; un juré arrêté coché donne et reste arrêté.
+round.juror.add.unrated={0} non notés
+round.juror.add.share={0} fichiers non notés chez {1} jurés. {2} en reçoit environ {3} : de {4}.
+round.juror.add.share.none={0} ne reçoit rien : aucun juré coché n''a plus de fichiers non notés que {0}.
+round.juror.add.stopped.donor=Un juré arrêté coché donne ses fichiers non notés et reste arrêté.
+round.juror.add.restart={0} est arrêté dans ce tour : l''ajout le redémarre, et il pourra alors modifier ses votes précédents dans le tour.
+round.juror.share=Démarrer et donner une part équitable…
+job.error.rebalance.donor=Le compte {0}, coché pour donner des fichiers, n''est pas un juré du tour {1}.
+job.error.rebalance.donor.verify=Tour {0} : le juré {1} a perdu un autre nombre de fichiers que ceux qu''il a donnés. Réessayer vérifie à nouveau.
