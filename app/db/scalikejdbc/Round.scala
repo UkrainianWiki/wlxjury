@@ -77,8 +77,24 @@ case class Round(
     criteriaCount: Int = 1,
     // the round form's criteria, by position: a new round's are written with it (create);
     // not loaded with the round (RoundCriterion.idsOf)
-    criterionIds: Seq[Long] = Nil
+    criterionIds: Seq[Long] = Nil,
+    // its lifecycle state (V105, round lineage §2.6): one of Round.Status.All; None for a round
+    // not backfilled (a rollback's), read from the flags ([[lifecycle]])
+    status: Option[String] = None
 ) extends HasId {
+
+  /** The round's state ([[Round.Status]]): the stored one, or for a round without one (created by
+    * a binary from before V105) the flags' (draft while being created, active if open, else
+    * paused).
+    */
+  def lifecycle: String =
+    status.getOrElse(Round.Status.ofFlags(distributing = distributing, open = active))
+
+  /** In review (P3): filled, not yet distributed to its jurors. "Before first activation" is told
+    * by `distributing` (round lineage §2.6): a stopped round is `paused` too, with
+    * `distributing = 0`.
+    */
+  def inReview: Boolean = distributing && lifecycle == Round.Status.Paused
 
   /** Jurors may see and vote in the round: it is active, and not still being created
     * (see V60: a round being distributed stays hidden until its count check passes).
@@ -303,6 +319,28 @@ object Round extends RoundRepo with CRUDMapper[Round] {
   val ratesById: Map[Int, Rates] =
     rates.groupBy(_.id).view.mapValues(_.head).toMap
 
+  /** A round's lifecycle states (`round.status`, V105; round lineage §2.6, the two-step plan's
+    * §4). Written in step with `active` and `distributing`:
+    *  - draft: distributing, not active (its creation's fill runs, failed or never completed);
+    *  - paused: distributing, not active, filled and in review (P3); or stopped or finished
+    *    (distributing = 0, not active);
+    *  - active: open to its jurors (distributing = 0, active, or frozen while active);
+    *  - cancelled: a creation job an admin cancelled (round lineage's Cancel later);
+    *  - finalized: not written yet (Montage parity).
+    */
+  object Status {
+    val Draft = "draft"
+    val Paused = "paused"
+    val Active = "active"
+    val Finalized = "finalized"
+    val Cancelled = "cancelled"
+    val All: Seq[String] = Seq(Draft, Paused, Active, Finalized, Cancelled)
+
+    /** The status a round's flags give, as V105's backfill and a NULL status read them. */
+    def ofFlags(distributing: Boolean, open: Boolean): String =
+      if (distributing) Draft else if (open) Active else Paused
+  }
+
   /** Round ids stored comma-separated (`previous`, `exclude_rounds`); a part that is no id is skipped. */
   def parseIds(stored: Option[String]): Seq[Long] =
     stored.map(_.split(",").toSeq.flatMap(s => s.trim.toLongOption)).getOrElse(Nil)
@@ -354,10 +392,12 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       excludeRounds = Round.parseIds(rs.stringOpt(c.excludeRounds)),
       topBinaryOrder = rs.stringOpt(c.topBinaryOrder).flatMap(BinaryOrder.parse),
       averageRule = AverageRule.fromStored(rs.stringOpt(c.averageRule)),
-      worstMark = rs.booleanOpt(c.worstMark).getOrElse(false)
+      worstMark = rs.booleanOpt(c.worstMark).getOrElse(false),
+      status = rs.stringOpt(c.status)
     ).withFixedCategories
 
   def create(round: Round)(implicit session: DBSession = AutoSession): Round = {
+    val status = round.status.getOrElse(Status.ofFlags(round.distributing, round.active))
     val id = withSQL {
       insert
         .into(Round)
@@ -396,7 +436,10 @@ object Round extends RoundRepo with CRUDMapper[Round] {
           column.topBinaryOrder -> round.topBinaryOrder.map(_.param),
           column.averageRule -> round.averageRule.param,
           column.worstMark -> round.worstMark,
-          column.hasCriteria -> round.criterionIds.nonEmpty
+          column.hasCriteria -> round.criterionIds.nonEmpty,
+          // from its flags (round lineage §2.6), unless given
+          column.status -> status,
+          column.column("status_changed_at") -> ZonedDateTime.now
         )
     }.updateAndReturnGeneratedKey()
 
@@ -404,7 +447,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     // the new row is the transaction's (an insert holds it for update)
     RoundWrites.recordRounds(Seq(id))
     RoundCriterion.insert(id, round.criterionIds)
-    round.copy(id = Some(id), hasCriteria = round.criterionIds.nonEmpty)
+    round.copy(id = Some(id), hasCriteria = round.criterionIds.nonEmpty, status = Some(status))
   }
 
   /** The round form's edit: its name, its average rule and its worst mark. Starting and stopping
@@ -537,9 +580,23 @@ object Round extends RoundRepo with CRUDMapper[Round] {
   private def ratingOf(round: Round)(implicit session: DBSession): (Long, Int) =
     (round.rates.id, if (round.hasCriteria) RoundCriterion.countOf(round.getId) else 0)
 
+  /** Starts or stops the round, its status in step ([[statusOfStartStop]]), unguarded: tests. */
   def setActive(id: Long, active: Boolean): Unit =
-    updateById(id)
-      .withAttributes("active" -> active)
+    sql"""UPDATE round SET ${statusOfStartStop(active, None)}, active = $active, created_at = created_at
+          WHERE id = $id""".update(): Unit
+
+  /** The status a start or a stop writes, in its UPDATE (round lineage §2.6): `active` or
+    * `paused` as the flag it asks for (on a frozen round, the flag the freeze saved), only where
+    * the round isn't being created (`distributing = 0`) nor `cancelled`; who and when with it.
+    * First in the statement's SET: MariaDB applies the assignments left to right.
+    */
+  private def statusOfStartStop(active: Boolean, by: Option[Long]): SQLSyntax = {
+    val to = if (active) Status.Active else Status.Paused
+    val writes = sqls"distributing = 0 AND NOT (status <=> ${Status.Cancelled})"
+    sqls"""status_changed_at = IF($writes AND NOT (status <=> $to), NOW(3), status_changed_at),
+            status_changed_by = IF($writes AND NOT (status <=> $to), $by, status_changed_by),
+            status = IF($writes, $to, status)"""
+  }
 
   /** An organizer starting or stopping a round. A round still being created
     * (`distributing`) can't be started. A frozen round (a previous round of a running
@@ -548,14 +605,16 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     *
     * @return false if the round can't be started now (it is still being distributed)
     */
-  def setActiveGuarded(id: Long, active: Boolean): Boolean = {
+  def setActiveGuarded(id: Long, active: Boolean, by: Option[Long] = None): Boolean = {
     val refused =
       sql"SELECT distributing FROM round WHERE id = $id".map(_.boolean(1)).single().getOrElse(false) && active
     val archived = WriteTx.write { implicit session =>
       val wasOpen = isOpen(id)
       sql"""UPDATE round
-            SET active_before_freeze = IF(freeze_count > 0, $active AND NOT distributing, active_before_freeze),
-                active = IF(freeze_count > 0, active, $active AND NOT distributing)
+            SET ${statusOfStartStop(active, by)},
+                active_before_freeze = IF(freeze_count > 0, $active AND NOT distributing, active_before_freeze),
+                active = IF(freeze_count > 0, active, $active AND NOT distributing),
+                created_at = created_at
             WHERE id = $id""".update()
       // After the update, and read as of then: see ImageJdbc.lockOpenRoundsOf
       !wasOpen && isOpen(id) && ImageJdbc.archiveDeletedVotesInRound(id).nonEmpty
@@ -623,25 +682,40 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     */
   def release(roundIds: Seq[Long], close: Boolean)(implicit session: DBSession): Unit =
     roundIds.distinct.sorted.foreach { id =>
+      // closing: `paused` as a stop writes it (round lineage §2.6); a plain release changes no status
+      val status = if (close) sqls"${statusOfStartStop(active = false, None)}," else sqls""
       sql"""UPDATE round
-            SET active_before_freeze = IF($close, 0, active_before_freeze),
+            SET $status
+                active_before_freeze = IF($close, 0, active_before_freeze),
                 freeze_count = GREATEST(freeze_count - 1, 0),
                 active = IF(freeze_count = 0, COALESCE(active_before_freeze, active), active),
-                active_before_freeze = IF(freeze_count = 0, NULL, active_before_freeze)
+                active_before_freeze = IF(freeze_count = 0, NULL, active_before_freeze),
+                created_at = created_at
             WHERE id = $id""".update()
     }
 
-  /** A round's creation has passed its count check: it is shown to its jurors. */
+  /** A round's creation has passed its count check: it is shown to its jurors, `active`. */
   def completeCreation(id: Long)(implicit session: DBSession): Unit =
-    sql"UPDATE round SET distributing = 0, active = 1 WHERE id = $id".update()
+    sql"""UPDATE round SET ${statusWrite(Status.Active, None)}, distributing = 0, active = 1, created_at = created_at
+          WHERE id = $id""".update(): Unit
 
-  def setInactiveAllInContest(contestId: Long): Unit =
-    withSQL {
-      update(Round)
-        .set(column.active -> false)
-        .where
-        .eq(column.contestId, contestId)
-    }.update()
+  /** Writes the round's status, with who (None: a job's write) and when: a creation job queued
+    * (`draft`), its fill done (`paused`, in review), a creation job cancelled (`cancelled`). The
+    * caller holds the round's lock.
+    *
+    * @return whether the row changed
+    */
+  def setStatus(id: Long, to: String, by: Option[Long] = None)(implicit session: DBSession): Boolean = {
+    require(Status.All.contains(to), s"unknown round status $to")
+    sql"""UPDATE round SET ${statusWrite(to, by)}, created_at = created_at
+          WHERE id = $id AND NOT (status <=> $to)""".update() > 0
+  }
+
+  /** `status = to` with who and when, as every status write has them. */
+  private def statusWrite(to: String, by: Option[Long]): SQLSyntax =
+    sqls"""status_changed_at = IF(status <=> $to, status_changed_at, NOW(3)),
+            status_changed_by = IF(status <=> $to, status_changed_by, $by),
+            status = $to"""
 
   /** The round created by the submission with this token (see V59), if any. */
   def findBySubmitToken(token: String)(implicit session: DBSession = AutoSession): Option[Round] =

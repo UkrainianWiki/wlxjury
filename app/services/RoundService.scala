@@ -172,6 +172,9 @@ class RoundService @Inject() (
     // rebalance is queued and ends under it
     if (!listOnly) RoundDistributionHandler.requireNoPreviousRebalance(round)
     val state = distribution.initialState(round, listOnly)
+    // a creation (or one finished by "Distribute new files") is `draft` while it runs (round
+    // lineage §2.6); under the round's lock, taken above
+    if (completingCreation) Round.setStatus(round.getId, Round.Status.Draft, createdBy)
     // the top-N's order and the rejected-by filter only where they apply: from a yes/no
     // previous round, and the rejected-by from a rated one without criteria too (its ✗, whether
     // its option is on now or not): from any such previous round, as the job and the form have it
@@ -378,13 +381,13 @@ class RoundService @Inject() (
     *
     * @return false if the round can't be started: it is still being distributed
     */
-  def setCurrentRound(prevRoundIds: Seq[Long], round: Round): Boolean = {
+  def setCurrentRound(prevRoundIds: Seq[Long], round: Round, by: Option[Long] = None): Boolean = {
     logger.info(
       s"Setting current round ${if (prevRoundIds.nonEmpty) s"from ${prevRoundIds.mkString(", ")}" else ""} to ${round.getId}"
     )
 
     prevRoundIds.foreach(rId => Round.setActiveGuarded(rId, active = false))
-    Round.setActiveGuarded(round.getId, active = round.active)
+    Round.setActiveGuarded(round.getId, active = round.active, by)
   }
 }
 

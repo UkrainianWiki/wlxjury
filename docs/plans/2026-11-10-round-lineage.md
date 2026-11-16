@@ -512,6 +512,21 @@ changed now):
 - **P3's paused-gated review and Distribute** (`:505-508`) must not apply to finished rounds,
   i.e. `paused` with `distributing = 0`.
 
+**Built as V105 by P3-2 of the round-editing plan** (`2026-11-16-round-editing.md` §6, §10;
+`stack/165-round-status`): steps 1–3 below are done there (the columns without `track`, the CHECK,
+the backfill with two more rows for a round in review: latest job of mode `distribute`, or a fill
+queued from review, or a fill done, with `distributing = 1` → `paused`), with the writers in step
+(`Round.create`, `setActiveGuarded`, `release(close = true)`, `completeCreation`, a creation job
+queued → `draft`, a creation job cancelled → `cancelled`). `track` and step 4 (`created_at` without
+`ON UPDATE`) are left to this plan's own migration. **Reinstate, amended:** `cancelled` → `paused`
+when the round's last fill job is done (a round in review), else `draft` if `distributing = 1`, else
+`paused`. `Round.setActive` is kept (tests only) and writes the status in step;
+`setInactiveAllInContest` is deleted. **Who, amended (accepted in P3-3's review):** a job's status
+write records who queued the job (`job.created_by`: the creator, the reviewer who distributed, an
+admin reinstating a cancelled creation), not NULL: the `paused` at a fill's end and the `active` at
+completion would otherwise overwrite the admin's `draft` of a reinstate. A cancelled creation records
+the admin who cancelled it (`JobScheduler.cancel(jobId, by)`). The backfill's rows stay NULL.
+
 **V103, in phase 1** (decisions 4, 5, 17): one migration. "V103" is the roadmap's next free number
 today (renumbered from V99 on 2026-11-13, when V99 went to the vote gallery index's `voted_at`, then from V100 the same day, when V100 went to dropping vote's four single-column indexes, then from V101 the same day, when V101 went to comment's `(contest_id, room)` index, then from V102 the same day, when V102 went to `monument.wikidata`); the number is assigned at merge, per the roadmap's migration-number rule
 (`2026-11-02-roadmap.md:463-474`: "Assigned at merge time … Renumber on merge if two collide"),

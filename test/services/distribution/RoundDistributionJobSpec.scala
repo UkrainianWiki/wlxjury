@@ -610,7 +610,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       eventually(50, 100.millis)(stateOf(roundId).imagesAdded must beGreaterThan(0L))
       roundDao.findById(prev.getId).get.active must beFalse
 
-      val cancelled = scheduler.cancel(submitted.job.get.id).get
+      val cancelled = scheduler.cancel(submitted.job.get.id, by = Some(77L)).get
       cancelled.status === JobStatus.Cancelled
       Thread.sleep(400)
       val added = RoundDistributionHandler.imagesAdded(cancelled)
@@ -620,10 +620,15 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       roundDao.findById(roundId).get.active must beFalse
       roundDao.findById(prev.getId).get.active must beTrue
       roundDao.findById(prev.getId).get.freezeCount === 0
+      // its creation cancelled (round lineage §2.6, V105)
+      roundDao.findById(roundId).get.status === Some(Round.Status.Cancelled)
+      DB.readOnly(implicit s => sql"SELECT status_changed_by FROM round WHERE id = $roundId".map(_.longOpt(1)).single()) ===
+        Some(Some(77L)) // by the admin who cancelled it
 
       // finishing it later: "Distribute new files" completes the creation
       service.distributeNewImages(roundId) === (30 - added).toInt
       roundDao.findById(roundId).get.openToJurors must beTrue
+      roundDao.findById(roundId).get.status === Some(Round.Status.Active)
     }
 
     "be resumed by a scheduler after its instance died mid-job, from its committed chunks" in {

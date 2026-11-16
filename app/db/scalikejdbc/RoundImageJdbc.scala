@@ -139,7 +139,7 @@ object RoundImageJdbc {
         sql"""INSERT INTO round_image (round_id, page_id, status, added_how, added_by_job_id, added_at, monument_id)
               SELECT r.id, i.page_id, ${Status.In}, ${origin.how}, ${origin.jobId}, NOW(3), i.monument_id
               FROM round r JOIN images i ON i.page_id IN ($pageIds) WHERE r.id = $roundId ORDER BY i.page_id
-              ON DUPLICATE KEY UPDATE status = IF(status = ${Status.Dq}, ${Status.Dq}, ${Status.In})""".update()
+              ON DUPLICATE KEY UPDATE round_image.status = IF(round_image.status = ${Status.Dq}, ${Status.Dq}, ${Status.In})""".update()
         val disqualified = sql"""SELECT page_id FROM round_image
                                  WHERE round_id = $roundId AND page_id IN ($pageIds) AND status = ${Status.Dq}
                                  ORDER BY page_id LIMIT 10"""

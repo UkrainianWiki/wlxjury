@@ -17,7 +17,7 @@ class RoundSpec extends Specification with BeforeAll {
     "insert round" in new AutoRollbackDb {
       val created = roundDao.create(round)
       val id = created.id
-      created === round.copy(id = id)
+      created === round.copy(id = id, status = Some(Round.Status.Active)) // from its flags (V105)
       roundDao.findById(id.get) === Some(created)
       roundDao.findAll() === Seq(created)
     }

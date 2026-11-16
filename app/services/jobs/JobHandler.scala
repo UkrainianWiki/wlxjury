@@ -8,7 +8,10 @@ import scala.collection.mutable
 /** The transaction a step, a cancel or a retry runs in, with the job's row locked. Work
   * to do once it has committed (e.g. invalidating a cache) goes to [[afterCommit]].
   */
-final class StepContext(val session: DBSession) {
+/** @param by who acts, where the step is a user's action (a Cancel: [[JobScheduler.cancel]]); None for
+  *           the scheduler's own steps
+  */
+final class StepContext(val session: DBSession, val by: Option[Long] = None) {
   private[jobs] val afterCommitActions = mutable.Buffer.empty[() => Unit]
   def afterCommit(f: => Unit): Unit = afterCommitActions += (() => f)
 }

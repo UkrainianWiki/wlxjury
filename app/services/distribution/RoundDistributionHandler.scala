@@ -320,7 +320,22 @@ class RoundDistributionHandler @Inject() (
 
   override def onFailed(job: Job, ctx: StepContext): JsObject = end(job, ctx)
 
-  override def onCancelled(job: Job, ctx: StepContext): JsObject = end(job, ctx)
+  /** [[end]]; a creation that never completed (the round still `distributing`) is `cancelled`
+    * (round lineage §2.6: an admin cancelled its creation job), by the admin who cancelled it.
+    */
+  override def onCancelled(job: Job, ctx: StepContext): JsObject = {
+    val ended = end(job, ctx)
+    implicit val session: DBSession = ctx.session
+    val roundId = roundIdOf(job)
+    // locked by end, which runs first
+    val distributing = sql"SELECT distributing FROM round WHERE id = $roundId".map(_.boolean(1)).single().getOrElse(false)
+    if (distributing && cancelsCreation(job)) Round.setStatus(roundId, Round.Status.Cancelled, ctx.by)
+    ended
+  }
+
+  /** Cancelling this job cancels its round's creation: a creation's job (or one finishing it). */
+  protected def cancelsCreation(job: Job): Boolean =
+    (job.params \ "completingCreation").asOpt[Boolean].getOrElse(false)
 
   /** Stores what Commons now has of the chunk's stored files that changed, as an import
     * does, with a former title of a renamed one.

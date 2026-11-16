@@ -29,8 +29,9 @@ object GatlingDbCache {
     *     session_upgrade_window) don't clash on restore after the migrations ran.
     * v6: round_image (V84) rows, written by VoteJdbc.batchInsert with the votes.
     * v7: round_image's counts (V89) recounted after the load (RoundCountsRecompute), the rounds clean.
-    * v8: the binary round is named "Yes/No Round", as the UI calls the kind (was "Binary Round"). */
-  val FixtureVersion = "fixture-v8"
+    * v8: the binary round is named "Yes/No Round", as the UI calls the kind (was "Binary Round").
+    * v9: the rounds have their status (V105), written by Round.create. */
+  val FixtureVersion = "fixture-v9"
 
   // ── Cache key ──────────────────────────────────────────────────────────────
 

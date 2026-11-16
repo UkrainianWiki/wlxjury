@@ -30,7 +30,7 @@ class JobController @Inject() (cc: ControllerComponents, jobs: JobScheduler, blo
   def cancel(id: Long): EssentialAction =
     withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
       withJob(user, id, request) { job =>
-        jobs.cancel(job.id)
+        jobs.cancel(job.id, user.id)
         back(request, job)
       }
     }

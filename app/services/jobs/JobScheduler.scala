@@ -297,12 +297,13 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
   def started(jobId: Long): Unit = if (inline) runInline(jobId) else wake()
 
   /** Cancels a queued, running or failed job; waits for a running step to commit first.
+    * @param by who cancels it (the job page's admin), for the handler's cleanup ([[StepContext.by]])
     * @return the job afterwards, None if it doesn't exist
     */
-  def cancel(jobId: Long): Option[Job] = {
+  def cancel(jobId: Long, by: Option[Long] = None): Option[Job] = {
     val ctx = DB.localTx { implicit s =>
       JobJdbc.lock(jobId).filter(j => j.isActive || j.isFailed).map { j =>
-        val ctx = new StepContext(s)
+        val ctx = new StepContext(s, by)
         val state = handlers.get(j.kind).fold(j.state)(_.onCancelled(j, ctx))
         JobJdbc.update(jobId, JobStatus.Cancelled, state, progressOf(j), j.error)
         ctx

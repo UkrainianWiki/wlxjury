@@ -472,7 +472,7 @@ class RoundController @Inject() (
                 val back =
                   if (toConflicts) Redirect(routes.RoundConflictsController.page(round.getId))
                   else Redirect(routes.RoundController.rounds(Some(round.contestId)))
-                if (roundsService.setCurrentRound(Nil, round.copy(active = selectRound.active))) {
+                if (roundsService.setCurrentRound(Nil, round.copy(active = selectRound.active), user.id)) {
                   if (toConflicts)
                     back.flashing("success" ->
                       messages(if (selectRound.active) "coi.round.started" else "coi.round.stopped", round.number))

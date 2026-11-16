@@ -666,6 +666,34 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+  /** V105's rollback SQL after reopen (round.status, P3-2 of the round-editing plan): the CHECK,
+    * then the columns. Finish or cancel rounds in review first (an older binary has no review).
+    */
+  private val v105Rollback = Seq(
+    "ALTER TABLE round DROP CONSTRAINT IF EXISTS round_status_chk",
+    "ALTER TABLE round DROP COLUMN status, DROP COLUMN status_changed_at, DROP COLUMN status_changed_by",
+    "DELETE FROM flyway_schema_history WHERE version = '105'")
+
+  "V105's round status" should {
+    "run after V104 (V103 retired), rerun as a no-op, and roll back to V104's schema" in {
+      emptyDb("fw_v105_prev")
+      flyway("fw_v105_prev", production.copy(target = Some("104"))).migrate()
+      emptyDb("fw_v105")
+      flyway("fw_v105", production.copy(target = Some("105"))).migrate().success must beTrue
+      val once = schema("fw_v105")
+      def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+      (history("fw_v105").map(_.split(" \\| ")(1)) === upTo("105")) and {
+        Using.resource(connect("fw_v105"))(c => run(c, statements("V105__Round_status.sql")))
+        schema("fw_v105") === once
+      } and {
+        Using.resource(connect("fw_v105"))(c => run(c, v105Rollback))
+        (tablesOnly(schema("fw_v105")) === tablesOnly(schema("fw_v105_prev"))) and
+          (flyway("fw_v105", production.copy(target = Some("105"))).migrate().success must beTrue) and
+          (schema("fw_v105") === once)
+      }
+    }
+  }
+
   /** V96's rollback SQL after reopen (CHANGELOG, the account change log): the live unsent
     * invitations revoked first, since an older release would show one as mailed; the log dropped.
     */
