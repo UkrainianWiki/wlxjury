@@ -61,9 +61,11 @@
     voteChip(tile);
   }
 
-  /** The tile's foot (gallery tiles only): a column at its bottom edge with the chips' row
-    * ([[chips]]) above a rated round's stars (addStars), so that the two never overlap however
-    * the stars wrap. It takes no clicks itself (main.css .wlx-tile-foot). */
+  /** The tile's foot: a column at its bottom edge with the chips' row ([[chips]]) above a rated
+    * round's stars (addStars, gallery tiles only), so that the two never overlap however the
+    * stars wrap; the by-rate gallery's thumbnail has one with its chips alone, which the server
+    * draws (galleryByRate.scala.html thumbChips). It takes no clicks itself (main.css
+    * .wlx-tile-foot). */
   function foot(tile) {
     for (var i = 0; i < tile.children.length; i++) {
       if (tile.children[i].classList.contains('wlx-tile-foot')) return tile.children[i];
@@ -108,7 +110,7 @@
     if (!old) return;
     var row = old.parentNode;
     row.removeChild(old);
-    if (!row.firstChild) {
+    if (!row.firstElementChild) { // the server's row has whitespace between its chips
       if (resizes) resizes.unobserve(row);
       row.parentNode.removeChild(row);
     }
@@ -198,7 +200,7 @@
         part.classList.remove('wlx-vote-time-none');
         var el = timeElement(time.iso);
         part.appendChild(el);
-        said.push(el.textContent);
+        said.push(timeElement(time.iso)); // its own <time>, as snippets.voteChip's words have
         titled.push(el.title || el.textContent);
       } else {
         part.textContent = time.none;
@@ -208,7 +210,13 @@
     } else {
       shown.removeChild(part);
     }
-    chip.querySelector('.visually-hidden').textContent = said.filter(Boolean).join(', ');
+    var hidden = chip.querySelector('.visually-hidden');
+    hidden.textContent = '';
+    said.filter(Boolean).forEach(function (part, i) {
+      if (i) hidden.appendChild(document.createTextNode(', '));
+      hidden.appendChild(typeof part === 'string' ? document.createTextNode(part) : part);
+    });
+    hidden.normalize(); // "Selected, " one text, as the server writes it
     chip.setAttribute('title', titled.filter(Boolean).join(', '));
     return place(tile, chip, true);
   }
@@ -391,8 +399,8 @@
    * is, with its rank: the file marked changed (.wlx-rate-changed, titled with the list's
    * data-changed-title) unless back at its rate at load, and the hint above the list
    * (.wlx-byrate-hint) shown from the first change on. In an order by vote time (the list's
-   * data-vote-times), the file's vote time follows it as on the gallery's tiles
-   * ([[listVoteTimeAfter]]).
+   * data-vote-times), the file's vote time follows it in the vote chip on its thumbnail, as on
+   * the gallery's tiles ([[listVoteTimeAfter]]).
    */
   function addListStars(list) {
     var options = {
@@ -437,24 +445,17 @@
   }
 
   /** After a stored vote from `before` to `rate` in the by-rate list (in an order by vote time),
-    * the time line under the file's rate in its box (`box`: galleryByRate.scala.html's
-    * .wlx-vote-time-line, there for a rated file at load): a changed vote's is now (the browser's
-    * clock, as [[voteTimeAfter]]), added if the file had none; a cleared vote has none; the same
-    * vote again keeps it, as the server does (VoteSql.votedAt). */
+    * the vote chip on the file's thumbnail (`box`'s .thumb, its chips as galleryByRate.scala.html
+    * thumbChips draws them, before the comments; the chip from the page's template, as a
+    * gallery tile's: [[voteChip]]): a changed vote's time is now (the browser's clock, as
+    * [[voteTimeAfter]]), the chip added if the file had none; a cleared vote has none; the same
+    * vote again keeps it, as the server does (VoteSql.votedAt). A rated round's: the time alone,
+    * its stars being its mark. */
   function listVoteTimeAfter(box, before, rate) {
     if (rate === before) return;
-    var line = box.querySelector('.wlx-vote-time-line');
-    if (rate === 0) {
-      if (line) line.parentNode.removeChild(line);
-      return;
-    }
-    if (!line) {
-      line = document.createElement('div');
-      line.className = 'wlx-vote-time-line small';
-      box.appendChild(line);
-    }
-    line.textContent = '';
-    line.appendChild(timeElement(new Date().toISOString()));
+    var thumb = box.querySelector('.thumb') || box;
+    chipState(thumb).time = rate === 0 ? null : { iso: new Date().toISOString() };
+    voteChip(thumb);
   }
 
   /** All the jurors' votes on a binary round's file, on its tile in the organisers' gallery of

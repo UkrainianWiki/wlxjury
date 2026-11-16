@@ -225,9 +225,8 @@ you have chosen. Choosing another one keeps them. A comments-only round has no v
 A file that has comments shows a speech bubble with their number in its lower-left corner, for
 example 💬 3, in the gallery (right after your vote's mark) and in the large view's **Next
 files**. It counts the comments that the file's large view shows: those written in any round of
-the contest. A screen reader reads it as "3 comments"; in the gallery, where it is a link, as "3
-comments: open the comments". In the gallery, click it to open the file's large view at its
-comments. In the large view the same 💬 3 is under the buttons, after
+the contest. It is a link: a screen reader reads it as "3 comments: open the comments", and a
+click on it opens the file's large view at its comments. In the large view the same 💬 3 is under the buttons, after
 your vote; click it to jump to the comments under the image.
 
 The **Comments** menu, after the votes menu, has three choices:

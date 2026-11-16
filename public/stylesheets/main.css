@@ -54,10 +54,14 @@ body.gallery {
    edge (navbar.scala.html itemCount, region-menu.js), a closed button's after its name
    (wlx-nav-count), muted (--bs-secondary-color: 4.5:1 and more on the navbar and the menus in
    both modes), the digits of a menu's counts lined up in one column; on the active item in its
-   text colour, on a greyed-out one greyed out with it */
+   text colour, on a greyed-out one greyed out with it. A button's text after its count (the Votes
+   button's "· 12 unrated", wlx-nav-suffix) muted as the count, in every state of the button (at
+   rest, pointed at, focused, open): never brighter than the count, which the button's own colour
+   on hover made it (the maintainer's note of 2026-11-16) */
 .wlx-menu-item { display: flex; align-items: center; }
 .wlx-menu-count { margin-inline-start: auto; padding-inline-start: 1rem; }
 .wlx-menu-count, .wlx-nav-count { color: var(--bs-secondary-color); font-variant-numeric: tabular-nums; }
+.wlx-nav-suffix { color: var(--bs-secondary-color); }
 .dropdown-item.active .wlx-menu-count, .dropdown-item.disabled .wlx-menu-count { color: inherit; }
 /* the icon before a menu's choice that says which menu it is (the Votes menu's vote, the organisers'
    juror menu's people: decision C of 2026-11-14), close to its text */
@@ -533,8 +537,11 @@ a:has(> .btn) { text-decoration: none; }
 /* the gallery tile's foot (tile-votes.js foot): a column at its bottom edge, its chips above a
    rated round's stars, so the two never overlap however the stars wrap. No stacking context of
    its own (no z-index): the chips stay under the ✓ and ✗ buttons (z-index 6), the stars above
-   the zoom icon. It takes no clicks; the stars do */
-.ug-thumb-wrapper.ug-tile .wlx-tile-foot {
+   the zoom icon. It takes no clicks; the stars do. The by-rate gallery's thumbnails have the same
+   foot with the chips alone (galleryByRate.scala.html thumbChips), the stars under the thumbnail,
+   and so have the large view's strip's (large/thumbsBar: the comments alone) */
+.ug-thumb-wrapper.ug-tile .wlx-tile-foot, li.gallerybox .thumb > .wlx-tile-foot,
+li.gallerybox .thumb_small > .wlx-tile-foot {
     position: absolute;
     left: 0;
     right: 0;
@@ -580,7 +587,7 @@ a.wlx-chip:focus-visible {
 .wlx-chip-vote .wlx-chip-mark + .wlx-chip-time,
 .wlx-chip-vote .wlx-chip-time.wlx-vote-time-none { color: var(--bs-secondary-color); }
 .wlx-chip-time { font-variant-numeric: tabular-nums; }
-/* on a photo (the tile's chips, the by-rate gallery's and the large view's strip's thumbnails):
+/* on a photo (the tile's chips, the by-rate gallery's and the large view's strip's thumbnails'):
    the page's colours over it, taking no clicks (the tile's click, which opens the large view, goes
    through them) but a link's */
 .wlx-tile-chips > .wlx-chip, li.gallerybox .wlx-chip {
@@ -592,8 +599,10 @@ a.wlx-chip:focus-visible {
    as the tile less its margins, so a narrower tile is measured again (fit) and drops the vote's
    time first (wlx-chips-tight); clipped at the edge, never wider than the tile. Under the ✓ and ✗
    buttons. A file deleted on Commons has its mark there, but only on the contest files page,
-   which has no chips */
-.ug-thumb-wrapper.ug-tile .wlx-tile-chips {
+   which has no chips. The by-rate gallery's and the strip's thumbnails (a fixed width) have the
+   same row */
+.ug-thumb-wrapper.ug-tile .wlx-tile-chips, li.gallerybox .thumb .wlx-tile-chips,
+li.gallerybox .thumb_small .wlx-tile-chips {
     position: relative;
     z-index: 5;
     display: flex;
@@ -603,23 +612,16 @@ a.wlx-chip:focus-visible {
     overflow: hidden;
     pointer-events: none;
 }
-.ug-thumb-wrapper.ug-tile .wlx-tile-chips > .wlx-chip { flex: none; }
+.ug-thumb-wrapper.ug-tile .wlx-tile-chips > .wlx-chip, li.gallerybox .wlx-tile-chips > .wlx-chip { flex: none; }
 /* the comments' chip, the one that is a link (to the large view at its comments): it takes the
    clicks and the focus, the row around it none; the focus ring inside the row, which clips outside */
-.ug-thumb-wrapper.ug-tile .wlx-tile-chips > a.wlx-chip {
+.ug-thumb-wrapper.ug-tile .wlx-tile-chips > a.wlx-chip, li.gallerybox .wlx-tile-chips > a.wlx-chip {
     pointer-events: auto;
     cursor: pointer;
 }
-.ug-thumb-wrapper.ug-tile .wlx-tile-chips > a.wlx-chip:focus-visible { outline-offset: -2px; }
+.ug-thumb-wrapper.ug-tile .wlx-tile-chips > a.wlx-chip:focus-visible,
+li.gallerybox .wlx-tile-chips > a.wlx-chip:focus-visible { outline-offset: -2px; }
 .ug-thumb-wrapper.ug-tile .wlx-tile-chips.wlx-chips-tight .wlx-chip-time { display: none; }
-/* a file's comments on the by-rate gallery's thumbnail and the large view's strip: in the tiles'
-   chips' place, the lower left, under the link */
-li.gallerybox .wlx-chip-comments {
-    position: absolute;
-    left: 6px;
-    bottom: 6px;
-    z-index: 6;
-}
 
 /* a video's still thumbnail in a list or strip (snippets.videoMark): a ▶ at its centre, white on
    a dark disc (4.5:1 or more over any photo); the comments report's thumbnail link is its box */

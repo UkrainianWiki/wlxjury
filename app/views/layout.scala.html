@@ -44,7 +44,12 @@
         <link rel="stylesheet" media="screen" href="@routes.Assets.versioned("stylesheets/main.css")">
 
         <script type="text/javascript" src="@routes.WebJars.at("jquery/3.7.1/jquery.min.js")"></script>
-        <script src="@routes.WebJars.at("bootstrap/5.3.8/js/bootstrap.bundle.min.js")"></script>
+        @* defer: Bootstrap starts once the body is parsed. Run from <head>, it waits for
+           DOMContentLoaded and then reads document.body (getjQuery), but Firefox fires that event
+           on a page whose loading a navigation stopped before its body (a link followed, or a
+           reload, while the head's scripts load): "document.body is null". The app's code calls
+           no Bootstrap API, only its data attributes, which work the same deferred. *@
+        <script defer src="@routes.WebJars.at("bootstrap/5.3.8/js/bootstrap.bundle.min.js")"></script>
         @head
     </head>
     <body@defining((bodyClass +: (if (fullHeight) Seq("h-100") else Nil)).filter(_.nonEmpty).mkString(" ")) { classes =>@if(classes.nonEmpty){ class="@classes"}}>

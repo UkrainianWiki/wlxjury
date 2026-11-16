@@ -6,7 +6,10 @@
         implicit flash: Flash, request: Request[Any], messages: Messages)
 @* A round's large view's strip of the files after its file (Neighbourhood.following), in a
    section closed by default; none at the list's end. Not the file itself, which the stars
-   above rate, nor those before it. Each with its comments' badge (snippets.commentChip) *@
+   above rate, nor those before it. Each with its comments' chip (snippets.commentChip) at its
+   lower left as on the gallery's tiles and the by-rate gallery (galleryByRate thumbChips): a
+   link to that file's large view in this list at its comments, beside the thumbnail's link, not
+   in it (the maintainer's report of 2026-11-16: the plain badge opened the file at its top) *@
 
 @if(hood.following.nonEmpty) {
 @sideSection("large-next", "large.next.files", open = false) {
@@ -17,7 +20,6 @@
     <div class="thumb_small">
         <div class="my-1 mx-auto">
             <a href="@list.largeUrl(file.pageId)">
-                @snippets.commentChip(commentCounts.getOrElse(file.pageId, 0))
                 @* an image's or a video's thumbnail; a video's with its mark *@
                 <img class="cropped" alt="@if(file.image.isVideo) {@Messages("video"): }@file.title"
                 src="@Global.resizeTo(file.image, Global.thumbSizeX, Global.thumbSizeY)"
@@ -25,6 +27,9 @@
                 @if(file.image.isVideo) {@snippets.videoMark()}
             </a>
         </div>
+        @for(n <- commentCounts.get(file.pageId).filter(_ > 0)) {
+        <div class="wlx-tile-foot"><div class="wlx-tile-chips">@snippets.commentChip(n, Some(list.largeUrl(file.pageId) + "#comments"))</div></div>
+        }
     </div>
     </li>
 }

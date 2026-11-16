@@ -283,10 +283,14 @@ class VoteTimeOrderSpec extends PlaySpecification with ThrownExpectations with P
         val f = fixture(Round.binaryRound, binaryRates)
         val (_, organizer) = others(f)
         def html(query: String) = contentAsString(getAs(s"/byrate/round/${f.round.getId}/user/${f.juror.getId}/page/1$query", organizer))
-        def times(h: String) = """<time class="wlx-vote-time" datetime="([^"]*)"""".r.findAllMatchIn(h).map(_.group(1)).toList
+        // each shown once in its vote chip (the chip's words have it again, for screen readers)
+        def times(h: String) = Jsoup.parse(h).select(".wlx-chip-shown time.wlx-vote-time").asScala.map(_.attr("datetime")).toList
         val byTime = html("?sort=oldest-vote")
+        // in the files' vote chips, as on the gallery's tiles: a vote from before vote times with its
+        // mark alone (a rated round's says the time wasn't recorded)
         (times(byTime) === List(iso(1), iso(3), iso(5), iso(5))) and
-          (byTime must contain("Time not recorded")) and
+          (byTime must not(contain("Time not recorded"))) and
+          (Jsoup.parse(byTime).select("li.gallerybox .wlx-tile-chips > .wlx-chip-vote").size === 6) and
           (times(html("?sort=rate")) must beEmpty) and (html("?sort=rate") must not(contain("Time not recorded")))
       }
     }

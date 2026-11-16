@@ -50,6 +50,10 @@ class LayoutSpec extends PlaySpecification {
       html.indexOf("var head;") must be_>(main)
     }
 
+    "start Bootstrap's script deferred, once the body is parsed (Firefox: a stopped page has none)" in {
+      html must contain("""<script defer src="/webjars/bootstrap/5.3.8/js/bootstrap.bundle.min.js"></script>""")
+    }
+
     "show the title as given" in {
       html must contain("<title>A title</title>")
     }

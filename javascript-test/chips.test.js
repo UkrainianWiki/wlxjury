@@ -78,3 +78,29 @@ describe("a tile's chip and the server's", () => {
         same(addVoteTime(tile(), { rate: "3", votedAt: "", votedNone: "Time not recorded" }), server("vote-time-none"));
     });
 });
+
+// The server's vote chip on a page (the by-rate gallery's thumbnails, galleryByRate thumbChips):
+// vote-time.js formats the time in its words as in its shown part, so screen readers never read
+// the raw UTC value, and gives it the tiles' title, the words with the time's year.
+describe("the server's vote chip on a page", () => {
+    afterEach(() => {
+        delete window.wlxVoteTime;
+        document.documentElement.removeAttribute("lang");
+    });
+
+    test("is read with its time formatted, its title with the year", () => {
+        const { localize } = require("../public/javascripts/vote-time.js");
+        document.documentElement.setAttribute("lang", "en-GB");
+        const rendered = server("vote-rejected-time");
+        expect(accessibleText(rendered).trim()).toBe("Rejected, 2026-11-12T14:05:00Z"); // before the script
+        localize(document);
+        const said = accessibleText(rendered).trim();
+        expect(said).toMatch(/^Rejected, \d{1,2} Nov( 2026)?, \d\d:\d\d$/);
+        expect(rendered.getAttribute("title")).toMatch(/^Rejected, \d{1,2} Nov 2026, \d\d:\d\d$/);
+        expect(rendered.querySelector(".visually-hidden time.wlx-vote-time").textContent)
+            .toBe(rendered.querySelector(".wlx-chip-shown time.wlx-vote-time").textContent);
+        // a chip without a time keeps its words and title
+        localize(document);
+        expect(server("vote-selected").getAttribute("title")).toBe("Selected");
+    });
+});

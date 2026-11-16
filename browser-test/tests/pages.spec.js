@@ -114,3 +114,36 @@ test.describe('the page tour', { tag: '@S-04' }, () => {
     });
   }
 });
+
+// A page left while its head's scripts still load: Firefox fires DOMContentLoaded on the stopped
+// page, before its body. Bootstrap run from <head> then read document.body there ("document.body
+// is null", the review spec's reloads in CI, 2026-11-16); deferred (layout.scala.html) it starts
+// only once the body is parsed, so a stopped page has nothing to throw (lib/fixtures.js fails the
+// test on a page error).
+test.describe('a page left while it loads', { tag: '@S-04' }, () => {
+  test.use({ role: 'juror' });
+
+  test('throws no page error', async ({ page, fixture }) => {
+    // a script after Bootstrap's in the gallery's <head>, held until the page is left
+    let reached, release;
+    const isReached = new Promise((r) => { reached = r; });
+    const held = new Promise((r) => { release = r; });
+    const SCRIPT = /\/javascripts\/([0-9a-f]+-)?region-menu\.js/; // versioned: a digest before the name
+    await page.route(SCRIPT, async (route) => {
+      reached();
+      await held;
+      await route.continue().catch(() => {});
+    });
+    const gallery = galleryPath(fixture.roundBinaryId, fixture.accounts.juror.id);
+    await page.goto(gallery, { waitUntil: 'commit' });
+    await isReached;
+    // the head's scripts before it run (jQuery, then Bootstrap where it isn't deferred)
+    await page.waitForFunction(() => !!window.jQuery);
+    await page.waitForTimeout(300);
+    await page.unroute(SCRIPT, { behavior: 'ignoreErrors' });
+    const leaving = page.goto(gallery);
+    release();
+    await leaving;
+    await expect(page.locator('h1')).toHaveCount(1);
+  });
+});

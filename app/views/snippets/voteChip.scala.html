@@ -3,7 +3,9 @@
    yes/no round's ✓ or ✗ in the vote's colour (`rate` 1 or -1; 0: none, a rated round's stars are
    its mark), then with `time` the vote's time, muted after a mark (snippets.voteTime: Some(at), or
    the text that none was recorded, None), "✓ 14:32"; marks and time hidden from screen readers,
-   which read its words, the vote's and the time's ("Selected, 12 Nov, 14:32"), its title too. The
+   which read its words, the vote's and the time's ("Selected, 12 Nov, 14:32"): the time there a
+   <time> as well, which vote-time.js formats as the shown one (never the raw UTC value), and
+   the title, the same words with the time's year, set by it too (the UTC value without it). The
    gallery's tiles clone it from a <template> (snippets.chipTemplates, tile-votes.js voteChip),
    setting the mark, the time and the words. Nothing without a mark or a time. Its look: main.css
    .wlx-chip *@
@@ -14,6 +16,9 @@
     <span class="badge wlx-chip wlx-chip-vote" title="@label"><span class="wlx-chip-shown" aria-hidden="true">@if(rate > 0) {<i class="bi wlx-chip-mark bi-check-lg wlx-vote-selected"></i>}@if(rate < 0) {<i class="bi wlx-chip-mark bi-x-lg wlx-vote-rejected"></i>}@for(at <- time) {@at match {
         case Some(_) => {<span class="wlx-chip-time">@snippets.voteTime(at)</span>}
         case None => {<span class="wlx-chip-time wlx-vote-time-none">@Messages("vote.time.none")</span>}
-    }}</span><span class="visually-hidden">@label</span></span>
+    }}</span><span class="visually-hidden">@time match {
+        case Some(Some(at)) => {@for(w <- word) {@w, }<time class="wlx-vote-time" datetime="@at.toInstant.toString">@at.toInstant.toString</time>}
+        case _ => {@label}
+    }</span></span>
     }
 }

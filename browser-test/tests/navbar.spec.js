@@ -79,6 +79,44 @@ test.describe('a juror\'s navbar menus by keyboard', () => {
     await page.keyboard.press('Escape');
     await expect(comments.locator('> button')).toBeFocused();
   });
+
+  // The Votes button's "All 120 · 30 unrated": the count is the main number, the unrated after it
+  // muted as the count in every state of the button and in both colour modes, never brighter
+  // (main.css wlx-nav-suffix; the maintainer's note of 2026-11-16: pointed at, the count stayed
+  // grey and the unrated turned white with the button's text)
+  test('the Votes button\'s unrated is as muted as its count, at rest, pointed at, focused and open', { tag: '@J-12' }, async ({ page, fixture }) => {
+    await page.goto(galleryPath(fixture.roundBinaryId, fixture.accounts.juror.id));
+    const menu = page.locator('#votes-menu');
+    const button = menu.locator('> button');
+    await expect(button.locator('.wlx-votes-unrated')).toBeVisible();
+    await expect(button.locator('.wlx-votes-count')).toBeVisible();
+    const colors = () => button.evaluate((b) => {
+      const color = (selector) => getComputedStyle(b.querySelector(selector)).color;
+      return { count: color('.wlx-votes-count'), unrated: color('.wlx-votes-unrated'), choice: color('.wlx-nav-choice') };
+    });
+    /** The colours once the button's colour transition (Bootstrap's .15s) is over. */
+    const settled = async () => { await page.waitForTimeout(300); return colors(); };
+    for (const mode of ['dark', 'light']) {
+      await page.evaluate((m) => document.documentElement.setAttribute('data-bs-theme', m), mode);
+      await page.mouse.move(5, 700);
+      const states = {};
+      states.rest = await settled();
+      await button.hover();
+      states.hover = await settled();
+      await page.mouse.move(5, 700);
+      await button.focus();
+      states.focus = await settled();
+      await page.keyboard.press('Space');
+      await expect(button).toHaveAttribute('aria-expanded', 'true');
+      states.open = await settled();
+      await page.keyboard.press('Escape');
+      for (const [state, c] of Object.entries(states)) {
+        expect(c.unrated, `${mode} mode, ${state}: the unrated as the count`).toBe(c.count);
+      }
+      // pointed at, the button's own text brightens (or darkens): its choice no longer the count's colour
+      expect(states.hover.choice, `${mode} mode: the choice follows the button's hover colour`).not.toBe(states.hover.count);
+    }
+  });
 });
 
 // The widest bar the fixture can't show by itself, put in before measuring: a long juror name

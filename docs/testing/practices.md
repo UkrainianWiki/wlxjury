@@ -419,14 +419,14 @@ fallback covers.
 `webkit`), each depending on its sign-in project (`setup-<engine>`, `tests/auth.setup.js`), which
 signs in through the login form once per role (juror, organizer, admin, root) and saves the
 session to `target/browser-test/auth/<engine>-<role>.json`. A test takes a role with
-`test.use({ role: 'juror' })`, or opens another session with `contextAs(role)`. 56 tests per
-engine (168 in all), 4 of them its sign-ins:
+`test.use({ role: 'juror' })`, or opens another session with `contextAs(role)`. 91 tests per
+engine (273 in all; `playwright test --list`, 2026-11-16), 4 of them its sign-ins, besides the opt-in docs screenshots:
 
 | Spec | What it shows | Stories |
 |---|---|---|
 | `guards` | the fixture sends the production CSP; a CSP violation is reported; an image from another host, a lookalike of Commons' upload host and `commons.wikimedia.org`, and a request to Commons' API, are refused and reported; Commons' and the image proxy's images get the placeholder; the routeless browser refuses other hosts too (the guards' self-tests, §4.2) | S-03 |
 | `sign-in` | sign in through the form, sign out through the user menu's POST with its token; a sign-out without the token is refused and the session stays; a wrong password | J-02, J-03, J-06, J-07, J-34, S-02 |
-| `voting` | binary round: large view by key and by button, a gallery tile's ✓ button (its lower-left badge, no frame); rated round: large view by key and by star, gallery star (reading the tile's rate first); Back after a large-view vote shows the stored vote, as a fresh load does (from `ui_checks.py`; §10.3) | J-16, J-17, J-20, J-21, J-24, J-36, S-02 |
+| `voting` | binary round: large view by key and by button, a gallery tile's ✓ button (its lower-left badge, no frame); rated round: large view by key and by star, gallery star (reading the tile's rate first); Back after a large-view vote shows the stored vote, as a fresh load does (from `ui_checks.py`; §10.3); a tile's ✓ and ✗ level and the same size, the large view's ✓ and ✗ drawn as its navigation buttons; the comments link of the large view, the Next files strip, a gallery tile, the by-rate gallery and the comments list to the file's comments, and a by-rate vote chip's name with its time formatted | J-16, J-17, J-20, J-21, J-24, J-25, J-36, S-02 |
 | `sections` | the large view's and the contest file's side sections restored as stored by DOMContentLoaded; the first-frame check (from `ui_checks.py`) is `fixme`, triage U18 ([UI](../ui/practices.md) §9) | J-33 |
 | `theme` | the login page's switch (no request), the navbar's CSRF POST; `auto` in both schemes with every frame, from the first, in the scheme's mode: the `data-bs-theme` attribute, the root's computed `color-scheme` and the page's computed background (the "Firefox theme flash" check) | J-30 |
 | `access` | a juror refused another juror's votes (gallery, large view, all jurors) and the admin pages, an organizer the round form: the 403 page with its reference | J-27, J-35, S-01 |

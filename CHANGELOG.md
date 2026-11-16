@@ -30,6 +30,31 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
 
 **Features**
 
+- **By rate: the comment chip opens the comments, the chips as on the gallery's tiles** (the
+  maintainer's report on 26.11.9; developed 2026-11-16, `stack/170`): a file's comment chip on
+  the by-rate gallery was a plain badge inside the thumbnail's link, so a click opened the file's
+  large view at its top. It is now the gallery tiles' link chip (`snippets.commentChip` with the
+  file's large view in the list, its filter and order kept, and `#comments`), in one row of chips
+  at the thumbnail's lower left (`galleryByRate.scala.html` `thumbChips`, next to the thumbnail's
+  link, not in it): first a yes/no round's tally of all the jurors (binaryTally's chip) or one
+  juror's ✓ or ✗ (`snippets.voteChip`), with the vote's time in the vote-time orders (a rated
+  round's time alone; the juror's own vote moves it at once, `tile-votes.js listVoteTimeAfter`
+  through the gallery's `voteChip` and chip templates), then the comments. The tally, the mark and
+  the time line under the thumbnail are gone; the rank and a rated round's stars stay there.
+  The large view's **Next files** strip had the same plain badge (a click opened that file at its
+  top): its comment chip is now the same link, in the same row (`large/thumbsBar`).
+  Screen readers read a vote chip's time as it is shown ("Selected, 16 Nov, 09:10"), not the
+  stored UTC value: the chip's words have the time as a `<time>` that `vote-time.js` formats, and
+  its title is the same with the year (`snippets.voteChip`; the tiles' chips build the same).
+- **Votes button and the tiles' ✓ and ✗ even** (the maintainer's notes of 2026-11-16, `stack/170`):
+  the Votes button's "· 30 unrated" is muted as its count in every state of the button and in both
+  colour modes (it took the button's colour, so pointed at it turned brighter than the count;
+  `main.css .wlx-nav-suffix`). A gallery tile's ✓ and ✗ buttons are level: `unitegallery.js`
+  placed the ✓ 8 px above the ✗. In a juror's large view the ✓ and ✗ are outline buttons like
+  the gallery, previous and next buttons in their group (the same border, size, radius and focus
+  ring), green and red, filled when pointed at, as the worst-mark button
+  (`large/navigationButtons` buttonSelect; they were filled, without the others' border).
+
 - **Review a round's images before distribution** (P3 of the two-step plan, P3-1 to P3-3 of the
   round-editing plan; developed 2026-11-16, `stack/164`–`166`): a new round's images are selected
   first and wait on the round's review page (`/admin/rounds/:id/review`), hidden from its jurors;

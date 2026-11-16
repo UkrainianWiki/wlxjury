@@ -292,9 +292,14 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
         NavMenus.button(juror2, "comments-menu") === Some("With comments 2")
         val all = ids(s"/byrate/round/${f.round.getId}/user/0/page/1?comments=1")
         all.select("li.gallerybox").asScala.map(_.id.toLong).sorted === Seq(1L, 3L, 5L, 7L)
-        // the by-rate tiles' badges, their words for screen readers
-        all.select("li.gallerybox .wlx-chip-comments .visually-hidden").asScala.map(_.text).sorted ===
-          Seq("1 comment", "1 comment", "1 comment", "2 comments")
+        // the by-rate tiles' comment chips, links to each file's large view at its comments in this
+        // list, their words for screen readers saying so
+        all.select("li.gallerybox a.wlx-chip-comments .visually-hidden").asScala.map(_.text).sorted ===
+          Seq("1 comment: open the comments", "1 comment: open the comments", "1 comment: open the comments",
+            "2 comments: open the comments")
+        forall(all.select("li.gallerybox a.wlx-chip-comments").asScala) { chip =>
+          chip.attr("href") must beMatching(s"/large/round/${f.round.getId}/user/0/pageid/${chip.closest("li").id}\\?.*comments=1.*#comments")
+        }
         // all the jurors' votes: no count on the button (D5 of the navigation proposal v3), the items have it
         NavMenus.button(all, "comments-menu") === Some("With comments")
         NavMenus.current(all, "comments-menu").flatMap(_.count) === Some(4)
@@ -316,8 +321,12 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
         doc.select("a[href*=/pageid/5?]").size must be_>(0)
         doc.select("a[href*=/pageid/2?], a[href*=/pageid/4?]").size === 0
         doc.selectFirst("form#addComment").attr("action") must contain("comments=1")
-        // the strip's file 5, with its badge
-        doc.select(".gallerybox .wlx-chip-comments .visually-hidden").asScala.map(_.text) === Seq("1 comment")
+        // the strip's file 5, with its comment chip: a link to its large view in this list at its
+        // comments, beside the thumbnail's link (not in it)
+        doc.select(".gallerybox .wlx-chip-comments .visually-hidden").asScala.map(_.text) === Seq("1 comment: open the comments")
+        val stripChip = doc.selectFirst("#large-next .thumb_small > .wlx-tile-foot > .wlx-tile-chips > a.wlx-chip-comments")
+        stripChip.attr("href") must beMatching(s"/large/round/${f.round.getId}/user/${f.juror1.getId}/pageid/5\\?.*comments=1.*#comments")
+        stripChip.parents().asScala.filter(_.tagName == "a") must beEmpty
         // file 3's one comment: from the earlier round, its stored time (a zone id) read
         val comment = doc.selectFirst(".large-comments .msg")
         comment.selectFirst(".wlx-comment-meta strong").text === "Org"
@@ -420,7 +429,8 @@ class CommentsFilterSpec extends PlaySpecification with PlayTestDb {
       * section's comments, of `viewer`'s large view `path`. */
     def linkOf(app: Application, viewer: User, path: String) = {
       val doc = Jsoup.parse(contentAsString(get(app, viewer, path)))
-      val links = doc.select("a.wlx-chip-comments")
+      // the side column's (the strip's thumbnails have their own: "the large view with the toggle")
+      val links = doc.select(".wlx-large-summary a.wlx-chip-comments")
       val shown = links.asScala.map(_.selectFirst("span[aria-hidden=true]").text)
       val said = links.asScala.map(_.selectFirst(".visually-hidden").text)
       val summary = Option(doc.selectFirst(".wlx-large-summary")).toSeq

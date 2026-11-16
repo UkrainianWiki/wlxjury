@@ -89,14 +89,18 @@
         "down", "chevron-down", s"${Messages("next.image")} &lt;${Messages("down.key")}&gt;")
 }
 
+@* the juror's ✓ and ✗ (the votes the file doesn't have), in the same group as the gallery, previous and
+   next buttons and drawn as they are: Bootstrap's outline buttons, the same border, size, radius and
+   focus ring, in the vote's colour (✓ green, ✗ red) and filled with it pointed at or pressed, as the
+   worst-mark button (the maintainer's note of 2026-11-16: filled, they had no border the others have) *@
 @buttonSelect() = {
     @if(files(index).rate <=0 ) {
-        <a role="button" class="btn btn-success btn-sm" href="#" data-vote-url="@list.voteUrl(files(index).pageId, 1)" title="@Messages("select.image") &lt;Space&gt;">
+        <a role="button" class="btn btn-outline-success btn-sm" href="#" data-vote-url="@list.voteUrl(files(index).pageId, 1)" title="@Messages("select.image") &lt;Space&gt;">
             <i class="bi bi-check-lg" aria-hidden="true"></i>
         </a>
     }
     @if(files(index).rate >=0 ) {
-        <a role="button" class="btn btn-danger btn-sm" href="#" data-vote-url="@list.voteUrl(files(index).pageId, -1)" title="@Messages("reject.image") &lt;Delete&gt;">
+        <a role="button" class="btn btn-outline-danger btn-sm" href="#" data-vote-url="@list.voteUrl(files(index).pageId, -1)" title="@Messages("reject.image") &lt;Delete&gt;">
             <i class="bi bi-x-lg" aria-hidden="true"></i>
         </a>
     }

@@ -3,10 +3,12 @@
    bubble and the number, hidden from screen readers, which read its words (views.CommentCount:
    "3 comments"), the same words as its title. With `href` a link, its words then saying where it
    goes ("3 comments: open the comments", comments.open): the large view's to its comments section
-   (large/navigationButtons, `#comments`), the comments list's rows' to the file's large view at its
-   comments (commentsReport); without, a plain chip on a thumbnail (the by-rate
-   gallery, the large view's strip). The gallery's tiles clone it from a <template>
-   (snippets.chipTemplates, tile-votes.js addComments). Nothing without comments. Its look:
+   (large/navigationButtons, `#comments`); the comments list's rows', the by-rate gallery's
+   thumbnails' (galleryByRate thumbChips) and the large view's strip's (large/thumbsBar) to the
+   file's large view in the list at its comments, the thumbnails' in their chips' row beside the
+   thumbnail's link, never in it. The gallery's tiles clone the link from a <template>
+   (snippets.chipTemplates, tile-votes.js addComments). Without `href` a plain chip, which no
+   page uses now (a tile without its large view's URL). Nothing without comments. Its look:
    main.css .wlx-chip *@
 @inner(label: String) = {<i class="bi bi-chat-left-text-fill" aria-hidden="true"></i><span class="wlx-chip-shown" aria-hidden="true">@count</span><span class="visually-hidden">@label</span>}
 @if(count > 0) {

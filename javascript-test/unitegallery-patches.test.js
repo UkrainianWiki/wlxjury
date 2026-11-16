@@ -117,6 +117,11 @@ async function gallery(items, extra) {
     document.body.appendChild(el);
     jQuery("#gallery").unitegallery(options(el, extra));
     await until(() => document.querySelectorAll("#gallery .ug-tile").length === items.length, "the tiles");
+    // the tiles theme places each tile (its size, place and icons) as its thumbnail loads or
+    // fails, one timer per image: wait for all of them, not a fixed time, which a loaded machine
+    // overran (tiles still unplaced, without a size or icon positions)
+    const placed = (t) => ["width", "height", "left", "top"].every((p) => /^\d+(\.\d+)?px$/.test(t.style[p]));
+    await until(() => Array.from(document.querySelectorAll("#gallery .ug-tile")).every(placed), "the tiles placed");
     await tick(60);
     return Array.from(document.querySelectorAll("#gallery .ug-tiles-wrapper .ug-tile"));
 }

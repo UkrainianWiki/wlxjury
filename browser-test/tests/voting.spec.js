@@ -131,6 +131,82 @@ test.describe('a juror votes', () => {
     await expectBackShowsVote(page, url, ratedVote, expected, before, browserName);
   });
 
+  // The juror's large view of a yes/no file: its ✓ and ✗ drawn as the gallery, previous and next
+  // buttons beside them (the maintainer's note of 2026-11-16: filled, they had no border), the
+  // same border, height, radius and padding, at rest, pointed at and focused, in both colour
+  // modes; the ✓ green and the ✗ red (navigationButtons buttonSelect)
+  test('the large view\'s ✓ and ✗ buttons are drawn as its navigation buttons', { tag: '@J-20' }, async ({ page, fixture }) => {
+    const { juror } = fixture.accounts;
+    await page.goto(largePath(fixture.roundBinaryId, juror.id, juror.pageId));
+    const nav = page.locator('.large-nav [data-nav=gallery]');
+    const votes = page.locator('.large-nav a[data-vote-url]');
+    await expect(nav).toBeVisible();
+    expect(await votes.count(), 'the file offers ✓, ✗ or both').toBeGreaterThan(0);
+    const style = (locator) => locator.evaluate((el) => {
+      const c = getComputedStyle(el);
+      return {
+        border: `${c.borderTopWidth} ${c.borderTopStyle}`, height: el.getBoundingClientRect().height,
+        radius: c.borderTopLeftRadius === '0px' ? c.borderTopRightRadius : c.borderTopLeftRadius,
+        padding: `${c.paddingTop} ${c.paddingLeft}`, colour: c.borderTopColor,
+        check: el.querySelector('.bi-check-lg') !== null,
+      };
+    });
+    for (const mode of ['dark', 'light']) {
+      await page.evaluate((m) => document.documentElement.setAttribute('data-bs-theme', m), mode);
+      for (const state of ['at rest', 'pointed at', 'focused']) {
+        await page.mouse.move(1, 1);
+        const reference = await style(nav);
+        for (let i = 0; i < await votes.count(); i++) {
+          const vote = votes.nth(i);
+          if (state === 'pointed at') await vote.hover();
+          if (state === 'focused') await vote.focus();
+          await page.waitForTimeout(200);
+          const v = await style(vote);
+          const where = `${mode} mode, ${state}, the ${v.check ? '✓' : '✗'}`;
+          expect(v.border, `${where}: border`).toBe(reference.border);
+          expect(Math.abs(v.height - reference.height), `${where}: height`).toBeLessThanOrEqual(1);
+          expect(v.padding, `${where}: padding`).toBe(reference.padding);
+          // its border in the vote's colour, not the navigation's grey
+          expect(v.colour, `${where}: border colour`).not.toBe(reference.colour);
+          await page.mouse.move(1, 1);
+          await page.evaluate(() => document.activeElement && document.activeElement.blur());
+        }
+      }
+    }
+  });
+
+  // A tile's ✓ and ✗ buttons side by side at one height, the same size, their glyphs level (the
+  // maintainer's note of 2026-11-16: the ✓ sat 8 px above the ✗; unitegallery.js placed them so),
+  // pointed at and not, in both colour modes; the ✓ to the left of the ✗
+  test('a tile\'s ✓ and ✗ buttons are level and the same size', { tag: '@J-16' }, async ({ page, fixture }) => {
+    const { juror } = fixture.accounts;
+    await page.goto(galleryPath(fixture.roundBinaryId, juror.id));
+    const select = page.getByRole('button', { name: 'Selected' }).first();
+    await expect(select).toBeVisible();
+    const tile = select.locator('xpath=ancestor::*[contains(concat(" ", @class, " "), " ug-tile ")][1]');
+    const reject = tile.getByRole('button', { name: 'Rejected' });
+    const boxes = async () => ({
+      select: await select.boundingBox(), reject: await reject.boundingBox(),
+      check: await select.locator('i.bi-check-lg').boundingBox(), cross: await reject.locator('i.bi-x-lg').boundingBox(),
+    });
+    const centreY = (b) => b.y + b.height / 2;
+    for (const mode of ['dark', 'light']) {
+      await page.evaluate((m) => document.documentElement.setAttribute('data-bs-theme', m), mode);
+      for (const state of ['at rest', 'pointed at']) {
+        if (state === 'pointed at') await tile.hover(); else await page.mouse.move(1, 1);
+        await page.waitForTimeout(300);
+        const b = await boxes();
+        const where = `${mode} mode, ${state}`;
+        expect(Math.abs(b.select.y - b.reject.y), `${where}: the buttons' tops`).toBeLessThanOrEqual(1);
+        expect(Math.abs(b.select.height - b.reject.height), `${where}: the buttons' heights`).toBeLessThanOrEqual(1);
+        expect(Math.abs(b.select.width - b.reject.width), `${where}: the buttons' widths`).toBeLessThanOrEqual(1);
+        expect(Math.abs(centreY(b.check) - centreY(b.cross)), `${where}: the glyphs' centres`).toBeLessThanOrEqual(1);
+        expect(Math.abs(b.check.height - b.cross.height), `${where}: the glyphs' heights`).toBeLessThanOrEqual(1);
+        expect(b.select.x + b.select.width, `${where}: the ✓ left of the ✗`).toBeLessThan(b.reject.x);
+      }
+    }
+  });
+
   test('in the binary round\'s gallery by a tile\'s ✓ button', { tag: ['@J-16', '@J-36', '@S-02'] }, async ({ page, context, fixture }) => {
     const { juror } = fixture.accounts;
     await page.goto(galleryPath(fixture.roundBinaryId, juror.id));
@@ -259,6 +335,21 @@ test.describe('the large view\'s comments link', () => {
     await expect(page).toHaveURL(/#comments$/);
     await expect(heading).toBeInViewport();
 
+    // the previous file's large view, its Next files strip (large/thumbsBar): the file's comment
+    // chip there is the same link, to its large view at the comments (it was a plain badge on the
+    // thumbnail's link, which opened the file at its top)
+    const up = await page.locator('[data-nav=up]').getAttribute('href');
+    expect(up, 'the comment file has a file before it in its list').not.toBe('#');
+    await page.goto(up);
+    const toggle = page.locator('button[aria-controls=large-next]');
+    if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+    const stripChip = page.locator(`#large-next .thumb_small a.wlx-chip-comments[href*="/pageid/${other.pageId}?"]`);
+    await expect(stripChip).toBeVisible();
+    await expect(stripChip).toHaveAccessibleName(/^\d+ comments?: open the comments$/);
+    await stripChip.click();
+    await page.waitForURL((u) => u.pathname.endsWith(`/pageid/${other.pageId}`) && u.hash === '#comments');
+    await expect(heading).toBeInViewport();
+
     // the gallery page with the file (the large view's Gallery button): its tile's comments chip,
     // the one chip that is a link, opens the file's large view at the comments
     await page.goto(await page.locator('[data-nav=gallery]').getAttribute('href'));
@@ -293,6 +384,45 @@ test.describe('the large view\'s comments link', () => {
     await rowChip.click();
     await page.waitForURL(new RegExp(`/large/round/${fixture.roundBinaryId}/user/${other.id}/pageid/${other.pageId}.*#comments$`));
     await expect(page.locator('h2#comments')).toBeInViewport();
+
+    // the by-rate gallery of all the jurors, only the files with comments, by approvals (the
+    // maintainer's report of 2026-11-16: its chip was a plain badge on the thumbnail's link, which
+    // opened the large view at its top): the same link chip, after the file's tally, in its
+    // thumbnail's chips (galleryByRate thumbChips), to its large view in this list at the comments
+    await page.setViewportSize({ width: 1366, height: 400 });
+    await page.goto(`/byrate/round/${fixture.roundBinaryId}/user/0/page/1?comments=1&sort=approvals`);
+    const byRateBox = page.locator(`li.gallerybox[id="${other.pageId}"]`);
+    const byRateChip = byRateBox.locator('.thumb > .wlx-tile-foot > .wlx-tile-chips > a.wlx-chip-comments');
+    await expect(byRateChip).toBeVisible();
+    await expect(byRateChip).toHaveAccessibleName(/^\d+ comments?: open the comments$/);
+    await expect(byRateBox.locator('.wlx-tile-chips > :first-child')).toHaveClass(/wlx-chip-tally/);
+    const byRateTarget = await byRateChip.boundingBox();
+    expect(byRateTarget.height, 'a 24 px target').toBeGreaterThanOrEqual(24);
+    expect(byRateTarget.width, 'a 24 px target').toBeGreaterThanOrEqual(24);
+    await byRateChip.click();
+    await page.waitForURL((url) => url.pathname === `/large/round/${fixture.roundBinaryId}/user/0/pageid/${other.pageId}`
+      && url.hash === '#comments');
+    expect(page.url()).toContain('comments=1');
+    expect(page.url()).toContain('sort=approvals');
+    await expect(page.locator('h2#comments')).toBeInViewport();
+    // the thumbnail itself still opens the large view at its top
+    await page.goBack();
+    await Promise.all([
+      page.waitForURL((url) => url.pathname.endsWith(`/pageid/${other.pageId}`) && url.hash === ''),
+      byRateBox.locator('.thumb > a img').click()
+    ]);
+
+    // one juror's by-rate list by vote time: the vote chips as the tiles' (thumbChips), their
+    // words read with the time formatted as shown (vote-time.js), never the raw UTC value, and
+    // their title the same with the year
+    await page.goto(`/byrate/round/${fixture.roundBinaryId}/user/${other.id}/page/1?sort=latest-vote`);
+    const voteChip = page.locator('li.gallerybox .wlx-tile-chips > .wlx-chip-vote').first();
+    // the words screen readers read (the span has no role, so its accessible name would fall
+    // back to its title)
+    const words = voteChip.locator('.visually-hidden');
+    await expect(words).toHaveText(/^(Selected|Rejected), [A-Z][a-z]{2} \d{1,2}, \d\d:\d\d$/);
+    await expect(words).not.toContainText('Z');
+    await expect(voteChip).toHaveAttribute('title', /^(Selected|Rejected), [A-Z][a-z]{2} \d{1,2}, \d{4}, \d\d:\d\d$/);
   });
 
   // Opened at its comments (the chips' links) while the file is still on its way: the file's box

@@ -145,7 +145,7 @@ class JurorCommentsReportSpec extends PlaySpecification with PlayTestDb {
           val n = row.select(".msg").size
           val large = page(app, f.juror1, s"/large/round/${f.round.getId}/user/${f.juror1.getId}/pageid/$pageId")
           (chip.selectFirst("span[aria-hidden=true]").text aka s"file $pageId" must_== n.toString) and
-            (large.select("a.wlx-chip-comments span[aria-hidden=true]").text must_== n.toString) and
+            (large.select(".wlx-large-summary a.wlx-chip-comments span[aria-hidden=true]").text must_== n.toString) and
             (chip.selectFirst(".visually-hidden").text must endWith(": open the comments")) and
             (chip.attr("href") must_== row.selectFirst("h2 a").attr("href") + "#comments") and
             (chip.attr("href") must startWith(s"/large/round/${f.round.getId}/user/${f.juror1.getId}/pageid/$pageId"))

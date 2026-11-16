@@ -11314,8 +11314,10 @@ function UGTileDesign(){
 			var buttonsX = Math.floor(sizeTile.width / 3);
 
 			g_functions.placeElement(objButtonZoom, sizeTile.width/2 - 24, sizeTile.height/3, 0, gapVert);
-			g_functions.placeElement(objButtonSelect, buttonsX - 16, sizeTile.height*2/3 - 4, 0, gapVert);
-			g_functions.placeElement(objButtonReject, buttonsX*2 - 16, sizeTile.height*2/3 + 4, 0, gapVert);
+			// wlxjury: the select (✓) and reject (✗) side by side at one height, their boxes and
+			// glyphs level (they were 8 px apart, the ✓ above: the maintainer's note of 2026-11-16)
+			g_functions.placeElement(objButtonSelect, buttonsX - 16, sizeTile.height*2/3, 0, gapVert);
+			g_functions.placeElement(objButtonReject, buttonsX*2 - 16, sizeTile.height*2/3, 0, gapVert);
 
 		}else{
 

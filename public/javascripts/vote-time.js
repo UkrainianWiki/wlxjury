@@ -40,6 +40,16 @@
         el.title = format(iso, lang, undefined, undefined, true);
       }
     });
+    // a vote chip's (snippets.voteChip) words have the time as a <time> too, formatted above, so
+    // screen readers never read the UTC value; its title: the words with the time's year, as the
+    // tiles' chips have it (tile-votes.js voteChip)
+    Array.prototype.forEach.call(root.querySelectorAll('.wlx-chip-vote > .visually-hidden'), function (said) {
+      var time = said.querySelector('time.wlx-vote-time[title]');
+      if (!time) return;
+      said.parentNode.setAttribute('title', Array.prototype.map.call(said.childNodes, function (node) {
+        return node === time ? time.title : node.textContent;
+      }).join(''));
+    });
   }
 
   window.wlxVoteTime = { format: format, localize: localize };
