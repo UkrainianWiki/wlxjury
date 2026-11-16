@@ -175,7 +175,8 @@ class RoundDistributionHandler @Inject() (
       case Some(c) => Right(c)
       case None =>
         try Right(contexts.getOrElseUpdate(job.id,
-            context(roundIdOf(job), Some(jobAverageRules(job)), Some(jobRejectedMode(job)))))
+            context(roundIdOf(job), Some(jobAverageRules(job)), Some(jobRejectedMode(job)),
+              checkPrevious = !listOnly(job))))
         catch { case refusal: ExcludeRoundsRefused => Left(refusal) }
     }
 
@@ -203,7 +204,7 @@ class RoundDistributionHandler @Inject() (
     * job's, [[jobRejectedMode]]), else by the round's own mode.
     */
   private def context(roundId: Long, averageRules: Option[Long => AverageRule],
-      rejectedMode: Option[RejectedMode] = None, countOnly: Boolean = false): Context = {
+      rejectedMode: Option[RejectedMode] = None, countOnly: Boolean = false, checkPrevious: Boolean = true): Context = {
     val round = Round.findById(roundId).getOrElse(throw new NoSuchElementException(s"Round $roundId not found"))
     val prevRounds = RoundDistributionHandler.previousRounds(round)
       .map(p => averageRules.filterNot(_ => p.isBinary).fold(p)(rules => p.copy(averageRule = rules(p.getId))))
@@ -213,6 +214,9 @@ class RoundDistributionHandler @Inject() (
     // and the reverse: a round leaving out this one's files being distributed now (its job reads
     // them as they are) refuses this run; the service checks it before queueing, this is the backstop
     if (!countOnly) RoundDistributionHandler.requireNoExcluderBusy(round)
+    // and a previous round having a juror added (its votes moving): the service checks it before
+    // queueing, this is the backstop
+    if (!countOnly && checkPrevious) RoundDistributionHandler.requireNoPreviousRebalance(round)
     val jurors = User.distributionJurors(roundId).sortBy(_.getId).toIndexedSeq
     DistributeImages.checkJury(round, jurors)
     val categoryRule = round.categoryRule
@@ -359,6 +363,12 @@ class RoundDistributionHandler @Inject() (
     val prevIds = if (listOnly(job)) Nil else Round.findById(roundId).map(_.previousIds).getOrElse(Nil)
     // the round too, as creating the job locks it (RoundConflicts.disqualify)
     Round.lock((st.frozen ++ prevIds) :+ roundId)
+    // not while a previous round is having a juror added (its votes moving; its rebalance would fail
+    // on the freeze below): refused, rolling the Retry back, the job staying failed
+    if (!listOnly(job)) Round.findById(roundId).foreach { round =>
+      try RoundDistributionHandler.requireNoPreviousRebalance(round)
+      catch { case e: ExcludeRoundsRefused => throw JobScheduler.RetryRefusal(e.refusal.key, e.refusal.args) }
+    }
     Round.release(st.frozen, close = false) // nothing, normally: a failure released them
     Round.freeze(prevIds)
     val resumed =
@@ -891,6 +901,24 @@ object RoundDistributionHandler {
           s"distribute round ${round.getId} again when it has finished")
     }
 
+  /** Refuses ([[ExcludeRoundsRefused]], [[PreviousRebalancing]]) a distribution of `round` while
+    * one of its previous rounds has a `round_rebalance` job queued or running (a juror being added:
+    * its votes move while the distribution would read them; docs/plans/2026-11-16-round-editing.md,
+    * §5 "Refusals"). The rounds it leaves out need no such check: a rebalance adds no file to its
+    * round, and any active job of theirs already counts as busy ([[distributingNow]]).
+    */
+  def requireNoPreviousRebalance(round: Round)(implicit session: DBSession = AutoSession): Unit =
+    round.previousIds.foreach { id =>
+      JobJdbc.activeByDedupeKey(dedupeKey(id)).filter(_.kind == RoundRebalanceHandler.Kind).foreach { _ =>
+        val number = Round.findById(id).map(_.description).getOrElse(id.toString)
+        throw ExcludeRoundsRefused(ExcludeRoundsRefusal(PreviousRebalancing, Seq(number)),
+          s"previous round $id is having a juror added: distribute again when that has finished")
+      }
+    }
+
+  /** A previous round has a juror being added ([[requireNoPreviousRebalance]]). */
+  val PreviousRebalancing = "error.previous.round.rebalancing"
+
   val ExcludeRoundsSelf = "error.exclude.rounds.self"
   val ExcludeRoundsOther = "error.exclude.rounds.other"
   val ExcludeRoundsPrevious = "error.exclude.rounds.previous"
@@ -900,7 +928,7 @@ object RoundDistributionHandler {
 
   /** Every refusal key above: a job failed by one stores it ([[services.jobs.JobError.decode]]). */
   val ExcludeRoundsKeys: Set[String] = Set(ExcludeRoundsSelf, ExcludeRoundsOther, ExcludeRoundsPrevious,
-    ExcludeRoundsBusy, ExcludeRoundsMissing, ExcludeRoundsExcluderBusy)
+    ExcludeRoundsBusy, ExcludeRoundsMissing, ExcludeRoundsExcluderBusy, PreviousRebalancing)
 
   /** `round.exclude_rounds` is a VARCHAR(255) (V95). */
   val ExcludeRoundsMaxLength = 255

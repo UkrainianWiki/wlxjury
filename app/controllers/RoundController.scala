@@ -11,7 +11,8 @@ import play.api.libs.json.Json
 import play.api.mvc.{AnyContent, ControllerComponents, EssentialAction, Request, RequestHeader, Result}
 import play.twirl.api.Html
 import services.RoundService
-import services.distribution.{RoundDistributionHandler, RoundImageCheckHandler}
+import services.distribution.{RoundDistributionHandler, RoundFreezes, RoundImageCheckHandler, RoundRebalanceHandler,
+  RoundRebalanceService}
 import services.imports.{FileTitles, ImportSource}
 import services.jobs.JobJdbc
 
@@ -44,13 +45,19 @@ class RoundController @Inject() (
           contest <- ContestJuryJdbc.findById(contestId)
         ) yield {
           val rounds = Round.findByContest(contestId)
+          // the latest of each round's distribution and juror-add jobs (they share the round's key)
+          def latest(kind: String) = JobJdbc.latestBySubjects(kind, RoundDistributionHandler.SubjectType, rounds.flatMap(_.id))
+          val distributions = latest(RoundDistributionHandler.Kind)
+          val rebalances = latest(RoundRebalanceHandler.Kind)
+          val jobs = (distributions.keySet ++ rebalances.keySet).map { id =>
+            id -> (distributions.get(id).toSeq ++ rebalances.get(id)).maxBy(_.id)
+          }.toMap
           Ok(
             views.html.rounds(
               user,
               rounds,
               RoundImageCounts.get(rounds.flatMap(_.id))(ImageJdbc.imageCountByRounds),
-              JobJdbc.latestBySubjects(RoundDistributionHandler.Kind, RoundDistributionHandler.SubjectType,
-                rounds.flatMap(_.id)),
+              jobs,
               editRoundForm,
               imagesForm.fill(contest.images),
               selectRoundForm,
@@ -59,7 +66,9 @@ class RoundController @Inject() (
               // root's all-rounds check: not shown to a contest's admins
               Option.when(user.isRoot)(JobJdbc.latestByDedupeKey(RoundImageCheckHandler.AllDedupeKey)).flatten,
               // and root's author normalization
-              Option.when(user.isRoot)(JobJdbc.latestByDedupeKey(services.imports.AuthorNormalizeHandler.DedupeKey)).flatten
+              Option.when(user.isRoot)(JobJdbc.latestByDedupeKey(services.imports.AuthorNormalizeHandler.DedupeKey)).flatten,
+              // rounds left frozen with no job holding them: flagged, root may release them
+              RoundFreezes.leftFrozen(rounds)
             )
           )
         }
@@ -475,7 +484,8 @@ class RoundController @Inject() (
   }
 
   /** Activates or deactivates a juror in a round of a contest the user administers.
-    * Only that round's round_user row changes.
+    * Only that round's round_user row changes, under the round's lock; refused while a job holds
+    * the round (a distribution, or a juror being added).
     */
   def setRoundUser(): EssentialAction =
     withAuth(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
@@ -486,9 +496,13 @@ class RoundController @Inject() (
           setRoundUser =>
             (setRoundUser.roundId.toLongOption, setRoundUser.userId.toLongOption) match {
               case (Some(roundId), Some(userId)) =>
-                withAdminRound(user, roundId, roundNotFound(user), request) { _ =>
-                  RoundUser.setActive(roundId, userId, setRoundUser.active)
-                  Redirect(routes.RoundController.roundStat(roundId))
+                withAdminRound(user, roundId, roundNotFound(user), request) { round =>
+                  // under the round's lock, refused while a job holds the round (its jurors as read)
+                  if (RoundRebalanceService.setJurorActive(roundId, userId, setRoundUser.active))
+                    Redirect(routes.RoundController.roundStat(roundId))
+                  else
+                    Redirect(routes.RoundController.roundStat(roundId))
+                      .flashing("error" -> messagesApi.preferred(request)("round.juror.busy", round.number))
                 }
               case _ => BadRequest
             }

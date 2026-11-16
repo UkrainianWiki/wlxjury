@@ -60,6 +60,17 @@ test.describe('an admin', () => {
     await expect(page.getByLabel('Round name (optional)')).toHaveValue('Yes/No Round');
   });
 
+  // adding a juror (round_rebalance): the page opened from the round's statistics, read only here
+  // (a POST would change the round the other tests vote in)
+  test("opens a round's add juror page from its statistics, with the round's jurors", { tag: '@A-04' },
+    async ({ page, fixture }) => {
+      await page.goto(`/roundstat/${fixture.roundBinaryId}`);
+      await page.getByRole('link', { name: 'Add juror…' }).click();
+      await expect(page).toHaveURL((url) => url.pathname === `/admin/rounds/${fixture.roundBinaryId}/add-juror`);
+      await expect(page.getByRole('heading', { level: 1 })).toContainText('Add a juror to round');
+      await expect(page.locator('#round-juror-add-jury li').first()).toBeVisible();
+    });
+
   test('opens the new round form, whose fields follow the choices', { tag: '@A-01' }, async ({ page, fixture }) => {
     await page.goto(`/admin/rounds/edit?contestId=${fixture.contestId}`);
     await expect(page.getByRole('heading', { level: 1, name: 'Create round' })).toBeVisible();

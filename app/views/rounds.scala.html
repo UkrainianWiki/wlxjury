@@ -13,7 +13,8 @@
         round: Option[Round],
         contest: ContestJury,
         imageCheckJob: Option[services.jobs.Job] = None,
-        authorNormalizeJob: Option[services.jobs.Job] = None
+        authorNormalizeJob: Option[services.jobs.Job] = None,
+        leftFrozen: Map[Long, Int] = Map.empty
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
     @mainAdmin("rounds", adminUser, adminUser.getId,
@@ -69,8 +70,23 @@
                             <td>@round.limits.recommended.fold("")(_.toString) </td> -->
                             <td>@snippets.startStop(round.active, round.getId, contest.getId, routes.RoundController.setRound)</td>
                             <td>@roundsStat.getOrElse(round.getId, 0) </td>
-                            <td>@for(job <- jobs.get(round.getId) if !job.isDone || round.distributing) {
+                            @* a distribution's job while it matters; a juror's add (round_rebalance) also done, with
+                               the files it gave, until the round's next job *@
+                            <td>@for(job <- jobs.get(round.getId) if !job.isDone || round.distributing ||
+                                    job.kind == services.distribution.RoundRebalanceHandler.Kind) {
                                 @snippets.jobStatus(job, req.uri)
+                            }
+                            @* frozen with no job holding it (RoundFreezes): flagged; root releases it *@
+                            @for(n <- leftFrozen.get(round.getId)) {
+                                <div class="text-danger small round-left-frozen" data-round="@round.getId" data-excess="@n">
+                                    @Messages("round.freeze.left", round.number)
+                                    @if(adminUser.isRoot) {
+                                        @helper.form(routes.RoundJurorsController.releaseFreeze(round.getId), Symbol("class") -> "d-inline") {
+                                            @csrfField()
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">@Messages("round.freeze.release")</button>
+                                        }
+                                    }
+                                </div>
                             }</td>
                         </tr>
                     }

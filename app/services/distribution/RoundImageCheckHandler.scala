@@ -47,7 +47,8 @@ final case class ImageCheckState(
     roundRemoved: Long = 0L,
     roundMonumentFixed: Long = 0L,
     roundNotMarkedDeleted: Long = 0L,
-    roundDqWithVotes: Long = 0L
+    roundDqWithVotes: Long = 0L,
+    leftFrozen: Seq[Long] = Nil
 )
 
 object ImageCheckState {
@@ -98,7 +99,7 @@ class RoundImageCheckHandler(windowRows: Int, orphanWindow: Int) extends JobHand
     Json.obj("rounds" -> st.rounds, "skipped" -> st.skipped, "added" -> st.added, "statusFixed" -> st.statusFixed,
       "removed" -> st.removed, "monumentFixed" -> st.monumentFixed, "notMarkedDeleted" -> st.notMarkedDeleted,
       "dqWithVotes" -> st.dqWithVotes, "orphansArchived" -> st.orphansArchived, "drift" -> st.drift,
-      "phase" -> st.phase)
+      "phase" -> st.phase, "leftFrozen" -> st.leftFrozen)
   }
 
   def step(job: Job, ctx: StepContext): StepResult = {
@@ -239,7 +240,7 @@ class RoundImageCheckHandler(windowRows: Int, orphanWindow: Int) extends JobHand
       case None    => sql"SELECT MIN(id) FROM round WHERE id > $after".map(_.longOpt(1)).single().flatten
     }
 
-  private def afterRounds(job: Job, st: ImageCheckState): StepResult =
+  private def afterRounds(job: Job, st: ImageCheckState)(implicit session: DBSession): StepResult =
     if (roundOf(job).isEmpty) continue(st.copy(phase = Phase.Orphans, roundId = 0L, cursor = 0L))
     else finish(job, st)
 
@@ -248,7 +249,7 @@ class RoundImageCheckHandler(windowRows: Int, orphanWindow: Int) extends JobHand
                      ORDER BY id LIMIT $orphanWindow) w"""
       .map(_.longOpt(1)).single().flatten
     to match {
-      case None => StepResult.Done(Json.toJsObject(st), progress(st))
+      case None => StepResult.Done(Json.toJsObject(st.copy(leftFrozen = reportLeftFrozen(None))), progress(st))
       case Some(last) =>
         val candidates = sql"""SELECT cr.id, cr.vote_id FROM criteria_rate cr
                                WHERE cr.id > ${st.cursor} AND cr.id <= $last
@@ -279,12 +280,23 @@ class RoundImageCheckHandler(windowRows: Int, orphanWindow: Int) extends JobHand
     }
   }
 
-  private def finish(job: Job, st: ImageCheckState): StepResult = {
+  private def finish(job: Job, st: ImageCheckState)(implicit session: DBSession): StepResult = {
+    // rounds left frozen with no job holding them (RoundFreezes): reported, root releases them
+    val left = reportLeftFrozen(roundOf(job))
     logger.info(s"round_image_check job ${job.id}: ${st.rounds} rounds checked, ${st.added} rows added, " +
       s"${st.statusFixed} statuses fixed, ${st.removed} removed, ${st.monumentFixed} monument ids fixed, " +
       s"${st.notMarkedDeleted} deleted but not marked deleted, ${st.dqWithVotes} disqualified with votes, " +
       s"${st.skipped.size} left out")
-    StepResult.Done(Json.toJsObject(st), progress(st))
+    StepResult.Done(Json.toJsObject(st.copy(leftFrozen = left)), progress(st))
+  }
+
+  /** The rounds left frozen with no job holding them ([[RoundFreezes]]; of `round` only if given),
+    * logged at WARN: root's Release on the rounds list ends them.
+    */
+  private def reportLeftFrozen(round: Option[Long])(implicit session: DBSession): Seq[Long] = {
+    val left = RoundFreezes.allLeftFrozen().keys.toSeq.sorted.filter(id => round.forall(_ == id))
+    if (left.nonEmpty) logger.warn(s"round_image_check: rounds left frozen with no job holding them: ${left.mkString(", ")}")
+    left
   }
 
   private def continue(st: ImageCheckState) = StepResult.Continue(Json.toJsObject(st), progress(st))

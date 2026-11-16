@@ -27,6 +27,13 @@
             </nav>
         }
 
+        @for(text <- flash.get("error")) {
+            <div class="alert alert-danger" role="alert" id="flash-error">@text</div>
+        }
+        @for(text <- flash.get("success")) {
+            <div class="alert alert-info" role="status" id="flash-success">@text</div>
+        }
+
         <div class="row">
             @roundStatTable(user, round, stat)
         </div>

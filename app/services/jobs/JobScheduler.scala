@@ -34,6 +34,8 @@ import scala.util.control.NonFatal
   *    in seconds while a big one runs, and one contest's many jobs don't starve another
   *    contest's. A job or contest that arrives starts level with the least served one
   *    present, so it neither waits behind the others nor monopolizes the workers.
+  *  - '''Priority.''' A job of a kind whose handler has [[JobHandler.priority]] (a rebalance,
+  *    which holds its round paused) gets the next free worker before the turns are considered.
   *  - '''Limits.''' At most `workers` steps run at once overall, and at most the kind's
   *    concurrency limit of one kind (e.g. 2 distributions, 1 Commons import).
   *  - '''The fetch lane.''' A handler that calls an external API before each step
@@ -81,6 +83,8 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
   private var inFlightTotal = 0
   private val fetchingByKind = mutable.Map.empty[String, Int].withDefaultValue(0)
   private var fetchingTotal = 0
+
+  private def priority(h: Held): Boolean = handlers.get(h.kind).exists(_.priority)
 
   private def external(h: Held): Boolean = handlers.get(h.kind).exists(_.isInstanceOf[FetchingJobHandler[_]])
 
@@ -196,7 +200,8 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
         !h.inFlight && !h.fetching && (h.fetched.isDefined || !external(h)) && inFlightByKind(h.kind) < limit(h.kind))
       if (ready.isEmpty) more = false
       else {
-        val h = ready.minBy(h => (contestTime.getOrElse(h.contestId, 0L), h.vtime, h.id))
+        // a priority kind's job first ([[JobHandler.priority]]), then by the turns
+        val h = ready.minBy(h => (if (priority(h)) 0 else 1, contestTime.getOrElse(h.contestId, 0L), h.vtime, h.id))
         h.inFlight = true
         inFlightByKind(h.kind) += 1
         inFlightTotal += 1
@@ -337,6 +342,8 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
       catch {
         case e: Throwable if JobJdbc.isDuplicateActive(e) =>
           Left(JobScheduler.RetryRefused("job.retry.duplicate"))
+        // the handler's own refusal (onRetry), its transaction rolled back
+        case refusal: JobScheduler.RetryRefusal => Left(JobScheduler.RetryRefused(refusal.messageKey, refusal.args: _*))
       }
     result.map { ctx =>
       runAfterCommit(ctx)
@@ -524,6 +531,11 @@ object JobScheduler {
 
   /** Why a job can't be retried: a message key and its arguments. */
   final case class RetryRefused(messageKey: String, args: String*)
+
+  /** Thrown by a handler's [[JobHandler.onRetry]] to refuse the Retry (rolled back; the job stays
+    * failed): [[retry]] answers it as a [[RetryRefused]] with its message key and arguments.
+    */
+  final case class RetryRefusal(messageKey: String, args: Seq[String] = Nil) extends RuntimeException(messageKey)
 
   /** An implicit resume of a job given up after `jobs.maxAttempts`: its reference the argument. */
   val AttemptsRefusedKey = "job.retry.attempts"

@@ -198,6 +198,31 @@ class JobSchedulerSpec extends Specification with BeforeAll with BeforeEach with
       b.maxRunning.get === 2
     }
 
+    "claim a priority kind's steps before the others' turns (a rebalance holding its round paused)" in {
+      val order = new CopyOnWriteArrayList[String]()
+      class Recording(k: String, urgent: Boolean) extends CountingHandler(k) {
+        override def priority: Boolean = urgent
+        override def step(job: Job, ctx: StepContext): StepResult = { order.add(kind); super.step(job, ctx) }
+      }
+      val slow = new Recording("slow", urgent = false)
+      val urgent = new Recording("urgent", urgent = true)
+      val s = background(Seq(slow, urgent), workers = 1)
+      s.start()
+      val big = enqueue(s, newJob("slow", 30, sleepMs = 20))
+      s.started(big.id)
+      val deadline = System.currentTimeMillis() + 10000
+      while (slow.stepsRun.size < 3 && System.currentTimeMillis() < deadline) Thread.sleep(10)
+      val small = enqueue(s, newJob("urgent", 4))
+      s.started(small.id)
+      s.await(small.id, 30.seconds)
+      s.await(big.id, 30.seconds)
+      val seq = order.asScala.toSeq
+      val (first, last) = (seq.indexOf("urgent"), seq.lastIndexOf("urgent"))
+      // its 4 steps one after another, the big job's turns resumed after them
+      (seq.count(_ == "urgent") === 4) and (seq.slice(first, last + 1).forall(_ == "urgent") must beTrue) and
+        (last must be_<(seq.size - 1)) and (status(small.id) === JobStatus.Done) and (status(big.id) === JobStatus.Done)
+    }
+
     "give a small job of another contest turns while a big one runs" in {
       val h = new CountingHandler("count")
       val s = background(Seq(h), workers = 1)

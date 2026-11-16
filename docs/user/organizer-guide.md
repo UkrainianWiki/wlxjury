@@ -83,7 +83,9 @@ selected, unrated or rejected files.
 The **Voting** column shows **Active**, or **Paused** when the admins have paused the juror's
 voting in this round: the round is then hidden from that juror, and their votes are kept. Admins
 see pause and resume buttons in this column instead, see [Pausing a
-juror](admin-guide.md#a-pause-juror).
+juror](admin-guide.md#a-pause-juror), and can [add a juror](admin-guide.md#a-add-juror) to a
+running round. While a juror is being added the round pauses for its jurors for a few seconds;
+you still see its files.
 
 The last row, **Total**, sums up all the jurors, with links to the results of all jurors, see
 the next part. In a yes/no round a file with votes of two kinds is counted in each, so the

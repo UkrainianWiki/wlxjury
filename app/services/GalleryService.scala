@@ -55,6 +55,13 @@ class GalleryService {
     notAuthorized
   }
 
+  /** Whether `user`, who may view the round ([[mayViewRound]]) as its juror, gets the "paused"
+    * page instead of its files: a job moves its files now ([[Round.pausedCond]]). Those who may see
+    * its organiser info view it as a stopped round, its files as they are.
+    */
+  def pausedFor(user: User, round: Round): Boolean =
+    round.mayBePaused && !user.canViewOrgInfo(round) && Round.isPaused(round.getId)
+
   def getAsUser(asUserId: Long, user: User): User = {
     if (asUserId == 0) {
       null

@@ -1,0 +1,90 @@
+@import db.scalikejdbc.{Round, User}
+@import services.distribution.RoundRebalanceService.{Jury, Preview}
+@(
+        user: User,
+        round: Round,
+        jury: Jury,
+        preview: Option[Preview],
+        notice: Option[String],
+        signature: String,
+        paused: Boolean
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+
+@* Adding a juror to a running round (RoundJurorsController): the contest's jurors outside the
+   round to choose from (a GET form), then for the one chosen the figures and the confirm form,
+   a POST with the CSRF token, the jury as shown (`jury`, checked again under the round's lock)
+   and sent once (submit-once.js). The round's jurors are listed, the stopped ones marked. *@
+@import helper._
+@scripts = {
+    <script src="@routes.Assets.versioned("javascripts/submit-once.js")"></script>
+}
+@mainAdmin("round.juror.add.title", user, user.getId, contestId = Some(round.contestId), head = scripts) {
+    <div class="row">
+        <div class="col-md-10">
+            <h1 class="h3">@Messages("round.juror.add.title.of", round.number, round.name.getOrElse(""))</h1>
+            <p>@Messages("round.juror.add.help")</p>
+
+            @for(text <- notice) {
+                <div class="alert alert-warning" role="alert" id="round-juror-add-notice">@text</div>
+            }
+            @if(paused) {
+                <div class="alert alert-info" role="status">@Messages("round.paused.staff")</div>
+            }
+
+            <h2 class="h5">@Messages("round.juror.add.jury")</h2>
+            <ul id="round-juror-add-jury">
+            @for(row <- jury.jurors) {
+                <li data-juror="@row.user.getId" data-active="@row.active">@row.user.fullname@if(!row.active) { <span class="badge text-bg-secondary">@Messages("round.juror.stopped")</span>}</li>
+            }
+            </ul>
+
+            @defining(jury.candidates.map(u => (u, None: Option[Boolean])) ++ jury.jurors.map(r => (r.user, Some(r.active)))) { options =>
+            @if(options.isEmpty) {
+                <p id="round-juror-add-none">@Messages("round.juror.add.none")</p>
+            } else {
+                <form method="get" action="@routes.RoundJurorsController.addPage(round.getId, None)" class="row g-2 align-items-end mb-3" id="round-juror-add-choose">
+                    <div class="col-auto">
+                        <label for="round-juror-add-select" class="form-label">@Messages("round.juror.add.choose")</label>
+                        <select name="juror" id="round-juror-add-select" class="form-select">
+                        @for((candidate, inRound) <- options) {
+                            <option value="@candidate.getId" @if(preview.flatMap(_.juror).exists(_.id == candidate.id)) {selected}>@candidate.fullname (@candidate.email)@for(active <- inRound) { — @Messages(if (active) "round.juror.add.in.round" else "round.juror.stopped")}</option>
+                        }
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-outline-secondary">@Messages("round.juror.add.show")</button>
+                    </div>
+                </form>
+            }
+            }
+
+            @for(p <- preview) {
+                @p.refusal match {
+                    case Some(error) => {
+                        <div class="alert alert-danger" role="alert" id="round-juror-add-refused">@error.message</div>
+                    }
+                    case None => {
+                        @for(juror <- p.juror) {
+                            <div id="round-juror-add-figures" data-files="@p.files">
+                                <p>@Messages("round.juror.add.all", juror.fullname, p.files)</p>
+                                @if(p.topUp) {
+                                    <p class="text-muted" id="round-juror-add-topup">@Messages("round.juror.add.topup", juror.fullname)</p>
+                                }
+                                <p class="text-muted">@Messages("round.juror.add.pause")</p>
+                            </div>
+                            @form(routes.RoundJurorsController.add(round.getId), Symbol("id") -> "round-juror-add-form",
+                                Symbol("data-submit-once") -> "true") {
+                                @csrfField()
+                                <input type="hidden" name="juror" value="@juror.getId">
+                                <input type="hidden" name="jury" value="@signature">
+                                <button type="submit" class="btn btn-primary">@Messages("round.juror.add.confirm", juror.fullname)</button>
+                            }
+                        }
+                    }
+                }
+            }
+
+            <p class="mt-3"><a href="@routes.RoundController.roundStat(round.getId)">@Messages("round.juror.add.back")</a></p>
+        </div>
+    </div>
+}

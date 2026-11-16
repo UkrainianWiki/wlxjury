@@ -49,6 +49,12 @@ trait JobHandler {
   /** The `job.kind` this handler runs, e.g. "round_distribution". */
   def kind: String
 
+  /** Its steps are claimed before other kinds' ([[JobScheduler]]'s turns): a job that holds a
+    * round paused for its jurors (`round_rebalance`) would otherwise take turns with imports and
+    * distributions on the few workers. Its steps must be short.
+    */
+  def priority: Boolean = false
+
   /** A short human description of the work, for the status display. */
   def title(job: Job): String = kind
 

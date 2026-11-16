@@ -161,6 +161,10 @@ class GalleryController @Inject() (
       val denial = Secured.Denial.round(round, Secured.ViewerRoles)
       if (Secured.isScriptRequest(request)) onUnAuthorizedJson(user, request, denial)
       else onUnAuthorized(user, request, denial)
+    } else if (galleryService.pausedFor(user, round)) {
+      // its juror while a job moves the round's files: a state, not a denial (no authz line)
+      if (Secured.isScriptRequest(request)) Conflict(play.api.libs.json.Json.obj("error" -> "round_paused"))
+      else Ok(views.html.roundPaused(user, round, rounds, request.uri))
     } else if (view.exists(_.comments) && !user.canViewOrgInfo(round) &&
         !(view.contains(GalleryView.Comments) && user.id.contains(asUserId))) {
       // the comments report and its CSV: the round's contest's admins, organizers and root, as
@@ -416,8 +420,11 @@ class GalleryController @Inject() (
     val round = Round.findById(roundId)
     // Votes only in a round open to its jurors: not in a stopped round, a previous round
     // frozen while a distribution reads its votes, or a round still being distributed; and only
-    // by a juror not stopped on the round (P6: as if the round were stopped for them).
-    if (!round.exists(_.openToJurors) || RoundUser.isStopped(roundId, user.getId))
+    // by a juror not stopped on the round (P6: as if the round were stopped for them). A round
+    // paused while a job moves its files (Round.pausedCond) says so: its jurors reload shortly.
+    if (round.exists(r => r.mayBePaused && Round.isPaused(roundId)) && !RoundUser.isStopped(roundId, user.getId))
+      Conflict(play.api.libs.json.Json.obj("error" -> "round_paused"))
+    else if (!round.exists(_.openToJurors) || RoundUser.isStopped(roundId, user.getId))
       Conflict(play.api.libs.json.Json.obj("error" -> "round_closed"))
     // a criteria round's votes are per criterion, in the large view: a file's own rate would
     // overwrite the sum of its criteria (its tiles have no stars)

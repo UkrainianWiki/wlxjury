@@ -727,6 +727,33 @@ juror's view while they are paused; their votes are kept, and the juror's files 
 them. Organizers don't have the buttons: their column, **Voting**, shows each juror as
 **Active** or **Paused**.
 
+While a background job holds the round (its distribution, or a juror being added), these
+buttons are refused with a message: try again when the job has finished.
+
+<a id="a-add-juror"></a>
+### Adding a juror to a running round
+
+Under the jurors' table of the [statistics page](organizer-guide.md#o-statistics) (and of the
+round form's jurors panel), **Add juror…** opens a page listing the round's jurors (stopped ones
+marked **stopped**) and the contest's jurors who aren't in the round. Choose one and **Show what
+this does**: the page says how many files they get, or why they can't be added now. **Add**
+queues the work; the rounds list's job column shows it, and the number of files given when it
+is done. The person must first be a juror of the contest (**Users**).
+
+- Only a running round takes a juror: started, its distribution done, and not held by another
+  round's distribution. Start the round first.
+- For now this works in rounds where every file goes to every juror: the new juror gets every
+  file of the round they don't have yet, unrated, except files deleted on Commons. Votes already
+  given never move.
+- The round pauses for a few seconds while the files are given: its jurors see a page saying so
+  ("Reload shortly") and their votes are refused meanwhile; then the round is open again.
+- If the job fails, the round is open again and **Retry** resumes it. **Cancel** also opens the
+  round. A juror the job added stays in the round with the files given so far; only if it gave
+  them nothing yet are they stopped again (if they weren't active before).
+- Choosing a juror who is already in the round tops them up: they get only what they are short
+  of. That is also how to finish an add that was cancelled.
+- Rounds from before the rounds' jurors were stored (old rounds) can't take a juror.
+
 <a id="a-what-jurors-see"></a>
 ### What jurors see
 
@@ -798,6 +825,9 @@ stopped.
 - Run **Check every round's images**, on the rounds list: it checks that every round's list of
   files matches its votes, and repairs any drift.
 - Run **Normalize stored authors**, on the rounds list, see [below](#a-normalize-authors).
+- **Release** a round that the rounds list flags as held inactive with no job holding it: a job
+  that paused it (a distribution, or a juror being added) ended without its cleanup. Release
+  makes it active again if it was before. **Check every round's images** lists such rounds too.
 - Work in any contest without being a member of it.
 
 The first root account is made when the tool is first set up; that is in the [deployment

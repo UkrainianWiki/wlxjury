@@ -325,8 +325,8 @@ failure names the reason; Retry checks again):
 - the round isn't running;
 - it has no `round_user` rows;
 - it is cancelled, or another job holds its key, or another job froze it;
-- Y has no active jury membership of the round's contest, or is already an active juror of the
-  round;
+- Y has no active jury membership of the round's contest. *(Built: an already active juror is
+  not refused; the add tops them up, see the build notes.)*
 - a ticked donor isn't a juror of the round.
 
 The other direction:
@@ -375,6 +375,28 @@ The other direction:
   order is the existing one (round → vote → `vote_aside` → `criteria_rate` → `round_image`).
 - **Audit:** a `round.admin` INFO line at queue time and at Done (`action=juror_add accountId=
   contestId= roundId= jurorId= moved= jobId=`); the job row keeps `params` and `given`.
+
+### Build notes (PR 1a, 2026-11-16)
+
+Where the build chose the safer option than the text above (details in
+`docs/pr/stack-162-add-juror.md`):
+- **Cancel and top-up (default, the orchestrator's decision after review, to be confirmed by the
+  maintainer):** Cancel stops the juror again only if the job gave them nothing (`filesGiven = 0`)
+  and they weren't active before; otherwise they stay started, so no file the job moved sits with
+  a stopped juror. An already active juror is not refused: adding them is a top-up (N = 0: the
+  files they lack; N > 0: the water-filling counts their own unrated files), which is how a
+  cancelled add is finished.
+- Every `stop` step (a Retry's too) writes the juror's row active again; its state before is
+  recorded the first time only. A distribution's Retry, and "Distribute new files" resuming a
+  failed one, are refused while a previous round has a rebalance (its freeze would fail the
+  rebalance). A rebalance's Retry rebaselines its count check by what others changed meanwhile.
+- **Priority** is per kind, not "while it holds a freeze" (it holds one from its first step to its
+  last).
+- **Left frozen**: only active jobs count as holders; root's Release also takes the round off a
+  failed job's `state.frozen`, so that job's Retry or Cancel doesn't release it a second time.
+- The previous-round refusal applies to rebalance jobs, not to a list-only distribution.
+- There is no job page: the rounds list's job column shows the newer of the two kinds' jobs, and
+  keeps a done rebalance with its count.
 
 ## 6. Step 2: P3 as decided
 

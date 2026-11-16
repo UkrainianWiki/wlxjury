@@ -6,6 +6,7 @@ const texts = {
     signedOut: "SIGNED OUT",
     expired: "EXPIRED",
     closed: "CLOSED",
+    paused: "PAUSED",
     invalidRate: "INVALID RATE",
     notFound: "NOT FOUND",
     forbidden: "FORBIDDEN",
@@ -34,6 +35,12 @@ describe("voteErrorMessage", () => {
 
     test("says the round is closed", () => {
         expect(voteErrorMessage(409, { error: "round_closed" }, texts)).toBe("CLOSED");
+    });
+
+    test("says the round is paused while its files are being reassigned", () => {
+        expect(voteErrorMessage(409, { error: "round_paused" }, texts)).toBe("PAUSED");
+        // another conflict: closed
+        expect(voteErrorMessage(409, null, texts)).toBe("CLOSED");
     });
 
     test("says the round doesn't take the rate", () => {
@@ -66,6 +73,7 @@ describe("voteErrorTexts", () => {
             "data-vote-signed-out": "Déconnecté",
             "data-vote-expired": "Expirée",
             "data-vote-closed": "Fermé",
+            "data-vote-paused": "En pause",
             "data-vote-invalid-rate": "Note refusée",
             "data-vote-not-found": "Plus attribué",
             "data-vote-forbidden": "Plus de vote",
@@ -74,7 +82,7 @@ describe("voteErrorTexts", () => {
             "data-vote-login-url": "/login"
         }));
         expect(read).toEqual({
-            signedOut: "Déconnecté", expired: "Expirée", closed: "Fermé", invalidRate: "Note refusée", notFound: "Plus attribué",
+            signedOut: "Déconnecté", expired: "Expirée", closed: "Fermé", paused: "En pause", invalidRate: "Note refusée", notFound: "Plus attribué",
             forbidden: "Plus de vote", failed: "Échec",
             reference: "Référence : {0}", loginUrl: "/login"
         });

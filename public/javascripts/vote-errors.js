@@ -12,6 +12,8 @@
  *                                              juror made an organizer, who votes no more
  *                                              (Secured.VotePermission); with the reference
  *     409 {error: "round_closed"}              the round is not open for voting
+ *     409 {error: "round_paused"}              the round is paused for a few seconds while a
+ *                                              job moves its files (a juror being added)
  *     400 {error: "invalid_rate"}              a rate the round doesn't take (a page from
  *                                              before the round's rates changed)
  *     404 {error: "not_found"}                 a file the juror has no selection for in the
@@ -29,6 +31,7 @@ function voteErrorMessage(status, body, texts) {
     if (status === 403) {
         return reference ? texts.forbidden + " " + texts.reference.replace("{0}", reference) : texts.forbidden;
     }
+    if (status === 409 && error === "round_paused") return texts.paused;
     if (status === 409) return texts.closed;
     if (status === 400 && error === "invalid_rate") return texts.invalidRate;
     if (status === 404 && error === "not_found") return texts.notFound;
@@ -44,6 +47,7 @@ function voteErrorTexts(el) {
         signedOut: text("signed-out", "You have been signed out. Sign in again and reload the page."),
         expired: text("expired", "This page has expired. Reload it and vote again."),
         closed: text("closed", "This round is closed for voting."),
+        paused: text("paused", "Files are being reassigned in this round; this takes a few seconds. Reload the page shortly."),
         invalidRate: text("invalid-rate", "This round doesn't take that rate. Reload the page and vote again."),
         notFound: text("not-found", "This file is no longer assigned to you. Reload the page."),
         forbidden: text("forbidden", "You can no longer vote in this round. Reload the page."),

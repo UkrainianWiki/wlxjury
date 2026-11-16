@@ -1,0 +1,13 @@
+@import db.scalikejdbc.{Round, User}
+@(user: User, round: Round, rounds: Seq[Round], reload: String)(implicit messages: Messages, request: RequestHeader)
+
+@* A round's gallery or large view for its juror while a job moves its files (the round paused,
+   Round.pausedCond: docs/plans/2026-11-16-round-editing.md, §5): a state, not a denial (200, no
+   security.authz line); the round stays in the juror's menu. `reload`: the page to reload. *@
+@main("round.paused.title", user, user.getId, Some(round), rounds, backHere = false) {
+    <div class="alert alert-info mt-3" role="status" id="round-paused" data-round="@round.getId">
+        <h1 class="h4">@Messages("round.paused.title")</h1>
+        <p>@Messages("round.paused.text", round.number)</p>
+        <p><a class="btn btn-primary" href="@reload">@Messages("round.paused.reload")</a></p>
+    </div>
+}

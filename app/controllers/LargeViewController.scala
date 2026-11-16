@@ -133,6 +133,12 @@ class LargeViewController @Inject() (
           case Accepts.Html() => onUnAuthorized(user, request, denial)
           case Accepts.Json() => onUnAuthorizedJson(user, request, denial)
         }
+      case Some(round) if galleryService.pausedFor(user, round) =>
+        // its juror while a job moves the round's files: a state, not a denial (no authz line)
+        render {
+          case Accepts.Html() => Ok(views.html.roundPaused(user, round, galleryService.viewerRounds(user, round), request.uri))
+          case Accepts.Json() => Conflict(Json.obj("error" -> "round_paused"))
+        }
       case Some(round) =>
         galleryService.viewAs(user, round, asUserId) match {
           // a juror's votes are their own: another's, or all together, for the organisers

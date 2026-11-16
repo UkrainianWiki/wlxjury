@@ -31,7 +31,7 @@ function formatJobProgress(p) {
 }
 
 /* The counts in a job's details, by kind: a distribution's images added (always), an
-   import's files and monuments (when there are any). */
+   import's files and monuments, an added juror's files (when there are any). */
 var JOB_COUNTS = [
     ["inserted", "new"],
     ["linked", "linked"],
@@ -40,7 +40,9 @@ var JOB_COUNTS = [
     ["monuments", "monuments"],
     ["missing", "not found"],
     ["notInCountries", "left out as in no country category"],
-    ["coiLeftOut", "left out as conflicts of interest"]
+    ["coiLeftOut", "left out as conflicts of interest"],
+    // a juror added to a round (round_rebalance)
+    ["filesGiven", "files given to the new juror"]
 ];
 
 function formatJobCounts(details) {

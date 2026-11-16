@@ -85,6 +85,11 @@ case class Round(
     */
   def openToJurors: Boolean = active && !distributing
 
+  /** Inactive by a freeze, so possibly paused for its jurors while a job moves its files
+    * ([[Round.pausedCond]] decides, by the job): the cheap test before that lookup.
+    */
+  def mayBePaused: Boolean = !active && !distributing && freezeCount > 0
+
   def availableJurors(implicit session: DBSession = AutoSession): Seq[User] =
     User.findByContestAndRoles(contestId, roles.toSeq)
 
@@ -422,14 +427,40 @@ object Round extends RoundRepo with CRUDMapper[Round] {
   def setExcludeCoi(id: Long, excludeCoi: Boolean): Unit =
     updateById(id).withAttributes("excludeCoi" -> excludeCoi): Unit
 
+  /** The round is paused for its jurors while a `round_rebalance` job moves its unrated files
+    * (docs/plans/2026-11-16-round-editing.md, §5): the job froze it while it was open
+    * (`freeze_count > 0`, `active_before_freeze = 1`) and holds its dedupe key. Its jurors keep it
+    * in their menus and get the "paused" page and the vote error `round_paused` instead of the
+    * closed round's; a round frozen as a previous round of a distribution isn't paused. One
+    * lookup of the unique `job.active_dedupe_key`.
+    *
+    * @param table the round table or its alias
+    */
+  def pausedCond(table: SQLSyntax): SQLSyntax =
+    sqls"""($table.freeze_count > 0 AND $table.active_before_freeze = 1 AND $table.distributing = 0
+            AND EXISTS (SELECT 1 FROM job pj
+                        WHERE pj.active_dedupe_key = CONCAT(${services.distribution.RoundDistributionHandler.Kind + ":" +
+      services.distribution.RoundDistributionHandler.SubjectType + ":"}, $table.id)
+                          AND pj.kind = ${services.distribution.RoundRebalanceHandler.Kind}))"""
+
+  /** Whether the round is paused for its jurors ([[pausedCond]]), a plain read. */
+  def isPaused(roundId: Long)(implicit session: DBSession = AutoSession): Boolean =
+    sql"SELECT ${pausedCond(sqls"round")} FROM round WHERE id = $roundId"
+      .map(_.booleanOpt(1).getOrElse(false)).single().getOrElse(false)
+
+  /** Open to its jurors as their menus list it: active, or paused ([[pausedCond]]). */
+  private def openOrPausedCond(table: SQLSyntax): SQLSyntax =
+    sqls"($table.active = 1 OR ${pausedCond(table)})"
+
   def activeRounds(contestId: Long)(implicit session: DBSession = AutoSession): Seq[Round] =
     where(sqls.eq(r.contestId, contestId).and.eq(r.active, true).and.eq(r.distributing, false))
       .orderBy(r.id)
       .apply()
 
   /** Of `contestIds`, those with a round open to the user as a juror, as [[activeRounds(user*]]
-    * takes one: active, not being distributed, with an active round_user row of the user. One
-    * query (the navbar's contest switcher runs it on every page of a multi-contest juror).
+    * takes one: active (or paused, [[pausedCond]]), not being distributed, with an active
+    * round_user row of the user. One query (the navbar's contest switcher runs it on every page
+    * of a multi-contest juror).
     */
   def contestsWithOpenRound(userId: Long, contestIds: Seq[Long])(implicit
       session: DBSession = AutoSession): Set[Long] =
@@ -437,9 +468,12 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     else
       sql"""SELECT DISTINCT r.contest_id FROM round r
             JOIN round_user ru ON ru.round_id = r.id AND ru.user_id = $userId AND ru.active = TRUE
-            WHERE r.contest_id IN (${contestIds.distinct}) AND r.active = TRUE AND r.distributing = FALSE"""
+            WHERE r.contest_id IN (${contestIds.distinct}) AND ${openOrPausedCond(sqls"r")} AND r.distributing = FALSE"""
         .map(_.long(1)).list().toSet
 
+  /** The user's rounds as a juror in their current contest: active or paused for a rebalance
+    * ([[pausedCond]]), not being distributed, with an active round_user row of the user.
+    */
   def activeRounds(user: User): Seq[Round] = {
     user.currentContest
       .map { contestId =>
@@ -447,7 +481,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
           sqls
             .eq(r.contestId, contestId)
             .and
-            .eq(r.active, true)
+            // `r`: the default alias (createAlias("r")) the query reads the round by
+            .append(openOrPausedCond(sqls"r"))
             .and
             .eq(r.distributing, false)
             .and

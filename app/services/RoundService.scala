@@ -168,6 +168,9 @@ class RoundService @Inject() (
     // (refused, rolling back; the round form shows the message). The job checks again as it runs.
     RoundDistributionHandler.excludedRounds(round)
     RoundDistributionHandler.requireNoExcluderBusy(round)
+    // nor a previous round having a juror added (its votes moving), read under its lock: a
+    // rebalance is queued and ends under it
+    if (!listOnly) RoundDistributionHandler.requireNoPreviousRebalance(round)
     val state = distribution.initialState(round, listOnly)
     // the top-N's order and the rejected-by filter only where they apply: from a yes/no
     // previous round, and the rejected-by from a rated one without criteria too (its ✗, whether
@@ -264,9 +267,16 @@ class RoundService @Inject() (
         // not while a round leaving out its files is being distributed (refused: the form says so;
         // the job checks again as it runs)
         RoundDistributionHandler.requireNoExcluderBusy(round)
+        // nor while a previous round is having a juror added (the job's onRetry refuses it too)
+        if (!RoundDistributionHandler.listOnly(j)) RoundDistributionHandler.requireNoPreviousRebalance(round)
         jobs.retry(j.id, explicit = false) match {
           case Right(job) => Resumed(job)
           case Left(refused) if refused.messageKey == JobScheduler.AttemptsRefusedKey => GivenUp(j)
+          // a rebalance of a previous round queued since the check above: its refusal, as the check's
+          case Left(refused) if refused.messageKey == RoundDistributionHandler.PreviousRebalancing =>
+            throw RoundDistributionHandler.ExcludeRoundsRefused(
+              RoundDistributionHandler.ExcludeRoundsRefusal(refused.messageKey, refused.args),
+              s"a previous round of round $roundId is having a juror added: distribute again when that has finished")
           case Left(_)    => AlreadyRunning(distributionJob(roundId).getOrElse(j))
         }
       case _ =>

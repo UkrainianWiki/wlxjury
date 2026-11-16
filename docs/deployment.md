@@ -611,6 +611,16 @@ instances against one database was never designed for or tested. The release too
 service before starting the new one; keep it that way (the blue/green slots, which could run two
 at once, are disabled).
 
+### Before rolling back past "add a juror" (round_rebalance jobs)
+
+A release from before "Add juror…" has no handler for `round_rebalance` jobs. On such a release
+a queued or running one never runs, keeps its round's job key (the round's distributions are
+refused as already running) and keeps the round frozen (hidden from its jurors), and Cancel there
+doesn't release it. So, **on the new release, before restoring an older one**: in every contest's
+rounds list, let each "Adding juror …" job finish or cancel it (its job column), and check that
+no round is flagged as held with no job (root's **Release** ends one). A failed one needs nothing:
+its failure already released the round. Then roll back as below.
+
 ### Recovery runbook
 
 Maintenance is never cleared automatically. A command that stops ends with `sudo wlxjury-release status`; start there: it names the current operation and its state, lists stale open operations, and ends with the next command of the section below that fits it (`status --verbose` adds the milestones, the named forms and how to back out). For detail, read `OPERATION/milestones`, `record` and `operation.log` (`OPERATION` is `/var/backups/wlxjury/NAME`), then use the section for the last milestone. `previous` and `candidate` in `record` name the releases. For the current operation, the commands below work without `OPERATION`; `restore` only while maintenance is on, and `--accept-data-loss` always needs it. A stale operation always needs its name, and `restore` refuses it once `current` is neither of its releases.

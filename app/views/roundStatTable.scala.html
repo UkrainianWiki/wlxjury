@@ -112,3 +112,8 @@
     }
 
 </table>
+@* "Add juror…" for the round's admins (RoundJurorsController): the page lists the contest's jurors
+   outside the round and says what the add does, or why it can't be done now *@
+@if(mayPause) {
+    <p id="round-juror-add-link"><a class="btn btn-sm btn-outline-secondary" href="@routes.RoundJurorsController.addPage(round.getId, None)"><i class="bi bi-person-plus" aria-hidden="true"></i> @Messages("round.juror.add")</a></p>
+}

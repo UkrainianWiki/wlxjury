@@ -63,6 +63,8 @@ const TOUR = [
   ['rounds', 'admin', (f) => `/admin/rounds?contestId=${f.contestId}`],
   ['round form', 'admin', (f) => `/admin/rounds/edit?id=${f.roundBinaryId}&contestId=${f.contestId}`],
   ['new round form', 'admin', (f) => `/admin/rounds/edit?contestId=${f.contestId}`],
+  // adding a juror to a running round: the contest's jurors outside it (none may be left), its jurors
+  ['add juror page', 'admin', (f) => `/admin/rounds/${f.roundBinaryId}/add-juror`],
   ['users', 'admin', (f) => `/admin/users?contestId=${f.contestId}`],
   ['contest images', 'admin', (f) => `/contest/${f.contestId}/images`],
   ['contests', 'root', () => '/contests'],
