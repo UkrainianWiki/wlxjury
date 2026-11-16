@@ -167,22 +167,23 @@ class RoundImageEventSpec extends Specification with TestDb with BeforeAll with 
         (RoundImageInvariants.violations(round) must beEmpty)
     }
 
-    "record a disqualified file with no votes left, requalified out of the round, as removed" in {
+    "record a disqualified file with no votes left, requalified, as in the round again (P3-1: its row kept)" in {
       val (round, _) = setUp()
       DB.localTx { implicit s =>
         RoundWrites.lock(Seq(round))
         ImageJdbc.moveVotesAsideInRound(round, Seq(1L))
         RoundImageJdbc.disqualify(round, Map(1L -> "x"), DqCode.Coi, None, Map(1L -> "in"))
       }
-      // its votes gone (a hand edit): the row is kept `dq`, and a requalify removes it
+      // its votes gone (a hand edit): the row is kept `dq`, and a requalify makes it `in` (no row is
+      // removed since P3-1)
       DB.autoCommit(implicit s => sql"DELETE FROM vote_aside WHERE round_id = $round AND page_id = 1".update())
       DB.localTx { implicit s =>
         RoundWrites.lock(Seq(round))
         RoundImageJdbc.requalifyRows(round, Seq(1L), "mistaken_match", None)
       }
-      (RoundImageJdbc.find(round, 1L) must beNone) and
+      (RoundImageJdbc.find(round, 1L).map(_.status) === Some("in")) and
         (RoundImageEventJdbc.ofFile(round, 1L).map(e => (e.action, e.newStatus)) ===
-          Seq(("disqualify", Some("dq")), ("requalify", None)))
+          Seq(("disqualify", Some("dq")), ("requalify", Some("in"))))
     }
   }
 }

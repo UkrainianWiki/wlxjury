@@ -6,7 +6,7 @@ import scalikejdbc._
 /** The invariants that keep `round_image` (V84) in step with the votes
   * (docs/plans/2026-11-02-round-images-two-step.md, §5), checked per round. Specs assert
   * [[violations]] empty after each scenario; the `round_image_check` job repairs what it can
-  * (1, 2, 6, 8; 3 for `deleted` rows) and reports the rest (3 for `dq` rows: a vote written
+  * (1, 2, 6; 3 for `deleted` rows) and reports the rest (3 for `dq` rows: a vote written
   * for a disqualified file). Only pairs of a round and an image that exist count:
   * vote.round_id and vote_aside have no foreign keys, and V84 left such pairs out.
   *
@@ -21,9 +21,9 @@ import scalikejdbc._
   *  6. `monument_id` equals `images.monument_id`.
   *  7. Every `criteria_rate.vote_id` is a vote's in `vote` or `vote_aside` (not per round:
   *     [[criteriaOrphans]]).
-  *  8. Until P3 (a round filled before it is distributed): a row has votes, `in` in `vote`,
-  *     `deleted` in `vote_aside`. A `dq` row (P1b) may have none: it is kept whatever its
-  *     votes, so that the file is never distributed again ([[RoundImageJdbc.sync]]).
+  *  8. Ended by P3-1 (a round is filled before it is distributed): a row may have no votes,
+  *     and keeps its status ([[RoundImageJdbc.sync]] never deletes one). The number is not
+  *     reused.
   *  9. A `dq` row has its `dq_code` and `dq_at`; any other row has no `dq_*` (P1b; reported).
   */
 object RoundImageInvariants {
@@ -38,7 +38,6 @@ object RoundImageInvariants {
     if (!roundExists) Nil
     else {
       val inVote = sqls"EXISTS (SELECT 1 FROM vote s WHERE s.round_id = ri.round_id AND s.page_id = ri.page_id)"
-      val inAside = sqls"EXISTS (SELECT 1 FROM vote_aside d WHERE d.round_id = ri.round_id AND d.page_id = ri.page_id)"
       val aside = Seq(Status.Deleted, Status.Dq)
       Seq(
         pages(1, sql"""SELECT DISTINCT v.page_id FROM vote v JOIN images i ON i.page_id = v.page_id
@@ -58,10 +57,6 @@ object RoundImageInvariants {
                        ORDER BY ri.page_id"""),
         pages(6, sql"""SELECT ri.page_id FROM round_image ri JOIN images i ON i.page_id = ri.page_id
                        WHERE ri.round_id = $roundId AND NOT (ri.monument_id <=> i.monument_id)
-                       ORDER BY ri.page_id"""),
-        pages(8, sql"""SELECT ri.page_id FROM round_image ri
-                       WHERE ri.round_id = $roundId
-                         AND (ri.status = ${Status.In} AND NOT $inVote OR ri.status = ${Status.Deleted} AND NOT $inAside)
                        ORDER BY ri.page_id"""),
         pages(9, sql"""SELECT ri.page_id FROM round_image ri
                        WHERE ri.round_id = $roundId

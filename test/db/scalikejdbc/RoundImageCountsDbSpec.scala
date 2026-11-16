@@ -69,15 +69,15 @@ class RoundImageCountsDbSpec extends Specification with TestDb with BeforeAll wi
       count(created.getId) === 4
     }
 
-    "follow removing an image and removing unrated images" in {
+    "keep the files whose votes go (removing an image, the unrated votes): their rows stay (P3-1)" in {
       val (_, round, images, jurors) = setUp(3)
       distributor.distributeImages(round, images, jurors)
       count(round.getId) === 3
       TestVoteWrites.removeImage(images.head.pageId, round.getId)
-      count(round.getId) === 2
+      count(round.getId) === 3
       VoteJdbc.rate(images(1).pageId, jurors.head.getId, round.getId, 1)
       TestVoteWrites.removeUnrated(round.getId)
-      count(round.getId) === 1
+      count(round.getId) === 3
     }
 
     "follow moving an image to another round" in {
@@ -87,7 +87,8 @@ class RoundImageCountsDbSpec extends Specification with TestDb with BeforeAll wi
       count(round.getId) === 2
       count(other.getId) === 0
       TestVoteWrites.setRound(images.head.pageId, round.getId, other.getId)
-      count(round.getId) === 1
+      // the source round keeps the file's row, with no votes (P3-1)
+      count(round.getId) === 2
       count(other.getId) === 1
     }
 

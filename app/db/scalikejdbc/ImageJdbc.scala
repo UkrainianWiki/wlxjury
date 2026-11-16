@@ -377,10 +377,14 @@ object ImageJdbc extends CRUDMapper[Image]
     */
   def lockRoundsOfArchived(pageIds: Seq[Long])(implicit session: DBSession): Unit =
     if (pageIds.nonEmpty) {
-      val roundIds = sql"SELECT DISTINCT d.round_id FROM vote_aside d WHERE d.page_id IN ($pageIds) AND ${notDisqualified(sqls"d")}"
+      // and the rounds where the files are `deleted` with no votes (P3-1: filled, not distributed;
+      // RoundImageJdbc.restoreVoteless brings them back)
+      val roundIds = sql"""SELECT d.round_id FROM vote_aside d WHERE d.page_id IN ($pageIds) AND ${notDisqualified(sqls"d")}
+                           UNION SELECT ri.round_id FROM round_image ri
+                             WHERE ri.page_id IN ($pageIds) AND ri.status = ${RoundImageJdbc.Status.Deleted}"""
         .map(_.long(1))
         .list()
-      RoundWrites.lock(roundIds)
+      RoundWrites.lock(roundIds.distinct.sorted)
     }
 
   /** Moves the vote rows of `pageIds` in the `roundIds` rounds to vote_aside
@@ -392,7 +396,11 @@ object ImageJdbc extends CRUDMapper[Image]
     */
   def archiveVotes(pageIds: Seq[Long], roundIds: Set[Long])(implicit session: DBSession): Seq[Long] =
     if (pageIds.isEmpty || roundIds.isEmpty) Nil
-    else moveVotesAside(t => sqls"$t.page_id IN ($pageIds) AND $t.round_id IN ($roundIds)")
+    else {
+      val moved = moveVotesAside(t => sqls"$t.page_id IN ($pageIds) AND $t.round_id IN ($roundIds)")
+      // the files `in` those rounds with no votes (P3-1: filled, not distributed yet), last
+      (moved ++ RoundImageJdbc.markVotelessDeleted(pageIds, roundIds)).distinct
+    }
 
   /** [[archiveVotes]] of the files in the round that were deleted on Commons: when the round
     * opens ([[Round.setActiveGuarded]]), or those a distribution added to it as they were
@@ -415,7 +423,16 @@ object ImageJdbc extends CRUDMapper[Image]
       .list()
     val pageIds = lockDeleted(candidates)
     if (pageIds.nonEmpty) moveVotesAside(t => sqls"$t.round_id = $roundId AND $t.page_id IN ($pageIds)")
-    pageIds
+    // the round's files `in` it with no votes (P3-1: filled, not distributed yet) whose image is
+    // deleted: from the files marked deleted as above, to the round's row of each
+    val voteless = lockDeleted(
+      sql"""SELECT STRAIGHT_JOIN i.page_id FROM images i
+            JOIN round_image ri ON ri.round_id = $roundId AND ri.page_id = i.page_id
+            WHERE i.deleted_at IS NOT NULL AND ri.status = ${RoundImageJdbc.Status.In}
+              AND NOT EXISTS (SELECT 1 FROM vote v WHERE v.round_id = ri.round_id AND v.page_id = ri.page_id)"""
+        .map(_.long(1)).list())
+    val marked = if (voteless.nonEmpty) RoundImageJdbc.markVotelessDeleted(voteless, Set(roundId)) else Nil
+    if (marked.nonEmpty) (pageIds ++ voteless).distinct.sorted else pageIds
   }
 
   /** Moves aside the votes of the round's files `pageIds` (to disqualify them, P1b:
@@ -476,9 +493,12 @@ object ImageJdbc extends CRUDMapper[Image]
     */
   def restoreVotes(pageIds: Seq[Long])(implicit session: DBSession): Seq[Long] =
     if (pageIds.isEmpty) Nil
-    else
-      moveVotesBack(sqls"d.page_id IN ($pageIds) AND ${notDisqualified(sqls"d")}",
+    else {
+      val moved = moveVotesBack(sqls"d.page_id IN ($pageIds) AND ${notDisqualified(sqls"d")}",
         sqls"page_id IN ($pageIds)", requalify = None)
+      // a `deleted` row with no votes anywhere is `in` again (P3-1), last
+      (moved ++ RoundImageJdbc.restoreVoteless(pageIds)).distinct
+    }
 
   /** Moves back the votes aside of the round's disqualified files `pageIds`, to requalify
     * them ([[RoundConflicts.requalify]]), with their exact rates and criteria rates (their

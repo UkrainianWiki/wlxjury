@@ -583,7 +583,8 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
         lockWait(restore) === "LOCK WAIT"
         removeVotes.countDown()
         Await.result(holder, 30.seconds) === 1
-        Await.result(restore, 30.seconds) must beEmpty
+        // no votes back; the file's row, kept with none (P3-1), is `in` again
+        Await.result(restore, 30.seconds) === Seq(round.getId)
         ids("vote") must beEmpty
         ids("vote_aside") must beEmpty
         ratesOf(aside) must beEmpty

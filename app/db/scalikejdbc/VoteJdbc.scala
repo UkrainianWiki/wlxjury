@@ -300,7 +300,7 @@ object VoteJdbc extends CRUDMapper[Vote] {
     * its upgrade, with a juror voting on one of them), then their rates and they are deleted:
     * rates are written only while their vote is locked ([[org.intracer.wmua.CriteriaRate.updateRate]]).
     * Last, their files' rows in their rounds follow what is left ([[RoundImageJdbc.sync]]: a
-    * file with no votes left there is no longer in the round, as before V84). A structural
+    * file with no votes left there keeps its row and status, P3-1). A structural
     * write: the caller has locked the votes' rounds first ([[RoundWrites]]; checked).
     *
     * @return the votes deleted

@@ -274,4 +274,55 @@ class DeletedFilesSpec extends Specification with TestDb with BeforeAll with Bef
       rows("vote", 1L, r1) === Seq(1, 1)
     }
   }
+
+  "a file of no votes in a round (P3-1: filled, not distributed yet)" should {
+
+    /** Image 3 in both rounds with no votes, as a fill leaves it (`in`, added `fill`). */
+    def voteless(rounds: Seq[Long]): Unit = {
+      imageDao.batchInsert(Seq(image(3L)))
+      rounds.foreach { r =>
+        DB.autoCommit(implicit s =>
+          sql"""INSERT INTO round_image (round_id, page_id, status, added_how, monument_id)
+                 SELECT $r, page_id, 'in', 'fill', monument_id FROM images WHERE page_id = 3""".update())
+      }
+    }
+
+    def status(roundId: Long, pageId: Long) = RoundImageJdbc.find(roundId, pageId).map(_.status)
+
+    "be marked deleted in the open rounds when deleted on Commons, and in again on a restore" in {
+      val (Seq(r1, r2), _) = setUp()
+      voteless(Seq(r1, r2))
+      setRound(r1, sqls"active = 0, distributing = 1") // a round in review is open (openCond)
+      setRound(r2, sqls"active = 0") // finished, or not started yet
+
+      (DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(3L))) === Seq(r1)) and
+        (status(r1, 3L) === Some("deleted")) and (status(r2, 3L) === Some("in")) and
+        (DB.localTx(implicit s => DeletedFiles.restore(Seq(3L))) === Seq(r1)) and
+        (status(r1, 3L) === Some("in")) and (status(r2, 3L) === Some("in")) and
+        (RoundImageInvariants.violations(r1) must beEmpty) and (RoundImageInvariants.violations(r2) must beEmpty)
+    }
+
+    "be marked deleted by settle, and when its round opens" in {
+      val (Seq(r1, r2), _) = setUp()
+      voteless(Seq(r1, r2))
+      setRound(r2, sqls"active = 0")
+      DB.autoCommit(implicit s => ImageJdbc.setDeleted(Seq(3L)))
+
+      (DeletedFiles.settle(Seq(3L)) === Seq(r1)) and (status(r1, 3L) === Some("deleted")) and
+        (status(r2, 3L) === Some("in")) and
+        (Round.setActiveGuarded(r2, active = true) must beTrue) and (status(r2, 3L) === Some("deleted")) and
+        (RoundImageInvariants.violations(r2) must beEmpty)
+    }
+
+    "keep a voted file's votes aside and a disqualified row as it is" in {
+      val (Seq(r1, _), _) = setUp()
+      voteless(Seq(r1))
+      DB.autoCommit(implicit s => sql"UPDATE round_image SET status = 'dq', dq_code = 'manual', dq_at = NOW(3) WHERE round_id = $r1 AND page_id = 3".update())
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L, 3L)))
+      (status(r1, 1L) === Some("deleted")) and (status(r1, 3L) === Some("dq")) and
+        (rows("vote_aside", 1L, r1) === Seq(1, 1)) and
+        { DB.localTx(implicit s => DeletedFiles.restore(Seq(1L, 3L))); status(r1, 3L) === Some("dq") } and
+        (status(r1, 1L) === Some("in"))
+    }
+  }
 }

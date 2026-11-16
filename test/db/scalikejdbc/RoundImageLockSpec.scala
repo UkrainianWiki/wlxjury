@@ -112,7 +112,8 @@ class RoundImageLockSpec extends Specification with TestDb with BeforeAll with B
       (lockWait(move) === "LOCK WAIT") and {
         go.countDown()
         (Await.result(change, 30.seconds) === (())) and (Await.result(move, 30.seconds) === (())) and
-          (RoundImageJdbc.find(r1, 1L) must beNone) and
+          // its row kept in r1, with no votes (P3-1)
+          (RoundImageJdbc.find(r1, 1L).map(_.status) === Some("in")) and
           (RoundImageJdbc.find(r2, 1L).flatMap(_.monumentId) === Some("46-101-0001")) and
           (RoundImageInvariants.violations(r1) must beEmpty) and (RoundImageInvariants.violations(r2) must beEmpty)
       }

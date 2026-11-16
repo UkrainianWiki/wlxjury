@@ -216,8 +216,9 @@ object RoundConflicts {
           }
           ImageJdbc.moveVotesBackInRound(roundId, dq.filterNot(keepAside))
           // every one of them follows its votes now (`in`; `deleted` with its votes aside; one
-          // with none left leaves the round, as before V84), then the events, last
-          RoundImageJdbc.requalifyRows(roundId, dq, reason, by.id)
+          // with none stays in the round, P3-1: `deleted` by the same rule, else `in`), then
+          // the events, last
+          RoundImageJdbc.requalifyRows(roundId, dq, reason, by.id, deleted = keepAside)
           Outcome.Requalified(dq)
       }
     }

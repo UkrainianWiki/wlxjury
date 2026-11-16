@@ -6,12 +6,16 @@ import scalikejdbc._
   * round's `vote` and `vote_aside` rows in the same transaction as their writes
   * (docs/plans/2026-11-02-round-images-two-step.md, §5 and P1).
   *
-  * Until P3 (a round filled before it is distributed) a row is exactly a (round, file) pair
-  * with votes: status `in` while the pair has `vote` rows, `deleted` while its votes are only
-  * in `vote_aside` (a file deleted on Commons in an open round), and no row once the pair has
-  * none ([[RoundImageInvariants]]). A disqualified file (`dq`, P1b: [[RoundConflicts]]) keeps
-  * its row, with its votes aside, whatever its votes: only an explicit requalify
-  * ([[requalifyRows]]) takes it back to `in`, so "Distribute new files" never adds it again.
+  * A row is never deleted by a write here (P3-1, invariant 8 ended: a round is filled before
+  * it is distributed, so a filled file has no votes yet). Its status follows the pair's votes:
+  * `in` while it has `vote` rows, `deleted` while its votes are only in `vote_aside` (a file
+  * deleted on Commons in an open round); a pair with no votes keeps its row and its status (a
+  * file filled and not distributed yet, or one whose votes were deleted). A vote-less file
+  * deleted on Commons is marked `deleted` by the deletion paths, and `in` again on a restore
+  * ([[markVotelessDeleted]], [[restoreVoteless]]). A disqualified file (`dq`, P1b:
+  * [[RoundConflicts]]) keeps its row, with its votes aside, whatever its votes: only an
+  * explicit requalify ([[requalifyRows]]) takes it back, so "Distribute new files" never adds
+  * it again.
   *
   * Writers:
   *  - a vote insert ([[VoteJdbc.create]], [[VoteJdbc.batchInsert]], so a distribution, the
@@ -88,12 +92,10 @@ object RoundImageJdbc {
       region: Option[String]
   )
 
-  /** What a [[sync]] changed: rows added, statuses changed, rows removed (their pair has no
-    * votes left).
-    */
-  final case class SyncResult(added: Int = 0, statusChanged: Int = 0, removed: Int = 0) {
-    def +(o: SyncResult): SyncResult = SyncResult(added + o.added, statusChanged + o.statusChanged, removed + o.removed)
-    def isEmpty: Boolean = added == 0 && statusChanged == 0 && removed == 0
+  /** What a [[sync]] changed: rows added and statuses changed. No row is removed (P3-1). */
+  final case class SyncResult(added: Int = 0, statusChanged: Int = 0) {
+    def +(o: SyncResult): SyncResult = SyncResult(added + o.added, statusChanged + o.statusChanged)
+    def isEmpty: Boolean = added == 0 && statusChanged == 0
   }
 
   /** Page ids per statement: an `IN` list the (round_id, page_id) key reads one by one. */
@@ -153,7 +155,8 @@ object RoundImageJdbc {
 
   /** Brings the rows of the round's files `pageIds` in line with their votes, after a bulk
     * write of those votes in the same transaction: `in` where the pair has `vote` rows; else
-    * `deleted` where it has `vote_aside` rows; no row where it has neither. A `dq` row stays
+    * `deleted` where it has `vote_aside` rows; a row of a pair with neither stays as it is (P3-1:
+    * never deleted). A `dq` row stays
     * `dq` whatever its votes (P1b: a vote written for it is invariant 3's to report; one with
     * none keeps its row, so it is never distributed again); only [[requalifyRows]] lifts it. The votes are read in share mode (the caller holds those it
     * wrote; the others' latest committed state, not the snapshot's), then the rows locked and
@@ -165,30 +168,41 @@ object RoundImageJdbc {
 
   /** [[sync]] of the round's files `pageIds` with their `dq` lifted (a requalify,
     * [[RoundConflicts.requalify]], after the votes to bring back are moved back): they follow
-    * their votes as any other row (`in` with votes, `deleted` with votes only aside, no row with
-    * none), and lose their `dq_*`. Each row that leaves `dq` is recorded, after the rows, as a
+    * their votes as any other row (`in` with votes, `deleted` with votes only aside), and lose
+    * their `dq_*`. One with no votes anywhere stays in the round (P3-1): `deleted` if it is in
+    * `deleted` (the caller's rule for a file deleted on Commons), else `in`. Each row that leaves `dq` is recorded, after the rows, as a
     * `requalify` event with `reason` ([[RoundImageEventJdbc]], V88): its status before (`dq`)
     * and after.
     *
     * @param reason one of [[RoundConflicts.RequalifyReason.All]]
     */
-  private[scalikejdbc] def requalifyRows(roundId: Long, pageIds: Seq[Long], reason: String, by: Option[Long])(implicit
-      session: DBSession
-  ): SyncResult = {
-    val (result, lifted) = syncWith(roundId, pageIds, Origin.Manual, requalify = pageIds.toSet)
+  private[scalikejdbc] def requalifyRows(
+      roundId: Long,
+      pageIds: Seq[Long],
+      reason: String,
+      by: Option[Long],
+      deleted: Set[Long] = Set.empty
+  )(implicit session: DBSession): SyncResult = {
+    val (result, lifted) = syncWith(roundId, pageIds, Origin.Manual, requalify = pageIds.toSet, deleted)
     RoundImageEventJdbc.record(roundId, RoundImageEventJdbc.Action.Requalify, reason, by,
       lifted.map { case (pageId, now) => RoundImageEventJdbc.Change(pageId, Status.Dq, now) })
     result
   }
 
-  /** The rows synced, and those that left `dq`: page id -> their status now (None: removed). */
-  private def syncWith(roundId: Long, pageIds: Seq[Long], missing: Origin, requalify: Set[Long])(implicit
+  /** The rows synced, and those that left `dq`: page id -> their status now. */
+  private def syncWith(
+      roundId: Long,
+      pageIds: Seq[Long],
+      missing: Origin,
+      requalify: Set[Long],
+      requalifiedDeleted: Set[Long] = Set.empty
+  )(implicit
       session: DBSession
   ): (SyncResult, Seq[(Long, Option[String])]) = {
     if (pageIds.nonEmpty) RoundWrites.requireRounds(Seq(roundId))
     val synced = pageIds.distinct.sorted.grouped(Chunk).foldLeft((SyncResult(), Seq.empty[(Long, Option[String])])) {
       case ((acc, lifted), chunk) =>
-        val (r, l) = syncChunk(roundId, chunk, missing, requalify)
+        val (r, l) = syncChunk(roundId, chunk, missing, requalify, requalifiedDeleted)
         (acc + r, lifted ++ l)
     }
     // the caller wrote these files' votes: the round's counts follow in the background (P2a)
@@ -202,9 +216,13 @@ object RoundImageJdbc {
       acc + sync(roundId, ofRound.map(_._2).toSeq, missing)
     }
 
-  private def syncChunk(roundId: Long, pageIds: Seq[Long], missing: Origin, requalify: Set[Long])(implicit
-      session: DBSession
-  ): (SyncResult, Seq[(Long, Option[String])]) = {
+  private def syncChunk(
+      roundId: Long,
+      pageIds: Seq[Long],
+      missing: Origin,
+      requalify: Set[Long],
+      requalifiedDeleted: Set[Long]
+  )(implicit session: DBSession): (SyncResult, Seq[(Long, Option[String])]) = {
     val voted = sql"""SELECT DISTINCT page_id FROM vote WHERE round_id = $roundId AND page_id IN ($pageIds)
                       LOCK IN SHARE MODE""".map(_.long(1)).list().toSet
     val aside = sql"""SELECT DISTINCT page_id FROM vote_aside WHERE round_id = $roundId AND page_id IN ($pageIds)
@@ -212,17 +230,18 @@ object RoundImageJdbc {
     val rows = sql"""SELECT page_id, status FROM round_image WHERE round_id = $roundId AND page_id IN ($pageIds)
                      FOR UPDATE""".map(rs => rs.long(1) -> rs.string(2)).list().toMap
 
+    // None: no votes anywhere; a row there keeps its status (P3-1), none is added
     def wanted(pageId: Long): Option[String] =
       if (rows.get(pageId).contains(Status.Dq) && !requalify(pageId)) Some(Status.Dq)
       else if (voted(pageId)) Some(Status.In)
       else if (aside(pageId)) Some(Status.Deleted)
+      else if (rows.contains(pageId) && requalify(pageId))
+        Some(if (requalifiedDeleted(pageId)) Status.Deleted else Status.In)
       else None
 
-    val gone = rows.keys.filter(wanted(_).isEmpty).toSeq.sorted
     val changed = rows.toSeq.collect { case (p, status) if wanted(p).exists(_ != status) => p -> wanted(p).get }
     val toAdd = pageIds.filter(p => !rows.contains(p) && wanted(p).isDefined)
 
-    if (gone.nonEmpty) sql"DELETE FROM round_image WHERE round_id = $roundId AND page_id IN ($gone)".update()
     // never to `dq` (kept above; set only by disqualify): a row leaving it loses its dq_*
     changed.groupBy(_._2).foreach { case (status, ps) =>
       sql"""UPDATE round_image SET status = $status, dq_code = NULL, dq_detail = NULL, dq_by = NULL, dq_at = NULL
@@ -237,7 +256,7 @@ object RoundImageJdbc {
             WHERE r.id = $roundId ORDER BY i.page_id""".update()
     }.sum
     val lifted = rows.toSeq.collect { case (p, Status.Dq) if requalify(p) => p -> wanted(p) }.sortBy(_._1)
-    (SyncResult(added = added, statusChanged = changed.size, removed = gone.size), lifted)
+    (SyncResult(added = added, statusChanged = changed.size), lifted)
   }
 
   /** Marks the round's files disqualified (`dq`, P1b), after their votes were moved aside in
@@ -285,6 +304,61 @@ object RoundImageJdbc {
       marked
     }
   }
+
+  /** Marks `deleted` the rows of `pageIds` in the rounds `roundIds` that are `in` with no
+    * `vote` rows (P3-1: a file filled and not distributed yet, deleted on Commons): the deletion
+    * paths move a deleted file's votes aside ([[ImageJdbc.archiveVotes]]) and so reach only
+    * pairs with votes. Run after those moves, in their transaction, with the rounds locked for
+    * update ([[RoundWrites]]; checked): no vote is inserted for them meanwhile.
+    *
+    * @return the rounds that had rows marked
+    */
+  def markVotelessDeleted(pageIds: Seq[Long], roundIds: Set[Long])(implicit session: DBSession): Seq[Long] =
+    if (pageIds.isEmpty || roundIds.isEmpty) Nil
+    else {
+      val rounds = roundIds.toSeq.sorted
+      RoundWrites.requireRounds(rounds)
+      val pairs = pageIds.distinct.sorted.grouped(Chunk).flatMap { chunk =>
+        sql"""SELECT ri.round_id, ri.page_id FROM round_image ri
+              WHERE ri.round_id IN ($rounds) AND ri.page_id IN ($chunk) AND ri.status = ${Status.In}
+                AND NOT EXISTS (SELECT 1 FROM vote v WHERE v.round_id = ri.round_id AND v.page_id = ri.page_id)
+              ORDER BY ri.round_id, ri.page_id FOR UPDATE""".map(rs => rs.long(1) -> rs.long(2)).list()
+      }.toSeq
+      setStatus(pairs, from = Status.In, to = Status.Deleted)
+    }
+
+  /** Marks `in` again the `deleted` rows of `pageIds` with no votes in `vote` or `vote_aside`
+    * (a file restored on Commons that [[markVotelessDeleted]] marked), after the restore's votes
+    * moved back ([[ImageJdbc.restoreVotes]]), in its transaction. The caller has locked their
+    * rounds ([[ImageJdbc.lockRoundsOfArchived]]; checked).
+    *
+    * @return the rounds that had rows marked
+    */
+  def restoreVoteless(pageIds: Seq[Long])(implicit session: DBSession): Seq[Long] =
+    if (pageIds.isEmpty) Nil
+    else {
+      val pairs = pageIds.distinct.sorted.grouped(Chunk).flatMap { chunk =>
+        sql"""SELECT ri.round_id, ri.page_id FROM round_image ri
+              WHERE ri.page_id IN ($chunk) AND ri.status = ${Status.Deleted}
+                AND NOT EXISTS (SELECT 1 FROM vote v WHERE v.round_id = ri.round_id AND v.page_id = ri.page_id)
+                AND NOT EXISTS (SELECT 1 FROM vote_aside d WHERE d.round_id = ri.round_id AND d.page_id = ri.page_id)
+              ORDER BY ri.round_id, ri.page_id""".map(rs => rs.long(1) -> rs.long(2)).list()
+      }.toSeq
+      // locked by the caller; one whose row was marked since its read is locked now (as moveVotesBack)
+      RoundWrites.lockMissing(pairs.map(_._1).distinct.sorted)
+      RoundWrites.requireRounds(pairs.map(_._1).distinct)
+      setStatus(pairs, from = Status.Deleted, to = Status.In)
+    }
+
+  /** The rounds of `pairs` whose rows went from `from` to `to`. */
+  private def setStatus(pairs: Seq[(Long, Long)], from: String, to: String)(implicit session: DBSession): Seq[Long] =
+    pairs.groupBy(_._1).toSeq.sortBy(_._1).flatMap { case (roundId, ofRound) =>
+      val changed = ofRound.map(_._2).sorted.grouped(Chunk).map { pages =>
+        sql"""UPDATE round_image SET status = $to WHERE round_id = $roundId AND page_id IN ($pages)
+              AND status = $from""".update()
+      }.sum
+      Option.when(changed > 0)(roundId)
+    }
 
   /** The statuses of the round's files `pageIds` that have a row: read plainly, under the
     * round's lock the caller holds (every writer of a round's rows but a juror's vote holds it,

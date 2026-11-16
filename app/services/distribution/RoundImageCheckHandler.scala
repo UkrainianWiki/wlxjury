@@ -19,7 +19,8 @@ import javax.inject.{Inject, Singleton}
   * @param skipped     rounds left out: their distribution was queued or running
   * @param added       rows added (a pair with votes and no row)
   * @param statusFixed rows whose status didn't match their votes
-  * @param removed     rows of a pair with no votes left
+  * @param removed     rows of a pair with no votes left, removed by releases before P3-1 (kept to
+  *                    read their jobs; P3-1 removes none)
   * @param monumentFixed rows whose monument id wasn't their image's
   * @param notMarkedDeleted `deleted` rows whose image isn't marked deleted (invariant 4:
   *                    reported, not repaired)
@@ -73,7 +74,8 @@ object ImageCheckState {
   * file isn't marked deleted (invariant 4) is only reported: its votes would have to move. So
   * is a disqualified (`dq`) row with votes in `vote` (invariant 3): the sync keeps a `dq` row
   * `dq` whatever its votes (P1b), and a `dq` row with no votes stays, so the file is never
-  * distributed again; only a requalify takes it back.
+  * distributed again; only a requalify takes it back. No row is removed (P3-1): a row with no
+  * votes is a file filled and not distributed yet, and keeps its status.
   *
   * The criteria rates of no vote (invariant 7: a vote id in neither vote nor vote_aside) are
   * archived in criteria_rate_orphan (reason `orphan`, as V78 did) and deleted, window by
@@ -145,7 +147,7 @@ class RoundImageCheckHandler(windowRows: Int, orphanWindow: Int) extends JobHand
           val roundId = st.roundId
           if (!fixed.isEmpty) ctx.afterCommit(RoundImageCounts.invalidate(roundId))
           continue(st.copy(cursor = pageIds.max, roundAdded = st.roundAdded + fixed.added,
-            roundStatusFixed = st.roundStatusFixed + fixed.statusChanged, roundRemoved = st.roundRemoved + fixed.removed))
+            roundStatusFixed = st.roundStatusFixed + fixed.statusChanged))
         }
     }
 

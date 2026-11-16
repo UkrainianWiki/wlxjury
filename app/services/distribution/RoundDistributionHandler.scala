@@ -1043,10 +1043,17 @@ object DistributionSource {
       .map(rs => new ImageWithRating(ImageJdbc(i)(rs), Seq.empty))
       .list()
 
+  /** An unfiltered previous round's file (`ri`) was given to a juror there: it has a vote. A row
+    * with none (P3-1: filled and not distributed, or its votes gone) isn't one of its files for a
+    * next round, as the candidates, read from the votes ([[previousCandidates]]), never have it.
+    */
+  private val assignedThere: SQLSyntax =
+    sqls"EXISTS (SELECT 1 FROM vote pv WHERE pv.round_id = ri.round_id AND pv.page_id = ri.page_id)"
+
   def previousCount(prevIds: Seq[Long], votes: PrevVotes, excluded: Seq[Long])(implicit session: DBSession): Long =
     (if (unfiltered(votes))
        sql"""SELECT COUNT(DISTINCT ri.page_id) FROM round_image ri
-             WHERE ri.round_id IN ($prevIds) AND ri.status = ${RoundImageJdbc.Status.In}
+             WHERE ri.round_id IN ($prevIds) AND ri.status = ${RoundImageJdbc.Status.In} AND $assignedThere
                ${notInExcluded(excluded, sqls"ri.page_id")}"""
      else
        sql"""SELECT COUNT(DISTINCT s.page_id) FROM vote s
@@ -1060,7 +1067,7 @@ object DistributionSource {
       if (unfiltered(votes))
         sqls"""SELECT DISTINCT ri.page_id FROM round_image ri
                WHERE ri.round_id IN ($prevIds) AND ri.status = ${RoundImageJdbc.Status.In} AND ri.page_id > $cursor
-                 ${notInExcluded(excluded, sqls"ri.page_id")}
+                 AND $assignedThere ${notInExcluded(excluded, sqls"ri.page_id")}
                ORDER BY ri.page_id LIMIT $size"""
       else
         sqls"""SELECT DISTINCT s.page_id FROM vote s

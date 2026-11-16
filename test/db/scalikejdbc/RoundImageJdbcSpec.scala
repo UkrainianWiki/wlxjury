@@ -73,29 +73,31 @@ class RoundImageJdbcSpec extends Specification with TestDb with BeforeAll with B
 
   "the bulk writers" should {
 
-    "remove a file's row with its votes (removeImage), and only then" in {
+    "keep a file's row, with no votes, when its votes go (removeImage, P3-1), and only its round's" in {
       val (r1, r2, _) = setUp()
       TestVoteWrites.removeImage(1L, r1)
-      (statuses(r1) === Seq(2L -> "in", 3L -> "in")) and (statuses(r2) === Seq(1L -> "in", 2L -> "in")) and clean(r1, r2)
+      (statuses(r1) === Seq(1L -> "in", 2L -> "in", 3L -> "in")) and (VoteJdbc.byRound(r1).map(_.pageId).toSet === Set(2L, 3L)) and (statuses(r2) === Seq(1L -> "in", 2L -> "in")) and clean(r1, r2)
     }
 
     "keep the files with a rated vote left when the unrated votes go (removeUnrated)" in {
       val (r1, _, jurors) = setUp()
       VoteJdbc.rate(2L, jurors.head, r1, 1)
       TestVoteWrites.removeUnrated(r1)
-      (statuses(r1) === Seq(2L -> "in")) and clean(r1)
+      // the others keep their rows with no votes (P3-1)
+      (statuses(r1) === Seq(1L -> "in", 2L -> "in", 3L -> "in")) and (VoteJdbc.byRound(r1).map(_.pageId).toSet === Set(2L)) and
+        clean(r1)
     }
 
-    "move a file from one round to the other (setRound): out of one, into the other" in {
+    "move a file's votes from one round to the other (setRound): its row kept in one (P3-1), added in the other" in {
       val (r1, r2, _) = setUp()
       TestVoteWrites.setRound(3L, r1, r2)
       val moved = RoundImageJdbc.find(r2, 3L)
-      (statuses(r1) === Seq(1L -> "in", 2L -> "in")) and
+      (statuses(r1) === Seq(1L -> "in", 2L -> "in", 3L -> "in")) and
         (statuses(r2) === Seq(1L -> "in", 2L -> "in", 3L -> "in")) and
         (moved.map(_.addedHow) === Some("manual")) and (moved.flatMap(_.monumentId) === Some("07-101-0003")) and
         {
           TestVoteWrites.setRound(1L, r1, r2) // into a round that has the file: stays in
-          (statuses(r1) === Seq(2L -> "in")) and (statuses(r2).map(_._1) === Seq(1L, 2L, 3L)) and clean(r1, r2)
+          (statuses(r1).map(_._1) === Seq(1L, 2L, 3L)) and (statuses(r2).map(_._1) === Seq(1L, 2L, 3L)) and clean(r1, r2)
         }
     }
 
@@ -142,7 +144,7 @@ class RoundImageJdbcSpec extends Specification with TestDb with BeforeAll with B
 
   "sync" should {
 
-    "set each pair's row from its votes: in, deleted (dq kept), none; add a missing one as its origin" in {
+    "set each pair's row from its votes: in, deleted (dq kept); keep a vote-less one as it is (P3-1); add a missing one as its origin" in {
       val (r1, _, _) = setUp()
       imageDao.batchInsert(Seq(image(4L), image(5L)))
       exec(sqls"INSERT INTO vote_aside SELECT * FROM vote WHERE round_id = $r1 AND page_id = 1")
@@ -153,8 +155,8 @@ class RoundImageJdbcSpec extends Specification with TestDb with BeforeAll with B
         RoundWrites.lock(Seq(r1))
         RoundImageJdbc.sync(r1, Seq(1L, 2L, 3L, 4L, 5L, 6L), Origin(RoundImageJdbc.AddedHow.Repair, Some(5L)))
       }
-      (result === SyncResult(added = 1, statusChanged = 1, removed = 1)) and
-        (statuses(r1) === Seq(1L -> "deleted", 3L -> "in", 4L -> "deleted", 5L -> "dq")) and
+      (result === SyncResult(added = 1, statusChanged = 1)) and
+        (statuses(r1) === Seq(1L -> "deleted", 2L -> "in", 3L -> "in", 4L -> "deleted", 5L -> "dq")) and
         (RoundImageJdbc.find(r1, 4L).map(r => (r.addedHow, r.addedByJobId)) === Some(("repair", Some(5L)))) and
         (DB.localTx { implicit s => RoundWrites.lock(Seq(r1)); RoundImageJdbc.sync(r1, Seq(1L, 2L, 3L, 4L, 5L)) } === SyncResult())
     }
@@ -193,8 +195,9 @@ class RoundImageJdbcSpec extends Specification with TestDb with BeforeAll with B
       exec(sqls"DELETE FROM vote WHERE round_id = $r1 AND page_id = 1")
       exec(sqls"UPDATE round_image SET status = 'deleted' WHERE round_id = $r1 AND page_id = 2")
       exec(sqls"UPDATE images SET deleted_at = NOW(3) WHERE page_id = 2")
-      // 2 has votes and no 'in' row (1); 1 is 'in' with no votes, 2 'deleted' with none aside (8)
-      found(r1) === Seq(1 -> 2L, 2 -> 1L, 3 -> 2L, 8 -> 1L, 8 -> 2L)
+      // 2 has votes and no 'in' row (1); 1 is 'in' with no votes and 2 'deleted' with none aside:
+      // no longer a violation (invariant 8 ended, P3-1)
+      found(r1) === Seq(1 -> 2L, 2 -> 1L, 3 -> 2L)
     }
 
     "find a 'deleted' row of a file not marked deleted (4) and a wrong monument id (6)" in {
@@ -206,12 +209,12 @@ class RoundImageJdbcSpec extends Specification with TestDb with BeforeAll with B
       found(r1) === Seq(4 -> 1L, 6 -> 3L)
     }
 
-    "find a row with no votes (8) and a criteria rate of no vote (7)" in {
+    "find a criteria rate of no vote (7), and no longer a row with no votes (8 ended, P3-1)" in {
       val (r1, _, _) = setUp()
       exec(sqls"DELETE FROM vote WHERE round_id = $r1 AND page_id = 3")
       exec(sqls"INSERT INTO criteria_rate (vote_id, criterion_id, rate) VALUES (99999, 6, 1)")
-      (found(r1) === Seq(8 -> 3L)) and (RoundImageInvariants.criteriaOrphans().size === 1) and
-        (RoundImageInvariants.all().map(_.invariant).sorted === Seq(7, 8))
+      (found(r1) must beEmpty) and (RoundImageInvariants.criteriaOrphans().size === 1) and
+        (RoundImageInvariants.all().map(_.invariant).sorted === Seq(7))
     }
 
     "ignore the votes of a round that doesn't exist" in {

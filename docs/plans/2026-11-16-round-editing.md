@@ -446,7 +446,7 @@ row not yet distributed): **no row is ever deleted by a sync.**
 | `rewrite/ImageDbNew` (the vote source), the CSV | `vote` rows | not listed |
 | `RoundImageJdbc.countIn` / `countsIn` → `imageCountByRounds` → `RoundImageCounts` | `in` rows | counted (a round held in review shows its filled files; step 3 shows "N files (M waiting)") |
 | `ImageJdbc.byRound`, `inRound` / `hasVotes`, `RoundStatLinks`, `AuthorStats`, `CoiMembers.roundFiles` | `in` rows | included, as a file with no votes: right for CoI and per-author counts |
-| `previousCount` / `previousWindow` (a next round) | unfiltered: `in` rows; rate filters: `vote` | unfiltered: passes, as an unrated file does today; filtered: doesn't |
+| `previousCount` / `previousWindow` (a next round) | unfiltered: `in` rows; rate filters: `vote` | doesn't (review fix: the unfiltered count and window require a vote there, as the candidates, read from `vote`, always did) |
 | `notInRound`, `notInExcluded` | any row | never re-added; still left out by a round excluding it |
 | `RoundCountsRecompute` (`writeCounts`) | counts from `votedCounts` | a row absent from it gets `Counts.Zero`: invariant 5 holds |
 | Score rules | `assigned` / `voted` | `AverageRule.keySql` guards a zero denominator |
@@ -462,6 +462,22 @@ row not yet distributed): **no row is ever deleted by a sync.**
   - the recompute writes zero counts for a row absent from `votedCounts`;
   - a vote-less file deleted on Commons becomes `deleted`, and `in` on restore;
   - the specs that relied on deletion are updated.
+
+**Built (P3-1, `stack/164-round-image-keeps-files`):**
+- `RoundImageJdbc.syncChunk` keeps a vote-less row and its status; `SyncResult` has no `removed`.
+  A requalified `dq` row with no votes stays in the round: `deleted` by `RoundConflicts.requalify`'s
+  rule for a file still deleted on Commons (`keepAside`), else `in`.
+- The repair job removes nothing; `ImageCheckState.removed` stays only to read jobs of older
+  releases. `RoundImageInvariants` drops invariant 8 (its number isn't reused).
+- Deleted files: `RoundImageJdbc.markVotelessDeleted` (from `ImageJdbc.archiveVotes`, so
+  `DeletedFiles.markDeleted` and `settle`, and from `archiveDeletedVotesInRound`, so a round that
+  opens and a distribution's `settleFiles`) and `restoreVoteless` (from `restoreVotes`;
+  `lockRoundsOfArchived` also locks the rounds of the files' `deleted` rows).
+- Specs: `RoundImageVotelessReadersSpec` (the table's readers), `DeletedFilesSpec` (vote-less
+  files deleted, settled, opened, restored; a `dq` row kept), and the specs that expected a row to
+  go (`RoundImageJdbcSpec`, `RoundImageCheckSpec`, `RoundImageEventSpec`).
+- Not changed: `AverageRule.keySql` already guards a zero denominator, and the counts path lists
+  only rows with `assigned > 0`, so a vote-less row reaches no score.
 
 ### 6.2 What changed in the code since P3 was written
 

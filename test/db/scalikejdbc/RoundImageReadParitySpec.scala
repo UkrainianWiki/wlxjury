@@ -122,6 +122,15 @@ class RoundImageReadParitySpec extends Specification with TestDb with BeforeAll 
     TestVoteWrites.setRound(7L, rounds(0), rounds(1))
     TestVoteWrites.removeImage(11L, rounds(1))
     TestVoteWrites.removeUnrated(rounds(2))
+    // the reference queries read the votes, where a file with no votes left is in no round; since
+    // P3-1 its row stays (a file filled and not distributed yet), which RoundImageVotelessReadersSpec
+    // checks reader by reader: left out here, so the two models compare
+    DB.autoCommit { implicit s =>
+      sql"""DELETE ri FROM round_image ri WHERE ri.status <> 'dq'
+             AND NOT EXISTS (SELECT 1 FROM vote v WHERE v.round_id = ri.round_id AND v.page_id = ri.page_id)
+             AND NOT EXISTS (SELECT 1 FROM vote_aside d WHERE d.round_id = ri.round_id AND d.page_id = ri.page_id)"""
+        .update()
+    }
     rounds
   }
 

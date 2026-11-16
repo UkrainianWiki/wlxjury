@@ -57,8 +57,8 @@ object TestVoteWrites {
     * vote and in vote_aside, but those of a juror who has the image in the
     * target round already: they are dropped, with their criteria rates. The moved votes keep
     * their ids, so their criteria rates follow them. Then the files' rows in both rounds
-    * follow their votes ([[RoundImageJdbc.sync]]): out of the source round, into the target
-    * one (added `manual`).
+    * follow their votes ([[RoundImageJdbc.sync]]): into the target one (added `manual`); the
+    * source round keeps its rows, with no votes (P3-1: a sync never deletes a row).
     */
   private def moveVotes(targetRoundId: Long, sourceRoundId: Long, andWhere: SQLSyntax)(implicit
       session: DBSession

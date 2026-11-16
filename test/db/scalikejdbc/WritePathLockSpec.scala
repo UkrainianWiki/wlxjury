@@ -169,11 +169,12 @@ class WritePathLockSpec extends Specification with TestDb with BeforeAll with Be
       val jurors = createUsers("jury", 1, 2)
       val images = (1L to 3L).map(i => image(i))
       imageDao.batchInsert(images)
-      CategoryLinkJdbc.addToCategory(contestDao.findById(contest.getId).get.categoryId.get, images)
+      val category = contestDao.findById(contest.getId).get.categoryId.get
+      CategoryLinkJdbc.addToCategory(category, images.filter(_.pageId != 2L))
       val service = TestRoundServices.roundService()
       val round = service.createNewRound(Round(None, 1, Some("R"), contest.getId, distribution = 0, active = true),
         jurors.map(_.getId)).getId
-      TestVoteWrites.removeImage(2L, round) // "Distribute new files" adds it back
+      CategoryLinkJdbc.addToCategory(category, images.filter(_.pageId == 2L)) // "Distribute new files" adds it
       val ready = new CountDownLatch(1)
       val go = new CountDownLatch(1)
       // ImageJdbc.updateMonumentIdIn on file 2 (in no round now), held after the image's update

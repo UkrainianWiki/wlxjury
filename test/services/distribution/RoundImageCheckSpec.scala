@@ -70,17 +70,18 @@ class RoundImageCheckSpec extends Specification with TestDb with BeforeAll with 
 
   "the round_image_check job" should {
 
-    "repair every round's drift, report a 'deleted' row of a file not marked deleted, archive rates of no vote" in {
+    "repair every round's drift, keep rows of no votes (P3-1), report a 'deleted' row of a file not marked deleted, archive rates of no vote" in {
       val (r1, r2) = setUp()
       drift(r1)
       val before = RoundImageInvariants.all().map(v => v.invariant -> v.pageId)
       val job = run(RoundImageCheckHandler.allJob(root))
       val d = details(job)
       val after = RoundImageInvariants.all().map(v => v.invariant -> v.pageId)
-      (before must containAllOf(Seq(1 -> 13L, 1 -> 14L, 2 -> 5L, 6 -> 8L, 4 -> 9L, 8 -> 6L, 8 -> 7L))) and
+      (before must containAllOf(Seq(1 -> 13L, 1 -> 14L, 2 -> 5L, 6 -> 8L, 4 -> 9L))) and
         (job.status === JobStatus.Done) and
-        // 13, 14 added; 5 and 9 'deleted'... 9 was 'deleted' already, 5 now; 6, 7 removed; 8's monument id
-        ((d \ "added").as[Long] === 2L) and ((d \ "statusFixed").as[Long] === 1L) and ((d \ "removed").as[Long] === 2L) and
+        // 13, 14 added; 5 and 9 'deleted'... 9 was 'deleted' already, 5 now; 6, 7 kept (no votes:
+        // a file filled and not distributed yet, P3-1); 8's monument id
+        ((d \ "added").as[Long] === 2L) and ((d \ "statusFixed").as[Long] === 1L) and ((d \ "removed").as[Long] === 0L) and
         ((d \ "monumentFixed").as[Long] === 1L) and ((d \ "notMarkedDeleted").as[Long] === 1L) and
         ((d \ "orphansArchived").as[Long] === 2L) and ((d \ "rounds").as[Long] === 2L) and
         ((d \ "drift").as[Seq[String]].size === 1) and
@@ -88,6 +89,7 @@ class RoundImageCheckSpec extends Specification with TestDb with BeforeAll with 
         (RoundImageJdbc.find(r1, 13L).map(r => (r.status, r.addedHow, r.addedByJobId, r.region)) ===
           Some(("in", "repair", Some(job.id), Some("46")))) and
         (RoundImageJdbc.find(r1, 5L).map(_.status) === Some("deleted")) and
+        (Seq(6L, 7L).map(p => RoundImageJdbc.find(r1, p).map(_.status)) === Seq(Some("in"), Some("in"))) and
         (RoundImageJdbc.byRound(r2).size === 4) and
         (DB.readOnly(implicit s => sql"SELECT vote_id, criteria, rate, reason FROM criteria_rate_orphan ORDER BY vote_id"
           .map(rs => (rs.long(1), rs.long(2), rs.int(3), rs.string(4))).list()) ===
