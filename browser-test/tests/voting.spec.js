@@ -20,12 +20,15 @@ test.use({ role: 'juror' });
 const selectButton = (page) => page.getByRole('button', { name: /^Select image/ });
 const rejectButton = (page) => page.getByRole('button', { name: /^Reject image/ });
 
-/** The binary round's vote the large view shows: 1 (only Reject offered), -1 (only Select), 0 (both). */
+/** The binary round's vote the large view shows, by its pressed button: 1 (✓ pressed), -1 (✗
+  * pressed), 0 (neither); both buttons always there (the maintainer's notes of 2026-11-16). */
 async function binaryVote(page) {
-  const select = await selectButton(page).count();
-  const reject = await rejectButton(page).count();
-  expect(select + reject, 'the large view offers Select, Reject or both').toBeGreaterThan(0);
-  return select && reject ? 0 : reject ? 1 : -1;
+  expect(await selectButton(page).count(), 'the large view has its ✓').toBe(1);
+  expect(await rejectButton(page).count(), 'the large view has its ✗').toBe(1);
+  const select = await selectButton(page).getAttribute('aria-pressed');
+  const reject = await rejectButton(page).getAttribute('aria-pressed');
+  expect(select === 'true' && reject === 'true', 'one button pressed at most').toBe(false);
+  return select === 'true' ? 1 : reject === 'true' ? -1 : 0;
 }
 
 /** The rated round's rate the large view says ("Rating: 4"; 0 not rated). */
@@ -42,6 +45,17 @@ async function voteAndMove(page, act) {
   await act();
   const request = await posted;
   await page.waitForURL((u) => u.href !== from);
+  return new URL(request.url());
+}
+
+/** Waits for the vote's POST and the page it leads to, after `act`, whichever file that is;
+  * returns the POST's URL. */
+async function voteAndLoad(page, act) {
+  const posted = page.waitForRequest((r) => r.method() === 'POST' && /\/select\/-?\d+/.test(r.url()));
+  const loaded = page.waitForEvent('load');
+  await act();
+  const request = await posted;
+  await loaded;
   return new URL(request.url());
 }
 
@@ -131,48 +145,174 @@ test.describe('a juror votes', () => {
     await expectBackShowsVote(page, url, ratedVote, expected, before, browserName);
   });
 
-  // The juror's large view of a yes/no file: its ✓ and ✗ drawn as the gallery, previous and next
-  // buttons beside them (the maintainer's note of 2026-11-16: filled, they had no border), the
-  // same border, height, radius and padding, at rest, pointed at and focused, in both colour
-  // modes; the ✓ green and the ✗ red (navigationButtons buttonSelect)
-  test('the large view\'s ✓ and ✗ buttons are drawn as its navigation buttons', { tag: '@J-20' }, async ({ page, fixture }) => {
+  // The juror's large view of a yes/no file (the maintainer's notes of 2026-11-16): every button
+  // of its row (gallery, previous, next, ✓, ✗) with its own complete border, all four sides one
+  // colour at rest and pointed at, none overlapping another (a Bootstrap button group shared their
+  // borders); the ✓ and ✗ with the gallery tiles' border (3 px in the vote's colour), filled with
+  // it pointed at, as high as the navigation buttons and with their radius; at rest, pointed at
+  // and focused, in both colour modes
+  test('the large view\'s buttons each have their own border, the ✓ and ✗ the tiles\' design', { tag: '@J-20' }, async ({ page, fixture }) => {
     const { juror } = fixture.accounts;
     await page.goto(largePath(fixture.roundBinaryId, juror.id, juror.pageId));
     const nav = page.locator('.large-nav [data-nav=gallery]');
+    const buttons = page.locator('.large-nav > a');
     const votes = page.locator('.large-nav a[data-vote-url]');
     await expect(nav).toBeVisible();
-    expect(await votes.count(), 'the file offers ✓, ✗ or both').toBeGreaterThan(0);
+    await expect(votes).toHaveCount(2);
     const style = (locator) => locator.evaluate((el) => {
       const c = getComputedStyle(el);
+      const sides = ['Top', 'Right', 'Bottom', 'Left'];
       return {
-        border: `${c.borderTopWidth} ${c.borderTopStyle}`, height: el.getBoundingClientRect().height,
-        radius: c.borderTopLeftRadius === '0px' ? c.borderTopRightRadius : c.borderTopLeftRadius,
-        padding: `${c.paddingTop} ${c.paddingLeft}`, colour: c.borderTopColor,
-        check: el.querySelector('.bi-check-lg') !== null,
+        colours: sides.map((s) => c[`border${s}Color`]), widths: sides.map((s) => c[`border${s}Width`]),
+        height: el.getBoundingClientRect().height, radius: c.borderTopLeftRadius, background: c.backgroundColor,
+        check: el.querySelector('.bi-check-lg') !== null, glyph: getComputedStyle(el.querySelector('i')).color,
+        shadow: c.boxShadow, text: getComputedStyle(document.body).color, page: getComputedStyle(document.body).backgroundColor,
       };
     });
+    const overlap = (a, b) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5
+      && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
     for (const mode of ['dark', 'light']) {
       await page.evaluate((m) => document.documentElement.setAttribute('data-bs-theme', m), mode);
       for (const state of ['at rest', 'pointed at', 'focused']) {
         await page.mouse.move(1, 1);
         const reference = await style(nav);
-        for (let i = 0; i < await votes.count(); i++) {
-          const vote = votes.nth(i);
-          if (state === 'pointed at') await vote.hover();
-          if (state === 'focused') await vote.focus();
-          await page.waitForTimeout(200);
-          const v = await style(vote);
-          const where = `${mode} mode, ${state}, the ${v.check ? '✓' : '✗'}`;
-          expect(v.border, `${where}: border`).toBe(reference.border);
-          expect(Math.abs(v.height - reference.height), `${where}: height`).toBeLessThanOrEqual(1);
-          expect(v.padding, `${where}: padding`).toBe(reference.padding);
-          // its border in the vote's colour, not the navigation's grey
-          expect(v.colour, `${where}: border colour`).not.toBe(reference.colour);
+        const count = await buttons.count();
+        for (let i = 0; i < count; i++) {
+          const button = buttons.nth(i);
+          if (state === 'pointed at') await button.hover();
+          if (state === 'focused') await button.focus();
+          await page.waitForTimeout(250);
+          const b = await style(button);
+          const isVote = (await button.getAttribute('data-vote-url')) !== null;
+          const where = `${mode} mode, ${state}, button ${i + 1}${isVote ? (b.check ? ' (✓)' : ' (✗)') : ''}`;
+          expect(new Set(b.colours).size, `${where}: its four border colours equal (${b.colours})`).toBe(1);
+          expect(new Set(b.widths).size, `${where}: its four border widths equal`).toBe(1);
+          expect(Math.abs(b.height - reference.height), `${where}: height`).toBeLessThanOrEqual(1);
+          expect(b.radius, `${where}: radius`).toBe(reference.radius);
+          // no other button covers it, nor it them, in any state
+          const boxes = await buttons.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON()));
+          for (let j = 0; j < boxes.length; j++) {
+            for (let k = j + 1; k < boxes.length; k++) {
+              expect(overlap(boxes[j], boxes[k]), `${where}: buttons ${j + 1} and ${k + 1} apart`).toBe(false);
+            }
+          }
+          if (isVote) {
+            expect(b.widths[0], `${where}: the tiles' 3 px border`).toBe('3px');
+            expect(b.colours[0], `${where}: its border in the vote's colour, not the navigation's grey`).not.toBe(reference.colours[0]);
+            const pressed = (await button.getAttribute('aria-pressed')) === 'true';
+            if (state === 'focused') {
+              // the two-tone focus ring: the page's colour, then its text colour, 4 px out
+              expect(b.shadow, `${where}: the focus ring in the text colour`).toContain(`${b.text} 0px 0px 0px 4px`);
+              expect(b.shadow, `${where}: inside it a ring of the page's colour`).toMatch(/0px 0px 0px 2px/);
+            }
+            if (state === 'pointed at' || pressed) {
+              expect(b.background, `${where}: filled with the vote's colour`).toBe(b.colours[0]);
+              expect(b.glyph, `${where}: the glyph apart from the fill`).not.toBe(b.colours[0]);
+            } else {
+              expect(b.glyph, `${where}: the glyph in the vote's colour`).toBe(b.colours[0]);
+            }
+          }
           await page.mouse.move(1, 1);
           await page.evaluate(() => document.activeElement && document.activeElement.blur());
         }
       }
     }
+  });
+
+  // A tile's ✓ and ✗ as the large view's: the 3 px border in the vote's colour, its radius,
+  // filled with the vote's colour pointed at (the maintainer's notes of 2026-11-16), both modes
+  test('a tile\'s ✓ and ✗ are filled with the vote\'s colour pointed at', { tag: '@J-16' }, async ({ page, fixture }) => {
+    const { juror } = fixture.accounts;
+    await page.goto(galleryPath(fixture.roundBinaryId, juror.id));
+    const select = page.getByRole('button', { name: 'Selected' }).first();
+    await expect(select).toBeVisible();
+    const tile = select.locator('xpath=ancestor::*[contains(concat(" ", @class, " "), " ug-tile ")][1]');
+    const reject = tile.getByRole('button', { name: 'Rejected' });
+    const style = (locator) => locator.evaluate((el) => {
+      const c = getComputedStyle(el);
+      return {
+        border: c.borderTopColor, width: c.borderTopWidth, background: c.backgroundColor,
+        radius: c.borderTopLeftRadius, glyph: getComputedStyle(el.querySelector('i')).color,
+      };
+    });
+    for (const mode of ['dark', 'light']) {
+      await page.evaluate((m) => document.documentElement.setAttribute('data-bs-theme', m), mode);
+      for (const button of [select, reject]) {
+        await tile.hover();
+        await page.waitForTimeout(200);
+        const pressed = (await button.getAttribute('aria-pressed')) === 'true';
+        const rest = await style(button);
+        expect(rest.width, `${mode}: the 3 px border`).toBe('3px');
+        expect(rest.radius, `${mode}: the large view's radius`).toBe('6px');
+        if (!pressed) expect(rest.background, `${mode}: not filled at rest`).not.toBe(rest.border);
+        await button.hover();
+        await page.waitForTimeout(250);
+        const hover = await style(button);
+        expect(hover.background, `${mode}: filled with the vote's colour pointed at`).toBe(hover.border);
+        expect(hover.glyph, `${mode}: the glyph apart from the fill`).not.toBe(hover.border);
+      }
+      const [s, r] = [await style(select), await style(reject)];
+      expect(s.border, `${mode}: ✓ and ✗ in their own colours`).not.toBe(r.border);
+    }
+  });
+
+  // The large view undoes a vote as a tile does (the maintainer's notes of 2026-11-16): a file
+  // selected on its tile shows its ✓ pressed in the large view; a click on it posts rate 0 and the
+  // view moves on to the next file, as after any vote (the maintainer's decision); back at the file
+  // it is unrated, neither button pressed, and so is its tile
+  test('in the binary round\'s large view, its pressed ✓ undoes the vote', { tag: ['@J-16', '@J-20'] }, async ({ page, fixture }) => {
+    const { juror } = fixture.accounts;
+    await page.goto(galleryPath(fixture.roundBinaryId, juror.id));
+    const tileSelect = () => page.getByRole('button', { name: 'Selected' }).first();
+    await expect(tileSelect()).toBeVisible();
+    if ((await tileSelect().getAttribute('aria-pressed')) === 'true') {
+      // selected already: unselect it on its tile first, so that the selection below is this test's
+      const undone = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/rate/round/'));
+      await tileSelect().click();
+      expect((await undone).status()).toBe(200);
+    }
+    const response = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/rate/round/'));
+    await tileSelect().click();
+    const voted = await response;
+    expect(voted.status()).toBe(200);
+    const pageId = new URL(voted.url()).pathname.match(/\/pageid\/(\d+)\/select\/1$/)[1];
+    const url = largePath(fixture.roundBinaryId, juror.id, pageId);
+    await page.goto(url);
+    expect(await binaryVote(page), 'the tile\'s vote, pressed').toBe(1);
+    const posted = await voteAndMove(page, () => selectButton(page).click());
+    expect(posted.pathname).toMatch(new RegExp(`/pageid/${pageId}/select/0$`));
+    expect(new URL(page.url()).pathname, 'on to the next file').not.toBe(url);
+    expect(new URL(page.url()).pathname).toMatch(/\/large\/round\//);
+    await page.goto(url);
+    expect(await binaryVote(page), 'back at the file: unrated').toBe(0);
+    await expect(selectButton(page)).toHaveAttribute('aria-pressed', 'false');
+    await expect(rejectButton(page)).toHaveAttribute('aria-pressed', 'false');
+    await page.goto(galleryPath(fixture.roundBinaryId, juror.id));
+    await expect(tileSelect()).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  // The large view's ✓ and ✗ always both, ✓ first, as the tiles' (the maintainer's notes of
+  // 2026-11-16: one or two buttons by the file's vote was confusing): for an unrated, a selected
+  // and a rejected file, the file's vote pressed
+  test('the large view has both ✓ and ✗ for an unrated, a selected and a rejected file', { tag: '@J-20' }, async ({ page, fixture }) => {
+    const { juror } = fixture.accounts;
+    const url = largePath(fixture.roundBinaryId, juror.id, juror.pageId);
+    const seen = [];
+    for (const rate of [0, 1, -1]) {
+      await page.goto(url);
+      const now = await binaryVote(page);
+      if (now !== rate) {
+        // the button that gives `rate`: the pressed one undoes, the other gives its vote
+        const button = rate === 0 ? (now === 1 ? selectButton(page) : rejectButton(page))
+          : rate === 1 ? selectButton(page) : rejectButton(page);
+        await voteAndLoad(page, () => button.click());
+        await page.goto(url);
+      }
+      const order = await page.locator('.large-nav a[data-vote-url]').evaluateAll((els) => els.map((el) =>
+        `${el.querySelector('.bi-check-lg') ? '✓' : '✗'}${el.getAttribute('aria-pressed') === 'true' ? '*' : ''}`));
+      seen.push(order.join(' '));
+    }
+    expect(seen).toEqual(['✓ ✗', '✓* ✗', '✓ ✗*']);
   });
 
   // A tile's ✓ and ✗ buttons side by side at one height, the same size, their glyphs level (the
@@ -387,12 +527,13 @@ test.describe('the large view\'s comments link', () => {
 
     // the by-rate gallery of all the jurors, only the files with comments, by approvals (the
     // maintainer's report of 2026-11-16: its chip was a plain badge on the thumbnail's link, which
-    // opened the large view at its top): the same link chip, after the file's tally, in its
-    // thumbnail's chips (galleryByRate thumbChips), to its large view in this list at the comments
+    // opened the large view at its top): the same link chip, after the file's tally, in its chips
+    // under the thumbnail with its rank (galleryByRate rankChips; the maintainer's note of
+    // 2026-11-16), to its large view in this list at the comments
     await page.setViewportSize({ width: 1366, height: 400 });
     await page.goto(`/byrate/round/${fixture.roundBinaryId}/user/0/page/1?comments=1&sort=approvals`);
     const byRateBox = page.locator(`li.gallerybox[id="${other.pageId}"]`);
-    const byRateChip = byRateBox.locator('.thumb > .wlx-tile-foot > .wlx-tile-chips > a.wlx-chip-comments');
+    const byRateChip = byRateBox.locator('.rank-line > .wlx-tile-foot > .wlx-tile-chips > a.wlx-chip-comments');
     await expect(byRateChip).toBeVisible();
     await expect(byRateChip).toHaveAccessibleName(/^\d+ comments?: open the comments$/);
     await expect(byRateBox.locator('.wlx-tile-chips > :first-child')).toHaveClass(/wlx-chip-tally/);
@@ -412,7 +553,7 @@ test.describe('the large view\'s comments link', () => {
       byRateBox.locator('.thumb > a img').click()
     ]);
 
-    // one juror's by-rate list by vote time: the vote chips as the tiles' (thumbChips), their
+    // one juror's by-rate list by vote time: the vote chips as the tiles' (rankChips), their
     // words read with the time formatted as shown (vote-time.js), never the raw UTC value, and
     // their title the same with the year
     await page.goto(`/byrate/round/${fixture.roundBinaryId}/user/${other.id}/page/1?sort=latest-vote`);
@@ -557,5 +698,44 @@ test.describe('the large view\'s comments link', () => {
     await loaded();
     await page.waitForLoadState('load');
     expect(await commentsScrolls(), 'the page scrolls to the comments when the file loads').toBeGreaterThan(0);
+  });
+});
+
+// The by-rate gallery's chips with the ranking under the thumbnail (the maintainer's note of
+// 2026-11-16; galleryByRate rankChips): all the jurors' tally on the rank's line, after it, never
+// on the thumbnail, the line no wider than the thumbnail; a juror's own rated list by vote time
+// with the vote's time after the stars, and a new vote's time there at once (tile-votes.js
+// listVoteTimeAfter)
+test.describe('the by-rate chips', () => {
+  test('are on the rank\'s line under the thumbnail', { tag: ['@O-02', '@J-17'] }, async ({ contextAs, fixture }) => {
+    const admin = await (await contextAs('admin')).newPage();
+    await admin.goto(`/byrate/round/${fixture.roundBinaryId}/user/0/page/1`);
+    const box = admin.locator('li.gallerybox').first();
+    const line = box.locator('.rank-line');
+    const tally = line.locator('.wlx-tile-foot > .wlx-tile-chips > .wlx-chip-tally');
+    await expect(tally).toBeVisible();
+    await expect(box.locator('.thumb .wlx-chip')).toHaveCount(0);
+    const [thumb, rank, chip, row] = await Promise.all([box.locator('.thumb'), line.locator('b'), tally, line]
+      .map((l) => l.boundingBox()));
+    const centreY = (b) => b.y + b.height / 2;
+    expect(chip.y, 'under the thumbnail').toBeGreaterThanOrEqual(thumb.y + thumb.height);
+    expect(Math.abs(centreY(chip) - centreY(rank)), 'on the rank\'s line').toBeLessThanOrEqual(6);
+    expect(chip.x, 'after the rank').toBeGreaterThan(rank.x + rank.width);
+    expect(row.width, 'no wider than the thumbnail').toBeLessThanOrEqual(thumb.width + 1);
+
+    const juror = await (await contextAs('juror')).newPage();
+    await juror.goto(`/byrate/round/${fixture.roundRatingId}/user/${fixture.accounts.juror.id}/page/1?sort=latest-vote`);
+    const first = juror.locator('li.gallerybox').first();
+    const stars = first.locator('.rank-line .wlx-tile-stars');
+    await expect(stars).toBeVisible();
+    const current = await stars.evaluate((el) => Number(window.jQuery(el).raty('score')) || 0);
+    const response = juror.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/rate/round/'));
+    await stars.locator(`[data-alt="${current === 4 ? 5 : 4}"]`).click();
+    expect((await response).status()).toBe(200);
+    const vote = first.locator('.rank-line > .wlx-tile-foot > .wlx-tile-chips > .wlx-chip-vote');
+    await expect(vote.locator('time.wlx-vote-time').first()).toBeVisible();
+    await expect(first.locator('.thumb .wlx-chip')).toHaveCount(0);
+    const [t, v] = [await first.locator('.thumb').boundingBox(), await vote.boundingBox()];
+    expect(v.y, 'under the thumbnail').toBeGreaterThanOrEqual(t.y + t.height);
   });
 });

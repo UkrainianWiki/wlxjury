@@ -99,6 +99,45 @@ class LargeViewControllerSpec extends PlaySpecification {
         }
     }
 
+    // the maintainer's notes of 2026-11-16: one or two vote buttons by the file's vote was
+    // confusing, and the large view couldn't undo a vote as a gallery tile does
+    "show a yes/no round's ✓ and ✗ always, the file's vote pressed and undone by its button, all by paths [J-20]" in {
+      import LargeViewRenders._
+      def buttons(rate: Int) = {
+        val doc = Jsoup.parse(large(binaryRound, middle, rated = Map(middle -> rate)))
+        val keys = doc.getElementById("large-keys")
+        (doc.select(".large-nav a[data-vote-url]").asScala.toSeq.map(b => (
+          b.selectFirst("i").className, b.className, b.attr("aria-pressed"), b.attr("aria-label"), b.attr("title"),
+          b.attr("data-vote-url").takeWhile(_ != '?'))),
+          Option(keys.attr("data-vote-key-space")).filter(_.nonEmpty).map(_.takeWhile(_ != '?')),
+          Option(keys.attr("data-vote-key-del")).filter(_.nonEmpty).map(_.takeWhile(_ != '?')),
+          doc.select(".large-nav a[data-vote-url]").asScala.map(_.attr("data-vote-url")).toSeq)
+      }
+      val path = "/large/round/1/pageid/107/select/"
+      def check(pressed: Boolean, url: String) = ("bi bi-check-lg", "btn btn-sm wlx-vote-btn wlx-vote-btn-select",
+        pressed.toString, "select.image", if (pressed) "vote.selected: vote.clear" else "select.image <Space>", url)
+      def cross(pressed: Boolean, url: String) = ("bi bi-x-lg", "btn btn-sm wlx-vote-btn wlx-vote-btn-reject",
+        pressed.toString, "reject.image", if (pressed) "vote.rejected: vote.clear" else "reject.image <Delete>", url)
+      val (unrated, unratedSpace, unratedDel, unratedUrls) = buttons(0)
+      val (selected, selectedSpace, selectedDel, selectedUrls) = buttons(1)
+      val (rejected, rejectedSpace, rejectedDel, rejectedUrls) = buttons(-1)
+      (unrated === Seq(check(pressed = false, path + "1"), cross(pressed = false, path + "-1"))) and
+        (selected === Seq(check(pressed = true, path + "0"), cross(pressed = false, path + "-1"))) and
+        (rejected === Seq(check(pressed = false, path + "1"), cross(pressed = true, path + "0"))) and
+        // the keys give their votes, as before: Space selects, Delete rejects, neither undoes one
+        ((unratedSpace, unratedDel) === ((Some(path + "1"), Some(path + "-1")))) and
+        ((selectedSpace, selectedDel) === ((None, Some(path + "-1")))) and
+        ((rejectedSpace, rejectedDel) === ((Some(path + "1"), None))) and
+        // paths with the list's query, never http:// URLs (Call.absoluteURL behind the proxy)
+        (forall(unratedUrls ++ selectedUrls ++ rejectedUrls)(u => (u must startWith(path)) and (u must not(startWith("//")))))
+    }
+
+    "show no vote buttons in another juror's view of a yes/no round" in {
+      import LargeViewRenders._
+      Jsoup.parse(large(binaryRound, middle, asUserId = otherJurorId, rated = Map(middle -> 1)))
+        .select(".large-nav [data-vote-url], .large-nav .wlx-vote-btn").size === 0
+    }
+
     "keep the monument filter in its keys' and stars' votes and moves, all by paths" in {
       implicit val request = play.api.test.FakeRequest("GET", "/").withCSRFToken
       implicit val messages = Helpers.stubMessagesApi().preferred(request)

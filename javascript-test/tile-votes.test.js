@@ -327,11 +327,11 @@ function byRateList(rates, options = { number: 5, half: false }, times = null, c
     };
     const files = rates.map((rate, i) =>
         '<li class="gallerybox" id="' + (201 + i) + '"><div class="thumb"><a href="/large/round/2/user/1/pageid/' + (201 + i) +
-        '"><img class="cropped" alt="File:Image ' + (201 + i) + '.jpg"></a>' + chips(rate, i) + '</div>' +
-        '<div class="rank-line"> <b>' + (i + 1) + '.</b>' +
+        '"><img class="cropped" alt="File:Image ' + (201 + i) + '.jpg"></a></div>' +
+        '<div class="rank-line wlx-byrate-line"><b>' + (i + 1) + '.</b>' +
         '<span class="rate-stars"><span class="wlx-byrate-stars" data-round-id="2" data-page-id="' + (201 + i) +
         '" data-rate="' + rate + '"><i class="bi bi-star wlx-star"></i></span>' +
-        '<span class="wlx-rate-text">' + rate + '</span></span></div></li>').join("");
+        '<span class="wlx-rate-text">' + rate + '</span></span>' + chips(rate, i) + '</div></li>').join("");
     document.body.innerHTML =
         (times ? TEMPLATES : '') +
         '<p class="wlx-byrate-hint" hidden>Changed rates are re-sorted when the page is reloaded</p>' +
@@ -441,15 +441,15 @@ describe("the juror's by-rate list", () => {
 });
 
 // The juror's by-rate list in an order by vote time (data-vote-times): a stored vote's time follows
-// it in the vote chip on the file's thumbnail as on the gallery's tiles, without a reload
+// it in the vote chip in the file's rank line under its thumbnail (galleryByRate rankChips), as on the gallery's tiles, without a reload
 // (listVoteTimeAfter): now for a changed vote, a chip added for a file unrated at load, first in
 // its chips, gone when cleared, kept for the same vote and on a failed one; nothing in another
 // order. The comment chip stays after it.
 describe("the juror's by-rate list's vote times", () => {
     afterEach(() => { delete window.wlxVoteTime; });
 
-    const row = box => box.querySelector(".thumb > .wlx-tile-foot > .wlx-tile-chips");
-    const chip = box => box.querySelector(".thumb .wlx-chip-vote");
+    const row = box => box.querySelector(".rank-line > .wlx-tile-foot > .wlx-tile-chips");
+    const chip = box => box.querySelector(".rank-line .wlx-chip-vote");
     const timeOf = box => chip(box) && chip(box).querySelector(".wlx-chip-time > time.wlx-vote-time");
 
     test("show now after a changed vote, formatted, in place of the time at load", () => {
@@ -483,8 +483,10 @@ describe("the juror's by-rate list's vote times", () => {
         expect(row(boxes[0]).firstElementChild).toBe(chip(boxes[0]));
         expect(row(boxes[0]).lastElementChild.classList.contains("wlx-chip-comments")).toBe(true);
         expect(row(boxes[0]).lastElementChild.getAttribute("href")).toBe("/large/round/2/user/1/pageid/201?sort=latest-vote#comments");
-        // not in the thumbnail's link
+        // not in the thumbnail's link, nor on the thumbnail: after the stars in the rank line
         expect(chip(boxes[0]).closest("a")).toBeNull();
+        expect(boxes[0].querySelector(".thumb .wlx-chip")).toBeNull();
+        expect(row(boxes[0]).parentNode.previousElementSibling.classList.contains("rate-stars")).toBe(true);
 
         expect(chip(boxes[1]).querySelector(".wlx-chip-shown").textContent).toBe("Time not recorded");
         star(listStars(boxes[1]), 1).trigger("click");

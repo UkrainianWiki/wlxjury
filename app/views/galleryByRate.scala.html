@@ -19,15 +19,16 @@
 
     @* a file's rank among the list's files by rate (a range for files that tie: RoundList.ranks)
        and a rated round's stars and rate, the juror's own to click (tile-votes.js, which puts its
-       stars in place of the static ones and keeps the rate text after them); a binary round's
-       result is on the thumbnail (thumbChips). A criteria round's stars are its criteria's
-       average (the rate, a sum, over their number, to the nearest half star), its number that
-       average with the sum and its jurors beside it, its file's average of each criterion under
-       them (C3) *@
+       stars in place of the static ones and keeps the rate text after them), then the file's
+       chips (rankChips: a binary round's result, its time, the comments), one line that wraps
+       (main.css .rank-line). A criteria round's stars are its criteria's average (the rate, a
+       sum, over their number, to the nearest half star), its number that average with the sum
+       and its jurors beside it, its file's average of each criterion under them (C3). A round
+       without rates (comments only) has the line for its chips alone *@
     @showRateGalery(file: ImageWithRating, index: Int) = {
     @defining(list.round) { round =>
-        @if(round.rates.id > 0) {
-        <div class="rank-line"> <b>@ranks.lift(index).filter(_.nonEmpty).map(_ + ".")</b>
+        @if(round.rates.id > 0 || hasChips(file)) {
+        <div class="rank-line wlx-byrate-line">@if(round.rates.id > 0) {<b>@ranks.lift(index).filter(_.nonEmpty).map(_ + ".")</b>}
             @if(!round.isBinary) {
             <span class="rate-stars">
                 @if(starsRound.nonEmpty) {
@@ -46,6 +47,7 @@
                 }
             </span>
             }
+            @rankChips(file)
         </div>
         @if(criteria.nonEmpty) {
             @criteriaAverages(criteria.of(file.pageId))
@@ -54,22 +56,25 @@
     }
     }
 
-    @* The file's chips on its thumbnail, as the gallery's tiles have them (tile-votes.js chips; the
-       maintainer's decisions of 2026-11-15, and the report of 2026-11-16 that a click on the plain
-       comment chip here opened the large view at its top): one row at its lower left, first all
-       the jurors' tally of a binary round (binaryTally's chip) or one juror's vote
-       (snippets.voteChip: a binary round's mark; in an order by vote time the vote's time, or in a
-       rated round that none was recorded), then the comments (snippets.commentChip), a link to the file's large view
-       in this list at its comments. Next to the thumbnail's link, not in it. A juror's own vote in
-       a rated round moves its time here (tile-votes.js listVoteTimeAfter, from the page's
-       chipTemplates). Nothing without a chip *@
+    @* The file's chips, as the gallery's tiles have them (tile-votes.js chips; the maintainer's
+       decisions of 2026-11-15, the report of 2026-11-16 that a click on the plain comment chip here
+       opened the large view at its top, and his note of 2026-11-16 to put them with the ranking
+       under the thumbnail, not on it): one row in the rank's line, after the rank and a rated
+       round's stars, first all the jurors' tally of a binary round (binaryTally's chip) or one
+       juror's vote (snippets.voteChip: a binary round's mark; in an order by vote time the vote's
+       time, or in a rated round that none was recorded), then the comments
+       (snippets.commentChip), a link to the file's large view in this list at its comments, apart
+       from the thumbnail's link. A juror's own vote in a rated round moves its time here
+       (tile-votes.js listVoteTimeAfter, from the page's chipTemplates, into the rank line's foot).
+       Nothing without a chip *@
     @voteMark(file: ImageWithRating) = @{ if (list.round.isBinary && !list.aggregateBinary) file.rate else 0 }
     @* a yes/no vote without a recorded time: its mark alone, as on the tiles (tile-votes.js voteChip) *@
     @voteTimeOf(file: ImageWithRating) = @{ Option.when(list.showsVoteTimes && file.rate != 0)(file.votes.headOption.flatMap(_.votedAt))
         .filter(at => at.nonEmpty || !list.round.isBinary) }
     @commentsOf(file: ImageWithRating) = @{ commentCounts.getOrElse(file.pageId, 0) }
-    @thumbChips(file: ImageWithRating) = {
-    @if(list.aggregateBinary || voteMark(file) != 0 || voteTimeOf(file).nonEmpty || commentsOf(file) > 0) {
+    @hasChips(file: ImageWithRating) = @{ list.aggregateBinary || voteMark(file) != 0 || voteTimeOf(file).nonEmpty || commentsOf(file) > 0 }
+    @rankChips(file: ImageWithRating) = {
+    @if(hasChips(file)) {
     <div class="wlx-tile-foot"><div class="wlx-tile-chips">@if(list.aggregateBinary) {@binaryTally(file.approvals, file.rejections, chip = true)} else {@snippets.voteChip(voteMark(file), voteTimeOf(file))}@snippets.commentChip(commentsOf(file), Some(list.largeUrl(file.pageId) + "#comments"))</div></div>
     }
     }
@@ -92,8 +97,8 @@
 
             @* a changed rate keeps the file's place and rank until a reload orders the list again:
                said once above it, and on the file (tile-votes.js); in an order by vote time
-               (data-vote-times) a vote's time follows it at once, in the vote chip on the
-               thumbnail *@
+               (data-vote-times) a vote's time follows it at once, in the vote chip in the rank's
+               line *@
             @if(starsRound.nonEmpty) {
             <p class="wlx-byrate-hint small text-body-secondary mb-2" role="status" hidden>
                 <i class="bi bi-info-circle" aria-hidden="true"></i> @Messages("byrate.changed.hint")</p>
@@ -120,7 +125,6 @@
                             srcset="@Global.srcSet(file.image, Global.gallerySizeX, Global.gallerySizeY)">
                             @if(file.image.isVideo) {@snippets.videoMark()}
                             </a>
-                            @thumbChips(file)
                         </div>
 
                         @showRateGalery(file, index)

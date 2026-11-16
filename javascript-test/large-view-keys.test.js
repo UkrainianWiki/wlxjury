@@ -192,10 +192,16 @@ describe("a binary round, the juror's own large view of an unrated file", () => 
     });
 
     test("the select and reject buttons post the same votes", () => {
-        document.querySelector(".btn-outline-success[data-vote-url]").click();
+        document.querySelector(".wlx-vote-btn-select[data-vote-url]").click();
         expect(sameOriginUrl(submits[0].action).pathname).toBe("/large/round/1/pageid/107/select/1");
-        document.querySelector(".btn-outline-danger[data-vote-url]").click();
+        document.querySelector(".wlx-vote-btn-reject[data-vote-url]").click();
         expect(sameOriginUrl(submits[1].action).pathname).toBe("/large/round/1/pageid/107/select/-1");
+    });
+
+    test("has both buttons, ✓ then ✗, neither pressed", () => {
+        const buttons = Array.from(document.querySelectorAll(".large-nav .wlx-vote-btn"));
+        expect(buttons.map(b => [b.querySelector("i").className, b.getAttribute("aria-pressed")]))
+            .toEqual([["bi bi-check-lg", "false"], ["bi bi-x-lg", "false"]]);
     });
 
     test.each([
@@ -231,6 +237,34 @@ describe("a binary round, the juror's own large view of an unrated file", () => 
         press(digit(1));
         expect(submits).toHaveLength(0);
         expect(navigations).toHaveLength(0);
+    });
+});
+
+// The maintainer's notes of 2026-11-16: both buttons always, the file's vote pressed, a click on
+// it undoing the vote (rate 0, as a gallery tile's); the keys give their votes only
+describe("a binary round, the juror's own large view of a selected file", () => {
+
+    beforeEach(() => loadPage("binary-own-selected.html"));
+
+    test("has both buttons, ✓ then ✗, the ✓ pressed", () => {
+        const buttons = Array.from(document.querySelectorAll(".large-nav .wlx-vote-btn"));
+        expect(buttons.map(b => [b.querySelector("i").className, b.getAttribute("aria-pressed")]))
+            .toEqual([["bi bi-check-lg", "true"], ["bi bi-x-lg", "false"]]);
+    });
+
+    test("the pressed ✓ undoes the vote, the ✗ rejects, by paths on this origin", () => {
+        document.querySelector(".wlx-vote-btn-select[data-vote-url]").click();
+        expect(sameOriginUrl(submits[0].action).pathname).toBe("/large/round/1/pageid/107/select/0");
+        expect(submits[0].form.querySelector("input[name=csrfToken]").value).toBe("fixture-csrf-token");
+        document.querySelector(".wlx-vote-btn-reject[data-vote-url]").click();
+        expect(sameOriginUrl(submits[1].action).pathname).toBe("/large/round/1/pageid/107/select/-1");
+    });
+
+    test("Space doesn't undo the selection; Del rejects", () => {
+        press("space");
+        expect(submits).toHaveLength(0);
+        press("del");
+        expectVote(-1);
     });
 });
 

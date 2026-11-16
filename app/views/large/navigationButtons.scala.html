@@ -89,21 +89,28 @@
         "down", "chevron-down", s"${Messages("next.image")} &lt;${Messages("down.key")}&gt;")
 }
 
-@* the juror's ✓ and ✗ (the votes the file doesn't have), in the same group as the gallery, previous and
-   next buttons and drawn as they are: Bootstrap's outline buttons, the same border, size, radius and
-   focus ring, in the vote's colour (✓ green, ✗ red) and filled with it pointed at or pressed, as the
-   worst-mark button (the maintainer's note of 2026-11-16: filled, they had no border the others have) *@
+@* the juror's ✓ and ✗, both always, in this order (as on the gallery's tiles), each a toggle
+   button of the one design of the gallery's and this view's vote buttons (main.css wlx-vote-btn,
+   the maintainer's notes of 2026-11-16: one or two buttons by the file's vote was confusing): the
+   file's vote pressed (aria-pressed), a click on it undoing the vote (rate 0, as the tiles' does),
+   the other giving its vote. Their names stay "Select image" and "Reject image"; their titles say
+   the key, or, pressed, that a click clears the vote (Space and Delete give their votes only:
+   large/keyboardNav). Posted by path with the vote form's token (large-view.js) *@
+@voteButton(rate: Int, kind: String, icon: String, label: String, key: String, word: String) = {
+    @defining(files(index)) { file =>
+    @defining(file.rate == rate) { pressed =>
+    <a role="button" class="btn btn-sm wlx-vote-btn wlx-vote-btn-@kind" href="#" aria-pressed="@pressed"
+        data-vote-url="@list.voteUrl(file.pageId, if (pressed) org.intracer.wmua.Vote.Unrated else rate)"
+        aria-label="@label" title="@if(pressed) {@word: @Messages("vote.clear")} else {@label &lt;@key&gt;}">
+        <i class="bi bi-@icon" aria-hidden="true"></i>
+    </a>
+    }
+    }
+}
+
 @buttonSelect() = {
-    @if(files(index).rate <=0 ) {
-        <a role="button" class="btn btn-outline-success btn-sm" href="#" data-vote-url="@list.voteUrl(files(index).pageId, 1)" title="@Messages("select.image") &lt;Space&gt;">
-            <i class="bi bi-check-lg" aria-hidden="true"></i>
-        </a>
-    }
-    @if(files(index).rate >=0 ) {
-        <a role="button" class="btn btn-outline-danger btn-sm" href="#" data-vote-url="@list.voteUrl(files(index).pageId, -1)" title="@Messages("reject.image") &lt;Delete&gt;">
-            <i class="bi bi-x-lg" aria-hidden="true"></i>
-        </a>
-    }
+    @voteButton(org.intracer.wmua.Vote.Selected, "select", "check-lg", Messages("select.image"), "Space", Messages("vote.selected"))
+    @voteButton(org.intracer.wmua.Vote.Rejected, "reject", "x-lg", Messages("reject.image"), "Delete", Messages("vote.rejected"))
 }
 
 @* the file's comments, after the vote's summary (the tally, the vote and its time; alone without
@@ -117,7 +124,7 @@
     @snippets.commentChip(comments, Some("#comments"))
 }
 
-<div class="btn-group large-nav" role="group">
+<div class="large-nav" role="group">
     @buttonGallery()
     @buttonUp()
     @buttonDown()

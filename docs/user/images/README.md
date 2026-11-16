@@ -10,10 +10,12 @@ The fixture's files carry real Commons file names and authors, so the spec repla
 numbered examples before each shot, and the link to share shows a neutral host.
 
 **Platform of the current set:** Windows 11 Pro (10.0.26200), Playwright 1.64.1 with its bundled
-Chromium (156), the app's own font stack, 2026-11-13. Text rendering depends on the operating
-system, so regenerate all the images together on one platform and update this line.
+Chromium (156), the app's own font stack, 2026-11-13; the three large views of a juror (yes/no,
+rated, worst mark) and the by-rate results again on 2026-11-16 on the same platform, for the vote
+buttons and the by-rate line (`stack/175`). Text rendering depends on the operating system, so
+regenerate all the images together on one platform and update this line.
 
-**Size:** 28 images, about 4.3 MiB in all. The largest are the two galleries (about 640 and 610
+**Size:** 28 images, about 4.5 MiB in all. The largest are the two galleries (about 640 and 610
 KiB), the contest's files (about 650 KiB) and the by-rate results (about 560 KiB); the three large views are cropped to the controls
 column and the top of the photo (about 320 to 390 KiB each), with the comment box in its own small shot;
 the others stay small. The profile, user-edit, share-link and score-rule shots are cropped to

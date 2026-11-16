@@ -68,7 +68,7 @@ class LargeViewUrlsSpec extends Specification {
     */
   private def isUpDownButton(a: Element) =
     (a.attr("data-nav") == "up" || a.attr("data-nav") == "down") &&
-      a.parents().asScala.exists(_.hasClass("btn-group"))
+      a.parents().asScala.exists(_.hasClass("large-nav"))
 
   private def checkCommon(u: Urls, roundView: Boolean) = {
     // no absolute URL is voted or moved to, in an attribute; and no script holds one: the
@@ -122,7 +122,9 @@ class LargeViewUrlsSpec extends Specification {
           // Space to select an unselected file, Del to reject one not rejected
           val expected = (if (index == 0) Nil else Seq(1)) ++ (if (index == fileCount - 1) Nil else Seq(-1))
           u.keyVotes must_== expected.map(s => s"/large/round/1/pageid/${pageIdAt(index)}/select/$s?sort=rate")
-          u.dataVoteUrls must haveSize(expected.size)
+          // the buttons: always ✓ then ✗, the file's vote pressed and undoing it (rate 0)
+          val buttons = Seq(if (index == 0) 0 else 1, if (index == fileCount - 1) 0 else -1)
+          u.dataVoteUrls must_== buttons.map(s => s"/large/round/1/pageid/${pageIdAt(index)}/select/$s?sort=rate")
         } else if (round.hasCriteria) {
           // no digit keys: they voted the file's own rate, which overwrote the sum of its
           // criteria (the server refuses it now); a criterion is voted by its stars
@@ -199,6 +201,16 @@ class LargeViewUrlsSpec extends Specification {
         checkVoteForm(u, readOnly = true)
         u.locations must haveSize(5 + (if (index > 0) 1 else 0) + (if (index < fileCount - 1) 1 else 0))
         u.locations.filter(_.startsWith("/contest/1/files/")) must not(beEmpty)
+      }
+    }
+
+    // the round's large view's row (main.css .large-nav): each button its own border, not a
+    // Bootstrap button group's shared ones
+    Fragment.foreach(Seq("contest file", "round")) { name =>
+      s"have the round view's button row, not a button group, in the $name view" in {
+        val doc = Jsoup.parse(if (name == "round") large(binaryRound, middle) else contestFile(middle))
+        (doc.select(".large-nav").size === 1) and (doc.select(".large-nav.btn-group, .large-nav .btn-group").size === 0) and
+          (doc.select(".large-nav > a.btn[data-nav]").size === 3)
       }
     }
   }

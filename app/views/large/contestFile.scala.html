@@ -40,7 +40,7 @@
             <div class="row h-100">
                 <div class="col-1 contest-file-info large-side">
 
-                    <div class="btn-group large-nav" role="group">
+                    <div class="large-nav" role="group">
                         @navButton(Some(view.pageUrl(page)), "gallery", "grid-3x3-gap-fill", s"${Messages("back.to.gallery")} <Esc>")
                         @navButton(Option.when(index > 0)(urlAt(index - 1)), "up", "chevron-up", s"${Messages("previous.image")} <${Messages("up.key")}>")
                         @navButton(Option.when(index < files.size - 1)(urlAt(index + 1)), "down", "chevron-down", s"${Messages("next.image")} <${Messages("down.key")}>")

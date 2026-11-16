@@ -162,10 +162,10 @@ large view then moves through those files only. **Recent comments list** opens t
 monument kept), with all rounds' comments, by the latest comment. The menu's button says
 **Comments N**, or, highlighted, **With comments N** or **Comments list N**; in the view of
 **All jurors** without the number. A choice with no file is greyed
-out. In the gallery, the by-rate gallery and the large view's **Next files**, a file with
-comments shows a speech bubble with their number in its lower-left corner (in the gallery and
-by rate right after the vote or the tally); a click on it opens the file's large view at its
-comments.
+out. A file with comments shows a speech bubble with their number: in the gallery in its tile's
+lower-left corner, right after the vote or the tally; in the by-rate gallery under the
+thumbnail, on the rank's line, after the tally or the vote; in the large view's **Next files** in
+the thumbnail's lower-left corner. A click on it opens the file's large view at its comments.
 In the large view the same 💬 3 follows the vote or the tally under the buttons and jumps to the
 comments under the image. They all count the comments the
 file's large view shows: from any round of the contest, by anyone.
@@ -264,9 +264,10 @@ of 3 jurors)". The rules are in [The file score](admin-guide.md#a-score-rule).
 score. In a yes/no round the order depends on the menu next to the views: **Approvals, then
 fewest rejections** or **Approvals minus rejections**. The votes menu shows only files with
 **Selected**, **Unrated** or **Rejected** votes: for a yes/no round, files with at least one
-such vote, or for a rated round **Rated** or **Unrated**. A yes/no round's tally (✓ approvals,
-✗ rejections), or a single juror's ✓ or ✗, is in each file's lower-left corner, as on the
-gallery's tiles, followed by its comments (💬 3). A rated round's score follows its
+such vote, or for a rated round **Rated** or **Unrated**. Under each thumbnail, on one line
+where they fit, come the file's rank, a rated round's stars and score, then its chips: a yes/no
+round's tally (✓ approvals, ✗ rejections) or a single juror's ✓ or ✗ (with the vote's time in
+the vote-time orders), then its comments (💬 3), as on the gallery's tiles. A rated round's score follows its
 [file score](#o-score), with the divisor shown. In a round with criteria, each file shows
 its stars for each criterion. A file with worst marks shows how many ("n worst marks").
 

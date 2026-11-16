@@ -268,6 +268,28 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  // the large view's pressed ✓ or ✗ undoes a yes/no vote (select 0): on to the next file, as
+  // after any vote (the maintainer's decision of 2026-11-16)
+  "undo a yes/no vote by the pressed button: on to the next file, the vote cleared [J-20]" in {
+    testDbApp { app =>
+      implicit val materializer: Materializer = app.materializer
+
+      setUp()
+
+      val images = createImages(3)
+      createSelection(images, rate = 1)
+      val first = images.head.pageId
+
+      val undone = controller.rateByPageId(round.id.get, first, select = 0)
+        .apply(voteRequest(s"/large/round/${round.id.get}/pageid/$first/select/0"))
+        .run()
+
+      (status(undone) mustEqual SEE_OTHER) and
+        (redirectLocation(undone) must beSome(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images(1).pageId}?sort=file")) and
+        (VoteJdbc.findBy(first, user.id.get, round.id.get).map(_.rate) must beSome(0))
+    }
+  }
+
   "rerate 1 rated image" in {
     testDbApp { app =>
       implicit val materializer: Materializer = app.materializer

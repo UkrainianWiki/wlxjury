@@ -331,38 +331,79 @@ a.wlx-large-failed img {
     white-space: nowrap;
     cursor: pointer;
 }
-/* A binary round's select (✓, bi-check-lg) and reject (✗, bi-x-lg) on the juror's own tiles
-   (unitegallery.js P11): the glyph in the vote's colour on a chip of the page's background, which
-   keeps it readable over a photo as dark or as bright as it is. The tile has no frame (the
-   maintainer's decision of 2026-11-15: too strong); its vote is the ✓ or ✗ badge at its lower left
-   (the vote chip, wlx-chip-vote, or the tally), and the button of the vote the file has
-   (aria-pressed) is ringed in its colour: a click on it undoes the vote. */
-.ug-thumb-wrapper.ug-tile .ug-tile-icon.ug-icon-select, .ug-thumb-wrapper.ug-tile .ug-tile-icon.ug-icon-reject {
-    border-radius: 6px;
-    background-color: rgba(var(--bs-body-bg-rgb), .85);
-    color: var(--wlx-vote-selected);
+/* A binary round's vote buttons, ✓ (select, bi-check-lg) and ✗ (reject, bi-x-lg), one design on
+   the juror's own gallery tiles (unitegallery.js P11, tile-votes.js) and in their large view
+   (large/navigationButtons buttonSelect), the maintainer's notes of 2026-11-16: the gallery's
+   border (3 px in the vote's colour, more noticeable than the large view's 1 px outline) and the
+   large view's fill pointed at (the vote's colour, the glyph in the page's background colour).
+   The button of the file's vote is pressed (aria-pressed="true"; a click on it undoes the vote):
+   filled, with a ring of the page's colour inside its border, so it reads as pressed by its shape
+   too, not by its colour alone. One radius (6 px) and focus ring (two tones outside the border,
+   3:1 or more) for both; each button its own complete border in every state (never a group's shared
+   one). Through Bootstrap's button variables, which the large view's .btn reads in each of its
+   states, and which the tile's own rules below read the same way. The vote colours are
+   --wlx-vote-* (3:1 or more for icons on the page and on its background colour). */
+.wlx-vote-btn {
+    --wlx-vote: var(--wlx-vote-selected);
+    --wlx-vote-bg: transparent;
+    --wlx-vote-inset: 0 0 0 0 transparent;
+    --bs-btn-border-width: 3px;
+    --bs-btn-border-radius: 6px;
+    --bs-btn-color: var(--wlx-vote);
+    --bs-btn-bg: var(--wlx-vote-bg);
+    --bs-btn-border-color: var(--wlx-vote);
+    --bs-btn-hover-color: var(--bs-body-bg);
+    --bs-btn-hover-bg: var(--wlx-vote);
+    --bs-btn-hover-border-color: var(--wlx-vote);
+    --bs-btn-active-color: var(--bs-body-bg);
+    --bs-btn-active-bg: var(--wlx-vote);
+    --bs-btn-active-border-color: var(--wlx-vote);
+    /* the focus ring in two tones, a ring of the page's colour then one of its text colour, 3:1 or
+       more on any background in both modes (Bootstrap's 25% tint is about 1.5:1) */
+    --bs-btn-focus-box-shadow: var(--wlx-vote-inset), 0 0 0 2px var(--bs-body-bg), 0 0 0 4px var(--bs-body-color);
+    box-shadow: var(--wlx-vote-inset);
+}
+.wlx-vote-btn.wlx-vote-btn-reject { --wlx-vote: var(--wlx-vote-rejected); }
+.wlx-vote-btn[aria-pressed=true] {
+    --bs-btn-color: var(--bs-body-bg);
+    --bs-btn-bg: var(--wlx-vote);
+    --wlx-vote-inset: inset 0 0 0 2px var(--bs-body-bg);
+}
+/* with the keyboard focus, its state as it is (Bootstrap draws a focused button as pointed at, which
+   would make an unpressed vote button look pressed) and the focus ring around it */
+.btn.wlx-vote-btn:focus-visible:not(:hover) {
+    color: var(--bs-btn-color);
+    background-color: var(--bs-btn-bg);
+    border-color: var(--bs-btn-border-color);
+}
+/* in the large view's row (navigationButtons): as high and wide as the navigation buttons beside
+   them (btn-sm, a 1 px border): 2 px less padding for the 2 px more border */
+.btn.btn-sm.wlx-vote-btn {
+    --bs-btn-padding-y: calc(.25rem - 2px);
+    --bs-btn-padding-x: calc(.5rem - 2px);
+}
+/* on a tile: the same, on a chip of the page's background over the photo (readable on any photo,
+   however dark or bright), 38 px square with its border, above the tile's chips */
+.ug-thumb-wrapper.ug-tile .ug-tile-icon.wlx-vote-btn {
+    --wlx-vote-bg: rgba(var(--bs-body-bg-rgb), .85);
+    box-sizing: border-box;
+    border: var(--bs-btn-border-width) solid var(--bs-btn-border-color);
+    border-radius: var(--bs-btn-border-radius);
+    background-color: var(--bs-btn-bg);
+    color: var(--bs-btn-color);
     font-size: 26px;
-    line-height: 38px;
+    line-height: calc(38px - 2 * var(--bs-btn-border-width));
     text-align: center;
 }
-.ug-thumb-wrapper.ug-tile .ug-tile-icon.ug-icon-reject {
-    color: var(--wlx-vote-rejected);
+.ug-thumb-wrapper.ug-tile .ug-tile-icon.wlx-vote-btn:hover {
+    background-color: var(--bs-btn-hover-bg);
+    border-color: var(--bs-btn-hover-border-color);
+    color: var(--bs-btn-hover-color);
 }
-.ug-thumb-wrapper.ug-tile .ug-tile-icon.ug-icon-select:hover, .ug-thumb-wrapper.ug-tile .ug-tile-icon.ug-icon-reject:hover {
-    background-color: var(--bs-body-bg);
-}
-.ug-thumb-wrapper.ug-tile .ug-tile-icon[aria-pressed=true] {
-    border-radius: 6px;
-    background-color: rgba(var(--bs-body-bg-rgb), .85);
-    box-shadow: 0 0 0 3px var(--wlx-vote-selected);
-}
-.ug-thumb-wrapper.ug-tile .ug-tile-icon.ug-icon-reject[aria-pressed=true] {
-    box-shadow: 0 0 0 3px var(--wlx-vote-rejected);
-}
-/* A ✓ or ✗ with the keyboard focus (tile-votes.js): the focus ring outside the pressed one. */
-.ug-thumb-wrapper.ug-tile .ug-tile-icon[tabindex]:focus-visible {
-    outline: var(--bs-focus-ring-width) solid var(--bs-focus-ring-color);
-    outline-offset: 4px;
+/* a ✓ or ✗ with the keyboard focus (tile-votes.js): the large view's focus ring */
+.ug-thumb-wrapper.ug-tile .ug-tile-icon.wlx-vote-btn:focus-visible {
+    outline: 0;
+    box-shadow: var(--bs-btn-focus-box-shadow);
 }
 /* The read-only large view's thumbnails (large/contestFile.scala.html): the link fills the
    box, so a thumbnail that failed to load, hidden, still opens its file; that one is the
@@ -446,6 +487,28 @@ a:has(> .btn) { text-decoration: none; }
 /* a file's rank and rate above its thumbnail (galleryByRate, galleryByRateRegions, showRate),
    in the page's text colour */
 .rank-line { margin-bottom: 10px; }
+/* the by-rate gallery's line under a thumbnail (galleryByRate.scala.html): the rank, a rated
+   round's stars and rate, then the file's chips (the tally or the vote and its time, the comments;
+   the maintainer's note of 2026-11-16: with the ranking, not on the thumbnail), in the text's flow
+   as before, so the rank and the stars stay on one line and the rate's words wrap as words; the
+   chips one inline row that goes on the same line where it fits and wraps as a whole, its chips
+   wrapping only on a line of their own; never wider than the thumbnail (the box would widen and
+   the grid with it) */
+.wlx-byrate-line {
+    max-width: 305px;
+    margin-left: auto;
+    margin-right: auto;
+}
+.wlx-byrate-line > .wlx-tile-foot, .wlx-byrate-line .wlx-tile-chips {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    vertical-align: middle;
+}
+/* no rank in an order other than by rate: no empty place for it */
+.wlx-byrate-line > b:empty { display: none; }
 
 /* the large views (large/large.scala.html, large/contestFile.scala.html): a side column with
    the buttons, stars, the file's details and the files after it, and the image beside it */
@@ -460,7 +523,12 @@ a:has(> .btn) { text-decoration: none; }
    link blue is 3.5:1 on #e3e3e3, its hover blue (#0a58ca) 5.0:1, its pressed one (#084298) 7.3:1 */
 :root:not([data-bs-theme=dark]) .large-side { --bs-link-color-rgb: 10, 88, 202; --bs-link-hover-color-rgb: 8, 66, 152; }
 .large-main { margin-left: 5px; margin-top: 10px; }
-.large-nav { margin: 10px; }
+/* the large views' buttons (a round's, large/navigationButtons, and a contest file's,
+   large/contestFile): back to the gallery, previous, next and a juror's ✓ and ✗, each a button of its own with its complete border, apart by a small gap (a Bootstrap
+   button group shared their borders: the outline vote buttons showed three coloured sides and a
+   grey one, and covered their neighbours' borders pointed at), with the vote buttons' radius */
+.large-nav { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px; }
+.large-nav > .btn { --bs-btn-border-radius: 6px; }
 /* a box in the side column (author, monument, deleted file, comments), and a line (full
    resolution, the jurors' votes, the file's title) */
 .large-box, .large-line { margin-right: 5px; padding: 5px; }
@@ -575,9 +643,9 @@ a:has(> .btn) { text-decoration: none; }
 /* the gallery tile's foot (tile-votes.js foot): a column at its bottom edge, its chips above a
    rated round's stars, so the two never overlap however the stars wrap. No stacking context of
    its own (no z-index): the chips stay under the ✓ and ✗ buttons (z-index 6), the stars above
-   the zoom icon. It takes no clicks; the stars do. The by-rate gallery's thumbnails have the same
-   foot with the chips alone (galleryByRate.scala.html thumbChips), the stars under the thumbnail,
-   and so have the large view's strip's (large/thumbsBar: the comments alone) */
+   the zoom icon. It takes no clicks; the stars do. The large view's strip's thumbnails have the
+   same foot with the comments alone (large/thumbsBar); the by-rate gallery has its chips under
+   the thumbnail, in the rank's line (.wlx-byrate-line) */
 .ug-thumb-wrapper.ug-tile .wlx-tile-foot, li.gallerybox .thumb > .wlx-tile-foot,
 li.gallerybox .thumb_small > .wlx-tile-foot {
     position: absolute;
@@ -625,10 +693,11 @@ a.wlx-chip:focus-visible {
 .wlx-chip-vote .wlx-chip-mark + .wlx-chip-time,
 .wlx-chip-vote .wlx-chip-time.wlx-vote-time-none { color: var(--bs-secondary-color); }
 .wlx-chip-time { font-variant-numeric: tabular-nums; }
-/* on a photo (the tile's chips, the by-rate gallery's and the large view's strip's thumbnails'):
+/* on a photo (the tile's chips, the large view's strip's thumbnails'):
    the page's colours over it, taking no clicks (the tile's click, which opens the large view, goes
    through them) but a link's */
-.wlx-tile-chips > .wlx-chip, li.gallerybox .wlx-chip {
+.ug-thumb-wrapper.ug-tile .wlx-tile-chips > .wlx-chip, li.gallerybox .thumb .wlx-chip,
+li.gallerybox .thumb_small .wlx-chip {
     background-color: rgba(var(--bs-body-bg-rgb), .85);
     pointer-events: none;
 }
@@ -637,8 +706,7 @@ a.wlx-chip:focus-visible {
    as the tile less its margins, so a narrower tile is measured again (fit) and drops the vote's
    time first (wlx-chips-tight); clipped at the edge, never wider than the tile. Under the ✓ and ✗
    buttons. A file deleted on Commons has its mark there, but only on the contest files page,
-   which has no chips. The by-rate gallery's and the strip's thumbnails (a fixed width) have the
-   same row */
+   which has no chips. The strip's thumbnails (a fixed width) have the same row */
 .ug-thumb-wrapper.ug-tile .wlx-tile-chips, li.gallerybox .thumb .wlx-tile-chips,
 li.gallerybox .thumb_small .wlx-tile-chips {
     position: relative;
@@ -651,6 +719,8 @@ li.gallerybox .thumb_small .wlx-tile-chips {
     pointer-events: none;
 }
 .ug-thumb-wrapper.ug-tile .wlx-tile-chips > .wlx-chip, li.gallerybox .wlx-tile-chips > .wlx-chip { flex: none; }
+/* under the thumbnail (the by-rate line): a vote chip that shows its time may wrap its parts */
+.wlx-byrate-line .wlx-tile-chips > .wlx-chip { max-width: 100%; }
 /* the comments' chip, the one that is a link (to the large view at its comments): it takes the
    clicks and the focus, the row around it none; the focus ring inside the row, which clips outside */
 .ug-thumb-wrapper.ug-tile .wlx-tile-chips > a.wlx-chip, li.gallerybox .wlx-tile-chips > a.wlx-chip {

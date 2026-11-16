@@ -93,14 +93,14 @@ class GalleryByRateViewSpec extends PlaySpecification {
   "a binary round's by-rate gallery" should {
     val binary = LargeViewRenders.binaryRound
 
-    /** The file's chips on its thumbnail (the tiles' chips' row), an empty element without them;
-      * its rank line has the rank alone, as the result is on the thumbnail. */
+    /** The file's chips in its rank line under the thumbnail (the tiles' chips' row), an empty
+      * element without them; the line has no stars, the result being in the chips. */
     def tile(file: ImageWithRating, asUserId: Long) = {
       val html = contentAsString(views.html.galleryByRate(juror, RoundList(binary, asUserId, view = GalleryView.ByRate),
         Seq(file), Pager(1, 1), Nil, None, new RateDistribution(Map.empty)))
       val doc = Jsoup.parse(html)
       doc.select("li.gallerybox .rank-line .rate-stars").size === 0
-      Option(doc.selectFirst("li.gallerybox div.thumb > .wlx-tile-foot > .wlx-tile-chips"))
+      Option(doc.selectFirst("li.gallerybox div.rank-line > .wlx-tile-foot > .wlx-tile-chips"))
         .getOrElse(new org.jsoup.nodes.Element("div"))
     }
 
@@ -146,8 +146,9 @@ class GalleryByRateViewSpec extends PlaySpecification {
     }
   }
 
-  /** The chips on each file's thumbnail as the gallery's tiles have them (tile-votes.js chips:
-    * snippets.voteChip, binaryTally's chip, snippets.commentChip): one row at its lower left, the
+  /** The chips of each file as the gallery's tiles have them (tile-votes.js chips:
+    * snippets.voteChip, binaryTally's chip, snippets.commentChip): one row in its rank line under
+    * the thumbnail (the maintainer's note of 2026-11-16), the
     * vote or the tally first, the comments last, a link to the file's large view at its comments
     * in this list (the maintainer's report of 2026-11-16: a click on the plain chip opened the
     * large view at its top); outside the thumbnail's own link, never a link in a link. */
@@ -174,7 +175,7 @@ class GalleryByRateViewSpec extends PlaySpecification {
         new RateDistribution(Map.empty), commentCounts = counts)(Flash(), en, request)))
 
     def row(doc: org.jsoup.nodes.Document, pageId: Long) =
-      Option(doc.selectFirst(s"li.gallerybox[id=$pageId] div.thumb > .wlx-tile-foot > .wlx-tile-chips"))
+      Option(doc.selectFirst(s"li.gallerybox[id=$pageId] div.rank-line > .wlx-tile-foot > .wlx-tile-chips"))
 
     def chipsOf(doc: org.jsoup.nodes.Document, pageId: Long) =
       row(doc, pageId).map(_.children.asScala.map(_.outerHtml).toSeq)
@@ -201,7 +202,12 @@ class GalleryByRateViewSpec extends PlaySpecification {
       (row(doc, 301L).map(_.children.asScala.map(_.className).toSeq) ===
         Some(Seq("badge wlx-chip wlx-chip-tally wlx-approvals", "badge wlx-chip wlx-chip-comments"))) and
         (chipsOf(doc, 302L) === Some(Seq(views.html.binaryTally(0, 1, chip = true)(en).body.trim))) and
-        (doc.select(".rank-line .wlx-approvals").size === 0)
+        // under the thumbnail with the ranking (the maintainer's note of 2026-11-16), after the
+        // rank, never on the thumbnail nor in its link
+        (doc.select("li.gallerybox .thumb .wlx-chip").size === 0) and
+        (doc.select("li.gallerybox[id=301] .rank-line").asScala.map(_.children.asScala.map(c => c.tagName + "." + c.className).toSeq) ===
+          Seq(Seq("b.", "div.wlx-tile-foot"))) and
+        (doc.select("li.gallerybox[id=301] .rank-line .wlx-chip").asScala.filter(_.parents.asScala.exists(_.tagName == "a")) must beEmpty)
     }
 
     "show one juror's binary vote with its time in an order by vote time, as the tiles' vote chip" in {
@@ -228,6 +234,10 @@ class GalleryByRateViewSpec extends PlaySpecification {
       (chipsOf(byTime, 201L) === Some(Seq(chip(views.html.snippets.voteChip(0, Some(Some(votedAt)))(en))))) and
         (chipsOf(byTime, 202L) === Some(Seq(chip(views.html.snippets.voteChip(0, Some(None))(en))))) and
         (byTime.select(".wlx-vote-time-line").size === 0) and
+        // after the rank and the stars, in their line (the maintainer's note of 2026-11-16)
+        (byTime.select("li.gallerybox[id=201] .rank-line").asScala.map(_.children.asScala.map(_.tagName).toSeq) ===
+          Seq(Seq("b", "span", "div"))) and
+        (byTime.select("li.gallerybox[id=201] .rank-line > span.rate-stars + div.wlx-tile-foot").size === 1) and
         // the template the juror's stars draw a vote's new time from (tile-votes.js voteChip)
         (byTime.select("template#wlx-chip-vote-template").size === 1) and
         (voted(ListOrder.ByRate).select(".wlx-tile-chips").size === 0) and

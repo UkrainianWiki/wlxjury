@@ -10710,11 +10710,12 @@ function UGTileDesign(){
 				htmlAdd += "<div class='ug-tile-icon " + iconPlayClass + "' style='display:none'></div>";
 
 				//wlxjury: select (a check, bi-check-lg) and reject (a cross, bi-x-lg) on a juror's
-				//tiles in a binary round (options jury and binary, gallery-init.js; issue #6)
+				//tiles in a binary round (options jury and binary, gallery-init.js; issue #6), drawn as
+				//the large view's vote buttons (main.css wlx-vote-btn)
 				if(g_options.jury) {
 					if(g_options.binary) {
-						htmlAdd += "<div class='ug-tile-icon ug-icon-select' style='display:none'><i class='bi bi-check-lg' aria-hidden='true'></i></div>";
-						htmlAdd += "<div class='ug-tile-icon ug-icon-reject' style='display:none'><i class='bi bi-x-lg' aria-hidden='true'></i></div>";
+						htmlAdd += "<div class='ug-tile-icon ug-icon-select wlx-vote-btn wlx-vote-btn-select' style='display:none'><i class='bi bi-check-lg' aria-hidden='true'></i></div>";
+						htmlAdd += "<div class='ug-tile-icon ug-icon-reject wlx-vote-btn wlx-vote-btn-reject' style='display:none'><i class='bi bi-x-lg' aria-hidden='true'></i></div>";
 					}
 				}
 			}

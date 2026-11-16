@@ -224,7 +224,7 @@ you have chosen. Choosing another one keeps them. A comments-only round has no v
 
 A file that has comments shows a speech bubble with their number in its lower-left corner, for
 example 💬 3, in the gallery (right after your vote's mark) and in the large view's **Next
-files**. It counts the comments that the file's large view shows: those written in any round of
+files**; in your list by rate it is under the thumbnail, on the line of the rank and the stars. It counts the comments that the file's large view shows: those written in any round of
 the contest. It is a link: a screen reader reads it as "3 comments: open the comments", and a
 click on it opens the file's large view at its comments. In the large view the same 💬 3 is under the buttons, after
 your vote; click it to jump to the comments under the image.
@@ -266,8 +266,9 @@ browser, choose it again.
 
 In these two orders each file you voted on shows when you voted, in your own time zone, next to
 your vote's mark in its lower-left corner (for example "✓ 12 Nov, 14:05"; in a rated round the
-time alone, above the stars). A yes/no vote from before these options shows its mark alone, a
-rated one **Time not recorded**. On a narrow tile the time is left out; the large view shows the
+time alone, above the stars; in your list by rate under the thumbnail, after the stars). A yes/no
+vote from before these options shows its mark alone, a rated one **Time not recorded**. On a
+narrow tile the time is left out; the large view shows the
 time of your vote on the file in every order.
 
 On **Selected** and **Rejected** in a yes/no round the order menu has **In file order**,
@@ -309,7 +310,9 @@ To jump to a page, click the numbers in the middle, type a page number in the bo
 
 ### Voting in a yes/no round's gallery
 
-Point at a file's tile and its buttons appear: ✓ to select it, ✗ to reject it.
+Point at a file's tile and its buttons appear: ✓ to select it, ✗ to reject it. Pointed at, a
+button fills with its colour; the button of the file's vote is pressed (filled, with a ring of
+the page's colour inside its border), as in the large view.
 A selected file gets a green ✓ in its tile's lower-left corner, a rejected one a red ✗, with the
 file's comments (💬 3) right after it. The picture below shows tiles at rest, with the marks of
 earlier votes.
@@ -402,7 +405,12 @@ You see only the files of your rounds: the contest's other files aren't shown to
 ### Voting in the large view
 
 In a yes/no round, use the green ✓ button (**Select image**) and the red ✗ button
-(**Reject image**). Only the vote the file doesn't have yet is offered.
+(**Reject image**). Both are always there, as on the gallery's tiles, and look the same: a
+coloured border, filled with the colour while you point at it. The button of the file's vote is
+pressed: filled, with a ring of the page's colour inside its border. Click the other button to
+change the vote, or the pressed one to undo it (the file is unrated again, neither button
+pressed when you come back to it). Either way the view then moves on to the next file, as after
+any vote.
 
 In a rated round, click the stars. The number above them shows the file's rate, or "–" if it
 has none. While you point at a star, it shows the rate a click gives. The circled cross removes
@@ -414,7 +422,8 @@ the vote**), shown once the file has a vote, removes it. Above the stars, a file
 worst mark shows the X icon instead of a number.
 
 After you vote, the large view moves on to the next file, so you can go through your files one
-after another. At the end of the list it goes to the file before instead.
+after another, also after undoing a vote. At the end of the list it goes to the file before
+instead.
 
 If your vote moves the file in your list, or takes it out of the list you are in, a note says
 so, for example **The image you rated (Rejected) is no longer in this list.** Click **View it**
@@ -441,10 +450,12 @@ The large view works with the keyboard:
 | Page Down / Page Up | two files on or back |
 | Home / End | the first or last of the files around this one |
 | Esc | back to the gallery, at this file's page |
-| Space | select the file (yes/no round) |
-| Delete | reject the file (yes/no round); give it the worst mark (rated round with the worst mark) |
+| Space | select the file (yes/no round; it doesn't undo a selection) |
+| Delete | reject the file (yes/no round; it doesn't undo a rejection); give it the worst mark (rated round with the worst mark) |
 | Backspace | remove your vote (rated round with the worst mark) |
 | 0 up to the highest rate (at most 9) | rate the file (rated round) |
+
+Space and Delete only give their vote: to undo a vote, click the pressed button.
 
 These keys move only among the few files around the one you see, never to the start or end of
 your whole list.

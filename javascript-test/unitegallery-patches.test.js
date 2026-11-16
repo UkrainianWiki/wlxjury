@@ -293,6 +293,9 @@ describe("the binary round's select and reject icons (issue #6)", () => {
             // screen readers (tile-votes.js names the buttons)
             expect(t.querySelectorAll(".ug-icon-select > i.bi.bi-check-lg[aria-hidden=true]")).toHaveLength(1);
             expect(t.querySelectorAll(".ug-icon-reject > i.bi.bi-x-lg[aria-hidden=true]")).toHaveLength(1);
+            // drawn as the large view's vote buttons (main.css wlx-vote-btn, one design for both)
+            expect(t.querySelectorAll(".ug-icon-select.wlx-vote-btn.wlx-vote-btn-select")).toHaveLength(1);
+            expect(t.querySelectorAll(".ug-icon-reject.wlx-vote-btn.wlx-vote-btn-reject")).toHaveLength(1);
         });
         expect(window.wlxTileVotes.addVote).toHaveBeenCalledTimes(2);
         const [el, item] = window.wlxTileVotes.addVote.mock.calls[0];

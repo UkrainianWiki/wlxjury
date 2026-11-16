@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark" data-theme-pref="dark" class="h-100">
+<head>
+<meta charset="UTF-8">
+<script>
+(function () {
+var root = document.documentElement, query = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+function apply() { if (root.getAttribute('data-theme-pref') === 'auto') root.setAttribute('data-bs-theme', query && query.matches ? 'dark' : 'light'); }
+apply();
+if (query) { if (query.addEventListener) query.addEventListener('change', apply); else if (query.addListener) query.addListener(apply); }
+})();
+</script>
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gallery</title>
+<link rel="shortcut icon" type="image/png" href="/assets/images/favicon.png">
+<link rel="stylesheet" href="/webjars/bootstrap/5.3.8/css/bootstrap.min.css">
+<link rel="stylesheet" href="/webjars/bootstrap-icons/1.13.1/font/bootstrap-icons.min.css">
+<link rel="stylesheet" href="/assets/stylesheets/theme.css">
+<link rel="stylesheet" media="screen" href="/assets/stylesheets/main.css">
+<script type="text/javascript" src="/webjars/jquery/3.7.1/jquery.min.js"></script>
+<script defer src="/webjars/bootstrap/5.3.8/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/javascripts/large-view.js"></script>
+<script src="/assets/javascripts/large-sections.js"></script>
+<script src="/assets/javascripts/vote-time.js"></script>
+<script src="/assets/javascripts/jquery.hotkeys.js"></script>
+<script src="/assets/javascripts/large-keys.js"></script>
+</head>
+<body class="gallery h-100">
+<h1 class="visually-hidden">gallery</h1>
+<form id="vote-form" method="post" class="d-none"><input type="hidden" name="csrfToken" value="fixture-csrf-token"/></form>
+<div id="large-keys" hidden
+data-key-down="/large/round/1/user/1/pageid/108?sort=rate"
+data-key-up="/large/round/1/user/1/pageid/106?sort=rate"
+data-key-esc="/gallery/round/1/user/1/region/all/pageid/107?sort=rate#107"
+data-key-pagedown="/large/round/1/user/1/pageid/112?sort=rate"
+data-key-pageup="/large/round/1/user/1/pageid/102?sort=rate"
+data-key-home="/large/round/1/user/1/pageid/101?sort=rate"
+data-key-end="/large/round/1/user/1/pageid/113?sort=rate"
+data-vote-key-del="/large/round/1/pageid/107/select/-1?sort=rate"
+></div>
+<div class="container-fluid large-view h-100">
+<div class="row h-100">
+<div class="col-1 large-side">
+<div class="large-nav" role="group">
+<a role="button" class="btn btn-outline-secondary btn-sm" data-nav="gallery" href="/gallery/round/1/user/1/region/all/pageid/107?sort=rate#107" title="back.to.gallery &lt;Esc&gt;">
+<i class="bi bi-grid-3x3-gap-fill" aria-hidden="true"></i>
+</a>
+<a role="button" class="btn btn-outline-secondary btn-sm" data-nav="up" href="/large/round/1/user/1/pageid/106?sort=rate" title="previous.image &lt;up.key&gt;">
+<i class="bi bi-chevron-up" aria-hidden="true"></i>
+</a>
+<a role="button" class="btn btn-outline-secondary btn-sm" data-nav="down" href="/large/round/1/user/1/pageid/108?sort=rate" title="next.image &lt;down.key&gt;">
+<i class="bi bi-chevron-down" aria-hidden="true"></i>
+</a>
+<a role="button" class="btn btn-sm wlx-vote-btn wlx-vote-btn-select" href="#" aria-pressed="true"
+data-vote-url="/large/round/1/pageid/107/select/0?sort=rate"
+aria-label="select.image" title="vote.selected: vote.clear">
+<i class="bi bi-check-lg" aria-hidden="true"></i>
+</a>
+<a role="button" class="btn btn-sm wlx-vote-btn wlx-vote-btn-reject" href="#" aria-pressed="false"
+data-vote-url="/large/round/1/pageid/107/select/-1?sort=rate"
+aria-label="reject.image" title="reject.image &lt;Delete&gt;">
+<i class="bi bi-x-lg" aria-hidden="true"></i>
+</a>
+</div>
+<div class="wlx-large-summary">
+<div class="wlx-large-vote-time small mt-1">
+<span class="wlx-vote-time-none text-body-secondary">vote.time.none</span>
+</div>
+</div>
+<section class="large-section">
+<button type="button" class="large-section-toggle" data-bs-toggle="collapse"
+data-bs-target="#large-info" aria-expanded="true" aria-controls="large-info" data-large-section="large-info">
+<i class="bi bi-chevron-down" aria-hidden="true"></i>
+large.file.info
+</button>
+<div id="large-info" class="collapse show">
+<div class="large-line">
+<a href="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg">full.resolution</a>
+</div>
+<div class="large-line">
+<ol>
+</ol>
+</div>
+</div>
+</section>
+<section class="large-section">
+<button type="button" class="large-section-toggle collapsed" data-bs-toggle="collapse"
+data-bs-target="#large-next" aria-expanded="false" aria-controls="large-next" data-large-section="large-next">
+<i class="bi bi-chevron-down" aria-hidden="true"></i>
+large.next.files
+</button>
+<div id="large-next" class="collapse">
+<ul class="gallery mw-gallery-traditional">
+<li class="gallerybox">
+<div class="thumb_small">
+<div class="my-1 mx-auto">
+<a href="/large/round/1/user/1/pageid/108?sort=rate">
+<img class="cropped" alt="File:Image 108.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_108.jpg"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_108.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_108.jpg 2x">
+</a>
+</div>
+</div>
+</li>
+<li class="gallerybox">
+<div class="thumb_small">
+<div class="my-1 mx-auto">
+<a href="/large/round/1/user/1/pageid/109?sort=rate">
+<img class="cropped" alt="File:Image 109.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_109.jpg"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_109.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_109.jpg 2x">
+</a>
+</div>
+</div>
+</li>
+<li class="gallerybox">
+<div class="thumb_small">
+<div class="my-1 mx-auto">
+<a href="/large/round/1/user/1/pageid/110?sort=rate">
+<img class="cropped" alt="File:Image 110.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_110.jpg"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_110.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_110.jpg 2x">
+</a>
+</div>
+</div>
+</li>
+<li class="gallerybox">
+<div class="thumb_small">
+<div class="my-1 mx-auto">
+<a href="/large/round/1/user/1/pageid/111?sort=rate">
+<img class="cropped" alt="File:Image 111.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_111.jpg"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_111.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_111.jpg 2x">
+</a>
+</div>
+</div>
+</li>
+<li class="gallerybox">
+<div class="thumb_small">
+<div class="my-1 mx-auto">
+<a href="/large/round/1/user/1/pageid/112?sort=rate">
+<img class="cropped" alt="File:Image 112.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_112.jpg"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_112.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_112.jpg 2x">
+</a>
+</div>
+</div>
+</li>
+</ul>
+</div>
+</section>
+<script>if (window.wlxLargeSections) wlxLargeSections.restore(document);</script>
+</div>
+<div id="mainContent" class="col large-main h-100">
+<a href="https://commons.wikimedia.org/wiki/File:Image 107.jpg" target="_blank">
+<img id="large_image" alt="File:Image 107.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg" class="mw-100 mh-100"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg 2x"
+data-failed-mark="large">
+</a>
+<section class="large-box large-comments" aria-labelledby="comments">
+<h2 id="comments" class="h6 mb-2">comments</h2>
+<form action="/comment/region/all/pageid/107?round=1&amp;user=1&amp;sort=rate" method="POST" id="addComment">
+<input type="hidden" name="csrfToken" value="fixture-csrf-token"/>
+<input type="hidden" name="id" id="id" value="0" />
+<label for="text" class="visually-hidden">your.comment</label>
+<textarea class="form-control imageComment" id="text" name="text" rows="3" placeholder="your.comment.here"></textarea>
+<div class="mt-2">
+<input type="submit" class="btn btn-primary btn-sm" id="saySomething" value="submit.comment" />
+</div>
+</form>
+</section>
+</div>
+</div>
+</div>
+</body>
+</html>

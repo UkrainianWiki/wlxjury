@@ -25,6 +25,8 @@ class LargeViewFixturesSpec extends Specification {
   def renders: Seq[(String, () => String)] = Seq(
     // the juror's own view of a binary round, at an unrated file in the middle
     "binary-own.html" -> (() => large(binaryRound, middle)),
+    // the same at a file the juror selected: both buttons, the ✓ pressed, undoing the vote
+    "binary-own-selected.html" -> (() => large(binaryRound, middle, rated = Map(middle -> 1))),
     // the juror's own view of a rated round (1..5 stars)
     "rated-own.html" -> (() => large(ratedRound, middle)),
     // the juror's own view of a half-star round (1..10 as five stars), at a file rated 7: 3.5 stars

@@ -9,7 +9,8 @@ any. Each entry gives the deploy date and when the work was developed. Merge dat
 Deploy dates come from production's migration history (`flyway_schema_history.installed_on`,
 read 2026-11-03): a deploy is dated by the first migration it applied. Changes without a
 migration are dated "deployed by" the next deploy that contained them, or from a deploy
-record. Work that is built but not deployed is under **Unreleased**. The
+record. Work that is developed but not in a release yet is under **Unreleased**; a release that is
+built but not deployed is under its own heading with "date TBD at deploy". The
 [earlier releases](#earlier-releases-from-git-history) are dated by when the work was
 developed (its first to last commit), or "released around" a git tag, with the release name
 where a tag or `version :=` in `build.sbt` gives one. Earlier deploy dates may be added later.
@@ -25,43 +26,72 @@ with `.N` for an extra deploy in the same month (`26.11.1`), and release heading
 
 ## Unreleased (developed, not yet deployed)
 
-The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything developed up to
-2026-11-13 before the entries below was deployed in `26.11.7`.
+Developed after `26.11.10` (#355 on): the next release is `26.11.11` (`build.sbt` says
+`26.12-SNAPSHOT` between releases).
 
 **Features**
 
-- **Find an existing account** on the users page (A-1 of the existing accounts plan, A1 decided
-  by the maintainer 2026-11-16; developed 2026-11-16, `stack/168-account-search`): root and the
-  contest's admins find every account by any part (3 characters or more) of its name or wiki
-  account, or by its whole email address (a part of one only within their contests), at most 20,
-  each with a masked address outside their contests, its wiki account, the contests of theirs it
-  is in, and **Add to this contest** (by id, the email path's rule: it joins if it proved its
-  email, otherwise an invitation, mailed from the tool's address only if asked). Its owner sees a
-  notice in the tool at their next sign-in (a bar, and the list on their profile, dismissible);
-  **Tell its owner by email** mails it too, only if ticked: nothing is mailed without the admin's
-  choice. The text goes in a POST with the CSRF token, never a URL; each search is logged by ids
-  only. Admin guide.
-- **The staff pages as links in the top bar, and one style for counts** (the maintainer's
-  feedback on 26.11.9 and decision of 2026-11-16; developed 2026-11-16, `stack/171`): on a page
-  whose top bar has no filters, order or pager and that isn't a gallery (the rounds, the users,
-  the statistics, the forms),
-  the pages of the Pages menu (**Contests**, **Contest files**, **Users**, **Rounds**,
-  **Statistics**: the same items, order and permissions) are links in the bar, the page's own
-  highlighted and `aria-current`, from 1280 px; narrower, and on the galleries' grouped bar, the
-  Pages menu as before. Counts after a name are drawn by one snippet (`snippets/count`, CSS
-  `wlx-count`, also from `roundstat-counts.js`): a space and the number grouped in the page's
-  language (`views.Count`, as the menus' counts and `toLocaleString`), without brackets, muted,
-  as the Votes button's count, on the bar's buttons, the contest files tabs (the conflicts of
-  interest's count now on every tab, for those who may see authors, by a count-only query,
-  `CoiMembers.filesCount`), a round's review tabs, the
-  conflicts of interest's people, the statistics page's comments, conflicts and authors links and
-  the large view's monument **Gallery N** and the contest files page's **Monument: … N** and
-  **Author: …** chips. After a name that is data and may end in digits (a monument id, an
-  author's or commenter's account: the chips and the conflicts of interest's people, read as
-  ", 3 files", and the comments list's "Comments by" items, read as ", 3 comments") the count is a
-  pill of its own. Messages no
-  longer embed the count (`*.link.count` keys removed, the chips' `({1})` dropped, in all four
-  languages).
+- **One vote-button design, and undoing a vote in the large view** (the maintainer's notes of
+  2026-11-16; developed 2026-11-16, `stack/175-vote-buttons-byrate-rank`): a juror's large view of a
+  yes/no file always has both ✓ and ✗, in the tiles' order (it offered only the votes the file
+  didn't have, one or two buttons, which was confusing); the file's vote is pressed
+  (`aria-pressed`), and a click on it undoes the vote (rate 0, the tiles' semantics; then on to the
+  next file, as after any vote, the maintainer's decision), titled "Selected: Clear the vote". Space
+  and Delete still only give their votes (the maintainer's decision: undoing is a click). The
+  gallery tiles' ✓ and ✗ and the large view's are one design (`main.css` `wlx-vote-btn`, through
+  Bootstrap's button variables): the tiles' 3 px border in the vote's colour, filled with it when
+  pointed at (the large view's change, now on the tiles too), pressed filled with a ring of the
+  page's colour inside the border (not by colour alone), one radius (6 px) and a two-tone focus ring
+  (a ring of the page's colour, then one of its text colour: 3:1 or more, Bootstrap's tint was about
+  1.5:1), in both colour modes; a focused button keeps its state. The large views' row (a round's
+  and a contest file's) is no longer a Bootstrap button group: each button has its own complete
+  border, apart by a small gap (the outline vote buttons showed three coloured sides and a grey one,
+  and covered their neighbours' borders pointed at). Juror guide.
+- **By rate: the chips with the ranking** (the maintainer's note of 2026-11-16, same branch): a
+  file's chips (all the jurors' tally or one juror's vote with its time, then the comments link)
+  are under the thumbnail on the line of the rank and a rated round's stars, wrapping as whole
+  items and never wider than the thumbnail (`galleryByRate` `rankChips`, `main.css`
+  `.wlx-byrate-line`), no longer on the thumbnail's lower left. The same chip snippets, the
+  comments chip a link of its own to the large view at `#comments` with the list kept, and a
+  juror's own new vote time there at once (`tile-votes.js listVoteTimeAfter`, into the rank
+  line). Gallery tiles unchanged. Juror and organizer guides.
+
+**Fixes**
+
+- **No criteria on a yes/no round's edit page** (reported on production; developed 2026-11-16,
+  `stack/174-binary-round-no-criteria`, #355): the edit page of an existing yes/no or comments-only
+  round showed the **Criteria** section (`round-form.js` hides it only while a new round's rating
+  is chosen; an existing round's rating is fixed). The page now leaves out the criteria and the
+  worst mark, with their hidden markers (`criteriaShown`, `worstMarkShown`), by the round's stored
+  rating, also when the form comes back with an error, so a save keeps the round's stored criteria
+  (a legacy one's, V83) and worst mark. A rated round's page is unchanged. A post that still sends
+  `criteriaShown` with the selects empty (no longer the page's) is refused for such a round, as an
+  added criterion was, instead of removing its legacy criteria, on a save and a re-apply. Admin guide.
+
+## 26.11.10 (2026-11-16)
+
+Deployed 2026-11-16, build `26.11.10-20980dc6d822` (release commit `20980dc6` on
+`release/26.11.10`), schema V105, from `26.11.9`, PRs #350-#354. **No migration**: the schema
+stays V105, so going back to `26.11.9` is the app alone. Deploy record: roadmap, "26.11.10 deploy
+record". Two changes to know about: the monument
+ids filter now reads `a, b` as both monuments (before, only `a`), so such a round's next
+distribution or "Distribute new files" can add `b`'s files; and adding an account found by the
+users page's search sends **no email unless the admin ticks** "Send an invitation email" or
+"Tell its owner by email" (both unticked): its owner sees a notice in the tool instead.
+
+**Features**
+
+- **Jurors chosen at Distribute; re-apply filters in review** (P3-5 of the round-editing plan;
+  developed 2026-11-16, `stack/169`, after the 26.11.9 RC report that a round couldn't be created
+  for review without jurors): a round created for review needs no jurors; its review page's
+  **Distribute to jurors** has the juror picker and the file distribution. While the round waits
+  for review with no votes, its form's filters are editable and **Re-apply filters** selects its
+  images again (files that no longer pass removed, new matches added, a top-N ranked again; files
+  from a list and disqualified ones kept), and the review page shows how many were added and
+  removed. The review page warns when previous rounds' votes changed since the images were
+  selected. **Changed meaning:** the monument ids filter now trims spaces after its commas: a
+  round whose filter reads `a, b` matched only `a` before (` b` matched nothing) and now matches
+  both; such a round's next distribution or "Distribute new files" can add `b`'s files.
 
 - **By rate: the comment chip opens the comments, the chips as on the gallery's tiles** (the
   maintainer's report on 26.11.9; developed 2026-11-16, `stack/170`): a file's comment chip on
@@ -88,27 +118,150 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   ring), green and red, filled when pointed at, as the worst-mark button
   (`large/navigationButtons` buttonSelect; they were filled, without the others' border).
 
+- **The staff pages as links in the top bar, and one style for counts** (the maintainer's
+  feedback on 26.11.9 and decision of 2026-11-16; developed 2026-11-16, `stack/171`): on a page
+  whose top bar has no filters, order or pager and that isn't a gallery (the rounds, the users,
+  the statistics, the forms),
+  the pages of the Pages menu (**Contests**, **Contest files**, **Users**, **Rounds**,
+  **Statistics**: the same items, order and permissions) are links in the bar, the page's own
+  highlighted and `aria-current`, from 1280 px; narrower, and on the galleries' grouped bar, the
+  Pages menu as before. Counts after a name are drawn by one snippet (`snippets/count`, CSS
+  `wlx-count`, also from `roundstat-counts.js`): a space and the number grouped in the page's
+  language (`views.Count`, as the menus' counts and `toLocaleString`), without brackets, muted,
+  as the Votes button's count, on the bar's buttons, the contest files tabs (the conflicts of
+  interest's count now on every tab, for those who may see authors, by a count-only query,
+  `CoiMembers.filesCount`), a round's review tabs, the
+  conflicts of interest's people, the statistics page's comments, conflicts and authors links and
+  the large view's monument **Gallery N** and the contest files page's **Monument: … N** and
+  **Author: …** chips. After a name that is data and may end in digits (a monument id, an
+  author's or commenter's account: the chips and the conflicts of interest's people, read as
+  ", 3 files", and the comments list's "Comments by" items, read as ", 3 comments") the count is a
+  pill of its own. Messages no
+  longer embed the count (`*.link.count` keys removed, the chips' `({1})` dropped, in all four
+  languages).
+
+- **Find an existing account** on the users page (A-1 of the existing accounts plan, A1 decided
+  by the maintainer 2026-11-16; developed 2026-11-16, `stack/168-account-search`): root and the
+  contest's admins find every account by any part (3 characters or more) of its name or wiki
+  account, or by its whole email address (a part of one only within their contests), at most 20,
+  each with a masked address outside their contests, its wiki account, the contests of theirs it
+  is in, and **Add to this contest** (by id, the email path's rule: it joins if it proved its
+  email, otherwise an invitation, mailed from the tool's address only if asked). Its owner sees a
+  notice in the tool at their next sign-in (a bar, and the list on their profile, dismissible);
+  **Tell its owner by email** mails it too, only if ticked: nothing is mailed without the admin's
+  choice. The text goes in a POST with the CSRF token, never a URL; each search is logged by ids
+  only. Admin guide.
+
+**Development**
+
+- **Plans (docs only):** adding existing accounts (search, the "wiki account already taken"
+  panel, adding by an unverified wiki name) and the account join plan brought up to date with
+  the maintainer's decisions of 2026-11-16 (`docs/plans/2026-11-16-existing-accounts.md`,
+  `docs/plans/2026-11-03-account-join.md`, #350).
+
+## 26.11.9 (2026-11-16)
+
+Deployed 2026-11-16 07:37 server time (06:37 UTC), build `26.11.9-6424d1e2885d` (release commit
+`6424d1e2` on `release/26.11.9`), schema V105, from `26.11.8`, PRs #341-#349. One migration: V105
+(`round.status`, with a backfill); V103 is retired. **Rolling back** to `26.11.8` or earlier:
+first finish or cancel the rounds held in review ("Images ready: N" on the rounds list) and
+let every "Adding juror …" job finish or cancel it, so that no round is left paused. Deploy record:
+roadmap, "26.11.9 deploy record".
+
+**Features**
+
 - **Review a round's images before distribution** (P3 of the two-step plan, P3-1 to P3-3 of the
-  round-editing plan; developed 2026-11-16, `stack/164`–`166`): a new round's images are selected
-  first and wait on the round's review page (`/admin/rounds/:id/review`), hidden from its jurors;
+  round-editing plan; developed 2026-11-16, `stack/164`–`166`, #347-#349): a new round's images
+  are selected first and wait on the round's review page (`/admin/rounds/:id/review`), hidden from its jurors;
   the round form's main button is **Create and review images**, and **Distribute as soon as the
   images are ready** (off) skips the review. The page shows the round's files as the contest files
   page does (tiles, region menu, large view) by status (in the round, deleted on Commons,
   disqualified), how they were added and its conflicts of interest; **Distribute to jurors**
   (admins, root) gives them out and opens the round. Organizers see the page read only. The rounds
   list shows **Images ready: N — Review / Distribute to jurors**. Admin and organizer guides.
+- **Add a juror to a running round** (step 1 of the round-editing plan, the maintainer's decisions
+  D1-D3 of 2026-11-16; developed 2026-11-16, `stack/162-add-juror`,
+  `stack/163-add-juror-fair-share`, #345, #346): **Add juror…** under a round's statistics (admins
+  and root) picks one of the contest's jurors outside the round (or a stopped juror of it, see
+  below), shows what they will get and, once confirmed, runs it as a background job
+  (`round_rebalance`) in a round that is running; votes already given stay as they are. In a round
+  held for review the juror is only added, and gets their share when the round is distributed. In a
+  round where every juror gets every file, the new juror gets all the round's files they have no
+  vote on (not those deleted on Commons), unrated. In a round of N jurors per file, the round's
+  jurors are listed ticked as donors (stopped ones unticked and marked): the ticked ones give
+  **unrated files only**, so that the new juror and the donors end with about as many unrated files
+  each ("9,120 unrated files over 5 jurors. Y gets about 1,520: from A 410, B 390, …"); rated votes,
+  a rated round's ✗ and a criteria round's partial votes never move. A stopped juror's row gets
+  **Start and give a fair share…**, the same page with that juror chosen. While the job runs the
+  round **pauses itself**: its jurors keep it in their menus and see a short "paused" page instead
+  of the gallery and the large view, and a vote is refused with a message to reload shortly
+  (`409 round_paused`); staff still see the files. Start/Stop of a juror and creating or distributing a
+  round that reads this one are refused while it runs. Cancel keeps the files a juror was already
+  given (and the juror stays started); a juror the job started who got nothing is stopped again.
+  Adding the same juror again tops up only what they lack. A round left paused with no job is
+  flagged on the rounds list, and root's **Release** opens it again. The rounds list's job column
+  shows the add and how many files it gave. Admin guide: "Adding a juror to a running round";
+  organizer guide.
+  Rolling back to a release without this: let each "Adding juror …" job finish or cancel it first
+  (`docs/deployment.md`, "Before rolling back past "add a juror"").
+- **The funnel after each comment's author is back, as quick access** (the maintainer's request
+  of 2026-11-15, after `26.11.8` was built; developed 2026-11-15, `stack/159`, #342): in
+  the organisers' comments list each comment's author with an account is again followed by a
+  funnel, **Show only Name's comments**, the same `commenter=` link as the author's item under
+  the **Comments** menu's **Comments by**. On the filtered author's comments the funnel is filled
+  and current (`aria-current="true"`, as the menu's item), **Show all authors' comments**, and
+  links the list without the filter, as **Everyone** does; other authors' funnels in the filtered
+  view switch to them. The **Comments by** section stays the menu's uniform filter; the chip
+  **Comments by Name ×** stays gone (the menu and the button show the filter). The author icons'
+  focus outline is now solid in the link colour (Bootstrap's focus ring colour, a 25% tint, was
+  too faint for a 2 px outline). Jurors get no funnels, and `commenter=` stays ignored in their
+  own list. The keys `comments.report.author.filter` and `comments.report.commenter.remove` are
+  back (en, fr, ru, uk), with new words. Organizer guide.
+- **A link to a file's comments stays at the comments while the file loads** (the maintainer's
+  report of 2026-11-15; developed 2026-11-15, `stack/160-large-image-size`, #343): the tiles', the
+  large view's and the comments list's 💬 chips open the large view at its comments
+  (`#comments`); while the file hadn't loaded, its image had no size, so the page scrolled to the
+  comments, then the file arrived and pushed them out of view. The large view's image (in a round
+  and on the contest files page) now has its box at its loaded height before the file arrives,
+  from the stored width and height (`Global.largeImageBox`: `width` and `height` attributes at the
+  `sizes` width, the height following the width in main.css, so that `mw-100 mh-100` fit it as
+  they fit the file; no inline style); once loaded they go (`large-view.js`) and the view's rules
+  size the file exactly as before.
+  A file of unknown size, not on Commons, of other proportions than the stored ones, or that fails
+  to load, and the browser's own scroll cut short (Bootstrap makes it smooth; WebKit stopped it
+  partway when the image loaded): the page scrolls back to the comments, instantly, when the image
+  loads or fails and when the page has loaded (once the browser's own scroll has settled, then
+  only if their heading isn't in view or the image is still loading), unless the user has
+  scrolled (a wheel, touch, key, click or pointer) since. Not on a reload or Back
+  (the view is no-store, so Back loads it again): the browser restores where the user was. A
+  video's box was already the column's (100% × 100%); the strip's thumbnails have fixed boxes.
 
-- **Jurors chosen at Distribute; re-apply filters in review** (P3-5 of the round-editing plan;
-  developed 2026-11-16, `stack/169`, after the 26.11.9 RC report that a round couldn't be created
-  for review without jurors): a round created for review needs no jurors; its review page's
-  **Distribute to jurors** has the juror picker and the file distribution. While the round waits
-  for review with no votes, its form's filters are editable and **Re-apply filters** selects its
-  images again (files that no longer pass removed, new matches added, a top-N ranked again; files
-  from a list and disqualified ones kept), and the review page shows how many were added and
-  removed. The review page warns when previous rounds' votes changed since the images were
-  selected. **Changed meaning:** the monument ids filter now trims spaces after its commas: a
-  round whose filter reads `a, b` matched only `a` before (` b` matched nothing) and now matches
-  both; such a round's next distribution or "Distribute new files" can add `b`'s files.
+**Development**
+
+- **`round.status` (V105) and rows kept without votes** (round-editing plan P3-1, P3-2; developed
+  2026-11-16): a sync no longer deletes a `round_image` row whose pair has no votes (invariant 8
+  ended; the deletion paths mark a vote-less file `deleted` and restore it); V105 adds
+  `round.status` / `status_changed_at` / `_by` with a CHECK and a backfill (rerunnable after a
+  rollback), written in step with `active` and `distributing`; the distribution job has modes
+  (`fill`, `distribute`; a job without one runs one pass). Rollback: finish or cancel rounds in
+  review first; forward again: rerun V105's UPDATE and the repair job.
+- **Plans (docs only):** screen-size analytics, recorded for later, not scheduled
+  (`docs/plans/2026-11-15-screen-size-analytics.md`, #341); round editing: review before
+  distribution, add a juror, reassign unrated files, with the maintainer's decisions of
+  2026-11-16 (`docs/plans/2026-11-16-round-editing.md`, #344).
+
+## 26.11.8 (2026-11-16)
+
+Deployed 2026-11-16 00:02 server time (2026-11-15 23:02 UTC), build `26.11.8-3bfd11bb686c`
+(release commit `3bfd11bb` on `release/26.11.8`), schema V104, from `26.11.7`, PRs #322-#340.
+Two migrations: V102 (`monument.wikidata`) and V104 (an online index on `images (author)`); V103
+is intentionally absent (reserved, then retired, see V104 and 26.11.9). Everything developed up
+to 2026-11-13 before the entries below was deployed in `26.11.7`. **Jurors do not open the
+contest files page in this release**: an earlier build of 26.11.8 (from #323, held, never
+deployed) opened it to them; #330 takes it back, and a juror reaches their own round's files of a
+monument from the monument's page instead. Deploy record: roadmap, "26.11.8 deploy record".
+
+**Features**
 
 - **Monument page** (the maintainer's decisions D5-D9 of 2026-11-13; developed 2026-11-13,
   `stack/140-monuments`): the monument box of a file's large view (in a round and on the contest
@@ -127,7 +280,8 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   The contest files page takes `monument=<id>` (exactly: `BINARY`, as `images.monument_id` is
   `utf8mb4_general_ci`) with a chip **Monument: … (N) ×**, combined with the deleted files, the
   region and country menus, the author filter and the large view.
-  **Jurors** of the contest can now open the contest files page (the maintainer's decision D9):
+  **Jurors** of the contest could open the contest files page (the maintainer's decision D9;
+  reversed before the release, see "A round's lists by monument" below, so not in 26.11.8):
   all its files except those deleted on Commons, without tabs, the authors list, the conflicts of
   interest or any author; `deleted`, `round`, `coi` and `author` are ignored for them, and a
   juror of another contest is refused as before. The top bar still links it for organizers and
@@ -164,6 +318,11 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   the contest's admins', organizers' and root's again (a juror gets the 403 page or JSON 403), and
   a juror's monument page has no contest count. `byRegionStat`, `regionCounts` and
   `regionRateCounts` bind every value. Juror, organizer and admin guides.
+- **Criteria rounds: sums labelled** (CodeRabbit triage of 2026-11-14, #326): a criteria round's
+  CSV names its third column **Overall (sum of the criteria)** (other rounds keep **Overall**),
+  and a juror's vote in a criteria round shows the number the stars show per criterion with the
+  vote's sum beside it ("7.00 (Σ 14)"), as the by-rate gallery has it. Organizer guide: the CSV.
+  Juror guide: Logout on a shared computer, sign-ins that keep the session.
 - **Comments list for jurors; tabs count what they open** (the maintainer's decisions 2, 5 and 6
   of 2026-11-14, PR-3 of the round filters proposal v4; developed 2026-11-14,
   `stack/148-juror-comments-list`): while **Only with comments** is on, **Recent comments** beside
@@ -329,59 +488,9 @@ The next release is `26.11.8` (`build.sbt` says `26.12-SNAPSHOT`). Everything de
   Votes button its icon alone and the names cut shorter. Everywhere the links a little closer
   (0.375rem each side, was 0.5), the juror's name cut at 6.5rem (was 7.5) and the region at 8rem
   (was 9). Jurors' bars are unchanged. Organizer guide.
-- **The funnel after each comment's author is back, as quick access** (the maintainer's request
-  of 2026-11-15, after `26.11.8`; developed 2026-11-15, `stack/159-comment-author-funnel`): in
-  the organisers' comments list each comment's author with an account is again followed by a
-  funnel, **Show only Name's comments**, the same `commenter=` link as the author's item under
-  the **Comments** menu's **Comments by**. On the filtered author's comments the funnel is filled
-  and current (`aria-current="true"`, as the menu's item), **Show all authors' comments**, and
-  links the list without the filter, as **Everyone** does; other authors' funnels in the filtered
-  view switch to them. The **Comments by** section stays the menu's uniform filter; the chip
-  **Comments by Name ×** stays gone (the menu and the button show the filter). The author icons'
-  focus outline is now solid in the link colour (Bootstrap's focus ring colour, a 25% tint, was
-  too faint for a 2 px outline). Jurors get no funnels, and `commenter=` stays ignored in their
-  own list. The keys `comments.report.author.filter` and `comments.report.commenter.remove` are
-  back (en, fr, ru, uk), with new words. Organizer guide.
-- **A link to a file's comments stays at the comments while the file loads** (the maintainer's
-  report of 2026-11-15; developed 2026-11-15, `stack/160-large-image-size`): the tiles', the
-  large view's and the comments list's 💬 chips open the large view at its comments
-  (`#comments`); while the file hadn't loaded, its image had no size, so the page scrolled to the
-  comments, then the file arrived and pushed them out of view. The large view's image (in a round
-  and on the contest files page) now has its box at its loaded height before the file arrives,
-  from the stored width and height (`Global.largeImageBox`: `width` and `height` attributes at the
-  `sizes` width, the height following the width in main.css, so that `mw-100 mh-100` fit it as
-  they fit the file; no inline style); once loaded they go (`large-view.js`) and the view's rules
-  size the file exactly as before.
-  A file of unknown size, not on Commons, of other proportions than the stored ones, or that fails
-  to load, and the browser's own scroll cut short (Bootstrap makes it smooth; WebKit stopped it
-  partway when the image loaded): the page scrolls back to the comments, instantly, when the image
-  loads or fails and when the page has loaded (once the browser's own scroll has settled, then
-  only if their heading isn't in view or the image is still loading), unless the user has
-  scrolled (a wheel, touch, key, click or pointer) since. Not on a reload or Back
-  (the view is no-store, so Back loads it again): the browser restores where the user was. A
-  video's box was already the column's (100% × 100%); the strip's thumbnails have fixed boxes.
-
-**Fixes**
-
-- **No criteria on a yes/no round's edit page** (reported on production; developed 2026-11-16,
-  `stack/174-binary-round-no-criteria`): the edit page of an existing yes/no or comments-only
-  round showed the **Criteria** section (`round-form.js` hides it only while a new round's rating
-  is chosen; an existing round's rating is fixed). The page now leaves out the criteria and the
-  worst mark, with their hidden markers (`criteriaShown`, `worstMarkShown`), by the round's stored
-  rating, also when the form comes back with an error, so a save keeps the round's stored criteria
-  (a legacy one's, V83) and worst mark. A rated round's page is unchanged. A post that still sends
-  `criteriaShown` with the selects empty (no longer the page's) is refused for such a round, as an
-  added criterion was, instead of removing its legacy criteria, on a save and a re-apply. Admin guide.
 
 **Development**
 
-- **`round.status` (V105) and rows kept without votes** (round-editing plan P3-1, P3-2; developed
-  2026-11-16): a sync no longer deletes a `round_image` row whose pair has no votes (invariant 8
-  ended; the deletion paths mark a vote-less file `deleted` and restore it); V105 adds
-  `round.status` / `status_changed_at` / `_by` with a CHECK and a backfill (rerunnable after a
-  rollback), written in step with `active` and `distributing`; the distribution job has modes
-  (`fill`, `distribute`; a job without one runs one pass). Rollback: finish or cancel rounds in
-  review first; forward again: rerun V105's UPDATE and the repair job.
 - **Width tests with Linux's fonts** (developed 2026-11-15, `stack/156-all-votes-icon`):
   `browser-test/linux-fonts.mjs` runs Playwright in the official image of its version
   (`mcr.microsoft.com/playwright:v<version>-noble`) with DejaVu Sans, CI's `system-ui`, against
@@ -1570,6 +1679,6 @@ FROM flyway_schema_history ORDER BY installed_rank;
 | V69–V70 | 2026-10-31 | category operations |
 
 The history has no V45 row (V45a–V45g never ran) and no B44 row. When a release is
-deployed, move its section from Unreleased to Deployed, date it from its first new
+deployed, replace its "date TBD at deploy" with the deploy date, date it from its first new
 `flyway_schema_history` row (or from the deploy record if it has no migration), and add the
 release name.

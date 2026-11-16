@@ -63,8 +63,8 @@
 
   /** The tile's foot: a column at its bottom edge with the chips' row ([[chips]]) above a rated
     * round's stars (addStars, gallery tiles only), so that the two never overlap however the
-    * stars wrap; the by-rate gallery's thumbnail has one with its chips alone, which the server
-    * draws (galleryByRate.scala.html thumbChips). It takes no clicks itself (main.css
+    * stars wrap; the by-rate gallery's rank line under the thumbnail has one with its chips alone,
+    * which the server draws (galleryByRate.scala.html rankChips). It takes no clicks itself (main.css
     * .wlx-tile-foot). */
   function foot(tile) {
     for (var i = 0; i < tile.children.length; i++) {
@@ -399,7 +399,7 @@
    * is, with its rank: the file marked changed (.wlx-rate-changed, titled with the list's
    * data-changed-title) unless back at its rate at load, and the hint above the list
    * (.wlx-byrate-hint) shown from the first change on. In an order by vote time (the list's
-   * data-vote-times), the file's vote time follows it in the vote chip on its thumbnail, as on
+   * data-vote-times), the file's vote time follows it in the vote chip in its rank line, as on
    * the gallery's tiles ([[listVoteTimeAfter]]).
    */
   function addListStars(list) {
@@ -445,17 +445,18 @@
   }
 
   /** After a stored vote from `before` to `rate` in the by-rate list (in an order by vote time),
-    * the vote chip on the file's thumbnail (`box`'s .thumb, its chips as galleryByRate.scala.html
-    * thumbChips draws them, before the comments; the chip from the page's template, as a
+    * the vote chip in the file's rank line under its thumbnail (`box`'s .rank-line, its chips as
+    * galleryByRate.scala.html rankChips draws them, after the rank and the stars, before the
+    * comments; the chip from the page's template, as a
     * gallery tile's: [[voteChip]]): a changed vote's time is now (the browser's clock, as
     * [[voteTimeAfter]]), the chip added if the file had none; a cleared vote has none; the same
     * vote again keeps it, as the server does (VoteSql.votedAt). A rated round's: the time alone,
     * its stars being its mark. */
   function listVoteTimeAfter(box, before, rate) {
     if (rate === before) return;
-    var thumb = box.querySelector('.thumb') || box;
-    chipState(thumb).time = rate === 0 ? null : { iso: new Date().toISOString() };
-    voteChip(thumb);
+    var line = box.querySelector('.rank-line') || box;
+    chipState(line).time = rate === 0 ? null : { iso: new Date().toISOString() };
+    voteChip(line);
   }
 
   /** All the jurors' votes on a binary round's file, on its tile in the organisers' gallery of
