@@ -116,6 +116,11 @@ The next release is `26.11.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything d
 
 **Development**
 
+- **Licence: GPL-3.0-or-later** (developed 2026-11-17, `stack/182-gpl-relicense`): relicensed from
+  Apache-2.0; releases before this stay available under Apache-2.0. `LICENSE` is the GPL-3.0
+  text, `NOTICE` lists the bundled components and the option chosen for each dual-licensed one;
+  both ship in the ZIP and Docker image. The unused `tyrex` jar (Exolab licence with a credit
+  clause) is excluded.
 - **`account_join_request` and `account_joined` (V106)** (the account join plan's J-1; developed
   2026-11-16): a table of join requests and pairs kept apart (an ordered pair, a state of
   `pending`, `done`, `refused`, `cancelled`, `kept_apart` with a unique key on the pairs kept

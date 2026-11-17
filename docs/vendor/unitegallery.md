@@ -31,7 +31,8 @@ Rules: [UI practices](../ui/practices.md) §7, [dependencies](../dependencies/pr
 **How the version was identified:** the file's first line says `Unite Gallery, Version: 1.7.28,
 released 04 Jul 2016`. The first copy in this repository (`214b7998`, 2016-10-05) is
 identical to the tag's file apart from line endings (CRLF here). Upstream is MIT-licensed. The
-copies carry no license header (dependencies §9, T4).
+copies carry no license header (dependencies §9, T4); the upstream MIT notice is in `NOTICE`. Our
+patches are GPL-3.0-or-later with the rest of the project; the unmodified parts stay MIT.
 
 **Upstream since then:** tags `1.7.31` to `1.7.40` (2016-11-29) and a `master` commit "updated to
 1.7.45" (2017-02-27). Those releases still look the theme up with `eval`, still put the title

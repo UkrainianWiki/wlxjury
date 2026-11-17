@@ -1,0 +1,107 @@
+WLX Jury Tool
+=============
+
+Copyright 2013-2026 the WLX Jury Tool contributors (see the git history).
+
+The WLX Jury Tool is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later version
+(SPDX: GPL-3.0-or-later). The full text is in LICENSE. GPL-3.0 includes its own
+patent licence (section 11).
+
+Versions released before the relicensing (2026-11) were released under the Apache
+License 2.0 and remain available under it; their git history and tags keep that grant.
+Contributions made under Apache-2.0 are included under its terms, which permit this; the
+Apache-2.0 text is in licenses/Apache-2.0.txt, and it also covers the Apache-licensed
+components below.
+
+Corresponding source: https://github.com/UkrainianWiki/wlxjury (the tag or commit
+recorded in wlxjury-build.json is the source of the build).
+
+The project's own images and icons (public/images) are covered by the project licence,
+GPL-3.0-or-later, except as listed below.
+
+This file lists the third-party components bundled in the release (ZIP and Docker
+image) and the licence option chosen where a component is dual licensed. Full texts of
+licences that are not in LICENSE are in the licenses/ directory.
+
+
+Vendored front-end files (public/)
+----------------------------------
+- jQuery Raty 2.7.1 (public/javascripts/jquery.raty.js): MIT, Washington Botelho (the
+  file says "The MIT License" without the text; see licenses/MIT.txt).
+  The icon font public/fonts/raty.* is part of the same package (MIT).
+- jQuery Hotkeys (public/javascripts/jquery.hotkeys.js): Copyright 2010 John Resig,
+  dual licensed MIT or GPL-2.0. Option chosen: MIT (text in licenses/MIT.txt).
+- Unite Gallery 1.7.28 (public/javascripts/unitegallery.js, ug-theme-tiles.js,
+  public/stylesheets/unite-gallery.css, ug-theme-default.css and their images):
+  MIT, Copyright (c) 2015 Max Valiano (unitegallery.net). The shipped files carry no
+  header, so the notice and MIT text are in licenses/MIT.txt. Local patches are GPL-3.0-or-later;
+  the unmodified parts stay MIT. See docs/vendor/unitegallery.md.
+<<CODEX: Wikimedia Codex design tokens (GPL-2.0-or-later, used under GPL-3.0-or-later):
+  the PR that vendors them adds its entry here.>>
+
+
+WebJars served by the app
+-------------------------
+- Bootstrap 5.3.8: MIT (the WebJar POM says Apache-2.0 in error).
+- Bootstrap Icons 1.13.1: MIT.
+- jQuery 3.7.1: MIT.
+- Tom Select 2.6.2: Apache-2.0.
+- Swagger UI 5.18.3 (through tapir-swagger-ui-bundle): Apache-2.0.
+
+
+Java libraries (lib/ in the release)
+------------------------------------
+Most of the roughly 180 jars are Apache-2.0 (Play, Pekko, Netty, Jackson, Guava, Caffeine,
+Tapir, ScalikeJDBC, Flyway, Nimbus, play-mailer, scala-csv, scalawiki and others), MIT,
+or BSD (TwelveMonkeys ImageIO, ASM, ...). Apache-2.0 code is combined into this
+GPL-3.0-or-later work as GPL-3.0 allows. The ones with other terms:
+
+- jaxb-impl 2.2.5 and jaxb-api 2.3.1 (through scalawiki-wlx and Sweble): offered under
+  CDDL-1.1 or GPL-2.0 with the Classpath Exception. Option chosen: GPL-2.0 with the
+  Classpath Exception (text below and licenses/GPL-2.0.txt). The jars are unmodified
+  and used as separate libraries; the exception allows linking them with modules under
+  other licences.
+- rats-runtime (xtc) 1.15.0 (through Sweble): LGPL-2.1. Unmodified, dynamically linked;
+  text in licenses/LGPL-2.1.txt.
+- logback-classic and logback-core 1.6.4: EPL-2.0 or LGPL-2.1. Option chosen: LGPL-2.1
+  (licenses/LGPL-2.1.txt).
+- mariadb-java-client 3.5.3: LGPL-2.1-or-later (licenses/LGPL-2.1.txt).
+- jakarta.mail 1.6.7: EPL-2.0, GPL-2.0 with Classpath Exception or EDL-1.0 (BSD-3-Clause).
+  Option chosen: EDL-1.0. jakarta.activation 1.2.1: EDL-1.0.
+- MIT: chronoscala, ficus, odelay, scallop, progressbar, sysout-over-slf4j, checker-qual,
+  enumeratum, jsoup, slf4j (api and jul-to-slf4j), cats (core and kernel), jawn-parser.
+- Apache-2.0: retry, scala-csv, jsr305, jcip-annotations (stephenc repackaging).
+- BSD-3-Clause: paranamer, jline, TwelveMonkeys ImageIO, ASM.
+- aopalliance 1.0: public domain. reactive-streams 1.0.4: MIT-0.
+- scalawiki (core, wlx, http-extensions): Apache-2.0, by the same maintainer.
+- tyrex 1.0.1 (Exolab licence, with a credit clause) is not bundled: it is excluded
+  in build.sbt because nothing uses it.
+
+Data
+----
+- conf/KOATUU.properties.*: the public Ukrainian KOATUU classifier of territorial units.
+
+
+Classpath Exception (applies to the GPL-2.0 jars above)
+-------------------------------------------------------
+Certain source files distributed by Oracle America and/or its affiliates are subject
+to the following clarification and special exception to the GPL, but only where Oracle
+has expressly included in the particular source file's header the words "Oracle
+designates this particular file as subject to the "Classpath" exception as provided by
+Oracle in the LICENSE file that accompanied this code."
+
+    Linking this library statically or dynamically with other modules is making a
+    combined work based on this library. Thus, the terms and conditions of the GNU
+    General Public License cover the whole combination.
+
+    As a special exception, the copyright holders of this library give you permission
+    to link this library with independent modules to produce an executable, regardless
+    of the license terms of these independent modules, and to copy and distribute the
+    resulting executable under terms of your choice, provided that you also meet, for
+    each linked independent module, the terms and conditions of the license of that
+    module. An independent module is a module which is not derived from or based on
+    this library. If you modify this library, you may extend this exception to your
+    version of the library, but you are not obligated to do so. If you do not wish to
+    do so, delete this exception statement from your version.

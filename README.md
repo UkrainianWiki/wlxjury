@@ -20,3 +20,10 @@ others in the [docs index](docs/README.md); open work: [roadmap](docs/plans/2026
   [docs/deployment.md](docs/deployment.md).
 
 [![CI](https://github.com/UkrainianWiki/wlxjury/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/UkrainianWiki/wlxjury/actions/workflows/ci.yml)
+
+## License
+
+GPL-3.0-or-later: see [LICENSE](LICENSE); third-party components and the options chosen for
+dual-licensed ones are in [NOTICE](NOTICE). GPL-3.0 has its own patent licence (section 11).
+Versions before the relicensing (2026-11) were released under Apache-2.0 and remain available
+under it from their tags.

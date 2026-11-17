@@ -236,9 +236,13 @@ failure; no plugin yet).
 
 ## 6. Licenses
 
-**6.1 Compatible with Apache 2.0.** The project is Apache-2.0 (`LICENSE`). A new dependency's
-license is permissive and compatible (Apache-2.0, MIT, BSD); a copyleft
-library that is served to browsers or linked into the app needs the user's decision first. Name
+**6.1 Compatible with GPL-3.0-or-later.** The project is GPL-3.0-or-later (`LICENSE`; it was
+Apache-2.0 before 2026-11). A new dependency's license is compatible (Apache-2.0, MIT, BSD,
+LGPL, MPL-2.0, GPL-3.0 or GPL-2.0-or-later); GPL-2.0-only (without a linking exception), EPL-1.0,
+CDDL, advertising or credit clauses (Exolab, Apache-1.1) and unknown licenses are not. LGPL
+and MPL-2.0 libraries are allowed with an entry in `NOTICE`. Where a component is dual
+licensed, record the option chosen in `NOTICE`. Any other copyleft library that is served to
+browsers or linked into the app needs the user's decision first. Name
 the license in the PR. *Example:* `axe-core` and `@axe-core/playwright` are MPL-2.0 (a
 file-level copyleft): test tools only, injected into the test browsers by the browser tests,
 never served by the app or packaged with it, so no decision was needed; Playwright is Apache-2.0.
@@ -277,7 +281,7 @@ the patch is reverted, and prefer replacing to patching more of it (secure-codin
 | 3.1 Pekko in step | `build.sbt` comment; image cache specs | review only |
 | 4.1 checksums | review | planned (no downloaded tool today) |
 | 5.3 update and vulnerability report | G11 | planned (no plugin yet) |
-| 6.1 licenses | review | planned: a license report with the G11 report |
+| 6.1 licenses | review | `NOTICE` lists the bundled components; planned: a license report with the G11 report |
 
 ## 9. Where the build doesn't follow these yet (for triage)
 
@@ -287,7 +291,7 @@ the patch is reverted, and prefer replacing to patching more of it (secure-codin
 - **T2 (2.3):** `docs/deployment.md` "Local verification" runs `python:3.8-slim` and
   `koalaman/shellcheck:stable`, while CI runs `python:3.8.20-slim` and `v0.11.0`.
 - **T3 (2.1):** `scripts/ui-shots.py` installs `"pillow<11"`, a range.
-- **T4 (6.2):** `unitegallery.js` and `ug-theme-tiles.js` carry no license header.
+- **T4 (6.2):** `unitegallery.js` and `ug-theme-tiles.js` carry no license header; their upstream MIT license and copyright are recorded in `NOTICE`.
 - **T5 (1.3), closed 2026-11-05:** Node 20 reached its end of life in April 2026, and
   `eslint-plugin-compat` 7.0.2 declares Node >= 22. `ci.yml` (whose job runs the lint),
   `browser.yml` and `coverage.yml` run Node 22.23.4 (2026-10-20, `setup-node` pinned by SHA).

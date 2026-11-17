@@ -118,6 +118,8 @@ lazy val root =
 name := "wlxjury"
 
 organization := "org.intracer"
+licenses := Seq("GPL-3.0-or-later" -> url("https://www.gnu.org/licenses/gpl-3.0.html"))
+homepage := Some(url("https://github.com/UkrainianWiki/wlxjury"))
 
 // Calendar version YY.MM (.N for an extra deploy in the same month); the snapshot carries the
 // next release. Release steps: docs/workflow/practices.md §7.4.
@@ -145,6 +147,12 @@ deploymentManifest := {
 }
 Compile / resourceGenerators += Def.task { Seq(deploymentManifest.value) }.taskValue
 Universal / mappings += deploymentManifest.value -> "wlxjury-build.json"
+// The licence, the third-party notices and the full texts they refer to ship in the ZIP (and so in
+// the Docker image, which takes the ZIP's files).
+Universal / mappings ++= Seq(
+  baseDirectory.value / "LICENSE" -> "LICENSE",
+  baseDirectory.value / "NOTICE" -> "NOTICE"
+) ++ (baseDirectory.value / "licenses").listFiles().toSeq.map(f => f -> s"licenses/${f.getName}")
 // Server setup files are installed once from a reviewed checkout (docs/deployment.md);
 // keep them out of releases, whose conf/ directory is also on the app's classpath.
 Universal / mappings ~= (_.filterNot { case (_, path) =>
@@ -351,6 +359,10 @@ excludeDependencies += ExclusionRule("commons-logging", "commons-logging")
 // javax.activation API (the same 31 classes) and the implementation MailcapCommandMap needs.
 // jaxb-api's javax.activation-api 1.2.0 (from scalawiki-core) would be a second copy of the API.
 excludeDependencies += ExclusionRule("javax.activation", "javax.activation-api")
+// tyrex 1.0.1 (play-jdbc's POM declares it; no class of play-jdbc-api, play-jdbc or the
+// scalikejdbc adapter refers to it, and the app uses no JNDI). Its Exolab licence has a credit
+// clause that is not GPL-3.0 compatible (NOTICE), so it is not shipped.
+excludeDependencies += ExclusionRule("tyrex", "tyrex")
 
 dependencyOverrides ++= Seq(
   "commons-io" % "commons-io" % "2.22.0",

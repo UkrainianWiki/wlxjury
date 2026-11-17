@@ -193,6 +193,10 @@ org.jfree.chart.JFreeChart <- wlx.stat.reports.AuthorsStat <- AuthorsStat$ <- wl
 
 The full per-jar table (size, parent, and which top-level dependencies bring it) is in the appendix at the end.
 
+> Note (2026-11-17, licence change to GPL-3.0-or-later): `tyrex 1.0.1` (via play-jdbc's POM) is
+> referenced by no class of play-jdbc-api, play-jdbc or the scalikejdbc adapter, and its Exolab
+> licence is not GPL-compatible; it is excluded in build.sbt.
+
 ## 2. Classification
 
 **Needed at run time:** Play, Netty and Guice; Pekko and Pekko HTTP; the Tapir API with Swagger; DB; auth; mail; the webjars; TwelveMonkeys; scalawiki core and wlx with sweble, jsoup, scallop, ficus, retry, chronoscala and the progress bar.
