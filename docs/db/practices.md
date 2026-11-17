@@ -364,6 +364,14 @@ disqualify's or requalify's events (V88), inserted after its rows (`RoundImageEv
 called by `RoundImageJdbc.disqualify` and `requalifyRows`; the round held for update, so the
 insert's foreign key check on `round` waits on nothing); `criteria_rate` written only while
 its vote row is locked.
+Accounts (the account join plan's J-2): `users` (ascending id) → `user_contest`,
+`account_token` come before `round` in a transaction that holds both (an account join's step,
+`AccountJoinHandler`, and the retirement it ends with, `AccountRetirement.retireIn`): `job` →
+`users` → `user_contest` / `account_token` → `round` → … as above. A round-first transaction never
+inserts a `round_user` row for an account in an active join (`AccountJoinJdbc.joining`, read
+before and after the users row's shared lock, `User.lockLive`, which the join's start takes
+exclusively): adding a juror, its "stop" phase and a review's jury refuse it, round creation
+(users-first) leaves the retiring account out.
 
 **7.2 Round first** (W2). A structural write (inserting, deleting or moving votes or aside
 rows, `round_image` rows, criteria, monument copies) locks its round(s) `FOR UPDATE` first, in

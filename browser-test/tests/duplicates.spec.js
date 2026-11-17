@@ -62,3 +62,56 @@ test.describe('an admin', () => {
       await expect(page.getByText(name('B'))).toHaveCount(0);
     });
 });
+
+// Joining two accounts (the account join plan's J-2), as root from the report of the join pairs'
+// contest (UiShotsServer: two members without a role sharing a wiki account written two ways, the
+// joined one with a Google sign-in): Join… on the group, the kept account chosen (none
+// preselected), the preview (what moves, the sign-in unlinked, the mail unticked), the join run in
+// the background, its result, and the group gone. A join can't be undone, so each run takes the
+// engine's first pair still listed (three per engine).
+test.describe('root', () => {
+  test.use({ role: 'root' });
+
+  test('joins two accounts of a group: preview, run, result', { tag: '@A-26' }, async ({ page, fixture }) => {
+    test.skip(fixture.joinPairs.length === 0, "the fixture has no join pairs (the guides' screenshot mode)");
+    const contestId = fixture.joinPairs[0].contestId;
+    await page.goto(`/admin/duplicates?contestId=${contestId}`);
+    const groupOf = (wiki) => page.getByRole('region', { name: new RegExp(`^Same wiki account: ${escape(wiki)} ·`) });
+    let pair;
+    for (const p of fixture.joinPairs) {
+      if (await groupOf(p.wiki).count() === 1) { pair = p; break; }
+    }
+    expect(pair, 'every pair of this engine is joined already: restart the fixture').toBeTruthy();
+    const { kept, joined } = pair;
+
+    await (await one(groupOf(pair.wiki))).getByRole('link', { name: 'Join…' }).click();
+    await expect(page).toHaveURL((url) => url.pathname === '/admin/accounts/join');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Join accounts');
+    // nothing preselected
+    await expect(page.getByRole('radio', { name: `Keep ${kept.name}` })).not.toBeChecked();
+    await expect(page.getByRole('radio', { name: `Keep ${joined.name}` })).not.toBeChecked();
+    await page.getByRole('radio', { name: `Keep ${kept.name}` }).check();
+    await page.getByRole('button', { name: 'Show what joining would do' }).click();
+
+    const preview = await one(page.getByRole('region', {
+      name: `Join ${joined.name} (#${joined.id}) into ${kept.name} (#${kept.id})` }));
+    await expect(preview).toContainText('It has no votes or round assignments.');
+    await expect(preview).toContainText(`Sign-ins unlinked, to be linked again from the account kept: google: Joined G`);
+    await expect(preview).toContainText(`${joined.name} (#${joined.id}) is then retired`);
+    const notify = preview.getByRole('checkbox', { name: 'Tell both owners by email (the addresses masked, no link)' });
+    await expect(notify).not.toBeChecked();
+    await preview.getByRole('button', { name: `Join #${joined.id} into #${kept.id}` }).click();
+
+    await expect(page).toHaveURL((url) => url.pathname.startsWith('/admin/accounts/join/'));
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      `Joining ${joined.name} (#${joined.id}) into ${kept.name} (#${kept.id})`);
+    // the job runs in the background; its page reloads when it is done
+    await expect(page.getByRole('status').filter({ hasText: 'was joined into' })).toBeVisible({ timeout: 30000 });
+    await expect(page.getByText(`${joined.name} (#${joined.id}) was joined into ${kept.name} (#${kept.id}) and retired.`))
+      .toBeVisible();
+
+    // the group is gone from the report
+    await page.goto(`/admin/duplicates?contestId=${contestId}`);
+    await expect(groupOf(pair.wiki)).toHaveCount(0);
+  });
+});

@@ -50,6 +50,8 @@ object ShareLinkService {
   case object TargetRoot extends Refusal("share_link_target_root", forbidden = true)
   case object TargetRole extends Refusal("share_link_target_role", forbidden = true)
   case object OtherContest extends Refusal("share_link_other_contest", forbidden = true)
+  /** The account is in an account join (J-2): no password set by an admin meanwhile (409's page). */
+  case object InJoin extends Refusal("account_in_join", forbidden = false)
   /** A reset by an admin for an account without an active membership of the contest. */
   case object NotActiveMember extends Refusal("share_link_reset_not_active_member", forbidden = true)
 

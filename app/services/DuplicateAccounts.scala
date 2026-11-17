@@ -61,7 +61,8 @@ object DuplicateAccounts {
   /** A group of the report: as [[Found]], the shared name or address as shown, its accounts, and
     * whether the actor may keep its accounts apart.
     */
-  final case class Group(found: Found, shared: String, accounts: Seq[Shown], mayKeepSeparate: Boolean) {
+  final case class Group(found: Found, shared: String, accounts: Seq[Shown], mayKeepSeparate: Boolean,
+      mayJoin: Boolean = false) {
     def id: String = s"${found.criterion.key}-${found.ids.mkString("-")}"
     def nameOf(accountId: Long): String = accounts.find(_.account.id.contains(accountId)).fold(s"#$accountId")(_.name)
   }
@@ -192,7 +193,10 @@ object DuplicateAccounts {
           case SameEmail => if (root) f.shared else UserService.maskEmail(f.shared)
           case SameWikiAccount => if (full) f.shared else AccountSearch.maskEmailsIn(f.shared)
         }
-        Group(f, shared, accounts, mayDecide(actor, accounts.map(_.account), contests))
+        val decide = mayDecide(actor, accounts.map(_.account), contests)
+        // J-2's Join: the same rule, each account in one of the actor's contests at least (root: any)
+        val join = decide && (root || f.ids.forall(id => contests.getOrElse(id, Set.empty).nonEmpty))
+        Group(f, shared, accounts, decide, join)
       }
     }
     Report(groups)

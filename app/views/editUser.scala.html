@@ -96,8 +96,8 @@
                                     </div>
                                     @* A-4 (decision A3): "Retire the account being edited", an unticked checkbox sent
                                        with this add, only where its rules allow it (else why not); what it changes in
-                                       the conflict-of-interest filter shown before the confirm. Then J-2's "Join the two
-                                       accounts" link, for who may join them, once the join is built *@
+                                       the conflict-of-interest filter shown before the confirm. J-2's "Join the two
+                                       accounts" link follows the add, for who may join them *@
                                     @for(offer <- panel.retire) {
                                         @offer.refusal match {
                                             case Some(refusal) => {
@@ -114,6 +114,10 @@
                                         }
                                     }
                                 </form>
+                            }
+                            @* J-2: "Join the two accounts", the join's preview (the kept account chosen there) *@
+                            @for(url <- other.joinUrl) {
+                                <p class="small mb-1 mt-1"><a href="@url" class="wiki-taken-join">@Messages("wiki.taken.join")</a></p>
                             }
                         </li>
                     }

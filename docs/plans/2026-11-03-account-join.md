@@ -248,6 +248,122 @@ editing step 3 starts when the maintainer says, alongside.
 J-2 changes who may act on accounts: negative cases (an admin of only one of the two accounts'
 contests; an organizer; a root account) and the job's restart and Retry cases.
 
+**J-2 as built (2026-11-17, `stack/179-account-join`, no migration).** `services.AccountJoin`
+(preview, `mayPerform`, `start`), `services.AccountJoinHandler` (the `account_join` job, its mail
+`AccountJoinMail`), `db.scalikejdbc.AccountJoinJdbc` (the SQL, `moveRound`), `AccountJoinController`
+(`GET /admin/accounts/join?contestId=&account=…&kept=`, `POST /admin/accounts/join`, the join's page
+`GET /admin/accounts/join/:jobId`). How the build reads the rules above:
+
+- **Entry points:** the duplicates report's **Join…** on a group its viewer may decide (the Keep
+  separate rule), and the Edit user panel's **Join the two accounts…** per other account, for who
+  may join the two (#358's marked spot). Any two to 11 accounts the performer may decide on; a
+  group of N is N−1 joins into the kept account, started one at a time from the same page (one
+  active join per kept account: its dedupe key). Joining a group in one job is left for later, as
+  planned.
+- **Who** (a builder's addition, as A-4's review found for the retirement): for an admin, each
+  account must be in (a member, or worked in) one of their contests at least; an account with no
+  ties passes "every contest it is in" on an empty set, and keeping it would hand a member's roles
+  to an account the admin knows nothing about, past the email path's invitation rule. Root: any
+  accounts. The report's Join follows it (`Group.mayJoin`); Keep separate keeps J-1's rule.
+- **The kept account** (J2): chosen in the preview, nothing preselected; where some accounts have
+  an email their owner proved (verified, not set by an admin, V96), only those may be kept (the
+  "Who performs" rule: the account kept is the one with the verified email; with two, the
+  performer chooses). The preview of keeping another one isn't shown, and its start is refused.
+- **Collisions** (J1, as the maintainer put it: refused if both accounts voted on the same file;
+  an unrated row is an assignment, not a vote; the independent review of 2026-11-17): a pair of
+  rows of the two accounts for one file and round, in one table, **both rated**; **and any pair
+  across the two tables** (one's `vote`, the other's `vote_aside`), whatever the rates (a
+  restore would meet the unique key; rare). Unrated means `rate` 0, no `voted_at` and no
+  criterion rated (a criteria vote rated partly keeps its total 0 and its time NULL). A pair with
+  an unrated row merges, nothing lost: the rated row stays (the joined account's moved onto the
+  kept account, the kept account's unrated row deleted; or the joined account's unrated row
+  deleted), of two unrated rows the kept account's stays; the deleted row goes with its criteria
+  rows (all 0), and where a `vote` row goes the round's counts are marked for the recompute
+  (`RoundCounts.markRounds`). The preview counts merges and collisions alike; a step reads them
+  again under its locks (the kept account may have rated its assignment meanwhile: then the
+  round fails with nothing written).
+- **Refused at the start** (each listed in the preview, all read again under both users rows; a
+  preview that changed since it was shown is shown again): a collision; the kept account not
+  allowed (above); the joined account not retirable by the performer
+  (`AccountRetirement.permissionRefusal`: own, root's, an admin account for an admin; for an
+  admin, not a member of (or invited to) the contest the join is done from, shown as its own
+  reason); either account in another join (queued, running, or failed: a failed join holds its
+  accounts until its Retry or, before its first round step, its Cancel); a queued or running
+  `round_rebalance` adding either; a round of either with `distributing` (being created, in
+  review, a failed creation) or a job holding its key; a round job in the joined account's
+  contests (A-4's M4 rule, which the retirement in the last step applies).
+- **Steps:** "start" (both users rows; both accounts' sessions ended, API tokens revoked; the
+  joined account's rounds listed), one step per round ("rounds": users rows, the round `FOR
+  UPDATE`, `AccountJoinJdbc.moveRound`, the invariants read before and after; a new violation or a
+  collision rolls the round back to a savepoint and fails the job), "finish" (users rows; the
+  sweep's rounds locked in id order; then the sweep, comments, memberships merged, identities
+  unlinked (J3), the kept account's wiki account by the CoI rule, the kept account's unused links
+  revoked (the joined account's go with its retirement, after A-4 has read its ties), the change log
+  rows, the `done` row in `account_join_request` (its id in the audit line's `requestId=`), and
+  `AccountRetirement.retireIn` from the join's contest; a refusal rolls the step back to a
+  savepoint and fails the job). The links are revoked in the last step, not the first: A-4's rule
+  for an admin reads a live invitation into the contest as a tie, and revoking it first would make
+  the retirement refuse a join the preview allowed.
+- **A busy round** (a job holding its key, or `freeze_count > 0`) fails the step with nothing
+  written (`job.error.join.round.busy`, Retry once it is done): the scheduler has no delayed
+  re-run, and a step returning Continue would spin.
+- **The joined account's `vote_orphan` rows** stay under its id, as planned; A-4's emptiness
+  counts them, so `retireIn` takes `keepOrphans = true` for the join (the only change to A-4's
+  rules).
+- **Account writes while a join holds the accounts** (the review), each refused under the
+  account's users row lock, which the join's start takes too: a membership add
+  (`UserService.addExisting`, behind the add row, Import users and the search's add: the new
+  result `InJoin`, "not added, being joined"), a link's acceptance (an invitation or a password
+  link: `AccountTokenService.checked`, `acceptByProvider`; `InJoin`, the refused link's page), a
+  password set by an admin or root (`ShareLinkService.InJoin`), a role change on Edit user
+  (`account.join.in.progress`), and an API token (`ApiTokenService.createOnce`: as an ended
+  session). And the retiring account is signed out from the join's start
+  (`Secured.sessionUser`), not only once the first step ends its sessions: an in-flight session
+  votes, makes tokens or writes its auth version back no more.
+- **Who finishes** (the review): the last step runs as the performer if they may still join the
+  two accounts and retire the joined one; else as the user whose Retry queued it again (the job
+  page's Retry passes them, `JobScheduler.retry(by =)`, `StepContext.by`; checked again under the
+  users rows), else it fails (`job.error.join.performer`). The audit line names both
+  (`byAccountId=` the finisher, `startedBy=` the performer). **Abandon** (root, `POST
+  /admin/accounts/join/:jobId/abandon`, `AccountJoin.abandon`): a join that failed after a round
+  step is cancelled, both accounts released (the rounds it moved stay with the kept account, which
+  gets the joined account's membership in their contests by the merge's rule, a `role` change log
+  row each, so it votes what it now holds; the rest stays with the other account, not retired),
+  `account_joined` change log rows on both (`abandoned #other`), `account_join_abandoned ...
+  contestsMerged=` logged. A Google or Wikimedia sign-in refused while held logs
+  `account_link_by_provider_refused reason=account_in_join`. Before a round step, Cancel does it.
+- **The contests behind the performer rule** (the review): memberships, contests worked in
+  (`round_user`, `vote`), and the rounds of the account's votes set aside and its comments'
+  contests, so an admin's preview shows nothing outside their contests.
+- **Lock order in the last step:** both users rows, then both accounts' `user_contest` and
+  `account_token` rows (`AccountJoinJdbc.lockAccountRows`), then the sweep's rounds.
+- **Refusals while a join holds the accounts:** sign-in of the retiring account
+  (`LoginResults.signedIn`, every password, OAuth and link sign-in; `sign_in_refused
+  reason=account_join`); a `round_user` row for either: round creation leaves the retiring account
+  out and keeps the kept one; adding a juror (both paths), its "stop" phase and a review's jury
+  refuse (`job.error.rebalance.joining`, `round.review.distribute.joining`), read before the users
+  row's shared lock (no wait on a join's step) and after it (the join's start takes it
+  exclusively). Votes need no check of their own: the sessions are ended by the first step and no
+  new one is opened; a vote in flight is moved by its round's step or by the last step's sweep.
+- **Cancel and Retry:** `JobScheduler.cancelOrRefuse` and `JobHandler.onCancelled` throwing
+  `JobScheduler.CancelRefusal` (the job page's Cancel flashes why); the job status JSON's
+  `details.cancellable` hides Cancel in `job-status.js`. `JobHandler.mayManage`: the job's page,
+  status, Cancel and Retry need the performer's rule over both accounts (the joined one while not
+  retired) besides the job contest's admin role.
+- **Notices:** a mail to both addresses only if the performer ticks **Tell both owners by email**
+  (unticked; masked addresses, no link; the maintainer's standing rule replaces "both addresses
+  get a notice"). No in-app notice (A-1's notices are adds from search; a join's would need its own
+  bar and list): the change log shows **Account joined** on both accounts.
+- **Audit:** `security.account` lines by ids only: `account_join_queued keptAccountId=
+  joinedAccountId= byAccountId= contestId= jobId= notify=`, `account_join_refused ... reason=`, and
+  `account_joined keptAccountId= joinedAccountId= byAccountId= contestId= requestId= jobId= votes=
+  votesAside= merged= rounds= memberships= comments= identitiesUnlinked= apiTokens= links=`.
+- **Guards:** `controllers.AccountJoinSpec` (the permission matrix with forged ids and CSRF, the
+  preview, refusals, the job over several rounds, Cancel and Retry, the races),
+  `RoundWritesGuardSpec` and `StructuralWritesSpec` (`AccountJoinJdbc.moveRound`),
+  `WikiTakenPanelSpec` (the link), `javascript-test/job-status.test.js`, and the browser test
+  `duplicates.spec.js` (report, Join, preview, run, result).
+
 ## Invariant
 
 A join always ends with exactly one active account, with one membership per contest (the user,

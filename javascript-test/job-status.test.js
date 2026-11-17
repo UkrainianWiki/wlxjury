@@ -115,6 +115,14 @@ describe("pollJobStatus", () => {
         expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
+    test("shows Retry but not Cancel for a failed job its handler won't cancel (an account join)", async () => {
+        respond({ status: "failed", error: "boom", details: { cancellable: false } });
+        const el = fakeElement("running");
+        await pollJobStatus(el, { reload: jest.fn() });
+        expect(el.parts[".job-retry"].style.display).toBe("inline");
+        expect(el.parts[".job-cancel"].style.display).toBe("none");
+    });
+
     test("polls while the job runs and reloads the page when it is done", async () => {
         respond({ status: "running", title: "Distributing", progressDone: 1, progressTotal: 2 }, { status: "done" });
         const reload = jest.fn();

@@ -519,16 +519,53 @@ elsewhere, as the edit form's Join link will. Keep separate only hides a pair fr
 changes no account and mails no one, is checked again under the accounts' users rows, and is
 logged at INFO on `security.account` by ids only (`accounts_kept_apart byAccountId= contestId=
 pairs=`), as is each report (`duplicates_report byAccountId= contestId= groups= accounts=`).
+**Since J-2** (joining two accounts, decisions J1–J3,
+[account join plan](../plans/2026-11-03-account-join.md)): `services.AccountJoin` (the preview, the
+start) and `services.AccountJoinHandler` (the `account_join` job) move one account's memberships,
+round assignments, votes, votes set aside (criteria rates follow their vote ids) and comments to
+the account kept, then retire it with A-4's `AccountRetirement.retireIn` (its rules apply: an admin
+account is joined into another by root only; an admin joins only an account tied to the contest
+the join is done from). Who: root, or an active admin of every contest each account is in or
+worked in, each account in one of them at least (an account with no ties would pass on an empty
+set: root only), never a root account (`AccountJoin.mayPerform`, read from the database on the page, on
+the POST under both users rows, and for the job's page, Cancel and Retry: `JobHandler.mayManage`);
+everyone else a 403 logged on `security.authz`, a missing or retired id a 404. The kept account is
+the performer's choice (J2, nothing preselected), limited to the accounts with an owner-proven
+email where some have one. The preview is recomputed under both users rows (ascending id) and runs
+only if it is the one the performer saw (a signature); a vote collision (J1: both accounts' rows
+for one file and round, one rated or across `vote` and `vote_aside`) refuses it, so no vote is
+dropped; a pair with an unrated row (an assignment) merges, keeping the vote. Identities are
+unlinked, never moved (J3: no proof from the user). One active join per
+account (the dedupe key on the kept account, and a queued, running or failed join holding either
+account refuses another). While a join holds the accounts, the account retired can't sign in
+(`LoginResults.signedIn`), and the job's first step ends both accounts' sessions and revokes their
+API tokens, and `Secured.sessionUser` treats the retiring account as signed out from the start,
+so it can't vote, make tokens or write its auth version back; under the account's users row lock
+no membership is added for either (`UserService.InJoin`), no link of either accepted, no role or
+password changed by an admin, no API token made; no `round_user` row is inserted for either (round creation leaves the
+retiring account out; adding a juror, its "stop" phase and a review's jury refuse, read before and
+after the users row's shared lock). Its last step, under the users rows, sweeps any row left (a
+vote that committed late), unlinks the identities, revokes both accounts' unused links, writes
+`account_joined` on both accounts and a `done` row in `account_join_request`, then retires the
+account. Cancel only before the first round step commits (`JobScheduler.CancelRefusal`), Retry
+after; a Retry finishes the join for the retrying user if the performer no longer may (checked
+under the users rows), and root may abandon a failed join after a round step (both accounts
+released, moved rows kept, logged `account_join_abandoned`). No mail unless the performer ticks **Tell both owners by email** (unticked; masked
+addresses, no link). Logged by ids only: `account_join_queued`, `account_join_refused ... reason=`,
+`account_joined keptAccountId= joinedAccountId= byAccountId= contestId= requestId= ...` with counts,
+`sign_in_refused accountId= reason=account_join`. **Residual risk:** a join can't be undone in the
+tool (votes are not moved back); the preview, the CSRF POST and the performer's rule are what
+stand before it.
 
 **Example.** `UserService.addToContest` (results `NewAccount`, `JoinedContest`, `Invited`,
 `WikiAccountUnverified`); `UserService.addAccountToContest` (the search's add by id: the account
 looked up once before its row lock and checked again under it, a deleted or unknown id a 404);
-`services.AccountSearch`; `services.WikiTakenPanel`; `services.AccountRetirement`; `services.AccountTokenService.check`; acceptance in one transaction
+`services.AccountSearch`; `services.WikiTakenPanel`; `services.AccountRetirement`; `services.AccountJoin`; `services.AccountTokenService.check`; acceptance in one transaction
 with the token row locked; `ShareLinkService.refusal` (who may share a link, or set a password).
 
 **Guards.** `AccountInvitationSpec`, `ShareLinkSpec`, `AdminSetPasswordSpec`, `OwnAccountSpec`, `AccountReviewFixesSpec`, `SetupSpec`,
 `db.AccountVerificationMigrationSpec`, `MultiContestUserSpec`, `UserControllerSpec`, `AccountSearchSpec`, `WikiTakenPanelSpec`, `RetireAccountSpec`,
-`DuplicateAccountsSpec`.
+`DuplicateAccountsSpec`, `AccountJoinSpec`.
 
 A Google or Wikimedia identity's first sign-in links to an account by the same rule
 (`services.oauth.IdentityLinker`): by an email the provider is authoritative for (Google: Gmail or
@@ -540,7 +577,8 @@ link, root's password reset, an admin's or root's change of another account's em
 account unlink identities; unlinking ends the account's other sessions.
 
 **Exceptions.** N5 (postponed): the greeting/invitation is sent "From" the inviter.
-Duplicate wiki accounts are refused at sign-in, not merged (postponed).
+Duplicate wiki accounts are refused at sign-in, not merged; an admin or root joins them (J-2) after
+the preview.
 
 ## 15. Sessions
 

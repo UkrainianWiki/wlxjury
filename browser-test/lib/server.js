@@ -65,6 +65,10 @@ export function fixtureFor(browserName) {
     // a contest of their own: an empty member without a role, with a wiki account, and an account
     // in no contest with another one; none in the guides' screenshot mode
     retireTargets: (s.retireTargets || [])[i] || [],
+    // this engine's pairs of accounts to join as root (duplicates.spec.js, J-2), in a contest of
+    // their own: two members without a role sharing a wiki account written two ways; none in the
+    // guides' screenshot mode
+    joinPairs: (s.joinPairs || [])[i] || [],
   };
 }
 

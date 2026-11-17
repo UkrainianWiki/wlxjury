@@ -125,6 +125,11 @@
                         <p class="text-body-secondary small mb-2 duplicates-kept">@Messages("duplicates.kept.pairs", keptText(group))</p>
                     }
 
+                    @* J-2: the join's preview, where the kept account is chosen (none preselected) *@
+                    @if(group.mayJoin) {
+                        <a class="btn btn-outline-secondary btn-sm mb-2 duplicates-join"
+                           href="@controllers.AccountJoinController.previewUrl(contestId, group.found.ids)">@Messages("duplicates.join")</a>
+                    }
                     @if(group.mayKeepSeparate) {
                         <form method="post" action="@keepAction" class="m-0">
                             @csrfField()

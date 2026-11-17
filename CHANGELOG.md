@@ -57,7 +57,7 @@ The next release is `26.11.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything d
   admin of every contest the group's accounts are in or worked in may, and a group that changed
   since the page was shown records nothing. Read-only otherwise: no account changes, nothing is
   mailed; the report and each Keep separate are logged by ids only (`security.account`). Joining
-  comes with J-2. Admin guide.
+  is J-2's (below). Admin guide.
 - **Retire an empty duplicate account** (A-4 of the existing accounts plan, decision A3; developed
   2026-11-16, `stack/178-retire-empty-account`): on Edit user's "Other accounts with the wiki
   account" panel, each **Add that account to this contest instead** has an unticked **Retire the
@@ -73,6 +73,25 @@ The next release is `26.11.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything d
   add. Round creation and adding a juror re-check the account under its users row lock, so a
   retired account is never assigned. **Account retired** in the change log on both accounts;
   logged by ids only (`security.account`); no mail. Admin guide.
+- **Join two accounts** (J-2 of the account join plan, decisions J1–J3; developed 2026-11-17,
+  `stack/179-account-join`): **Join…** on a group of the possible duplicates, or **Join the two
+  accounts…** on Edit user's "Other accounts with the wiki account" panel, opens a preview, for
+  root or an admin of every contest each account is in or worked in. The admin chooses the account
+  to keep (nothing preselected; only an account whose owner proved its email, where some have
+  one), then sees for each other account its contests and roles (the higher-access role kept), its
+  rounds, votes and votes set aside, duplicate unrated assignments (merged), **collisions** (a file
+  both accounts voted on in one round: any refuses the join, so no vote is ever dropped; a vote and
+  the other account's unrated assignment merge, keeping the vote), the
+  conflict-of-interest change and the Google or Wikimedia sign-ins it unlinks. **Join** (a POST
+  with the CSRF token, the preview read again) runs a background job, round by round: memberships,
+  round assignments, votes (with their criteria rates), votes set aside and comments move to the
+  account kept, then the other account is retired as A-4 retires one. Both accounts' sessions end
+  and their API tokens and unused links are revoked; meanwhile the retiring account is signed out
+  and can't sign in, and neither account is added to a round or a contest, accepts a link, or has
+  its role, password or API tokens changed. Cancel only before the first round moves, Retry after a
+  failed step (finished for the admin who retries if the one who started it no longer may); root
+  can abandon a failed join (both accounts released, what moved kept). No mail unless **Tell both owners by email** is ticked. **Account joined** in the
+  change log on both accounts; logged by ids only (`security.account`). Admin guide.
 
 **Fixes**
 

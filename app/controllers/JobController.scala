@@ -30,15 +30,18 @@ class JobController @Inject() (cc: ControllerComponents, jobs: JobScheduler, blo
   def cancel(id: Long): EssentialAction =
     withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
       withJob(user, id, request) { job =>
-        jobs.cancel(job.id, user.id)
-        back(request, job)
+        jobs.cancelOrRefuse(job.id, user.id) match {
+          case Right(_) => back(request, job)
+          case Left(refused) =>
+            back(request, job).flashing("error" -> messagesApi.preferred(request)(refused.messageKey, refused.args: _*))
+        }
       }
     }
 
   def retry(id: Long): EssentialAction =
     withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
       withJob(user, id, request) { job =>
-        jobs.retry(job.id) match {
+        jobs.retry(job.id, by = user.id) match {
           case Right(_)     => back(request, job)
           case Left(refused) =>
             back(request, job).flashing("error" -> messagesApi.preferred(request)(refused.messageKey, refused.args: _*))
@@ -53,7 +56,7 @@ class JobController @Inject() (cc: ControllerComponents, jobs: JobScheduler, blo
     */
   private def withJob(user: User, id: Long, request: RequestHeader, json: Boolean = false)(f: Job => Result): Result =
     JobJdbc.findById(id) match {
-      case Some(job) if adminOf(user, job.contestId) => f(job)
+      case Some(job) if adminOf(user, job.contestId) && jobs.handler(job.kind).forall(_.mayManage(job, user)) => f(job)
       case Some(job) =>
         Secured.logDenial(user, request, Secured.Denial(job.contestId, Some(s"job:${job.id}"), User.ADMIN_ROLES))
         notFound(user, request, json)

@@ -8,8 +8,8 @@ import scala.collection.mutable
 /** The transaction a step, a cancel or a retry runs in, with the job's row locked. Work
   * to do once it has committed (e.g. invalidating a cache) goes to [[afterCommit]].
   */
-/** @param by who acts, where the step is a user's action (a Cancel: [[JobScheduler.cancel]]); None for
-  *           the scheduler's own steps
+/** @param by who acts, where the step is a user's action (a Cancel: [[JobScheduler.cancel]], a Retry:
+  *           [[JobScheduler.retry]]); None for the scheduler's own steps
   */
 final class StepContext(val session: DBSession, val by: Option[Long] = None) {
   private[jobs] val afterCommitActions = mutable.Buffer.empty[() => Unit]
@@ -90,9 +90,15 @@ trait JobHandler {
   def onFailed(job: Job, ctx: StepContext): JsObject = job.state
 
   /** The job is cancelled (it may have been queued, running or failed). Returns its new
-    * state.
+    * state; throws [[JobScheduler.CancelRefusal]] to refuse the Cancel (the job stays as it was).
     */
   def onCancelled(job: Job, ctx: StepContext): JsObject = job.state
+
+  /** Whether `user`, who administers the job's contest (or is root for a job without one), may
+    * also see, cancel and retry this job: [[controllers.JobController]] asks it after its own rule.
+    * An account join asks for its performer's rule over both accounts.
+    */
+  def mayManage(job: Job, user: db.scalikejdbc.User): Boolean = true
 
   /** A failed job is queued again (Retry): redo what [[onFailed]] undid. Returns its new
     * state; it resumes from it.

@@ -96,6 +96,8 @@ object AccountTokenService {
   case object CreatorNotAllowed extends Refusal("shared_link_creator_not_allowed")
   /** A shared link of an account without an email while Wikimedia sign-in is offered. */
   case object SignsInWithWikimedia extends Refusal("shared_link_signs_in_with_wikimedia")
+  /** The account is in an account join (J-2): no link of it is accepted meanwhile (no role it would give). */
+  case object InJoin extends Refusal("account_in_join")
 
   private def refused(refusal: Refusal, token: Option[AccountToken]): Left[Refusal, Nothing] = {
     val line = s"account_token_refused reason=${refusal.reason}" + token.fold("")(t => s" tokenId=${t.id} accountId=${t.userId}")
@@ -137,6 +139,10 @@ object AccountTokenService {
         // nor, without an email, once Wikimedia sign-in is offered (configured since it was created)
         case Some(user) if t.shared && wikimediaSignIn && user.emailLo.isEmpty =>
           refused(SignsInWithWikimedia, Some(t))
+        // held by an account join (J-2): an acceptance (under the account's row lock, which the
+        // join's start takes too) would give roles and a password to an account being joined
+        case Some(user) if db.scalikejdbc.AccountJoinJdbc.joining(Seq(user.getId)).nonEmpty =>
+          refused(InJoin, Some(t))
         case Some(user) => Right(t -> user)
       }
 
@@ -182,13 +188,16 @@ object AccountTokenService {
     */
   def acceptByProvider[A](userId: Long, verifiedEmail: String)(
       link: (User, DBSession) => Either[A, Unit]): Either[Option[A], User] = {
-    final class Abort(val error: Option[Any]) extends RuntimeException(null, null, false, false)
+    final class Abort(val error: Option[Any], val reason: String = "no_live_link") extends RuntimeException(null, null, false, false)
     try {
       val (proven, line) = db.scalikejdbc.WriteTx.write { implicit session =>
         val email = LoginText.email(verifiedEmail)
         // the account's row, then its links' (acceptPasswordLink's order)
         val user  = User.lockRow(userId).filter(_.deletedAt.isEmpty)
         val links = AccountTokenJdbc.lockLive(userId, AccountTokenJdbc.SetsPassword, email)
+        // held by an account join (J-2): no link accepted meanwhile, under the row lock the join's start takes
+        if (user.nonEmpty && db.scalikejdbc.AccountJoinJdbc.joining(Seq(userId)).nonEmpty)
+          throw new Abort(None, reason = InJoin.reason)
         (links.headOption, user) match {
           case (Some(t), Some(u)) if u.password.isEmpty && u.emailLo == email && t.email == email =>
             // the provider verified the address: proven, whether the link was mailed or shared
@@ -202,7 +211,7 @@ object AccountTokenService {
       Right(proven)
     } catch {
       case a: Abort =>
-        if (a.error.isEmpty) logger.info(s"account_link_by_provider_refused reason=no_live_link accountId=$userId")
+        if (a.error.isEmpty) logger.info(s"account_link_by_provider_refused reason=${a.reason} accountId=$userId")
         Left(a.error.map(_.asInstanceOf[A]))
     }
   }
@@ -311,7 +320,9 @@ object AccountTokenService {
       logContest: Option[Long] = None): Either[ShareLinkService.Refusal, User] = {
     val result = User.quietTx { implicit session =>
       User.lockRow(accountId).toRight(ShareLinkService.NotInContest).flatMap { account =>
-        ShareLinkService.mayCreate(actor, account, AccountTokenJdbc.PasswordReset, contestId, wikimediaSignIn)
+        // an account an account join holds (J-2): its pending invitations would give roles meanwhile
+        (if (db.scalikejdbc.AccountJoinJdbc.joining(Seq(accountId)).nonEmpty) Some(ShareLinkService.InJoin)
+         else ShareLinkService.mayCreate(actor, account, AccountTokenJdbc.PasswordReset, contestId, wikimediaSignIn))
           .toLeft(())
           .map { _ =>
             // the invitations a shared link sent to the account's address would find

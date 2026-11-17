@@ -77,8 +77,11 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
             case None if fresh.inReview =>
               reviewRefusal(fresh, jurorId) match {
                 case Some(error) => Refused(error)
+                // in an account join (J-2): refused before the users row's lock, which the join holds
+                case None if joining(jurorId) => Refused(JobError(JoiningKey, Seq(jurorId.toString)))
                 // the juror's users row share-locked and re-checked (A-4): retired meanwhile, refused
                 case None if !liveJuror(jurorId) => Refused(JobError(NotJurorKey, Seq(jurorId.toString)))
+                case None if joining(jurorId) => Refused(JobError(JoiningKey, Seq(jurorId.toString)))
                 case None =>
                   sql"""INSERT INTO round_user (user_id, round_id, role, active) VALUES ($jurorId, ${fresh.getId}, ${User.JURY_ROLE}, TRUE)
                         ON DUPLICATE KEY UPDATE active = TRUE""".update()
@@ -88,8 +91,10 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
               refusal(fresh, run, jurorId, ticked, frozenByUs = false) match {
                 case Some(error) => Refused(error)
                 case None if signature(jury(fresh).jurors) != shownJury => JuryChanged
+                case None if joining(jurorId) => Refused(JobError(JoiningKey, Seq(jurorId.toString)))
                 // checked again under the same lock by the job's "stop" phase, which inserts the row
                 case None if !liveJuror(jurorId) => Refused(JobError(NotJurorKey, Seq(jurorId.toString)))
+                case None if joining(jurorId) => Refused(JobError(JoiningKey, Seq(jurorId.toString)))
                 case None =>
                   jobs.enqueue(NewJob(
                     kind = Kind,
@@ -131,6 +136,15 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
     */
   private def liveJuror(jurorId: Long)(implicit session: DBSession): Boolean =
     User.lockLive(Seq(jurorId)).contains(jurorId)
+
+  /** Whether the juror's account is in an account join (J-2,
+    * [[db.scalikejdbc.AccountJoinJdbc.joining]]): an add round-first would take its users row after
+    * the round, against the join's order, so it is refused while the join holds the account. Read
+    * plainly before the users row's shared lock ([[liveJuror]]: no wait on a join's step) and again
+    * after it (a join's start takes that row exclusively: it committed before, or waits for this).
+    */
+  private def joining(jurorId: Long)(implicit session: DBSession): Boolean =
+    AccountJoinJdbc.joining(Seq(jurorId)).nonEmpty
 
   /** Why adding `jurorId` to a round held in review is refused, if it is: a legacy round (jurors only
     * by their votes), or not an active jury member of the contest. A round created for review with

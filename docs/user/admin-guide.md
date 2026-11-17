@@ -297,6 +297,58 @@ group without the buttons. If the group changed since you opened the page (someo
 apart meanwhile), nothing is recorded and the page says so. Each Keep separate is logged with
 your account and the accounts' ids.
 
+<a id="a-join"></a>
+### Joining two accounts
+
+When the accounts of a group are one person's, **Join…** on the group (in the report, next to
+**Keep separate**) opens the join's page; **Join the two accounts…** in the Edit user panel (when
+another account has the wiki account you typed) opens it for those two accounts. Only root, or an
+admin of every contest each account is in or worked in, sees these links and the page; an account
+in no contest is joined by root only.
+
+1. **Choose the account to keep.** Nothing is chosen for you. If only some of the accounts have an
+   email their owner proved (verified, not set by an admin), only those can be kept. Press **Show
+   what joining would do**.
+2. **Check the preview** of each other account joining into the one kept:
+   - **Contests:** each account's role in each contest and the role after; where both have one, the
+     role with more access is kept (admin, then organizer, then juror, then the roles without
+     access; *no role* loses to any other).
+   - **Rounds:** each round of the account retired, both accounts' files, votes and votes set aside
+     there, and the round's juror after (active if either was; a row where one of the two was
+     stopped is marked). Where both accounts have the same file unrated, it is one assignment: one
+     stays (**Assignments merged**).
+   - **Collisions:** a file both accounts voted on in the same round (or one's vote and the other's
+     set aside). **Any collision stops the join**: a join never drops a vote. A file only one of
+     them rated, the other having it unrated, is not a collision: the vote is kept. Fix them
+     by hand first (it happens mostly where one person was given two shares on purpose; then keep
+     the accounts separate).
+   - **What else changes:** the conflict-of-interest filter (the account kept keeps its wiki
+     account, or takes the other's if it has none; a name stays verified only if the account that
+     proved it is the one it came from), comments moved, the account's Google or Wikimedia sign-ins
+     unlinked (their holder links them again from the account kept, after signing in to it), both
+     accounts' API tokens and unused links revoked and their sessions ended.
+   - Why the join can't start, if it can't: a collision; an account in another join; a juror being
+     added to a round of theirs, a round of theirs being distributed or held in review (finish or
+     cancel the review first), or a round job in a contest of the account retired; the account
+     retired being an admin (root only), your own, or not a member of this contest (start from the
+     report of a contest it is in).
+3. **Tell both owners by email** is unticked: no mail is sent unless you tick it (the addresses
+   masked, no link). Press **Join #… into #…**. In a group of three or more, join one account at a
+   time into the one kept.
+
+The join runs in the background, round by round; its page shows the progress and, when done, what
+moved. From its start the account retired can't sign in, and neither account can be added to a
+round. Until its first round has moved, **Cancel** stops it with nothing moved; after that it can't
+be cancelled: if it fails (a round getting its files or a new juror, say), fix the cause and press
+**Retry** (if whoever started it is no longer an admin of every contest of both accounts, it
+finishes for you, if you are). Root can **Abandon** a failed join instead: what moved stays with
+the account kept, the other account is not retired, and both can be used again. While a join
+runs, neither account can be added to a contest, accept an invitation, or have its role or
+password changed. When it is done the other account is retired (as **Retire the account being edited**
+does: its email freed, nobody signs in to it again), its votes outside every round's results stay
+with it, and the account change log shows **Account joined** and **Account retired** on both
+accounts. It can't be undone.
+
 <a id="a-invitations"></a>
 ## Invitations
 
@@ -1027,8 +1079,9 @@ stopped.
   once, as an admin does, see [Changing a person](#a-edit-person)).
 - Send **Reset password** links and use **End sessions** on any account, and see and revoke
   any account's API tokens.
-- See the [possible duplicate accounts](#a-duplicates) of every contest and outside them, and
-  keep any of them separate.
+- See the [possible duplicate accounts](#a-duplicates) of every contest and outside them, keep
+  any of them separate, and [join](#a-join) any two accounts (also an admin account, or one in no
+  contest).
 - Run **Check every round's images**, on the rounds list: it checks that every round's list of
   files matches its votes, and repairs any drift.
 - Run **Normalize stored authors**, on the rounds list, see [below](#a-normalize-authors).

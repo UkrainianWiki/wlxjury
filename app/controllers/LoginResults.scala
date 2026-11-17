@@ -49,7 +49,17 @@ trait LoginResults { this: Secured with I18nSupport =>
     * sign-in's flow keys, another account's sign-in) stays.
     */
   def signedIn(user: User, login: String, returnTo: Option[String], keep: Boolean,
-               contestId: Option[Long] = None)(implicit request: RequestHeader): Result = {
+               contestId: Option[Long] = None)(implicit request: RequestHeader): Result =
+    // an account an account join retires (J-2) signs in no more while the join runs: its sessions
+    // ended with the join's first step, and its votes would stay behind on it
+    if (user.id.exists(id => db.scalikejdbc.AccountJoinJdbc.retiring(Seq(id)).nonEmpty)) {
+      LoginResults.accountLogger.info(s"sign_in_refused accountId=${user.getId} reason=account_join")
+      noStore(Forbidden(views.html.errorPage(None, "error.title", "account.join.signin.refused")(
+        messagesApi.preferred(request), request)))
+    } else startSession(user, login, returnTo, keep, contestId)
+
+  private def startSession(user: User, login: String, returnTo: Option[String], keep: Boolean,
+               contestId: Option[Long])(implicit request: RequestHeader): Result = {
     val latest = Secured.inCurrentContest(user, contestId.map(_.toString))
     // defensive: inCurrentContest already picks an active membership; kept should its rules change
     val inContest = Secured.permitted(latest, _.hasAnyRole(Secured.ViewerRoles)).getOrElse(latest)
@@ -66,4 +76,8 @@ trait LoginResults { this: Secured with I18nSupport =>
     val withTheme = themeCookies.setStored(result, user.theme)
     user.lang.fold(withTheme)(l => withTheme.withLang(Lang(l)))
   }
+}
+
+object LoginResults {
+  private[controllers] val accountLogger = play.api.Logger("security.account")
 }

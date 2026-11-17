@@ -107,6 +107,13 @@ GET         /admin/account-changes                                              
 GET         /admin/duplicates                                                       @controllers.DuplicateAccountsController.report(contestId: Long)
 GET         /admin/duplicates/all                                                   @controllers.DuplicateAccountsController.all()
 POST        /admin/duplicates/keep-separate                                         @controllers.DuplicateAccountsController.keepSeparate(contestId: Option[Long] ?= None)
+# joining accounts (the account join plan's J-2): the preview and its start (root, or from a contest
+# its admins who administer every contest of the accounts), the join's page (its progress, Cancel, Retry)
+GET         /admin/accounts/join                                                    @controllers.AccountJoinController.preview(contestId: Option[Long] ?= None)
+POST        /admin/accounts/join                                                    @controllers.AccountJoinController.start(contestId: Option[Long] ?= None)
+GET         /admin/accounts/join/:jobId                                             @controllers.AccountJoinController.job(jobId: Long)
+# root abandons a failed join after its first round (Cancel is refused then)
+POST        /admin/accounts/join/:jobId/abandon                                     @controllers.AccountJoinController.abandon(jobId: Long)
 GET         /admin/allUsers                                                         @controllers.UserController.allUsers()
 GET         /admin/importusers                                                      @controllers.UserController.showImportUsers(contestId: Option[Long] ?= None)
 POST        /admin/importusers                                                      @controllers.UserController.importUsers(contestId: Option[Long] ?= None)

@@ -576,6 +576,10 @@ object Secured {
                   accountId: Option[String]): Option[User] =
     User.byUserName(normalizeUserName(userName))
       .filter(sessionMatches(_, authVersion, accountId))
+      // an account an account join retires (J-2) is signed out from the join's start, not only
+      // once its first step ends the sessions: an in-flight session votes, makes tokens or writes
+      // nothing more
+      .filterNot(u => db.scalikejdbc.AccountJoinJdbc.retiring(u.id.toSeq).nonEmpty)
       .map(inCurrentContest(_, currentContestId))
 
   /** `permission` as checked for the session's user: a [[ContestPermission]] without a

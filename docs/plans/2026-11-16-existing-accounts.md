@@ -210,7 +210,8 @@ When Edit user refuses a save as `wiki.account.taken`:
      checkbox. Its rules are under "Retiring an account" below.
   3. **Join the two accounts** (the [account join plan](2026-11-03-account-join.md)): a link to
      its preview, shown only to who may perform a join (root, or an admin of every contest both
-     are in or worked in), and only once the join is built.
+     are in or worked in), and only once the join is built. *(Built with J-2, 2026-11-17: "Join the
+     two accounts…" per other account; the kept account is chosen in the preview.)*
   4. **Keep them separate** (go back to the form, the wiki account left as it was).
 - **No suggestion otherwise:** nothing in the users page, the rounds or the reports suggests a
   join or a retire for accounts that merely look alike (the same name, the same round). One

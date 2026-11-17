@@ -93,6 +93,17 @@ object AccountRetirement {
       session: DBSession = AutoSession): Option[Refusal] =
     permission(actor, account, contestId).orElse(busy(account.getId)).orElse(emptiness(account.getId))
 
+  /** Who and which account only ([[permission]]), without the emptiness and the round job: the
+    * account join's preview (J-2), which empties the account before it retires it.
+    */
+  def permissionRefusal(actor: User, account: User, contestId: Option[Long])(implicit
+      session: DBSession = AutoSession): Option[Refusal] =
+    permission(actor, account, contestId)
+
+  /** The round job refusal only ([[busy]], M4): the account join's start and last step. */
+  def busyRefusal(accountId: Long)(implicit session: DBSession = AutoSession): Option[Refusal] =
+    busy(accountId)
+
   /** Who and which account: the actor read again from the database (a root flag removed, a
     * membership ended since the session was read).
     */
@@ -146,12 +157,15 @@ object AccountRetirement {
     }
   }
 
-  /** The first thing the account has that makes it not empty, if any. */
-  private def emptiness(accountId: Long)(implicit session: DBSession): Option[Refusal] =
+  /** The first thing the account has that makes it not empty, if any. `keepOrphans`: its
+    * `vote_orphan` rows don't count (the account join's retirement: the join plan keeps them under
+    * the retired account's id, outside every round's results).
+    */
+  private def emptiness(accountId: Long, keepOrphans: Boolean = false)(implicit session: DBSession): Option[Refusal] =
     sql"""SELECT
             EXISTS(SELECT 1 FROM vote WHERE jury_id = $accountId)
               OR EXISTS(SELECT 1 FROM vote_aside WHERE jury_id = $accountId)
-              OR EXISTS(SELECT 1 FROM vote_orphan WHERE jury_id = $accountId),
+              OR (NOT $keepOrphans AND EXISTS(SELECT 1 FROM vote_orphan WHERE jury_id = $accountId)),
             EXISTS(SELECT 1 FROM round_user WHERE user_id = $accountId),
             EXISTS(SELECT 1 FROM comment WHERE user_id = $accountId),
             EXISTS(SELECT 1 FROM user_identity WHERE user_id = $accountId AND unlinked_at IS NULL),
@@ -189,10 +203,11 @@ object AccountRetirement {
     * first, in id order: of two crossed retirements (each account retired keeping the other) the
     * second finds its kept account retired ([[KeptGone]]). Throws [[Refused]] on a refusal, after
     * which the caller must roll back: the memberships and links may be gone already. Logs nothing
-    * (the caller does, after its commit).
+    * (the caller does, after its commit). `keepOrphans`: the account's `vote_orphan` rows stay
+    * under its id and don't refuse (the account join, J-2, which has moved everything else).
     */
-  def retireIn(actor: User, accountId: Long, contestId: Option[Long], keptAccountId: Option[Long])(implicit
-      session: DBSession): Retired = {
+  def retireIn(actor: User, accountId: Long, contestId: Option[Long], keptAccountId: Option[Long],
+      keepOrphans: Boolean = false)(implicit session: DBSession): Retired = {
     def refuse(r: Refusal): Nothing = throw new Refused(r)
     val locked = (accountId +: keptAccountId.toSeq.filter(_ != accountId)).sorted
       .flatMap(id => User.lockRow(id).map(id -> _)).toMap
@@ -200,13 +215,13 @@ object AccountRetirement {
     if (keptAccountId.exists(k => !locked.get(k).exists(_.deletedAt.isEmpty))) refuse(KeptGone)
     permission(actor, account, contestId).foreach(refuse)
     busy(accountId).foreach(refuse)
-    emptiness(accountId).foreach(refuse)
+    emptiness(accountId, keepOrphans).foreach(refuse)
     val memberships = sql"DELETE FROM user_contest WHERE user_id = $accountId".update.apply()
     val links = sql"""UPDATE account_token SET revoked_at = NOW(3)
                       WHERE user_id = $accountId AND used_at IS NULL AND revoked_at IS NULL""".update.apply()
     // again, once the memberships and links are gone: a vote, an assignment or a comment that
     // committed meanwhile refuses, and the caller rolls all of it back
-    emptiness(accountId).foreach(refuse)
+    emptiness(accountId, keepOrphans).foreach(refuse)
     val oldEmail = Option(account.email).map(_.trim).filter(_.nonEmpty)
     sql"""UPDATE users SET deleted_at = NOW(3), email = NULL, email_verified_at = NULL, email_set_by_admin_at = NULL,
             password = NULL, auth_version = ${User.BumpAuthVersion}

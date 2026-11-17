@@ -1,0 +1,206 @@
+@(
+        user: db.scalikejdbc.User,
+        contest: Option[org.intracer.wmua.ContestJury],
+        accounts: Seq[db.scalikejdbc.User],
+        keepable: Set[Long],
+        verified: Set[Long],
+        kept: Option[Long],
+        previews: Seq[services.AccountJoin.Preview],
+        message: Option[String]
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@* Joining accounts (the account join plan's J-2, AccountJoinController): the accounts, the kept
+   account chosen by the performer (J2: none preselected; where only some have an email their owner
+   proved, only those), then per other account its preview (memberships, rounds, votes, collisions
+   (J1: any refuses), the conflict-of-interest change, the identities unlinked (J3)) and its form:
+   a POST with the CSRF token, "Tell both owners by email" unticked *@
+@contestId = @{ contest.flatMap(_.id) }
+@roleText(role: Option[String]) = @{ role.fold("–")(r => Messages("role." + r)) }
+@assigned(a: Option[Boolean]) = @{ a match {
+    case Some(true) => Messages("account.join.round.active")
+    case Some(false) => Messages("account.join.round.stopped")
+    case None => "–"
+} }
+@rateText(rate: Int, aside: Boolean) = @{ rate.toString + (if (aside) " " + Messages("account.join.collision.aside") else "") }
+@mainAdmin("account.join.title", user, user.getId, contestId = contestId) {
+    <div class="row account-join">
+        <h1 class="h3">@Messages("account.join.title")</h1>
+        @for(c <- contest) {
+            <p class="text-body-secondary">@Messages("contest") @c.fullName.</p>
+        }
+        <p>@Messages("account.join.explain")</p>
+        <p>
+            @contest match {
+                case Some(c) => {<a href="@routes.DuplicateAccountsController.report(c.getId)">@Messages("account.join.back")</a>}
+                case None => {<a href="@routes.DuplicateAccountsController.all()">@Messages("account.join.back")</a>}
+            }
+        </p>
+
+        @for(key <- message) {
+            <div class="alert alert-warning account-join-message" role="alert">@Messages(key)</div>
+        }
+
+        <form method="get" action="@routes.AccountJoinController.preview(contestId)" class="mb-3 account-join-choose">
+            @for(a <- accounts) {
+                <input type="hidden" name="account" value="@a.getId">
+            }
+            <fieldset>
+                <legend class="h5">@Messages("account.join.keep.legend")</legend>
+                <div class="table-responsive">
+                <table class="table table-sm align-middle mb-2">
+                    <thead>
+                        <tr>
+                            <th scope="col">@Messages("account.join.keep")</th>
+                            <th scope="col">@Messages("duplicates.account")</th>
+                            <th scope="col">@Messages("full.name")</th>
+                            <th scope="col">@Messages("wiki.account")</th>
+                            <th scope="col">@Messages("email")</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @for(a <- accounts; id = a.getId) {
+                        <tr data-account-id="@id">
+                            <td>
+                                <input class="form-check-input" type="radio" name="kept" value="@id" id="kept-@id"
+                                    @if(kept.contains(id)) {checked} @if(!keepable.contains(id)) {disabled aria-describedby="kept-why-@id"}>
+                                <label class="visually-hidden" for="kept-@id">@Messages("account.join.keep.this", a.fullname)</label>
+                                @if(!keepable.contains(id)) {
+                                    <div class="small text-body-secondary" id="kept-why-@id">@Messages("account.join.keep.unverified")</div>
+                                }
+                            </td>
+                            <td>#@id</td>
+                            <td>@a.fullname</td>
+                            <td>@a.wikiAccount.getOrElse("")@if(a.wikiAccount.exists(_.trim.nonEmpty) && a.wikiAccountVerified) { <span class="badge text-bg-success">@Messages("account.search.verified")</span>}</td>
+                            <td>@Option(a.email).filter(_.nonEmpty).getOrElse(Messages("account.search.no.email"))@if(Option(a.email).exists(_.nonEmpty)) {@if(verified.contains(id)) { <span class="badge text-bg-success">@Messages("account.search.verified")</span>} else { <span class="badge text-bg-secondary">@Messages("unverified")</span>}}</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+                </div>
+            </fieldset>
+            <button type="submit" class="btn btn-outline-secondary btn-sm">@Messages("account.join.show")</button>
+        </form>
+
+        @for(p <- previews) {
+            <section class="card mb-3 account-join-preview" aria-labelledby="join-@p.joined.id" data-joined-id="@p.joined.id">
+                <div class="card-body">
+                    <h2 class="h5 card-title" id="join-@p.joined.id">@Messages("account.join.preview.title", p.joined.name, p.joined.id.toString, p.kept.name, p.kept.id.toString)</h2>
+
+                    @if(p.refusals.nonEmpty) {
+                        <div class="alert alert-danger account-join-refusals">
+                            <p class="mb-1">@Messages("account.join.refused.intro")</p>
+                            <ul class="mb-0">
+                            @for(r <- p.refusals) {
+                                <li>@Messages(r.key, r.args.map(a => if (a.startsWith("account.retire.refused")) Messages(a) else a): _*)</li>
+                            }
+                            </ul>
+                        </div>
+                    }
+
+                    <h3 class="h6">@Messages("account.join.memberships")</h3>
+                    @if(p.memberships.isEmpty) {
+                        <p class="small">@Messages("account.join.memberships.none")</p>
+                    } else {
+                        <div class="table-responsive">
+                        <table class="table table-sm mb-2 account-join-memberships">
+                            <thead><tr>
+                                <th scope="col">@Messages("contest")</th>
+                                <th scope="col">#@p.kept.id</th>
+                                <th scope="col">#@p.joined.id</th>
+                                <th scope="col">@Messages("account.join.after")</th>
+                            </tr></thead>
+                            <tbody>
+                            @for(m <- p.memberships) {
+                                <tr @if(m.conflict) {class="table-warning"}>
+                                    <td>@m.label</td>
+                                    <td>@roleText(m.kept)</td>
+                                    <td>@roleText(m.joined)</td>
+                                    <td>@roleText(m.result)@if(m.conflict) { <span class="small">(@Messages("account.join.role.conflict"))</span>}</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                        </div>
+                    }
+
+                    <h3 class="h6">@Messages("account.join.rounds")</h3>
+                    @if(p.rounds.isEmpty) {
+                        <p class="small">@Messages("account.join.rounds.none")</p>
+                    } else {
+                        <div class="table-responsive">
+                        <table class="table table-sm mb-2 account-join-rounds">
+                            <thead><tr>
+                                <th scope="col">@Messages("account.join.round")</th>
+                                <th scope="col">@Messages("contest")</th>
+                                <th scope="col">#@p.kept.id</th>
+                                <th scope="col">#@p.joined.id</th>
+                                <th scope="col">@Messages("account.join.merged")</th>
+                                <th scope="col">@Messages("account.join.collisions")</th>
+                                <th scope="col">@Messages("account.join.after")</th>
+                            </tr></thead>
+                            <tbody>
+                            @for(r <- p.rounds) {
+                                <tr @if(r.collisions > 0) {class="table-danger"} else {@if(r.stoppedInOne) {class="table-warning"}}>
+                                    <td>@r.label</td>
+                                    <td>@r.contest.fold("")(_.fullName)</td>
+                                    <td>@assigned(r.kept.assigned); @Messages("account.join.votes", r.kept.votes, r.kept.rated, r.kept.aside)</td>
+                                    <td>@assigned(r.joined.assigned); @Messages("account.join.votes", r.joined.votes, r.joined.rated, r.joined.aside)</td>
+                                    <td>@r.merges</td>
+                                    <td>@r.collisions</td>
+                                    <td>@assigned(r.resultActive)@if(r.stoppedInOne) { <span class="small">(@Messages("account.join.round.stopped.one"))</span>}</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                        </div>
+                    }
+
+                    <p class="small text-body-secondary account-join-merge">@Messages("account.join.merge.explain")</p>
+                    @if(p.collisionCount > 0) {
+                        <h3 class="h6 text-danger">@Messages("account.join.collisions.title", p.collisionCount)</h3>
+                        <ul class="small account-join-collisions">
+                        @for(c <- p.collisions) {
+                            <li>@Messages("account.join.collision", c.round, c.title, p.kept.id.toString, rateText(c.pair.keptRate, c.pair.keptAside), p.joined.id.toString, rateText(c.pair.joinedRate, c.pair.joinedAside))</li>
+                        }
+                        </ul>
+                        @if(p.collisionCount > p.collisions.size) {
+                            <p class="small">@Messages("account.join.collisions.more", p.collisionCount - p.collisions.size)</p>
+                        }
+                    }
+
+                    <h3 class="h6">@Messages("account.join.what")</h3>
+                    <ul class="small account-join-what">
+                        <li class="account-join-coi">@p.coi match {
+                            case c if c.leaving.nonEmpty => {@Messages("account.join.coi.leaving", c.leaving.get, c.kept.get)}
+                            case c if c.taken.nonEmpty => {@Messages("account.join.coi.taken", c.taken.get)}
+                            case c if c.result.isEmpty => {@Messages("account.join.coi.none")}
+                            case c => {@Messages("account.join.coi.same", c.result.get)}
+                        }@if(p.coi.resultVerified != p.coi.keptVerified) { @Messages("account.join.coi.verified")}</li>
+                        <li>@Messages("account.join.comments", p.joined.comments)</li>
+                        <li class="account-join-identities">@if(p.joined.identities.isEmpty) {@Messages("account.join.identities.none")} else {@Messages("account.join.identities", p.joined.identities.map(i => s"${i.provider}: ${i.label}").mkString(", "))}</li>
+                        <li>@Messages("account.join.sessions", p.kept.apiTokens + p.joined.apiTokens, p.kept.links + p.joined.links)</li>
+                        @if(p.joined.orphans > 0) {
+                            <li>@Messages("account.join.orphans", p.joined.orphans)</li>
+                        }
+                        <li>@Messages("account.join.retired", p.joined.name, p.joined.id.toString)</li>
+                    </ul>
+
+                    <form method="post" action="@routes.AccountJoinController.start(contestId)" class="m-0 account-join-start">
+                        @csrfField()
+                        @for(a <- accounts) {
+                            <input type="hidden" name="account" value="@a.getId">
+                        }
+                        <input type="hidden" name="kept" value="@p.kept.id">
+                        <input type="hidden" name="joined" value="@p.joined.id">
+                        <input type="hidden" name="signature" value="@p.signature">
+                        @* never a mail nobody chose: unticked *@
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" name="notify" value="true" id="join-notify-@p.joined.id">
+                            <label class="form-check-label" for="join-notify-@p.joined.id">@Messages("account.join.notify")</label>
+                        </div>
+                        <button type="submit" class="btn btn-danger btn-sm" @if(!p.mayStart) {disabled}>@Messages("account.join.start", p.joined.id.toString, p.kept.id.toString)</button>
+                    </form>
+                </div>
+            </section>
+        }
+    </div>
+}

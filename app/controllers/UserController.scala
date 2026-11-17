@@ -605,6 +605,7 @@ class UserController @Inject()(cc: ControllerComponents,
           Set(User.ADMIN_ROLE), Some(r.reason)), notice)
       case ShareLinkService.SignsInWithWikimedia | ShareLinkService.NoLogin =>
         refused(None, "password.set.no.login", maySetPassword = false, notice)
+      case ShareLinkService.InJoin => refused(None, "account.join.in.progress", maySetPassword = false, notice)
       case _ => refused(None, "password.others.not.allowed", maySetPassword = false, notice)
     }
     // an access role the account can't take directly: an invitation, if it has an email
@@ -792,6 +793,10 @@ class UserController @Inject()(cc: ControllerComponents,
         // the account may have joined another contest since the checks: decided again under its lock
         if (mayEdit && !locked.exists(UserController.mayEditAccountNow(user, _)))
           throw new UserController.Refused("user.in.other.contests")
+        // an account an account join holds (J-2): no role change meanwhile (read under its row lock,
+        // which the join's start takes too)
+        if (newRole.nonEmpty && db.scalikejdbc.AccountJoinJdbc.joining(Seq(userId)).nonEmpty)
+          throw new UserController.Refused("account.join.in.progress")
         var emailChange = Option.empty[UserService.EmailChanged]
         var wikiUnlinked = 0
         if (mayEdit) {
@@ -974,6 +979,7 @@ class UserController @Inject()(cc: ControllerComponents,
     val invited = added.count { case Invited(_, m) => m != Mail.Retired; case _ => false }
     val unverifiedWiki = added.count(_.isInstanceOf[WikiAccountUnverified])
     val noEmail = added.count(_.isInstanceOf[NoEmailToInvite])
+    val inJoin = added.count(_.isInstanceOf[InJoin])
     def mailOf(a: Added): Option[Mail] = a match {
       case NewAccount(_, mail) => Some(mail)
       case Invited(_, mail)    => Some(mail)
@@ -990,6 +996,7 @@ class UserController @Inject()(cc: ControllerComponents,
       (if (invited > 0) Seq(messages("users.invited", invited)) else Nil) ++
       (if (unverifiedWiki > 0) Seq(messages("users.not.added.wiki.unverified", unverifiedWiki)) else Nil) ++
       (if (noEmail > 0) Seq(messages("users.not.added.no.email", noEmail)) else Nil) ++
+      (if (inJoin > 0) Seq(messages("users.not.added.joining", inJoin)) else Nil) ++
       (if (notSent > 0) Seq(messages("users.invitations.not.sent", notSent)) else Nil) ++
       (if (notAsked > 0) Seq(messages("users.invitations.not.mailed", notAsked)) else Nil) ++
       (if (notPossible > 0) Seq(messages("users.invitations.not.possible", notPossible)) else Nil) ++

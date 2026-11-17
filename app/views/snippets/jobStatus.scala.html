@@ -1,7 +1,9 @@
 @import services.jobs.Job
-@(job: Job, returnTo: String, reloadOnDone: Boolean = true)(implicit messages: Messages, req: RequestHeader)
+@(job: Job, returnTo: String, reloadOnDone: Boolean = true, cancellable: Boolean = true)(implicit messages: Messages, req: RequestHeader)
 @* A background job's status with its Retry / Cancel buttons, refreshed by
-   public/javascripts/job-status.js while the job is queued or running. *@
+   public/javascripts/job-status.js while the job is queued or running. `cancellable`: false for a
+   job past the point where Cancel is refused (an account join after its first round step; the
+   status JSON's details say so too) *@
 <div class="job-status" data-src="@routes.JobController.status(job.id)" data-status="@job.status"
      data-denied-text="@Messages("job.status.denied")"
      @if(reloadOnDone) {data-reload-on-done="true"}>
@@ -13,7 +15,7 @@
         <button type="submit" class="btn btn-outline-secondary btn-sm">@Messages("job.retry")</button>
     </form>
     <form method="post" action="@routes.JobController.cancel(job.id)" class="job-cancel"
-          style="display: @if(job.isActive || job.isFailed) {inline} else {none}">
+          style="display: @if((job.isActive || job.isFailed) && cancellable) {inline} else {none}">
         @csrfField()
         <input type="hidden" name="returnTo" value="@returnTo" />
         <button type="submit" class="btn btn-outline-secondary btn-sm">@Messages("job.cancel")</button>

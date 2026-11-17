@@ -74,6 +74,13 @@ const TOUR = [
   // the duplicates report (the account join plan's J-1): the contest's, and root's of every account
   ['duplicates report', 'admin', (f) => `/admin/duplicates?contestId=${f.contestId}`],
   ['duplicates report, all', 'root', () => '/admin/duplicates/all'],
+  // joining two accounts (J-2): the preview of the engine's last join pair, its kept account chosen
+  // (read-only: the join itself is duplicates.spec.js's); root's report where the fixture has none
+  ['account join preview', 'root', (f) => {
+    const p = f.joinPairs[f.joinPairs.length - 1];
+    return p ? `/admin/accounts/join?contestId=${p.contestId}&account=${p.kept.id}&account=${p.joined.id}&kept=${p.kept.id}`
+      : '/admin/duplicates/all';
+  }],
   ['contest images', 'admin', (f) => `/contest/${f.contestId}/images`],
   ['contests', 'root', () => '/contests'],
 ];

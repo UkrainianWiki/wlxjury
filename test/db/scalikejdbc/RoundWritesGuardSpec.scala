@@ -53,6 +53,22 @@ class RoundWritesGuardSpec extends Specification with TestDb with BeforeAll with
     }
   }
 
+  "an account join's move of a round" should {
+    "fail without the round's lock, and move nothing" in {
+      val (round, juror) = setUp()
+      val kept = User.create(User("Kept", "kept.guard@example.org", None, Set("jury"), None, Some(10))).getId
+      (DB.localTx(implicit s => AccountJoinJdbc.moveRound(round, kept, juror)) must throwA[IllegalStateException](
+        "without its round lock")) and (VoteJdbc.byRound(round).map(_.juryId) === Seq(juror))
+    }
+    "run with it" in {
+      val (round, juror) = setUp()
+      val kept = User.create(User("Kept", "kept.guard@example.org", None, Set("jury"), None, Some(10))).getId
+      (DB.localTx { implicit s => RoundWrites.lock(Seq(round)); AccountJoinJdbc.moveRound(round, kept, juror) }
+        .map(_.votes) must beRight(1)) and (VoteJdbc.byRound(round).map(_.juryId) === Seq(kept)) and
+        (RoundImageInvariants.violations(round) must beEmpty)
+    }
+  }
+
   "a monument id change" should {
     "fail without the file's rounds locked, and change nothing" in {
       val (round, _) = setUp()

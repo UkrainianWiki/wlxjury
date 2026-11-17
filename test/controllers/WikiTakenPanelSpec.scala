@@ -119,6 +119,8 @@ class WikiTakenPanelSpec extends PlaySpecification with PlayTestDb with AccountT
         other.text must contain("Your contests: none")
         other.selectFirst(".wiki-taken-activity").text === "No votes, comments or rounds in your contests."
         other.select("a").size === 0
+        // no join link (J-2): neither account is only in contests this admin administers
+        panel.select("a.wiki-taken-join").size === 0
         // A-1's add by id, with the form's role, both mails unticked
         val add = other.selectFirst("form.wiki-taken-add")
         add.attr("action") === routes.UserController.addExistingAccount(Some(10)).url
@@ -164,7 +166,9 @@ class WikiTakenPanelSpec extends PlaySpecification with PlayTestDb with AccountT
         other.text must contain("else.where@example.org")
         other.text must contain("Contests: contest20 2020 in Andorra (Juror)")
         other.selectFirst(".wiki-taken-activity").text === "In all contests: votes 2, comments 0, rounds 1."
-        other.select("a").asScala.map(_.attr("href")) === Seq(routes.UserController.editUser(elsewhere.getId, Some(10)).url)
+        // and the join's preview (J-2): root may join any two accounts
+        other.select("a").asScala.map(_.attr("href")) === Seq(routes.UserController.editUser(elsewhere.getId, Some(10)).url,
+          AccountJoinController.previewUrl(Some(10), Seq(edited.getId, elsewhere.getId)))
         other.selectFirst("form.wiki-taken-add").attr("action") === routes.UserController.addExistingAccount(Some(10)).url
         // Keep them separate puts the stored wiki account back
         Jsoup.parse(html).selectFirst("#wiki-taken-keep").attr("data-wiki-account") === "Own Name"

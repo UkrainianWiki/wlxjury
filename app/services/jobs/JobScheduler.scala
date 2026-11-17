@@ -300,18 +300,30 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
     * @param by who cancels it (the job page's admin), for the handler's cleanup ([[StepContext.by]])
     * @return the job afterwards, None if it doesn't exist
     */
-  def cancel(jobId: Long, by: Option[Long] = None): Option[Job] = {
-    val ctx = DB.localTx { implicit s =>
-      JobJdbc.lock(jobId).filter(j => j.isActive || j.isFailed).map { j =>
-        val ctx = new StepContext(s, by)
-        val state = handlers.get(j.kind).fold(j.state)(_.onCancelled(j, ctx))
-        JobJdbc.update(jobId, JobStatus.Cancelled, state, progressOf(j), j.error)
-        ctx
-      }
+  def cancel(jobId: Long, by: Option[Long] = None): Option[Job] =
+    cancelOrRefuse(jobId, by).fold(_ => JobJdbc.findById(jobId), identity)
+
+  /** [[cancel]], or why the job's handler refuses it ([[JobHandler.onCancelled]] threw a
+    * [[JobScheduler.CancelRefusal]]: rolled back, the job as it was), e.g. an account join after
+    * its first round step.
+    */
+  def cancelOrRefuse(jobId: Long, by: Option[Long] = None): Either[JobScheduler.CancelRefused, Option[Job]] = {
+    val ctx =
+      try
+        Right(DB.localTx { implicit s =>
+          JobJdbc.lock(jobId).filter(j => j.isActive || j.isFailed).map { j =>
+            val ctx = new StepContext(s, by)
+            val state = handlers.get(j.kind).fold(j.state)(_.onCancelled(j, ctx))
+            JobJdbc.update(jobId, JobStatus.Cancelled, state, progressOf(j), j.error)
+            ctx
+          }
+        })
+      catch { case refusal: JobScheduler.CancelRefusal => Left(JobScheduler.CancelRefused(refusal.messageKey, refusal.args: _*)) }
+    ctx.map { c =>
+      c.foreach(runAfterCommit)
+      handlers.values.foreach(_.forget(jobId))
+      JobJdbc.findById(jobId)
     }
-    ctx.foreach(runAfterCommit)
-    handlers.values.foreach(_.forget(jobId))
-    JobJdbc.findById(jobId)
   }
 
   /** Queues a failed job again; it resumes from its state.
@@ -319,9 +331,10 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
     *                 resume (the round form submitted again, "Distribute new files") keeps the
     *                 count, and refuses a job given up after its attempts
     *                 ([[JobScheduler.AttemptsRefusedKey]]): that one waits for the cause to be fixed
+    * @param by       who retries it (the job page's admin), for the handler ([[StepContext.by]])
     * @return the job, or why it can't be retried
     */
-  def retry(jobId: Long, explicit: Boolean = true): Either[JobScheduler.RetryRefused, Job] = {
+  def retry(jobId: Long, explicit: Boolean = true, by: Option[Long] = None): Either[JobScheduler.RetryRefused, Job] = {
     val result =
       try
         DB.localTx { implicit s =>
@@ -334,7 +347,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
               handlers.get(j.kind) match {
                 case None => Left(JobScheduler.RetryRefused("job.retry.no.handler", j.kind))
                 case Some(h) =>
-                  val ctx = new StepContext(s)
+                  val ctx = new StepContext(s, by)
                   JobJdbc.requeue(jobId, h.onRetry(j, ctx), Option.when(inline)(instanceId), resetAttempts = explicit)
                   Right(ctx)
               }
@@ -548,6 +561,14 @@ object JobScheduler {
     * failed): [[retry]] answers it as a [[RetryRefused]] with its message key and arguments.
     */
   final case class RetryRefusal(messageKey: String, args: Seq[String] = Nil) extends RuntimeException(messageKey)
+
+  /** Why a job can't be cancelled: a message key and its arguments. */
+  final case class CancelRefused(messageKey: String, args: String*)
+
+  /** Thrown by a handler's [[JobHandler.onCancelled]] to refuse the Cancel (rolled back; the job
+    * stays as it was): [[cancelOrRefuse]] answers it as a [[CancelRefused]].
+    */
+  final case class CancelRefusal(messageKey: String, args: Seq[String] = Nil) extends RuntimeException(messageKey)
 
   /** An implicit resume of a job given up after `jobs.maxAttempts`: its reference the argument. */
   val AttemptsRefusedKey = "job.retry.attempts"

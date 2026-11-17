@@ -1,0 +1,62 @@
+@import services.jobs.Job
+@import services.AccountJoinHandler.JoinState
+@(
+        user: db.scalikejdbc.User,
+        job: Job,
+        kept: Option[db.scalikejdbc.User],
+        joined: Option[db.scalikejdbc.User],
+        state: JoinState,
+        contest: Option[org.intracer.wmua.ContestJury]
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@* An account join's page (J-2, AccountJoinController.job): who joins whom, the job's status polled
+   by job-status.js (Retry; Cancel only before its first round step), and once done what moved *@
+@name(u: Option[db.scalikejdbc.User], id: Long) = @{ u.map(_.fullname).filter(_.trim.nonEmpty).fold(s"#$id")(n => s"$n (#$id)") }
+@params = @{ services.AccountJoinHandler.paramsOf(job) }
+@mainAdmin("account.join.title", user, user.getId, contestId = contest.flatMap(_.id)) {
+    <div class="row account-join-job">
+        <h1 class="h3">@Messages("account.join.job.title", name(joined, params.joinedId), name(kept, params.keptId))</h1>
+        @for(e <- flash.get("error")) {
+            <div class="alert alert-warning" role="alert">@e</div>
+        }
+        <div class="mb-3 account-join-status">
+            @snippets.jobStatus(job, routes.AccountJoinController.job(job.id).url, cancellable = !state.roundStepDone)
+            <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
+        </div>
+        @if(state.roundStepDone && !job.isDone && state.abandonedBy.isEmpty) {
+            <p class="small text-body-secondary account-join-no-cancel">@Messages("account.join.job.no.cancel")</p>
+        }
+        @* root's way out of a failed join after a round step: both accounts released, moved rows kept *@
+        @if(job.isFailed && state.roundStepDone && services.AccountSearch.isRoot(user)) {
+            <form method="post" action="@routes.AccountJoinController.abandon(job.id)" class="mb-3 account-join-abandon">
+                @csrfField()
+                <p class="small mb-1">@Messages("account.join.abandon.help")</p>
+                <button type="submit" class="btn btn-outline-secondary btn-sm">@Messages("account.join.abandon")</button>
+            </form>
+        }
+        @for(_ <- state.abandonedBy) {
+            <p class="alert alert-info account-join-abandoned" role="status">@Messages("account.join.abandoned")</p>
+        }
+        @if(job.isDone) {
+            <div class="alert alert-success account-join-done" role="status">
+                <p class="mb-1">@Messages("account.join.job.done", name(joined, params.joinedId), name(kept, params.keptId))</p>
+                <ul class="mb-0 small">
+                    <li>@Messages("account.join.job.votes", state.votes, state.aside, state.mergedVotes + state.mergedAside)</li>
+                    <li>@Messages("account.join.job.rounds", state.roundUsers, state.memberships, state.comments)</li>
+                    <li>@Messages("account.join.job.closed", state.identities, state.apiTokens, state.links)</li>
+                    @if(params.mailOwners) {
+                        <li>@Messages("account.join.job.mailed")</li>
+                    }
+                </ul>
+            </div>
+            @for(k <- kept) {
+                <p><a href="@routes.UserController.editUser(k.getId, contest.flatMap(_.id))">@Messages("account.join.job.kept.link", name(kept, params.keptId))</a></p>
+            }
+        }
+        <p>
+            @contest match {
+                case Some(c) => {<a href="@routes.DuplicateAccountsController.report(c.getId)">@Messages("account.join.back")</a>}
+                case None => {<a href="@routes.DuplicateAccountsController.all()">@Messages("account.join.back")</a>}
+            }
+        </p>
+    </div>
+}

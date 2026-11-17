@@ -119,7 +119,9 @@ object ApiTokenService extends Logging {
   {
     val userId = user.getId
     val (outcome, replaced) = WriteTx.write { implicit s =>
-      if (!ApiTokenJdbc.lockOwner(userId).contains(user.authVersion)) (CreateOutcome.SessionEnded, Nil)
+      // and none for an account an account join holds (J-2): its sessions end with the join's start
+      if (!ApiTokenJdbc.lockOwner(userId).contains(user.authVersion) ||
+          db.scalikejdbc.AccountJoinJdbc.joining(Seq(userId)).nonEmpty) (CreateOutcome.SessionEnded, Nil)
       else {
         val replaced = ApiTokenJdbc.unusedOfSubmit(userId, hash(nonce))
         replaced.foreach(ApiTokenJdbc.revoke(_, userId))

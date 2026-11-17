@@ -19,8 +19,8 @@ import play.api.Logger
   *
   * With each add, "Retire the account being edited" (A-4, decision A3: an unticked checkbox sent
   * with the add, [[AccountRetirement]]) where its rules allow it ([[RetireOffer]]); where only its
-  * emptiness, a round job or the account's admin role stands in the way, why not. Not here yet:
-  * "Join the two accounts" (J-2: a link to its preview, once built).
+  * emptiness, a round job or the account's admin role stands in the way, why not. And "Join the
+  * two accounts" (J-2): a link to the join's preview, for who may join them ([[AccountJoin.mayPerform]]).
   */
 object WikiTakenPanel {
 
@@ -42,8 +42,10 @@ object WikiTakenPanel {
   final case class RetireOffer(accountId: Long, name: String, refusal: Option[AccountRetirement.Refusal],
       coiLeaving: Option[String])
 
-  /** An account with the wiki account, as the actor sees it, with its activity. */
-  final case class Other(found: AccountSearch.Found, activity: Activity)
+  /** An account with the wiki account, as the actor sees it, with its activity; `joinUrl`: the
+    * account join's preview of it and the edited account (J-2), for who may join them.
+    */
+  final case class Other(found: AccountSearch.Found, activity: Activity, joinUrl: Option[String] = None)
 
   /** The panel: the wiki account typed, the other accounts shown, whether some are not shown, and
     * where an add goes: the contest the edit page acts in, if the actor administers it (None: no
@@ -77,11 +79,18 @@ object WikiTakenPanel {
     val notShown = found.size > shown.size || others.size > found.size
     accountLogger.info(s"wiki_taken_panel byAccountId=${actor.getId} accountId=${edited.getId} " +
       s"contestId=${edited.contestId.getOrElse("none")} shown=${shown.size} notShown=$notShown")
+    // the join's link (J-2): for who may join the two accounts (root, or an admin of every contest
+    // of both), from the page's contest if the actor administers it (else root's, outside a contest)
+    val stored = edited.id.filter(_ != 0).flatMap(User.findById(_)).filter(_.deletedAt.isEmpty)
+    def joinUrl(other: User): Option[String] =
+      stored.filter(e => AccountJoin.mayPerform(actor, Seq(e, other)))
+        .filter(_ => contestId.nonEmpty || AccountSearch.isRoot(actor))
+        .map(e => controllers.AccountJoinController.previewUrl(contestId, Seq(e.getId, other.getId)))
     Panel(
       wikiAccount,
       shown.map { f =>
         val (votes, comments, rounds) = activity.getOrElse(f.account.getId, (0L, 0L, 0L))
-        Other(f, Activity(votes, comments, rounds))
+        Other(f, Activity(votes, comments, rounds), joinUrl(f.account))
       },
       notShown,
       contestId,

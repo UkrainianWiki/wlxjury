@@ -207,12 +207,15 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
           // contests, either committed (this reads its password and unverified email) or
           // waits for this membership and then refuses its link (ShareLinkService). The lock
           // order is the acceptance's: the account's row, then its memberships and links
-          val joined = scalikejdbc.DB.localTx { implicit session =>
+          val joinedTx = try Right(scalikejdbc.DB.localTx { implicit session =>
             // an account picked by id and deleted meanwhile is none (checked here, not in
             // lockRow's SQL, which other callers share); so is any account deleted (retired,
             // A-4) meanwhile: None, nothing written
             val row = User.lockRow(account.getId).filterNot(l => l.deletedAt.nonEmpty || goneIf.exists(_(l)))
             if (goneIf.nonEmpty && row.isEmpty) throw new AccountNotFound
+            // an account an account join holds (J-2, kept or retiring) joins no contest meanwhile:
+            // read under its row lock, which the join's start takes too
+            if (row.nonEmpty && db.scalikejdbc.AccountJoinJdbc.joining(Seq(account.getId)).nonEmpty) throw new InJoinRefused
             if (row.isEmpty) None
             else Some(row.filter(mayJoin).map { locked =>
               val added = UserContestJdbc.createMembership(locked.getId, cId, role)
@@ -220,8 +223,8 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
                 newValue = Some(role), comment = comment)
               added -> locked
             })
-          }
-          joined.map {
+          }) catch { case _: InJoinRefused => Left(()) }
+          joinedTx.fold[Option[Added]](_ => Some(InJoin(account)), joined => joined.map {
             case Some((added, locked)) =>
               val member = User.findInContest(account.getId, cId).getOrElse(account)
               // no password, or a retired legacy one (P8): only an invitation lets its owner in
@@ -257,7 +260,7 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
               accountLogger.info(
                 s"add_refused reason=wiki_account_unverified accountId=${account.getId} byAccountId=${creator.getId} contestId=$cId")
               WikiAccountUnverified(account)
-          }
+          })
       }
     }
   }
@@ -777,6 +780,12 @@ object UserService {
 
   /** Not added: the wiki account given names an account whose wiki account is unverified. */
   case class WikiAccountUnverified(user: User) extends Added
+
+  /** An account an account join holds (J-2): no membership or invitation meanwhile. */
+  case class InJoin(user: User) extends Added
+
+  /** Thrown inside an add's transaction for an account a join holds: rolled back, nothing written. */
+  private[services] final class InJoinRefused extends RuntimeException(null, null, false, false)
 
   /** A role [[UserService.addToContest]] refuses ([[User.mayAssignRoles]]); the edit form's
     * save maps it, and only it, to a 400.

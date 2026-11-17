@@ -111,7 +111,9 @@ function pollJobStatus(el, options) {
                 if (text) text.textContent = formatJobStatus(p);
                 el.setAttribute("data-status", p.status);
                 show(".job-retry", p.status === "failed");
-                show(".job-cancel", isActiveJob(p) || p.status === "failed");
+                // a job past the point of no return says so (an account join after its first round)
+                var cancellable = !(p.details && p.details.cancellable === false);
+                show(".job-cancel", (isActiveJob(p) || p.status === "failed") && cancellable);
                 if (isActiveJob(p)) {
                     wasActive = true;
                     setTimeout(update, interval);

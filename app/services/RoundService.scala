@@ -3,7 +3,7 @@ package services
 import controllers.RoundStat
 import db.RoundRepo
 import db.scalikejdbc.Round.RoundStatRow
-import db.scalikejdbc.{ImageJdbc, Round, RoundImageCounts, RoundImageJdbc, RoundUser, VoteJdbc, User, WriteTx}
+import db.scalikejdbc.{AccountJoinJdbc, ImageJdbc, Round, RoundImageCounts, RoundImageJdbc, RoundUser, VoteJdbc, User, WriteTx}
 import org.intracer.wmua.cmd.DistributeImages
 import play.api.Logging
 import play.api.libs.json.{JsObject, JsString, Json}
@@ -139,7 +139,11 @@ class RoundService @Inject() (
         // each juror's users row share-locked and re-checked (A-4): an account retired since the
         // form was read is left out; one being retired now waits for this to commit, then sees
         // its round_user row and is refused (AccountRetirement)
-        val live = User.lockLive(jurors.flatMap(_.id))
+        // and an account a join retires is left out too (the join plan, J-2: round creation drops
+        // the retiring account and keeps the kept one), read after the shared lock, which a join's
+        // start takes exclusively: it either committed before (read here) or waits for this
+        val locked = User.lockLive(jurors.flatMap(_.id))
+        val live = locked -- AccountJoinJdbc.retiring(locked.toSeq)
         val (kept, retired) = jurors.partition(u => live.contains(u.getId))
         if (retired.nonEmpty)
           logger.info(s"Round ${created.getId}: retired accounts left out of its jurors: ${retired.map(_.getId).mkString(",")}")
@@ -457,6 +461,9 @@ class RoundService @Inject() (
       // each chosen juror's users row share-locked and re-checked (A-4): one retired since the page
       // was read refuses the review's jury as changed (shown again without it)
       if (User.lockLive(ids).size != ids.distinct.size) throw ReviewRefused(JurorsChangedKey, Seq(number))
+      // an account in a join (J-2) is added to no round: read after the shared lock, which the
+      // join's start takes exclusively
+      AccountJoinJdbc.joining(ids).headOption.foreach(id => throw ReviewRefused(JoiningKey, Seq(number, id.toString)))
       sql"DELETE FROM round_user WHERE round_id = $roundId AND user_id NOT IN ($ids)".update()
       users.foreach { u =>
         sql"""INSERT INTO round_user (user_id, round_id, role, active)
@@ -655,6 +662,8 @@ object RoundService {
   val TooManyPerFileKey = "round.review.distribute.too.many.per.file"
   /** Distribute refused: the round's jurors changed since the page showed them (M1 of the review). */
   val JurorsChangedKey = "round.review.distribute.jurors.changed"
+  /** A chosen juror's account is in an account join (J-2): no round_user row for it meanwhile. */
+  val JoiningKey = "round.review.distribute.joining"
   /** Distribute refused: a re-apply of the filters failed or was cancelled. */
   val ReapplyUnfinishedKey = "round.review.distribute.reapply.unfinished"
   /** Distribute refused: the jurors changed after a partial distribution gave them files. */

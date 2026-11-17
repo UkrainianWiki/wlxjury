@@ -196,6 +196,33 @@ object UiShotsServer {
       }
       if (f.docsPhotos.isEmpty) names.mkString("[", ", ", "]") else "[]"
     }
+    // accounts to join (the account join plan's J-2, duplicates.spec.js), per engine three pairs, as
+    // root in a contest of their own with no rounds (a round job another test queues in the
+    // fixture's contest would refuse a join): two members without a role and with one wiki account
+    // written two ways, the joined one with a Google sign-in (the preview lists it as unlinked). A
+    // join can't be undone, so a rerun takes the next pair. Not in the guides' screenshot mode
+    val joinContest: Option[Long] = Option.when(f.docsPhotos.isEmpty) {
+      val name = "UI join contest"
+      db.scalikejdbc.ContestJuryJdbc.findAll().find(_.name == name).map(_.getId)
+        .getOrElse(db.scalikejdbc.ContestJuryJdbc.create(None, name, 2026, "Ukraine").getId)
+    }
+    val joinPairs = (1 to 3).map { n =>
+      val pairs = for (contestId <- joinContest.toSeq; k <- 1 to 3) yield {
+        def account(name: String, email: String, wiki: String) =
+          db.scalikejdbc.User.findByEmail(email).headOption.map(_.getId).getOrElse(
+            db.scalikejdbc.User.create(db.scalikejdbc.User(name, email, None, Set("no"),
+              Some(services.PasswordHasher.default.hash(s"join-$n-$k-pass")), Some(contestId), wikiAccount = Some(wiki))).getId)
+        val (keptName, joinedName) = (s"Join Kept $n-$k", s"Join Joined $n-$k")
+        val kept = account(keptName, s"join-kept-$n-$k@ui-shots.test", s"Join Wiki $n-$k")
+        val joined = account(joinedName, s"join-joined-$n-$k@ui-shots.test", s"join_wiki $n-$k")
+        if (db.scalikejdbc.UserIdentityJdbc.findByUser(joined).isEmpty)
+          db.scalikejdbc.UserIdentityJdbc.create(db.scalikejdbc.UserIdentity("google", s"join-$n-$k", joined,
+            Some(s"join-joined-$n-$k@gmail.ui-shots.test"), Some(s"Joined G $n-$k")))
+        s"""{"contestId": $contestId, "wiki": ${q(s"Join Wiki $n-$k")}, "kept": {"id": $kept, "name": ${q(keptName)}}, """ +
+          s""""joined": {"id": $joined, "name": ${q(joinedName)}}}"""
+      }
+      pairs.mkString("[", ", ", "]")
+    }
     // in one transaction: as autocommitted statements (a commit per row) it took about 2.5 minutes
     val filled = DB.localTx { tx => CommonsFileUrl.fillMissing()(tx) }
     println(s"[ui-shots] set the Commons url of $filled images")
@@ -247,6 +274,7 @@ object UiShotsServer {
          |  "wikiTaken": [${wikiTaken.mkString(", ")}],
          |  "duplicateGroups": [${duplicateGroups.mkString(", ")}],
          |  "retireTargets": [${retireTargets.mkString(", ")}],
+         |  "joinPairs": [${joinPairs.mkString(", ")}],
          |  "commentFile": {"juror": $commentJuror, "pageId": $commentPage, "otherRounds": $commentOthers},
          |  "pageId": $pageId,
          |  "ratedPageId": $ratedPageId
