@@ -11,32 +11,56 @@
     --wlx-thumb-failed-bg: #c6c6c6;
     --wlx-thumb-failed-mark: #6e6e6e;
     /* a file deleted on Commons: its red frame */
-    --wlx-deleted: #dc3545;
+    --wlx-deleted: #8f0000;
     /* the navbar's selected and rejected tabs (own votes), and the active tab's background */
-    --wlx-selected: #146c43;
-    --wlx-rejected: #b02a37;
+    --wlx-selected: #025935;
+    --wlx-rejected: #8f0000;
     --wlx-nav-active-bg: rgba(0, 0, 0, .09);
     /* a binary round's vote on the gallery tiles' ✓ and ✗ buttons and in the large view's
-       read-only vote: saturated, at least 3:1 on the image grey (4.0 and 4.4) and the page (5.1
-       and 5.6) */
-    --wlx-vote-selected: #007f35;
-    --wlx-vote-rejected: #d1001f;
+       read-only vote: the WLM logo's dark green and red (maintainer's choice, 2026-11-17); contrast is
+       asserted in browser-test voting.spec */
+    --wlx-vote-selected: #025935;
+    --wlx-vote-rejected: #8f0000;
     /* rating stars (raty and the static ones): at least 3:1 on the page and on the image grey */
     --wlx-star: #a36a00;
+    /* Bootstrap's danger (alerts, validation errors, danger buttons, badges, text-danger) in the
+       WLM logo's red family, as the vote red: 9.7:1 on white; text-emphasis on the subtle
+       background 8.9:1; the validation text 9.7:1 on the page */
+    --bs-danger: #8f0000;
+    --bs-danger-rgb: 143, 0, 0;
+    --bs-danger-text-emphasis: #6b0000;
+    --bs-danger-bg-subtle: #e9cccc;
+    --bs-danger-border-subtle: #d29999;
+    --bs-form-invalid-color: #8f0000;
+    --bs-form-invalid-border-color: #8f0000;
+    --wlx-invalid-icon: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%238f0000' viewBox='0 0 12 12'%3e%3ccircle cx='6' cy='6' r='4.5'/%3e%3cpath stroke-linejoin='round' d='M5.8 3.6h.4L6 6.5z'/%3e%3ccircle cx='6' cy='8.2' r='.6' fill='%238f0000' stroke='none'/%3e%3c/svg%3e");
 }
 
 [data-bs-theme=dark] {
     --wlx-image-bg: #303030;
     --wlx-thumb-failed-bg: #4a4a4a;
     --wlx-thumb-failed-mark: #a0a0a0;
-    --wlx-deleted: #e35d6a;
-    --wlx-selected: #75b798;
-    --wlx-rejected: #ea868f;
+    --wlx-deleted: #d85546;
+    /* the vote text colours: 4.5:1 or more on the navbar, the page, the image grey and the active
+       tab (#404549) */
+    --wlx-selected: #44cc8e;
+    --wlx-rejected: #ff968a;
     --wlx-nav-active-bg: rgba(255, 255, 255, .1);
-    /* 5.8 and 4.1 on the image grey, 6.8 and 4.8 on the page */
-    --wlx-vote-selected: #22c55e;
-    --wlx-vote-rejected: #ff4d5e;
+    /* lighter tones of the same pair for dark mode; the tile buttons keep their 1 px halo */
+    --wlx-vote-selected: #019f62;
+    --wlx-vote-rejected: #d85546;
     --wlx-star: #ffc107;
+    /* the same family for dark mode: text and outlines #f46e5d (5.3:1 on the page, 4.6 on the
+       navbar grey), fills #d85546 with black text (5.3:1), text-emphasis #e89990 on the subtle
+       background #2b110e 7.9:1 */
+    --bs-danger: #f46e5d;
+    --bs-danger-rgb: 244, 110, 93;
+    --bs-danger-text-emphasis: #e89990;
+    --bs-danger-bg-subtle: #2b110e;
+    --bs-danger-border-subtle: #82332a;
+    --bs-form-invalid-color: #f46e5d;
+    --bs-form-invalid-border-color: #f46e5d;
+    --wlx-invalid-icon: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23f46e5d' viewBox='0 0 12 12'%3e%3ccircle cx='6' cy='6' r='4.5'/%3e%3cpath stroke-linejoin='round' d='M5.8 3.6h.4L6 6.5z'/%3e%3ccircle cx='6' cy='8.2' r='.6' fill='%23f46e5d' stroke='none'/%3e%3c/svg%3e");
     /* the secondary buttons (btn-outline-secondary) and the pager's links. Bootstrap keeps its
        light-mode grey (#6c757d) for them in dark mode: 2.4-3.3:1 on the dark greys, too faint to
        read as buttons. The border is at least 3:1 on every background they sit on (page #212529
@@ -84,4 +108,73 @@
    white); the border stays #6c757d (4.7:1); hover, pressed and disabled stay Bootstrap's. */
 :root:not([data-bs-theme=dark]) .btn-outline-secondary {
     --bs-btn-color: #343a40;
+}
+
+/* danger buttons and filled badges: Bootstrap computes their colours at build time from its own
+   red, so they are set here, per mode (light: white on #8f0000 9.7:1; dark: black on #d85546 5.3:1) */
+.btn-danger {
+    --bs-btn-color: #fff;
+    --bs-btn-bg: #8f0000;
+    --bs-btn-border-color: #8f0000;
+    --bs-btn-hover-color: #fff;
+    --bs-btn-hover-bg: #6f0000;
+    --bs-btn-hover-border-color: #6f0000;
+    --bs-btn-focus-shadow-rgb: 143, 0, 0;
+    --bs-btn-active-color: #fff;
+    --bs-btn-active-bg: #5c0000;
+    --bs-btn-active-border-color: #5c0000;
+    --bs-btn-disabled-color: #fff;
+    --bs-btn-disabled-bg: #8f0000;
+    --bs-btn-disabled-border-color: #8f0000;
+}
+.btn-outline-danger {
+    --bs-btn-color: #8f0000;
+    --bs-btn-border-color: #8f0000;
+    --bs-btn-hover-color: #fff;
+    --bs-btn-hover-bg: #8f0000;
+    --bs-btn-hover-border-color: #8f0000;
+    --bs-btn-focus-shadow-rgb: 143, 0, 0;
+    --bs-btn-active-color: #fff;
+    --bs-btn-active-bg: #6f0000;
+    --bs-btn-active-border-color: #6f0000;
+    --bs-btn-disabled-color: #8f0000;
+    --bs-btn-disabled-border-color: #8f0000;
+}
+[data-bs-theme=dark] .btn-danger {
+    --bs-btn-color: #000;
+    --bs-btn-bg: #d85546;
+    --bs-btn-border-color: #d85546;
+    --bs-btn-hover-color: #000;
+    --bs-btn-hover-bg: #e26e60;
+    --bs-btn-hover-border-color: #e26e60;
+    --bs-btn-focus-shadow-rgb: 216, 85, 70;
+    --bs-btn-active-color: #000;
+    --bs-btn-active-bg: #e8857a;
+    --bs-btn-active-border-color: #e8857a;
+    --bs-btn-disabled-color: #000;
+    --bs-btn-disabled-bg: #d85546;
+    --bs-btn-disabled-border-color: #d85546;
+}
+[data-bs-theme=dark] .btn-outline-danger {
+    --bs-btn-color: #f46e5d;
+    --bs-btn-border-color: #f46e5d;
+    --bs-btn-hover-color: #000;
+    --bs-btn-hover-bg: #d85546;
+    --bs-btn-hover-border-color: #d85546;
+    --bs-btn-focus-shadow-rgb: 216, 85, 70;
+    --bs-btn-active-color: #000;
+    --bs-btn-active-bg: #e8857a;
+    --bs-btn-active-border-color: #e8857a;
+    --bs-btn-disabled-color: #f46e5d;
+    --bs-btn-disabled-border-color: #f46e5d;
+}
+.text-bg-danger { color: #fff !important; background-color: #8f0000 !important; }
+[data-bs-theme=dark] .text-bg-danger { color: #000 !important; background-color: #d85546 !important; }
+
+/* a field with an error: Bootstrap's "!" icon is a data-URI SVG in its own #dc3545, so it is set
+   again here in the mode's red (a data: image, as Bootstrap's own is) */
+.form-control.is-invalid, .was-validated .form-control:invalid { background-image: var(--wlx-invalid-icon); }
+.form-select.is-invalid:not([multiple]):not([size]), .form-select.is-invalid:not([multiple])[size="1"],
+.was-validated .form-select:invalid:not([multiple]):not([size]), .was-validated .form-select:invalid:not([multiple])[size="1"] {
+    --bs-form-select-bg-icon: var(--wlx-invalid-icon);
 }

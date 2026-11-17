@@ -31,6 +31,18 @@ The next release is `26.11.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything d
 
 **Features**
 
+- **Vote colours from the WLM logo** (developed 2026-11-17, `stack/180-wlm-vote-colours`): the
+  yes/no colours of the vote buttons, chips, tally, large view and the navbar's selected and
+  rejected tabs are the WLM logo's dark green (`#025935`) and red (`#8f0000`) in the light theme
+  and softer tones of them in the dark theme (`#019f62`/`#d85546`; text `#44cc8e`/`#ff968a`, 4.5:1 on the active tab),
+  less aggressive than the bright pair they replace; the dark tile buttons keep their 1 px halo
+  over light photos. Bootstrap's danger red (alerts, validation errors, danger buttons and badges,
+  the worst mark, the deleted-on-Commons frame, the gallery's error text) moves to the same red
+  family (`#8f0000` light, `#f46e5d` text and `#d85546` fills dark, with Bootstrap's derived
+  subtle and emphasis tones); success green is unchanged outside the vote marks. The signed-out
+  navbar's brand is a wordmark: a serif W, the L as a green ✓ and the X as a red ✗ in the vote
+  colours (inline SVG named "WLX" for screen readers), then "Jury" (`application.brand.suffix`:
+  Jury, Жюри, Журі, Jury).
 - **Possible duplicate accounts** (J-1 of the account join plan; developed 2026-11-16,
   `stack/173-duplicates-report`): **Possible duplicates** on the users page lists the groups of
   accounts that share a wiki account (in any letter case, with or without `User:`, underscores

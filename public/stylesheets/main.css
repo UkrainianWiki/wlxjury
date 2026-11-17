@@ -846,9 +846,9 @@ div.thumb_small.wlx-thumb-failed .wlx-video-mark {
 
 /* the same vote in the large view's read-only one-juror view of a binary round
    (large/navigationButtons): its ✓ or ✗ and words in the vote's text colours (.wlx-vote-selected,
-   -rejected: --wlx-selected, --wlx-rejected, 5:1 or more on the side column's image grey in both
+   -rejected: --wlx-selected, --wlx-rejected, 4.5:1 or more on the side column's image grey in both
    modes), before its time. Not the buttons' saturated --wlx-vote-* (3:1 for icons; the dark
-   mode's red is 4.1:1 on #303030, too faint for words) */
+   mode's red is 3.3:1 on #303030, too faint for words) */
 .wlx-viewed-vote-mark { font-weight: 600; }
 /* the large view's vote summary (the tally, the vote, its time) and the comments' link after it
    (large/navigationButtons): one row, wrapping in the narrow side column */
@@ -894,3 +894,17 @@ div.thumb_small.wlx-thumb-failed .wlx-video-mark {
     width: max-content;
     max-width: min(20rem, calc(100vw - 2rem));
 }
+
+/* the signed-out navbar's brand (snippets/wordmark): the serif W in the text colour, the ✓ and ✗
+   in the vote colours (3:1 or more on the navbar in both modes), then "Jury" */
+.wlx-wordmark { display: inline-flex; align-items: center; font-size: 1.25rem; line-height: 1; white-space: nowrap; }
+.wlx-wm-mark { display: inline-flex; align-items: center; }
+.wlx-wm-glyph { height: 1.05em; width: auto; display: block; margin-right: -.02em; }
+.wlx-wm-glyph.wlx-wm-w { margin-right: .02em; }
+.wlx-wm-w text {
+    fill: currentColor;
+    font-family: "Linux Libertine", "Libertinus Serif", Georgia, "Times New Roman", serif;
+}
+.wlx-wm-check { stroke: var(--wlx-vote-selected); }
+.wlx-wm-cross { stroke: var(--wlx-vote-rejected); }
+.wlx-wm-name { margin-left: .35em; font-weight: 500; }

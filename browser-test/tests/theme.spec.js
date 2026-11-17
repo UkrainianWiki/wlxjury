@@ -111,3 +111,50 @@ test.describe('the colour mode', { tag: '@J-30' }, () => {
     });
   }
 });
+
+/** WCAG contrast of two rgb(a) strings, the foreground drawn over the (opaque) background. */
+function contrast(fg, bg) {
+  const parse = (c) => c.match(/[\d.]+/g).map(Number);
+  const [br, bgG, bb] = parse(bg);
+  const [r, g, b, a = 1] = parse(fg);
+  const lum = (rgb) => {
+    const [x, y, z] = rgb.map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; });
+    return 0.2126 * x + 0.7152 * y + 0.0722 * z;
+  };
+  const over = [r, g, b].map((v, i) => v * a + [br, bgG, bb][i] * (1 - a));
+  const [hi, lo] = [lum(over), lum([br, bgG, bb])].sort((p, q) => q - p);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+// the navbar's selected and rejected tabs (own votes) in the active tab's background, which is
+// the lightest ground their text sits on: 4.5:1 in both modes (the colours come from theme.css)
+test.describe('the vote tabs\' contrast', { tag: '@J-30' }, () => {
+  for (const mode of ['light', 'dark']) {
+    test(`the active selected and rejected tabs read at 4.5:1 in ${mode} mode`, async ({ context, page, fixture, baseURL }) => {
+      await context.addCookies([{ name: 'theme', value: mode, url: baseURL }]);
+      await page.goto(galleryPath(fixture.roundBinaryId, fixture.accounts.juror.id));
+      for (const kind of ['selected', 'rejected']) {
+        const { color, active, bar } = await page.evaluate((k) => {
+          const nav = document.querySelector('nav.navbar');
+          const ul = nav.querySelector('.navbar-nav');
+          const li = document.createElement('li');
+          li.className = `nav-item vote-${k}`;
+          li.innerHTML = '<a class="nav-link active" href="#">Probe</a>';
+          ul.appendChild(li);
+          const link = li.querySelector('a');
+          const s = getComputedStyle(link);
+          const out = { color: s.color, active: s.backgroundColor, bar: getComputedStyle(nav).backgroundColor };
+          li.remove();
+          return out;
+        }, kind);
+        // the bar's opaque colour under the active tab's translucent one
+        const ratio = contrast(color, (() => {
+          const [r, g, b] = bar.match(/[\d.]+/g).map(Number);
+          const [ar, ag, ab, aa = 1] = active.match(/[\d.]+/g).map(Number);
+          return `rgb(${ar * aa + r * (1 - aa)}, ${ag * aa + g * (1 - aa)}, ${ab * aa + b * (1 - aa)})`;
+        })());
+        expect(ratio, `${mode}: the ${kind} tab's text ${color} on the active tab`).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+  }
+});

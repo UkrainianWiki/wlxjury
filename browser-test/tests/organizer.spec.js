@@ -135,7 +135,13 @@ test.describe('root', () => {
       expect(before.below).toBeLessThan(12);
       expect(Math.abs(before.left)).toBeLessThan(2);
       await page.evaluate(() => window.scrollBy(0, 40));
-      expect(await place()).toEqual(before);
+      // Tom Select repositions the list in a scroll handler from the field's fractional box and
+      // rounds it, so after the scroll it may sit a pixel off (WebKit): wait for it to settle
+      // within 1px of where it was, not for exact equality.
+      await expect.poll(async () => {
+        const after = await place();
+        return after ? Math.max(Math.abs(after.below - before.below), Math.abs(after.left - before.left)) : Infinity;
+      }).toBeLessThanOrEqual(1);
       // the page's colours (data-bs-theme on <html>), not the light defaults
       const colours = await page.evaluate(() => {
         const d = getComputedStyle(document.querySelector('body > .ts-dropdown'));

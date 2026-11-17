@@ -1,0 +1,8 @@
+@()(implicit messages: Messages)
+@* The navbar's brand (the maintainer's variant C, 2026-11-17): a serif W in the text colour, then
+   the L as a ✓ in the selected vote's colour and the X as a ✗ in the rejected vote's, then the
+   name's second word ("Jury", application.brand.suffix), so that the screen reader says "WLX
+   Jury". Inline SVG with no font file and no artwork from elsewhere: the strokes and the colours
+   come from the CSS classes (main.css .wlx-wm-*) and the theme's variables, so both modes follow;
+   no style attribute (the production CSP). *@
+<span class="navbar-brand wlx-wordmark"><span class="wlx-wm-mark" role="img" aria-label="WLX"><svg class="wlx-wm-glyph wlx-wm-w" viewBox="0 0 30 24" aria-hidden="true" focusable="false"><text x="15" y="20" text-anchor="middle" font-size="25" font-weight="700" textLength="29" lengthAdjust="spacingAndGlyphs">W</text></svg><svg class="wlx-wm-glyph" viewBox="0 0 18 24" aria-hidden="true" focusable="false"><path class="wlx-wm-check" d="M2.5 13L7 19.5L16 4" fill="none" stroke-width="2.8" stroke-linecap="square" stroke-linejoin="miter"/></svg><svg class="wlx-wm-glyph" viewBox="0 0 18 24" aria-hidden="true" focusable="false"><path class="wlx-wm-cross" d="M3 4L15 20M15 4L3 20" fill="none" stroke-width="2.8" stroke-linecap="square" stroke-linejoin="miter"/></svg></span><span class="wlx-wm-name">@Messages("application.brand.suffix")</span></span>

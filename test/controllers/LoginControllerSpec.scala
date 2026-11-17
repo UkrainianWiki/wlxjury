@@ -307,7 +307,10 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
         forall(Seq("en", "fr", "uk", "ru"))(l => messages("application.name")(Lang(l)) === "WLX Jury") and
           (doc.title === "WLX Jury") and
           (doc.select("h1").text === "WLX Jury") and
-          (doc.select("nav .navbar-brand").text === "WLX Jury") and
+          // the wordmark: its mark is named "WLX" for a screen reader, the name's second word follows
+          (doc.select("nav .navbar-brand .wlx-wm-mark[role=img]").attr("aria-label") === "WLX") and
+          (doc.select("nav .navbar-brand .wlx-wm-name").text === "Jury") and
+          (doc.select("nav .navbar-brand svg[aria-hidden=true]").size === 3) and
           // sentence case, as the other buttons
           (doc.select("button#submit").text === "Sign in")
       }
