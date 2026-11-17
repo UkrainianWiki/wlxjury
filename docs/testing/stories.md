@@ -110,6 +110,7 @@ a guide or a test needs them.
 | A-22 | An admin finds an existing account by a part of its name or wiki account, or its whole email (masked outside their contests), and adds it to the contest | [admin guide](../user/admin-guide.md#finding-an-existing-account) | |
 | A-23 | An admin whose Edit user save is refused because another account has the wiki account sees that account (masked outside their contests, counts within them), keeps them separate, or adds that account to the contest instead | [admin guide](../user/admin-guide.md#a-wiki-account-another-account-has) | |
 | A-24 | An admin lists the contest's possible duplicate accounts (the same wiki account, or a verified email on another account's sign-in; masked outside their contests) and keeps accounts separate, for good | [admin guide](../user/admin-guide.md#possible-duplicate-accounts) | Keep separate only where they administer every contest of the accounts |
+| A-25 | An admin (an admin account: root) retires an empty duplicate account they are editing while adding the account that has its wiki account instead (opt-in; refused, with the reason, for an account with votes, rounds, comments, a linked sign-in or an API token, or while a round of its contests is getting its files or a new juror); it never signs in again, its address is freed and it is listed nowhere | [admin guide](../user/admin-guide.md#a-wiki-account-another-account-has) | the browser test runs as root in a contest of its own (no other test's round job there) |
 
 ## Root
 

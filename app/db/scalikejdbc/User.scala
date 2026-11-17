@@ -616,13 +616,16 @@ object User extends CRUDMapper[User] {
     }
 
   /** The jurors a distribution to the round gives images to, ordered by id: its active
-    * jurors in round_user, so a juror stopped on the round gets no new images. Rounds
+    * jurors in round_user, so a juror stopped on the round gets no new images; never a deleted
+    * (retired) account. Rounds
     * without round_user rows (created before round_user was filled) fall back to the
     * jurors with vote rows in the round.
     */
   def distributionJurors(roundId: Long): Seq[User] =
-    if (RoundUser.byRoundId(roundId).isEmpty) findByRoundSelection(roundId)
-    else activeRoundJurors(roundId)
+    (if (RoundUser.byRoundId(roundId).isEmpty) findByRoundSelection(roundId)
+     else activeRoundJurors(roundId))
+      // a retired account (A-4) has no round_user row nor vote; never given files if one appears
+      .filter(_.deletedAt.isEmpty)
 
   private def activeRoundJurors(roundId: Long): Seq[User] = {
     val ids = RoundUser.activeJurors(roundId).map(_.userId).distinct
@@ -1023,6 +1026,24 @@ object User extends CRUDMapper[User] {
         authVersionOf(id).toRight(WikiAccountOther)
       }
     }
+
+  /** Of the accounts `ids`, those not deleted, read under a shared lock on each one's users row
+    * (in id order) until the transaction ends: the re-check of every `round_user` insert (the
+    * existing accounts plan's A-4, "Retire vs round_user inserts"). The insert's foreign key takes
+    * the same shared lock anyway (V37); taken first, a retirement either committed before it (the
+    * account is left out here) or waits until the insert commits, and then sees the account's
+    * `round_user` row and is refused ([[services.AccountRetirement]]). A locking read, so it reads
+    * the latest committed row, never an older snapshot.
+    */
+  def lockLive(ids: Seq[Long])(implicit session: DBSession): Set[Long] =
+    if (ids.isEmpty) Set.empty
+    else
+      sql"""SELECT id, deleted_at IS NULL FROM users WHERE id IN (${ids.distinct.sorted}) ORDER BY id LOCK IN SHARE MODE"""
+        .map(rs => rs.long(1) -> rs.boolean(2)).list.apply().collect { case (id, true) => id }.toSet
+
+  /** Every account but the deleted ones (root's all users page). */
+  def findAllLive()(implicit session: DBSession = autoSession): Seq[User] =
+    findAllBy(isNotDeleted)
 
   /** The account's row, locked until the transaction ends. */
   def lockRow(id: Long)(implicit session: DBSession): Option[User] =

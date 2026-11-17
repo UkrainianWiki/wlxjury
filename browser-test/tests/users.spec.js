@@ -124,3 +124,55 @@ test.describe('an admin editing a member', () => {
       await expect(page.getByText('The invitation has been cancelled.')).toBeVisible();
     });
 });
+
+// Retiring an empty account from the same panel (accounts plan A-4, decision A3), as root, in the
+// pairs' own contest (UiShotsServer: no rounds there, so no other test's round job refuses it): the
+// engine's first pair whose edited member is still listed. The panel offers "Retire the account
+// being edited" unticked, with what changes in the conflict-of-interest filter; ticked, the add
+// adds the other account and retires the edited one: it is gone from the contest's members. A
+// retirement can't be undone, so a rerun takes the next pair.
+test.describe('root editing an empty member', () => {
+  test.use({ role: 'root' });
+
+  test('retires it with the add of the account that has the wiki account', { tag: '@A-25' },
+    async ({ page, fixture, diagnostics }) => {
+      test.skip(fixture.retireTargets.length === 0, 'the fixture has no retire pairs (the guides\' screenshot mode)');
+      diagnostics.expectStatus(400);
+      const contestId = fixture.retireTargets[0].contestId;
+      const members = () => page.goto(`/admin/users?contestId=${contestId}`);
+      await members();
+      let pair;
+      for (const p of fixture.retireTargets) {
+        if (await page.getByRole('row').filter({ hasText: p.edited.name }).count() > 0) { pair = p; break; }
+      }
+      expect(pair, 'every pair of this engine is retired already: restart the fixture').toBeTruthy();
+      const { edited, target } = pair;
+
+      await page.goto(`/users/edit/${edited.id}?contestId=${contestId}`);
+      const wiki = page.getByLabel('Wiki account', { exact: true });
+      await expect(wiki).toHaveValue(edited.wiki);
+      await wiki.fill(target.wiki);
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await expect(page.getByText('Another account already has this wiki account.')).toBeVisible();
+      const panel = await one(page.getByRole('region', { name: `Other accounts with the wiki account ${target.wiki}` }));
+      const item = await one(panel.getByRole('listitem').filter({ hasText: target.name }));
+
+      // unticked, what it does and the conflict-of-interest change shown before the add
+      const retire = item.getByRole('checkbox', { name: `Retire the account being edited (${edited.name})` });
+      await expect(retire).not.toBeChecked();
+      await expect(item).toContainText('frees its email address and ends its sessions');
+      await expect(item).toContainText(`The conflict-of-interest filter then no longer checks its wiki account ${edited.wiki}, ` +
+        `and checks ${target.wiki} once that account is added.`);
+      await expect(item.getByLabel('Send an invitation email')).not.toBeChecked();
+      await expect(item.getByLabel('Tell its owner by email')).not.toBeChecked();
+
+      await retire.check();
+      await item.getByRole('button', { name: 'Add that account to this contest instead' }).click();
+      await expect(page).toHaveURL((url) => url.pathname === '/admin/users');
+      await expect(page.getByText(`Account ${edited.name} was retired.`)).toBeVisible();
+      // the added account is a member; the retired one is listed no more, also after a reload
+      await expect(page.getByRole('row').filter({ hasText: target.name }).first()).toBeVisible();
+      await members();
+      await expect(page.getByRole('row').filter({ hasText: edited.name })).toHaveCount(0);
+    });
+});

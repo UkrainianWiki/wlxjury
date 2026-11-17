@@ -94,9 +94,25 @@
                                         <input class="form-check-input" type="checkbox" name="tellOwner" value="true" id="wiki-taken-tell-@id">
                                         <label class="form-check-label" for="wiki-taken-tell-@id">@Messages("account.search.tell.owner")</label>
                                     </div>
-                                    @* A-4 (decision A3) goes here: "Retire the account being edited", an unticked
-                                       checkbox sent with this add, only where its rules allow it. Then J-2's "Join the
-                                       two accounts" link, for who may join them, once the join is built *@
+                                    @* A-4 (decision A3): "Retire the account being edited", an unticked checkbox sent
+                                       with this add, only where its rules allow it (else why not); what it changes in
+                                       the conflict-of-interest filter shown before the confirm. Then J-2's "Join the two
+                                       accounts" link, for who may join them, once the join is built *@
+                                    @for(offer <- panel.retire) {
+                                        @offer.refusal match {
+                                            case Some(refusal) => {
+                                                <p class="small mb-0 wiki-taken-retire-refused">@Messages("wiki.taken.retire.refused", offer.name, Messages(refusal.key))</p>
+                                            }
+                                            case None => {
+                                                <div class="form-check wiki-taken-retire">
+                                                    <input class="form-check-input" type="checkbox" name="retireAccountId" value="@offer.accountId" id="wiki-taken-retire-@id"
+                                                        aria-describedby="wiki-taken-retire-help-@id">
+                                                    <label class="form-check-label" for="wiki-taken-retire-@id">@Messages("wiki.taken.retire", offer.name)</label>
+                                                </div>
+                                                <p class="form-text mb-0" id="wiki-taken-retire-help-@id">@Messages("wiki.taken.retire.help")@for(old <- offer.coiLeaving) { <span class="wiki-taken-retire-coi">@Messages("wiki.taken.retire.coi", old, panel.wikiAccount)</span>}</p>
+                                            }
+                                        }
+                                    }
                                 </form>
                             }
                         </li>

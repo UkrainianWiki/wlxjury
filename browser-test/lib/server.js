@@ -61,6 +61,10 @@ export function fixtureFor(browserName) {
     // this engine's groups of possible duplicates (their shared wiki accounts), for the
     // duplicates report (duplicates.spec.js); none in the guides' screenshot mode
     duplicateGroups: (s.duplicateGroups || [])[i] || [],
+    // this engine's pairs for retiring an account from that panel as root (users.spec.js, A-4), in
+    // a contest of their own: an empty member without a role, with a wiki account, and an account
+    // in no contest with another one; none in the guides' screenshot mode
+    retireTargets: (s.retireTargets || [])[i] || [],
   };
 }
 

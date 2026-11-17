@@ -235,8 +235,9 @@ instead". *Considered:* no retire (role `no` only), root only.
   `round_user` row, no identity, no API token, and every membership in a contest the actor
   administers.
 - **Not during a round job:** refused while a `round_distribution` or `round_rebalance` job holds a
-  round of the account's contests, or such a round is distributing or frozen (`distributing = 1`,
-  `freeze_count > 0`), so a distribution can't hand files to an account being retired.
+  round of the account's contests, so a distribution can't hand files to an account being retired.
+  *(2026-11-17, the maintainer: a round held in review, `distributing = 1` without a job, or one
+  whose creation failed, doesn't refuse; the `round_user` re-checks below cover it.)*
 - **One transaction:** lock the account's row (`User.lockRow`), delete its memberships, pending
   invitations and links, then check emptiness again (votes, rounds, comments: a vote or an
   assignment that committed first refuses the retire, and nothing is written); then set
@@ -266,6 +267,31 @@ instead". *Considered:* no retire (role `no` only), root only.
   keptAccountId=`).
 - **CoI:** the retired account's wiki account leaves the conflict-of-interest filter (`CoiMembers`
   reads members); the panel shows that change before the confirm if the two accounts' names differ.
+
+**A-4 as built (2026-11-16, `stack/178-retire-empty-account`, V107).** `services.AccountRetirement`
+(`retire`, its own transaction retried on a deadlock; `retireIn`, in the caller's, for J-2), the
+checkbox on each "Add that account instead" form of the panel (`retireAccountId`, unticked; where
+the account can't be retired for its emptiness, an admin role or a round job, the panel says why
+instead; nothing for an account the actor may not change). The add runs first and the retirement
+only if the add gave the other account a membership or an invitation (two transactions: an add
+that commits and a retirement refused meanwhile leaves the add, and the page says why the account
+was not retired). The rules are read again on the POST, so a forged id is refused alike (named by
+its id only); an admin may retire only an account tied to the contest it is done from (a membership
+in any role, or a live invitation; the review of 2026-11-17: an account with no ties passes "every
+contest it is in" on an empty set). Both users rows, the retired and the kept account's, are locked
+in id order (two crossed retirements: the second is refused); a new comment re-checks its author
+like a `round_user` insert (`CommentJdbc.createLive`); an invitation that finds the account retired
+after the add committed is reported on the page (`Mail.Retired`). M4 as the maintainer decided on 2026-11-17 (after a first build that refused on
+`distributing = 1` too): only a queued or running `round_distribution` or `round_rebalance` job in
+the account's contests refuses; a round held in review (P3) or whose creation failed doesn't,
+since every `round_user` insert re-checks the account (the review's Distribute included). `round_user` inserts re-check the account under a shared lock
+(`User.lockLive`) in `RoundService.insert`, the review's jury (`reviewJury`, a fourth insert,
+refused as "jurors changed"), `RoundRebalanceService.add` (both paths) and the handler's "stop"
+phase (before its freeze). Readers changed: the email match of an add, `addExisting` under its row
+lock (a deleted row is none: a new account), `invite` (refused), `User.distributionJurors`, root's
+all users page (`User.findAllLive`), and the edit save (refused under its row lock); the others
+already left deleted rows out, or find a retired account through nothing it still has (no
+membership, `round_user`, vote, address or live link).
 
 ## Migrations
 

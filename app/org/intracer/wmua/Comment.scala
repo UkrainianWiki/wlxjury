@@ -71,6 +71,18 @@ object CommentJdbc extends SQLSyntaxSupport[Comment] {
     body = rs.string(c.body)
   )
 
+  /** [[create]] in a transaction that first takes a shared lock on the author's users row and
+    * re-checks it ([[db.scalikejdbc.User.lockLive]]): a retirement (A-4) either committed first
+    * (None, nothing written: the author's account is retired) or waits for this comment and is
+    * then refused by it, so a comment never lands on a retired account.
+    */
+  def createLive(userId: Long, username: String, roundId: Long, contestId: Option[Long], room: Long,
+      body: String): Option[Comment] =
+    DB.localTx { s =>
+      Option.when(db.scalikejdbc.User.lockLive(Seq(userId))(s).contains(userId))(
+        create(userId, username, roundId, contestId, room, body)(s))
+    }
+
   def create(userId: Long, username: String, roundId: Long, contestId: Option[Long], room: Long, body: String,
              createdAt: String = CommentJdbc.now())(implicit session: DBSession = autoSession): Comment = {
     val id = withSQL {

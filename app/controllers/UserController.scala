@@ -13,7 +13,7 @@ import play.api.i18n.{I18nSupport, Lang, Messages}
 import play.api.mvc.{Action, AnyContent, ControllerComponents, EssentialAction, Result}
 import modules.BlockingExecutionContext
 import services.oauth.{OAuthProviders, OAuthSettings}
-import services.{AccountChangeLog, AccountTokenService, ApiTokenService, PasswordHasher, ShareLinkService, UserService}
+import services.{AccountChangeLog, AccountRetirement, AccountTokenService, ApiTokenService, PasswordHasher, ShareLinkService, UserService}
 import spray.util.pimpFuture
 
 import javax.inject.Inject
@@ -129,7 +129,7 @@ class UserController @Inject()(cc: ControllerComponents,
         case Some(contest) =>
           UserController.addExistingForm.bindFromRequest().fold(
             _ => BadRequest(views.html.errorPage(Some(user), "error.title", "error.bad.request")),
-            { case (accountId, role, sendInvitation, tellOwner) =>
+            { case (accountId, role, sendInvitation, tellOwner, retireId) =>
               try {
                 val result = userService.addAccountToContest(user, accountId, contest, role, sendInvitation, tellOwner)
                 // what its owner learns: the notice in the app, and the mail only if ticked
@@ -140,8 +140,22 @@ class UserController @Inject()(cc: ControllerComponents,
                   case UserService.SearchNotice.Failed    => Some(Messages("account.added.notice.failed"))
                   case UserService.SearchNotice.NoEmail   => Some(Messages("account.added.notice.no.email"))
                 }
+                // the edited account retired (A-4), only with an add that gave the account instead
+                // a membership or an invitation, never the account added itself
+                val gave = result.notice != UserService.SearchNotice.NotNeeded ||
+                  result.added.isInstanceOf[UserService.AlreadyMember]
+                val retired = retireId.filter(_ != accountId).map { id =>
+                  // its name only where the actor may see that it could be retired; else its id
+                  def name(shown: Boolean) =
+                    User.findById(id).filter(_ => shown).map(_.fullname).filter(_.trim.nonEmpty).getOrElse("#" + id)
+                  if (!gave) Messages("account.retire.not.done", name(false), Messages("account.retire.refused.not.added"))
+                  else AccountRetirement.retire(user, id, contest.id, Some(accountId)) match {
+                    case Right(_)      => Messages("account.retired", name(true))
+                    case Left(refusal) => Messages("account.retire.not.done", name(refusal.offered), Messages(refusal.key))
+                  }
+                }
                 Redirect(routes.UserController.users(contest.id))
-                  .flashing("users-added" -> (addedMessage(Seq(result.added)) +: notice.toSeq).mkString(" "))
+                  .flashing("users-added" -> ((addedMessage(Seq(result.added)) +: notice.toSeq) ++ retired).mkString(" "))
               } catch {
                 case _: UserService.AccountNotFound =>
                   NotFound(views.html.errorPage(Some(user), "error.title", "error.user.not.found"))
@@ -156,7 +170,8 @@ class UserController @Inject()(cc: ControllerComponents,
 
   def allUsers(): EssentialAction =
     withAuth(rolePermission(Set(User.ROOT_ROLE))) { user => implicit request =>
-      val users = User.withMemberships(User.findAll())
+      // retired accounts (A-4) are not listed: no memberships, no address, never signed in to
+      val users = User.withMemberships(User.findAllLive())
       val contests = ContestJuryJdbc.findAll()
       Ok(
         views.html.users(user,
@@ -676,7 +691,7 @@ class UserController @Inject()(cc: ControllerComponents,
       }
       // a save refused inside its transaction: the address's, or the account no longer the editor's
       def refusedInside(key: String): Result =
-        refused(if (key == "user.in.other.contests") None else Some("email"), key,
+        refused(if (key == "user.in.other.contests" || key == "account.retired.meanwhile") None else Some("email"), key,
           emailWas = Option.when(key == "user.email.changed.meanwhile")(
             User.findById(userId).map(_.emailLo).getOrElse("")))
       val save: Option[String] => Result = {
@@ -772,6 +787,8 @@ class UserController @Inject()(cc: ControllerComponents,
     val written: Either[String, (Option[UserService.EmailChanged], Int)] =
       try scalikejdbc.DB.localTx { implicit session =>
         val locked = User.lockRow(userId)
+        // retired (A-4) since the page was read: nothing of the form is written
+        if (locked.exists(_.deletedAt.nonEmpty)) throw new UserController.Refused("account.retired.meanwhile")
         // the account may have joined another contest since the checks: decided again under its lock
         if (mayEdit && !locked.exists(UserController.mayEditAccountNow(user, _)))
           throw new UserController.Refused("user.in.other.contests")
@@ -855,17 +872,23 @@ class UserController @Inject()(cc: ControllerComponents,
     def invitable(u: User) = !own && u.emailLo.nonEmpty && !u.isRoot && u.contestRole.exists(User.ACCESS_ROLES.contains) &&
       !(u.emailVerified && u.hasUsablePassword) && !userService.invitationRefused(user, u)
     def outcome(sent: Boolean) = Messages(if (sent) "invitation.sent" else "invitation.not.sent")
+    // the account retired (A-4) after this save committed: no invitation, said rather than a 404
+    def unlessRetired(notice: => String): String =
+      try notice
+      catch { case _: UserService.AccountNotFound => Messages("invitation.account.retired") }
     newRole.filter(_ => roleNeedsInvitation) match {
       case Some((role, _)) =>
         // O2: the role waits for the account's owner to accept an invitation
         if (updated.emailLo.isEmpty) notices += Messages("role.needs.invitation.email")
         else if (userService.invitationRefused(user, updated)) notices += Messages("invitation.not.possible")
         else {
-          val sent = userService.invite(user, updated, contest, Some(role), mail = extras.sendInvitation, comment)
-          notices += (if (extras.sendInvitation) outcome(sent) else Messages("invitation.created.not.sent"))
+          notices += unlessRetired {
+            val sent = userService.invite(user, updated, contest, Some(role), mail = extras.sendInvitation, comment)
+            if (extras.sendInvitation) outcome(sent) else Messages("invitation.created.not.sent")
+          }
         }
       case None if extras.sendInvitation && !own =>
-        notices += (if (invitable(updated)) outcome(userService.invite(user, updated, contest, None, comment = comment))
+        notices += (if (invitable(updated)) unlessRetired(outcome(userService.invite(user, updated, contest, None, comment = comment)))
                     else Messages("invitation.not.possible"))
       case None if emailChange.exists(_.changed) && invitable(updated) && !updated.hasUsablePassword =>
         notices += Messages("invitation.not.mailed")
@@ -947,7 +970,8 @@ class UserController @Inject()(cc: ControllerComponents,
     */
   private def addedMessage(added: Seq[UserService.Added])(implicit messages: Messages): String = {
     import UserService._
-    val invited = added.count(_.isInstanceOf[Invited])
+    // an invitation the account's retirement prevented (Mail.Retired) is not one
+    val invited = added.count { case Invited(_, m) => m != Mail.Retired; case _ => false }
     val unverifiedWiki = added.count(_.isInstanceOf[WikiAccountUnverified])
     val noEmail = added.count(_.isInstanceOf[NoEmailToInvite])
     def mailOf(a: Added): Option[Mail] = a match {
@@ -958,6 +982,7 @@ class UserController @Inject()(cc: ControllerComponents,
     val notSent = added.count(a => mailOf(a).contains(Mail.Failed))
     val notAsked = added.count(a => mailOf(a).contains(Mail.NotAsked))
     val notPossible = added.count(a => mailOf(a).contains(Mail.NotPossible))
+    val retired = added.count(a => mailOf(a).contains(Mail.Retired))
     (Seq(messages("users.added",
                   added.count(_.isInstanceOf[NewAccount]),
                   added.count(_.isInstanceOf[JoinedContest]),
@@ -967,7 +992,8 @@ class UserController @Inject()(cc: ControllerComponents,
       (if (noEmail > 0) Seq(messages("users.not.added.no.email", noEmail)) else Nil) ++
       (if (notSent > 0) Seq(messages("users.invitations.not.sent", notSent)) else Nil) ++
       (if (notAsked > 0) Seq(messages("users.invitations.not.mailed", notAsked)) else Nil) ++
-      (if (notPossible > 0) Seq(messages("users.invitations.not.possible", notPossible)) else Nil)).mkString(" ")
+      (if (notPossible > 0) Seq(messages("users.invitations.not.possible", notPossible)) else Nil) ++
+      (if (retired > 0) Seq(messages("users.invitations.account.retired", retired)) else Nil)).mkString(" ")
   }
 
   def showImportUsers(contestIdParam: Option[Long]): EssentialAction =
@@ -1397,14 +1423,16 @@ object UserController {
 
   /** "Add to this contest" on a search result ([[UserController.addExistingAccount]]): the
     * account's id, the role (one of the add row's, [[User.FORM_ROLES]]), "Send an invitation
-    * email" and "Tell its owner by email" (both unticked by default).
+    * email" and "Tell its owner by email" (both unticked by default), and, from the Edit user
+    * panel only, "Retire the account being edited" (its id if ticked; unticked by default, A-4).
     */
-  val addExistingForm: Form[(Long, String, Boolean, Boolean)] = Form(
+  val addExistingForm: Form[(Long, String, Boolean, Boolean, Option[Long])] = Form(
     tuple(
       "accountId" -> longNumber,
       "role" -> nonEmptyText.verifying("error.invalid", User.isContestRole(_)),
       "sendInvitation" -> default(boolean, false),
-      "tellOwner" -> default(boolean, false)
+      "tellOwner" -> default(boolean, false),
+      "retireAccountId" -> optional(longNumber)
     )
   )
 

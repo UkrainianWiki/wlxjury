@@ -477,6 +477,36 @@ to root only), with their votes, comments and rounds counted within the editor's
 (root: all), to whoever passed `editableUser` (root, or an admin of the page's contest); "Add that
 account instead" is the search's add by id (`addExistingAccount`, CSRF, both mails unticked).
 Logged as `wiki_taken_panel byAccountId= accountId= contestId= shown= notShown=`.
+**Since A-4** (retiring an empty account, decision A3: an unticked checkbox with the panel's add,
+[existing accounts plan](../plans/2026-11-16-existing-accounts.md), "Retiring an account"):
+`services.AccountRetirement` is the only writer of `users.deleted_at`. Who: the actor may change
+the account (`UserController.mayEditAccountNow`: root, or an admin of every contest it is in or
+worked in), it is not the actor, not root, and (for an admin) holds no active membership or live
+invitation with a role other than `jury` or `organizer` (`ShareLinkService.handOverRefusal`'s
+rule): an admin account is retired by root only; and, for an admin, the account is a member of
+(any role) or has a live invitation into the contest the retirement is done from (an account with
+no ties anywhere would pass "every contest it is in" on an empty set). Empty: no `vote`, `vote_aside`, `vote_orphan`,
+comment, `round_user`, linked identity or usable API token. Refused while a `round_distribution` or
+`round_rebalance` job is queued or running in the account's contests (a round held in review
+does not refuse: its Distribute re-checks the account like every `round_user` insert).
+One transaction, under the users row locks of the account and of the one added instead, in id order
+(of two crossed retirements the second finds its kept account retired), then `user_contest` /
+`account_token`, no round lock: the rules read again, the memberships deleted and unused links revoked, emptiness
+read once more, then `deleted_at` set, the email and password cleared (the old address only in the
+`account_retired` change log row; `users.email`'s unique key frees it), API tokens revoked, sessions
+ended (`auth_version` bumped). Every `round_user` insert takes a shared lock on the account's users
+row and re-checks `deleted_at` (`User.lockLive`: round creation leaves the account out; a review's
+jury, adding a juror and the rebalance job's "stop" phase refuse), so an assignment either commits
+first (the retirement is refused) or skips the retired account; a new comment does the same
+(`CommentJdbc.createLive`). An invitation that finds the account retired after an add or a save
+committed is reported on the page (`Mail.Retired`), not as a 404 or a 500. Deleted rows are none for the email
+match of an add (`matchAccount`, `addExisting` under its row lock), for `invite` (refused under its
+row lock), for sign-in (`User.byUserName`), sessions, the search, the members, jurors and
+conflict-of-interest lists, and root's all users page; a save of a retired account is refused under
+its row lock. The checkbox's account id is a form field: the POST decides everything again (a forged
+id is refused by the same rules and named by its id only). No mail. Logged by ids only:
+`account_retired accountId= byAccountId= contestId= keptAccountId= memberships= links=`, and
+`account_retire_refused accountId= byAccountId= contestId= reason=`.
 **Since J-1** (the duplicates report, [account join plan](../plans/2026-11-03-account-join.md)):
 a contest's admins see the groups of accounts that share a normalised wiki account (the groups by
 a verified address on another account's sign-in are root's only for now), where one account of
@@ -493,11 +523,11 @@ pairs=`), as is each report (`duplicates_report byAccountId= contestId= groups= 
 **Example.** `UserService.addToContest` (results `NewAccount`, `JoinedContest`, `Invited`,
 `WikiAccountUnverified`); `UserService.addAccountToContest` (the search's add by id: the account
 looked up once before its row lock and checked again under it, a deleted or unknown id a 404);
-`services.AccountSearch`; `services.WikiTakenPanel`; `services.AccountTokenService.check`; acceptance in one transaction
+`services.AccountSearch`; `services.WikiTakenPanel`; `services.AccountRetirement`; `services.AccountTokenService.check`; acceptance in one transaction
 with the token row locked; `ShareLinkService.refusal` (who may share a link, or set a password).
 
 **Guards.** `AccountInvitationSpec`, `ShareLinkSpec`, `AdminSetPasswordSpec`, `OwnAccountSpec`, `AccountReviewFixesSpec`, `SetupSpec`,
-`db.AccountVerificationMigrationSpec`, `MultiContestUserSpec`, `UserControllerSpec`, `AccountSearchSpec`, `WikiTakenPanelSpec`,
+`db.AccountVerificationMigrationSpec`, `MultiContestUserSpec`, `UserControllerSpec`, `AccountSearchSpec`, `WikiTakenPanelSpec`, `RetireAccountSpec`,
 `DuplicateAccountsSpec`.
 
 A Google or Wikimedia identity's first sign-in links to an account by the same rule

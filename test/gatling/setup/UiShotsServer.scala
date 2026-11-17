@@ -146,6 +146,35 @@ object UiShotsServer {
       s"""{"edited": {"id": $edited, "name": ${q(s"Taken Edited $n")}}, "target": {"id": $target, """ +
         s""""name": ${q(targetName)}, "login": ${q(targetEmail)}, "wiki": ${q(wiki)}}}"""
     }
+    // pairs for retiring an account from the "wiki account taken" panel (users.spec.js, accounts
+    // plan A-4), per engine three, as root in a contest of their own with no rounds (a round job another
+    // test queues in the fixture's contest, review.spec.js's say, would refuse a retirement): an empty
+    // member without a role, with a wiki account of its own (so the panel shows the
+    // conflict-of-interest change), which the test retires, and an account in no contest with the
+    // wiki account it types, which "Add that account instead" adds with that role. A retirement
+    // can't be undone, so a rerun takes the next pair. Not in the guides' screenshot mode; in this
+    // run's container only
+    val retireContest: Option[Long] = Option.when(f.docsPhotos.isEmpty) {
+      val name = "UI retire contest"
+      db.scalikejdbc.ContestJuryJdbc.findAll().find(_.name == name).map(_.getId)
+        .getOrElse(db.scalikejdbc.ContestJuryJdbc.create(None, name, 2026, "Ukraine").getId)
+    }
+    val retireTargets = (1 to 3).map { n =>
+      val pairs = for (contestId <- retireContest.toSeq; k <- 1 to 3) yield {
+        def account(name: String, email: String, contest: Option[Long], roles: Set[String], wiki: String) =
+          db.scalikejdbc.User.findByEmail(email).headOption.map(_.getId).getOrElse(
+            db.scalikejdbc.User.create(db.scalikejdbc.User(name, email, None, roles,
+              Some(services.PasswordHasher.default.hash(s"retire-$n-$k-pass")), contest, wikiAccount = Some(wiki))).getId)
+        val (editedName, oldWiki) = (s"Retire Edited $n-$k", s"Retire Old $n-$k")
+        val (targetName, targetEmail, wiki) = (s"Retire Target $n-$k", s"retire-target-$n-$k@ui-shots.test", s"Retire Wiki $n-$k")
+        val edited = account(editedName, s"retire-edited-$n-$k@ui-shots.test", Some(contestId),
+          Set(db.scalikejdbc.User.NO_ROLE), oldWiki)
+        val target = account(targetName, targetEmail, None, Set.empty, wiki)
+        s"""{"contestId": $contestId, "edited": {"id": $edited, "name": ${q(editedName)}, "wiki": ${q(oldWiki)}}, """ +
+          s""""target": {"id": $target, "name": ${q(targetName)}, "login": ${q(targetEmail)}, "wiki": ${q(wiki)}}}"""
+      }
+      pairs.mkString("[", ", ", "]")
+    }
     // possible duplicates for the duplicates report (duplicates.spec.js), per engine four groups of
     // three accounts with one wiki account written three ways (the account join plan's J-1): the
     // first a member of the contest without a role (so the contest's report lists the group, its
@@ -217,6 +246,7 @@ object UiShotsServer {
          |  "searchTargets": [${searchTargets.mkString(", ")}],
          |  "wikiTaken": [${wikiTaken.mkString(", ")}],
          |  "duplicateGroups": [${duplicateGroups.mkString(", ")}],
+         |  "retireTargets": [${retireTargets.mkString(", ")}],
          |  "commentFile": {"juror": $commentJuror, "pageId": $commentPage, "otherRounds": $commentOthers},
          |  "pageId": $pageId,
          |  "ratedPageId": $ratedPageId

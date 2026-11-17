@@ -223,12 +223,26 @@ accounts are not shown.
   **Tell its owner by email** are unticked by default; nothing is mailed unless you tick one. Its
   owner sees a notice in the tool either way. An account already in this contest shows its role
   instead.
+- **Retire the account being edited** (unticked; next to each **Add that account to this contest
+  instead**) also retires the account you were editing, once the other account is added: for one
+  person who ended up with two accounts. It is offered only for an **empty** account: no votes, no
+  rounds, no comments, no linked Google or Wikimedia sign-in, no API token. Retiring removes it
+  from its contests, revokes its invitations and links, frees its email address (so the person's
+  other account can take it), ends its sessions, and nobody can sign in to it again; it can't be
+  undone here, and no mail is sent. Admins may retire an account only if it is a member of (or invited to)
+  this contest and they are an admin of every contest it is in; an account that is an admin is retired by root only; never your own
+  account. While a round of its contests is getting its files or a new juror (a job on its
+  page), wait until that is done; a round held in review doesn't stop it. If the account you were editing has another wiki account, the panel says that the
+  conflict-of-interest filter will check the added account's wiki account instead. If the account
+  can't be retired, the panel says why instead of offering the checkbox. The account change log
+  shows **Account retired** on both accounts, each naming the other.
 - **Keep them separate** puts the account's wiki account back as it was and hides the panel; your
   other changes in the form stay, and nothing is saved until you press **Save**. Nothing is
   recorded: the next time someone types that wiki account, the panel shows again.
 
-The account you were editing stays as it was. Each time the panel is shown, the log records your
-account and the number of accounts shown, as for a search.
+Unless you tick **Retire the account being edited**, the account you were editing stays as it was.
+Each time the panel is shown, the log records your account and the number of accounts shown, as for
+a search.
 
 <img src="images/admin-user-edit.png" alt="The Edit user page of a member, with the role and its help, and the set-password links" width="450">
 

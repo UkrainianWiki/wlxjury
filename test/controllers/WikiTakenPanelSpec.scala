@@ -124,7 +124,7 @@ class WikiTakenPanelSpec extends PlaySpecification with PlayTestDb with AccountT
         add.attr("action") === routes.UserController.addExistingAccount(Some(10)).url
         add.select("input[name=accountId]").attr("value") === elsewhere.getId.toString
         add.selectFirst("select[name=role] option[selected]").attr("value") === "organizer"
-        add.select("input[type=checkbox]").asScala.map(_.attr("name")) === Seq("sendInvitation", "tellOwner")
+        add.select("input[type=checkbox]").asScala.map(_.attr("name")) === Seq("sendInvitation", "tellOwner", "retireAccountId")
         add.select("input[type=checkbox][checked]").size === 0
         add.select("input[type=radio]").size === 0
 

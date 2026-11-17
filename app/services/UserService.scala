@@ -84,14 +84,18 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     val contestId = contest.flatMap(_.id).orElse(creator.contestId)
     val role = person.contestRole.getOrElse(User.JURY_ROLE)
 
+    def create(): Added = {
+      // root may give no contest role; anyone else's new user gets one
+      val roles = if (creator.hasRole(User.ROOT_ROLE)) person.roles else Set(role)
+      createAccount(creator, person.copy(contestId = contestId, roles = roles), contest, sendInvitation)
+    }
     matchAccount(person) match {
       case Some((account, byEmail)) =>
-        addExisting(creator, account, byEmail, contest, contestId, role, sendInvitation)
+        // an account retired between the match and its row lock (A-4) is none: a new account
+        // (the retirement cleared its address, so the email no longer matches it)
+        addExisting(creator, account, byEmail, contest, contestId, role, sendInvitation).getOrElse(create())
 
-      case None =>
-        // root may give no contest role; anyone else's new user gets one
-        val roles = if (creator.hasRole(User.ROOT_ROLE)) person.roles else Set(role)
-        createAccount(creator, person.copy(contestId = contestId, roles = roles), contest, sendInvitation)
+      case None => create()
     }
   }
 
@@ -127,11 +131,13 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     val cId = contest.getId
     val added = addExisting(creator, account, byEmail = true, Some(contest), contest.id, role, sendInvitation,
       comment = Some(SearchComment), mailFrom = Some(systemSender), goneIf = Some(gone))
+      .getOrElse(throw new AccountNotFound)
     // what the add gave: a membership (direct, or one waiting for a password), or an invitation
     // that waits to give the role; nothing where none may be sent
     val invited = added match {
       case JoinedContest(_)             => Some(false)
       case Invited(_, Mail.NotPossible) => Option.when(UserContestJdbc.find(account.getId, cId).nonEmpty)(true)
+      case Invited(_, Mail.Retired)     => None
       case Invited(_, _)                => Some(true)
       case _                            => None
     }
@@ -173,7 +179,8 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     * (or picked by id, [[addAccountToContest]]), else by its wiki account. `comment`: the account
     * change log's, for the role or the invitation; `mailFrom`: the sender of a mail it sends, if
     * not `creator`; `goneIf`: an account that it holds for gone under its row lock (deleted, say)
-    * is refused ([[UserService.AccountNotFound]]), nothing written.
+    * is refused ([[UserService.AccountNotFound]]), nothing written. None, nothing written: the
+    * account was deleted (retired, A-4) before its row lock; the caller treats it as no account.
     */
   private def addExisting(
       creator: User,
@@ -185,15 +192,15 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
       sendInvitation: Boolean,
       comment: Option[String] = None,
       mailFrom: Option[User] = None,
-      goneIf: Option[User => Boolean] = None)(implicit messages: Messages, linkHost: LinkHost): Added = {
+      goneIf: Option[User => Boolean] = None)(implicit messages: Messages, linkHost: LinkHost): Option[Added] = {
     val access = User.ACCESS_ROLES.contains(role)
-    contestId.fold[Added](AlreadyMember(account)) { cId =>
+    contestId.fold[Option[Added]](Some(AlreadyMember(account))) { cId =>
       // matched by email: whoever can sign in owns the address (or nobody can); matched by
       // wiki account only: only a verified wiki account says who holds it (H1), whatever
       // the account's email or password: a legacy self-set name, or an admin's typo
       def mayJoin(a: User) = !access || (if (byEmail) a.mayTakeAccessRole else a.wikiAccountVerified)
       User.findInContest(account.getId, cId) match {
-        case Some(member) => AlreadyMember(member)
+        case Some(member) => Some(AlreadyMember(member))
         case None =>
           // decided and joined under the account's row lock, read again inside: a shared
           // link's acceptance, which takes the same lock before checking the account's
@@ -202,17 +209,19 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
           // order is the acceptance's: the account's row, then its memberships and links
           val joined = scalikejdbc.DB.localTx { implicit session =>
             // an account picked by id and deleted meanwhile is none (checked here, not in
-            // lockRow's SQL, which other callers share)
-            val row = User.lockRow(account.getId).filterNot(l => goneIf.exists(_(l)))
+            // lockRow's SQL, which other callers share); so is any account deleted (retired,
+            // A-4) meanwhile: None, nothing written
+            val row = User.lockRow(account.getId).filterNot(l => l.deletedAt.nonEmpty || goneIf.exists(_(l)))
             if (goneIf.nonEmpty && row.isEmpty) throw new AccountNotFound
-            row.filter(mayJoin).map { locked =>
+            if (row.isEmpty) None
+            else Some(row.filter(mayJoin).map { locked =>
               val added = UserContestJdbc.createMembership(locked.getId, cId, role)
               if (added) AccountChangeLog.record(creator, locked.getId, Some(cId), AccountChangeJdbc.Role,
                 newValue = Some(role), comment = comment)
               added -> locked
-            }
+            })
           }
-          joined match {
+          joined.map {
             case Some((added, locked)) =>
               val member = User.findInContest(account.getId, cId).getOrElse(account)
               // no password, or a retired legacy one (P8): only an invitation lets its owner in
@@ -223,7 +232,8 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
                 // asked: the member's row offers to send it, or a link to share)
                 Invited(member,
                   if (invitationRefused(creator, member)) Mail.NotPossible
-                  else if (sendInvitation) Mail.of(invite(creator, member, contest, None, comment = comment, from = mailFrom))
+                  else if (sendInvitation)
+                    retiredMeanwhile(Mail.of(invite(creator, member, contest, None, comment = comment, from = mailFrom)))
                   else Mail.NotAsked)
               else {
                 for (c <- contest if sendInvitation && added && c.greeting.use && mayBeGreeted(role))
@@ -238,9 +248,11 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
               Invited(account, Mail.NotPossible)
             case None if byEmail =>
               // the role waits for an invitation: kept unsent if no mail was asked for
-              val sent = invite(creator, account, contest, Some(role), mail = sendInvitation, comment = comment,
-                from = mailFrom)
-              Invited(account, if (sendInvitation) Mail.of(sent) else Mail.NotAsked)
+              Invited(account, retiredMeanwhile {
+                val sent = invite(creator, account, contest, Some(role), mail = sendInvitation, comment = comment,
+                  from = mailFrom)
+                if (sendInvitation) Mail.of(sent) else Mail.NotAsked
+              })
             case None =>
               accountLogger.info(
                 s"add_refused reason=wiki_account_unverified accountId=${account.getId} byAccountId=${creator.getId} contestId=$cId")
@@ -249,6 +261,14 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
       }
     }
   }
+
+  /** `invited`, or [[Mail.Retired]] if [[invite]] found the account retired (A-4) under its row
+    * lock, after the join's transaction committed: nothing was created, and the page says so
+    * rather than a 404 or a 500.
+    */
+  private def retiredMeanwhile(invited: => Mail): Mail =
+    try invited
+    catch { case _: AccountNotFound => Mail.Retired }
 
   /** Creates the account, without a password, with a membership in [[User.contestId]] if
     * set; for an access role and an email, an invitation sets the password: mailed if
@@ -279,7 +299,7 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
       createdUser.contestRole.exists(User.ACCESS_ROLES.contains)
     val mail =
       if (!needsInvitation) Mail.NotNeeded
-      else if (sendInvitation) Mail.of(invite(creator, createdUser, contestOpt, None))
+      else if (sendInvitation) retiredMeanwhile(Mail.of(invite(creator, createdUser, contestOpt, None)))
       else Mail.NotAsked
     NewAccount(createdUser, mail)
   }
@@ -297,7 +317,9 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     */
   private def matchAccount(formUser: User): Option[(User, Boolean)] = {
     val email = LoginText.email(formUser.email)
-    if (email.nonEmpty) User.findByEmail(email).headOption.map(_ -> true)
+    // a deleted (retired, A-4) row is none: the retirement clears its address, so none is found
+    // anyway; kept for a row deleted otherwise (addExisting checks it again under the row lock)
+    if (email.nonEmpty) User.findByEmail(email).find(_.deletedAt.isEmpty).map(_ -> true)
     else
       formUser.wikiAccount.map(LoginText.clean).filter(_.nonEmpty)
         .flatMap(User.findByAccount(_).filter(_.deletedAt.isEmpty).headOption)
@@ -311,7 +333,8 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     * role to wait until the admin sends it or shares a link; its token is never shown. Logged in
     * the account change log, in the invitation's transaction, and whether it was mailed once the
     * mail is out: the mail is the last step that can fail the call, so an add or an import line
-    * shown as failed sent none.
+    * shown as failed sent none. Throws [[UserService.AccountNotFound]], nothing written, if the
+    * account is deleted (retired) when its row is locked.
     */
   def invite(creator: User, account: User, contestOpt: Option[ContestJury], role: Option[String],
       mail: Boolean = true, comment: Option[String] = None, from: Option[User] = None)(implicit
@@ -331,7 +354,9 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     // (addToContest's join commits first), or this would wait on it until
     // innodb_lock_wait_timeout; keep it so.
     val (tokenId, token, changeId) = scalikejdbc.DB.localTx { implicit session =>
-      val _ = User.lockRow(account.getId)
+      // a deleted (retired, A-4) account is never invited: retired after the caller read it (an
+      // add's join committed first, then this), refused with nothing written
+      if (!User.lockRow(account.getId).exists(_.deletedAt.isEmpty)) throw new AccountNotFound
       AccountTokenJdbc.revokeUnused(account.getId, Seq(AccountTokenJdbc.Invitation), contestId)
       val (tokenId, token) = AccountTokenService.create(account.getId, AccountTokenJdbc.Invitation, account.emailLo,
         contestId, role, creator.id, unsent = !mail, logCreated = false)
@@ -703,6 +728,8 @@ object UserService {
     case object Failed extends Mail
     /** None may be sent by this creator ([[UserService.invitationRefused]]): nothing created. */
     case object NotPossible extends Mail
+    /** The account was retired (A-4) between the add's decision and the invitation: none created. */
+    case object Retired extends Mail
     def of(sent: Boolean): Mail = if (sent) Sent else Failed
   }
 

@@ -101,7 +101,8 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
       _ => Redirect(back),
       commentBody => {
         if (commentBody.text.trim.nonEmpty)
-          CommentJdbc.create(user.getId, user.fullname, targetRound.getId, Some(targetRound.contestId), pageId,
+          // the author's account re-checked under its row lock (A-4): retired meanwhile, nothing written
+          CommentJdbc.createLive(user.getId, user.fullname, targetRound.getId, Some(targetRound.contestId), pageId,
             commentBody.text)
         Redirect(back + "#comments")
       }
@@ -120,7 +121,8 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
     editCommentForm.bindFromRequest().fold(
       _ => Redirect(list.largeUrl(pageId)),
       commentBody => {
-        CommentJdbc.create(
+        // the author's account re-checked under its row lock (A-4): retired meanwhile, nothing written
+        CommentJdbc.createLive(
           user.getId,
           user.fullname,
           roundId,

@@ -210,6 +210,11 @@ class RoundRebalanceHandler @Inject() (config: Configuration) extends JobHandler
 
     st.phase match {
       case Phase.Stop =>
+        // the juror's users row share-locked and re-checked before anything is written (A-4): an
+        // account retired since the add was queued is refused; one being retired waits for this
+        // step, then sees the round_user row below and is refused
+        if (!User.lockLive(Seq(jurorId)).contains(jurorId))
+          return failed(job, st, JobError(NotJurorKey, Seq(jurorId.toString)))
         val frozen =
           if (st.frozen.contains(roundId)) st.frozen
           else { Round.freeze(Seq(roundId)); Seq(roundId) }

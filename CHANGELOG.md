@@ -46,6 +46,21 @@ The next release is `26.11.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything d
   since the page was shown records nothing. Read-only otherwise: no account changes, nothing is
   mailed; the report and each Keep separate are logged by ids only (`security.account`). Joining
   comes with J-2. Admin guide.
+- **Retire an empty duplicate account** (A-4 of the existing accounts plan, decision A3; developed
+  2026-11-16, `stack/178-retire-empty-account`): on Edit user's "Other accounts with the wiki
+  account" panel, each **Add that account to this contest instead** has an unticked **Retire the
+  account being edited**, for one person with two accounts. Offered only for an empty account (no
+  votes, rounds, comments, linked sign-in or API token), to root or an admin of every contest it is
+  in (and of this contest, where it is a member or invited); an admin account to root only; never one's own or a root account; not while a round of its
+  contests is getting its files or a new juror (a round held in review doesn't stop it; the panel
+  says why otherwise). Retiring, after the add,
+  in one transaction: its memberships and unused links gone, its email address freed for the other
+  account, its password cleared, its sessions ended, `users.deleted_at` set; it never signs in
+  again and is listed nowhere (members, jurors, the search, the conflict-of-interest filter,
+  root's all users). The panel shows what changes in the conflict-of-interest filter before the
+  add. Round creation and adding a juror re-check the account under its users row lock, so a
+  retired account is never assigned. **Account retired** in the change log on both accounts;
+  logged by ids only (`security.account`); no mail. Admin guide.
 
 **Fixes**
 
@@ -80,6 +95,12 @@ The next release is `26.11.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything d
   The report on production's size (2,800 accounts, 280 in 86 groups, DuplicateAccountsSpec in the
   test container): 94 ms; the names one read of `users` (a range of its wiki account index, 280
   rows), the email path from `user_identity` with `users` by its keys.
+
+- **`account_retired` (V107)** (the existing accounts plan's A-4; developed 2026-11-16):
+  `account_change`'s field CHECK gains `account_retired`, keeping every field before it (V106's
+  `account_joined` included). One statement, rerunnable (the CHECK dropped and added), under a 60 s
+  `lock_wait_timeout`; the rollback is in the script's last comment (FlywayUpgradeSpec "V107's
+  account_retired field"); retired accounts stay retired after it.
 
 ## 26.11.11 (2026-11-16)
 

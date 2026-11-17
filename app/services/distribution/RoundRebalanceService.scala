@@ -77,6 +77,8 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
             case None if fresh.inReview =>
               reviewRefusal(fresh, jurorId) match {
                 case Some(error) => Refused(error)
+                // the juror's users row share-locked and re-checked (A-4): retired meanwhile, refused
+                case None if !liveJuror(jurorId) => Refused(JobError(NotJurorKey, Seq(jurorId.toString)))
                 case None =>
                   sql"""INSERT INTO round_user (user_id, round_id, role, active) VALUES ($jurorId, ${fresh.getId}, ${User.JURY_ROLE}, TRUE)
                         ON DUPLICATE KEY UPDATE active = TRUE""".update()
@@ -86,6 +88,8 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
               refusal(fresh, run, jurorId, ticked, frozenByUs = false) match {
                 case Some(error) => Refused(error)
                 case None if signature(jury(fresh).jurors) != shownJury => JuryChanged
+                // checked again under the same lock by the job's "stop" phase, which inserts the row
+                case None if !liveJuror(jurorId) => Refused(JobError(NotJurorKey, Seq(jurorId.toString)))
                 case None =>
                   jobs.enqueue(NewJob(
                     kind = Kind,
@@ -120,6 +124,13 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
       case other => other
     }
   }
+
+  /** Whether the juror's account is not deleted, read under a shared lock on its users row until
+    * the transaction ends ([[User.lockLive]]): a retirement (A-4) either committed first (refused
+    * here) or waits for this add and is then refused by its `round_user` row.
+    */
+  private def liveJuror(jurorId: Long)(implicit session: DBSession): Boolean =
+    User.lockLive(Seq(jurorId)).contains(jurorId)
 
   /** Why adding `jurorId` to a round held in review is refused, if it is: a legacy round (jurors only
     * by their votes), or not an active jury member of the contest. A round created for review with

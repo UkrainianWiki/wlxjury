@@ -750,6 +750,63 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+  /** V107's rollback SQL after reopen (the existing accounts plan's A-4, as the script's last
+    * comment gives it): the `account_retired` rows, and V106's field CHECK back (the retired accounts
+    * stay retired).
+    */
+  private val v107Rollback = Seq(
+    "DELETE FROM account_change WHERE field = 'account_retired'",
+    "ALTER TABLE account_change DROP CONSTRAINT IF EXISTS account_change_field_chk, ADD CONSTRAINT account_change_field_chk " +
+      "CHECK (BINARY field IN ('email', 'password', 'role', 'name', 'wiki_account', 'root', 'account_created', " +
+      "'invitation', 'invitation_cancelled', 'password_link', 'share_link', 'sessions_ended', 'account_joined'))",
+    "DELETE FROM flyway_schema_history WHERE version = '107'")
+
+  "V107's account_retired field" should {
+    "run after V106, take account_retired and keep account_joined, refuse other values, rerun as a no-op, and roll back" in {
+      emptyDb("fw_v107_prev")
+      flyway("fw_v107_prev", production.copy(target = Some("106"))).migrate()
+      emptyDb("fw_v107")
+      flyway("fw_v107", production.copy(target = Some("106"))).migrate().success must beTrue
+      def refused(sql: String): Boolean = Using.resource(connect("fw_v107"))(c => scala.util.Try(run(c, Seq(sql))).isFailure)
+      Using.resource(connect("fw_v107"))(c => run(c, Seq(
+        "INSERT INTO users (id, fullname, email) VALUES (1, 'A', 'a@example.com'), (2, 'B', 'b@example.com')",
+        // rows of fields V106 allowed, kept by the new CHECK as it is added
+        "INSERT INTO account_change (user_id, actor_id, field, comment) VALUES (1, 2, 'account_joined', '#2')",
+        "INSERT INTO account_change (user_id, actor_id, field, old_value) VALUES (1, 2, 'email', 'a@example.com')")))
+      // V106's CHECK refuses the new field
+      val before = refused("INSERT INTO account_change (user_id, actor_id, field) VALUES (1, 2, 'account_retired')")
+      flyway("fw_v107", production.copy(target = Some("107"))).migrate().success must beTrue
+      val once = schema("fw_v107")
+      def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+      Using.resource(connect("fw_v107"))(c => run(c, Seq(
+        "UPDATE users SET deleted_at = NOW(3), email = NULL WHERE id = 1",
+        "INSERT INTO account_change (user_id, actor_id, field, old_value, comment) VALUES (1, 2, 'account_retired', " +
+          "'a@example.com', '#2')",
+        "INSERT INTO account_change (user_id, actor_id, field, comment) VALUES (2, 2, 'account_joined', '#1')")))
+      (before must beTrue) and
+        (history("fw_v107").map(_.split(" \\| ")(1)) === upTo("107")) and
+        // byte for byte: the field as listed only
+        (refused("INSERT INTO account_change (user_id, actor_id, field) VALUES (1, 2, 'Account_retired')") must beTrue) and
+        (refused("INSERT INTO account_change (user_id, actor_id, field) VALUES (1, 2, 'account_retire')") must beTrue) and
+        (refused("INSERT INTO account_change (user_id, actor_id, field) VALUES (1, 2, 'retired')") must beTrue) and {
+          Using.resource(connect("fw_v107"))(c => run(c, Seq("DELETE FROM account_change")))
+          val reset = schema("fw_v107")
+          Using.resource(connect("fw_v107"))(c => run(c, statements("V107__Account_retired.sql")))
+          schema("fw_v107") === reset
+        } and {
+          Using.resource(connect("fw_v107"))(c => run(c, Seq(
+            "INSERT INTO account_change (user_id, actor_id, field) VALUES (1, 2, 'account_retired')",
+            "INSERT INTO account_change (user_id, actor_id, field) VALUES (1, 2, 'account_joined')")))
+          Using.resource(connect("fw_v107"))(c => run(c, v107Rollback))
+          (history("fw_v107").map(_.split(" \\| ")(1)) === upTo("106")) and
+            (refused("INSERT INTO account_change (user_id, actor_id, field) VALUES (1, 2, 'account_retired')") must beTrue) and
+            (tablesOnly(schema("fw_v107")) === tablesOnly(schema("fw_v107_prev"))) and
+            (flyway("fw_v107", production.copy(target = Some("107"))).migrate().success must beTrue) and
+            (tablesOnly(schema("fw_v107")) === tablesOnly(once))
+        }
+    }
+  }
+
   /** V96's rollback SQL after reopen (CHANGELOG, the account change log): the live unsent
     * invitations revoked first, since an older release would show one as mailed; the log dropped.
     */

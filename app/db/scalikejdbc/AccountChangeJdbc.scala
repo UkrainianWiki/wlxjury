@@ -50,10 +50,15 @@ object AccountChangeJdbc {
   val SessionsEnded = "sessions_ended"
   /** Two accounts joined (the account join plan's J-2; V106 allows it, nothing writes it yet). */
   val AccountJoined = "account_joined"
+  /** An empty account retired (the existing accounts plan's A-4, V107, [[services.AccountRetirement]]):
+    * on the retired account (its former address in old_value) and on the account added instead,
+    * each naming the other in its comment.
+    */
+  val AccountRetired = "account_retired"
 
-  /** The fields the check allows (V96's, and V106's `account_joined`). */
+  /** The fields the check allows (V96's, V106's `account_joined` and V107's `account_retired`). */
   val Fields: Seq[String] = Seq(Email, Password, Role, Name, WikiAccount, Root, AccountCreated, Invitation,
-    InvitationCancelled, PasswordLink, ShareLink, SessionsEnded, AccountJoined)
+    InvitationCancelled, PasswordLink, ShareLink, SessionsEnded, AccountJoined, AccountRetired)
 
   /** The longest old or new value, and comment, the columns take: longer ones are cut. */
   val ValueMaxLength = 255

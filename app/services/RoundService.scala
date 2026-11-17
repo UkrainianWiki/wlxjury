@@ -136,7 +136,14 @@ class RoundService @Inject() (
         val created = dao.create(
           round.copy(number = number, submitToken = submitToken, active = false, distributing = true)
         )
-        created.addUsersIn(jurors.map(u => RoundUser(created.getId, u.getId, u.contestRole.getOrElse(User.JURY_ROLE), active = true)))
+        // each juror's users row share-locked and re-checked (A-4): an account retired since the
+        // form was read is left out; one being retired now waits for this to commit, then sees
+        // its round_user row and is refused (AccountRetirement)
+        val live = User.lockLive(jurors.flatMap(_.id))
+        val (kept, retired) = jurors.partition(u => live.contains(u.getId))
+        if (retired.nonEmpty)
+          logger.info(s"Round ${created.getId}: retired accounts left out of its jurors: ${retired.map(_.getId).mkString(",")}")
+        created.addUsersIn(kept.map(u => RoundUser(created.getId, u.getId, u.contestRole.getOrElse(User.JURY_ROLE), active = true)))
         // "Create and review images" (D3): a fill that ends in review; else one pass (D4)
         val job = enqueueOrFail(created, completingCreation = true, createdBy, titles, distributeAfter = !review)
         (created, job)
@@ -447,6 +454,9 @@ class RoundService @Inject() (
     if (!confirmPrevChanged && RoundService.prevChanged(round)) throw ReviewRefused(PrevChangedKey, Seq(number))
     chosen.filter(_ => changed).foreach { users =>
       val ids = users.flatMap(_.id)
+      // each chosen juror's users row share-locked and re-checked (A-4): one retired since the page
+      // was read refuses the review's jury as changed (shown again without it)
+      if (User.lockLive(ids).size != ids.distinct.size) throw ReviewRefused(JurorsChangedKey, Seq(number))
       sql"DELETE FROM round_user WHERE round_id = $roundId AND user_id NOT IN ($ids)".update()
       users.foreach { u =>
         sql"""INSERT INTO round_user (user_id, round_id, role, active)
