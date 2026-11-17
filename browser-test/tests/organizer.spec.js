@@ -71,6 +71,23 @@ test.describe('an admin', () => {
       await expect(page.locator('#round-juror-add-jury li').first()).toBeVisible();
     });
 
+  // reassigning a juror's unrated files (round_rebalance): the page opened from the round's statistics, read
+  // only here (a POST would change the round the other tests vote in). The fixture's binary round gives every
+  // file to every juror: no receivers to tick, the juror's unrated files are removed from them. The ticks of a
+  // round of one juror per file: review.spec.js
+  test("opens a juror's reassign page from the round's statistics: every file to every juror, no receivers", { tag: '@A-04' },
+    async ({ page, fixture }) => {
+      await page.goto(`/roundstat/${fixture.roundBinaryId}`);
+      await page.locator('a.round-juror-reassign').first().click();
+      await expect(page).toHaveURL((url) => url.pathname === `/admin/rounds/${fixture.roundBinaryId}/reassign-juror`);
+      await expect(page.getByRole('heading', { level: 1 })).toContainText('unrated files in round');
+      await expect(page.locator('#round-juror-reassign-files')).toBeVisible();
+      await expect(page.locator('#round-juror-reassign-receivers input[name="receiver"]')).toHaveCount(0);
+      await expect(page.locator('#round-juror-reassign-figures')).toContainText('Every file goes to every juror');
+      await expect(page.locator('#round-juror-reassign-form button[type="submit"]')).toBeEnabled();
+      await expect(page.getByRole('link', { name: "Back to the round's statistics" })).toBeVisible();
+    });
+
   test('opens the new round form, whose fields follow the choices', { tag: '@A-01' }, async ({ page, fixture }) => {
     await page.goto(`/admin/rounds/edit?contestId=${fixture.contestId}`);
     await expect(page.getByRole('heading', { level: 1, name: 'Create round' })).toBeVisible();

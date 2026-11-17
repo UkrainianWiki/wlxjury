@@ -889,4 +889,170 @@ class RoundRebalanceJobSpec extends Specification with TestDb with BeforeAll wit
         (VoteJdbc.findBy(ratedPage, y.getId, r) must beNone) and (RoundImageInvariants.violations(r) must beEmpty)
     }
   }
+
+  // ── an add's share: the files waiting for a juror first (the maintainer's decision of 2026-11-17) ──
+
+  /** One vote row deleted from each of `pages` (the last assigned), the files' rows synced: they wait
+    * for a juror (fewer rows than N).
+    */
+  private def makeWaiting(r: Long, pages: Seq[Long]): Unit = DB.localTx { implicit autoSession =>
+    RoundWrites.lock(Seq(r))
+    pages.foreach(p => sql"DELETE FROM vote WHERE round_id = $r AND page_id = $p ORDER BY id DESC LIMIT 1".update())
+    RoundImageJdbc.syncPairs(pages.map(r -> _))
+  }
+
+  private def waitingNow(r: Long): Long = RoundReassign.waitingCount(Round.findById(r).get).getOrElse(0L)
+
+  "adding a juror to a round with files waiting for a juror" should {
+
+    "take them first within the share: fewer than, equal to and more than it; the rest from the donors; checks hold" in {
+      // 4 jurors with 10 files each (one juror per file); w of a's files left with no juror. The share
+      // is 7 for each w (b, c and d give 2, 2 and 3 without waiting files)
+      Seq(3 -> "fewer", 7 -> "equal", 8 -> "more").map { case (w, label) =>
+        SharedTestDb.truncateAll()
+        val (round, js, y, admin) = setUpN(40, 1, jurors = 4)
+        val r = round.getId
+        val a = js.head
+        val waitingPages = rows(r, a.getId).take(w).map(_._1)
+        makeWaiting(r, waitingPages)
+        val donors = js.map(_.getId)
+        val unratedBefore = unrated(r, donors)
+        val split = RoundRebalanceHandler.addSplit(0, donors.map(d => d -> unratedBefore.getOrElse(d, 0L)), w.toLong)
+        val pagesBefore = perPage(r)
+        val originsBefore = origins(r)
+        implicit val (service, _) = inline(new TestRebalance(chunkRows = 2))
+        val preview = service.preview(Round.findById(r).get, y.getId)
+        val job = queued(service.add(round, y.getId, admin, signature(round), donors))
+        val done = JobJdbc.findById(job.id).get
+        val st = RoundRebalanceHandler.stateOf(done)
+        val yPages = rows(r, y.getId).map(_._1)
+        val after = unrated(r, donors)
+        val givenBy = donors.map(d => d -> (unratedBefore.getOrElse(d, 0L) - after.getOrElse(d, 0L))).filter(_._2 > 0).toMap
+        val waitingGiven = yPages.filter(waitingPages.contains)
+        (s"$label: ${done.status}" === s"$label: ${JobStatus.Done}") and
+          (split.total === 7L) and (split.waiting === math.min(w, 7).toLong) and
+          // the page says what the job does
+          (preview.waiting === split.waiting) and (preview.fromDonors === split.fromDonors.values.sum) and
+          (preview.waitingLeft === split.waitingLeft) and (preview.files === split.total) and
+          (st.waitingGiven === split.waiting) and (st.filesGiven === split.total) and
+          (waitingGiven.size.toLong === split.waiting) and (yPages.size.toLong === split.total) and
+          (givenBy === split.fromDonors) and (rows(r, y.getId).forall(_._2 == 0) must beTrue) and
+          (waitingNow(r) === split.waitingLeft) and
+          // every file not waiting before keeps its rows; each waiting one given has its juror now
+          (perPage(r).filter { case (p, _) => !waitingPages.contains(p) } === pagesBefore) and
+          (waitingGiven.forall(p => perPage(r).get(p).contains(1)) must beTrue) and pairsUnique(r) and
+          // every file keeps its origin, the waiting ones too
+          (origins(r) === originsBefore) and
+          (flags(r) === (true -> 0)) and (RoundImageInvariants.violations(r) must beEmpty)
+      }.reduce(_ and _)
+    }
+
+    "give a file of N > 1 its missing juror, never a file the new juror has aside or one disqualified as a conflict" in {
+      val (round, js, y, admin) = setUpN(20, 2, jurors = 4)
+      val r = round.getId
+      // four files each with one juror less
+      val Seq(coi, aside, p3, p4) = rows(r, js.head.getId).take(4).map(_._1)
+      makeWaiting(r, Seq(coi, aside, p3, p4))
+      // a conflict of interest disqualified: its votes aside, no longer waiting
+      DB.localTx { implicit autoSession =>
+        RoundWrites.lock(Seq(r))
+        ImageJdbc.moveVotesAsideInRound(r, Seq(coi))
+        sql"UPDATE round_image SET status = 'dq', dq_code = 'coi', dq_at = NOW(3) WHERE round_id = $r AND page_id = $coi".update()
+      }
+      // the new juror holds a row of `aside` set aside (a deletion or disqualification restored since)
+      DB.localTx { implicit autoSession =>
+        VoteJdbc.create(aside, 0, y.getId, r)
+        sql"INSERT INTO vote_aside SELECT * FROM vote WHERE round_id = $r AND page_id = $aside AND jury_id = ${y.getId}".update()
+        sql"DELETE FROM vote WHERE round_id = $r AND page_id = $aside AND jury_id = ${y.getId}".update()
+      }
+      val waitingBefore = waitingNow(r)
+      implicit val (service, _) = inline(new TestRebalance(chunkRows = 100))
+      val preview = service.preview(Round.findById(r).get, y.getId)
+      val job = queued(service.add(round, y.getId, admin, signature(round), js.map(_.getId)))
+      val st = RoundRebalanceHandler.stateOf(JobJdbc.findById(job.id).get)
+      val yPages = rows(r, y.getId).map(_._1)
+      (waitingBefore === 3L) and (preview.waiting === 2L) and (st.waitingGiven === 2L) and
+        (yPages must contain(allOf(p3, p4))) and (yPages must not(contain(coi))) and (yPages must not(contain(aside))) and
+        (perPage(r).get(p3) must beSome(2)) and (perPage(r).get(coi) must beNone) and
+        (waitingNow(r) === 1L) and pairsUnique(r) and (flags(r) === (true -> 0)) and
+        (RoundImageInvariants.violations(r) must beEmpty)
+    }
+
+    "roll a waiting step back when a file's rows change in it; Retry gives the same result as an uninterrupted run" in {
+      val (round, js, y, admin) = setUpN(40, 1, jurors = 4)
+      val r = round.getId
+      val waitingPages = rows(r, js.head.getId).take(5).map(_._1)
+      makeWaiting(r, waitingPages)
+      val donors = js.map(_.getId)
+      val before = unrated(r, donors)
+      val split = RoundRebalanceHandler.addSplit(0, donors.map(d => d -> before.getOrElse(d, 0L)), 5)
+      val h = new TestRebalance(chunkRows = 2) {
+        val takes = new AtomicInteger()
+        override protected def afterTakeWaiting(roundId: Long, pageIds: Seq[Long])(implicit session: DBSession): Unit =
+          // the second: another juror's row of one of its files, written in the step
+          if (takes.incrementAndGet() == 2)
+            sql"INSERT INTO vote (page_id, rate, jury_id, round_id) VALUES (${pageIds.head}, 0, ${admin.getId}, $roundId)".update()(session)
+      }
+      implicit val (service, scheduler) = inline(h)
+      val job = queued(service.add(round, y.getId, admin, signature(round), donors))
+      val failed = JobJdbc.findById(job.id).get
+      val atFailure = (failed.status === JobStatus.Failed) and (rows(r, y.getId).size === 2) and
+        (VoteJdbc.byRound(r).count(_.juryId == admin.getId) === 0) and (flags(r) === (true -> 0))
+      val retried = scheduler.retry(job.id).toOption.get
+      atFailure and (retried.status === JobStatus.Done) and (rows(r, y.getId).size.toLong === split.total) and
+        (waitingPages.forall(p => rows(r, y.getId).exists(_._1 == p)) must beTrue) and
+        (perPage(r).values.forall(_ == 1) must beTrue) and (waitingNow(r) === 0L) and
+        (RoundImageInvariants.violations(r) must beEmpty) and (flags(r) === (true -> 0))
+    }
+
+    "fail its count check on a new violation of the round's invariants, releasing the round" in {
+      val (round, js, y, admin) = setUpN(20, 1, jurors = 2)
+      val r = round.getId
+      val h = new TestRebalance(chunkRows = 100) {
+        override protected def afterMove(roundId: Long, pageIds: Seq[Long])(implicit session: DBSession): Unit =
+          // a file with votes marked deleted (invariant 3) in the step: not the job's to leave
+          sql"""UPDATE round_image SET status = 'deleted' WHERE round_id = $roundId
+                AND page_id = (SELECT MIN(page_id) FROM vote WHERE round_id = $roundId)""".update()(session)
+      }
+      implicit val (service, _) = inline(h)
+      val job = queued(service.add(round, y.getId, admin, signature(round), js.map(_.getId)))
+      val failed = JobJdbc.findById(job.id).get
+      (failed.status === JobStatus.Failed) and (failed.failure.map(_.key) must beSome(RoundRebalanceHandler.InvariantsKey)) and
+        (failed.failure.map(_.args.take(2)) must beSome(Seq(round.number.toString, "1"))) and
+        (flags(r) === (true -> 0)) and (js.size === 2)
+    }
+
+    "with a share of 0, give the new juror every waiting file they may take, and nothing with none waiting" in {
+      def run(waiting: Int): (RoundRebalanceService.Preview, RebalanceState, Seq[Long], Long, Long) = {
+        SharedTestDb.truncateAll()
+        val (round, js, y, admin) = setUpN(40, 1, jurors = 4)
+        val r = round.getId
+        // every juror has rated all their files: no donor has more unrated files than the new juror
+        js.foreach(j => rows(r, j.getId).foreach { case (p, _) => VoteJdbc.rate(p, j.getId, r, 1) })
+        if (waiting > 0) makeWaiting(r, rows(r, js.head.getId).take(waiting).map(_._1))
+        val before = waitingNow(r)
+        implicit val (service, _) = inline(new TestRebalance(chunkRows = 2))
+        val preview = service.preview(Round.findById(r).get, y.getId)
+        val job = queued(service.add(round, y.getId, admin, signature(round), js.map(_.getId)))
+        val st = RoundRebalanceHandler.stateOf(JobJdbc.findById(job.id).get)
+        (preview, st, rows(r, y.getId).map(_._1), before, waitingNow(r))
+      }
+      val (p5, st5, y5, before5, after5) = run(5)
+      val (p0, st0, y0, before0, after0) = run(0)
+      (p5.fairShare === 0L) and (p5.waiting === 5L) and (p5.fromDonors === 0L) and (p5.files === 5L) and
+        (st5.waitingGiven === 5L) and (st5.filesGiven === 5L) and (y5.size === 5) and (before5 === 5L) and (after5 === 0L) and
+        (p0.fairShare === 0L) and (p0.waiting === 0L) and (p0.files === 0L) and (st0.filesGiven === 0L) and
+        (y0 must beEmpty) and (before0 === 0L) and (after0 === 0L)
+    }
+
+    "be unchanged in a round where every file goes to every juror: no waiting files" in {
+      val (_, round, js, y, admin) = setUp(6)
+      implicit val (service, _) = inline(new TestRebalance(chunkRows = 100))
+      val preview = service.preview(round, y.getId)
+      queued(service.add(round, y.getId, admin, signature(round), Nil))
+      (preview.waiting === 0L) and (preview.files === 6L) and
+        (RoundReassign.waitingForCount(round.getId, round.distribution, y.getId) === 0L) and
+        (rows(round.getId, y.getId).size === 6) and (js.size === 3)
+    }
+  }
 }

@@ -37,6 +37,9 @@ class StructuralWritesSpec extends Specification {
         "its rows), or rows of a round that no longer exists (none to lock: no foreign key on vote.round_id)"),
     "app/services/distribution/RoundRebalanceHandler.scala#move" ->
       "requireRounds (an added juror's move: the round FOR UPDATE first, lockRun, then images shared, then the votes by id)",
+    "app/services/distribution/RoundRebalanceHandler.scala#reassignStep" ->
+      ("requireRounds (a reassign's move and aside steps: the round FOR UPDATE first, lockRun, then images shared, then " +
+        "the vote or vote_aside rows by id, then criteria_rate)"),
     // their own round lock, recorded
     "app/db/scalikejdbc/CriterionJdbc.scala#updateIn" -> "the round FOR UPDATE first, then its votes (RoundCriterion.update)",
     "app/db/scalikejdbc/CriterionJdbc.scala#insert" -> "a new round's criteria, in its creating transaction (the inserted round row)",

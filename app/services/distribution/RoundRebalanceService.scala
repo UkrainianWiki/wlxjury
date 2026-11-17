@@ -44,16 +44,19 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
     // the donors' files the receiver could take (not those of pages they hold), and the receiver's own
     val unrated = unratedCounts(round.getId, j.jurors.map(_.user.getId).filterNot(_ == jurorId), receiver = Some(jurorId)) ++
       unratedCounts(round.getId, Seq(jurorId))
-    val share =
-      if (refused.isDefined || round.distribution == 0 || round.inReview) Map.empty[Long, Long]
-      else quotas(unrated.getOrElse(jurorId, 0L), ticked.map(d => d -> unrated.getOrElse(d, 0L)))
+    // the share (N > 0): the files waiting for a juror first, the rest from the donors, as the job's "stop"
+    val split =
+      if (refused.isDefined || round.distribution == 0 || round.inReview) None
+      else Some(addSplit(unrated.getOrElse(jurorId, 0L), ticked.map(d => d -> unrated.getOrElse(d, 0L)),
+        RoundReassign.waitingForCount(round.getId, round.distribution, jurorId)))
     val files =
       if (refused.isDefined || round.inReview) 0L
       else if (round.distribution == 0) toGiveCount(round.getId, jurorId)
-      else share.values.sum
-    Preview(round, juror, refused, files, j, signature(j.jurors), ticked, unrated, share,
+      else split.fold(0L)(_.total)
+    Preview(round, juror, refused, files, j, signature(j.jurors), ticked, unrated, split.fold(Map.empty[Long, Long])(_.fromDonors),
       restart = j.jurors.exists(r => r.user.id.contains(jurorId) && !r.active),
-      topUp = j.jurors.exists(r => r.user.id.contains(jurorId) && r.active))
+      topUp = j.jurors.exists(r => r.user.id.contains(jurorId) && r.active),
+      waiting = split.fold(0L)(_.waiting), waitingLeft = split.fold(0L)(_.waitingLeft), fairShare = split.fold(0L)(_.share))
   }
 
   /** Queues the add of `jurorId` by `by`, if the round's jury is still `shownJury` (the page's
@@ -130,6 +133,104 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
     }
   }
 
+  /** What reassigning `from`'s unrated files would do now (§7): the refusal if any, the juror's files,
+    * and for each receiver the files it gets, with the files that can't move (every receiver has
+    * them: they wait for a juror). `receivers`: those ticked, by default the round's active jurors (D1:
+    * the stopped ones listed unticked). The same choice of receiver per file as the job
+    * ([[RoundReassign.allocate]], by vote id), from plain reads (the POST checks again under the
+    * round's lock).
+    */
+  def reassignPreview(round: Round, from: Long, receivers: Option[Seq[Long]] = None): ReassignPreview = DB.readOnly {
+    implicit session =>
+      val j = jury(round)
+      val others = j.jurors.filterNot(_.user.id.contains(from))
+      // by default the active jurors (D1) who may receive: an active jury membership of the contest
+      val ticked = receivers.getOrElse(others.filter(o => o.active && eligibleJuror(round.contestId, o.user.getId).isDefined)
+        .map(_.user.getId)).distinct.filterNot(_ == from).sorted
+      val busy = JobJdbc.activeByDedupeKey(RoundDistributionHandler.dedupeKey(round.getId))
+      val run = RoundRun(round.active, round.distributing, round.freezeCount, activeBeforeFreeze = false)
+      val refused = busy.map(_ => JobError(BusyKey, Seq(round.number.toString)))
+        .orElse(reassignRefusal(round, run, from, ticked, frozenByUs = false))
+      val files = RoundReassign.jurorFiles(round.getId, from)
+      val shares = round.distribution > 0
+      val to = if (shares) ticked else Nil
+      val unrated = unratedCounts(round.getId, others.map(_.user.getId))
+      val (given, waiting, asideGiven) =
+        if (!shares) (Map.empty[Long, Long], 0L, 0L)
+        else {
+          val pages = RoundReassign.unratedRows(round.getId, from, 0L, Int.MaxValue).map(_._2)
+          val quota = RoundReassign.fillQuotas(pages.size.toLong, to.map(r => r -> unrated.getOrElse(r, 0L)))
+          val (choices, left) = RoundReassign.allocate(pages, RoundReassign.holders(round.getId, pages, to), to, quota)
+          val asidePages = sql"""SELECT v.page_id FROM vote_aside v WHERE v.round_id = ${round.getId} AND v.jury_id = $from
+                                 AND ${RoundReassign.unrated(sqls"v")} ORDER BY v.id""".map(_.long(1)).list()
+          val (asideChoices, _) = RoundReassign.allocate(asidePages, RoundReassign.holders(round.getId, asidePages, to), to, left)
+          (choices.flatMap(_._2).groupMapReduce(identity)(_ => 1L)(_ + _), choices.count(_._2.isEmpty).toLong,
+            asideChoices.count(_._2.isDefined).toLong)
+        }
+      ReassignPreview(round, j.jurors.find(_.user.id.contains(from)), refused, files, j, signature(j.jurors), ticked,
+        unrated, given, waiting, asideGiven,
+        restarted = ticked.filter(r => others.exists(o => o.user.id.contains(r) && !o.active)),
+        noMembership = others.map(_.user.getId).filter(id => eligibleJuror(round.contestId, id).isEmpty).toSet)
+  }
+
+  /** Queues the reassign of `from`'s unrated files by `by` to `receivers`, if the round's jury is still
+    * `shownJury` (the page's [[signature]]) and nothing refuses it, all under the round's lock; the job
+    * runs once this has committed (§7).
+    */
+  def reassign(round: Round, from: Long, by: User, shownJury: String, receivers: Seq[Long]): Outcome = {
+    val ticked = receivers.distinct.filterNot(_ == from).sorted
+    val outcome = WriteTx.write { implicit session =>
+      (lockRun(round.getId), Round.findById(round.getId)) match {
+        case (Some(run), Some(fresh)) =>
+          // read plainly under the round's lock, as add does
+          JobJdbc.activeByDedupeKey(RoundDistributionHandler.dedupeKey(fresh.getId)) match {
+            case Some(active) => Busy(active)
+            case None =>
+              val to = if (fresh.distribution > 0) ticked else Nil
+              reassignRefusal(fresh, run, from, ticked, frozenByUs = false) match {
+                case Some(error) => Refused(error)
+                case None if signature(jury(fresh).jurors) != shownJury => JuryChanged
+                case None =>
+                  // outside an account join (J-2), read before and after the receivers' users rows are
+                  // share-locked (A-4: retired meanwhile, refused); the job's "stop" checks again
+                  val accounts = (to :+ from).distinct
+                  def joining = AccountJoinJdbc.joining(accounts).toSeq.sorted.headOption
+                  val live = if (joining.isEmpty) User.lockLive(to) else Set.empty[Long]
+                  joining.map(a => Refused(JobError(JoiningKey, Seq(a.toString))))
+                    .orElse(to.find(r => !live.contains(r)).map(r => Refused(JobError(ReceiverKey, Seq(r.toString, fresh.number.toString)))))
+                    .orElse(joining.map(a => Refused(JobError(JoiningKey, Seq(a.toString)))))
+                    .getOrElse(enqueueReassign(fresh, from, to, by))
+              }
+          }
+        case _ => Refused(JobError(MissingKey, Seq(round.getId.toString)))
+      }
+    }
+    outcome match {
+      case Queued(job) =>
+        adminLog.info(s"action=juror_reassign accountId=${by.getId} contestId=${round.contestId} roundId=${round.getId} " +
+          s"jurorId=$from receivers=${ticked.mkString(",")} jobId=${job.id} state=queued")
+        jobs.started(job.id)
+        Queued(JobJdbc.findById(job.id).getOrElse(job))
+      case other => other
+    }
+  }
+
+  private def enqueueReassign(fresh: Round, from: Long, to: Seq[Long], by: User)(implicit session: DBSession): Outcome =
+    jobs.enqueue(NewJob(
+      kind = Kind,
+      contestId = Some(fresh.contestId),
+      subjectType = Some(RoundDistributionHandler.SubjectType),
+      subjectId = fresh.id,
+      dedupeKey = Some(RoundDistributionHandler.dedupeKey(fresh.getId)),
+      params = Json.obj("roundId" -> fresh.getId, "from" -> from, "receivers" -> to, "by" -> by.getId),
+      state = Json.toJsObject(ReassignState()),
+      progress = Progress(unit = Some("files")),
+      createdBy = by.id
+    )) match {
+      case Right(job)  => Queued(job)
+      case Left(other) => Busy(other)
+    }
+
   /** Whether the juror's account is not deleted, read under a shared lock on its users row until
     * the transaction ends ([[User.lockLive]]): a retirement (A-4) either committed first (refused
     * here) or waits for this add and is then refused by its `round_user` row.
@@ -188,17 +289,48 @@ object RoundRebalanceService {
     *                the sum of the donors' shares
     * @param donors  the jurors ticked as donors (N > 0)
     * @param unrated each round juror's (and the new juror's) unrated files
-    * @param share   each donor's share (water-filling, [[RoundRebalanceHandler.quotas]])
+    * @param share   each donor's share (water-filling, [[RoundRebalanceHandler.quotas]]; with waiting files
+    *                taken, the rest of the share, [[RoundRebalanceHandler.addSplit]])
     * @param restart the juror is a stopped juror of the round, started again by the add
     * @param topUp   the juror is already an active juror of the round: the add gives only what they
     *                lack (N = 0), or a share counting their own unrated files (N > 0)
+    * @param waiting the files waiting for a juror the juror takes first, within the share (N > 0)
+    * @param waitingLeft the files waiting for a juror they could take beyond the share: they keep waiting
+    * @param fairShare the share before the waiting files (N > 0): 0 when no ticked donor has more unrated
+    *                files than the juror (they then get every waiting file they may take, nothing else)
     */
   final case class Preview(round: Round, juror: Option[User], refusal: Option[JobError], files: Long, jury: Jury,
       signature: String, donors: Seq[Long] = Nil, unrated: Map[Long, Long] = Map.empty, share: Map[Long, Long] = Map.empty,
-      restart: Boolean = false, topUp: Boolean = false) {
+      restart: Boolean = false, topUp: Boolean = false, waiting: Long = 0L, waitingLeft: Long = 0L,
+      fairShare: Long = 0L) {
+
+    /** The files the donors give (N > 0). */
+    def fromDonors: Long = share.values.sum
+
 
     /** The ticked donors' unrated files. */
     def donorsUnrated: Long = donors.map(unrated.getOrElse(_, 0L)).sum
+  }
+
+  /** What the reassign page shows (§7).
+    *
+    * @param from       the juror whose unrated files go (None: not a juror of the round)
+    * @param files      the juror's files: assigned, rated, unrated, set aside
+    * @param receivers  the jurors ticked to receive files
+    * @param unrated    each other round juror's unrated files now
+    * @param given      per receiver, the files it gets (N > 0)
+    * @param waiting    the files that can't move: every ticked receiver has them (N > 0)
+    * @param asideGiven the juror's unrated files set aside that go to receivers too
+    * @param restarted  ticked receivers who are stopped: started again
+    * @param noMembership the round's other jurors with no active jury membership of the contest: they can't
+    *                   receive files (listed unticked, marked)
+    */
+  final case class ReassignPreview(round: Round, from: Option[JurorRow], refusal: Option[JobError],
+      files: RoundReassign.JurorFiles, jury: Jury, signature: String, receivers: Seq[Long], unrated: Map[Long, Long],
+      given: Map[Long, Long], waiting: Long, asideGiven: Long, restarted: Seq[Long], noMembership: Set[Long] = Set.empty) {
+
+    /** Files given in all (N > 0). */
+    def moved: Long = given.values.sum
   }
 
   /** The jury as the page showed it: active and stopped jurors' ids. A change between the page and

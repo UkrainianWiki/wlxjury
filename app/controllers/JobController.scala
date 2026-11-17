@@ -31,7 +31,12 @@ class JobController @Inject() (cc: ControllerComponents, jobs: JobScheduler, blo
     withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
       withJob(user, id, request) { job =>
         jobs.cancelOrRefuse(job.id, user.id) match {
-          case Right(_) => back(request, job)
+          // what the cancelled job left, if its handler says (a reassign stopped part-way)
+          case Right(cancelled) =>
+            cancelled.flatMap(c => jobs.handler(c.kind).flatMap(_.cancelledNote(c))) match {
+              case Some(note) => back(request, job).flashing("success" -> note.message(messagesApi.preferred(request)))
+              case None       => back(request, job)
+            }
           case Left(refused) =>
             back(request, job).flashing("error" -> messagesApi.preferred(request)(refused.messageKey, refused.args: _*))
         }

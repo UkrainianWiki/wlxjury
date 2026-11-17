@@ -30,9 +30,16 @@ object RoundImageInvariants {
 
   final case class Violation(invariant: Int, roundId: Long, pageId: Long)
 
-  def violations(roundId: Long)(implicit session: DBSession = AutoSession): Seq[Violation] = {
-    def pages(invariant: Int, query: SQL[Nothing, NoExtractor]): Seq[Violation] =
-      query.map(rs => Violation(invariant, roundId, rs.long(1))).list()
+  /** Every invariant [[violations]] checks per round (7 is not per round). */
+  val All: Set[Int] = Set(1, 2, 3, 4, 5, 6, 9)
+
+  /** The round's violations of the invariants in `only` (all by default): only their queries run, so a
+    * caller that needs a few (a rebalance's check of 1-3, under the round's lock) doesn't pay for the
+    * counts' drift (5) or the monument ids (6).
+    */
+  def violations(roundId: Long, only: Set[Int] = All)(implicit session: DBSession = AutoSession): Seq[Violation] = {
+    def pages(invariant: Int, query: => SQL[Nothing, NoExtractor]): Seq[Violation] =
+      if (!only(invariant)) Nil else query.map(rs => Violation(invariant, roundId, rs.long(1))).list()
 
     val roundExists = sql"SELECT 1 FROM round WHERE id = $roundId".map(_ => ()).single().isDefined
     if (!roundExists) Nil
@@ -64,7 +71,7 @@ object RoundImageInvariants {
                            OR ri.status <> ${Status.Dq} AND (ri.dq_code IS NOT NULL OR ri.dq_detail IS NOT NULL
                              OR ri.dq_by IS NOT NULL OR ri.dq_at IS NOT NULL))
                        ORDER BY ri.page_id""")
-      ).flatten ++ counts(roundId)
+      ).flatten ++ (if (only(5)) counts(roundId) else Nil)
     }
   }
 

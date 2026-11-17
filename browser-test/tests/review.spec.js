@@ -139,6 +139,28 @@ test.describe('an admin', () => {
       expect(await postTo(page, reviewPath, page.getByRole('button', { name: 'Distribute to jurors' })))
         .toMatch(/id="flash-success"[^>]*>[^<]*being distributed to the jurors/);
       await reviewState(page, roundId, 'have been distributed');
+
+      // reassigning a juror's files in this round of one juror per file (round_rebalance), read only: the
+      // other juror, active, is ticked; changing the ticks disables the confirm, with a hint, until the
+      // figures are shown for them (it posts the receivers they were shown for)
+      await page.goto(`/roundstat/${roundId}`);
+      await page.locator('a.round-juror-reassign').first().click();
+      const receivers = page.locator('#round-juror-reassign-receivers input[name="receiver"]');
+      await expect(receivers).toHaveCount(1);
+      await expect(receivers.first()).toBeChecked();
+      const confirm = page.locator('#round-juror-reassign-form button[type="submit"]');
+      const stale = page.locator('#round-juror-reassign-stale');
+      // the hint is a status, always in the page: empty, then filled in (announced)
+      await expect(confirm).toBeEnabled();
+      await expect(stale).toHaveText('');
+      await receivers.first().uncheck();
+      await expect(confirm).toBeDisabled();
+      await expect(stale).toContainText('Show what this does');
+      await expect(confirm).toHaveAttribute('aria-describedby', 'round-juror-reassign-stale');
+      await receivers.first().check();
+      await expect(confirm).toBeEnabled();
+      await expect(stale).toHaveText('');
+      await expect(confirm).not.toHaveAttribute('aria-describedby');
     });
 
   test('creates a round with "Choose jurors next": its jurors form waits for the selection, then offers the jurors',

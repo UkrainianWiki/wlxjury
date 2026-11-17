@@ -43,6 +43,12 @@ import javax.inject.{Inject, Singleton}
   * @param exhausted       "move": donors with no eligible unrated row left below their cursor
   * @param donorRowsBefore "move": each donor's rows (vote and vote_aside) when "stop" counted: the
   *                        count check expects each to have lost exactly the rows it gave
+  * @param quotasSet       "stop" fixed the share (N > 0): `quota` and `waitingQuota` (kept on Retry)
+  * @param waitingQuota    "waiting": the files waiting for a juror the new juror takes first, within
+  *                        their share ([[RoundRebalanceHandler.addSplit]])
+  * @param waitingGiven    "waiting": the waiting files given so far (in `filesGiven` too)
+  * @param waitingCursor   "waiting": the last page id a committed window read
+  * @param checks          the verify step's invariant baseline ([[VerifyChecks]])
   */
 final case class RebalanceState(
     phase: String = RoundRebalanceHandler.Phase.Stop,
@@ -59,7 +65,12 @@ final case class RebalanceState(
     given: Map[String, Long] = Map.empty,
     cursors: Map[String, Long] = Map.empty,
     exhausted: Seq[Long] = Nil,
-    donorRowsBefore: Map[String, Long] = Map.empty
+    donorRowsBefore: Map[String, Long] = Map.empty,
+    quotasSet: Boolean = false,
+    waitingQuota: Long = 0L,
+    waitingGiven: Long = 0L,
+    waitingCursor: Long = 0L,
+    checks: VerifyChecks = VerifyChecks()
 ) {
   def givenBy(donor: Long): Long = given.getOrElse(donor.toString, 0L)
   def quotaOf(donor: Long): Long = quota.getOrElse(donor.toString, 0L)
@@ -67,6 +78,58 @@ final case class RebalanceState(
 
 object RebalanceState {
   implicit val format: OFormat[RebalanceState] = Json.using[Json.WithDefaultValues].format[RebalanceState]
+}
+
+/** What a `round_rebalance` job's "verify" checks beyond its counts (round-editing plan §5, §7): no new
+  * violation of the round's invariants 1-3 ([[db.scalikejdbc.RoundImageInvariants]]: every vote row's
+  * file `in`, set-aside rows' files `deleted` or `dq`, no votes for those) since its first "stop", and
+  * the files a reassign left waiting for a juror still in the round.
+  *
+  * @param violationsBefore per invariant ("1", "2", "3"), the round's violations when the first "stop"
+  *                         ran, bounded ([[ViolationBaseline]]); None for a job queued before this
+  *                         check (not checked)
+  * @param waitingPages     a reassign's files left waiting, the first [[RoundRebalanceHandler.MaxWaitingChecked]]
+  */
+final case class VerifyChecks(violationsBefore: Option[Map[String, ViolationBaseline]] = None, waitingPages: Seq[Long] = Nil)
+
+/** An invariant's violations at the baseline: how many, and the first [[ViolationBaseline.MaxPages]]
+  * pages. While `pages` lists them all, a violation of another page is new; past that, only a count
+  * above `count` is (the job state stays small however broken a round is).
+  */
+final case class ViolationBaseline(count: Long, pages: Seq[Long]) {
+  def complete: Boolean = pages.size.toLong >= count
+
+  /** Of `now` (the invariant's pages now, sorted), the new ones and how many: every page not listed while
+    * the list is complete; else, if there are more than `count`, the excess, with no page named (which
+    * of the unlisted ones are new is unknown).
+    */
+  def fresh(now: Seq[Long]): (Long, Seq[Long]) =
+    if (complete) {
+      val unlisted = now.filterNot(pages.toSet)
+      (unlisted.size.toLong, unlisted)
+    } else if (now.size > count) (now.size - count, Nil)
+    else (0L, Nil)
+}
+
+object ViolationBaseline {
+  val MaxPages = 50
+  implicit val format: OFormat[ViolationBaseline] = Json.using[Json.WithDefaultValues].format[ViolationBaseline]
+}
+
+object VerifyChecks {
+  private val base: OFormat[VerifyChecks] = Json.using[Json.WithDefaultValues].format[VerifyChecks]
+
+  /** Each field read on its own, a wrong type taken as absent: a state written by an earlier build (its
+    * `violationsBefore` a list of strings) must not fail the whole job state, which would read as the
+    * default and run the job from its start again. The baseline is then None (not checked).
+    */
+  implicit val format: OFormat[VerifyChecks] = OFormat(
+    Reads { js =>
+      JsSuccess(VerifyChecks(
+        violationsBefore = (js \ "violationsBefore").validate[Map[String, ViolationBaseline]].asOpt,
+        waitingPages = (js \ "waitingPages").validate[Seq[Long]].getOrElse(Nil)))
+    },
+    base)
 }
 
 /** Adds a juror to a running round, as a [[Job]] of kind `round_rebalance` whose subject is the
@@ -91,10 +154,16 @@ object RebalanceState {
   *     deleted on Commons, their images read in share mode (their monument ids, and whether
   *     marked deleted meanwhile), the juror's unrated rows inserted. The files' `round_image`
   *     rows exist and keep their origin ([[RoundImageJdbc.addVoted]]);
-  *  2'. "move" (a round where each file goes to N > 0 jurors), instead: the ticked donors'
+  *  2'. "waiting" (a round where each file goes to N > 0 jurors): the files waiting for a juror
+  *     ([[RoundReassign.waitingForCond]]: `in`, not deleted on Commons, fewer than N vote rows, none
+  *     of the new juror's in `vote` or `vote_aside`) go to the new juror first, within their share
+  *     ([[RoundRebalanceHandler.addSplit]]), by page id, at most `chunkRows` a step; each file's number
+  *     of vote rows is checked one more in the same transaction, else the step rolls back;
+  *  2''. "move" (N > 0), then: the ticked donors'
   *     (`params.donors`) unrated rows (`rate = 0` and no criterion rated above 0), last assigned
-  *     first, each donor up to its quota (water-filling, [[RoundRebalanceHandler.quotas]]: donors
-  *     end with about as many unrated files as the new juror), at most `chunkRows` rows a step. The
+  *     first, each donor up to its quota (the rest of the share: water-filling,
+  *     [[RoundRebalanceHandler.quotas]], donors end with about as many unrated files as the new juror;
+  *     with waiting files taken, [[RoundRebalanceHandler.fromTop]]), at most `chunkRows` rows a step. The
   *     candidates' images are read in share mode, then their rows locked (`FOR UPDATE`, by id); a row
   *     rated meanwhile is skipped, and a row moves only if the new juror has no row of its page in
   *     `vote` or `vote_aside`. The new juror's row is written first, then the donor's deleted with its
@@ -102,7 +171,8 @@ object RebalanceState {
   *     of vote rows is checked unchanged in the same transaction, else the step rolls back. A ticked
   *     stopped donor gives and stays stopped;
   *  3. "verify": the juror holds exactly the rows before plus those given, each donor exactly its
-  *     rows before less those it gave; the round released.
+  *     rows before less those it gave, no new violation of the round's invariants 1-3
+  *     ([[VerifyChecks]]); the round released.
   *
   * Rated votes never move. The audit is a `round.admin` INFO line when queued and when done, and
   * the job row (`params`, `state`).
@@ -119,13 +189,20 @@ class RoundRebalanceHandler @Inject() (config: Configuration) extends JobHandler
   /** Files per "give" or "move" step. */
   val chunkRows: Int = config.getOptional[Int]("jobs.roundRebalance.chunkRows").getOrElse(DefaultChunkRows)
 
-  override def title(job: Job): String =
-    s"Adding juror ${jurorOf(job)} to round ${job.subjectId.getOrElse("?")}"
+  override def title(job: Job): String = fromOf(job) match {
+    case Some(from) => s"Reassigning juror $from's unrated files in round ${job.subjectId.getOrElse("?")}"
+    case None       => s"Adding juror ${jurorOf(job)} to round ${job.subjectId.getOrElse("?")}"
+  }
 
-  override def details(job: Job): JsObject = {
-    val st = stateOf(job)
-    Json.obj("roundId" -> roundIdOf(job), "jurorId" -> jurorOf(job), "filesGiven" -> st.filesGiven, "phase" -> st.phase,
-      "given" -> st.given)
+  override def details(job: Job): JsObject = fromOf(job) match {
+    case Some(from) =>
+      val st = reassignStateOf(job)
+      Json.obj("roundId" -> roundIdOf(job), "fromId" -> from, "moved" -> st.moved, "waiting" -> st.waiting,
+        "removed" -> st.removed, "aside" -> st.asideMoved, "phase" -> st.phase, "given" -> st.given)
+    case None =>
+      val st = stateOf(job)
+      Json.obj("roundId" -> roundIdOf(job), "jurorId" -> jurorOf(job), "filesGiven" -> st.filesGiven, "phase" -> st.phase,
+        "given" -> st.given, "waiting" -> st.waitingGiven)
   }
 
   /** Hook for tests: runs in a "give" step's transaction before its rows are inserted. */
@@ -142,11 +219,18 @@ class RoundRebalanceHandler @Inject() (config: Configuration) extends JobHandler
   /** Hook for tests: runs in a "move" step's transaction after the rows moved, before its check. */
   protected def afterMove(roundId: Long, pageIds: Seq[Long])(implicit session: DBSession): Unit = ()
 
+  /** Hook for tests: runs in a "waiting" step's transaction after the new juror's rows were written,
+    * before its check.
+    */
+  protected def afterTakeWaiting(roundId: Long, pageIds: Seq[Long])(implicit session: DBSession): Unit = ()
+
   // ── failure, cancel, retry ─────────────────────────────────────────────────
 
-  override def onFailed(job: Job, ctx: StepContext): JsObject = end(job, ctx, cancelled = false)
+  override def onFailed(job: Job, ctx: StepContext): JsObject =
+    if (fromOf(job).isDefined) reassignEnd(job, ctx, cancelled = false) else end(job, ctx, cancelled = false)
 
-  override def onCancelled(job: Job, ctx: StepContext): JsObject = end(job, ctx, cancelled = true)
+  override def onCancelled(job: Job, ctx: StepContext): JsObject =
+    if (fromOf(job).isDefined) reassignEnd(job, ctx, cancelled = true) else end(job, ctx, cancelled = true)
 
   /** Releases the round if the job froze it; on Cancel, a juror the job started who wasn't
     * active before is stopped again, only if it gave them nothing: a juror holding files the job
@@ -172,7 +256,10 @@ class RoundRebalanceHandler @Inject() (config: Configuration) extends JobHandler
     * rebaselines. After a failed count check it gives
     * again from the start, with fresh accounting.
     */
-  override def onRetry(job: Job, ctx: StepContext): JsObject = {
+  override def onRetry(job: Job, ctx: StepContext): JsObject =
+    if (fromOf(job).isDefined) reassignRetry(job, ctx) else addRetry(job, ctx)
+
+  private def addRetry(job: Job, ctx: StepContext): JsObject = {
     implicit val session: DBSession = ctx.session
     val st = stateOf(job)
     val roundId = roundIdOf(job)
@@ -182,7 +269,8 @@ class RoundRebalanceHandler @Inject() (config: Configuration) extends JobHandler
       if (!st.verifyFailed) rebaseline(st, roundId, jurorOf(job))
       // fresh accounting and, for a move, fresh quotas from the files as they are now
       else st.copy(cursor = 0L, filesGiven = 0L, jurorRowsBefore = None, total = None, verifyFailed = false,
-        quota = Map.empty, given = Map.empty, cursors = Map.empty, exhausted = Nil, donorRowsBefore = Map.empty)
+        quota = Map.empty, given = Map.empty, cursors = Map.empty, exhausted = Nil, donorRowsBefore = Map.empty,
+        quotasSet = false, waitingQuota = 0L, waitingGiven = 0L, waitingCursor = 0L)
     Json.toJsObject(resumed.copy(phase = Phase.Stop, frozen = Nil))
   }
 
@@ -195,7 +283,10 @@ class RoundRebalanceHandler @Inject() (config: Configuration) extends JobHandler
 
   // ── steps ──────────────────────────────────────────────────────────────────
 
-  def step(job: Job, ctx: StepContext): StepResult = {
+  def step(job: Job, ctx: StepContext): StepResult =
+    if (fromOf(job).isDefined) reassignStep(job, ctx) else addStep(job, ctx)
+
+  private def addStep(job: Job, ctx: StepContext): StepResult = {
     implicit val session: DBSession = ctx.session
     val roundId = roundIdOf(job)
     val jurorId = jurorOf(job)
@@ -229,24 +320,27 @@ class RoundRebalanceHandler @Inject() (config: Configuration) extends JobHandler
         val (wasActive, added) = (if (st.jurorAdded) st.jurorWasActive else before, true)
         val rowsBefore = st.jurorRowsBefore.getOrElse(jurorRows(roundId, jurorId))
         val stopped = st.copy(frozen = frozen, jurorWasActive = wasActive, jurorAdded = added,
-          jurorRowsBefore = Some(rowsBefore))
+          jurorRowsBefore = Some(rowsBefore), checks = baseline(roundId, st.checks))
         if (round.distribution == 0) {
           val total = st.total.getOrElse(st.filesGiven + toGiveCount(roundId, jurorId))
           continue(stopped.copy(phase = Phase.Give, total = Some(total)))
         } else {
-          // the quotas once, from the unrated work as it is when the round is paused (kept on Retry)
+          // the share once, from the unrated work as it is when the round is paused (kept on Retry): the
+          // files waiting for a juror first, the rest from the donors
           val withQuotas =
-            if (st.quota.nonEmpty || st.given.nonEmpty) stopped
+            if (st.quotasSet || st.quota.nonEmpty || st.given.nonEmpty) stopped
             else {
               // the donors' files the receiver could take, and the receiver's own unrated files
               val unrated = unratedCounts(roundId, donors, receiver = Some(jurorId))
               val own = unratedCounts(roundId, Seq(jurorId)).getOrElse(jurorId, 0L)
-              val quota = quotas(own, donors.map(d => d -> unrated.getOrElse(d, 0L)))
-              stopped.copy(quota = quota.map { case (d, n) => d.toString -> n },
+              val split = addSplit(own, donors.map(d => d -> unrated.getOrElse(d, 0L)),
+                RoundReassign.waitingForCount(roundId, round.distribution, jurorId))
+              stopped.copy(quotasSet = true, quota = split.fromDonors.map { case (d, n) => d.toString -> n },
+                waitingQuota = split.waiting,
                 donorRowsBefore = donors.map(d => d.toString -> jurorRows(roundId, d)).toMap,
-                total = Some(quota.values.sum))
+                total = Some(split.total))
             }
-          continue(withQuotas.copy(phase = Phase.Move))
+          continue(withQuotas.copy(phase = if (withQuotas.waitingGiven < withQuotas.waitingQuota) Phase.Waiting else Phase.Move))
         }
 
       case Phase.Give =>
@@ -267,6 +361,8 @@ class RoundRebalanceHandler @Inject() (config: Configuration) extends JobHandler
           continue(st.copy(cursor = ids.last, filesGiven = st.filesGiven + rows.size, gaveAny = st.gaveAny || rows.nonEmpty))
         }
 
+      case Phase.Waiting => takeWaiting(job, ctx, round, jurorId, st)
+
       case Phase.Move => move(job, ctx, round, jurorId, donors, st)
 
       case Phase.Verify =>
@@ -276,23 +372,69 @@ class RoundRebalanceHandler @Inject() (config: Configuration) extends JobHandler
         val donorMismatch = st.donorRowsBefore.toSeq.sortBy(_._1.toLong).collectFirst {
           case (d, before) if jurorRows(roundId, d.toLong) != before - st.givenBy(d.toLong) => d.toLong
         }
+        lazy val broken = invariantsFailure(round, st.checks)
         if (count != expected)
           StepResult.Failed(JobError(VerifyKey, Seq(round.number.toString, count.toString, expected.toString)),
             Json.toJsObject(st.copy(verifyFailed = true)), progress(st))
         else if (donorMismatch.isDefined)
           StepResult.Failed(JobError(DonorVerifyKey, Seq(round.number.toString, donorMismatch.get.toString)),
             Json.toJsObject(st.copy(verifyFailed = true)), progress(st))
+        else if (broken.isDefined)
+          StepResult.Failed(broken.get, Json.toJsObject(st.copy(verifyFailed = true)), progress(st))
         else {
           Round.release(st.frozen, close = false)
           ctx.afterCommit(RoundImageCounts.invalidate(roundId))
           adminLog.info(s"action=juror_add accountId=${byOf(job).getOrElse(0L)} contestId=${round.contestId} " +
             s"roundId=$roundId jurorId=$jurorId moved=${st.filesGiven} " +
+            (if (st.waitingGiven > 0) s"waiting=${st.waitingGiven} " else "") +
             (if (st.given.nonEmpty) s"from=${st.given.toSeq.sortBy(_._1.toLong).map { case (d, n) => s"$d:$n" }.mkString(",")} "
              else "") + s"jobId=${job.id} state=done")
           StepResult.Done(Json.toJsObject(st.copy(frozen = Nil)), progress(st))
         }
 
       case other => throw new IllegalStateException(s"Job ${job.id}: unknown phase $other")
+    }
+  }
+
+  /** One "waiting" step (N > 0): the next window of the files waiting for a juror that the new juror
+    * could take, by page id, up to what is left of `waitingQuota`; their images read in share mode
+    * (their monument ids; one marked deleted on Commons meanwhile left out), the juror's unrated rows
+    * inserted, the files' `round_image` rows kept with their origin. The check, in the same
+    * transaction: each file given has exactly one more vote row, at most N; otherwise the step rolls
+    * back. Then "move" when the share's waiting part is given or none is left.
+    */
+  private def takeWaiting(job: Job, ctx: StepContext, round: Round, jurorId: Long, st: RebalanceState)(implicit
+      session: DBSession
+  ): StepResult = {
+    val roundId = round.getId
+    val want = math.min(chunkRows.toLong, st.waitingQuota - st.waitingGiven).toInt
+    val window =
+      if (want <= 0) Nil else RoundReassign.waitingForWindow(roundId, round.distribution, jurorId, st.waitingCursor, want)
+    if (window.isEmpty) continue(st.copy(phase = Phase.Move))
+    else {
+      val pages = window.map(_._1)
+      val images = sql"""SELECT page_id, monument_id FROM images WHERE page_id IN ($pages) AND deleted_at IS NULL
+                         ORDER BY page_id LOCK IN SHARE MODE""".map(rs => rs.long(1) -> rs.stringOpt(2)).list()
+      val rows = images.map { case (pageId, monumentId) =>
+        Vote(pageId = pageId, juryId = jurorId, roundId = roundId, rate = 0, monumentId = monumentId)
+      }
+      val given = rows.map(_.pageId)
+      if (rows.nonEmpty) {
+        val before = votesPerPage(roundId, given)
+        DistributeImages.insertRows(rows, RoundImageJdbc.Origin.Manual)
+        afterTakeWaiting(roundId, given)
+        // the check: each file given has one more vote row, at most N; otherwise the whole step rolls back
+        val after = votesPerPage(roundId, given)
+        val wrong = given.filter { p =>
+          after.getOrElse(p, 0) != before.getOrElse(p, 0) + 1 || after.getOrElse(p, 0) > round.distribution
+        }
+        if (wrong.nonEmpty)
+          throw new IllegalStateException(s"Job ${job.id}: round $roundId's vote rows per file changed in giving waiting " +
+            s"files (${wrong.take(10).mkString(", ")})")
+        ctx.afterCommit(RoundImageCounts.invalidate(roundId))
+      }
+      continue(st.copy(waitingCursor = pages.max, waitingGiven = st.waitingGiven + rows.size,
+        filesGiven = st.filesGiven + rows.size, gaveAny = st.gaveAny || rows.nonEmpty))
     }
   }
 
@@ -376,6 +518,270 @@ class RoundRebalanceHandler @Inject() (config: Configuration) extends JobHandler
     continue(next.copy(filesGiven = st.filesGiven + moving.size, gaveAny = st.gaveAny || moving.nonEmpty))
   }
 
+  // ── reassigning a juror's unrated files (§7, params.from) ──────────────────
+
+  /** Hook for tests: runs in a reassign "move" step's transaction, its rows locked, before they move. */
+  protected def beforeReassign(roundId: Long, voteIds: Seq[Long])(implicit session: DBSession): Unit = ()
+
+  /** Hook for tests: runs in a reassign "verify" step's transaction, the round locked, before its rescan. */
+  protected def beforeReassignVerify(roundId: Long)(implicit session: DBSession): Unit = ()
+
+  /** Releases the round if the job froze it; on Cancel, if no row moved yet, the juror and the
+    * receivers it started are put back as they were (the juror active again if they were, the
+    * restarted receivers stopped again). Once a row moved, the juror stays stopped and the receivers
+    * started: the files moved are theirs. The round first, then round_user, as the "stop" step.
+    */
+  private def reassignEnd(job: Job, ctx: StepContext, cancelled: Boolean): JsObject = {
+    implicit val session: DBSession = ctx.session
+    val st = reassignStateOf(job)
+    val roundId = roundIdOf(job)
+    lockRun(roundId)
+    Round.release(st.frozen, close = false)
+    if (cancelled && st.stopped && !st.movedAny) {
+      if (st.fromWasActive.contains(true))
+        sql"UPDATE round_user SET active = TRUE WHERE round_id = $roundId AND user_id = ${fromOf(job).get}".update()
+      if (st.restarted.nonEmpty)
+        sql"UPDATE round_user SET active = FALSE WHERE round_id = $roundId AND user_id IN (${st.restarted})".update()
+    }
+    if (st.frozen.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(roundId))
+    Json.toJsObject(st.copy(frozen = Nil))
+  }
+
+  /** A reassign cancelled once a row had moved: the juror stays stopped with the unrated files not yet
+    * moved; the admin is told to run "Reassign files…" again for the rest (the cancel's flash).
+    */
+  override def cancelledNote(job: Job): Option[JobError] =
+    fromOf(job).flatMap { from =>
+      val st = reassignStateOf(job)
+      // rows removed (a round where every file goes to every juror: nothing is given), or the files
+      // handled: given, left waiting, given aside
+      val everyJuror = Round.findById(roundIdOf(job)).exists(_.distribution == 0)
+      Option.when(st.movedAny)(
+        if (everyJuror) JobError(CancelledRemovedKey, Seq((st.removed + st.asideRemoved).toString, from.toString))
+        else JobError(CancelledPartwayKey, Seq((st.moved + st.waiting + st.asideMoved + st.asideRemoved).toString, from.toString)))
+    }
+
+  /** As [[addRetry]]: releases what a failure left frozen and resumes from "stop". The count check's
+    * baselines move by what others changed meanwhile; after a failed count check the accounting and
+    * the quotas start again from the files as they are now.
+    */
+  private def reassignRetry(job: Job, ctx: StepContext): JsObject = {
+    implicit val session: DBSession = ctx.session
+    val st = reassignStateOf(job)
+    val roundId = roundIdOf(job)
+    lockRun(roundId)
+    Round.release(st.frozen, close = false)
+    val resumed =
+      if (!st.verifyFailed)
+        st.copy(
+          receiverRowsBefore = st.receiverRowsBefore.map { case (r, _) =>
+            r -> (jurorRows(roundId, r.toLong) - st.givenTo(r.toLong) - st.asideGivenTo(r.toLong))
+          },
+          fromRatedBefore = st.fromRatedBefore.map(_ => RoundReassign.ratedCount(roundId, fromOf(job).get)))
+      else
+        st.copy(quotasSet = false, quota = Map.empty, given = Map.empty, asideGiven = Map.empty, cursor = 0L, waiting = 0L,
+          removed = 0L, asideRemoved = 0L, receiverRowsBefore = Map.empty, fromRatedBefore = None, total = None,
+          repassed = false, verifyFailed = false)
+    Json.toJsObject(resumed.copy(phase = Phase.Stop, frozen = Nil))
+  }
+
+  private def reassignStep(job: Job, ctx: StepContext): StepResult = {
+    implicit val session: DBSession = ctx.session
+    val roundId = roundIdOf(job)
+    val from = fromOf(job).get
+    val receivers = receiversOf(job).filterNot(_ == from)
+    val st = reassignStateOf(job)
+    def fail(error: JobError) = {
+      logger.warn(s"Job ${job.id} ($Kind): round $roundId refused: ${error.describe}")
+      StepResult.Failed(error, Json.toJsObject(st), reassignProgress(st))
+    }
+    val run = lockRun(roundId).getOrElse(return fail(JobError(MissingKey, Seq(roundId.toString))))
+    val round = Round.findById(roundId).getOrElse(return fail(JobError(MissingKey, Seq(roundId.toString))))
+    reassignRefusal(round, run, from, receivers, frozenByUs = st.frozen.contains(roundId)).foreach(e => return fail(e))
+    val shares = round.distribution > 0
+    val to = if (shares) receivers else Nil
+
+    st.phase match {
+      case Phase.Stop =>
+        // the receivers' users rows share-locked and re-checked (A-4), outside an account join (J-2),
+        // as the add checks its juror
+        val accounts = (to :+ from).distinct
+        AccountJoinJdbc.joining(accounts).headOption.foreach(a => return fail(JobError(JoiningKey, Seq(a.toString))))
+        val live = User.lockLive(to)
+        to.find(r => !live.contains(r)).foreach(r => return fail(JobError(ReceiverKey, Seq(r.toString, round.number.toString))))
+        AccountJoinJdbc.joining(accounts).headOption.foreach(a => return fail(JobError(JoiningKey, Seq(a.toString))))
+        val frozen =
+          if (st.frozen.contains(roundId)) st.frozen
+          else { Round.freeze(Seq(roundId)); Seq(roundId) }
+        // the jurors' rows locked in id order; the juror stopped, the ticked receivers started (D1), in
+        // every "stop" (a Retry's too); their states before, the first time
+        val before = sql"""SELECT user_id, active FROM round_user WHERE round_id = $roundId AND user_id IN (${accounts.sorted})
+                           ORDER BY user_id FOR UPDATE""".map(rs => rs.long(1) -> rs.boolean(2)).list().toMap
+        sql"UPDATE round_user SET active = FALSE WHERE round_id = $roundId AND user_id = $from".update()
+        if (to.nonEmpty) sql"UPDATE round_user SET active = TRUE WHERE round_id = $roundId AND user_id IN ($to)".update()
+        val restartedNow = to.filter(r => before.get(r).contains(false))
+        val stopped = st.copy(frozen = frozen, stopped = true, checks = baseline(roundId, st.checks),
+          fromWasActive = if (st.stopped) st.fromWasActive else before.get(from),
+          restarted = if (st.stopped) (st.restarted ++ restartedNow).distinct else restartedNow)
+        val withQuotas =
+          if (st.quotasSet) stopped
+          else {
+            val unratedVotes = RoundReassign.unratedCount(roundId, from, sqls"vote")
+            val unratedAside = RoundReassign.unratedCount(roundId, from, sqls"vote_aside")
+            val open = unratedCounts(roundId, to)
+            stopped.copy(quotasSet = true,
+              quota = RoundReassign.fillQuotas(unratedVotes, to.map(r => r -> open.getOrElse(r, 0L))).map { case (r, n) => r.toString -> n },
+              receiverRowsBefore = receivers.map(r => r.toString -> jurorRows(roundId, r)).toMap,
+              fromRatedBefore = Some(RoundReassign.ratedCount(roundId, from)),
+              total = Some(unratedVotes + unratedAside))
+          }
+        reassignContinue(withQuotas.copy(phase = Phase.Move))
+
+      case Phase.Move =>
+        val candidates = RoundReassign.unratedRows(roundId, from, st.cursor, chunkRows)
+        if (candidates.isEmpty) reassignContinue(st.copy(phase = Phase.Aside))
+        else {
+          beforeLock(roundId, candidates.map(_._1))
+          // the lock order: the round (held), the files' images in share mode, then the rows by id
+          val pages = candidates.map(_._2).distinct.sorted
+          sql"SELECT page_id FROM images WHERE page_id IN ($pages) ORDER BY page_id LOCK IN SHARE MODE".map(_.long(1)).list()
+          val ids = candidates.map(_._1).sorted
+          val locked = sql"""SELECT id, page_id, jury_id, rate, monument_id FROM vote WHERE id IN ($ids) ORDER BY id FOR UPDATE"""
+            .map(rs => (rs.long(1), rs.long(2), rs.long(3), rs.int(4), rs.stringOpt(5))).list()
+          val criteriaRated = sql"SELECT DISTINCT vote_id FROM criteria_rate WHERE vote_id IN ($ids) AND rate > 0 LOCK IN SHARE MODE"
+            .map(_.long(1)).list().toSet
+          // rated just before its lock (the juror's vote in flight before the stop): it stays
+          val moving = locked.filter { case (id, _, jury, rate, _) => rate == 0 && jury == from && !criteriaRated(id) }
+          val (choices, _) = RoundReassign.allocate(moving.map(_._2),
+            RoundReassign.holders(roundId, moving.map(_._2), to), to, st.remaining(to))
+          val receiverOf = choices.toMap
+          if (moving.nonEmpty) {
+            beforeReassign(roundId, moving.map(_._1))
+            val movingPages = moving.map(_._2).sorted
+            val before = votesPerPage(roundId, movingPages)
+            // the receivers' rows first, then the juror's rows with their (unrated) criteria rates
+            VoteJdbc.batchInsert(moving.flatMap { case (_, page, _, _, monument) =>
+              receiverOf.get(page).flatten.map(r => Vote(pageId = page, juryId = r, roundId = roundId, rate = 0, monumentId = monument))
+            }, RoundImageJdbc.Origin.Manual)
+            val movedIds = moving.map(_._1)
+            RoundWrites.requireRounds(Seq(roundId))
+            sql"DELETE FROM criteria_rate WHERE vote_id IN ($movedIds)".update()
+            sql"DELETE FROM vote WHERE id IN ($movedIds)".update()
+            // a file left with no vote keeps its row and status (P3-1): it waits for a juror
+            RoundImageJdbc.syncPairs(movingPages.map(roundId -> _))
+            afterMove(roundId, movingPages)
+            // the check: a file given keeps its number of vote rows, one left waiting has one less
+            val after = votesPerPage(roundId, movingPages)
+            val wrong = movingPages.filter { p =>
+              after.getOrElse(p, 0) != before.getOrElse(p, 0) - (if (receiverOf.get(p).flatten.isDefined) 0 else 1)
+            }
+            if (wrong.nonEmpty)
+              throw new IllegalStateException(s"Job ${job.id}: round $roundId's vote rows per file changed in a reassign " +
+                s"(${wrong.take(10).mkString(", ")})")
+            ctx.afterCommit(RoundImageCounts.invalidate(roundId))
+          }
+          val givenNow = choices.flatMap(_._2).groupMapReduce(identity)(_ => 1L)(_ + _)
+          val unplaced = choices.count(_._2.isEmpty).toLong
+          // the files left waiting, for "verify" to check they are still `in`
+          val leftWaiting = if (shares) choices.collect { case (p, None) => p } else Nil
+          reassignContinue(st.copy(
+            checks = st.checks.copy(waitingPages = (st.checks.waitingPages ++ leftWaiting).distinct.take(MaxWaitingChecked)),
+            cursor = candidates.map(_._1).max,
+            given = givenNow.foldLeft(st.given) { case (acc, (r, n)) => acc.updated(r.toString, st.givenTo(r) + n) },
+            waiting = st.waiting + (if (shares) unplaced else 0L),
+            removed = st.removed + (if (shares) 0L else unplaced),
+            movedAny = st.movedAny || moving.nonEmpty))
+        }
+
+      case Phase.Aside =>
+        // the juror's unrated rows aside (files deleted on Commons or disqualified): each goes to an
+        // eligible receiver in place (its id kept), so a restore or requalify gives the file to them, not
+        // to the stopped juror; with none, it is deleted. The files' images in share mode first, then
+        // the rows (vote_aside before criteria_rate, the lock order)
+        val plain = sql"""SELECT v.id, v.page_id FROM vote_aside v WHERE v.round_id = $roundId AND v.jury_id = $from
+                          AND ${RoundReassign.unrated(sqls"v")} ORDER BY v.id LIMIT $chunkRows"""
+          .map(rs => rs.long(1) -> rs.long(2)).list()
+        if (plain.isEmpty) reassignContinue(st.copy(phase = Phase.Verify))
+        else {
+          val pages = plain.map(_._2).distinct.sorted
+          sql"SELECT page_id FROM images WHERE page_id IN ($pages) ORDER BY page_id LOCK IN SHARE MODE".map(_.long(1)).list()
+          val ids = plain.map(_._1).sorted
+          val locked = sql"SELECT id, page_id, jury_id, rate FROM vote_aside WHERE id IN ($ids) ORDER BY id FOR UPDATE"
+            .map(rs => (rs.long(1), rs.long(2), rs.long(3), rs.int(4))).list()
+          val criteriaRated = sql"SELECT DISTINCT vote_id FROM criteria_rate WHERE vote_id IN ($ids) AND rate > 0 LOCK IN SHARE MODE"
+            .map(_.long(1)).list().toSet
+          val rows = locked.filter { case (id, _, jury, rate) => rate == 0 && jury == from && !criteriaRated(id) }
+          val remaining = st.remaining(to).map { case (r, n) => r -> (n - st.asideGivenTo(r)) }
+          val (choices, _) = RoundReassign.allocate(rows.map(_._2), RoundReassign.holders(roundId, rows.map(_._2), to), to, remaining)
+          val receiverOf = choices.toMap
+          val ofRows = rows.map(_._1)
+          if (ofRows.nonEmpty) {
+            RoundWrites.requireRounds(Seq(roundId))
+            sql"DELETE FROM criteria_rate WHERE vote_id IN ($ofRows)".update()
+            rows.foreach { case (id, page, _, _) =>
+              receiverOf.get(page).flatten match {
+                case Some(r) => sql"UPDATE vote_aside SET jury_id = $r WHERE id = $id".update()
+                case None    => sql"DELETE FROM vote_aside WHERE id = $id".update()
+              }
+            }
+            RoundImageJdbc.syncPairs(rows.map(r => roundId -> r._2).distinct)
+            ctx.afterCommit(RoundImageCounts.invalidate(roundId))
+          }
+          val givenNow = choices.flatMap(_._2).groupMapReduce(identity)(_ => 1L)(_ + _)
+          val next = st.copy(
+            asideGiven = givenNow.foldLeft(st.asideGiven) { case (acc, (r, n)) => acc.updated(r.toString, st.asideGivenTo(r) + n) },
+            asideRemoved = st.asideRemoved + choices.count(_._2.isEmpty),
+            movedAny = st.movedAny || rows.nonEmpty)
+          // rows rated meanwhile stay; fewer than asked: none left
+          reassignContinue(if (plain.size < chunkRows) next.copy(phase = Phase.Verify) else next)
+        }
+
+      case Phase.Verify =>
+        beforeReassignVerify(roundId)
+        // rescanned from the start: a file restored or requalified meanwhile brings back a row the
+        // windows had passed
+        val left = RoundReassign.unratedCount(roundId, from, sqls"vote") + RoundReassign.unratedCount(roundId, from, sqls"vote_aside")
+        if (left > 0 && !st.repassed) reassignContinue(st.copy(phase = Phase.Move, cursor = 0L, repassed = true))
+        else if (left > 0)
+          StepResult.Failed(JobError(ReassignVerifyKey, Seq(round.number.toString, from.toString, left.toString)),
+            Json.toJsObject(st.copy(verifyFailed = true)), reassignProgress(st))
+        else {
+          val receiverMismatch = st.receiverRowsBefore.toSeq.sortBy(_._1.toLong).collectFirst {
+            case (r, before) if jurorRows(roundId, r.toLong) != before + st.givenTo(r.toLong) + st.asideGivenTo(r.toLong) => r.toLong
+          }
+          val ratedNow = RoundReassign.ratedCount(roundId, from)
+          // the files left waiting still `in`, and no new violation of the round's invariants 1-3
+          lazy val broken = invariantsFailure(round, st.checks)
+          if (receiverMismatch.isDefined)
+            StepResult.Failed(JobError(ReceiverVerifyKey, Seq(round.number.toString, receiverMismatch.get.toString)),
+              Json.toJsObject(st.copy(verifyFailed = true)), reassignProgress(st))
+          else if (st.fromRatedBefore.exists(_ != ratedNow))
+            StepResult.Failed(JobError(FromVerifyKey, Seq(round.number.toString, from.toString)),
+              Json.toJsObject(st.copy(verifyFailed = true)), reassignProgress(st))
+          else if (broken.isDefined)
+            StepResult.Failed(broken.get, Json.toJsObject(st.copy(verifyFailed = true)), reassignProgress(st))
+          else {
+            Round.release(st.frozen, close = false)
+            ctx.afterCommit(RoundImageCounts.invalidate(roundId))
+            val toText = (st.given.keySet ++ st.asideGiven.keySet).toSeq.sortBy(_.toLong)
+              .map(r => s"$r:${st.givenTo(r.toLong) + st.asideGivenTo(r.toLong)}").mkString(",")
+            adminLog.info(s"action=juror_reassign accountId=${byOf(job).getOrElse(0L)} contestId=${round.contestId} " +
+              s"roundId=$roundId jurorId=$from moved=${st.moved} waiting=${st.waiting} removed=${st.removed} " +
+              s"aside=${st.asideMoved} asideRemoved=${st.asideRemoved} " + (if (toText.nonEmpty) s"to=$toText " else "") +
+              s"jobId=${job.id} state=done")
+            StepResult.Done(Json.toJsObject(st.copy(frozen = Nil)), reassignProgress(st))
+          }
+        }
+
+      case other => throw new IllegalStateException(s"Job ${job.id}: unknown phase $other")
+    }
+  }
+
+  private def reassignContinue(st: ReassignState) = StepResult.Continue(Json.toJsObject(st), reassignProgress(st))
+
+  private def reassignProgress(st: ReassignState) =
+    Progress(done = Some(st.done), total = st.total, unit = Some("files"))
+
   private def votesPerPage(roundId: Long, pages: Seq[Long])(implicit session: DBSession): Map[Long, Int] =
     sql"SELECT page_id, COUNT(*) FROM vote WHERE round_id = $roundId AND page_id IN ($pages) GROUP BY page_id"
       .map(rs => rs.long(1) -> rs.int(2)).list().toMap
@@ -404,6 +810,10 @@ object RoundRebalanceHandler {
     val Stop = "stop"
     val Give = "give"
     val Move = "move"
+    /** A reassign's: the juror's unrated rows in vote_aside. */
+    val Aside = "aside"
+    /** An add's (N > 0): the files waiting for a juror, before "move". */
+    val Waiting = "waiting"
     val Verify = "verify"
   }
 
@@ -422,6 +832,133 @@ object RoundRebalanceHandler {
   val VerifyKey = "job.error.rebalance.verify"
   val DonorVerifyKey = "job.error.rebalance.donor.verify"
   val DonorKey = "job.error.rebalance.donor"
+  // a reassign's (§7)
+  val ReassignNotRunningKey = "job.error.rebalance.reassign.not.running"
+  val ReassignLegacyKey = "job.error.rebalance.reassign.legacy"
+  val FromKey = "job.error.rebalance.from"
+  val ReceiverKey = "job.error.rebalance.receiver"
+  val FewReceiversKey = "job.error.rebalance.receivers.few"
+  val ReassignVerifyKey = "job.error.rebalance.reassign.verify"
+  val ReceiverVerifyKey = "job.error.rebalance.receiver.verify"
+  val FromVerifyKey = "job.error.rebalance.from.verify"
+  /** "verify": a file left waiting no longer `in`, or a new violation of the round's invariants 1-3. */
+  val InvariantsKey = "job.error.rebalance.invariants"
+  /** The same past a truncated baseline: how many more, no file named. */
+  val InvariantsCountKey = "job.error.rebalance.invariants.count"
+  /** The cancel's flash of a reassign cancelled once a row had moved ([[RoundRebalanceHandler.cancelledNote]]). */
+  val CancelledPartwayKey = "round.juror.reassign.cancelled.partway"
+  /** The same in a round where every file goes to every juror: the juror's rows were removed. */
+  val CancelledRemovedKey = "round.juror.reassign.cancelled.removed"
+
+  /** The files a reassign left waiting that "verify" checks are still `in` ([[VerifyChecks.waitingPages]]). */
+  val MaxWaitingChecked = 5000
+
+  /** The round's invariants a rebalance's writes could break: vote rows of a file not `in` (1), rows set
+    * aside of a file neither `deleted` nor `dq` (2), votes of a `deleted` or `dq` file (3).
+    */
+  private val CheckedInvariants = Set(1, 2, 3)
+
+  /** The round's violations of [[CheckedInvariants]], per invariant, their pages sorted: only those
+    * invariants' queries run (they are read under the round's lock).
+    */
+  def checkedViolations(roundId: Long)(implicit session: DBSession): Map[Int, Seq[Long]] =
+    RoundImageInvariants.violations(roundId, only = CheckedInvariants)
+      .groupMap(_.invariant)(_.pageId).view.mapValues(_.distinct.sorted).toMap
+
+  /** The checks' baseline, read by the first "stop" only (kept on Retry, so a Retry after a failed check
+    * fails again until the round is repaired): per invariant, the count and the first pages.
+    */
+  def baseline(roundId: Long, checks: VerifyChecks)(implicit session: DBSession): VerifyChecks =
+    if (checks.violationsBefore.isDefined) checks
+    else {
+      val now = checkedViolations(roundId)
+      checks.copy(violationsBefore = Some(now.map { case (i, pages) =>
+        i.toString -> ViolationBaseline(pages.size.toLong, pages.take(ViolationBaseline.MaxPages))
+      }))
+    }
+
+  /** Why "verify"'s invariant check fails, if it does: a file left waiting whose row is gone or has a
+    * status other than `in`, `deleted` or `dq` (a file left waiting may be deleted on Commons, or
+    * disqualified, before "verify": its row is then `deleted` or `dq`, rightly), or a violation of
+    * [[CheckedInvariants]] new since the first "stop" ([[ViolationBaseline.fresh]]). The error names the
+    * round, how many files, and the first.
+    */
+  def invariantsFailure(round: Round, checks: VerifyChecks)(implicit session: DBSession): Option[JobError] = {
+    val roundId = round.getId
+    val known = Seq(RoundImageJdbc.Status.In, RoundImageJdbc.Status.Deleted, RoundImageJdbc.Status.Dq)
+    val lost = checks.waitingPages.distinct.sorted.grouped(1000).flatMap { chunk =>
+      val there = sql"""SELECT page_id FROM round_image WHERE round_id = $roundId AND page_id IN ($chunk)
+                        AND status IN ($known)""".map(_.long(1)).list().toSet
+      chunk.filterNot(there)
+    }.toSeq
+    val fresh = checks.violationsBefore.fold(Seq.empty[(Long, Seq[Long])]) { before =>
+      checkedViolations(roundId).toSeq.sortBy(_._1).map { case (i, now) =>
+        before.getOrElse(i.toString, ViolationBaseline(0L, Nil)).fresh(now)
+      }.filter(_._1 > 0)
+    }
+    // the files, each once (one may break invariants 1 and 3 at once); past a truncated baseline only how
+    // many more, no file named
+    val files = (lost ++ fresh.flatMap(_._2)).distinct.sorted
+    val unnamed = fresh.filter(_._2.isEmpty).map(_._1).sum
+    if (unnamed > 0) Some(JobError(InvariantsCountKey, Seq(round.number.toString, (files.size + unnamed).toString)))
+    else files.headOption.map(first => JobError(InvariantsKey, Seq(round.number.toString, files.size.toString, first.toString)))
+  }
+
+  /** An add's share in a round where each file goes to N > 0 jurors: how many files waiting for a juror
+    * the new juror takes first, and how many each donor gives (round-editing plan §5, the maintainer's
+    * decision of 2026-11-17). The share is the water-filling's ([[quotas]], as without waiting files);
+    * the waiting files the juror could take count toward it: `waiting` is the smaller of the two. If
+    * they are fewer, the donors give the rest ([[fromTop]]); if more, the share is filled from them
+    * only and the others keep waiting. A share of 0 (no donor has more unrated files than the new
+    * juror) takes every waiting file the juror could take, nothing from the donors (the maintainer's
+    * decision of 2026-11-17, after the build).
+    *
+    * @param jurorUnrated    the new juror's own unrated files
+    * @param donors          (id, unrated files the new juror could take)
+    * @param waitingEligible the round's files waiting for a juror that the new juror could take
+    */
+  def addSplit(jurorUnrated: Long, donors: Seq[(Long, Long)], waitingEligible: Long): AddSplit = {
+    val share = quotas(jurorUnrated, donors)
+    val total = share.values.sum
+    val eligible = math.max(0L, waitingEligible)
+    if (total == 0) AddSplit(eligible, Map.empty, eligible, 0L)
+    else {
+      val waiting = math.min(eligible, total)
+      if (waiting == 0) AddSplit(0L, share, eligible, total)
+      else AddSplit(waiting, fromTop(total - waiting, donors), eligible, total)
+    }
+  }
+
+  /** @param waiting    the waiting files the new juror takes
+    * @param fromDonors each donor's quota
+    * @param eligible   the waiting files the new juror could take (those over `waiting` keep waiting)
+    * @param share      the fair share ([[quotas]]): 0 when no donor has more unrated files than the juror
+    */
+  final case class AddSplit(waiting: Long, fromDonors: Map[Long, Long], eligible: Long, share: Long) {
+    def total: Long = waiting + fromDonors.values.sum
+    def waitingLeft: Long = eligible - waiting
+  }
+
+  /** How many of `total` files each donor gives, taken from the most loaded first so that those who
+    * give end level: the largest k donors, k the most for which the k-th largest is at least the level
+    * `(their sum - total) / k`, each kept at the level's floor (the remainder one more each, the largest
+    * first). The quotas sum exactly to `total` (at most all the donors' files); none is negative.
+    */
+  def fromTop(total: Long, donors: Seq[(Long, Long)]): Map[Long, Long] = {
+    val sorted = donors.sortBy { case (id, n) => (-n, id) }
+    val take = math.min(math.max(total, 0L), sorted.map(_._2).sum)
+    if (take == 0 || sorted.isEmpty) Map.empty
+    else {
+      val k = (1 to sorted.size).filter { k =>
+        sorted(k - 1)._2 * k >= sorted.take(k).map(_._2).sum - take
+      }.last
+      val top = sorted.take(k)
+      val left = top.map(_._2).sum - take
+      val base = left / k
+      val extra = (left % k).toInt // donors (the largest first) that keep one more
+      top.zipWithIndex.map { case ((id, n), i) => id -> (n - base - (if (i < extra) 1 else 0)) }.filter(_._2 > 0).toMap
+    }
+  }
 
   def roundIdOf(job: Job): Long =
     (job.params \ "roundId").asOpt[Long].orElse(job.subjectId).getOrElse(
@@ -432,10 +969,31 @@ object RoundRebalanceHandler {
 
   def byOf(job: Job): Option[Long] = (job.params \ "by").asOpt[Long]
 
+  /** A reassign's juror, whose unrated files go to the receivers (§7); None for an add. */
+  def fromOf(job: Job): Option[Long] = (job.params \ "from").asOpt[Long]
+
+  /** The receivers ticked on the reassign page. */
+  def receiversOf(job: Job): Seq[Long] = (job.params \ "receivers").asOpt[Seq[Long]].getOrElse(Nil).distinct.sorted
+
+  def reassignStateOf(job: Job): ReassignState = readState(job, ReassignState())
+
   /** The donors ticked on the page: their unrated files may go to the new juror. */
   def donorsOf(job: Job): Seq[Long] = (job.params \ "donors").asOpt[Seq[Long]].getOrElse(Nil).distinct
 
-  def stateOf(job: Job): RebalanceState = job.state.validate[RebalanceState].getOrElse(RebalanceState())
+  def stateOf(job: Job): RebalanceState = readState(job, RebalanceState())
+
+  private val stateLog = Logger("services.distribution.RoundRebalanceHandler")
+
+  /** The job's state, or `default` with a WARN line if it doesn't read (never silently: the job would run
+    * from its start again).
+    */
+  private def readState[S](job: Job, default: S)(implicit reads: Reads[S]): S =
+    job.state.validate[S] match {
+      case JsSuccess(st, _) => st
+      case error: JsError =>
+        stateLog.warn(s"Job ${job.id} ($Kind): its state doesn't read (${JsError.toJson(error)}): taken as the default")
+        default
+    }
 
   def filesGiven(job: Job): Long = stateOf(job).filesGiven
 
@@ -485,6 +1043,35 @@ object RoundRebalanceHandler {
     else if (!hasRoundUsers(round.getId)) Some(JobError(LegacyKey, Seq(n)))
     else if (eligibleJuror(round.contestId, jurorId).isEmpty) Some(JobError(NotJurorKey, Seq(jurorId.toString)))
     else donors.find(d => !isRoundJuror(round.getId, d)).map(d => JobError(DonorKey, Seq(d.toString, n)))
+  }
+
+  /** Whether the round runs as [[RoundRun.running]] says, from the round as read (no lock): the stat
+    * table offers "Reassign files…" only then.
+    */
+  def isRunning(round: Round): Boolean =
+    RoundRun(round.active, round.distributing, round.freezeCount, activeBeforeFreeze = false).running(frozenByUs = false)
+
+  /** Why reassigning `from`'s unrated files to `receivers` is refused now, if it is (§7, D3): checked on
+    * the page, on the POST and by every step, each under the round's lock (but the page). In this
+    * order: frozen by another job; not running; no round_user rows (a legacy round); `from` not a
+    * juror of the round; a receiver not a juror of the round with an active jury membership of the
+    * contest (an inactive or removed membership can't be started again); in a round where each file
+    * goes to N > 0 jurors, fewer receivers than N ("add a juror first"). Receivers don't matter in a
+    * round where every file goes to every juror: nothing is given there.
+    */
+  def reassignRefusal(round: Round, run: RoundRun, from: Long, receivers: Seq[Long], frozenByUs: Boolean)(implicit
+      session: DBSession
+  ): Option[JobError] = {
+    val n = round.number.toString
+    val to = if (round.distribution > 0) receivers.filterNot(_ == from) else Nil
+    if (run.frozenByOther(frozenByUs)) Some(JobError(FrozenKey, Seq(n)))
+    else if (!run.running(frozenByUs)) Some(JobError(ReassignNotRunningKey, Seq(n)))
+    else if (!hasRoundUsers(round.getId)) Some(JobError(ReassignLegacyKey, Seq(n)))
+    else if (!isRoundJuror(round.getId, from)) Some(JobError(FromKey, Seq(from.toString, n)))
+    else to.find(r => !isRoundJuror(round.getId, r) || eligibleJuror(round.contestId, r).isEmpty)
+      .map(r => JobError(ReceiverKey, Seq(r.toString, n)))
+      .orElse(Option.when(round.distribution > 0 && to.size < round.distribution)(
+        JobError(FewReceiversKey, Seq(n, round.distribution.toString))))
   }
 
   def hasRoundUsers(roundId: Long)(implicit session: DBSession): Boolean =

@@ -5,6 +5,11 @@
    (RoundController.setRoundUser): the contest's admins. Its organizers (who monitor the voting)
    and jurors see each juror's state as text instead. *@
 @mayPause = @{ controllers.Secured.administersRound(user, round) }
+@* "Reassign files…" per juror: admins, only while the round is running (round-editing plan §7, D3) *@
+@running = @{ services.distribution.RoundRebalanceHandler.isRunning(round) }
+@* the round's files with fewer jurors than its jurors per file (§7): everyone who sees the table, while
+   the round is running (a stopped or finished round has nothing to give out) *@
+@waiting = @{ if (running) services.distribution.RoundReassign.waitingCount(round).filter(_ > 0) else None }
 
 <table class="table table-striped table-sm">
     <thead>
@@ -36,6 +41,10 @@
                     @* a stopped juror: started again with a fair share of the others' unrated files (the add page) *@
                     @if(!juror.active.getOrElse(true)) {
                         <a class="btn btn-sm btn-outline-secondary round-juror-share" href="@routes.RoundJurorsController.addPage(round.getId, juror.id)" title="@Messages("round.juror.share")" aria-label="@Messages("round.juror.share")"><i class="bi bi-person-plus" aria-hidden="true"></i></a>
+                    }
+                    @* their unrated files to the other jurors; they end stopped (the reassign page) *@
+                    @if(running) {
+                        <a class="btn btn-sm btn-outline-secondary round-juror-reassign" href="@routes.RoundJurorsController.reassignPage(round.getId, juror.getId)" title="@Messages("round.juror.reassign")" aria-label="@Messages("round.juror.reassign.of", juror.fullname)"><i class="bi bi-arrow-left-right" aria-hidden="true"></i></a>
                     }
                 </td>
             } else {
@@ -117,6 +126,9 @@
     }
 
 </table>
+@for(n <- waiting) {
+    <p id="round-waiting" data-waiting="@n">@Messages("round.waiting", n, round.distribution)</p>
+}
 @* "Add juror…" for the round's admins (RoundJurorsController): the page lists the contest's jurors
    outside the round and says what the add does, or why it can't be done now *@
 @if(mayPause) {

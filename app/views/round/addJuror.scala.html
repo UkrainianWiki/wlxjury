@@ -15,7 +15,10 @@
    and, in a round where each file goes to N jurors, the donors (D1: the active jurors ticked, the
    stopped ones listed unticked and marked); then for the juror chosen the figures and the confirm
    form, a POST with the CSRF token, the donors, the jury as shown (`jury`, checked again under the
-   round's lock), sent once (submit-once.js). *@
+   round's lock), sent once (submit-once.js). The confirm carries the juror and donors the figures were
+   shown for: preview-confirm.js disables it while the choice or the ticks differ, until "Show what this
+   does" (the server checks them again either way). In a round of N > 0 jurors per file the files
+   waiting for a juror go to the new juror first, within their share. *@
 @import helper._
 @shares = @{ round.distribution > 0 }
 @chosen = @{ preview.flatMap(_.juror).flatMap(_.id) }
@@ -23,6 +26,7 @@
 @nameOf(id: Long) = @{ jury.jurors.find(_.user.id.contains(id)).fold(id.toString)(_.user.fullname) }
 @scripts = {
     <script src="@routes.Assets.versioned("javascripts/submit-once.js")"></script>
+    <script src="@routes.Assets.versioned("javascripts/preview-confirm.js")"></script>
 }
 @mainAdmin("round.juror.add.title", user, user.getId, contestId = Some(round.contestId), head = scripts) {
     <div class="row">
@@ -39,22 +43,27 @@
 
             <form method="get" action="@routes.RoundJurorsController.addPage(round.getId, None)" id="round-juror-add-choose">
                 <input type="hidden" name="picked" value="1">
-                <h2 class="h5">@Messages("round.juror.add.jury")</h2>
+                <fieldset @if(shares) {aria-describedby="round-juror-add-donors-help"}>
+                <legend class="h5">@Messages("round.juror.add.jury")</legend>
                 @if(shares) { <p class="text-muted" id="round-juror-add-donors-help">@Messages("round.juror.add.donors.help")</p> }
                 <ul id="round-juror-add-jury" class="list-unstyled">
                 @for(row <- jury.jurors) {
                     <li data-juror="@row.user.getId" data-active="@row.active">
+                        @* the state and the count inside the label: read out with the checkbox *@
                         @if(shares && !chosen.contains(row.user.getId)) {
                             <label><input type="checkbox" class="form-check-input" name="donor" value="@row.user.getId" @if(ticked(row.user.getId)) {checked}>
-                                @row.user.fullname</label>
+                                @row.user.fullname
+                                @if(!row.active) { <span class="badge text-bg-secondary">@Messages("round.juror.stopped")</span>}
+                                @for(p <- preview; n <- p.unrated.get(row.user.getId)) { <small class="text-muted">@Messages("round.juror.add.unrated", n)</small>}</label>
                         } else {
                             @row.user.fullname
+                            @if(!row.active) { <span class="badge text-bg-secondary">@Messages("round.juror.stopped")</span>}
+                            @for(p <- preview; n <- p.unrated.get(row.user.getId) if shares) { <small class="text-muted">@Messages("round.juror.add.unrated", n)</small>}
                         }
-                        @if(!row.active) { <span class="badge text-bg-secondary">@Messages("round.juror.stopped")</span>}
-                        @for(p <- preview; n <- p.unrated.get(row.user.getId) if shares) { <small class="text-muted">@Messages("round.juror.add.unrated", n)</small>}
                     </li>
                 }
                 </ul>
+                </fieldset>
 
                 @* the contest's jurors outside the round, then the round's: a stopped one is started again, an
                    active one topped up *@
@@ -91,11 +100,23 @@
                                 @if(round.inReview) {
                                     <p id="round-juror-add-review">@Messages("round.juror.add.review.note")</p>
                                 } else { @if(shares) {
-                                    @if(p.share.isEmpty) {
+                                    @* the files waiting for a juror first, within the share; the rest from the donors *@
+                                    @if(p.waiting > 0 && p.fairShare == 0) {
+                                        @* no share from the others: every waiting file they may take *@
+                                        <p id="round-juror-add-split" data-waiting="@p.waiting" data-from-donors="0">@Messages("round.juror.add.split.waiting", juror.fullname, p.waiting)</p>
+                                    } else { @if(p.waiting > 0) {
+                                        <p id="round-juror-add-split" data-waiting="@p.waiting" data-from-donors="@p.fromDonors">@Messages("round.juror.add.split", juror.fullname, p.files, p.waiting, p.fromDonors)</p>
+                                        @if(p.share.nonEmpty) {
+                                            <p>@Messages("round.juror.add.split.from", p.share.toSeq.sortBy { case (id, n) => (-n, id) }.map { case (id, n) => nameOf(id) + " " + n }.mkString(", "))</p>
+                                        }
+                                    } else { @if(p.share.isEmpty) {
                                         <p>@Messages("round.juror.add.share.none", juror.fullname)</p>
                                     } else {
                                         <p>@Messages("round.juror.add.share", p.donorsUnrated, p.donors.size, juror.fullname, p.files,
                                             p.share.toSeq.sortBy { case (id, n) => (-n, id) }.map { case (id, n) => nameOf(id) + " " + n }.mkString(", "))</p>
+                                    } } }
+                                    @if(p.waitingLeft > 0) {
+                                        <p class="text-muted" id="round-juror-add-waiting-left">@Messages("round.juror.add.waiting.left", p.waitingLeft)</p>
                                     }
                                     @if(p.donors.exists(d => jury.jurors.exists(r => r.user.id.contains(d) && !r.active))) {
                                         <p class="text-muted">@Messages("round.juror.add.stopped.donor")</p>
@@ -111,8 +132,10 @@
                                 }
                                 <p class="text-muted">@Messages("round.juror.add.pause")</p>
                             </div>
+                            <p class="text-muted" id="round-juror-add-stale" role="status" data-stale-text="@Messages("round.juror.preview.stale", Messages("round.juror.add.show"))"></p>
                             @form(routes.RoundJurorsController.add(round.getId), Symbol("id") -> "round-juror-add-form",
-                                Symbol("data-submit-once") -> "true") {
+                                Symbol("data-submit-once") -> "true", Symbol("data-preview-form") -> "round-juror-add-choose",
+                                Symbol("data-preview-hint") -> "round-juror-add-stale") {
                                 @csrfField()
                                 <input type="hidden" name="juror" value="@juror.getId">
                                 <input type="hidden" name="jury" value="@signature">

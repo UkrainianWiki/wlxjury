@@ -53,8 +53,8 @@ import scala.collection.mutable
   *                       ([[Round.excludeCoi]])
   * @param coiTitles      the first [[RoundDistributionHandler.MaxMissingTitles]] of them, each
   *                       with the person it is by and their role
-  * @param rescanned      a distribute found files still to give at its end (a file restored on
-  *                       Commons below its cursor) and went over the round once more
+  * @param passes         a distribute's second passes and its top-up ([[Passes]]); `rescanned`
+  *                       stood alone before (read into it, [[DistributionState.format]])
   * @param pruned         a re-apply's files removed ([[Pruned]])
   * @param prevFingerprint a fill's end: the previous rounds' votes as it read them
   *                       ([[RoundDistributionHandler.prevFingerprint]]); the review page warns when
@@ -80,10 +80,13 @@ final case class DistributionState(
     missingTitles: Seq[String] = Nil,
     coiLeftOut: Long = 0L,
     coiTitles: Seq[String] = Nil,
-    rescanned: Boolean = false,
+    passes: Passes = Passes(),
     pruned: Pruned = Pruned(),
     prevFingerprint: Option[String] = None
 ) {
+  /** [[Passes.rescanned]]. */
+  def rescanned: Boolean = passes.rescanned
+
   /** [[Pruned.count]]: the count check's. */
   def removed: Long = pruned.count
 
@@ -105,12 +108,41 @@ final case class DistributionState(
   */
 final case class Pruned(count: Long = 0L, titles: Seq[String] = Nil, total: Long = 0L)
 
+/** A distribute's second passes, and its top-up of the files waiting for a juror (round-editing plan §7,
+  * "Also give out the waiting files"): nested so that the state stays within a case class's 22 fields.
+  *
+  * @param rescanned      a distribute found files still to give at its end (a file restored on
+  *                       Commons below its cursor) and went over the round once more
+  * @param topUpRescanned the top-up found a waiting file an active juror could take at its end and went
+  *                       over the waiting files once more
+  * @param toppedUp       waiting files the top-up gave jurors to
+  * @param topUpRows      the vote rows it gave (counted apart from `rowsAdded`)
+  */
+final case class Passes(rescanned: Boolean = false, topUpRescanned: Boolean = false, toppedUp: Long = 0L,
+    topUpRows: Long = 0L)
+
+object Passes {
+  implicit val format: OFormat[Passes] = Json.using[Json.WithDefaultValues].format[Passes]
+}
+
 object Pruned {
   implicit val format: OFormat[Pruned] = Json.using[Json.WithDefaultValues].format[Pruned]
 }
 
 object DistributionState {
-  implicit val format: OFormat[DistributionState] = Json.using[Json.WithDefaultValues].format[DistributionState]
+  private val base: OFormat[DistributionState] = Json.using[Json.WithDefaultValues].format[DistributionState]
+
+  /** The state's JSON; a job's state written before [[Passes]] has `rescanned` at its top, read into
+    * `passes`.
+    */
+  implicit val format: OFormat[DistributionState] = OFormat(
+    Reads {
+      case o: JsObject if !o.keys.contains("passes") && o.keys.contains("rescanned") =>
+        val rescanned: Boolean = (o \ "rescanned").asOpt[Boolean].getOrElse(false)
+        base.reads(o - "rescanned" + ("passes" -> Json.obj("rescanned" -> rescanned)))
+      case js => base.reads(js)
+    },
+    base)
 }
 
 /** Distributes a round's images in the background, as a [[Job]] of kind
@@ -191,7 +223,9 @@ class RoundDistributionHandler @Inject() (
 
   override def title(job: Job): String = {
     val round = job.subjectId.getOrElse("?")
-    if (distributeMode(job)) s"Distributing the reviewed images of round $round"
+    // "Also give out the files waiting for a juror" (round-editing plan §7), alone or after new files
+    if (distributeMode(job) && topUpWaiting(job)) s"Distributing images of round $round and its files waiting for a juror"
+    else if (distributeMode(job)) s"Distributing the reviewed images of round $round"
     else if (fillOnly(job)) s"Selecting the images of round $round for review"
     else titleCountOf(job) match {
       case 0                  => s"Distributing images to round $round"
@@ -204,7 +238,8 @@ class RoundDistributionHandler @Inject() (
     val st = stateOf(job)
     Json.obj("roundId" -> roundIdOf(job), "imagesAdded" -> st.imagesAdded, "rowsAdded" -> st.rowsAdded,
       "phase" -> st.phase, "missing" -> st.missing, "missingTitles" -> st.missingTitles,
-      "coiLeftOut" -> st.coiLeftOut, "coiTitles" -> st.coiTitles, "mode" -> modeOf(job))
+      "coiLeftOut" -> st.coiLeftOut, "coiTitles" -> st.coiTitles, "mode" -> modeOf(job),
+      "toppedUp" -> st.passes.toppedUp, "topUpRows" -> st.passes.topUpRows)
   }
 
   override def prepare(job: Job): Unit =
@@ -646,7 +681,9 @@ class RoundDistributionHandler @Inject() (
         // structural writer held off; then the files' current monument ids (h6)
         RoundWrites.lock(Seq(roundId))
         val ids = RoundImageJdbc.undistributedWindow(roundId, st1.cursor, c.windowSize)
-        if (ids.isEmpty) continue(st1.copy(phase = Phase.Complete, cursor = 0L))
+        // then, if ticked, the files waiting for a juror (round-editing plan §7)
+        if (ids.isEmpty)
+          continue(st1.copy(phase = if (topUpWaiting(job) && c.round.distribution > 0) Phase.TopUp else Phase.Complete, cursor = 0L))
         else {
           val found = ImageJdbc.findByPageIds(ids)
           val images = withLockedMonumentIds(ids.flatMap(found.get))
@@ -660,13 +697,15 @@ class RoundDistributionHandler @Inject() (
             rowsAdded = st1.rowsAdded + rows.size))
         }
 
+      case Phase.TopUp => topUp(job, ctx, st, c)
+
       case Phase.Complete =>
         // per job (§6 "Count checks"): every file this round still has to give is given now, read
         // under the round's lock (every writer of its files holds it)
         RoundWrites.lock(Seq(roundId))
         val left = RoundImageJdbc.undistributedCount(roundId)
         // a file restored on Commons below the cursor meanwhile: once more over the round
-        if (left > 0 && !st.rescanned) continue(st.copy(phase = Phase.Assign, cursor = 0L, rescanned = true))
+        if (left > 0 && !st.rescanned) continue(st.copy(phase = Phase.Assign, cursor = 0L, passes = st.passes.copy(rescanned = true)))
         else if (left > 0)
           StepResult.Failed(
             JobError(JobError.CountMismatchKey, Seq(roundId, left, 0L).map(_.toString)),
@@ -676,6 +715,48 @@ class RoundDistributionHandler @Inject() (
         else complete(job, ctx, st, c)
 
       case other => throw new IllegalStateException(s"Job ${job.id}: unknown phase $other")
+    }
+  }
+
+  /** One step of "Also give out the waiting files" (round-editing plan §7, opt-in): a keyset window of
+    * the round's files waiting for a juror (`in`, not deleted on Commons, fewer vote rows than its
+    * jurors per file), each given its missing jurors from the round's active jurors with no row of it in
+    * `vote` or `vote_aside`, the least loaded (unrated files) first. The files' rows keep their origin
+    * ([[RoundImageJdbc.addVoted]]); the rows given are counted apart (`toppedUp`, `topUpRows`). At the
+    * end the count check: no waiting file is left that an active juror could take (one more pass for a
+    * file restored meanwhile), then "complete".
+    */
+  private def topUp(job: Job, ctx: StepContext, st: DistributionState, c: Context)(implicit session: DBSession): StepResult = {
+    val roundId = roundIdOf(job)
+    val perFile = c.round.distribution
+    val jurorIds = c.jurors.map(_.getId)
+    RoundWrites.lock(Seq(roundId))
+    val window = RoundReassign.waitingWindow(roundId, perFile, st.cursor, c.windowSize)
+    if (window.isEmpty) {
+      val left = RoundReassign.waitingTakeable(roundId, perFile, jurorIds)
+      if (left > 0 && !st.passes.topUpRescanned) continue(st.copy(cursor = 0L, passes = st.passes.copy(topUpRescanned = true)))
+      else if (left > 0)
+        StepResult.Failed(JobError(JobError.CountMismatchKey, Seq(roundId, left, 0L).map(_.toString)),
+          Json.toJsObject(st.copy(verifyFailed = true)), progress(st))
+      else continue(st.copy(phase = Phase.Complete, cursor = 0L))
+    } else {
+      val pages = window.map(_._1)
+      val found = ImageJdbc.findByPageIds(pages)
+      val images = withLockedMonumentIds(pages.flatMap(found.get)).map(i => i.pageId -> i).toMap
+      val holders = RoundReassign.holders(roundId, pages, jurorIds)
+      val load = scala.collection.mutable.Map.from(RoundRebalanceHandler.unratedCounts(roundId, jurorIds))
+      val rows = window.flatMap { case (page, count) =>
+        images.get(page).toSeq.flatMap { image =>
+          val eligible = c.jurors.filterNot(j => holders.getOrElse(page, Set.empty[Long]).contains(j.getId))
+            .sortBy(j => (load.getOrElse(j.getId, 0L), j.getId)).take(perFile - count)
+          eligible.foreach(j => load.update(j.getId, load.getOrElse(j.getId, 0L) + 1))
+          eligible.map(j => Vote(image, j, c.round))
+        }
+      }
+      DistributeImages.insertRows(rows, RoundImageJdbc.Origin.Manual)
+      if (rows.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(roundId))
+      continue(st.copy(cursor = pages.max, passes = st.passes.copy(toppedUp = st.passes.toppedUp + rows.map(_.pageId).distinct.size,
+        topUpRows = st.passes.topUpRows + rows.size)))
     }
   }
 
@@ -732,6 +813,7 @@ class RoundDistributionHandler @Inject() (
     ctx.afterCommit(RoundImageCounts.refresh(roundId)(visible.toInt))
     logger.info(
       s"Round $roundId: distributed ${st.imagesAdded} images (${st.rowsAdded} vote rows) " +
+        (if (topUpWaiting(job)) s"and topped up ${st.passes.toppedUp} waiting files (${st.passes.topUpRows} vote rows) " else "") +
         s"to ${c.jurors.size} jurors" +
         (if (c.prevRounds.nonEmpty && !listOnly(job))
            s" from previous rounds [${c.prevRounds.flatMap(_.id).mkString(", ")}]"
@@ -935,7 +1017,12 @@ object RoundDistributionHandler {
     val Complete = "complete"
     /** A re-apply (P3-5): the round's own `fill` files checked against the filters, before the fill. */
     val Scan = "scan"
+    /** A distribute's "Also give out the waiting files" (round-editing plan §7): after "assign". */
+    val TopUp = "topup"
   }
+
+  /** "Also give out the files waiting for a juror" was ticked with "Distribute new files" (§7). */
+  def topUpWaiting(job: Job): Boolean = (job.params \ "topUpWaiting").asOpt[Boolean].getOrElse(false)
 
   /** The job's pasted list of files to add to the round (`params.titles`), if it has one. */
   def titlesOf(job: Job): Seq[String] = (job.params \ "titles").asOpt[Seq[String]].getOrElse(Nil)

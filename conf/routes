@@ -167,6 +167,8 @@ POST        /admin/rounds/:id/distribute                                        
 # adding a juror to a running round (round_rebalance jobs): the page and its POST, by the round's contest's admins and root
 GET         /admin/rounds/:id/add-juror                                             @controllers.RoundJurorsController.addPage(id: Long, juror: Option[Long] ?= None)
 POST        /admin/rounds/:id/add-juror                                             @controllers.RoundJurorsController.add(id: Long)
+GET         /admin/rounds/:id/reassign-juror                                        @controllers.RoundJurorsController.reassignPage(id: Long, juror: Long)
+POST        /admin/rounds/:id/reassign-juror                                        @controllers.RoundJurorsController.reassign(id: Long)
 # root's Release of a round left frozen with no job holding it
 POST        /admin/rounds/:id/release-freeze                                        @controllers.RoundJurorsController.releaseFreeze(id: Long)
 GET         /admin/rounds/newfiles                                                  @controllers.RoundController.newFilesCount(id: Long)

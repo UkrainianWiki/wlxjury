@@ -18,7 +18,8 @@
         scoreRuleWarning: Option[controllers.RoundController.ScoreRuleWarning] = None,
         imageCheckJob: Option[services.jobs.Job] = None,
         reapply: Boolean = false,
-        unratedRound: Boolean = false
+        unratedRound: Boolean = false,
+        waiting: Option[Long] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 @* `reapply`: a round held in review with no vote and no job (P3-5): its filters editable, the main
    button "Re-apply filters" (the hidden `reapply` field), "Distribute new files" left out (a re-apply
@@ -214,6 +215,13 @@
                             @bs.checkbox(field = editRoundForm("newImages"),
                                 Symbol("_label") -> Messages("distribute.x.new.files", "?"),
                                 Symbol("readonly") -> (numJurors == 0))
+                            @* the files waiting for a juror (round-editing plan §7): topped up only if ticked,
+                               off by default, with "Distribute new files" *@
+                            @for(n <- waiting) {
+                                @bs.checkbox(field = editRoundForm("topUpWaiting"),
+                                    Symbol("_label") -> Messages("round.waiting.topup", n),
+                                    Symbol("_help") -> Messages("round.waiting.topup.help"))
+                            }
                             @for(rid <- editRoundForm("id").value.flatMap(v => scala.util.Try(v.toLong).toOption)) {
                                 <div class="row mb-3"><div class="offset-md-4 col-md-8">
                                     <button type="button" class="btn btn-outline-secondary btn-sm" id="count-new-files"

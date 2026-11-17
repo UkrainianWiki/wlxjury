@@ -33,7 +33,10 @@ case class EditRound(
     // the rejected-by choices as posted (V93), for the form's checks: the mode select's value
     // (None: a client without it) and X (None: empty)
     rejectedModeChoice: Option[String] = None,
-    rejectedByChoice: Option[Int] = None
+    rejectedByChoice: Option[Int] = None,
+    // "Also give out the N files waiting for a juror" with "Distribute new files" (round-editing
+    // plan §7), off by default
+    topUpWaiting: Boolean = false
 )
 
 object EditRound {
@@ -165,9 +168,10 @@ object EditRound {
       "rejectedMode" -> optional(text).verifying("error.invalid",
         _.forall(m => m == EditRound.NoRejectedFilter || RejectedMode.parse(m).isDefined)),
       // "Leave out files that are in round(s)" (V95): round ids, checked by validExcludedRounds
-      "excludeRounds" -> seq(text)
+      "excludeRounds" -> seq(text),
+      "topUpWaiting" -> boolean
     )((edit, excludeCoi, selected, topOrder, rejectedBy, criteria, criteriaShown, halfStar, averageRule, worstMark,
-        worstMarkShown, rejectedMode, excludeRounds) => {
+        worstMarkShown, rejectedMode, excludeRounds, topUpWaiting) => {
       val configured = selected match {
         case None => edit.round // Older clients omitted the clause; retain their inference.
         case Some(value) =>
@@ -186,13 +190,13 @@ object EditRound {
         criterionIds = criterionIdsOf(criteria), halfStar = halfStar,
         averageRule = averageRule.flatMap(AverageRule.parse).getOrElse(AverageRule.Default),
         worstMark = worstMark && worstMarkShown, excludeRounds = excludeRoundIdsOf(excludeRounds)),
-        averageRuleShown = averageRule.isDefined, worstMarkShown = worstMarkShown)
+        averageRuleShown = averageRule.isDefined, worstMarkShown = worstMarkShown, topUpWaiting = topUpWaiting)
     })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue),
       edit.round.topImages.filter(_ > 0).map(_ => edit.round.topOrderParam), edit.round.rejectedByFilter.map(_.toString),
       edit.round.criterionIds.map(_.toString), edit.criteriaShown, edit.round.halfStar,
       Some(edit.round.averageRule.param), edit.round.worstMark, edit.worstMarkShown,
       Some(edit.round.rejectedByFilter.fold(NoRejectedFilter)(_ => edit.round.prevRejectedMode.param)),
-      edit.round.excludeRounds.map(_.toString))))
+      edit.round.excludeRounds.map(_.toString), edit.topUpWaiting)))
       .verifying(validCategories)
       .verifying(validCriteria)
       .verifying(validRejectedBy)

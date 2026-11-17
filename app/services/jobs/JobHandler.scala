@@ -94,6 +94,11 @@ trait JobHandler {
     */
   def onCancelled(job: Job, ctx: StepContext): JsObject = job.state
 
+  /** What the admin who cancelled the job should know about what it left (the cancel's flash), read
+    * from the job as cancelled: e.g. a reassign stopped part-way. None: nothing to say.
+    */
+  def cancelledNote(job: Job): Option[JobError] = None
+
   /** Whether `user`, who administers the job's contest (or is root for a job without one), may
     * also see, cancel and retry this job: [[controllers.JobController]] asks it after its own rule.
     * An account join asks for its performer's rule over both accounts.

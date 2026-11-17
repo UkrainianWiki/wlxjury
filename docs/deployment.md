@@ -621,6 +621,21 @@ rounds list, let each "Adding juror …" job finish or cancel it (its job column
 no round is flagged as held with no job (root's **Release** ends one). A failed one needs nothing:
 its failure already released the round. Then roll back as below.
 
+The same holds for "Reassigning juror …'s unrated files" jobs (`round_rebalance` with a `from`
+juror, step 3 of the round-editing plan) before rolling back past "Reassign files…": a release that
+has "Add juror…" but not the reassign takes such a job for an add without a juror, so its step
+fails (the failure releases the round) and its Retry fails again. Let each finish, or cancel it, on
+the new release first.
+
+The same release added two phases an older one doesn't know; its step fails on them with "unknown
+phase" (the failure releases what the job froze) and so does its Retry:
+- a distribution job of the round form's **Also give out the N files waiting for a juror**, in its
+  `topup` phase (the jobs page's "Distributing images of round … and its files waiting for a
+  juror"). Let it finish on the new release before rolling back. One found failed in that phase
+  after a rollback can't be retried there: cancel it (Cancel reads no phase);
+- an "Adding juror …" job in a round with files waiting for a juror, in its `waiting` phase: let it
+  finish too, or cancel it, on the new release.
+
 ### Recovery runbook
 
 Maintenance is never cleared automatically. A command that stops ends with `sudo wlxjury-release status`; start there: it names the current operation and its state, lists stale open operations, and ends with the next command of the section below that fits it (`status --verbose` adds the milestones, the named forms and how to back out). For detail, read `OPERATION/milestones`, `record` and `operation.log` (`OPERATION` is `/var/backups/wlxjury/NAME`), then use the section for the last milestone. `previous` and `candidate` in `record` name the releases. For the current operation, the commands below work without `OPERATION`; `restore` only while maintenance is on, and `--accept-data-loss` always needs it. A stale operation always needs its name, and `restore` refuses it once `current` is neither of its releases.

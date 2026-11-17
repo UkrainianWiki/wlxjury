@@ -160,7 +160,9 @@ class RoundController @Inject() (
       reapply = reapply,
       // an existing yes/no or comments-only round, by its stored rating (the form's is not
       // editable): no criteria, no worst mark
-      unratedRound = stored.exists(!_.isRated)
+      unratedRound = stored.exists(!_.isRated),
+      // its files waiting for a juror (round-editing plan §7): "Also give out the N waiting files"
+      waiting = stored.flatMap(r => services.distribution.RoundReassign.waitingCount(r)).filter(_ > 0)
     )
   }
 
@@ -435,16 +437,24 @@ class RoundController @Inject() (
               // one message per kind: an error of the distribution wins over the removal's
               def flashing(errors: (String, String)*) =
                 toRoundsList.flashing((coi ++ errors).toMap.toSeq: _*)
-              if (!editForm.newImages && titles.isEmpty) flashing()
+              // "Also give out the waiting files" (round-editing plan §7) on its own: the top-up only, no new
+              // files; only a distributed round of N > 0 jurors per file has such files (the form shows the tick)
+              val topUp = editForm.topUpWaiting && stored.distribution > 0 && !stored.distributing
+              if (!editForm.newImages && !topUp && titles.isEmpty) flashing()
               else
                 try {
-                  roundsService.distributeNewFiles(roundId, user.id, titles, newFiles = editForm.newImages) match {
+                  roundsService.distributeNewFiles(roundId, user.id, titles, newFiles = editForm.newImages,
+                    topUpWaiting = topUp) match {
                     case RoundService.AlreadyRunning(_) =>
                       flashing("error" -> messagesApi.preferred(request)(
                         if (titles.nonEmpty) "round.distribute.running.files" else "round.distribute.running",
                         stored.number))
-                    case RoundService.Resumed(_) if titles.nonEmpty =>
-                      flashing("error" -> messagesApi.preferred(request)("round.distribute.resumed.files", stored.number))
+                    // a failed distribution resumed instead: the list and the tick weren't applied, said
+                    case RoundService.Resumed(_) if titles.nonEmpty || topUp =>
+                      val m = messagesApi.preferred(request)
+                      flashing("error" -> Seq(
+                        Option.when(titles.nonEmpty)(m("round.distribute.resumed.files", stored.number)),
+                        Option.when(topUp)(m("round.waiting.topup.resumed", stored.number))).flatten.mkString(" "))
                     case givenUp: RoundService.GivenUp =>
                       flashing("error" -> messagesApi.preferred(request)("round.distribute.attempts", stored.number,
                         givenUp.reference))

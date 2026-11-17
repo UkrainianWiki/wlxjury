@@ -49,6 +49,22 @@ No next release is set yet (`build.sbt` says `26.12-SNAPSHOT`). Everything devel
   danger red (`theme.css`) are kept; a signed-out page with nothing in its navbar has none; a
   dark-mode page prints dark text on white. Browser checks for the selected and hover colours,
   links and the controls' heights.
+- **Reassign a juror's unrated files** (step 3 of the round-editing plan, developed 2026-11-17,
+  `stack/185-reassign-unrated`): **Reassign files…** beside each juror's Start/Stop in a running
+  round's statistics (admins and root) opens a page with the juror's files and the receivers (D1:
+  the active jurors ticked, stopped ones unticked and marked; a ticked stopped juror is started
+  again). A `round_rebalance` job (`params.from`) pauses the round, moves only unrated rows to the
+  receivers by water-filling of open work (each file to the eligible receiver with the most quota
+  left, never one who has it in `vote` or `vote_aside`), gives the juror's unrated rows set aside
+  to receivers too, rescans in its count check, and stops the juror; votes stay. Files no receiver
+  can take wait for a juror: counted under the statistics table, and given out by the round
+  form's opt-in **Also give out the N files waiting for a juror** (a top-up pass of the distribute
+  job, least loaded first; ticked alone it gives out only those files), and by **Add juror…**, which
+  gives the new juror the waiting files first within their share ("12 waiting + 69 from others").
+  The add and reassign pages' confirm is greyed out until the figures are shown for the ticks.
+  No migration. Admin and organizer guides. Rolling back past it: let each reassign job, and each
+  distribution or add in its new `topup` or `waiting` phase, finish or cancel it first
+  (`docs/deployment.md`).
 
 **Development**
 

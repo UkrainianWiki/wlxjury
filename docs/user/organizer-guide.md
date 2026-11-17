@@ -87,9 +87,10 @@ selected, unrated or rejected files.
 The **Voting** column shows **Active**, or **Paused** when the admins have paused the juror's
 voting in this round: the round is then hidden from that juror, and their votes are kept. Admins
 see pause and resume buttons in this column instead, see [Pausing a
-juror](admin-guide.md#a-pause-juror), and can [add a juror](admin-guide.md#a-add-juror) to a
-running round. While a juror is being added the round pauses for its jurors for a few seconds;
-you still see its files.
+juror](admin-guide.md#a-pause-juror), can [add a juror](admin-guide.md#a-add-juror) to a
+running round, and can [reassign a juror's unrated files](admin-guide.md#a-reassign-juror) to the
+other jurors. While a juror is being added or their files reassigned the round pauses for its
+jurors for a few seconds; you still see its files.
 
 The last row, **Total**, sums up all the jurors, with links to the results of all jurors, see
 the next part. In a yes/no round a file with votes of two kinds is counted in each, so the
@@ -97,6 +98,11 @@ columns of the totals can add up to more than the files.
 
 Under the table:
 
+- in a round where each file goes to a set number of jurors, **N files are waiting for a juror**
+  when some files have fewer jurors than that (after an admin reassigned a juror's files and no
+  other ticked juror could take some of them), shown while the round is running; an admin gives
+  them out with the round form's **Also give out the N files waiting for a juror**, and adding a
+  juror gives them to the new juror first;
 - for a rated round, the round's **File score** rule, see [The score](#o-score);
 - **Comments on the round's files N**, the [comments report](#o-comments-report): N is the
   number of comments written in this round on its files. When the round's files also have

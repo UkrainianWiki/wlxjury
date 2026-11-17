@@ -189,6 +189,7 @@ class RoundService @Inject() (
       fromReview: Boolean = false,
       requireInReview: Boolean = false,
       reapply: Boolean = false,
+      topUpWaiting: Boolean = false,
       underLocks: DBSession => Unit = _ => ()
   )(implicit session: DBSession): Job = {
     val distribute = mode == RoundDistributionHandler.Mode.Distribute
@@ -253,7 +254,9 @@ class RoundService @Inject() (
           "mode" -> mode
         ) ++ (if (distribute) Json.obj() else Json.obj("distributeAfter" -> distributeAfter)) ++
           (if (fromReview) Json.obj("fromReview" -> true) else Json.obj()) ++
-          (if (reapply) Json.obj("reapply" -> true) else Json.obj()) ++ Json.obj(
+          (if (reapply) Json.obj("reapply" -> true) else Json.obj()) ++
+          // "Also give out the waiting files" (round-editing plan §7): kept by the distribute it queues
+          (if (topUpWaiting) Json.obj("topUpWaiting" -> true) else Json.obj()) ++ Json.obj(
           // for the record: the job reads the round, whose settings don't change once created;
           // but prevAverageRule(s) and prevRejectedMode, which the job reads from here
           // (RoundDistributionHandler.context)
@@ -311,12 +314,17 @@ class RoundService @Inject() (
     * @param titles   a pasted list of files to add to the round, whatever its filters
     * @param newFiles also the images that qualify for the round; without, only the list
     *                 (but for a round still being created, which its filters must fill)
+    * @param topUpWaiting also give out the files waiting for a juror (round-editing plan §7): the
+    *                 distribute's `topup` pass after its `assign`. Alone (no new files, no list), only a
+    *                 distribute is queued, on a distributed round (`distribution` > 0): no fill. Ignored
+    *                 when a failed distribution is resumed instead ([[Resumed]]: the caller says so)
     */
   def distributeNewFiles(
       roundId: Long,
       createdBy: Option[Long] = None,
       titles: Seq[String] = Nil,
-      newFiles: Boolean = true
+      newFiles: Boolean = true,
+      topUpWaiting: Boolean = false
   ): DistributionStart = {
     val round = dao.findById(roundId).getOrElse(throw new NoSuchElementException(s"Round $roundId not found"))
     val latest = distributionJob(roundId)
@@ -354,12 +362,23 @@ class RoundService @Inject() (
           else true
         // the jurors only where the files go to them now: a fill held in review needs none yet
         if (distributeAfter) DistributeImages.checkJury(round, User.distributionJurors(roundId))
+        // the top-up alone: a distribute (its `assign`, then `topup`), no fill reading new files
+        val topUpOnly = topUpWaiting && !newFiles && titles.isEmpty
+        if (topUpOnly)
+          require(!round.distributing && round.distribution > 0,
+            s"Round $roundId: no files to top up (not a distributed round of N > 0 jurors per file)")
         try {
           val reinstating = round.distributing && round.lifecycle == Round.Status.Cancelled
           val job = WriteTx.write { implicit session =>
-            enqueueOrFail(round, completingCreation = round.distributing, createdBy, titles,
-              listOnly = titles.nonEmpty && !newFiles && !round.distributing,
-              distributeAfter = distributeAfter, fromReview = round.inReview)
+            if (topUpOnly)
+              enqueueOrFail(round, completingCreation = false, createdBy, mode = RoundDistributionHandler.Mode.Distribute,
+                topUpWaiting = true)
+            else
+              enqueueOrFail(round, completingCreation = round.distributing, createdBy, titles,
+                listOnly = titles.nonEmpty && !newFiles && !round.distributing,
+                distributeAfter = distributeAfter, fromReview = round.inReview,
+                // the waiting files are topped up by the distribute after the fill: only a distributed round's
+                topUpWaiting = topUpWaiting && distributeAfter && !round.distributing && round.distribution > 0)
           }
           if (reinstating)
             logger.info(s"Round $roundId: reinstated from cancelled by user ${createdBy.orNull} (job ${job.id}, " +

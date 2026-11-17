@@ -70,6 +70,8 @@ const TOUR = [
   ['round jurors form', 'admin', (f) => `/admin/rounds/${f.roundBinaryId}/jurors`],
   // adding a juror to a running round: the contest's jurors outside it (none may be left), its jurors
   ['add juror page', 'admin', (f) => `/admin/rounds/${f.roundBinaryId}/add-juror`],
+  // reassigning a juror's unrated files: the fixture's juror, the round's other jurors as receivers
+  ['reassign juror page', 'admin', (f) => `/admin/rounds/${f.roundBinaryId}/reassign-juror?juror=${f.accounts.juror.id}`],
   ['users', 'admin', (f) => `/admin/users?contestId=${f.contestId}`],
   // the duplicates report (the account join plan's J-1): the contest's, and root's of every account
   ['duplicates report', 'admin', (f) => `/admin/duplicates?contestId=${f.contestId}`],

@@ -974,8 +974,8 @@ juror's view while they are paused; their votes are kept, and the juror's files 
 them. Organizers don't have the buttons: their column, **Voting**, shows each juror as
 **Active** or **Paused**.
 
-While a background job holds the round (its distribution, or a juror being added), these
-buttons are refused with a message: try again when the job has finished.
+While a background job holds the round (its distribution, a juror being added, or a juror's
+files being reassigned), these buttons are refused with a message: try again when the job has finished.
 
 <a id="a-add-juror"></a>
 ### Adding a juror to a running round
@@ -996,7 +996,18 @@ is done. The person must first be a juror of the contest (**Users**).
   page shows how many from each ("Y gets about 1,520: from A 410, B 390 …"). The round's active
   jurors are ticked; stopped ones are listed unticked and marked: a ticked stopped juror gives
   their unrated files and stays stopped. Each juror gives the files assigned to them last first.
-  Choose the jurors and **Show what this does** again to see the new figures.
+  Choose the jurors and **Show what this does** again to see the new figures: until then the
+  confirm button is greyed out, with a note to show the figures first.
+- In such a round, files **waiting for a juror** (with fewer jurors than the round gives each file,
+  for example after a juror's files were reassigned) go to the new juror first, automatically:
+  each counts toward the new juror's fair share, and the rest of the share comes from the ticked
+  jurors as above. The page shows the split ("Y gets about 81 files: 12 waiting + 69 from
+  others"). If more files are waiting than the share, the share is filled from them only and the
+  others keep waiting (the page says how many); a file the new juror already has, or has set
+  aside, isn't given to them. If no ticked juror has more unrated files than the new juror (their
+  share of the others' files is nothing), the new juror still gets every waiting file they may
+  take, and nothing from the others ("Y gets the 12 files waiting for a juror that they may
+  take").
 - Votes already given never move: only unrated files do (in a round with criteria, a file with
   any criterion rated counts as rated).
 - A stopped juror's row in the table has **Start and give a fair share…**: the same page for
@@ -1010,6 +1021,52 @@ is done. The person must first be a juror of the contest (**Users**).
 - Choosing a juror who is already in the round tops them up: they get only what they are short
   of. That is also how to finish an add that was cancelled.
 - Rounds from before the rounds' jurors were stored (old rounds) can't take a juror.
+
+<a id="a-reassign-juror"></a>
+### Reassigning a juror's unrated files
+
+When a juror can't go on, their unrated files can go to the round's other jurors. In the
+**Start/Stop** column of the [statistics page](organizer-guide.md#o-statistics), the button with
+two arrows next to a juror's name (**Reassign files…**) opens a page with the juror's files: how
+many they have, how many are rated (a ✗ and, in a round with criteria, a file with any criterion
+rated count as rated), how many unrated, and how many set aside (files deleted on Commons or
+disqualified). The button is there only while the round is running.
+
+- Only unrated files move. The juror's votes stay as they are, in every view and in the results.
+  Afterwards the juror is stopped in the round.
+- In a round where each file goes to a set number of jurors, the page lists the round's other
+  jurors: the active ones ticked, the stopped ones unticked and marked **stopped**. Ticking a
+  stopped juror starts them again, and they can then change their earlier votes in the round, as
+  after a plain Start. **Show what this does** shows, for the jurors ticked, how many files each
+  gets ("340 unrated files → 4 jurors: A +85, B +85, C +85, D +85"): they end with about as many
+  unrated files each. A file goes only to a juror who doesn't have it yet. Until you show the
+  figures for the jurors ticked, the confirm button is greyed out, with a note to show them first.
+  A juror whose jury membership of the contest isn't active is listed unticked and marked **no
+  active membership**: they can't receive files.
+- Files that every ticked juror already has can't move: the page says how many. They stay in the
+  round **waiting for a juror**, counted under the statistics table while the round is running.
+  Adding a juror (see above) gives them to the new juror first. Or tick **Also give out the N
+  files waiting for a juror** on the round form (it is off by default) to give each its missing
+  jurors from the round's active jurors who don't have it, the least loaded first. Ticked alone,
+  it gives out only those files; with **Distribute new files** or a pasted **Add files** list it
+  does that too. If the round's last distribution had failed, saving resumes it instead and says
+  so: tick the box again once it has finished.
+- The juror's unrated files set aside go to ticked jurors too, so that a file restored on Commons
+  or requalified comes back to an active juror, not to the stopped one.
+- In a round where every file goes to every juror, nothing is given: the other jurors have the
+  files already. The juror's unrated files are only taken from them.
+- Fewer ticked jurors than the files' number of jurors is refused: add a juror first. So are a
+  juror without an active jury membership of the contest, a round that isn't running (start it
+  first), and rounds from before the rounds' jurors were stored.
+- **Reassign** queues the work; the rounds list's job column shows it. The round pauses for a few
+  seconds meanwhile, as when a juror is added. If the job fails, the round is open again and
+  **Retry** resumes it. **Cancel** also opens the round; if no file had moved yet, the juror and
+  any stopped juror it started are as they were before. If some files had moved already, the
+  juror stays stopped with the unrated files not yet moved, and the jurors it started stay started
+  (the message after Cancel says so): **run Reassign files… again to move the rest**.
+- In a round where every file goes to every juror, the message afterwards says how many unrated
+  files were taken from the juror.
+- To bring the juror back, use **Start and give a fair share…** (see above).
 
 <a id="a-what-jurors-see"></a>
 ### What jurors see

@@ -3,7 +3,7 @@
 **Status:** decided. Written 2026-11-16 from the maintainer's request of the same day. Revised after
 an independent review and the maintainer's direction (v3: **build what is already decided, plan
 only what is new**), and after a follow-up review (v4). All decisions were taken by the maintainer
-the same day (v5, §13, marked **[user]**). Nothing is built.
+the same day (v5, §13, marked **[user]**). What is built is in each section's build notes (step 3: §7).
 
 Marks: **[user]** decided by the maintainer; a default is this plan's, open to the maintainer.
 
@@ -638,6 +638,118 @@ rounds only.
     WHERE ri.status = 'in' AND r.distribution > 0 AND ri.assigned < r.distribution GROUP BY
     ri.round_id;` (after a clean recount), with the repair job's past `removed` figures from
     `job.state`.
+
+### Build notes (step 3, 2026-11-17)
+
+Built on `stack/185-reassign-unrated` (no migration). Where the text above left a detail, the build
+chose as follows:
+- **The page** (`RoundJurorsController.reassignPage` / `reassign`, `/admin/rounds/:id/reassign-juror`,
+  `round/reassignJuror.scala.html`): the stat table's two-arrow button per juror, shown to admins while
+  the round is running (`RoundRebalanceHandler.isRunning`). A juror id not in the round is the 404
+  page (GET and POST). The receivers are ticked by default from the round's active jurors **with an
+  active jury membership** (an active round juror whose membership is inactive is listed unticked:
+  ticking them is refused). The figures come from the job's own choice run over the juror's rows
+  (`RoundReassign.allocate`), so "A +85, B +85" is what the job does when nothing changes meanwhile.
+  In a round where every file goes to every juror the page lists no receivers.
+- **The job** (`params.from`, `receivers`, `by`; `ReassignState`): "stop" freezes the round, locks the
+  juror's and the receivers' `round_user` rows in id order, stops the juror and starts the ticked
+  receivers (every "stop", a Retry's too; the states before recorded once), and fixes the quotas:
+  water-filling from below over the receivers' unrated files (`RoundReassign.fillQuotas`), summing
+  exactly to the juror's unrated rows. "move" takes the juror's unrated rows by ascending vote id,
+  2,000 a step, with the add's lock order and per-step check (a file given keeps its number of vote
+  rows, a file left waiting has one less). **A quota is soft:** a file goes to the eligible receiver
+  with the most quota left even when that is zero or less, the lowest id on a tie; it waits only
+  when every receiver has it. "aside" gives each unrated row set aside to an eligible receiver in
+  place (`UPDATE vote_aside SET jury_id`, its id kept), else deletes it; the row's (rate 0) criteria
+  rates are deleted. "verify" rescans: rows of the juror left send it back to "move" once
+  (`repassed`), then fail; each receiver holds its rows before plus those given; the juror's rated
+  rows are unchanged. Round where every file goes to every juror: the juror's unrated rows (and those
+  aside) are deleted (`removed`), nothing given.
+- **Cancel** (default, mirrors PR 1a's): if no row moved yet, the juror is active again if they were
+  and the receivers the job started are stopped again; once a row moved, both stay as the job left
+  them. Retry rebaselines the receivers' and the juror's counts; after a failed count check the
+  accounting and quotas start again.
+- **Refusals:** §5's frozen / not running / legacy (own messages for the reassign), the juror not in
+  the round, a receiver not a round juror with an active jury membership, fewer receivers than N, and
+  an account join holding the juror or a receiver (J-2), the receivers' users rows share-locked (A-4).
+- **Waiting files** (`RoundReassign.waitingCount`): `in`, not deleted on Commons, fewer vote rows
+  than N; not counted for a round being created or held in review. Shown under the stat table (also to
+  organizers) and as the round form's tick **Also give out the N files waiting for a juror** (off;
+  ticked alone it is "Distribute new files" with the tick). The top-up is the distribute job's
+  `topup` phase after `assign` (`params.topUpWaiting`, kept from the fill to its distribute): a
+  keyset pass, each file's missing jurors from the round's active jurors with no row of it, the
+  least loaded (unrated files) first, rows with `Origin.Manual` (existing files keep their origin);
+  its count check: no waiting file left that an active juror could take, one more pass, then failure.
+  Its counts are `DistributionState.passes` (`toppedUp`, `topUpRows`): the state is at a case
+  class's 22 fields, so `rescanned` moved into `Passes` too, read from the old top-level key.
+  A waiting file with **no** vote row is also a file "Distribute new files" gives out without the tick
+  (P3-3's distribute gives every `in` file without votes).
+- **An add gives the waiting files first** (the maintainer's decision of 2026-11-17, built after the
+  review): in a round of N > 0 the add's "stop" fixes the new juror's share as before (the
+  water-filling, `RoundRebalanceHandler.quotas`) and counts the waiting files they could take
+  (`RoundReassign.waitingForCond`: `in`, not deleted, fewer than N vote rows, none of theirs in `vote`
+  or `vote_aside`). They count toward the share: the juror takes `min(waiting, share)` of them first
+  (phase `waiting`, by page id, ≤ `chunkRows` a step, its check: each file one vote row more, at most
+  N, else the step rolls back), the rest of the share comes from the donors levelled from the top
+  (`RoundRebalanceHandler.fromTop`; without waiting files the quotas are unchanged). More waiting
+  files than the share: the share is filled from them only, the others keep waiting. The add page
+  shows the split ("Y gets about 81 files: 12 waiting + 69 from others"), the donors' part and the
+  files left waiting (`addSplit`, the job's own function). Distribution 0 has no waiting files: the
+  add is unchanged. **A share of 0** (no ticked donor has more unrated files than the new juror):
+  the new juror still gets every waiting file they may take, nothing from the donors (the
+  maintainer's decision of 2026-11-17 on the question the build left open); the page says "Y gets
+  the N files waiting for a juror that they may take". Specs: `RoundRebalanceJobSpec` (fewer than,
+  equal to and more than the share; N = 2 with a conflict of interest disqualified and a file the
+  new juror has aside; a waiting step rolled back and retried; the invariant check; distribution 0),
+  `RoundEditingFormatsSpec` (the split).
+- **Defaults chosen by the maintainer (2026-11-17, recorded):** Cancel copies 1a's rule (above);
+  the stat table's reassign button stays icon-only with a tooltip and a screen-reader label, as
+  **Start and give a fair share…**.
+- **Review fixes (2026-11-17):**
+  - The round form's top-up is independent of "Distribute new files": ticked alone it queues only a
+    distribute (its `assign` gives files with no vote row, then `topup`), no fill; with a pasted
+    list the fill stays list-only; with both ticks, both. When a failed distribution is resumed
+    instead, the flash says the tick wasn't applied (`round.waiting.topup.resumed`).
+  - The add and reassign pages' confirm posts the choice the figures were shown for:
+    `preview-confirm.js` disables it, with a hint, while the choose form's ticks or select differ
+    from the rendered ones (the server checks the posted choice again).
+  - "verify" (add and reassign) also checks no new violation of invariants 1–3 since the first
+    "stop" (`VerifyChecks.violationsBefore`; kept on Retry, so a broken round fails until repaired)
+    and that the files a reassign left waiting (`waitingPages`, the first 5,000) are still `in`
+    (`job.error.rebalance.invariants`).
+  - A reassign moves only rows whose file is `in` and not deleted on Commons
+    (`RoundReassign.movableVote`); a row of a file deleted meanwhile, its votes not yet aside, stays.
+  - Cancel once a row moved: the flash says to run **Reassign files…** again for the rest
+    (`JobHandler.cancelledNote`). Distribution 0's done flash says what was removed.
+  - The waiting count shows under the stat table only while the round is running. Plurals: job
+    errors pass the arguments their pattern formats as numbers (`JobError.numericArgs`).
+- **Follow-up review (2026-11-17):**
+  - A file a reassign left waiting may be deleted on Commons (or disqualified) before "verify": the
+    paused round is still open, so its row becomes `deleted`. "verify" counts a waiting file as lost
+    only if its row is gone or has another status than `in`, `deleted` or `dq`.
+  - The invariant baseline is bounded: per invariant the count and the first 50 pages
+    (`ViolationBaseline`); a new page is a new violation while the list is complete, past it only a
+    count above the baseline. Only invariants 1–3's queries run (`RoundImageInvariants.violations(r,
+    only)`), not the counts' drift.
+  - Cancel's note counts the files given, left waiting and given aside; distribution 0 has its own
+    note (`round.juror.reassign.cancelled.removed`).
+  - The stale hint is a status, always in the page and empty; `preview-confirm.js` fills its text and
+    sets `aria-describedby` only while it applies.
+  - Past a truncated baseline "verify" names no file: `job.error.rebalance.invariants.count` (how many
+    more). A state from an earlier build whose `checks` don't read keeps the rest (no baseline); a job
+    state that doesn't read is logged at WARN. Cancel's note follows the round's distribution and
+    counts rows aside removed too.
+- Messages: `job.error.rebalance.busy`, `round.juror.busy` and `error.previous.round.rebalancing` now
+  name "jurors' files being moved". Rolling back past this: `docs/deployment.md`.
+- Specs: `RoundReassignJobSpec` (quotas, binary/rated ✗/criteria, N = 0–3, D1 restart, waiting and the
+  top-up with and without the tick, alone, with a list and with new files, aside rows with restore
+  and requalify, a restore caught by verify, a waiting file no longer `in` caught by verify, a deleted
+  file's row left, refusals, a freeze between steps, Cancel and its note, Retry = uninterrupted run,
+  votes from every juror during the move), `RoundReassignAuthorizationSpec` (§9; the GET writes
+  nothing; signed out: 401, or the CSRF 403 with the filter on; the flashes), `RoundEditingFormatsSpec`
+  (the state's JSON across the `Passes` split, plurals), a browser story (the ticks and the confirm
+  guard, on review.spec's round of one juror per file) and page-tour entry.
+  `WritePathStress` was not extended (as in step 1: the concurrency is spec'd).
 
 ## 8. Later: discarding a juror's votes
 
