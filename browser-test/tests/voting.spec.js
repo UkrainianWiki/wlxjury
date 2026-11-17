@@ -366,7 +366,7 @@ test.describe('a juror votes', () => {
         const pressed = (await button.getAttribute('aria-pressed')) === 'true';
         const rest = await style(button);
         expect(rest.width, `${mode}: Bootstrap's border width`).toBe(await bootstrapBorder(page));
-        expect(rest.radius, `${mode}: the large view's radius`).toBe('6px');
+        expect(rest.radius, `${mode}: the large view's radius`).toBe('2px');
         if (!pressed) expect(rest.background, `${mode}: not filled at rest`).not.toBe(rest.border);
         await button.hover();
         await page.waitForTimeout(250);

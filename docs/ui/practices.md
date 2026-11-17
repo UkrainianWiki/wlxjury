@@ -68,8 +68,8 @@ else is `Theme.Default`, `dark`; only the fixed strings reach the page. `layout.
 cookie value is never written into HTML as given (secure-coding §6).
 
 **3.2 Colours are variables.** Bootstrap 5.3's `--bs-*` and the app's own `--wlx-*` in
-`public/stylesheets/theme.css` (`--wlx-image-bg`, `--wlx-selected`/`--wlx-rejected`,
-`--wlx-nav-active-bg`, …), per mode; `main.css` has no hex colour, templates no inline colour. Text
+`public/stylesheets/theme.css` and `codex-theme.css` (Wikimedia Codex tokens, `docs/vendor/codex.md`:
+`--wlx-image-bg`, `--wlx-selected`/`--wlx-rejected`, `--wlx-current-bg` (the selected highlight; `--wlx-selected` is the vote green), `--wlx-hover-bg`, …), per mode; `main.css` has no hex colour, templates no inline colour. Text
 on the navbar's vote tabs has at least 4.5:1 contrast in both modes. In light mode photos sit on a
 neutral grey, not white. *Why:* one place per colour and mode; photos are judged without glare.
 

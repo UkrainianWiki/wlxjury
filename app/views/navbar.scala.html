@@ -374,7 +374,7 @@
    highlighted as the bar's active link, shown from the width they fit on one line
    (wlx-nav-pages-inline, main.css), the Pages menu below it; each link's id its item's with
    "page-" for "menu-" (page-users for menu-users).
-   Signed out: the application's name *@
+   Signed out: nothing (the wordmark is the page's own, snippets/brandHeading) *@
 @pageLinks(inline: Boolean) = {
     @if(user != null) {
         @defining(pageItems) { items =>
@@ -477,13 +477,16 @@
 @* The bar (the navigation proposal v3 §2): its groups, each a list that wraps as a whole, left to
    right: the pages to go to, the filters, after a divider the order (and view), the pager; the
    account menus (logged) on the right. A group with nothing is left out; without filters, order
-   and pager the pages are links (pageLinks' `inline`) *@
-<nav class="navbar navbar-expand bg-body-tertiary border-bottom mb-2 py-1@if(resultsBar) { wlx-nav-results}@if(resultsBar && list.exists(_.view.comments)) { wlx-nav-comments}">
+   and pager the pages are links (pageLinks' `inline`). Signed out with nothing in it (the
+   sign-in pages, a signed-out error: their theme switch and wordmark are the page's own) no bar
+   at all, not an empty landmark under a lone border *@
+@defining(filterGroup) { filterItems =>
+@defining(orderGroup) { orderItems =>
+@defining(pagesInline && !nonEmpty(filterItems) && !nonEmpty(orderItems) && !nonEmpty(pager)) { inline =>
+@defining(pageLinks(inline)) { links =>
+@if(user != null || nonEmpty(links) || nonEmpty(filterItems) || nonEmpty(orderItems) || nonEmpty(pager)) {
+<nav class="navbar navbar-expand border-bottom mb-2 py-1@if(resultsBar) { wlx-nav-results}@if(resultsBar && list.exists(_.view.comments)) { wlx-nav-comments}">
     <div class="container-fluid px-2">
-        @defining(filterGroup) { filterItems =>
-        @defining(orderGroup) { orderItems =>
-        @defining(pagesInline && !nonEmpty(filterItems) && !nonEmpty(orderItems) && !nonEmpty(pager)) { inline =>
-        @defining(pageLinks(inline)) { links =>
         <div class="d-flex flex-wrap align-items-center column-gap-2 me-auto wlx-nav-groups">
             @if(nonEmpty(links)) {
             <ul class="navbar-nav flex-wrap align-items-center wlx-nav-links@if(inline) { wlx-nav-pages-inline}" aria-label="@Messages("nav.group.links")">@links</ul>
@@ -498,10 +501,11 @@
             <ul class="navbar-nav flex-wrap align-items-center wlx-nav-pager" aria-label="@Messages("nav.group.pager")">@pager</ul>
             }
         </div>
-        }
-        }
-        }
-        }
         @logged(user, backHere)
     </div>
 </nav>
+}
+}
+}
+}
+}

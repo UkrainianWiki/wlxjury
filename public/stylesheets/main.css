@@ -8,24 +8,21 @@ body.gallery {
     background-color: var(--wlx-image-bg);
 }
 
-/* the navbar's links a little apart, and the page's own link or menu button marked with a
-   background */
+/* the navbar's links a little apart (the page's own link or menu button is marked with the
+   selected highlight, codex-theme.css) */
 .navbar .navbar-nav .nav-link {
     padding-left: .6rem;
     padding-right: .6rem;
 }
-.navbar .navbar-nav .nav-link.active {
-    background-color: var(--wlx-nav-active-bg);
-    border-radius: var(--bs-border-radius);
-}
 /* the navbar's Votes menu (navbar.scala.html votesMenu) on the selected or the rejected: its
-   button's text and its icon tinted (at least 4.5:1 on the navbar in both modes); in its menu only
-   the icons (✓, ✗) are, the text staying readable on the active item's background, where the
-   icon is its colour */
-.navbar .nav-item.vote-selected > .nav-link {
+   button's text and its icon tinted (at least 4.5:1 on the navbar and on the hover grey in both
+   modes), also pointed at and open (as specific as codex-theme.css's hover and open rules, and
+   after them); in its menu only the icons (✓, ✗) are, the text staying readable on the active
+   item's background, where the icon is its colour */
+.navbar .navbar-nav .nav-item.vote-selected > .nav-link {
     color: var(--wlx-selected);
 }
-.navbar .nav-item.vote-rejected > .nav-link {
+.navbar .navbar-nav .nav-item.vote-rejected > .nav-link {
     color: var(--wlx-rejected);
 }
 .wlx-votes-menu .wlx-vote-icon-selected { color: var(--wlx-selected); }
@@ -225,7 +222,7 @@ img.cropped {
     height: auto;
     max-height: 200px;
     object-fit: contain;
-    border-radius: .25rem;
+    border-radius: var(--bs-border-radius);
 }
 .wlx-comments-main { flex: 1 1 auto; min-width: 0; max-width: 48rem; }
 .wlx-comments-main h2 { overflow-wrap: anywhere; }
@@ -241,14 +238,14 @@ img.cropped {
     min-height: 24px;
     margin-left: .15rem;
     vertical-align: middle;
-    border-radius: .25rem;
+    border-radius: var(--bs-border-radius);
     color: var(--bs-secondary-color);
     text-decoration: none;
 }
 .wlx-comments-report .wlx-comment-author-link:hover { color: var(--bs-link-hover-color); background: var(--bs-tertiary-bg); }
-/* the focus outline solid in the link colour (3:1 and more against the page in light and dark;
-   Bootstrap's focus ring colour is a 25% tint, too faint for a 2 px outline) */
-.wlx-comments-report .wlx-comment-author-link:focus-visible { outline: 2px solid var(--bs-link-color); outline-offset: 1px; }
+/* the focus outline solid in the link colour (3:1 and more against the page in light and dark),
+   in place of codex-theme.css's ring, not beside it */
+.wlx-comments-report .wlx-comment-author-link:focus-visible { outline: 2px solid var(--bs-link-color); outline-offset: 1px; box-shadow: none; }
 /* the funnel of the author the report is filtered by: filled, in the link colour (Bootstrap's
    --bs-link-color, 4.5:1 and more on the page in light and dark), it removes the filter */
 .wlx-comments-report .wlx-comment-filter-link.active { color: var(--bs-link-color); }
@@ -268,7 +265,7 @@ img.cropped {
     margin: 20px 0;
     border: 1px solid var(--bs-border-color);
     border-left-width: 5px;
-    border-radius: 3px;
+    border-radius: var(--bs-border-radius);
 }
 .bs-callout .h4 {
     margin-top: 0;
@@ -278,7 +275,7 @@ img.cropped {
     margin-bottom: 0;
 }
 .bs-callout-info {
-    border-left-color: var(--bs-info);
+    border-left-color: var(--border-color-notice);
 }
 .bs-callout-info .h4 {
     color: var(--bs-info-text-emphasis);
@@ -337,7 +334,7 @@ a.wlx-large-failed img {
    vote's colour, filled with it pointed at (the glyph in the page's background colour). The button
    of the file's vote is pressed (aria-pressed="true"; a click on it undoes the vote): filled, with
    a ring of the page's colour inside its border, so it reads as pressed by its shape too, not by
-   its colour alone. One size, border, radius (6 px) and focus ring (two tones outside the border,
+   its colour alone. One size, border, radius (the theme's 2 px) and focus ring (two tones outside the border,
    3:1 or more) everywhere: those of the large view's navigation buttons (btn btn-sm, Bootstrap's
    border width; the maintainer's notes on 26.11.11: the 3 px border made them much heavier than
    the buttons beside them, and the tiles' were larger); each button its own complete border in
@@ -350,7 +347,7 @@ a.wlx-large-failed img {
     --wlx-btn-bg: transparent;
     --wlx-btn-inset: 0 0 0 0 transparent;
     --wlx-btn-halo: 0 0 0 0 transparent;
-    --bs-btn-border-radius: 6px;
+    --bs-btn-border-radius: var(--bs-border-radius);
     --bs-btn-color: var(--wlx-btn-tone);
     --bs-btn-bg: var(--wlx-btn-bg);
     --bs-btn-border-color: var(--wlx-btn-tone);
@@ -466,7 +463,7 @@ div.thumb_small.wlx-thumb-failed img {
 /* The round form's multiple selects (multi-select.js, Tom Select): the control sums up the
    selection, as bootstrap-multiselect's button did, instead of listing each item */
 .wlx-multi .ts-control > .item { display: none; }
-.wlx-multi .ts-control { min-height: calc(1.5em + .75rem + 2px); }
+.wlx-multi .ts-control { min-height: calc(32px - 2 * var(--bs-border-width)); }
 .wlx-multi .wlx-select-all { padding: .375rem .75rem; }
 .wlx-multi .ts-dropdown .option .tomselect-checkbox { margin-right: .5rem; }
 /* Tom Select's Bootstrap 5 theme takes its backgrounds from Bootstrap's variables but keeps a
@@ -525,16 +522,13 @@ a:has(> .btn) { text-decoration: none; }
    it loads, in them, at the box's start */
 #large_image[width][height] { height: auto; object-fit: contain; object-position: left top; }
 .large-side { min-width: 220px; }
-/* the side column's links (the jury's names, the file's details) on the light image grey: Bootstrap's
-   link blue is 3.5:1 on #e3e3e3, its hover blue (#0a58ca) 5.0:1, its pressed one (#084298) 7.3:1 */
-:root:not([data-bs-theme=dark]) .large-side { --bs-link-color-rgb: 10, 88, 202; --bs-link-hover-color-rgb: 8, 66, 152; }
 .large-main { margin-left: 5px; margin-top: 10px; }
 /* the large views' buttons (a round's, large/navigationButtons, and a contest file's,
    large/contestFile): back to the gallery, previous, next and a juror's ✓ and ✗, each a button of its own with its complete border, apart by a small gap (a Bootstrap
    button group shared their borders: the outline vote buttons showed three coloured sides and a
    grey one, and covered their neighbours' borders pointed at), with the vote buttons' radius */
 .large-nav { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px; }
-.large-nav > .btn { --bs-btn-border-radius: 6px; }
+.large-nav > .btn { --bs-btn-border-radius: var(--bs-border-radius); }
 /* a box in the side column (author, monument, deleted file, comments), and a line (full
    resolution, the jurors' votes, the file's title) */
 .large-box, .large-line { margin-right: 5px; padding: 5px; }
@@ -548,7 +542,7 @@ a:has(> .btn) { text-decoration: none; }
     border: 0; border-radius: var(--bs-border-radius-sm); background: none;
     color: var(--bs-body-color); font-size: .875rem; font-weight: 600; text-align: start;
 }
-.large-section-toggle:hover { background-color: var(--wlx-nav-active-bg); }
+.large-section-toggle:hover { background-color: var(--wlx-hover-bg); }
 .large-section-toggle:focus-visible { outline: 2px solid var(--bs-focus-ring-color); outline-offset: 1px; }
 .large-section-toggle .bi { transition: transform .2s; }
 .large-section-toggle.collapsed .bi { transform: rotate(-90deg); }
@@ -670,7 +664,8 @@ li.gallerybox .thumb_small > .wlx-tile-foot {
    them from templates (snippets.chipTemplates, tile-votes.js). One look: a badge 24 px high, its
    parts apart by a small gap, in the text colour on the page's secondary background (the large
    view's side column, the comments list); a link is at least 24 px wide (WCAG's minimum target),
-   underlined while pointed at, with Bootstrap's focus ring. */
+   underlined while pointed at, with an outline as its focus ring (the tiles' chip row clips
+   outside it, codex-theme.css's ring would be cut), in place of the ring, not beside it. */
 .wlx-chip {
     display: inline-flex;
     gap: .3em;
@@ -689,6 +684,7 @@ a.wlx-chip:hover { text-decoration: underline; }
 a.wlx-chip:focus-visible {
     outline: var(--bs-focus-ring-width) solid var(--bs-focus-ring-color);
     outline-offset: 1px;
+    box-shadow: none;
 }
 /* the vote chip's mark and time with a small gap; the time after a mark muted (--bs-secondary-color
    on the chip: 4.5:1 or more over any photo in both modes), alone (a rated round's) in the text
@@ -848,7 +844,7 @@ div.thumb_small.wlx-thumb-failed .wlx-video-mark {
    (large/navigationButtons): its ✓ or ✗ and words in the vote's text colours (.wlx-vote-selected,
    -rejected: --wlx-selected, --wlx-rejected, 4.5:1 or more on the side column's image grey in both
    modes), before its time. Not the buttons' saturated --wlx-vote-* (3:1 for icons; the dark
-   mode's red is 3.3:1 on #303030, too faint for words) */
+   mode's red is 4.1:1 on the dark image grey #202122, too faint for words next to them) */
 .wlx-viewed-vote-mark { font-weight: 600; }
 /* the large view's vote summary (the tally, the vote, its time) and the comments' link after it
    (large/navigationButtons): one row, wrapping in the narrow side column */

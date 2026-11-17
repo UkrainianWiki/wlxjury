@@ -38,8 +38,10 @@ Vendored front-end files (public/)
   MIT, Copyright (c) 2015 Max Valiano (unitegallery.net). The shipped files carry no
   header, so the notice and MIT text are in licenses/MIT.txt. Local patches are GPL-3.0-or-later;
   the unmodified parts stay MIT. See docs/vendor/unitegallery.md.
-<<CODEX: Wikimedia Codex design tokens (GPL-2.0-or-later, used under GPL-3.0-or-later):
-  the PR that vendors them adds its entry here.>>
+- Wikimedia Codex design tokens 2.7.0 (@wikimedia/codex-design-tokens;
+  public/stylesheets/vendor/codex/): GPL-2.0-or-later, Copyright Wikimedia Foundation and
+  contributors. Used under GPL-3.0-or-later. Only the CSS custom-property files are copied, with
+  their headers; the licence text is licenses/GPL-2.0.txt. See docs/vendor/codex.md.
 
 
 WebJars served by the app

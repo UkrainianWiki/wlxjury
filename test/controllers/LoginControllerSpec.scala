@@ -341,6 +341,9 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
               (doc.select("h1 .wlx-wordmark .wlx-wm-mark[role=img]").attr("aria-label") aka name must_== "WLX") and
               (doc.select("h1 .wlx-wordmark .wlx-wm-name").text aka name must_== suffix) and
               (doc.select("nav .wlx-wordmark").size aka s"$name navbar brand" must_== 0) and
+              // no empty bar (a lone border) above the wordmark: the theme switch is the page's own
+              (doc.select("nav").size aka s"$name navbar" must_== 0) and
+              (name != "sign-in" || doc.select("#theme-switch button").size == 3 aka s"$name theme switch" must beTrue) and
               (doc.title aka s"$name title in $l" must_== "WLX " + suffix)
           }
         }

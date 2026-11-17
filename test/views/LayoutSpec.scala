@@ -50,6 +50,18 @@ class LayoutSpec extends PlaySpecification {
       html.indexOf("var head;") must be_>(main)
     }
 
+    "load the Codex tokens, then their mapping, then theme.css, between Bootstrap and main.css" in {
+      val bootstrap = html.indexOf("bootstrap.min.css")
+      val tokens    = html.indexOf("stylesheets/vendor/codex/")
+      val codex     = html.indexOf("codex-theme.css")
+      val theme     = html.indexOf("stylesheets/theme.css")
+      val main      = html.indexOf("stylesheets/main.css")
+      tokens must be_>(bootstrap)
+      codex must be_>(tokens)
+      theme must be_>(codex)
+      main must be_>(theme)
+    }
+
     "start Bootstrap's script deferred, once the body is parsed (Firefox: a stopped page has none)" in {
       html must contain("""<script defer src="/webjars/bootstrap/5.3.8/js/bootstrap.bundle.min.js"></script>""")
     }

@@ -1,0 +1,309 @@
+/* The app's look: the Wikimedia Codex design tokens (vendor/codex/codex-tokens.css, unmodified
+   values, see docs/vendor/codex.md) mapped onto Bootstrap 5.3's variables and components, in
+   Codex's shapes (2 px corners, 32 px controls, bold button labels). Loaded after Bootstrap and
+   the tokens, before theme.css (the vote and danger colours, the image greys) and main.css.
+   The colour mode is the page's data-bs-theme (light, dark; "auto" is set by script from the
+   browser), which the tokens follow, so the rules below are written once, with token names.
+
+   The rules of the look (maintainer's decisions, 2026-11-17):
+   - Links (text, tables, .btn-link): the link colour, no underline, underlined on hover and
+     keyboard focus; except links inside a sentence, underlined at rest (see below). The navbar,
+     menus, tabs and pager are interface, not links: neutral text, the grey hover fill, no
+     underline.
+   - The navbar and the menus on the page's background (white, #101418 in dark), as the
+     Wikimedia header; the bar apart from the page by its bottom border.
+   - ONE "selected" highlight (--wlx-current-*, not the vote green --wlx-selected): progressive-subtle fill with progressive text (and the
+     progressive border on bordered controls): the navbar's active item, the pager's current
+     page and range box, a chosen menu item, a pressed toggle. Grey never means selected.
+   - ONE hover colour: interactive-subtle--hover (grey), never blue.
+   - ONE focus ring: 1 px of the page colour inside 2 px progressive.
+   - Table header without fill (bold, a 2 px rule); stripes the faintest neutral.
+
+   Deviations from Codex's values, all to keep text at 4.5:1 and control borders at 3:1 or more
+   (computed as WCAG 2 contrast; asserted by browser-test theme.spec.js):
+   - the dark placeholder is --color-subtle #a2a9b1 (7.8:1 on the dark page, 6.8:1 on #202122),
+     not Codex's #72777d (4.1:1); the light one is Codex's #72777d (4.5:1 on white, the inputs'
+     background);
+   - links on the light image grey (#e3e3e3, the side column of the large view) are Codex's
+     hover blue #3056a9 (5.4:1; #36c is 4.2:1 there);
+   - links inside alerts use the hover tone #3056a9 in light (5.9:1 or more on every alert fill;
+     #36c is 4.5:1 on the grey one); the pale green badge's text is #0e6048 (6.5:1; Codex's
+     #177860 is 4.6:1);
+   - control borders are --border-color-interactive (#72777d, 4.5:1 on white, 3.2:1 or more on
+     every dark surface), never --border-color-base (#a2a9b1, 2.4:1 on white). */
+
+/* ---- the tokens onto Bootstrap's variables --------------------------------------------- */
+:root, [data-bs-theme=light], [data-bs-theme=dark] {
+    --font-family-system-sans: -apple-system, 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Inter', 'Helvetica', 'Arial', sans-serif;
+    --bs-body-font-family: var(--font-family-system-sans);
+    --bs-body-bg: var(--background-color-base);
+    --bs-body-color: var(--color-base);
+    --bs-emphasis-color: var(--color-emphasized);
+    --bs-secondary-color: var(--color-subtle);
+    --bs-secondary-bg: var(--background-color-neutral);
+    --bs-tertiary-color: var(--color-subtle);
+    --bs-tertiary-bg: var(--background-color-neutral-subtle);
+    --bs-border-color: var(--border-color-subtle);
+    --bs-border-color-translucent: var(--border-color-subtle);
+    --bs-link-color: var(--color-progressive);
+    --bs-link-hover-color: var(--color-progressive--hover);
+    --bs-primary: var(--background-color-progressive);
+    --bs-primary-rgb: 51, 102, 204; /* = --background-color-progressive */
+    --bs-focus-ring-color: var(--border-color-progressive--focus);
+    --bs-highlight-bg: var(--background-color-warning-subtle);
+    /* the box shapes: 2 px everywhere (pills and circles keep theirs) */
+    --bs-border-radius: 2px;
+    --bs-border-radius-sm: 2px;
+    --bs-border-radius-lg: 2px;
+    --bs-border-radius-xl: 2px;
+    --bs-border-radius-xxl: 2px;
+    /* the one hover colour, the one selected ("current") highlight and the one focus ring, by name */
+    --wlx-hover-bg: var(--background-color-interactive-subtle--hover);
+    --wlx-current-bg: var(--background-color-progressive-subtle);
+    --wlx-current-fg: var(--color-progressive);
+    --wlx-current-border: var(--border-color-progressive);
+    --wlx-focus-ring: 0 0 0 1px var(--bs-body-bg), 0 0 0 3px var(--border-color-progressive--focus);
+}
+/* Bootstrap's rgb() companions (Bootstrap's utilities, such as bg-body-tertiary, read them):
+   each the token named in its comment, which `python scripts/codex-tokens.py --check` verifies
+   against the vendored value in the rule's mode */
+:root, [data-bs-theme=light] {
+    --bs-body-bg-rgb: 255, 255, 255; /* = --background-color-base */
+    --bs-body-color-rgb: 32, 33, 34; /* = --color-base */
+    --bs-emphasis-color-rgb: 16, 20, 24; /* = --color-emphasized */
+    --bs-secondary-color-rgb: 84, 89, 93; /* = --color-subtle */
+    --bs-secondary-bg-rgb: 234, 236, 240; /* = --background-color-neutral */
+    --bs-tertiary-color-rgb: 84, 89, 93; /* = --color-subtle */
+    --bs-tertiary-bg-rgb: 248, 249, 250; /* = --background-color-neutral-subtle */
+    --bs-link-color-rgb: 51, 102, 204; /* = --color-progressive */
+    --bs-link-hover-color-rgb: 48, 86, 169; /* = --color-progressive--hover */
+    /* behind photos: a neutral grey, so that their colours are not judged against glare */
+    --wlx-image-bg: #e3e3e3;
+    --wlx-placeholder: var(--color-placeholder);
+    /* the pale green badge's text (see the top of this file) */
+    --wlx-badge-success-fg: #0e6048;
+}
+[data-bs-theme=dark] {
+    --bs-body-bg-rgb: 16, 20, 24; /* = --background-color-base */
+    --bs-body-color-rgb: 234, 236, 240; /* = --color-base */
+    --bs-emphasis-color-rgb: 248, 249, 250; /* = --color-emphasized */
+    --bs-secondary-color-rgb: 162, 169, 177; /* = --color-subtle */
+    --bs-secondary-bg-rgb: 39, 41, 45; /* = --background-color-neutral */
+    --bs-tertiary-color-rgb: 162, 169, 177; /* = --color-subtle */
+    --bs-tertiary-bg-rgb: 32, 33, 34; /* = --background-color-neutral-subtle */
+    --bs-link-color-rgb: 136, 163, 232; /* = --color-progressive */
+    --bs-link-hover-color-rgb: 166, 187, 245; /* = --color-progressive--hover */
+    --wlx-image-bg: #202122;
+    --wlx-placeholder: var(--color-subtle);
+    --wlx-badge-success-fg: var(--color-success);
+}
+
+/* ---- links ------------------------------------------------------------------------------- */
+a { text-decoration: none; }
+/* an anchor without href (a count of 0, snippets/textLink) is plain text: never underlined;
+   :where keeps these rules' weight, so that the chrome rules below still win */
+a:where([href]):hover, a:where([href]):focus-visible { text-decoration: underline; }
+/* interface chrome is not a link: its feedback is the fill and the ring */
+.nav-link, .page-link, .dropdown-item, .navbar-brand, .btn, a.wlx-chip { text-decoration: none; }
+.nav-link:hover, .nav-link:focus-visible, .page-link:hover, .page-link:focus-visible,
+.dropdown-item:hover, .dropdown-item:focus-visible, .navbar-brand:hover, .navbar-brand:focus-visible,
+.btn:hover, .btn:focus-visible { text-decoration: none; }
+.btn-link { --bs-btn-color: var(--color-progressive); --bs-btn-hover-color: var(--color-progressive--hover);
+    --bs-btn-active-color: var(--color-progressive--active); --bs-btn-disabled-color: var(--color-disabled);
+    text-decoration: none; }
+.btn-link:hover, .btn-link:focus-visible { text-decoration: underline; }
+/* a link inside a sentence (a paragraph, a small line, a hint, a message) is underlined at rest: a
+   link told by its colour alone from the text around it needs 3:1 against it (WCAG 1.4.1; axe's
+   link-in-text-block), which the link colour (3.0:1 on white, 2.1:1 in dark, less on the image
+   grey) doesn't give. Links standing alone (tables, lists, menus, the navbar) keep hover-only. */
+:where(p, small, .small, .form-text, .alert, dd) a:where([href]):not(.btn):not(.nav-link):not(.page-link):not(.dropdown-item):not(.wlx-chip) {
+    text-decoration: underline; text-underline-offset: .16em; }
+/* one focus ring: the page's colour inside, the progressive one outside; never a fill */
+a:focus-visible, .nav-link:focus-visible, .page-link:focus-visible, .dropdown-item:focus-visible,
+.navbar-brand:focus-visible, summary:focus-visible {
+    outline: 1px solid transparent; outline-offset: 0; box-shadow: var(--wlx-focus-ring);
+}
+.btn { --bs-btn-focus-box-shadow: var(--wlx-focus-ring); }
+.btn:focus-visible, .btn-check:focus-visible + .btn { outline: 1px solid transparent; }
+.page-link:focus { box-shadow: none; }
+.page-link:focus-visible { box-shadow: var(--wlx-focus-ring); }
+.btn-close:focus { box-shadow: none; }
+.btn-close:focus-visible { outline: 1px solid transparent; box-shadow: var(--wlx-focus-ring); }
+/* the galleries and the large views sit on the image grey, where #36c is 4.2:1 (hover blue 5.4) */
+[data-bs-theme=light] body.gallery, [data-bs-theme=light] .large-side {
+    --bs-link-color-rgb: 48, 86, 169; /* = --color-progressive--hover */
+    --bs-link-hover-color-rgb: 35, 53, 102; /* = --color-progressive--active */
+}
+
+/* ---- shapes: Codex's 32 px controls (44 px large, 28 px small), bold labels ---------------- */
+/* the heights exactly: Bootstrap's line (1.5 of the font: 24 px, large 30, small 21), its 1 px
+   borders, the padding the rest (browser-test theme.spec.js measures 32) */
+.btn { --bs-btn-border-radius: 2px; --bs-btn-font-weight: 700; --bs-btn-padding-x: .6875rem;
+    --bs-btn-padding-y: .1875rem; min-height: 32px; }
+/* a .btn-group-sm's or -lg's buttons size as .btn-sm and .btn-lg (Bootstrap sets their padding
+   on the group's children; without these they keep .btn's 32 px) */
+.btn-lg, .btn-group-lg > .btn { --bs-btn-padding-x: 1rem; --bs-btn-padding-y: .375rem; --bs-btn-border-radius: 2px; min-height: 44px; }
+.btn-sm, .btn-group-sm > .btn { --bs-btn-padding-x: .5rem; --bs-btn-padding-y: .15625rem; --bs-btn-border-radius: 2px; min-height: 28px; }
+.btn-link { --bs-btn-font-weight: 400; }
+.form-control, .form-select { min-height: 32px; padding-top: .1875rem; padding-bottom: .1875rem; padding-left: .5rem; }
+.form-control-lg, .form-select-lg { min-height: 44px; padding-top: .375rem; padding-bottom: .375rem; padding-left: .75rem; }
+.form-control-sm, .form-select-sm { min-height: 28px; padding-top: .15625rem; padding-bottom: .15625rem; padding-left: .5rem; }
+.form-check-input[type=radio] { border-radius: 50%; }
+.page-item:first-child .page-link, .page-item:last-child .page-link { border-radius: var(--bs-pagination-border-radius); }
+.pagination { --bs-pagination-border-radius: 2px; --bs-pagination-padding-y: .1875rem; --bs-pagination-font-size: .875rem; }
+.badge { --bs-badge-border-radius: 2px; --bs-badge-font-weight: 400; }
+
+/* ---- buttons ------------------------------------------------------------------------------ */
+.btn-primary { --bs-btn-color: #fff; --bs-btn-bg: var(--background-color-progressive);
+    --bs-btn-border-color: var(--background-color-progressive);
+    --bs-btn-hover-color: #fff; --bs-btn-hover-bg: var(--background-color-progressive--hover);
+    --bs-btn-hover-border-color: var(--background-color-progressive--hover);
+    --bs-btn-active-color: #fff; --bs-btn-active-bg: var(--background-color-progressive--active);
+    --bs-btn-active-border-color: var(--background-color-progressive--active);
+    --bs-btn-disabled-color: var(--color-disabled); --bs-btn-disabled-bg: var(--background-color-disabled);
+    --bs-btn-disabled-border-color: var(--border-color-disabled); --bs-btn-disabled-opacity: 1; }
+.btn-outline-secondary, .btn-secondary { --bs-btn-color: var(--color-base); --bs-btn-bg: var(--background-color-interactive-subtle);
+    --bs-btn-border-color: var(--border-color-interactive);
+    --bs-btn-hover-color: var(--color-base--hover); --bs-btn-hover-bg: var(--wlx-hover-bg);
+    --bs-btn-hover-border-color: var(--border-color-interactive--hover);
+    --bs-btn-active-color: var(--color-base--hover); --bs-btn-active-bg: var(--background-color-interactive-subtle--active);
+    --bs-btn-active-border-color: var(--border-color-interactive--hover);
+    --bs-btn-disabled-color: var(--color-disabled); --bs-btn-disabled-bg: var(--background-color-disabled-subtle);
+    --bs-btn-disabled-border-color: var(--border-color-disabled); --bs-btn-disabled-opacity: 1; }
+/* chosen (a pressed toggle, a checked btn-check): the selected highlight */
+.btn-outline-secondary.active, .btn-check:checked + .btn-outline-secondary,
+.btn-outline-primary.active, .btn-check:checked + .btn-outline-primary {
+    --bs-btn-active-color: var(--wlx-current-fg); --bs-btn-active-bg: var(--wlx-current-bg);
+    --bs-btn-active-border-color: var(--wlx-current-border); }
+.btn-outline-primary { --bs-btn-color: var(--color-progressive); --bs-btn-border-color: var(--border-color-progressive);
+    --bs-btn-hover-color: var(--color-progressive--hover); --bs-btn-hover-bg: var(--wlx-hover-bg);
+    --bs-btn-hover-border-color: var(--border-color-progressive);
+    --bs-btn-active-color: var(--color-progressive--active); --bs-btn-active-bg: var(--background-color-interactive-subtle--active);
+    --bs-btn-active-border-color: var(--border-color-progressive);
+    --bs-btn-disabled-color: var(--color-disabled); --bs-btn-disabled-border-color: var(--border-color-disabled);
+    --bs-btn-disabled-opacity: 1; }
+/* the Codex buttons above are disabled by their colours, not faded on top as well (Bootstrap's
+   .65); the danger ones (theme.css), whose disabled colours are their own, keep the fading */
+.btn-link { --bs-btn-disabled-opacity: 1; }
+
+/* ---- navbar, tabs, menus, pager ------------------------------------------------------------ */
+.navbar { --bs-navbar-color: var(--color-base); --bs-navbar-hover-color: var(--color-base--hover);
+    --bs-navbar-active-color: var(--wlx-current-fg); --bs-navbar-brand-color: var(--color-emphasized);
+    --bs-navbar-brand-hover-color: var(--color-emphasized);
+    --bs-navbar-disabled-color: var(--color-disabled);
+    background-color: var(--background-color-base); }
+/* pointed at, or its menu open (Bootstrap puts .show on the toggle and colours it as the active
+   one): the hover grey, never the selected blue; the Votes menu keeps its vote tint (main.css) */
+.navbar .navbar-nav .nav-link:hover:not(.active),
+.navbar .navbar-nav .nav-link.show:not(.active) { background-color: var(--wlx-hover-bg); color: var(--color-base--hover); border-radius: var(--bs-border-radius); }
+.navbar .navbar-nav .nav-link.active { background-color: var(--wlx-current-bg); color: var(--wlx-current-fg); border-radius: var(--bs-border-radius); }
+.nav-tabs { --bs-nav-tabs-link-active-color: var(--wlx-current-fg); --bs-nav-tabs-link-active-bg: var(--wlx-current-bg);
+    --bs-nav-tabs-link-active-border-color: var(--bs-border-color) var(--bs-border-color) var(--wlx-current-bg);
+    --bs-nav-tabs-link-hover-border-color: var(--bs-border-color); --bs-nav-tabs-border-radius: 2px; }
+.nav-tabs .nav-link:hover:not(.active) { background-color: var(--wlx-hover-bg); }
+.nav { --bs-nav-link-color: var(--color-base); --bs-nav-link-hover-color: var(--color-base--hover); }
+.nav-link:hover:not(.active) { color: var(--color-base--hover); }
+.dropdown-menu { --bs-dropdown-bg: var(--background-color-base); --bs-dropdown-color: var(--color-base);
+    --bs-dropdown-border-color: var(--border-color-subtle); --bs-dropdown-border-radius: 2px;
+    --bs-dropdown-inner-border-radius: 1px;
+    --bs-dropdown-link-color: var(--color-base); --bs-dropdown-link-hover-color: var(--color-base--hover);
+    --bs-dropdown-link-hover-bg: var(--wlx-hover-bg);
+    --bs-dropdown-link-active-color: var(--wlx-current-fg); --bs-dropdown-link-active-bg: var(--wlx-current-bg);
+    --bs-dropdown-link-disabled-color: var(--color-disabled);
+    --bs-dropdown-divider-bg: var(--border-color-subtle); --bs-dropdown-header-color: var(--color-subtle); }
+.dropdown-item.active:hover, .dropdown-item.active:focus { background-color: var(--background-color-progressive-subtle--hover); }
+.pagination { --bs-pagination-color: var(--color-base); --bs-pagination-bg: var(--background-color-interactive-subtle);
+    --bs-pagination-border-color: var(--border-color-interactive);
+    --bs-pagination-hover-color: var(--color-base--hover); --bs-pagination-hover-bg: var(--wlx-hover-bg);
+    --bs-pagination-hover-border-color: var(--border-color-interactive--hover);
+    --bs-pagination-active-color: var(--wlx-current-fg); --bs-pagination-active-bg: var(--wlx-current-bg);
+    --bs-pagination-active-border-color: var(--wlx-current-border);
+    --bs-pagination-disabled-color: var(--color-disabled); --bs-pagination-disabled-bg: var(--background-color-disabled-subtle);
+    --bs-pagination-disabled-border-color: var(--border-color-disabled);
+    --bs-pagination-focus-color: var(--color-base); --bs-pagination-focus-bg: var(--wlx-hover-bg);
+    --bs-pagination-focus-box-shadow: var(--wlx-focus-ring); }
+/* the range box (an open page menu is the hover-grey, the box itself always the selected one) */
+.page-link.pager-range { background-color: var(--wlx-current-bg); color: var(--wlx-current-fg); border-color: var(--wlx-current-border); }
+.page-link.pager-range:hover, .page-link.pager-range.show { background-color: var(--background-color-progressive-subtle--hover); }
+
+/* ---- forms --------------------------------------------------------------------------------- */
+.form-control, .form-select { background-color: var(--background-color-base); color: var(--color-base); border-color: var(--border-color-interactive); }
+.form-control::placeholder { color: var(--wlx-placeholder); opacity: 1; }
+.form-control:focus, .form-select:focus { background-color: var(--background-color-base); color: var(--color-base);
+    border-color: var(--border-color-progressive--focus); box-shadow: inset 0 0 0 1px var(--border-color-progressive--focus); outline: 1px solid transparent; }
+.form-control.is-invalid, .form-select.is-invalid, .was-validated .form-control:invalid, .was-validated .form-select:invalid { box-shadow: none; }
+/* focused, an invalid field has the same one ring (as Codex: its error stays in its icon and message) */
+.form-control.is-invalid:focus, .form-select.is-invalid:focus, .was-validated .form-control:invalid:focus,
+.was-validated .form-select:invalid:focus { border-color: var(--border-color-progressive--focus); box-shadow: inset 0 0 0 1px var(--border-color-progressive--focus); }
+.form-control:disabled, .form-select:disabled { background-color: var(--background-color-disabled-subtle); color: var(--color-disabled);
+    border-color: var(--border-color-disabled); }
+.form-check-input { border-color: var(--border-color-interactive); background-color: var(--background-color-base); }
+.form-check-input:checked, .form-check-input[type=checkbox]:indeterminate { background-color: var(--background-color-progressive); border-color: var(--background-color-progressive); }
+.form-check-input:focus { box-shadow: var(--wlx-focus-ring); border-color: var(--border-color-progressive--focus); }
+.form-check-input:focus:not(:checked) { background-color: var(--background-color-base); }
+.input-group-text { background-color: var(--background-color-interactive); color: var(--color-base); border-color: var(--border-color-interactive); }
+
+/* ---- tables -------------------------------------------------------------------------------- */
+.table { --bs-table-color: var(--color-base); --bs-table-border-color: var(--border-color-subtle);
+    --bs-table-striped-bg: var(--background-color-neutral-subtle); --bs-table-striped-color: var(--color-base);
+    --bs-table-hover-bg: var(--wlx-hover-bg); --bs-table-hover-color: var(--color-base); }
+.table > thead > tr > th, .table > thead > tr > td { background-color: transparent; box-shadow: none; font-weight: 700;
+    color: var(--color-emphasized); border-bottom: 2px solid var(--border-color-base); }
+
+/* ---- messages: Codex's Message (pale fill, 1px border, the base text colour) ---------------- */
+.alert { --bs-alert-color: var(--color-base); --bs-alert-link-color: var(--color-progressive--hover); --bs-alert-border-radius: 2px; color: var(--color-base); }
+.alert-info { --bs-alert-bg: var(--background-color-notice-subtle); --bs-alert-border-color: var(--border-color-notice); }
+.alert-secondary { --bs-alert-bg: var(--background-color-notice-subtle); --bs-alert-border-color: var(--border-color-base); }
+.alert-success { --bs-alert-bg: var(--background-color-success-subtle); --bs-alert-border-color: var(--border-color-success); }
+.alert-warning { --bs-alert-bg: var(--background-color-warning-subtle); --bs-alert-border-color: var(--border-color-warning); }
+.alert-danger { --bs-alert-bg: var(--background-color-error-subtle); --bs-alert-border-color: var(--bs-danger); }
+.alert-primary { --bs-alert-bg: var(--background-color-progressive-subtle); --bs-alert-border-color: var(--border-color-progressive); }
+.alert-link { color: var(--bs-alert-link-color); font-weight: 400; }
+[data-bs-theme=dark] .alert { --bs-alert-link-color: var(--color-progressive); }
+
+/* ---- badges: pale; counts neutral grey, "active" pale green, danger solid WLM red ------------ */
+.badge.text-bg-secondary { background-color: var(--background-color-neutral) !important; color: var(--color-base) !important; }
+.badge.text-bg-primary { background-color: var(--background-color-progressive-subtle) !important; color: var(--color-progressive) !important; }
+.badge.text-bg-success { background-color: var(--background-color-success-subtle) !important; color: var(--wlx-badge-success-fg) !important; box-shadow: inset 0 0 0 1px var(--border-color-success); }
+.badge.text-bg-warning { background-color: var(--background-color-warning-subtle) !important; color: var(--color-base) !important; box-shadow: inset 0 0 0 1px var(--border-color-warning); }
+.badge.text-bg-info { background-color: var(--background-color-notice-subtle) !important; color: var(--color-base) !important; }
+/* links on a badge are in its own text colour (Bootstrap's link-light is for a dark badge) */
+.badge .link-light { color: inherit !important; }
+
+/* ---- other components ---------------------------------------------------------------------- */
+.card { --bs-card-border-color: var(--border-color-subtle); --bs-card-cap-bg: var(--background-color-neutral-subtle); --bs-card-border-radius: 2px; --bs-card-inner-border-radius: 1px; }
+hr { border-color: var(--border-color-subtle); opacity: 1; }
+mark, .mark { background-color: var(--background-color-warning-subtle); color: var(--color-base); }
+
+/* Tom Select (its Bootstrap 5 theme loads after main.css and wins ties, so each rule here starts
+   with :root, as main.css's do): its control and dropdown as the form controls and menus, 32 px;
+   the pointed-at option the hover grey, a chosen one the selected highlight */
+:root .ts-wrapper { min-height: 32px; }
+:root .ts-wrapper .ts-control, :root .ts-wrapper.multi.has-items .ts-control { padding-top: .1875rem; padding-bottom: .1875rem; }
+:root .ts-wrapper.form-control, :root .ts-wrapper.form-select, :root .ts-wrapper .ts-control { border-radius: 2px; }
+:root .ts-control, :root .ts-wrapper.single.input-active .ts-control { background-color: var(--background-color-base); border-color: var(--border-color-interactive); color: var(--color-base); }
+/* one focus ring, on the bordered box: the wrapper of a form-control or form-select, else the control */
+:root .ts-wrapper.focus .ts-control, :root .ts-wrapper.is-invalid.focus .ts-control, :root .was-validated :invalid + .ts-wrapper.focus .ts-control {
+    border-color: var(--border-color-progressive--focus); box-shadow: inset 0 0 0 1px var(--border-color-progressive--focus); outline: 1px solid transparent; }
+:root .ts-wrapper.form-control.focus, :root .ts-wrapper.form-select.focus { border-color: var(--border-color-progressive--focus); box-shadow: inset 0 0 0 1px var(--border-color-progressive--focus); }
+:root .ts-wrapper.form-control.focus .ts-control, :root .ts-wrapper.form-select.focus .ts-control,
+:root .was-validated .ts-wrapper.form-control.focus .ts-control, :root .was-validated .ts-wrapper.form-select.focus .ts-control { box-shadow: none; }
+:root .ts-control > input::placeholder { color: var(--wlx-placeholder); }
+:root .ts-dropdown, :root .ts-dropdown.form-control, :root .ts-dropdown.form-select { background-color: var(--background-color-base); color: var(--color-base); border-color: var(--border-color-subtle); border-radius: 2px; }
+/* multi-select.js's "Select all" header: its separator the menus' subtle border, not Tom Select's #d0d0d0 */
+:root .ts-wrapper .dropdown-header { border-bottom-color: var(--border-color-subtle); }
+:root .ts-dropdown .optgroup-header { background-color: var(--background-color-base); color: var(--color-subtle); }
+:root .ts-dropdown .active { background-color: var(--wlx-hover-bg); color: var(--color-base--hover); }
+:root .ts-dropdown .selected { background-color: var(--wlx-current-bg); color: var(--wlx-current-fg); }
+:root .ts-dropdown .active.selected { background-color: var(--background-color-progressive-subtle--hover); color: var(--wlx-current-fg); }
+:root .ts-wrapper.multi .ts-control > div { background-color: var(--background-color-neutral); color: var(--color-base); border-color: var(--border-color-interactive); }
+:root .ts-wrapper.multi .ts-control > div.active { background-color: var(--wlx-current-bg); color: var(--wlx-current-fg); }
+
+/* print: paper is white in either mode (browsers leave the backgrounds out by default), so a page
+   in dark mode prints its text dark, on no fill. :root in front so it matches the !important
+   badge rules above (0,2,0), and last in the file it wins over them; the danger badge's own
+   (theme.css, loaded later) needs one class more */
+@media print {
+    :root[data-bs-theme=dark], :root[data-bs-theme=dark] *, :root[data-bs-theme=dark] .badge.text-bg-danger {
+        color: #000 !important; background-color: transparent !important; }
+}

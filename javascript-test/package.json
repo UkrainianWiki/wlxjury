@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "test": "jest",
-    "lint": "cd .. && eslint -c javascript-test/eslint.config.mjs public/javascripts && stylelint --config javascript-test/stylelint.config.mjs --report-needless-disables public/stylesheets/main.css public/stylesheets/theme.css",
+    "lint": "cd .. && eslint -c javascript-test/eslint.config.mjs public/javascripts && stylelint --config javascript-test/stylelint.config.mjs --report-needless-disables public/stylesheets/main.css public/stylesheets/theme.css public/stylesheets/codex-theme.css",
     "lint:selftest": "node lint-selftest/run.mjs"
   },
   "devDependencies": {

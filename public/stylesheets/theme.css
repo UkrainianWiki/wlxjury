@@ -1,21 +1,18 @@
 /* The app's colours for each colour mode (layout.scala.html sets data-bs-theme on <html>:
    light, dark, or for "auto" the browser's prefers-color-scheme). Loaded after Bootstrap and
-   before main.css, whose rules use these variables. Bootstrap's own (--bs-body-bg,
-   --bs-secondary-bg, --bs-danger, ...) cover everything else. :root is light before the auto
-   script has run, or without scripts, as Bootstrap's own defaults are. */
+   before main.css, whose rules use these variables. The page's colours, shapes, links and
+   components are codex-theme.css (the Codex tokens), loaded before this file; here are the
+   vote colours, the failed-thumbnail greys and the WLM red danger family, which Codex does
+   not set. :root is light before the auto script has run, or without scripts. */
 :root, [data-bs-theme=light] {
-    /* behind photos (galleries, large views): a neutral light grey, not white, so that the
-       photos' colours are not judged against glare */
-    --wlx-image-bg: #e3e3e3;
     /* a thumbnail or image that failed to load, and its mark */
     --wlx-thumb-failed-bg: #c6c6c6;
     --wlx-thumb-failed-mark: #6e6e6e;
     /* a file deleted on Commons: its red frame */
     --wlx-deleted: #8f0000;
-    /* the navbar's selected and rejected tabs (own votes), and the active tab's background */
+    /* the navbar's selected and rejected tabs (own votes) */
     --wlx-selected: #025935;
     --wlx-rejected: #8f0000;
-    --wlx-nav-active-bg: rgba(0, 0, 0, .09);
     /* a binary round's vote on the gallery tiles' ✓ and ✗ buttons and in the large view's
        read-only vote: the WLM logo's dark green and red (maintainer's choice, 2026-11-17); contrast is
        asserted in browser-test voting.spec */
@@ -37,22 +34,20 @@
 }
 
 [data-bs-theme=dark] {
-    --wlx-image-bg: #303030;
     --wlx-thumb-failed-bg: #4a4a4a;
     --wlx-thumb-failed-mark: #a0a0a0;
     --wlx-deleted: #d85546;
-    /* the vote text colours: 4.5:1 or more on the navbar, the page, the image grey and the active
-       tab (#404549) */
+    /* the vote text colours: 4.5:1 or more on the navbar and the page (#101418: 9.1, 8.8), the
+       image grey (#202122: 7.9, 7.7) and the navbar's hover grey (#27292d: 7.1, 6.9) */
     --wlx-selected: #44cc8e;
     --wlx-rejected: #ff968a;
-    --wlx-nav-active-bg: rgba(255, 255, 255, .1);
     /* lighter tones of the same pair for dark mode; the tile buttons keep their 1 px halo */
     --wlx-vote-selected: #019f62;
     --wlx-vote-rejected: #d85546;
     --wlx-star: #ffc107;
-    /* the same family for dark mode: text and outlines #f46e5d (5.3:1 on the page, 4.6 on the
-       navbar grey), fills #d85546 with black text (5.3:1), text-emphasis #e89990 on the subtle
-       background #2b110e 7.9:1 */
+    /* the same family for dark mode: text and outlines #f46e5d (6.4:1 on the page and the navbar
+       #101418, 5.6 on the image grey #202122, 5.0 on the hover grey #27292d), fills #d85546 with
+       black text (5.3:1), text-emphasis #e89990 on the subtle background #2b110e 7.9:1 */
     --bs-danger: #f46e5d;
     --bs-danger-rgb: 244, 110, 93;
     --bs-danger-text-emphasis: #e89990;
@@ -61,53 +56,6 @@
     --bs-form-invalid-color: #f46e5d;
     --bs-form-invalid-border-color: #f46e5d;
     --wlx-invalid-icon: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23f46e5d' viewBox='0 0 12 12'%3e%3ccircle cx='6' cy='6' r='4.5'/%3e%3cpath stroke-linejoin='round' d='M5.8 3.6h.4L6 6.5z'/%3e%3ccircle cx='6' cy='8.2' r='.6' fill='%23f46e5d' stroke='none'/%3e%3c/svg%3e");
-    /* the secondary buttons (btn-outline-secondary) and the pager's links. Bootstrap keeps its
-       light-mode grey (#6c757d) for them in dark mode: 2.4-3.3:1 on the dark greys, too faint to
-       read as buttons. The border is at least 3:1 on every background they sit on (page #212529
-       5.2, table rows and navbar #2b3035 4.5, image grey #303030 4.5, #343a40 3.9); the text
-       11.9 on the page, 8.8 on #343a40 */
-    --wlx-control-border: #8f979f;
-    --wlx-control-color: #dee2e6;
-    --wlx-control-bg: rgba(255, 255, 255, .05);
-    /* hover: white text (8.2) on #495057, a lighter border (5.5 or more); pressed or chosen
-       (active, a checked btn-check): filled light grey, dark text (10.3) */
-    --wlx-control-hover-bg: #495057;
-    --wlx-control-hover-border: #adb5bd;
-    --wlx-control-active-bg: #ced4da;
-    --wlx-control-active-color: #212529;
-    /* disabled: no fill, a dim border, and Bootstrap's .65 opacity on top */
-    --wlx-control-disabled-color: #adb5bd;
-    --wlx-control-disabled-border: #6c757d;
-}
-
-[data-bs-theme=dark] .btn-outline-secondary {
-    --bs-btn-color: var(--wlx-control-color);
-    --bs-btn-bg: var(--wlx-control-bg);
-    --bs-btn-border-color: var(--wlx-control-border);
-    --bs-btn-hover-color: #fff;
-    --bs-btn-hover-bg: var(--wlx-control-hover-bg);
-    --bs-btn-hover-border-color: var(--wlx-control-hover-border);
-    --bs-btn-focus-shadow-rgb: 173, 181, 189;
-    --bs-btn-active-color: var(--wlx-control-active-color);
-    --bs-btn-active-bg: var(--wlx-control-active-bg);
-    --bs-btn-active-border-color: var(--wlx-control-active-bg);
-    --bs-btn-disabled-color: var(--wlx-control-disabled-color);
-    --bs-btn-disabled-bg: transparent;
-    --bs-btn-disabled-border-color: var(--wlx-control-disabled-border);
-}
-
-/* the pager: its links keep the link colour; only their outline was Bootstrap's #495057 (1.9:1) */
-[data-bs-theme=dark] .pagination {
-    --bs-pagination-border-color: var(--wlx-control-border);
-    --bs-pagination-hover-border-color: var(--wlx-control-hover-border);
-    --bs-pagination-disabled-border-color: var(--wlx-control-disabled-border);
-}
-
-/* light: Bootstrap draws these buttons' text in #6c757d, the grey it also uses for disabled
-   controls, so working buttons looked greyed out. Their text is the page's dark grey (11.5:1 on
-   white); the border stays #6c757d (4.7:1); hover, pressed and disabled stay Bootstrap's. */
-:root:not([data-bs-theme=dark]) .btn-outline-secondary {
-    --bs-btn-color: #343a40;
 }
 
 /* danger buttons and filled badges: Bootstrap computes their colours at build time from its own

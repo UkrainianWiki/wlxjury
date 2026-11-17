@@ -55,6 +55,8 @@ class HeadingsViewSpec extends PlaySpecification {
         (doc.select("div .wlx-wordmark .wlx-wm-mark[role=img]").attr("aria-label") must_== "WLX") and
         (doc.select("h1 .wlx-wordmark").size must_== 0) and
         (doc.select("nav .wlx-wordmark").size must_== 0) and
+        // signed out, nothing in the bar: no bar at all (not an empty one's lone border)
+        (doc.select("nav").size must_== 0) and
         (Jsoup.parse(contentAsString(views.html.errorPage(Some(juror), "error.title", "error.round.not.found")))
           .select(".wlx-wordmark").size must_== 0)
     }
