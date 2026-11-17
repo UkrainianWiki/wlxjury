@@ -62,6 +62,10 @@ test.describe('the guides\' screenshots', () => {
     for (const a of document.querySelectorAll('a')) {
       if (/^File:/.test(a.textContent.trim())) a.textContent = `File:Example photo ${++n}.jpg`;
     }
+    // a file name as plain text in a table cell (the conflicts page's files)
+    for (const td of document.querySelectorAll('td')) {
+      if (td.children.length === 0 && /^File:/.test(td.textContent.trim())) td.textContent = `File:Example photo ${++n}.jpg`;
+    }
     for (const table of document.querySelectorAll('table')) {
       const headers = [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
       const column = headers.indexOf('Author');
@@ -213,6 +217,8 @@ test.describe('the guides\' screenshots', () => {
     await stat.goto(`/roundstat/${fixture.roundBinaryId}`);
     await expect(stat.locator('#round-conflicts-link a')).toBeVisible();
     await stat.waitForLoadState('networkidle');
+    // the docs fixture's conflict (UiShotsServer): the counts keep it a link, as the guide says
+    await expect(stat.locator('#round-conflicts-link a[href] .wlx-count'), 'the conflicts link, with its count').toBeVisible();
     const lastRow = await stat.locator('table tbody tr').last().boundingBox();
     const link = await stat.locator('#round-conflicts-link').boundingBox();
     expect(lastRow && link, 'the statistics table\'s last row and the conflicts link are shown').toBeTruthy();

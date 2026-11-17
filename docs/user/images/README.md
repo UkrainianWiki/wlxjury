@@ -7,18 +7,21 @@ named after the guide and section that uses it; the guides show them at their CS
 
 Every image is a Playwright page or element screenshot: no browser or operating-system window.
 The fixture's files carry real Commons file names and authors, so the spec replaces them with
-numbered examples before each shot, and the link to share shows a neutral host.
+numbered examples before each shot, and the link to share shows a neutral host. In docs mode the
+server also makes the yes/no round's last file Juror 12's own (`gatling.setup.UiShotsServer`), so
+that the round has a conflict of interest: its statistics page keeps the conflicts link, which
+the organizer guide follows to the conflicts page.
 
 **Platform of the current set:** Windows 11 Pro (10.0.26200), Playwright 1.64.1 with its bundled
-Chromium (156), the app's own font stack, 2026-11-13; the three large views of a juror (yes/no,
-rated, worst mark) and the by-rate results again on 2026-11-16 on the same platform, for the vote
-buttons and the by-rate line (`stack/175`), and the yes/no large view once more that day, for
-the vote buttons' weight (`stack/177`). Text rendering depends on the operating system, so
-regenerate all the images together on one platform and update this line.
+Chromium (156), the app's own font stack, 2026-11-17, all 28 regenerated together for the Codex
+restyle (`stack/184`); the same day, on the same platform, the four that show the docs fixture's
+conflict of interest (below) again: `organizer-round-statistics-link`, `organizer-conflicts`,
+`organizer-contest-files` and `admin-new-round-form`. Text rendering depends on the operating system, so regenerate all the
+images together on one platform and update this line.
 
-**Size:** 28 images, about 4.5 MiB in all. The largest are the two galleries (about 640 and 610
-KiB), the contest's files (about 650 KiB) and the by-rate results (about 560 KiB); the three large views are cropped to the controls
-column and the top of the photo (about 320 to 390 KiB each), with the comment box in its own small shot;
+**Size:** 28 images, about 4.6 MiB in all. The largest are the two galleries (about 700 and 610
+KiB), the contest's files (about 650 KiB) and the by-rate results (about 720 KiB); the three large views are cropped to the controls
+column and the top of the photo (about 320 to 400 KiB each), with the comment box in its own small shot;
 the others stay small. The profile, user-edit, share-link and score-rule shots are cropped to
 their forms, below the navbar, and the root user-edit shot to its Root and Role fields. Photos make 2x PNGs large, so
 `browser-test/docs-optimize-png.py` reduces each image to a 256-colour palette after the spec

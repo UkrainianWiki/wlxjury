@@ -26,8 +26,57 @@ with `.N` for an extra deploy in the same month (`26.11.1`), and release heading
 
 ## Unreleased (developed, not yet deployed)
 
-The next release is `26.11.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything developed up to
-2026-11-16 before the entries below was deployed in `26.11.11`.
+No next release is set yet (`build.sbt` says `26.12-SNAPSHOT`). Everything developed up to
+2026-11-17 before the entries below was deployed in `26.11.12`.
+
+**Features**
+
+- **The wordmark on the signed-out pages** (developed 2026-11-17, `stack/181-signin-wordmark`):
+  the "WLX Jury" wordmark is the page's heading above the form on the sign-in page, and the one
+  heading of the invitation, set-up, invalid-link and email-change pages; the signed-out error,
+  sign-out and account-chooser pages show it as a banner. The signed-out navbar no longer carries
+  the brand, and the signed-out pages' title is `application.title`, WLX and the translated
+  suffix. Its accessible name stays "WLX Jury" whatever the layout.
+- **The Wikimedia Codex look** (developed 2026-11-17, `stack/183-codex-theme`): the Codex design
+  tokens 2.7.0, vendored unmodified (`docs/vendor/codex.md`), mapped onto Bootstrap in each
+  colour mode (`codex-theme.css`): 2 px corners, 32 px controls (44 large, 28 small), bold
+  buttons, the system font stack, Message-style alerts, pale badges, one focus ring, the navbar
+  and menus on the page's background (dark page `#101418`), Tom Select as a Codex control. One
+  selected highlight (the current page, a pressed toggle, a chosen item) and one hover grey; grey
+  never means selected. Links have no underline until pointed at, except inside a sentence,
+  underlined at rest (WCAG 1.4.1); an anchor without href (a count of 0, e.g. "Conflicts of
+  interest of this round: none") is plain text, never underlined. The vote colours and the WLM
+  danger red (`theme.css`) are kept; a signed-out page with nothing in its navbar has none; a
+  dark-mode page prints dark text on white. Browser checks for the selected and hover colours,
+  links and the controls' heights.
+
+**Development**
+
+- **Licence: GPL-3.0-or-later** (developed 2026-11-17, `stack/182-gpl-relicense`): relicensed from
+  Apache-2.0; releases before this stay available under Apache-2.0. `LICENSE` is the GPL-3.0
+  text, `NOTICE` lists the bundled components and the option chosen for each dual-licensed one;
+  both ship in the ZIP and Docker image. The unused `tyrex` jar (Exolab licence with a credit
+  clause) is excluded.
+- **User guides (docs only)** (developed 2026-11-17, `stack/184-codex-guide-shots`): the guides'
+  screenshots regenerated in the Codex look.
+
+## 26.11.12 (2026-11-17)
+
+Deployed 2026-11-17, build `26.11.12-099e6d68e56f` (release commit `099e6d68` on
+`release/26.11.12`), schema V107, from `26.11.11`, PRs #359-#363. **Two migrations**: V106
+(`account_join_request`, the table of join requests and of pairs kept apart, and the account
+change log's `account_joined` field) and V107 (the log's `account_retired` field). The schema
+changed, so the release tool took a database backup before it started the new release. Going
+back to `26.11.11` means the release tool's restore, or the undo statements at the end of V107
+and then V106 run by hand before the old release starts. Deploy record: roadmap, "26.11.12
+deploy record". Changes to know about:
+- **Accounts:** root and the contests' admins get the possible duplicate accounts report (Keep
+  separate), can **join two accounts** (a background job; Abandon) and **retire an empty
+  duplicate** from the "wiki account taken" panel; no mail is sent unless a box is ticked.
+- **Colours:** the yes/no vote colours and Bootstrap's danger red follow the WLM logo (dark green
+  and red, softer in the dark theme); the signed-out brand is a "WLX Jury" wordmark.
+- **Vote buttons:** the marks are centred, the buttons have one size, and a first tap on a
+  touch screen votes nothing.
 
 **Features**
 
@@ -116,11 +165,6 @@ The next release is `26.11.12` (`build.sbt` says `26.12-SNAPSHOT`). Everything d
 
 **Development**
 
-- **Licence: GPL-3.0-or-later** (developed 2026-11-17, `stack/182-gpl-relicense`): relicensed from
-  Apache-2.0; releases before this stay available under Apache-2.0. `LICENSE` is the GPL-3.0
-  text, `NOTICE` lists the bundled components and the option chosen for each dual-licensed one;
-  both ship in the ZIP and Docker image. The unused `tyrex` jar (Exolab licence with a credit
-  clause) is excluded.
 - **`account_join_request` and `account_joined` (V106)** (the account join plan's J-1; developed
   2026-11-16): a table of join requests and pairs kept apart (an ordered pair, a state of
   `pending`, `done`, `refused`, `cancelled`, `kept_apart` with a unique key on the pairs kept

@@ -81,6 +81,20 @@ object UiShotsServer {
     // person's is who accepted an invitation, so that the profile shows no "unverified" badge
     if (sys.props.get("ui.images").contains("docs"))
       sql"UPDATE users SET email_verified_at = NOW() WHERE id = $jurorId".update()
+    // and the binary round has a conflict of interest: its last file is by Juror 12 (its author
+    // that juror's wiki account), so that its statistics page's "Conflicts of interest of this
+    // round" stays a link with a count (with none, roundstat-counts.js makes it plain text) and
+    // the conflicts page the organizer guide shows next lists the file. In this run's container
+    // only; the browser tests' rounds have no conflicts
+    if (sys.props.get("ui.images").contains("docs")) {
+      val (coiEmail, coiAccount) = ("juror12@gatling.test", "Juror 12")
+      val coiJuror = f.jurors.find(_._2 == coiEmail).map(_._1).getOrElse(sys.error(s"No juror $coiEmail"))
+      val coiPage = sql"""SELECT MAX(page_id) FROM round_image WHERE round_id = ${f.roundBinaryId}
+                          AND status = ${db.scalikejdbc.RoundImageJdbc.Status.In}"""
+        .map(_.longOpt(1)).single().flatten.getOrElse(sys.error("The binary round has no files"))
+      sql"UPDATE images SET author = $coiAccount WHERE page_id = $coiPage".update()
+      db.scalikejdbc.User.setWikiAccount(coiJuror, Some(coiAccount))
+    }
     // the browser tests (browser-test/): jurors with files in both rounds, each engine voting
     // as its own juror and signing in and out as another, so engines may share one server
     val listedJurors = f.jurorsIn(Some(f.roundBinaryId)).filter(j => f.roundsOf(j._1).contains(f.roundRatingId)).take(8)

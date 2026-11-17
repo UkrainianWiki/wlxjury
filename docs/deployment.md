@@ -2,7 +2,7 @@
 
 Use `scripts/deployment/wlxjury-deploy.py` on Linux as root, with Python 3.8+, systemd, Apache and MariaDB client tools, for the one-time setup and the cutover release. After the cutover, routine releases use the smaller [`wlxjury-release`](#routine-deployment-after-the-cutover) script, with a `restore` command and a recovery runbook ([why](#why-it-works-this-way)). The old blue/green scripts are disabled and their slot files removed.
 
-Run every `deploy`, `restore` and `reopen` inside `tmux` (or `screen`). The tool ignores SSH hangups and logs each step to `/var/backups/wlxjury/operations.log`, so a dropped connection does not interrupt a backup, migration or restore. You still need the terminal to follow it and to act on the result.
+Run every `deploy`, `restore` and `reopen` inside `tmux` (or `screen`). `wlxjury-release` logs each step to the operation's folder (`/var/backups/wlxjury/UTC_TIMESTAMP-BUILD/operation.log`), and `tmux` keeps it running when the connection drops. The cutover tool `wlxjury-deploy.py` also ignores SSH hangups itself and logs each step to `/var/backups/wlxjury/operations.log`. Either way a dropped connection does not interrupt a backup, migration or restore. You still need the terminal to follow it and to act on the result.
 
 The selected baseline is the latest benchmarked background-distribution release, including **V55.1 and V60**. The changes from `bcdf9847` are present as `32a1253`; its migration, test and fixture are identical. The measured MariaDB recommendation remains `bench/cnf/recommended-60-wlxjury.cnf`, with a **256 MiB** buffer pool. These changes have been implemented locally; production setup and real-data rehearsal are separate rollout steps.
 

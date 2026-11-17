@@ -474,7 +474,7 @@ The link **Conflicts of interest of this round**, under the table on the round's
 **Statistics** page, opens the page **Conflicts of interest of round …**. (Admins also find a
 button on the round form.)
 
-<img src="images/organizer-round-statistics-link.png" alt="The end of the statistics table, with the link Conflicts of interest of this round" width="1280">
+<img src="images/organizer-round-statistics-link.png" alt="The end of the statistics table, with the link Conflicts of interest of this round and its count, 1 file" width="1280">
 
 The page has:
 
@@ -484,8 +484,9 @@ The page has:
 - **History**: every disqualification and requalification, newest first: when, which file, the
   reason, the status before and after, and who did it.
 
-A round without conflicts, as in the picture, says so in each part. Admins also have the
+In the picture, one of the round's files is a juror's own photo; no file is disqualified yet
+and there is no history. A part with nothing in it says so. Admins also have the
 controls to disqualify and requalify files there, see [Disqualifying and
 requalifying](admin-guide.md#a-disqualify); for you the page is read only.
 
-<img src="images/organizer-conflicts.png" alt="The conflicts of interest page of a round with no conflicts, no disqualified files and no history" width="1280">
+<img src="images/organizer-conflicts.png" alt="The conflicts of interest page of a round with one file by a juror, no disqualified files and no history" width="1280">

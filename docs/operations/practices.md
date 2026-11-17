@@ -122,8 +122,11 @@ performance §2.7).
 
 ## 4. Deploys and rollback
 
-**4.1 The runbook is deployment.md.** Every `deploy`, `restore` and `reopen` runs inside `tmux`;
-the tool logs each step to `/var/backups/wlxjury/operations.log`. One app instance at a time
+**4.1 The runbook is deployment.md.** Every `deploy`, `restore` and `reopen` runs inside `tmux`.
+`wlxjury-release` (every release since the cutover) logs each step to the operation's own folder,
+`/var/backups/wlxjury/<UTC start>-<build>/operation.log`, beside its `record`, `milestones` and, for
+a migration, the backup `database.sql.gz`; the folder's name is the operation id. Only the cutover
+tool, `wlxjury-deploy.py`, writes `/var/backups/wlxjury/operations.log`. One app instance at a time
 (deployment.md, "One app instance"): the in-memory caches and limits assume it.
 
 **4.2 Pre-deploy checks** are the roadmap's
