@@ -12,6 +12,9 @@
 @* Any error but an authorization denial (accessDenied): a message from conf/messages,
    never text from the request or an exception, and the reference of its log line. *@
 @content = {
+    @if(user.isEmpty) {
+        @snippets.brandBanner()
+    }
     <div class="alert alert-danger" role="alert">
         <h1 class="h4">@Messages(titleKey)</h1>
         <p>@Messages(messageKey, args: _*)</p>

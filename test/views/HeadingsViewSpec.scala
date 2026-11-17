@@ -49,6 +49,16 @@ class HeadingsViewSpec extends PlaySpecification {
           Seq("h4" -> "error.title"))
     }
 
+    "show the wordmark above a signed-out error page, as no heading and not in the navbar, and keep its one h1" in {
+      val doc = Jsoup.parse(contentAsString(views.html.errorPage(None, "error.title", "error.round.not.found")))
+      (doc.select("h1").size must_== 1) and
+        (doc.select("div .wlx-wordmark .wlx-wm-mark[role=img]").attr("aria-label") must_== "WLX") and
+        (doc.select("h1 .wlx-wordmark").size must_== 0) and
+        (doc.select("nav .wlx-wordmark").size must_== 0) and
+        (Jsoup.parse(contentAsString(views.html.errorPage(Some(juror), "error.title", "error.round.not.found")))
+          .select(".wlx-wordmark").size must_== 0)
+    }
+
     "have a hidden h1 in a gallery, and its tiles' ids instead of an empty h1 in each" in {
       val list = RoundList(ratedRound, juror.getId, view = GalleryView.ByRate)
       val byRate = contentAsString(views.html.galleryByRate(juror, list, files, Pager(1, files.size), Nil, None,

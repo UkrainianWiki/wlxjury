@@ -1,4 +1,5 @@
 application.name=WLX Jury
+application.title=WLX Жюри
 application.brand.suffix=Жюри
 author=Автор
 

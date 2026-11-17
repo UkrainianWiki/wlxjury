@@ -300,19 +300,50 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
   }
 
   "the sign-in page" should {
-    "name the product WLX Jury, one name untranslated, in its title, heading and top bar" in {
+    "name the product WLX Jury, one name untranslated, in its title and heading, the wordmark above the form" in {
       testDbApp { implicit app =>
         val messages = app.injector.instanceOf[MessagesApi]
         val doc = org.jsoup.Jsoup.parse(contentAsString(route(app, FakeRequest(GET, "/auth").withCSRFToken).get))
         forall(Seq("en", "fr", "uk", "ru"))(l => messages("application.name")(Lang(l)) === "WLX Jury") and
           (doc.title === "WLX Jury") and
-          (doc.select("h1").text === "WLX Jury") and
+          // the title's second word is the translated one, as the wordmark's
+          forall(Seq("en", "fr", "uk", "ru"))(l =>
+            messages("application.title")(Lang(l)) === "WLX " + messages("application.brand.suffix")(Lang(l))) and
+          (doc.select("h1").size === 1) and
+          (doc.select("nav .wlx-wordmark").size === 0) and
           // the wordmark: its mark is named "WLX" for a screen reader, the name's second word follows
-          (doc.select("nav .navbar-brand .wlx-wm-mark[role=img]").attr("aria-label") === "WLX") and
-          (doc.select("nav .navbar-brand .wlx-wm-name").text === "Jury") and
-          (doc.select("nav .navbar-brand svg[aria-hidden=true]").size === 3) and
+          (doc.select("h1 .wlx-wordmark .wlx-wm-mark[role=img]").attr("aria-label") === "WLX") and
+          (doc.select("h1 .wlx-wordmark .wlx-wm-name").text === "Jury") and
+          (doc.select("h1 .wlx-wordmark svg[aria-hidden=true]").size === 3) and
           // sentence case, as the other buttons
           (doc.select("button#submit").text === "Sign in")
+      }
+    }
+
+    "carry the one wordmark h1, translated, and no brand in the navbar, on every signed-out page" in {
+      testDbApp { implicit app =>
+        val messagesApi = app.injector.instanceOf[MessagesApi]
+        val lc = login
+        implicit val flash: Flash = Flash()
+        implicit val req: RequestHeader = FakeRequest(GET, "/").withCSRFToken
+        forall(Seq("en", "uk")) { l =>
+          implicit val messages: play.api.i18n.Messages = messagesApi.preferred(Seq(Lang(l)))
+          val suffix = messages("application.brand.suffix")
+          val pages = Seq(
+            "sign-in" -> views.html.login(lc.loginForm),
+            "invitation" -> views.html.invitation(lc.setPasswordForm, hadPassword = false, purpose = "invitation"),
+            "setup" -> views.html.setup(lc.setupForm),
+            "invalid link" -> views.html.accountLinkInvalid(),
+            "email change" -> views.html.emailConfirm(Some("t"), "a@example.org"))
+          forall(pages) { case (name, html) =>
+            val doc = org.jsoup.Jsoup.parse(html.body)
+            (doc.select("h1").size aka s"$name h1s in $l" must_== 1) and
+              (doc.select("h1 .wlx-wordmark .wlx-wm-mark[role=img]").attr("aria-label") aka name must_== "WLX") and
+              (doc.select("h1 .wlx-wordmark .wlx-wm-name").text aka name must_== suffix) and
+              (doc.select("nav .wlx-wordmark").size aka s"$name navbar brand" must_== 0) and
+              (doc.title aka s"$name title in $l" must_== "WLX " + suffix)
+          }
+        }
       }
     }
 

@@ -1,10 +1,11 @@
 @(token: Option[String], email: String)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 @* an email change's link: a button that confirms it (a POST), then the result. The address
    shown is the one the link was sent to, which the reader owns *@
-@mainAdmin("application.name") {
+@mainAdmin("application.title") {
+@snippets.brandHeading()
 <div class="row">
 <div class="col-md-6 offset-md-3">
-    <h1 class="h3">@Messages("email.change.title")</h1>
+    <h2 class="h3">@Messages("email.change.title")</h2>
     @token match {
         case Some(value) => {
             <p>@Messages("email.change.confirm", email)</p>

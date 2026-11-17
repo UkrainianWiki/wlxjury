@@ -1,0 +1,5 @@
+@()(implicit messages: Messages)
+@* The wordmark as the logo of a signed-out page that has its own h1 (an error, the sign-out
+   confirmation, the account chooser): centred above its content, no heading (snippets/brandHeading
+   is the h1 of the pages that have none). Never in the navbar. *@
+<div class="text-center mt-4 mt-md-5 mb-4 wlx-signin-brand">@snippets.wordmark()</div>

@@ -895,9 +895,10 @@ div.thumb_small.wlx-thumb-failed .wlx-video-mark {
     max-width: min(20rem, calc(100vw - 2rem));
 }
 
-/* the signed-out navbar's brand (snippets/wordmark): the serif W in the text colour, the ✓ and ✗
-   in the vote colours (3:1 or more on the navbar in both modes), then "Jury" */
+/* the signed-out pages' logo (snippets/wordmark): the serif W in the text colour, the ✓ and ✗
+   in the vote colours (3:1 or more on the page background in both modes), then "Jury" */
 .wlx-wordmark { display: inline-flex; align-items: center; font-size: 1.25rem; line-height: 1; white-space: nowrap; }
+.wlx-signin-brand .wlx-wordmark { font-size: 2.5rem; }
 .wlx-wm-mark { display: inline-flex; align-items: center; }
 .wlx-wm-glyph { height: 1.05em; width: auto; display: block; margin-right: -.02em; }
 .wlx-wm-glyph.wlx-wm-w { margin-right: .02em; }

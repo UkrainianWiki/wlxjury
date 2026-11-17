@@ -1,11 +1,12 @@
 @(loginForm: Form[(String, String)], returnTo: Option[String] = None, noAccounts: Boolean = false, providers: Seq[String] = Nil)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
-@mainAdmin("application.name") {
+@mainAdmin("application.title") {
 
-@* the product's name (one name, untranslated: application.name), centred above the form, with
-   room below the top bar. The whole block is one centred column: its texts (headings, "or", the
-   note, the theme switch) centred, its fields and buttons the column's full width *@
-<h1 class="text-center mt-4 mt-md-5 mb-4">@Messages("application.name")</h1>
+@* the product's name as the wordmark (snippets/wordmark: "WLX" for a screen reader, then the
+   translated "Jury"), centred above the form, with room below the top bar. The whole block is
+   one centred column: its texts (headings, "or", the note, the theme switch) centred, its fields
+   and buttons the column's full width *@
+@snippets.brandHeading()
 <div class="row">
 <fieldset class="col-md-6 offset-md-3">
 

@@ -1,8 +1,8 @@
 @(setupForm: Form[(String, String, String, String)])(implicit flash: Flash, messages: Messages, req: RequestHeader)
 @* the first account of an empty installation (P20): only while no account exists and a setup
    token is configured (LoginController.setupView) *@
-@mainAdmin("application.name") {
-<h1 class="visually-hidden">@Messages("application.name")</h1>
+@mainAdmin("application.title") {
+@snippets.brandHeading()
 <div class="row">
 <fieldset class="col-md-6 offset-md-3">
 

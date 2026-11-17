@@ -2,8 +2,8 @@
 @* an invitation's or a password link's page: the new password, twice; the token in a hidden
    field (the POST carries the CSRF token too). `wikiLogin`: an account without an email (a
    shared link's) signs in by its wiki account *@
-@mainAdmin("application.name") {
-<h1 class="visually-hidden">@Messages("application.name")</h1>
+@mainAdmin("application.title") {
+@snippets.brandHeading()
 <div class="row">
 <fieldset class="col-md-6 offset-md-3">
 

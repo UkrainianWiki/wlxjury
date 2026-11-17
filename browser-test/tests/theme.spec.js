@@ -129,6 +129,7 @@ function contrast(fg, bg) {
 // the navbar's selected and rejected tabs (own votes) in the active tab's background, which is
 // the lightest ground their text sits on: 4.5:1 in both modes (the colours come from theme.css)
 test.describe('the vote tabs\' contrast', { tag: '@J-30' }, () => {
+  test.use({ role: 'juror' }); // signed out, the gallery is the sign-in page, which has no tabs bar
   for (const mode of ['light', 'dark']) {
     test(`the active selected and rejected tabs read at 4.5:1 in ${mode} mode`, async ({ context, page, fixture, baseURL }) => {
       await context.addCookies([{ name: 'theme', value: mode, url: baseURL }]);

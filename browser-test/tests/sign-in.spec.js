@@ -5,6 +5,17 @@ import { test, expect } from '../lib/fixtures.js';
 import { allowFirefoxLeavingGallery, galleryPath, signIn } from '../lib/actions.js';
 
 test.describe('signing in and out', () => {
+  // the logo is the one h1; its name is "WLX" and the translated suffix, spoken as one name
+  for (const [locale, name] of [['en-US', 'WLX Jury'], ['uk-UA', 'WLX Журі']]) {
+    test(`the sign-in page's h1 is the wordmark, named "${name}" (${locale})`, { tag: '@J-03' }, async ({ contextAs }) => {
+      const context = await contextAs(null, { locale });
+      const page = await context.newPage();
+      await page.goto('/auth');
+      await expect(page.getByRole('heading', { level: 1, name, exact: true })).toBeVisible();
+      await expect(page.locator('nav .wlx-wordmark')).toHaveCount(0);
+    });
+  }
+
   test('a juror signs in, then signs out from the user menu', { tag: ['@J-02', '@J-06', '@J-07', '@S-02'] }, async ({ page, fixture, diagnostics, browserName }) => {
     allowFirefoxLeavingGallery(diagnostics, browserName); // U22: the sign-out leaves a gallery
     const juror = fixture.freshJuror;
