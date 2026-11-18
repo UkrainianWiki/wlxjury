@@ -100,8 +100,11 @@ under the table recalls which roles make the person's own photos conflicts of in
   itself.
 - An account that hasn't proved its email, for example one made unverified by a shared link,
   gets an invitation instead, and the role applies when they accept it. Unticked, the invitation
-  waits in the invitations list as **Not sent**, for you to send or share. A wiki account that
-  belongs to such an account is not added: add the person by email.
+  waits in the invitations list as **Not sent**, for you to send or share.
+- A **wiki account** (with no email) that an account already has, but that nobody has verified,
+  adds nothing at first: the page asks you to pick the account you mean and confirm it, see
+  [A wiki account nobody verified](#a-wiki-confirm). A role without access (**Board**, **Audit
+  committee**, **Staff**, **No role**) is added at once, as before.
 - A person added with a wiki account only has no email. They can't sign in with a password
   until you share a link or set one for them (only while Wikimedia sign-in is not set up, see
   [Sharing a link](#a-share-link) and [Passwords](#a-passwords)), or add the person by email to
@@ -110,6 +113,48 @@ under the table recalls which roles make the person's own photos conflicts of in
 The page tells you how many accounts were created, how many people joined and how many were
 members already, how many invitations were not emailed because the box was unticked, and any that
 could not be sent.
+
+<a id="a-wiki-confirm"></a>
+### A wiki account nobody verified
+
+A wiki account stored in the tool says who holds the account only once its owner has signed in
+with it through Wikimedia: until then anyone could have typed it into their own account, or an
+admin of another contest could have mistyped it. So when you type, in the add row, a wiki account
+(and no email) that such accounts have, nothing is added yet. The page **Confirm the account with
+the wiki account** … lists those accounts **by name only**, none of them chosen; old contests
+sometimes left several accounts with one wiki account, and one person may have several on purpose.
+
+- Pick the account of the person you mean. The page shows the name you typed in the add row
+  beside them, to compare. To see more about one first (its email, masked, and
+  the contests of yours it is in), search for it under [Find an existing
+  account](#a-find-account) on the users page.
+- Tick **This is the person I mean** and press **Add to this contest**. Without a pick or the tick,
+  nothing is added and the page says so.
+- **Send an invitation email** and **Tell its owner by email** are both unticked, whatever you
+  chose in the add row: tick them here for the account you picked. **Cancel** goes back to the
+  users page.
+
+The account is then added as if you had found it with the search (see [Finding an existing
+account](#a-find-account)): an account whose owner proved its email joins at once; an account
+with no password and no email joins at once too (see below); one with an email but no password
+joins at once and needs an invitation to set its password; another gets an invitation, and the role
+applies when they accept it. An invitation is mailed only if you ticked **Send an invitation
+email**; unticked, the one that gives the role waits in the invitations list as **Not sent**, for
+you to send or share, and none is made for the account that only needs a password: send it with
+the envelope button, or create a link to share, from the users page. The message after the add names the account you confirmed with its email,
+masked there if the account wasn't in your contests before; once it is in your contest (or
+invited), the users page and the search show its email in full, as for anyone you add. Its owner
+sees a notice in the tool when they next sign in.
+
+**Be sure before you confirm:** the role goes to whoever signs in to that account, with its
+password or its email, and that may not be the person you mean. If you are not sure, add the
+person by email instead. Each confirmation is recorded in the account changes as **wiki account
+unverified, confirmed by the admin**, and logged with your account.
+
+An account with no password and no email (made with a wiki account only) is confirmed the same
+way. Nobody can sign in to it until someone shares a link to set its password: if you can't (the
+account is also in a contest you don't administer), the page says that the person signs in with a
+link from root.
 
 <a id="a-find-account"></a>
 ### Finding an existing account
@@ -171,7 +216,10 @@ Name1 Surname1 <mail1@example.org>
 
 Choose the role for all of them; the text under it says the same about the roles as the users
 page. **Send an invitation email** works as on the users page (unticked: nothing is mailed). They
-are added as in [Adding a person](#a-add-person).
+are added as in [Adding a person](#a-add-person), except that an import never asks you to confirm
+an account: a wiki account nobody verified is counted as **Not added yet**, with a link to the
+users page, where you type each such wiki account in the add row and
+[confirm the account](#a-wiki-confirm).
 
 <a id="a-edit-person"></a>
 ### Changing a person

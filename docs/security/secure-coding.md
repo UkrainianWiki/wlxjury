@@ -383,8 +383,12 @@ its `org.mariadb.jdbc` line is a pre-deploy item until the infra plan's Step 4.
 
 **Rule.** An access role (jury, organizer, admin) reaches an existing account only if nobody
 but the email's owner can sign in to it (`User.mayTakeAccessRole`: root, verified email, or no
-password); otherwise an add becomes an invitation. A wiki-account match never attaches an
-access role to an unverified wiki account. Emails are trimmed (`LoginText.clean`: also tabs and
+password); otherwise an add becomes an invitation. An add by wiki account alone gives an access
+role to an account whose wiki account is unverified only after the admin picked the account and
+confirmed that it is the person they mean (**since A-3**, below), and then by the email path's rule
+(an invitation where the account can't take the role directly). A role without access joins on
+such a match directly, and a later role change on Edit user follows the email's rule only, with no
+confirmation (the residual risk under A-3, below). Emails are trimmed (`LoginText.clean`: also tabs and
 non-breaking spaces, never a password's ASCII trim) and lowercased; wiki names normalised and unique. Links are 32 random bytes, stored as SHA-256, single use, expiring,
 bound to account and address. Every refused link gives the same page (no account
 enumeration). One's own password or email change needs the current password. Another account's
@@ -432,7 +436,7 @@ an email while Wikimedia sign-in is offered (it signs in there), at creation and
 link is opened and used. A shared link proves nothing: accepting it ends sessions, API tokens and
 identities as a mailed one does (identities only then, never when the link is created), **clears
 `email_verified_at` and `wiki_account_verified_at`** (so another contest's add becomes a mailed
-invitation and a wiki-account add is refused, and a Google sign-in by the address no longer
+invitation and a wiki-account add needs the admin's confirmation and becomes one too, and a Google sign-in by the address no longer
 links; a mailed link's acceptance verifies the email again), and gives only pending roles its
 creator may still give. Mail that is not the person's goes from `UserService.systemSender`.
 
@@ -441,7 +445,7 @@ the email of a verified account with no ties (no membership, past work or invita
 which joins their contest directly (`User.mayTakeAccessRole`), and then share a reset for it, or
 set its password (**Set password**, the same rule). The link's holder (or the admin) gains the account's name and email and the owner is locked out; the account becomes
 unverified, so it can't be pulled into other contests (another contest's add mails an invitation,
-a wiki-account add is refused). Root's mailed reset, or a later mailed invitation, gives the
+a wiki-account add needs the admin's confirmation and then invites too). Root's mailed reset, or a later mailed invitation, gives the
 address's owner the account back (its acceptance sets the password and ends the holder's sessions).
 **Since A-1** (the users page's search, [accounts plan](../plans/2026-11-16-existing-accounts.md)
 §a, A1 accepted by the maintainer 2026-11-16) **the admin no longer needs the address**: the
@@ -556,16 +560,69 @@ addresses, no link). Logged by ids only: `account_join_queued`, `account_join_re
 `sign_in_refused accountId= reason=account_join`. **Residual risk:** a join can't be undone in the
 tool (votes are not moved back); the preview, the CSRF POST and the performer's rule are what
 stand before it.
+**Since A-3** (adding by an unverified wiki account, decision A2: confirm any account, wherever it
+is, [existing accounts plan](../plans/2026-11-16-existing-accounts.md) §b; **this supersedes S2's
+refusal for this path**): the add row given a wiki account and no email, for an access role, that
+names accounts whose wiki account is unverified adds nothing (`WikiAccountUnverified`, still logged
+`add_refused reason=wiki_account_unverified`); it shows every non-deleted account with that wiki
+account (`UserService.wikiMatches`; root accounts to root only) **by name only**
+(`AccountSearch.describe`'s name: an address typed into it masked outside the admin's contests),
+none preselected, with the name the admin typed in the add row shown beside them, and both mails
+unticked (the add row's "Send an invitation email" was chosen for another recipient). Each showing
+of the page is logged at INFO on `security.account` by ids and counts (`wiki_confirm_page
+byAccountId= contestId= matches=`). The admin picks one and ticks **This is the person I mean**; the POST
+(`UserController.confirmWikiAccount`, CSRF, root or an admin of the contest) requires both, else
+the page again (400) and nothing written, and reads the matches again: an id the wiki account
+doesn't name now (forged, renamed meanwhile, deleted, root for an admin) is a 404. Then
+`UserService.addConfirmedWikiAccount`, which is A-1's add by id (`addAccountToContest`, the email
+path's rule under the row lock: it joins if `mayTakeAccessRole`, otherwise the role waits for an
+invitation; no mail unless ticked), recorded in the change log with the comment `wiki account
+unverified, confirmed by the admin`, which, like `from search`, makes the owner's notice in the
+tool and which the edit form refuses as a typed comment (`UserService.NoticeComments`). The result
+names the account and shows its address as the search shows it, read before the add. A
+**placeholder** (no password, no email, no Wikimedia identity now or before) found by the add row
+takes the same confirmation and never joins unconfirmed (`matchAccount`'s wiki path still refuses
+it until the confirmation); after it, where this admin may not create its link
+(`ShareLinkService.refusal`) and Wikimedia sign-in is off, the page says the person signs in with
+a link from root. A role without access (`board`, `auditor`, `staff`, `no`) joins directly, as
+before. **Import users** never confirms row by row: such rows are counted ("Not added yet") with a
+link to the users page, where each is confirmed in the add row. Logged at INFO on
+`security.account` by ids only: `add_confirmed_unverified_wiki accountId= byAccountId= contestId=
+role= matches= placeholder= outcome=added|invited|already_member|in_join|no_email|not_possible|retired
+verified=`, where `added` means the account is a member after the add (an account with an email but
+no usable password joins, and its invitation only sets the password). A match that is only a root account, for an admin, keeps the earlier message ("add them
+by email"): it tells the admin that some account they can't see has that wiki account, a small
+oracle accepted with the A-3 review (2026-11-18), since the search already says which names have
+accounts and root accounts are few. **The risk, stated:** a stored wiki name and a full name are
+self-set or typed by an admin, so they don't prove who holds the account; after the confirmation
+the role goes to whoever controls the matched account (its password, its email), who may not be
+the person the admin meant (someone who once typed that wiki name into their own account, or an
+account another contest's admin mistyped), and with an access role that person votes in, or sees,
+the admin's contest. What stands between them: the confirmation (by name, with the risk said on
+the page), the email path's rule (an account that can't take the role directly gets only an
+invitation to its own address), the owner's notice, the change log row and the log line. Accepted
+by the maintainer (A2, 2026-11-16). **Residual risk, a role without access:** the add row given a
+wiki account alone with `board`, `auditor`, `staff` or `no` still joins the matched account
+directly, unverified, with no confirmation (as before A-3), placeholders included. A later Edit user
+change of that membership to an access role then follows only the email's rule
+(`mayTakeAccessRole`: a placeholder, an account without a password or with a verified email gets
+the access directly; another an invitation), with no confirmation, no owner notice and no
+`add_confirmed_unverified_wiki` line (the change log records the role change, by the admin). So an
+access role can reach an account by its unverified wiki account in two steps. Accepted by the
+maintainer (2026-11-18): the behaviour is kept and documented, not changed.
 
 **Example.** `UserService.addToContest` (results `NewAccount`, `JoinedContest`, `Invited`,
-`WikiAccountUnverified`); `UserService.addAccountToContest` (the search's add by id: the account
+`WikiAccountUnverified`); `UserService.addConfirmedWikiAccount` (an unverified wiki account, confirmed by
+the admin); `UserService.addAccountToContest` (the search's add by id: the account
 looked up once before its row lock and checked again under it, a deleted or unknown id a 404);
 `services.AccountSearch`; `services.WikiTakenPanel`; `services.AccountRetirement`; `services.AccountJoin`; `services.AccountTokenService.check`; acceptance in one transaction
 with the token row locked; `ShareLinkService.refusal` (who may share a link, or set a password).
 
 **Guards.** `AccountInvitationSpec`, `ShareLinkSpec`, `AdminSetPasswordSpec`, `OwnAccountSpec`, `AccountReviewFixesSpec`, `SetupSpec`,
 `db.AccountVerificationMigrationSpec`, `MultiContestUserSpec`, `UserControllerSpec`, `AccountSearchSpec`, `WikiTakenPanelSpec`, `RetireAccountSpec`,
-`DuplicateAccountsSpec`, `AccountJoinSpec`.
+`DuplicateAccountsSpec`, `AccountJoinSpec`, `WikiConfirmSpec` (the confirmation required on the server, a
+forged or stale pick a 404, placeholders confirmed only, organizers, jurors, other contests' admins,
+signed out and a missing CSRF token refused).
 
 A Google or Wikimedia identity's first sign-in links to an account by the same rule
 (`services.oauth.IdentityLinker`): by an email the provider is authoritative for (Google: Gmail or

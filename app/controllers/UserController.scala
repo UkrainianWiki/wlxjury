@@ -133,13 +133,7 @@ class UserController @Inject()(cc: ControllerComponents,
               try {
                 val result = userService.addAccountToContest(user, accountId, contest, role, sendInvitation, tellOwner)
                 // what its owner learns: the notice in the app, and the mail only if ticked
-                val notice = result.notice match {
-                  case UserService.SearchNotice.NotNeeded => None
-                  case UserService.SearchNotice.NotSent   => Some(Messages("account.added.notice.in.app"))
-                  case UserService.SearchNotice.Sent      => Some(Messages("account.added.notice.sent"))
-                  case UserService.SearchNotice.Failed    => Some(Messages("account.added.notice.failed"))
-                  case UserService.SearchNotice.NoEmail   => Some(Messages("account.added.notice.no.email"))
-                }
+                val notice = noticeText(result.notice)
                 // the edited account retired (A-4), only with an add that gave the account instead
                 // a membership or an invitation, never the account added itself
                 val gave = result.notice != UserService.SearchNotice.NotNeeded ||
@@ -162,6 +156,100 @@ class UserController @Inject()(cc: ControllerComponents,
                 case _: UserService.RoleNotAssignable =>
                   rolesLogger.warn(s"refused a role that is not assignable accountId=${user.getId} targetId=$accountId")
                   BadRequest(views.html.errorPage(Some(user), "error.title", "error.bad.request"))
+              }
+            }
+          )
+      }
+    }
+
+  /** What an added account's owner learns ([[UserService.addAccountToContest]]): the notice in the
+    * app, and the mail only if ticked; None where the add gave nothing.
+    */
+  private def noticeText(notice: UserService.SearchNotice)(implicit messages: Messages): Option[String] =
+    notice match {
+      case UserService.SearchNotice.NotNeeded => None
+      case UserService.SearchNotice.NotSent   => Some(messages("account.added.notice.in.app"))
+      case UserService.SearchNotice.Sent      => Some(messages("account.added.notice.sent"))
+      case UserService.SearchNotice.Failed    => Some(messages("account.added.notice.failed"))
+      case UserService.SearchNotice.NoEmail   => Some(messages("account.added.notice.no.email"))
+    }
+
+  /** The page that asks the admin to pick and confirm the account an unverified wiki account names
+    * (accounts plan A-3): the accounts by name only ([[services.AccountSearch.describe]]: an address
+    * typed into a name masked outside the admin's contests; root accounts to root only), none
+    * preselected (`picked`: the one picked on a POST shown again), with the add row's role, the
+    * name the admin typed there (`typedName`), and both mails unticked at first ("Send an
+    * invitation email" too: the add row's choice was made for a person, not for one of these
+    * accounts). Logged at INFO on `security.account` by ids and counts only (`wiki_confirm_page
+    * byAccountId= contestId= matches=`), from the add row and from a POST shown again.
+    */
+  private def wikiConfirmPage(status: Status, user: User, contest: ContestJury, wikiAccount: String,
+      matches: Seq[User], role: String, typedName: Option[String], sendInvitation: Boolean = false,
+      tellOwner: Boolean = false, picked: Option[Long] = None, missing: Boolean = false)(implicit
+      request: play.api.mvc.Request[_]): Result = {
+    val shown = services.AccountSearch.describe(user, contest.id, matches)
+    play.api.Logger("security.account").info(s"wiki_confirm_page byAccountId=${user.getId} contestId=${contest.getId} " +
+      s"matches=${shown.size}")
+    status(views.html.wikiConfirm(user, contest, wikiAccount, shown, role, typedName.map(_.trim.take(255)).filter(_.nonEmpty),
+      sendInvitation, tellOwner, picked, missing))
+  }
+
+  /** The confirmation of an add by an unverified wiki account (accounts plan A-3, decision A2: any
+    * account, wherever it is): a form POST with the CSRF token carrying the wiki account typed in
+    * the add row, the account picked, its role, the name typed there (shown again only), the two
+    * mail choices and "This is the person I mean". Without an account picked or that box ticked, nothing is added and the page is shown
+    * again (400). The account must still be one the wiki account names, not deleted, not root for
+    * anyone but root; otherwise a 404. Then [[UserService.addConfirmedWikiAccount]]: the search's
+    * add by id (the email path's rule), logged on `security.account`. The page shows the account's
+    * name and its address as the search shows it (masked outside the admin's contests, as read
+    * before the add), what its owner learns, and, for a placeholder whose sign-in link this admin
+    * may not create, that it signs in with a link from root.
+    */
+  def confirmWikiAccount(contestIdParam: Option[Long] = None): EssentialAction =
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, contestIdParam)) { user => implicit request =>
+      contestIdParam.orElse(user.contestId).flatMap(ContestJuryJdbc.findById) match {
+        case None => NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))
+        case Some(contest) =>
+          def notFound = NotFound(views.html.errorPage(Some(user), "error.title", "error.user.not.found"))
+          def badRequest = BadRequest(views.html.errorPage(Some(user), "error.title", "error.bad.request"))
+          UserController.wikiConfirmForm.bindFromRequest().fold(
+            _ => badRequest,
+            { c =>
+              User.normalizeWikiAccount(c.wikiAccount) match {
+                case Left(_) | Right(None) => badRequest
+                case Right(Some(wiki)) =>
+                  val matches = userService.wikiMatches(user, wiki)
+                  val picked = c.accountId.flatMap(id => matches.find(_.id.contains(id)))
+                  if (matches.isEmpty || (c.accountId.nonEmpty && picked.isEmpty)) notFound
+                  else if (picked.isEmpty || !c.confirmed)
+                    // nothing added: the page again, with what is missing
+                    wikiConfirmPage(BadRequest, user, contest, wiki, matches, c.role, c.typedName, c.sendInvitation,
+                      c.tellOwner, c.accountId, missing = true)
+                  else try {
+                    // its address as the search shows it, read before the add
+                    val shown = services.AccountSearch.describe(user, contest.id, picked.toSeq).headOption
+                    val done = userService.addConfirmedWikiAccount(user, picked.get.getId, wiki, contest, c.role,
+                      c.sendInvitation, c.tellOwner)
+                    val who = Messages("wiki.confirm.done", wiki,
+                      shown.map(_.name).filter(_.trim.nonEmpty).getOrElse(Messages("wiki.confirm.no.name")),
+                      shown.flatMap(_.email).getOrElse(Messages("account.search.no.email")))
+                    // a placeholder: nobody signs in to it until someone shares a link (or Wikimedia
+                    // sign-in is on); said where this admin may not create that link
+                    val signIn = Option.when(done.placeholder && !oauthSettings.wikimediaConfigured &&
+                      done.result.added.isInstanceOf[UserService.JoinedContest] &&
+                      ShareLinkService.refusal(user, done.account, AccountTokenJdbc.Invitation, contest.id).nonEmpty)(
+                      Messages("wiki.confirm.placeholder.root"))
+                    Redirect(routes.UserController.users(contest.id)).flashing("users-added" ->
+                      ((addedMessage(Seq(done.result.added)) +: who +: noticeText(done.result.notice).toSeq) ++
+                        signIn).mkString(" "))
+                  } catch {
+                    case _: UserService.AccountNotFound => notFound
+                    case _: UserService.InvalidWikiAccount => badRequest
+                    case _: UserService.RoleNotAssignable =>
+                      rolesLogger.warn(s"refused a role that is not assignable accountId=${user.getId} " +
+                        s"targetId=${picked.get.getId}")
+                      badRequest
+                  }
               }
             }
           )
@@ -453,9 +541,21 @@ class UserController @Inject()(cc: ControllerComponents,
             if (user.isAdmin(formUser.contestId)) {
               // an existing email joins the contest with its account, or is invited
               try {
-                val added = userService.createNewUser(user, formUser, extras.sendInvitation)
-                Redirect(routes.UserController.users(formUser.contestId))
-                  .flashing("users-added" -> addedMessage(Seq(added)))
+                userService.createNewUser(user, formUser, extras.sendInvitation) match {
+                  // A-3: an unverified wiki account adds nothing yet; the admin picks the account
+                  // they mean and confirms it (confirmWikiAccount)
+                  case UserService.WikiAccountUnverified(_, matches) if matches.nonEmpty =>
+                    val contest = formUser.contestId.orElse(user.contestId).flatMap(ContestJuryJdbc.findById)
+                    val wiki = formUser.wikiAccount.flatMap(User.normalizeWikiAccount(_).toOption.flatten)
+                    (for (c <- contest; w <- wiki) yield
+                      wikiConfirmPage(Ok, user, c, w, matches, formUser.contestRole.getOrElse(User.JURY_ROLE),
+                        Option(formUser.fullname))).getOrElse(
+                      Redirect(routes.UserController.users(formUser.contestId))
+                        .flashing("users-added" -> addedMessage(Seq(UserService.WikiAccountUnverified(matches.head)))))
+                  case added =>
+                    Redirect(routes.UserController.users(formUser.contestId))
+                      .flashing("users-added" -> addedMessage(Seq(added)))
+                }
               } catch {
                 // a role the service refuses ([[UserService.addToContest]]): nothing created
                 case _: UserService.RoleNotAssignable => roleRefused(formUser)
@@ -977,7 +1077,11 @@ class UserController @Inject()(cc: ControllerComponents,
     import UserService._
     // an invitation the account's retirement prevented (Mail.Retired) is not one
     val invited = added.count { case Invited(_, m) => m != Mail.Retired; case _ => false }
-    val unverifiedWiki = added.count(_.isInstanceOf[WikiAccountUnverified])
+    // an unverified wiki account: to confirm in the add row (A-3), or, naming no account this admin
+    // may confirm (a root account's), to add by email
+    val unverifiedWiki = added.collect { case w: WikiAccountUnverified => w }
+    val toConfirm = unverifiedWiki.count(_.matches.nonEmpty)
+    val byEmailOnly = unverifiedWiki.size - toConfirm
     val noEmail = added.count(_.isInstanceOf[NoEmailToInvite])
     val inJoin = added.count(_.isInstanceOf[InJoin])
     def mailOf(a: Added): Option[Mail] = a match {
@@ -994,7 +1098,8 @@ class UserController @Inject()(cc: ControllerComponents,
                   added.count(_.isInstanceOf[JoinedContest]),
                   added.count(_.isInstanceOf[AlreadyMember]))) ++
       (if (invited > 0) Seq(messages("users.invited", invited)) else Nil) ++
-      (if (unverifiedWiki > 0) Seq(messages("users.not.added.wiki.unverified", unverifiedWiki)) else Nil) ++
+      (if (toConfirm > 0) Seq(messages("users.not.added.wiki.confirm", toConfirm)) else Nil) ++
+      (if (byEmailOnly > 0) Seq(messages("users.not.added.wiki.unverified", byEmailOnly)) else Nil) ++
       (if (noEmail > 0) Seq(messages("users.not.added.no.email", noEmail)) else Nil) ++
       (if (inJoin > 0) Seq(messages("users.not.added.joining", inJoin)) else Nil) ++
       (if (notSent > 0) Seq(messages("users.invitations.not.sent", notSent)) else Nil) ++
@@ -1076,9 +1181,15 @@ class UserController @Inject()(cc: ControllerComponents,
                 // was added, each line not added with why (and an error's reference), and the
                 // form with only those people, to import again ([[ImportResults]])
                 val key = ImportResults.put(user.getId, contestId, ImportResults.Result(problems, role, sendInvitation))
-                Redirect(routes.UserController.showImportUsers(Some(contestId))).flashing(
+                // rows of an unverified wiki account: confirmed one by one in the add row (A-3)
+                val toConfirm = added.exists {
+                  case w: UserService.WikiAccountUnverified => w.matches.nonEmpty
+                  case _                                    => false
+                }
+                Redirect(routes.UserController.showImportUsers(Some(contestId))).flashing(Seq(
                   "users-added" -> message, UserController.ImportResultKey -> key,
-                  UserController.ImportResultCount -> problems.size.toString)
+                  UserController.ImportResultCount -> problems.size.toString) ++
+                  (if (toConfirm) Seq(UserController.WikiConfirmFlash -> "1") else Nil): _*)
               }
             }
           )
@@ -1442,6 +1553,30 @@ object UserController {
       "retireAccountId" -> optional(longNumber)
     )
   )
+
+  /** The confirmation of an add by an unverified wiki account ([[UserController.confirmWikiAccount]],
+    * accounts plan A-3): the wiki account typed, the account picked (none: the page again), the
+    * role, the two mails (unticked by default) and "This is the person I mean".
+    */
+  final case class WikiConfirm(wikiAccount: String, accountId: Option[Long], role: String, typedName: Option[String],
+      sendInvitation: Boolean, tellOwner: Boolean, confirmed: Boolean)
+
+  val wikiConfirmForm: Form[WikiConfirm] = Form(
+    mapping(
+      "wikiAccount" -> nonEmptyText(maxLength = 255),
+      "accountId" -> optional(longNumber),
+      "role" -> nonEmptyText.verifying("error.invalid", User.isContestRole(_)),
+      "typedName" -> optional(text(maxLength = 255)),
+      "sendInvitation" -> default(boolean, false),
+      "tellOwner" -> default(boolean, false),
+      "confirmed" -> default(boolean, false)
+    )(WikiConfirm.apply)(WikiConfirm.unapply)
+  )
+
+  /** The import's flash when rows matched an unverified wiki account: its page links the users
+    * page, where each is confirmed in the add row (accounts plan A-3).
+    */
+  val WikiConfirmFlash = "users-wiki-confirm"
 
   /** A save refused inside its transaction (a message key): nothing of it is written. */
   final class Refused(val key: String) extends RuntimeException(key, null, false, false)

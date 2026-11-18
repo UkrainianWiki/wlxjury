@@ -58,6 +58,9 @@ export function fixtureFor(browserName) {
     // this engine's pair for the Edit user form's "wiki account taken" panel (users.spec.js): a
     // member with no role and no wiki account, and an account in no contest with the wiki account
     wikiTaken: (s.wikiTaken || [])[i],
+    // this engine's two accounts in no contest with one wiki account nobody verified, for the add
+    // row's confirmation (users.spec.js, A-3)
+    wikiConfirm: (s.wikiConfirm || [])[i],
     // this engine's groups of possible duplicates (their shared wiki accounts), for the
     // duplicates report (duplicates.spec.js); none in the guides' screenshot mode
     duplicateGroups: (s.duplicateGroups || [])[i] || [],

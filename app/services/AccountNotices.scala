@@ -7,8 +7,9 @@ import scalikejdbc._
 import java.time.Instant
 
 /** The in-app notices of an account's owner: the adds from another admin's users page search
-  * (accounts plan A-1, the maintainer's correction of 2026-11-16: never an automatic mail). Each is
-  * an account change log row of the account with the comment [[UserService.SearchComment]]: the
+  * (accounts plan A-1, the maintainer's correction of 2026-11-16: never an automatic mail), and the
+  * adds by an unverified wiki account an admin confirmed (A-3). Each is an account change log row
+  * of the account with one of the comments only the tool writes ([[UserService.NoticeComments]]): the
   * role given (`role`), or an invitation that waits to give one (`invitation` with a role), of
   * the last [[ShownDays]] days. No table of their own: the owner dismisses them in this browser
   * (a cookie with the newest row's id they saw, [[CookieName]]); at sign-in a session flag
@@ -40,7 +41,7 @@ object AccountNotices {
           LEFT JOIN contest_jury c ON c.id = ac.contest_id
           LEFT JOIN users a ON a.id = ac.actor_id
           WHERE ac.user_id = $accountId AND ac.id > $seenUpTo
-            AND BINARY ac.comment = ${UserService.SearchComment}
+            AND BINARY ac.comment IN (${UserService.NoticeComments})
             AND ac.field IN (${AccountChangeJdbc.Role}, ${AccountChangeJdbc.Invitation})
             AND ac.new_value IS NOT NULL
             AND ac.created_at > NOW(3) - INTERVAL $ShownDays DAY

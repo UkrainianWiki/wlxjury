@@ -4,6 +4,7 @@
 // unverified email and a password, so the add invites it (no membership); the test then cancels
 // that invitation, so a rerun against the same server finds the account as before.
 import { test, expect } from '../lib/fixtures.js';
+import AxeBuilder from '@axe-core/playwright';
 import { one } from '../lib/actions.js';
 
 const isSearch = (r) => new URL(r.url()).pathname === '/admin/users/search';
@@ -118,6 +119,64 @@ test.describe('an admin editing a member', () => {
 
       // the invitation waits, unsent: cancelled here, so a rerun starts over
       const invitation = await one(page.getByRole('row').filter({ hasText: target.login })
+        .filter({ has: page.getByRole('button', { name: 'Cancel', exact: true }) }));
+      await expect(invitation).toContainText('Juror');
+      await invitation.getByRole('button', { name: 'Cancel' }).click();
+      await expect(page.getByText('The invitation has been cancelled.')).toBeVisible();
+    });
+});
+
+// Adding by a wiki account nobody verified (accounts plan A-3, decision A2): the add row given only
+// the wiki account of the engine's two accounts in no contest adds nothing and asks which account
+// is meant, by name only, none preselected; the confirmation is a form POST, and the account
+// picked (an unverified email with a password) gets an invitation, which the test cancels so a
+// rerun starts over.
+test.describe('an admin adding by a wiki account nobody verified', () => {
+  test.use({ role: 'admin' });
+
+  test('picks the account they mean, confirms it, and it is added as the search adds it', { tag: '@A-27' },
+    async ({ page, fixture, browserName }) => {
+      const pair = fixture.wikiConfirm;
+      expect(pair, 'server.json lists wikiConfirm: restart the fixture').toBeTruthy();
+      await page.goto(`/admin/users?contestId=${fixture.contestId}`);
+      // the add row needs a name; an existing account keeps its own
+      await page.getByPlaceholder('Full name', { exact: true }).fill('Typed name');
+      await page.getByPlaceholder('Wiki account', { exact: true }).fill(pair.wiki);
+      await page.locator('#add-user-button').click();
+
+      await expect(page.getByRole('heading', { name: `Confirm the account with the wiki account ${pair.wiki}` }))
+        .toBeVisible();
+      const accounts = await one(page.getByRole('group', { name: `Accounts with the wiki account ${pair.wiki}` }));
+      const target = accounts.getByRole('radio', { name: pair.target.name });
+      const other = accounts.getByRole('radio', { name: pair.other.name });
+      await expect(target).not.toBeChecked();
+      await expect(other).not.toBeChecked();
+      // by name only: no address, not even masked
+      await expect(page.locator('#wiki-confirm')).not.toContainText('@ui-shots.test');
+      const check = page.getByLabel('This is the person I mean');
+      await expect(check).not.toBeChecked();
+      await expect(page.getByLabel('Send an invitation email')).not.toBeChecked();
+      await expect(page.getByLabel('Tell its owner by email')).not.toBeChecked();
+      if (browserName === 'chromium') {
+        const results = await new AxeBuilder({ page })
+          .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+        expect(results.violations.map((v) => v.id), 'the confirmation page: no accessibility findings').toEqual([]);
+      }
+
+      // nothing picked: the browser keeps the page (the server refuses it too, WikiConfirmSpec)
+      await page.getByRole('button', { name: 'Add to this contest' }).click();
+      await expect(page).toHaveURL((url) => url.pathname === '/users/save');
+
+      await target.check();
+      await check.check();
+      await page.getByRole('button', { name: 'Add to this contest' }).click();
+      await expect(page).toHaveURL((url) => url.pathname === '/admin/users');
+      await expect(page.getByText('Invited (role given once they accept): 1.')).toBeVisible();
+      await expect(page.getByText(`The account you confirmed for the wiki account ${pair.wiki}: ` +
+        `${pair.target.name}, c***@ui-shots.test.`)).toBeVisible();
+
+      // the invitation waits, unsent: cancelled here, so a rerun starts over
+      const invitation = await one(page.getByRole('row').filter({ hasText: pair.target.login })
         .filter({ has: page.getByRole('button', { name: 'Cancel', exact: true }) }));
       await expect(invitation).toContainText('Juror');
       await invitation.getByRole('button', { name: 'Cancel' }).click();

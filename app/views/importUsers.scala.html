@@ -15,7 +15,12 @@
 
         @* after an import with lines not added: what was added, then each of those lines *@
         @result.map { msg =>
-            <div class="alert alert-info">@msg</div>
+            <div class="alert alert-info">@msg
+                @* rows of an unverified wiki account: each is confirmed in the users page's add row (A-3) *@
+                @if(flash.get(controllers.UserController.WikiConfirmFlash).nonEmpty) {
+                    <a href="@routes.UserController.users(Some(contestId))" class="wiki-confirm-link">@Messages("users.import.wiki.confirm.link")</a>
+                }
+            </div>
         }
         @if(problems.nonEmpty) {
             <div class="alert alert-warning" role="alert" id="import-problems">

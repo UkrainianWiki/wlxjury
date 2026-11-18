@@ -334,7 +334,7 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
       }
     }
 
-    "not join an account by an unverified wiki account: not added, said so" in {
+    "not join an account by an unverified wiki account: not added, to confirm in the add row" in {
       testDbApp { implicit app =>
         createContests(10)
         val admin = account("admin@example.com", Some(10), "admin", verified = true)
@@ -344,7 +344,7 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
 
         val result = importUsers(mail, admin, 10, "User:Victim_wiki")
         status(result) === SEE_OTHER
-        flash(result).get("users-added") must beSome(contain("Not added, as the wiki account belongs to an account"))
+        flash(result).get("users-added") must beSome(contain("Not added yet, as the wiki account is on an account that has not verified it: 1."))
         roles(claimer.getId) must beEmpty
         mail.sent must beEmpty
         User.findAll().size === 2

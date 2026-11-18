@@ -160,6 +160,27 @@ object UiShotsServer {
       s"""{"edited": {"id": $edited, "name": ${q(s"Taken Edited $n")}}, "target": {"id": $target, """ +
         s""""name": ${q(targetName)}, "login": ${q(targetEmail)}, "wiki": ${q(wiki)}}}"""
     }
+    // pairs, one per engine, for adding by a wiki account nobody verified (users.spec.js, accounts
+    // plan A-3): two accounts in no contest with one wiki account, each an unverified email and a
+    // password, so that the confirmed one gets an invitation (no membership), which the test
+    // cancels; in this run's container only
+    val wikiConfirm = (1 to 3).map { n =>
+      val wiki = s"Confirm Wiki $n"
+      def account(name: String, email: String) =
+        db.scalikejdbc.User.findByEmail(email).headOption.map(_.getId).getOrElse {
+          val id = db.scalikejdbc.User.create(fullname = name, email = email,
+            passwordHash = services.PasswordHasher.default.hash(s"confirm-$n-pass"), roles = Set.empty,
+            contestId = None).getId
+          db.scalikejdbc.User.setWikiAccount(id, Some(wiki))
+          id
+        }
+      val (targetName, targetEmail, otherName) =
+        (s"Confirm Target $n", s"confirm-target-$n@ui-shots.test", s"Confirm Other $n")
+      val target = account(targetName, targetEmail)
+      val other = account(otherName, s"confirm-other-$n@ui-shots.test")
+      s"""{"wiki": ${q(wiki)}, "target": {"id": $target, "name": ${q(targetName)}, "login": ${q(targetEmail)}}, """ +
+        s""""other": {"id": $other, "name": ${q(otherName)}}}"""
+    }
     // pairs for retiring an account from the "wiki account taken" panel (users.spec.js, accounts
     // plan A-4), per engine three, as root in a contest of their own with no rounds (a round job another
     // test queues in the fixture's contest, review.spec.js's say, would refuse a retirement): an empty
@@ -286,6 +307,7 @@ object UiShotsServer {
          |  "jurors": [${jurors.mkString(", ")}],
          |  "searchTargets": [${searchTargets.mkString(", ")}],
          |  "wikiTaken": [${wikiTaken.mkString(", ")}],
+         |  "wikiConfirm": [${wikiConfirm.mkString(", ")}],
          |  "duplicateGroups": [${duplicateGroups.mkString(", ")}],
          |  "retireTargets": [${retireTargets.mkString(", ")}],
          |  "joinPairs": [${joinPairs.mkString(", ")}],

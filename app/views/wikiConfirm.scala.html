@@ -1,0 +1,80 @@
+@import org.intracer.wmua.ContestJury
+@(
+        adminUser: db.scalikejdbc.User,
+        contest: ContestJury,
+        wikiAccount: String,
+        matches: Seq[services.AccountSearch.Found],
+        role: String,
+        typedName: Option[String],
+        sendInvitation: Boolean,
+        tellOwner: Boolean,
+        picked: Option[Long],
+        missing: Boolean
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+
+@* The add row's wiki account names accounts whose wiki account nobody verified (accounts plan A-3,
+   decision A2): nothing is added until the admin picks the account they mean, by name only, none
+   preselected, and ticks "This is the person I mean". A form POST with the CSRF token; the server
+   requires both again. The address is shown only with the result (masked outside the admin's
+   contests, as the search shows it) *@
+@mainAdmin("users", adminUser, adminUser.getId, contestId = contest.id) {
+    <div class="row">
+        <div class="col-lg-8">
+            <h1 class="h3" id="wiki-confirm-title">@Messages("wiki.confirm.title", wikiAccount)</h1>
+            <p>@Messages(if (matches.size == 1) "wiki.confirm.intro.one" else "wiki.confirm.intro", wikiAccount)</p>
+            @* the name typed in the add row, to compare with the accounts' names (escaped, as any text) *@
+            @for(name <- typedName) {
+                <p id="wiki-confirm-typed">@Messages("wiki.confirm.typed", name)</p>
+            }
+            <div class="alert alert-warning" id="wiki-confirm-risk">@Messages("wiki.confirm.risk")</div>
+
+            @if(missing) {
+                <div class="alert alert-danger" role="alert" id="wiki-confirm-missing">@Messages("wiki.confirm.required")</div>
+            }
+
+            <form method="post" action="@routes.UserController.confirmWikiAccount(contest.id)" id="wiki-confirm"
+                aria-labelledby="wiki-confirm-title">
+                @csrfField()
+                <input type="hidden" name="wikiAccount" value="@wikiAccount">
+                <input type="hidden" name="role" value="@role">
+                @for(name <- typedName) {
+                    <input type="hidden" name="typedName" value="@name">
+                }
+
+                <fieldset class="mb-3">
+                    <legend class="h6">@Messages(if (matches.size == 1) "wiki.confirm.account" else "wiki.confirm.accounts", wikiAccount)</legend>
+                    @for(f <- matches; id <- f.account.id) {
+                        <div class="form-check wiki-confirm-match">
+                            <input class="form-check-input" type="radio" name="accountId" value="@id" id="wiki-confirm-@id" required
+                                @if(picked.contains(id)) {checked}>
+                            <label class="form-check-label" for="wiki-confirm-@id">@if(f.name.trim.nonEmpty) {@f.name} else {@Messages("wiki.confirm.no.name")}@for(roles <- f.member) { <span class="text-body-secondary wiki-confirm-member">(@Messages("wiki.confirm.member", roles.toSeq.sorted.map(r => Messages("role." + r)).mkString(", ")))</span>}</label>
+                        </div>
+                    }
+                    <p class="form-text mb-0">@Messages("wiki.confirm.search.help")</p>
+                </fieldset>
+
+                <p class="mb-2" id="wiki-confirm-role">@Messages("wiki.confirm.role", Messages("role." + role))</p>
+
+                <div class="form-check mb-1">
+                    <input class="form-check-input" type="checkbox" name="confirmed" value="true" id="wiki-confirm-check" required>
+                    <label class="form-check-label fw-bold" for="wiki-confirm-check">@Messages("wiki.confirm.check")</label>
+                </div>
+                @* never a mail nobody chose: both unticked at first (the add row's choice was for another
+                   recipient); shown again after a refused POST as the admin left them *@
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="sendInvitation" value="true" id="wiki-confirm-send"
+                        @if(sendInvitation) {checked}>
+                    <label class="form-check-label" for="wiki-confirm-send">@Messages("invitation.send.email")</label>
+                </div>
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" name="tellOwner" value="true" id="wiki-confirm-tell"
+                        @if(tellOwner) {checked}>
+                    <label class="form-check-label" for="wiki-confirm-tell">@Messages("account.search.tell.owner")</label>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="wiki-confirm-add">@Messages("wiki.confirm.add")</button>
+                <a href="@routes.UserController.users(contest.id)" class="btn btn-outline-secondary ms-1">@Messages("cancel")</a>
+            </form>
+        </div>
+    </div>
+}

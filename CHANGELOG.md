@@ -65,6 +65,20 @@ No next release is set yet (`build.sbt` says `26.12-SNAPSHOT`). Everything devel
   No migration. Admin and organizer guides. Rolling back past it: let each reassign job, and each
   distribution or add in its new `topup` or `waiting` phase, finish or cancel it first
   (`docs/deployment.md`).
+- **Adding by a wiki account nobody verified** (A-3 of the existing accounts plan, decision A2;
+  developed 2026-11-17, `stack/186-unverified-wiki-add`): the users page's add row given a wiki
+  account and no email, for a role with access, that names accounts whose wiki account nobody
+  verified no longer just refuses ("add them by email"): it adds nothing yet and shows those
+  accounts by name only, none preselected; the admin picks the one they mean, ticks **This is the
+  person I mean** (both required on the server) and the account is added as the search adds it
+  (it joins if its owner proved the email or it has no password, else an invitation; no mail
+  unless ticked), with the owner's notice in the tool, the account change log's comment "wiki
+  account unverified, confirmed by the admin" and a `security.account` line by ids only. The
+  result names the account with its address masked outside the admin's contests. Accounts with
+  no password and no email are confirmed the same way, never joined unconfirmed; the page says
+  when only root can then give such a person a sign-in link. **Import users** only counts such rows
+  ("Not added yet"), linking the users page. Secure coding §14's rule changes with it (its risk
+  stated there). No migration. Admin guide.
 
 **Development**
 

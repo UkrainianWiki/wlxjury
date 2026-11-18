@@ -194,6 +194,29 @@ take the role directly) are what is left between them.
   pending until a Wikimedia sign-in proves the name; showing no address. A1/A2 settle the masked
   address: it is shown.
 
+**A-3 as built (2026-11-17, `stack/186-unverified-wiki-add`, no migration).** `addToContest`'s
+refusal for the wiki path (`WikiAccountUnverified`) now carries the accounts the admin may confirm
+(`UserService.wikiMatches`: every non-deleted account with the wiki account, root accounts to root
+only); the add row's save renders the confirmation page (`views.wikiConfirm`, 200) instead of
+redirecting, and `POST /admin/users/add-wiki-confirmed` (`UserController.confirmWikiAccount`)
+requires the pick and the box (else the page again, 400), reads the matches again (an id they
+don't hold now: 404) and calls `UserService.addConfirmedWikiAccount`, which is
+`addAccountToContest` with the comment `WikiConfirmedComment`. The owner's notice reads both tool
+comments (`UserService.NoticeComments`), and the edit form refuses both as typed comments. The
+match itself is unchanged (`matchAccount` takes the first account by id; that one already in the
+contest is "already in the contest", a verified one joins directly), and a role without access
+still joins directly without the confirmation, as before (the refusal it supersedes was only for
+access roles). That leaves a residual risk the maintainer accepted on 2026-11-18 (keep and
+document): such a membership changed later on Edit user to an access role gets it by the email's
+rule alone (a placeholder or an account with a verified email directly), with no confirmation, owner
+notice or A-3 log line; secure coding §14 states it. The page's names are `AccountSearch.describe`'s,
+with "already in this contest" for a member, and the name typed in the add row ("You typed: …");
+the result's address is read before the add. Both mails start unticked on the page (the add row's
+"Send an invitation email" was chosen for another recipient). Logged: `wiki_confirm_page
+byAccountId= contestId= matches=` for each showing, and `add_confirmed_unverified_wiki` with
+`outcome=` and `verified=` too. A match that is only a root account, for an admin, keeps the
+earlier "add them by email" message, a small oracle accepted with the review (2026-11-18).
+
 ## c. From the edit form
 
 When Edit user refuses a save as `wiki.account.taken`:

@@ -65,7 +65,8 @@ class AccountReviewFixesSpec extends PlaySpecification with PlayTestDb with Acco
 
         val result = importUsers(mail, admin, 10, "User:Wiki one\nUser:Wiki_two")
         status(result) === SEE_OTHER
-        flash(result).get("users-added") must beSome(contain("Not added, as the wiki account belongs to an account"))
+        // by an import: not added, to be confirmed in the add row one by one (A-3)
+        flash(result).get("users-added") must beSome(contain("Not added yet, as the wiki account is on an account that has not verified it: 2."))
         roles(verified.getId) must beEmpty
         roles(passwordless.getId) must beEmpty
         mail.sent must beEmpty

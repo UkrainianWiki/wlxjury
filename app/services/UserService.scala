@@ -57,8 +57,11 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     *    mailed unless `sendInvitation`: it waits on the users page, to be sent or shared), and
     *    the account joins once they accept it, with a new password (O2: whoever registered an
     *    email without owning it gets nothing) ([[Invited]]);
-    *  - an account has the wiki account (no email given), unverified: not added; the person is
-    *    to be added by email ([[WikiAccountUnverified]]).
+    *  - an account has the wiki account (no email given), unverified, for an access role: not
+    *    added yet ([[WikiAccountUnverified]], with every account the admin may confirm, `matches`):
+    *    the add row asks the admin to pick and confirm the account they mean
+    *    ([[addConfirmedWikiAccount]], accounts plan A-3), a placeholder (no password, no email)
+    *    included; an import only counts it.
     *
     * Throws [[UserService.RoleNotAssignable]] (an `IllegalArgumentException`), changing
     * nothing, if `formUser`'s roles are not each a contest role ([[User.ContestRoles]]; root
@@ -93,7 +96,13 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
       case Some((account, byEmail)) =>
         // an account retired between the match and its row lock (A-4) is none: a new account
         // (the retirement cleared its address, so the email no longer matches it)
-        addExisting(creator, account, byEmail, contest, contestId, role, sendInvitation).getOrElse(create())
+        addExisting(creator, account, byEmail, contest, contestId, role, sendInvitation) match {
+          // nothing added yet (A-3): the accounts the admin may pick from and confirm
+          case Some(WikiAccountUnverified(a, _)) =>
+            WikiAccountUnverified(a, person.wikiAccount.fold(Seq.empty[User])(wikiMatches(creator, _)))
+          case Some(other) => other
+          case None        => create()
+        }
 
       case None => create()
     }
@@ -106,7 +115,8 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     * ([[Invited]]; [[Mail.NotPossible]] where this creator may send none), mailed only if
     * `sendInvitation`, from the tool's own sender ([[systemSender]]), never the admin's address.
     * The account change log records the role or the invitation with the comment
-    * [[UserService.SearchComment]].
+    * [[UserService.SearchComment]] (`comment`: [[UserService.WikiConfirmedComment]] for an add
+    * confirmed by wiki account, [[addConfirmedWikiAccount]]); either makes the owner's notice.
     *
     * Never silent, and never a mail nobody chose (the maintainer, 2026-11-16: "please do not send
     * emails without approval"): an add that gives a membership or an invitation is a notice in
@@ -122,7 +132,7 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     * [[UserService.RoleNotAssignable]] for a role that is not a contest role.
     */
   def addAccountToContest(creator: User, accountId: Long, contest: ContestJury, role: String,
-      sendInvitation: Boolean = false, tellOwner: Boolean = false)(implicit
+      sendInvitation: Boolean = false, tellOwner: Boolean = false, comment: String = SearchComment)(implicit
       messages: Messages, linkHost: LinkHost = LinkHost.None): SearchAdded = {
     if (!User.mayAssignRoles(creator, Set(role))) throw new RoleNotAssignable
     val creatorRoot = creator.isRoot || creator.hasRole(User.ROOT_ROLE)
@@ -130,7 +140,7 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     val account = User.findById(accountId).filterNot(gone).getOrElse(throw new AccountNotFound)
     val cId = contest.getId
     val added = addExisting(creator, account, byEmail = true, Some(contest), contest.id, role, sendInvitation,
-      comment = Some(SearchComment), mailFrom = Some(systemSender), goneIf = Some(gone))
+      comment = Some(comment), mailFrom = Some(systemSender), goneIf = Some(gone))
       .getOrElse(throw new AccountNotFound)
     // what the add gave: a membership (direct, or one waiting for a password), or an invitation
     // that waits to give the role; nothing where none may be sent
@@ -150,6 +160,47 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
       outcome
     }
     SearchAdded(added, notice)
+  }
+
+  /** The accounts an add by the wiki account `name` (normalised) may confirm (accounts plan A-3,
+    * decision A2: any account, wherever it is): every non-deleted account with that wiki account,
+    * by id; a root account only for root (L1, as the search).
+    */
+  def wikiMatches(creator: User, name: String): Seq[User] = {
+    val creatorRoot = creator.isRoot || creator.hasRole(User.ROOT_ROLE)
+    User.findByAccount(name).filter(a => a.deletedAt.isEmpty && (creatorRoot || !(a.isRoot || a.hasRole(User.ROOT_ROLE))))
+  }
+
+  /** The add row's add by a wiki account that names accounts whose wiki account is unverified
+    * ([[WikiAccountUnverified]]), once the admin picked one of them and confirmed it is the person
+    * they mean (accounts plan A-3, decision A2, superseding S2's refusal for this path): the
+    * account must still be one of [[wikiMatches]] for the wiki account typed, else
+    * [[UserService.AccountNotFound]], nothing written. Then [[addAccountToContest]], the email
+    * path's rule (it joins if it may take the role, a placeholder included; otherwise the role
+    * waits for an invitation), recorded with the comment [[WikiConfirmedComment]], which makes the
+    * owner's notice in the app. Logged at INFO on `security.account` by ids only
+    * (`add_confirmed_unverified_wiki accountId= byAccountId= contestId= role= matches= placeholder=
+    * outcome= verified=`: what the add did, [[confirmedOutcome]], and whether the account's wiki
+    * account was verified when it was picked).
+    * Throws [[UserService.InvalidWikiAccount]] for a wiki account MediaWiki would refuse,
+    * [[UserService.RoleNotAssignable]] for a role that is not a contest role.
+    */
+  def addConfirmedWikiAccount(creator: User, accountId: Long, wikiAccount: String, contest: ContestJury,
+      role: String, sendInvitation: Boolean = false, tellOwner: Boolean = false)(implicit
+      messages: Messages, linkHost: LinkHost = LinkHost.None): WikiConfirmed = {
+    if (!User.mayAssignRoles(creator, Set(role))) throw new RoleNotAssignable
+    val name = User.normalizeWikiAccount(wikiAccount).fold(_ => throw new InvalidWikiAccount, identity)
+      .getOrElse(throw new AccountNotFound)
+    val matches = wikiMatches(creator, name)
+    val account = matches.find(_.id.contains(accountId)).getOrElse(throw new AccountNotFound)
+    val placeholder = isPlaceholder(account)
+    val added = addAccountToContest(creator, accountId, contest, role, sendInvitation, tellOwner,
+      comment = WikiConfirmedComment)
+    accountLogger.info(s"add_confirmed_unverified_wiki accountId=$accountId byAccountId=${creator.getId} " +
+      s"contestId=${contest.getId} role=$role matches=${matches.size} placeholder=$placeholder " +
+      s"outcome=${confirmedOutcome(added.added, UserContestJdbc.find(accountId, contest.getId).nonEmpty)} " +
+      s"verified=${account.wikiAccountVerified}")
+    WikiConfirmed(added, account, placeholder)
   }
 
   /** The mail telling an added account's owner (the add form's "Tell its owner by email"): from
@@ -778,8 +829,45 @@ object UserService {
     */
   case class NoEmailToInvite(user: User) extends Added
 
-  /** Not added: the wiki account given names an account whose wiki account is unverified. */
-  case class WikiAccountUnverified(user: User) extends Added
+  /** Not added (yet): the wiki account given names an account whose wiki account is unverified,
+    * for an access role. `matches`: the accounts the admin may pick from and confirm
+    * ([[UserService.wikiMatches]], accounts plan A-3); none (a root account's, for an admin): add
+    * the person by email.
+    */
+  case class WikiAccountUnverified(user: User, matches: Seq[User] = Nil) extends Added
+
+  /** An add by an unverified wiki account the admin confirmed ([[UserService.addConfirmedWikiAccount]]):
+    * what the add did, the account as it was picked, and whether it was a placeholder.
+    */
+  final case class WikiConfirmed(result: SearchAdded, account: User, placeholder: Boolean)
+
+  /** What a confirmed add did, for its log line: `added` (the add gave a membership, `member`, read
+    * after it: an account with an email but no usable password joins and its invitation only sets
+    * the password, whatever became of that invitation), `invited` (the role waits for an
+    * invitation), `already_member`, `in_join` (a join holds the account), `no_email` (no address
+    * for the invitation it needs), `not_possible` (no invitation this admin may send), `retired`
+    * (retired before its invitation).
+    */
+  def confirmedOutcome(added: Added, member: Boolean): String = added match {
+    case _: AlreadyMember             => "already_member"
+    case _: InJoin                    => "in_join"
+    case _ if member                  => "added"
+    case _: JoinedContest             => "added"
+    case Invited(_, Mail.NotPossible) => "not_possible"
+    case Invited(_, Mail.Retired)     => "retired"
+    case _: Invited                   => "invited"
+    case _: NoEmailToInvite           => "no_email"
+    case _: NewAccount                => "new_account"
+    case _: WikiAccountUnverified     => "unverified"
+  }
+
+  /** A placeholder (accounts plan A-3): no password, no email, no Wikimedia identity now or before
+    * (none linked, its wiki account never verified), not root. Nobody can sign in to it until
+    * root (or an admin who may) shares a link, or Wikimedia sign-in is on.
+    */
+  def isPlaceholder(account: User): Boolean =
+    !account.isRoot && account.password.isEmpty && account.emailLo.isEmpty && !account.wikiAccountVerified &&
+      !db.scalikejdbc.UserIdentityJdbc.hasProvider(account.getId, services.oauth.OAuthProviders.Wikimedia)
 
   /** An account an account join holds (J-2): no membership or invitation meanwhile. */
   case class InJoin(user: User) extends Added
@@ -808,11 +896,23 @@ object UserService {
     */
   val SearchComment = "from search"
 
-  /** Whether a comment typed in the edit form would read as [[SearchComment]], which only the search
-    * writes: the column compares case- and trailing-space-insensitively, so any case and spacing.
+  /** The account change log's comment on a role or an invitation given by an add by wiki account
+    * the admin confirmed ([[UserService.addConfirmedWikiAccount]], accounts plan A-3). Like
+    * [[SearchComment]], it makes the owner's notice ([[AccountNotices]]).
     */
-  def isReservedComment(comment: String): Boolean =
-    comment.trim.replaceAll("\\s+", " ").equalsIgnoreCase(SearchComment)
+  val WikiConfirmedComment = "wiki account unverified, confirmed by the admin"
+
+  /** The comments only the tool writes, each of which makes a notice for the owner. */
+  val NoticeComments: Seq[String] = Seq(SearchComment, WikiConfirmedComment)
+
+  /** Whether a comment typed in the edit form would read as one of [[NoticeComments]], which only
+    * the tool writes: the column compares case- and trailing-space-insensitively, so any case and
+    * spacing.
+    */
+  def isReservedComment(comment: String): Boolean = {
+    val typed = comment.trim.replaceAll("\\s+", " ")
+    NoticeComments.exists(typed.equalsIgnoreCase)
+  }
 
   /** An address with all but its first character before the `@` hidden: `a***@example.org`. */
   def maskEmail(email: String): String = email.indexOf('@') match {

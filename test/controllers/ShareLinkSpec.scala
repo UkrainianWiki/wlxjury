@@ -372,9 +372,9 @@ class ShareLinkSpec extends PlaySpecification with PlayTestDb with AccountTestSu
         reloaded(juror).emailVerified must beFalse
         reloaded(juror).wikiAccountVerified must beFalse
 
-        // by wiki account: not added (H1)
+        // by wiki account: not added (H1); an import only counts it, to confirm in the add row (A-3)
         val byName = importUsers(mail, admin20, 20, "User:Juror_wiki")
-        flash(byName).get("users-added") must beSome(contain("Not added, as the wiki account belongs"))
+        flash(byName).get("users-added") must beSome(contain("Not added yet, as the wiki account is on an account"))
         // by email: an invitation, not a membership (O2)
         val byEmail = add(mail, admin20, 20, "juror@example.com")
         flash(byEmail).get("users-added") must beSome(contain("Invited (role given once they accept): 1."))
