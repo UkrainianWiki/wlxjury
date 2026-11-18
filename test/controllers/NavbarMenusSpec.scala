@@ -315,7 +315,7 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
         staff.select(".wlx-nav-filters").hasClass("border-start") must beTrue
         staff.select(".wlx-nav-order").hasClass("border-start") must beTrue
         staff.select(".wlx-nav-filters > li").asScala.map(li => Option(li.id).filter(_.nonEmpty).getOrElse(li.className)).toList must
-          containTheSameElementsAs(List("nav-item dropdown", "juror-menu", "votes-menu", "comments-menu"))
+          containTheSameElementsAs(List("round-menu", "juror-menu", "votes-menu", "comments-menu"))
         val juror = page(app, f.juror, gallery(f.round, f.juror.getId))
         groups(juror) === Seq("wlx-nav-filters", "wlx-nav-order")
         juror.select(".wlx-nav-groups > ul").asScala.map(_.attr("aria-label")).toList === List("Filters", "Sorting and view")
@@ -371,20 +371,25 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
         val stat = page(app, f.organizer, s"/roundstat/${f.round.getId}")
         val rootUsers = page(app, f.root, s"/admin/users?contestId=$c")
         val orgGallery = page(app, f.organizer, gallery(f.round, f.juror.getId))
-        (links(rounds).map(_._1) === List("page-contest-files", "page-users", "page-rounds", "page-statistics")) and
-          (links(rounds).map(_._2) === List("Contest files", "Users", "Rounds", "Statistics")) and
-          (current(rounds) === List("page-rounds")) and
+        (links(users).map(_._1) === List("page-contest-files", "page-users", "page-rounds", "page-statistics")) and
+          (links(users).map(_._2) === List("Contest files", "Users", "Rounds", "Statistics")) and
           (current(users) === List("page-users")) and
-          (current(stat) === List("page-statistics")) and
-          (links(stat).map(_._1) === List("page-contest-files", "page-statistics")) and
           // the same items, order, names, links and current page as the Pages menu, still there
           // for narrow windows (main.css shows one of the two)
-          forall(Seq(rounds, users, stat, rootUsers))(doc => (links(doc) must not(beEmpty)) and (links(doc) === menu(doc))) and
+          forall(Seq(users, rootUsers))(doc => (links(doc) must not(beEmpty)) and (links(doc) === menu(doc))) and
           (links(rootUsers).map(_._1).take(2) === List("page-contests", "page-contest-files")) and
           // one group, the links before the menu, no ids twice
-          (rounds.select(".wlx-nav-groups > ul").size === 1) and
-          (rounds.select(".wlx-nav-pages-inline > li").last.id === "pages-menu") and
-          (rounds.select("nav.navbar [id]").asScala.map(_.id).groupBy(identity).collect { case (id, s) if s.size > 1 => id } must beEmpty) and
+          (users.select(".wlx-nav-groups > ul").size === 1) and
+          (users.select(".wlx-nav-pages-inline > li").last.id === "pages-menu") and
+          (users.select("nav.navbar [id]").asScala.map(_.id).groupBy(identity).collect { case (id, s) if s.size > 1 => id } must beEmpty) and
+          // the Rounds and statistics pages have their Status, Type and Order menus (2026-11-18):
+          // a bar with filters, so the Pages menu alone, as a gallery's, this page current in it
+          forall(Seq(rounds -> "menu-rounds", stat -> "menu-statistics")) { case (doc, id) =>
+            (doc.select(".wlx-nav-pages-inline, .wlx-page-link").size === 0) and
+              (doc.select("#pages-menu a.dropdown-item.active[aria-current=page]").asScala.map(_.id).toList === List(id)) and
+              (doc.select("nav.navbar [id]").asScala.map(_.id).groupBy(identity).collect { case (i, s) if s.size > 1 => i } must beEmpty)
+          } and
+          (menu(stat).map(_._1) === List("page-contest-files", "page-statistics")) and
           // a bar with filters, order and pager (a round's gallery) keeps the menu alone
           (orgGallery.select(".wlx-nav-pages-inline, .wlx-page-link").size === 0) and
           (orgGallery.select("#pages-menu").size === 1) and

@@ -68,7 +68,9 @@ class RoundController @Inject() (
               // and root's author normalization
               Option.when(user.isRoot)(JobJdbc.latestByDedupeKey(services.imports.AuthorNormalizeHandler.DedupeKey)).flatten,
               // rounds left frozen with no job holding them: flagged, root may release them
-              RoundFreezes.leftFrozen(rounds)
+              RoundFreezes.leftFrozen(rounds),
+              // the Status, Type and Order menus' choices (unknown values: the default)
+              RoundsFilter.fromRequest(request)
             )
           )
         }
@@ -326,7 +328,9 @@ class RoundController @Inject() (
             // (setRound starts and stops it)
             val round = editForm.round
             val contestId = round.contestId
-            val toRoundsList = Redirect(routes.RoundController.rounds(Some(contestId)))
+            // back to the Rounds page as it was filtered (the form's hidden fields, from its link)
+            val toRoundsList =
+              Redirect(RoundsFilter.fromForm(request).addTo(routes.RoundController.rounds(Some(contestId)).url))
             // "Add files": added by the round's distribution job, after the files its filters choose
             val titles = ImportSource.titles(editForm.fileList.getOrElse(""))
 
@@ -558,7 +562,8 @@ class RoundController @Inject() (
                 val toConflicts = request.body.asFormUrlEncoded.flatMap(_.get("returnTo")).exists(_.contains("conflicts"))
                 val back =
                   if (toConflicts) Redirect(routes.RoundConflictsController.page(round.getId))
-                  else Redirect(routes.RoundController.rounds(Some(round.contestId)))
+                  // back to the list as it was filtered (the form's hidden fields)
+                  else Redirect(RoundsFilter.fromForm(request).addTo(routes.RoundController.rounds(Some(round.contestId)).url))
                 if (roundsService.setCurrentRound(Nil, round.copy(active = selectRound.active), user.id)) {
                   if (toConflicts)
                     back.flashing("success" ->
@@ -584,11 +589,13 @@ class RoundController @Inject() (
             (setRoundUser.roundId.toLongOption, setRoundUser.userId.toLongOption) match {
               case (Some(roundId), Some(userId)) =>
                 withAdminRound(user, roundId, roundNotFound(user), request) { round =>
-                  // under the round's lock, refused while a job holds the round (its jurors as read)
+                  // under the round's lock, refused while a job holds the round (its jurors as read);
+                  // back to the statistics as filtered (the form's hidden fields)
+                  val back = Redirect(RoundsFilter.fromForm(request).addTo(routes.RoundController.roundStat(roundId).url))
                   if (RoundRebalanceService.setJurorActive(roundId, userId, setRoundUser.active))
-                    Redirect(routes.RoundController.roundStat(roundId))
+                    back
                   else
-                    Redirect(routes.RoundController.roundStat(roundId))
+                    back
                       .flashing("error" -> messagesApi.preferred(request)("round.juror.busy", round.number))
                 }
               case _ => BadRequest
@@ -645,7 +652,8 @@ class RoundController @Inject() (
         Secured.switchingContest(sessionUser, user) {
           activeRound
             .map { round =>
-              Redirect(routes.RoundController.roundStat(round.getId))
+              // the Rounds page's filter kept (the navbar's Statistics link)
+              Redirect(RoundsFilter.fromRequest(request).addTo(routes.RoundController.roundStat(round.getId).url))
             }
             .getOrElse {
               // a state, not an error, as for a juror ([[LoginController.index]]): no link back
@@ -670,7 +678,8 @@ class RoundController @Inject() (
               // the link to the comments report, with its header's numbers (one statement, inline)
               val comments = org.intracer.wmua.CommentJdbc.roundCounts(round.contestId, round.getId)
 
-              Secured.switchingContest(sessionUser, user)(Ok(views.html.roundStat(user, round, stat, comments)))
+              Secured.switchingContest(sessionUser, user)(
+                Ok(views.html.roundStat(user, round, stat, comments, RoundsFilter.fromRequest(request))))
             }
           }
           .getOrElse {

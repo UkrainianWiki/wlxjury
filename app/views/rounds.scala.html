@@ -14,11 +14,20 @@
         contest: ContestJury,
         imageCheckJob: Option[services.jobs.Job] = None,
         authorNormalizeJob: Option[services.jobs.Job] = None,
-        leftFrozen: Map[Long, Int] = Map.empty
+        leftFrozen: Map[Long, Int] = Map.empty,
+        filter: controllers.RoundsFilter = controllers.RoundsFilter.Default
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
+@* The rounds the Status and Type menus keep, in the Order menu's order (RoundsFilter; the
+   maintainer's decisions of 2026-11-18): by default all of them, oldest first, as before *@
+@shown = @{ filter(rounds) }
+@* this page with another filter; and a link of it to a round's statistics or form, keeping this one *@
+@roundsUrl(f: controllers.RoundsFilter) = @{ f.addTo(routes.RoundController.rounds(contest.id).url) }
+@filterFields = {@for((name, value) <- filter.params) {<input type="hidden" name="@name" value="@value">}}
+
     @mainAdmin("rounds", adminUser, adminUser.getId,
-        rounds = rounds, selectedRound = round, contestId = contest.id) {
+        rounds = rounds, selectedRound = round, contestId = contest.id,
+        roundFilter = Some(controllers.RoundsFilterBar(filter, roundsUrl, rounds))) {
         <div class="row" >
             <h1 class="h3">@Messages("contest") @contest.fullName</h1>
 
@@ -34,7 +43,11 @@
                 <div class="alert alert-info" id="flash-success">@msg</div>
             }
 
-            @if(rounds.nonEmpty) {
+            @if(rounds.nonEmpty && shown.isEmpty) {
+                <p class="text-muted" id="rounds-filter-none">@Messages("rounds.filter.none")
+                    <a href="@roundsUrl(controllers.RoundsFilter.Default.withOrder(filter.order))" id="rounds-filter-reset">@Messages("rounds.filter.reset")</a></p>
+            }
+            @if(shown.nonEmpty) {
                 @* scrolls inside its box on a narrow screen, not the page; nothing in it opens
                    outside its box (start/stop are buttons, a job's status is text) *@
                 <div class="table-responsive position-relative">
@@ -58,17 +71,20 @@
 
                     <tbody>
 
-                    @for(round <- rounds) {
-                        <tr>
-                            <td> <a href="@routes.RoundController.editRound(id = round.id, contestId = contest.getId)">@round.number</a> </td>
-                            <td> @round.name </td>
+                    @* an inactive round's row in the secondary grey, an active one's "Active" badge and each
+                       one's type (snippets/roundBadges) after its name, which opens its statistics; the
+                       number its form, as before; both keep the filter *@
+                    @for(round <- shown) {
+                        <tr class="round-row@if(!round.active) { wlx-round-inactive}" data-round="@round.getId">
+                            <td> <a class="round-edit-link" href="@filter.addTo(routes.RoundController.editRound(id = round.id, contestId = contest.getId).url)">@round.number</a> </td>
+                            <td> <a class="round-stat-link" href="@filter.addTo(routes.RoundController.roundStat(round.getId).url)">@round.description</a>@snippets.roundBadges(round) </td>
                                 <!--                            <td>              @round.roles.mkString(",") </td> -->
                             <td>@Option(round.distribution).filter(_ != 0).fold(Messages("each.file.to.all.jurors"))(i => Messages("each.file.to.i.juror.s", i))</td>
                             <td>@views.RatingType.label(round.rates)</td>
                                 <!--                            <td>              @round.limits.min </td>
                             <td>@round.limits.max </td>
                             <td>@round.limits.recommended.fold("")(_.toString) </td> -->
-                            <td>@snippets.startStop(round.active, round.getId, contest.getId, routes.RoundController.setRound)</td>
+                            <td>@snippets.startStop(round.active, round.getId, contest.getId, routes.RoundController.setRound, extraFields = filterFields)</td>
                             <td>@roundsStat.getOrElse(round.getId, 0) </td>
                             @* a distribution's job while it matters (a fill that left the round in review: the
                                review line below instead); a juror's add (round_rebalance) also done, with the files it
@@ -111,7 +127,7 @@
 
         <div class="row" >
             <div class="mb-3">
-                <a class="btn btn-primary" href="@routes.RoundController.editRound(id = None, contestId = contest.getId)">@Messages("add.round")</a>
+                <a class="btn btn-primary" id="add-round" href="@filter.addTo(routes.RoundController.editRound(id = None, contestId = contest.getId).url)">@Messages("add.round")</a>
                 @if(adminUser.isRoot) {
                     <form method="post" action="@routes.RoundImageCheckController.checkAll()" class="d-inline">
                         @csrfField()

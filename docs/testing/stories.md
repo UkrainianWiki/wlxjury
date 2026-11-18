@@ -81,6 +81,7 @@ a guide or a test needs them.
 | O-04 | An organizer reads a criteria round's results | – | |
 | O-05 | An organizer exports a round's results as CSV | – | |
 | O-06 | An organizer signs in with login and password | – | |
+| O-07 | An organizer narrows and orders the round statistics' row of rounds by status (all, active, not active), type (all, yes/no, rated) and order (oldest, newest, active first), kept in the URL and when switching round, the round shown kept; each round's Active and type badges, an inactive round in grey, also in the galleries' round menu | [organizer guide](../user/organizer-guide.md#where-to-start) | the same menus as the Rounds page (A-28) |
 
 ## Admin
 
@@ -113,6 +114,7 @@ a guide or a test needs them.
 | A-25 | An admin (an admin account: root) retires an empty duplicate account they are editing while adding the account that has its wiki account instead (opt-in; refused, with the reason, for an account with votes, rounds, comments, a linked sign-in or an API token, or while a round of its contests is getting its files or a new juror); it never signs in again, its address is freed and it is listed nowhere | [admin guide](../user/admin-guide.md#a-wiki-account-another-account-has) | the browser test runs as root in a contest of its own (no other test's round job there) |
 | A-26 | An admin of every contest of both accounts (or root) joins two accounts of one person: chooses the account to keep (nothing preselected; only one whose owner proved its email, where one has it), checks the preview (contests and roles, rounds, votes, merged assignments, collisions, the conflict-of-interest change, sign-ins unlinked), and runs the join; any vote of both accounts on one file in one round refuses it; the other account is retired; Cancel only before the first round moves, Retry after a failure | [admin guide](../user/admin-guide.md#joining-two-accounts) | no mail unless ticked; the browser test runs as root in a contest of its own (no other test's round job there) |
 | A-27 | An admin adds a person by a wiki account nobody verified: picks the account they mean from those that have it (by name only, none preselected), confirms it is the person, and it is added as the search adds it; an import only counts such rows | [admin guide](../user/admin-guide.md#a-wiki-account-nobody-verified) | the confirmation is required on the server (`WikiConfirmSpec`) |
+| A-28 | An admin filters the Rounds page by status (all, active, not active) and type (all, yes/no, rated) and orders it (oldest first, newest first, active first), with counts; the choice stays in the URL, on the links to a round's statistics and back, after Start/Stop and through the round form; an active round has a pale green Active badge, each a grey type badge, an inactive row is grey with its links | [admin guide](../user/admin-guide.md#the-rounds-list) | a juror or an organizer sees no other round than before (`RoundsFilterSpec`) |
 
 ## Root
 

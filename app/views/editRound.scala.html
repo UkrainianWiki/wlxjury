@@ -38,6 +38,10 @@
     <script src="@routes.Assets.versioned("javascripts/round-form.js")"></script>
 }
 
+@* the Rounds page's filter, from its round number link (RoundsFilter): kept in the form's action,
+   so that a save, a failed one's form again and Cancel come back to the same list *@
+@roundsFilter = @{ controllers.RoundsFilter.fromRequest(req) }
+
 @mainAdmin("edit.round", user, user.getId, contestId = contestId, head = formScripts) {
     <script type="application/json" id="round-form-texts">{"multiSelect": @views.JsTexts.multiSelect, "distribution": @views.JsTexts(
         "all" -> Messages("each.file.to.all.jurors"),
@@ -63,7 +67,7 @@
                 <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
             }
 
-            @bs.form(routes.RoundController.saveRound(), Symbol("id") -> "round-form") {
+            @bs.form(Call("POST", roundsFilter.addTo(routes.RoundController.saveRound().url)), Symbol("id") -> "round-form") {
                 @csrfField()
 
                 @snippets.formError(editRoundForm)
@@ -248,7 +252,7 @@
                     } else {
                     @snippets.submit(if (reapply) "round.form.reapply" else "save")
                     }
-                    @snippets.button(routes.RoundController.rounds(editRoundForm("contest").value.map(_.toLong)), "cancel")
+                    @snippets.button(Call("GET", roundsFilter.addTo(routes.RoundController.rounds(editRoundForm("contest").value.map(_.toLong)).url)), "cancel")
                     @* a round waiting for review: its review page *@
                     @for(rid <- editRoundForm("id").value.flatMap(v => scala.util.Try(v.toLong).toOption) if !newRound) {
                         <a id="round-review-link" class="btn btn-outline-secondary" href="@routes.RoundReviewController.review(rid)">@Messages("round.review")</a>

@@ -199,7 +199,9 @@ test.describe('the selected and hover colours', { tag: '@J-30' }, () => {
   for (const mode of ['light', 'dark']) {
     test(`the selected highlight and the hover grey differ and read in ${mode} mode`, async ({ context, page, fixture, baseURL }) => {
       await context.addCookies([{ name: 'theme', value: mode, url: baseURL }]);
-      await page.goto(`/admin/rounds?contestId=${fixture.contestId}`);
+      // the users page: its bar's pages are links, this page's the active one (the rounds page's
+      // bar has its menus, so the Pages menu)
+      await page.goto(`/admin/users?contestId=${fixture.contestId}`);
       const style = (loc, props) => loc.evaluate((el, ps) => {
         const s = getComputedStyle(el);
         return Object.fromEntries(ps.map((p) => [p, s[p]]));
@@ -224,7 +226,7 @@ test.describe('the selected and hover colours', { tag: '@J-30' }, () => {
       expect(selected.color).not.toBe(hovered.color);
       // the pager's range box: progressive border 3:1 against the page, its fill the selected one
       const range = page.locator('.page-link.pager-range').first();
-      if (await range.count()) { // the rounds page has no pager: the gallery's is checked in the gallery test below
+      if (await range.count()) { // the users page has no pager: the gallery's is checked in the gallery test below
         const box = await style(range, ['backgroundColor', 'color', 'borderTopColor']);
         expect(box.backgroundColor, 'the range box is the selected fill').toBe(selected.backgroundColor);
         expect(contrast(box.borderTopColor, pageBg), `${mode}: the range box's border on the page`).toBeGreaterThanOrEqual(3);

@@ -16,7 +16,8 @@
         commented: Option[Int] = None,
         commentsBy: Html = Html(""),
         commentsByName: Option[String] = None,
-        pagesInline: Boolean = true)(implicit messages: Messages, request: RequestHeader)
+        pagesInline: Boolean = true,
+        roundFilter: Option[RoundsFilterBar] = None)(implicit messages: Messages, request: RequestHeader)
 
 @* The organisers' bar of a round's results (another's votes, or all together): with its round,
    juror, filter, order, view and region menus and the pager it is the most crowded, so its links
@@ -38,7 +39,10 @@
 }
 
 @* The rounds the viewer may see, each opening the list in it (RoundList.inRound): another juror's
-   votes only in the rounds they are a juror of, read for all the menu's rounds in one query *@
+   votes only in the rounds they are a juror of, read for all the menu's rounds in one query. Each
+   item with the round's badges, an inactive one grey (snippets/roundBadges); a long name cut in the
+   toggle below 992 px (whole in its title) and wrapped in the menu on a phone, so both fit (main.css
+   #round-menu, wlx-round-item) *@
 @roundMenu(l: RoundList) = {
     @defining(if (l.asUserId == 0 || l.asUserId == user.getId) Set.empty[Long]
               else User.roundsJuredIn(l.asUserId, rounds.flatMap(_.id))) { jurorRounds =>
@@ -46,8 +50,9 @@
         (roundId: Long) => Call("GET", rounds.find(_.getId == roundId).fold("#")(r =>
             l.inRound(r, user.getId, jurorRounds.contains(r.getId)).pageUrl(1))),
         l.roundId,
-        rounds.map(r => (r.getId, SelectionItem(r.description, localized = false)))
-    ).toDropDown())
+        rounds.map(r => (r.getId, SelectionItem(r.description, localized = false,
+            itemClass = if (r.active) "wlx-round-item" else "wlx-round-item wlx-round-inactive", after = snippets.roundBadges(r))))
+    ).toDropDown(truncate = true, menuClass = "wlx-round-menu", id = Some("round-menu")))
     }
 }
 
@@ -346,15 +351,19 @@
         if (!user.hasAnyRole(User.ADMIN_ROLES)) Nil
         else contestId.toSeq.flatMap(_ => Seq(
           (routes.UserController.users(contestId).url, "users", "bi-people", "menu-users"),
-          (routes.RoundController.rounds(contestId).url, "rounds", "bi-collection", "menu-rounds")))
+          (withRoundFilter(routes.RoundController.rounds(contestId).url), "rounds", "bi-collection", "menu-rounds")))
       val stat = selectedRound.filter(r => user.canViewOrgInfo(r)).map(r => routes.RoundController.roundStat(r.getId).url)
         .orElse(contestId.filter(c => user.canViewContestStats(c) &&
           (rounds.exists(_.contestId == c) || Round.countByContest(c) > 0))
           .map(c => routes.RoundController.currentRoundStat(Some(c)).url))
-        .map(url => (url, "statistics", "bi-bar-chart", "menu-statistics")).toSeq
+        .map(url => (withRoundFilter(url), "statistics", "bi-bar-chart", "menu-statistics")).toSeq
       rootItems ++ files ++ admin ++ stat
     }
 }
+
+@* a page link with the Rounds and statistics pages' filter (on those pages: their links to each
+   other keep it, the maintainer's decision of 2026-11-18) *@
+@withRoundFilter(url: String) = @{ roundFilter.fold(url)(_.filter.addTo(url)) }
 
 @* Whether a page link is this page: its path is the request's; for the statistics, any round's
    statistics page (the current round's, `/roundstat?contestId=…`, links a round's) *@
@@ -368,8 +377,9 @@
    juror, who has no such pages. In the organisers' results bar below its full width (main.css) the button is the
    icon alone, the page's name read by screen readers and in its title (wlx-nav-label, main.css).
    `inline` (a bar without filters, order or pager on a page that isn't a gallery, `pagesInline`:
-   the rounds, the users, the statistics, the forms; never the galleries' or the contest files'
-   bar, also when it happens to be empty; the maintainer's feedback on 26.11.9, the strip was empty and the pages hidden behind a
+   the users, the forms; not the rounds' and the statistics' bars, which have their Status, Type
+   and Order menus (the maintainer's decision of 2026-11-18: a bar with filters folds its page
+   links); never the galleries' or the contest files' bar, also when it happens to be empty; the maintainer's feedback on 26.11.9, the strip was empty and the pages hidden behind a
    click): the same items also as links in the bar, this page's marked aria-current="page" and
    highlighted as the bar's active link, shown from the width they fit on one line
    (wlx-nav-pages-inline, main.css), the Pages menu below it; each link's id its item's with
@@ -402,6 +412,35 @@
         }
         }
     }
+}
+
+@* The Rounds page's and the round statistics page's Status and Type menus and their Order menu
+   (`roundFilter`, the maintainer's decisions of 2026-11-18): which of the rounds the viewer sees
+   are listed (the Rounds table, the statistics page's round menu) and in what order, each choice
+   the same page with it (RoundsFilter, kept in the URL). Status and Type items with their counts
+   (the rounds the other menu keeps), as the Votes menu's; each toggle with its menu's name shown before its choice ("Status: All"), as the
+   region menu's ("Region: All regions"), so their two "All"s are told apart, also on a phone *@
+@roundsFilterMenus(bar: RoundsFilterBar) = {
+    @(new UiSelectionDto[RoundsFilter.Status](
+        (s: RoundsFilter.Status) => Call("GET", bar.url(bar.filter.withStatus(s))),
+        bar.filter.status,
+        RoundsFilter.Status.values.map(s => s -> SelectionItem(s.messageKey, count = Some(bar.count(s))))
+    ).toDropDown(id = Some("rounds-status-menu"), label = Some(Messages("rounds.filter.status")),
+        labelShown = true))
+    @(new UiSelectionDto[RoundsFilter.Kind](
+        (k: RoundsFilter.Kind) => Call("GET", bar.url(bar.filter.withKind(k))),
+        bar.filter.kind,
+        RoundsFilter.Kind.values.map(k => k -> SelectionItem(k.messageKey, count = Some(bar.count(k))))
+    ).toDropDown(id = Some("rounds-type-menu"), label = Some(Messages("rounds.filter.type")),
+        labelShown = true))
+}
+@roundsOrderMenu(bar: RoundsFilterBar) = {
+    @(new UiSelectionDto[RoundsFilter.Order](
+        (o: RoundsFilter.Order) => Call("GET", bar.url(bar.filter.withOrder(o))),
+        bar.filter.order,
+        RoundsFilter.Order.values.map(o => o -> SelectionItem(o.messageKey))
+    ).toDropDown(id = Some("rounds-order-menu"), label = Some(Messages("rounds.order")),
+        labelShown = true))
 }
 
 @* The filter group: which files (the round, the organisers' juror, Votes, Comments, then the
@@ -442,6 +481,9 @@
     }
     }
     }
+    @for(bar <- roundFilter) {
+        @roundsFilterMenus(bar)
+    }
     @filters
     @for(l <- list) {
         @monumentChip(l)
@@ -468,6 +510,9 @@
         }
     }
     }
+    }
+    @for(bar <- roundFilter) {
+        @roundsOrderMenu(bar)
     }
 }
 

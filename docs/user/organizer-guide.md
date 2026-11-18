@@ -43,14 +43,22 @@ After you sign in, the tool opens the **Statistics** of a round of your contest:
 open round, or the latest round if none is open. A contest with no round yet shows **No round
 configured yet**.
 
-- The row of round names above the statistics table switches round.
-- **Contest files** at the start of the top bar opens the contest's files.
-- **Statistics** next to it, on every page of the contest, opens the statistics of the
-  round you are looking at, or else of the latest open round (once the contest has a round).
-- These pages are links in the top bar, the page you are on highlighted. On a page whose bar also
-  has filters, an order or pages (a gallery, the contest files) they are in the pages menu at the
-  start of the bar (its button the menu icon and the page you are on), and so they are in a window
-  narrower than 1280 pixels.
+- The row of round names above the statistics table switches round. A pale green **Active** badge
+  marks a started round and a grey one its type, **Yes/No** or **Rated**; a stopped round's name
+  is in grey. With many rounds, the **Status** (**All**, **Active**, **Not active**), **Type**
+  (**All**, **Yes/No**, **Rated**) and **Order** (**Oldest first**, **Newest first**, **Active
+  first**) menus in the top bar narrow and order this row; each item shows in grey how many rounds
+  it would list. The round you are looking at stays in the row, selected, even when the choices
+  leave it out. The choices stay in the page's address and when you switch round. The round menu
+  of the galleries shows the same badges and grey names, without these menus.
+- The pages menu at the start of the top bar (its button the menu icon and the page you are on,
+  **Statistics** here) opens the other pages: **Contest files** opens the contest's files, and
+  **Statistics**, on every page of the contest, the statistics of the round you are looking at,
+  or else of the latest open round (once the contest has a round).
+- On a page whose bar has no filters, order or pages (a round's conflicts page) these pages
+  are links in the top bar instead, the page you are on highlighted, from a window 1280 pixels
+  wide. The statistics, the galleries and the contest files have filters, so their pages are in
+  the pages menu.
 - The contest menu at the top of the page switches contest, if you are in more than one.
 
 There is no **Rounds** or **Users** menu for you: those are the admins'. The admins create the
@@ -127,7 +135,7 @@ Under the table:
 A link whose number is 0 is plain text. The numbers of the conflicts and authors links appear
 a moment after the page; until then, the links work without them.
 
-<img src="images/organizer-round-statistics.png" alt="The statistics page, a row for each juror, with the Voting column" width="1280">
+<img src="images/organizer-round-statistics.png" alt="The statistics page: the Status, Type and Order menus in the top bar, the row of rounds with their Active and type badges, and a row for each juror, with the Voting column" width="1280">
 
 ## Results
 
@@ -330,7 +338,7 @@ that a spreadsheet would read as a formula are changed so that they don't run as
 <a id="o-contest-files"></a>
 ### The contest's files
 
-**Contest files** at the start of the top bar shows all the files of the contest in a gallery, with the region
+**Contest files**, in the pages menu at the start of the top bar (on the statistics, where you start, and on a gallery) or a link there on a page without filters, shows all the files of the contest in a gallery, with the region
 menu of a monuments contest, and a large view of each file. It has three tabs, each with its
 number of files after its name (the conflicts of interest's for those who may see authors):
 

@@ -63,7 +63,7 @@ that contest. Admins manage only the contests in which they are admins.
 <a id="a-users-page"></a>
 ### The users page
 
-Open **Users** at the start of the top bar (in a gallery, or in a window narrower than 1280 pixels, in the pages menu there). The page lists the members of the current contest: **Full name**,
+Open **Users** at the start of the top bar (in a gallery, on the Rounds and Statistics pages, or in a window narrower than 1280 pixels, in the pages menu there). The page lists the members of the current contest: **Full name**,
 **Wiki account**, **Email**, **Role**, and a pencil to edit. Next to a wiki account there may be
 two buttons that write to the person on Commons, a message on their talk page and an email.
 
@@ -664,12 +664,29 @@ form. After the round's first vote you can only replace a criterion by another i
 ### The rounds list
 
 Open **Rounds** at the start of the top bar (or in the pages menu there). The list shows, for each round: its **Number** (a link to the
-round form), its **Name**, the **File distribution**, the **Rating type**, whether it is
+round form), its **Name** (a link to the round's statistics), the **File distribution**, the **Rating type**, whether it is
 **Active** (started), the number of **Images** and the state of its distribution.
+
+After each name, a pale green **Active** badge marks a started round, and a grey badge its type:
+**Yes/No** or **Rated** (a criteria round is rated too; a comments-only round has no type badge).
+A stopped round's row is in grey; its links still work.
+
+With many rounds, the menus in the top bar narrow and order the list:
+
+- **Status:** **All**, **Active** or **Not active** rounds.
+- **Type:** **All**, **Yes/No** or **Rated** rounds (a comments-only round shows under **All** only).
+- **Order:** **Oldest first** (the order in which the rounds were created), **Newest first**, or
+  **Active first** (the started rounds, then the others, each group oldest first).
+
+Each item shows in grey how many rounds it would list. The choices stay in the page's address, so
+a reload or a link keeps them, and the round's statistics (the round's name, **Statistics** in the
+pages menu) open with the same choices, which narrow the row of rounds there; **Rounds** from there
+comes back to the same list. Starting or stopping a round, and the round form's **Save** and
+**Cancel**, come back to it too. With no choice made the list is all rounds, oldest first.
 
 **Add round** creates a new round.
 
-<img src="images/admin-rounds-list.png" alt="The rounds list" width="1280">
+<img src="images/admin-rounds-list.png" alt="The rounds list, with the Status, Type and Order menus in the top bar and each round's Active and type badges" width="1280">
 
 <a id="a-create-round"></a>
 ### Creating a round

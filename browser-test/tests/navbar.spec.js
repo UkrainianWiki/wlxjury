@@ -251,8 +251,9 @@ for (const [view, pageName, pathOf] of VIEWS) {
   }
 }
 
-// A bar without filters, order or pager (the rounds, the users: the maintainer's feedback on
-// 26.11.9, its strip was empty with the pages behind the Pages menu): the staff pages as links,
+// A bar without filters, order or pager (the users, the forms: the maintainer's feedback on
+// 26.11.9, its strip was empty with the pages behind the Pages menu; the rounds and statistics
+// pages have their Status, Type and Order menus since 2026-11-18, so the Pages menu): the staff pages as links,
 // this page's marked, from 1280 px (main.css wlx-nav-pages-inline) on one line with the account
 // menus, for root (the most pages: contests, contest files, users, rounds, statistics) with a long
 // contest in the contest menu (put in when the account has none), in Ukrainian and in French (the
@@ -283,7 +284,7 @@ async function longContestMenu(page) {
 }
 
 for (const [lang, names] of Object.entries(INLINE_PAGES)) {
-  for (const [role, which] of [['admin', 'rounds'], ['root', 'users']]) {
+  for (const [role, which] of [['admin', 'users'], ['root', 'users']]) {
     for (const width of [INLINE_FROM, 1440, INLINE_FROM - 1]) {
       const inline = width >= INLINE_FROM;
       test(`the ${role}'s ${which} bar in ${lang} at ${width} px: the pages ${inline ? 'as links on one line' : 'in the Pages menu'}`, { tag: '@O-03' }, async ({ contextAs, fixture }, testInfo) => {
@@ -320,10 +321,12 @@ for (const [lang, names] of Object.entries(INLINE_PAGES)) {
         console.log(`[width] ${line}`);
         expect(oneLine, `the links on the account menus' line: ${line}`).toBe(true);
         expect(free, `at least 10 px free before the account menus: ${line}`).toBeGreaterThanOrEqual(10);
-        // a link opens its page, marked there
-        const other = which === 'rounds' ? 'users' : 'rounds';
+        // a link opens its page, marked there (the rounds page: in its Pages menu, its bar having
+        // the rounds' menus)
+        const other = 'rounds';
         await Promise.all([page.waitForURL(new RegExp(`/admin/${other}`)), group.getByRole('link', { name: names[other], exact: true }).click()]);
-        await expect(page.locator('.wlx-nav-pages-inline').getByRole('link', { name: names[other], exact: true })).toHaveAttribute('aria-current', 'page');
+        await expect(page.locator(`#menu-${other}`)).toHaveAttribute('aria-current', 'page');
+        await expect(page.locator('.wlx-page-link')).toHaveCount(0);
         await context.close();
       });
     }

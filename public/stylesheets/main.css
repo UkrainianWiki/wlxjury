@@ -85,6 +85,28 @@ body.gallery {
     background-clip: padding-box;
 }
 .dropdown-item.active > .wlx-count.wlx-count-pill { color: var(--bs-body-color); }
+/* a round's look, the same wherever it is named (the maintainer's decisions of 2026-11-18;
+   snippets/roundBadges.scala.html): its badges after its name, a little apart; an inactive round's
+   text and its type badge's in the secondary grey (--bs-secondary-color: 7:1 on white, 7.8:1 on the
+   dark page, 6:1 or more on the stripes, the menus' hover grey and the neutral badge, in both
+   modes; asserted by browser-test rounds-filter.spec.js), no strikethrough: the Rounds table's
+   rows (its links keep the link colour), the round menus' items (the galleries' bar, the
+   statistics page's); the current item keeps the selected highlight's colour */
+.wlx-round-badges { white-space: nowrap; }
+/* a round menu's items: on one line (the menu as wide as its longest), wrapping a long name only on
+   a phone, the menu no wider than the window */
+.dropdown-menu.wlx-round-menu { max-width: calc(100vw - 1rem); }
+@media (max-width: 575.98px) {
+    .dropdown-item.wlx-round-item { white-space: normal; }
+}
+/* the type badge (neutral grey) with a subtle border, so that it stands apart on the stripes, a
+   pointed-at menu item and the menus' hover grey, whose fill is its own in both modes */
+.badge.text-bg-secondary.wlx-round-type { box-shadow: inset 0 0 0 1px var(--border-color-subtle); }
+.wlx-round-badges > .badge { margin-inline-start: .35em; vertical-align: .1em; }
+.table > tbody > tr.wlx-round-inactive > * { color: var(--bs-secondary-color); }
+.wlx-round-inactive .wlx-round-type.badge.text-bg-secondary,
+.dropdown-item.wlx-round-inactive:not(.active),
+.page-item:not(.active) > .page-link.wlx-round-inactive { color: var(--bs-secondary-color) !important; }
 /* the icon before a menu's choice that says which menu it is (the Votes menu's vote, the organisers'
    juror menu's people: decision C of 2026-11-14), close to its text */
 .wlx-lead-icon { margin-right: .25rem; }
@@ -129,6 +151,15 @@ body.gallery {
 /* its juror menu's name shorter by its people icon (decision C of 2026-11-14), so the icons keep
    the bar on one line (browser-test navbar.spec.js) */
 .wlx-nav-results #juror-menu .wlx-truncate { max-width: 6.5rem; }
+/* the round menu's current round (navbar.scala.html roundMenu): cut only below 992 px, as the
+   other truncated names there; from 992 px its whole name, inline, as before 2026-11-18 */
+@media (min-width: 992px) {
+    #round-menu .wlx-truncate, .wlx-nav-results #round-menu .wlx-truncate {
+        display: inline;
+        max-width: none;
+        overflow: visible;
+    }
+}
 
 .region-menu-list>li.region-nomination>a {
     font-style: italic;

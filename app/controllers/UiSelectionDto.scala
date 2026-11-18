@@ -27,11 +27,13 @@ class UiSelectionDto[T](val itemUrlFunction: T => Call,
     * stays on one line (dropDownSelection.scala.html, main.css). `id`: the menu's element id;
     * `label`: what the menu is, read before the current item by screen readers only; `truncate`: a
     * long current item cut with an ellipsis, whole in the toggle's title; `leadIcon`: an icon always
-    * before the current item, hidden from screen readers (the organisers' juror menu). */
+    * before the current item, hidden from screen readers (the organisers' juror menu); `labelShown`:
+    * the label shown before the current item, as the region menu's (the Rounds and statistics pages'
+    * menus); `menuClass`: a class of the menu's list (the round menu's). */
   def toDropDown(iconOnly: Boolean = false, compactIcon: Option[String] = None, id: Option[String] = None,
-      label: Option[String] = None, truncate: Boolean = false, leadIcon: Option[String] = None)(implicit messages: Messages): Html =
+      label: Option[String] = None, truncate: Boolean = false, leadIcon: Option[String] = None, labelShown: Boolean = false, menuClass: String = "")(implicit messages: Messages): Html =
     views.html
-      .dropDownSelection(this.asInstanceOf[UiSelectionDto[Any]], iconOnly, compactIcon, id, label, truncate, leadIcon)
+      .dropDownSelection(this.asInstanceOf[UiSelectionDto[Any]], iconOnly, compactIcon, id, label, truncate, leadIcon, labelShown, menuClass)
 }
 
 object UiSelectionDto {

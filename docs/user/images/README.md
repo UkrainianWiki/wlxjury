@@ -16,7 +16,9 @@ the organizer guide follows to the conflicts page.
 Chromium (156), the app's own font stack, 2026-11-17, all 28 regenerated together for the Codex
 restyle (`stack/184`); the same day, on the same platform, the four that show the docs fixture's
 conflict of interest (below) again: `organizer-round-statistics-link`, `organizer-conflicts`,
-`organizer-contest-files` and `admin-new-round-form`. Text rendering depends on the operating system, so regenerate all the
+`organizer-contest-files` and `admin-new-round-form`; on 2026-11-18, on the same platform, the two
+whose bar and round menu the rounds' Status, Type and Order menus and badges changed (`stack/187`):
+`admin-rounds-list` and `organizer-round-statistics`. Text rendering depends on the operating system, so regenerate all the
 images together on one platform and update this line.
 
 **Size:** 28 images, about 4.6 MiB in all. The largest are the two galleries (about 700 and 610

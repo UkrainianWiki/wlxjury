@@ -1,4 +1,4 @@
-@(dto: UiSelectionDto[Any], iconOnly: Boolean = false, compactIcon: Option[String] = None, menuId: Option[String] = None, label: Option[String] = None, truncate: Boolean = false, leadIcon: Option[String] = None)(implicit messages: Messages)
+@(dto: UiSelectionDto[Any], iconOnly: Boolean = false, compactIcon: Option[String] = None, menuId: Option[String] = None, label: Option[String] = None, truncate: Boolean = false, leadIcon: Option[String] = None, labelShown: Boolean = false, menuClass: String = "")(implicit messages: Messages)
 @* A navbar menu: its toggle shows the current item (its icon only if `iconOnly` and it has one,
    the text then read by screen readers and shown as a tooltip), the menu every item, the current
    one marked active with aria-current="page" (each item opens a page; the current one is this
@@ -10,12 +10,18 @@
    ellipsis, whole in the toggle's title (the organisers' juror menu, main.css wlx-truncate).
    `leadIcon`: an icon always before the current item, hidden from screen readers, saying what the
    menu is (the organisers' juror menu: people, so its "All jurors" isn't read as the Votes "All").
+   `labelShown`: the label shown before the current item ("Status: All", as the region menu's
+   "Region: All regions": wlx-nav-label, regionMenu.scala.html), not for screen readers only (the
+   Rounds and statistics pages' Status, Type and Order menus, whose "All" says which menu only with
+   it). `menuClass`: a class of the menu's list (the round menu's wlx-round-menu: main.css). An item's count (SelectionItem.count)
+   muted at its right edge, as the Votes menu's (wlx-menu-item, wlx-menu-count: main.css); its own
+   classes and markup after its text (a round's look, snippets/roundBadges).
    The toggle is a real button, so Space opens it as Enter does (Bootstrap's dropdown) *@
 @icon(iconClass: String) = {<i class="@iconClass" aria-hidden="true"></i>}
 <li class="nav-item dropdown"@for(i <- menuId) { id="@i"}>
     <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"
         @if((iconOnly && dto.current.icon.nonEmpty) || compactIcon.nonEmpty || truncate) {title="@dto.current.localizedText"}>
-        @for(l <- label) {<span class="visually-hidden">@l: </span>}
+        @for(l <- label) {@if(labelShown) {<span class="wlx-nav-label">@l:</span> } else {<span class="visually-hidden">@l: </span>}}
         @for(i <- leadIcon) {@icon(i + " wlx-lead-icon")}
         @compactIcon match {
         case Some(iconClass) => {
@@ -29,12 +35,12 @@
         }
         }
     </button>
-    <ul class="dropdown-menu">
+    <ul class="dropdown-menu@if(menuClass.nonEmpty) { @menuClass}">
         @for((id, value) <- dto.optValues) {
             <li>
-                <a class="dropdown-item@if(id == dto.selectedItemId) { active}" @if(id == dto.selectedItemId) {aria-current="page" }href="@dto.itemUrlFunction(id)">
+                <a class="dropdown-item@if(value.count.nonEmpty) { wlx-menu-item}@if(value.itemClass.nonEmpty) { @value.itemClass}@if(id == dto.selectedItemId) { active}" @if(id == dto.selectedItemId) {aria-current="page" }href="@dto.itemUrlFunction(id)">
                     @value.icon.map { iconClass => @icon(iconClass) }
-                    @value.localizedText
+                    @if(value.count.nonEmpty) {<span>@value.localizedText</span>@for(n <- value.count) { <span class="wlx-menu-count">@views.Count.format(n)</span>}} else {@value.localizedText@value.after}
                 </a>
             </li>
         }
