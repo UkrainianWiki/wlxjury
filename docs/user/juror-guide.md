@@ -147,6 +147,16 @@ view when:
 
 Your votes are kept in each case.
 
+If you open such a round anyway, for example from a link or a bookmark, the tool shows a page
+saying why instead of its files: **Round stopped** ("Your votes are kept. If you think it
+should be open, ask the contest's admin."), **Round closed for now** (a later round reads its
+votes; when that is done the round is given back as it was, unless the contest's admins stop it
+meanwhile: **Reload** shortly), **Round closing** (the next round is being prepared from its
+votes, and this one closes), **Round not open yet** (it is still being prepared: try again in a
+few minutes) or **Your voting in this round is stopped**. If you were sending a comment, the page
+says that it was not saved. Below it are buttons for
+your open rounds of the contest, or a line saying that no other round is open to you now.
+
 ### Taking part in several contests
 
 One account can be a juror in several contests. When you are in more than one, the top bar has

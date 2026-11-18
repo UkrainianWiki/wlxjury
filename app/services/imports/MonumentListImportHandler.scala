@@ -165,7 +165,8 @@ class MonumentListImportHandler @Inject() (lists: MonumentListSource, config: Co
     val progress = Progress(Some(next.pages), None, Some("list pages"))
     if (next.source < p.sources.size) StepResult.Continue(Json.toJsObject(next), progress)
     else {
-      logger.info(s"Job ${job.id}: ${title(job)}: ${next.pages} list pages, ${next.monuments} monuments")
+      logger.info(s"monument_lists_done job=${job.id} contestId=${p.contestId} lists=${controllers.Secured.logValue(p.lists)} " +
+        s"pages=${next.pages} monuments=${next.monuments}")
       StepResult.Done(Json.toJsObject(next), progress)
     }
   }

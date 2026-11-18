@@ -9,9 +9,10 @@ import org.scalawiki.dto.cmd.query.prop.{Categories, CategoryInfo, ClLimit, IiLi
 import org.scalawiki.dto.cmd.query.{Generator, PageIdsParam, Query, QueryParam, RedirectsParam, TitlesParam}
 import org.scalawiki.dto.{MwException, Namespace, Page}
 import play.api.Logging
-import play.api.libs.json.JsObject
+import play.api.libs.json.{JsObject, Json}
 
 import javax.inject.{Inject, Singleton}
+import scala.concurrent.Await
 import scala.concurrent.duration._
 
 /** Where a contest's files come from: the "source" field of the files page. */
@@ -44,6 +45,64 @@ object ImportSource {
     * ([[FileTitles]]), as Commons names them, without duplicates.
     */
   def titles(list: String): Seq[String] = FileTitles(list)
+}
+
+/** A files source's name as typed on the files page, without a namespace prefix (support
+  * diagnostics plan, DG11): such a name is checked on Commons as a page and as a category before
+  * an import is queued. A name with a namespace prefix (`Category:`, `Template:`, `Commons:`, …)
+  * is read as before ([[ImportSource.apply]]).
+  */
+object SourceName {
+
+  /** Commons' namespace names and aliases, lowercased, with spaces. */
+  val Namespaces: Set[String] = Set(
+    "media", "special", "talk", "user", "user talk", "commons", "commons talk", "project", "project talk",
+    "com", "file", "file talk", "image", "image talk", "mediawiki", "mediawiki talk", "template",
+    "template talk", "help", "help talk", "category", "category talk", "creator", "creator talk",
+    "timedtext", "timedtext talk", "sequence", "sequence talk", "institution", "institution talk",
+    "module", "module talk", "translations", "translations talk", "campaign", "campaign talk",
+    "data", "data talk", "gallery", "gallery talk"
+  )
+
+  /** The namespace the title starts with, if any (lowercased). */
+  def namespaceOf(title: String): Option[String] = {
+    val colon = title.indexOf(':')
+    if (colon <= 0) None
+    else Some(title.take(colon).trim.replace('_', ' ').toLowerCase).filter(Namespaces)
+  }
+
+  /** Whether `source` names a page or category without a namespace prefix. */
+  def prefixless(source: String): Boolean = {
+    val name = source.trim
+    name.nonEmpty && namespaceOf(name).isEmpty
+  }
+
+  /** The category of a prefix-less name. */
+  def category(name: String): String = "Category:" + name.trim
+
+  /** The title's page on Commons, for the admin to look at. */
+  def commonsUrl(title: String): String =
+    "https://commons.wikimedia.org/wiki/" +
+      java.net.URLEncoder.encode(title.trim.replace(' ', '_'), java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20")
+}
+
+/** What Commons has under a prefix-less name ([[SourceName]]): a page of that title, a
+  * category `Category:<name>` (with members, or a category page), the category's file count, and,
+  * only when both exist, the number of files the page shows (one request, at most
+  * [[NameProbe.PageFilesCap]]: `pageFilesCapped` when it shows more).
+  */
+final case class NameProbe(
+    page: Boolean,
+    category: Boolean,
+    categoryFiles: Long = 0L,
+    pageFiles: Option[Int] = None,
+    pageFilesCapped: Boolean = false
+)
+
+object NameProbe {
+
+  /** The files of a page counted at most, one API request's worth. */
+  val PageFilesCap = 500
 }
 
 /** One page of a source's files: their page ids, and the cursor of the next page (None:
@@ -79,6 +138,14 @@ trait CommonsSource {
 
   /** The number of files in the category, if it is one. */
   def categoryFileCount(category: String): Option[Long]
+
+  /** What Commons has under a name without a namespace prefix ([[NameProbe]]): at most two
+    * requests, both within `timeout` together. Throws when Commons can't be reached, times out,
+    * or answers with an error: the files page then says it could not check the name (DG11).
+    * `countPageFiles`: false when the counts aren't shown (the admin chose already), so the
+    * page's files are not asked for (`pageFiles` None).
+    */
+  def probeName(name: String, timeout: FiniteDuration, countPageFiles: Boolean = true): NameProbe
 
   /** The categories of the files (at most [[maxIdsPerRequest]]), by page id; a file without
     * categories is left out.
@@ -162,7 +229,7 @@ class MwCommonsSource @Inject() (bot: MwBot, login: CommonsLogin) extends Common
       catch {
         case e: MwException if e.code == TooManyValues && values.size > CommonsLogin.Limit =>
           login.invalidate()
-          logger.warn(s"${bot.host}: ${values.size} values refused (${e.info}); fetching ${CommonsLogin.Limit} per request")
+          logger.warn(s"${bot.host}: ${values.size} values refused (${controllers.Secured.logValue(String.valueOf(e.info))}); fetching ${CommonsLogin.Limit} per request")
           values.grouped(CommonsLogin.Limit).flatMap(request).toSeq
       }
 
@@ -196,6 +263,41 @@ class MwCommonsSource @Inject() (bot: MwBot, login: CommonsLogin) extends Common
   def categoryFileCount(category: String): Option[Long] =
     if (!category.toLowerCase.startsWith("category:")) None
     else api.run(Query(TitlesParam(Seq(category)), Prop(CategoryInfo))).headOption.flatMap(_.categoryInfo.map(_.files))
+
+  def probeName(name: String, timeout: FiniteDuration, countPageFiles: Boolean = true): NameProbe = {
+    val title = name.trim
+    // a `|` would split the titles parameter; no title has one
+    if (title.isEmpty || title.contains('|')) NameProbe(page = false, category = false)
+    else {
+      val deadline = timeout.fromNow
+      def query(params: (String, String)*): JsObject = {
+        val left = deadline.timeLeft
+        if (left <= Duration.Zero) throw new java.util.concurrent.TimeoutException(s"name check over $timeout")
+        val body = Await.result(bot.post((params ++ Seq("action" -> "query", "format" -> "json",
+          "formatversion" -> "2", "utf8" -> "")).toMap), left)
+        val json = Json.parse(body).as[JsObject]
+        (json \ "error" \ "code").asOpt[String].foreach(code => throw MwException(code, code))
+        json
+      }
+      def present(p: JsObject) = !p.keys.contains("missing") && !p.keys.contains("invalid")
+      val categoryTitle = SourceName.category(title)
+      val pages = (query("titles" -> s"$title|$categoryTitle", "prop" -> "categoryinfo", "redirects" -> "") \ "query" \ "pages")
+        .asOpt[Seq[JsObject]].getOrElse(Nil)
+      val (categories, others) = pages.partition(p => (p \ "ns").asOpt[Int].contains(Namespace.CATEGORY))
+      val categoryFiles = categories.flatMap(p => (p \ "categoryinfo" \ "files").asOpt[Long]).headOption.getOrElse(0L)
+      // a category with members but no page of its own is a category all the same
+      val category = categories.exists(p => present(p) || (p \ "categoryinfo" \ "size").asOpt[Long].exists(_ > 0))
+      val page = others.exists(present)
+      if (!(page && category) || !countPageFiles) NameProbe(page, category, categoryFiles)
+      else {
+        val shown = query("titles" -> title, "prop" -> "images", "redirects" -> "",
+          "imlimit" -> NameProbe.PageFilesCap.toString)
+        val files = (shown \ "query" \ "pages").asOpt[Seq[JsObject]].getOrElse(Nil)
+          .flatMap(p => (p \ "images").asOpt[Seq[JsObject]].getOrElse(Nil)).size
+        NameProbe(page, category, categoryFiles, Some(files), pageFilesCapped = (shown \ "continue").isDefined)
+      }
+    }
+  }
 
   private def props(info: Boolean, text: Boolean): Seq[PropArg] =
     Option.when(info)(ImageInfo(IiProp(IiPropArgs.byNames(ImageInfoProps): _*))).toSeq ++

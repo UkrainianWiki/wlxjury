@@ -238,4 +238,79 @@ class MwCommonsSourceSpec extends Specification with JuryTestHelpers {
         Seq("File:A b.jpg", "File:Cé.jpg")
     }
   }
+
+  "probeName (DG11)" should {
+    val name = "Wiki Loves Monuments 2026 in Nepal"
+
+    def answer(pages: String*) = Future.successful(s"""{"batchcomplete":true,"query":{"pages":[${pages.mkString(",")}]}}""")
+    val page = s"""{"pageid":5,"ns":0,"title":"$name"}"""
+    val noPage = s"""{"ns":0,"title":"$name","missing":true}"""
+    val category = s"""{"pageid":6,"ns":14,"title":"Category:$name","categoryinfo":{"size":40,"pages":0,"files":37,"subcats":3}}"""
+    // a category with members but without a page of its own
+    val categoryWithoutPage =
+      s"""{"ns":14,"title":"Category:$name","missing":true,"categoryinfo":{"size":2,"pages":0,"files":2,"subcats":0}}"""
+    val noCategory = s"""{"ns":14,"title":"Category:$name","missing":true}"""
+
+    "ask once for the page and the category, and read which exists" in {
+      val bot = mockBot()
+      bot.post(any[Map[String, String]]) returns answer(page, noCategory) thenReturns answer(noPage, category) thenReturns
+        answer(noPage, categoryWithoutPage) thenReturns answer(noPage, noCategory)
+      val commons = source(bot)
+      commons.probeName(name, 5.seconds) === NameProbe(page = true, category = false)
+      commons.probeName(name, 5.seconds) === NameProbe(page = false, category = true, categoryFiles = 37)
+      commons.probeName(name, 5.seconds) === NameProbe(page = false, category = true, categoryFiles = 2)
+      commons.probeName(s" $name ", 5.seconds) === NameProbe(page = false, category = false)
+      val first = postedParams(bot, 4).head
+      first("titles") === s"$name|Category:$name"
+      first("prop") === "categoryinfo"
+      first.contains("redirects") must beTrue
+    }
+
+    "count the page's files, at most one request's worth, only when both exist" in {
+      val bot = mockBot()
+      val images = (1 to 500).map(i => s"""{"ns":6,"title":"File:$i.jpg"}""").mkString(",")
+      bot.post(any[Map[String, String]]) returns answer(page, category) thenReturns Future.successful(
+        s"""{"continue":{"imcontinue":"5|X","continue":"||"},"query":{"pages":[{"pageid":5,"ns":0,"title":"$name","images":[$images]}]}}""")
+      source(bot).probeName(name, 5.seconds) ===
+        NameProbe(page = true, category = true, categoryFiles = 37, pageFiles = Some(500), pageFilesCapped = true)
+      val Seq(_, second) = postedParams(bot, 2)
+      second("prop") === "images"
+      second("titles") === name
+      second("imlimit") === "500"
+    }
+
+    "skip the page's files when the counts aren't wanted (the admin chose already)" in {
+      val bot = mockBot()
+      bot.post(any[Map[String, String]]) returns answer(page, category)
+      source(bot).probeName(name, 5.seconds, countPageFiles = false) ===
+        NameProbe(page = true, category = true, categoryFiles = 37)
+      postedParams(bot, 1).head("prop") === "categoryinfo"
+    }
+
+    "throw when Commons times out or answers an error, and not ask about a title with a |" in {
+      val slow = mockBot()
+      slow.post(any[Map[String, String]]) returns scala.concurrent.Promise[String]().future
+      source(slow).probeName(name, 50.millis) must throwA[java.util.concurrent.TimeoutException]
+      val failing = mockBot()
+      failing.post(any[Map[String, String]]) returns Future.successful("""{"error":{"code":"maxlag","info":"Waiting"}}""")
+      source(failing).probeName(name, 5.seconds) must throwA[MwException]
+      val unused = mockBot()
+      source(unused).probeName("A|B", 5.seconds) === NameProbe(page = false, category = false)
+      org.mockito.Mockito.verify(unused, org.mockito.Mockito.never()).post(any[Map[String, String]])
+      ok
+    }
+  }
+
+  "SourceName (DG11)" should {
+    "tell a name without a namespace prefix from a prefixed one" in {
+      SourceName.prefixless("Images from Wiki Loves Monuments 2026 in Nepal") must beTrue
+      SourceName.prefixless("Wiki Loves Monuments 2026: Nepal") must beTrue // a colon, but no namespace
+      forall(Seq("Category:A", "category: A", "Template:Monument", "Commons:Wiki Loves Monuments 2026/Winners",
+        "User:Someone/list", "File:A.jpg", "  ", "")) { title =>
+        SourceName.prefixless(title) must beFalse
+      }
+      SourceName.category(" Images from X ") === "Category:Images from X"
+      SourceName.commonsUrl("Category:Images from X & Y") === "https://commons.wikimedia.org/wiki/Category%3AImages_from_X_%26_Y"
+    }
+  }
 }

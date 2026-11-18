@@ -1,0 +1,36 @@
+@import db.scalikejdbc.{Round, User}
+@(user: User, round: Round, reason: String, openRounds: Seq[Round], reload: Option[String] = None,
+  commentLost: Boolean = false)(implicit messages: Messages, request: RequestHeader)
+
+@* A round's gallery or large view for its juror while the round is not open to them
+   (services.GalleryService.RoundState, support diagnostics plan DG7): stopped, still being
+   distributed, or the juror stopped on it. A state, not a denial (200, no security.authz line;
+   one round.access line), as roundPaused. No files and no votes: only the round's state, which
+   its juror may know, and links to the juror's open rounds of the contest. `reason`: the
+   round.access line's (round_stopped, round_preparing, round_closing, round_distributing, juror_stopped). `reload`: the
+   page to reload, for a state that passes shortly (round_preparing), as roundPaused offers it.
+   `commentLost`: the page answers a comment's send, which was not saved. *@
+@defining("round.state.title." + reason) { titleKey =>
+@main(titleKey, user, user.getId, contestId = Some(round.contestId), backHere = false) {
+    <div class="alert alert-info mt-3" role="status" id="round-state" data-round="@round.getId" data-reason="@reason">
+        <h1 class="h4">@Messages(titleKey)</h1>
+        @if(commentLost) {
+            <p id="round-state-comment-lost"><strong>@Messages("round.state.comment.not.saved")</strong></p>
+        }
+        <p>@Messages("round.state.text." + reason, round.description)</p>
+        @for(page <- reload) {
+            <p><a class="btn btn-primary" id="round-state-reload" href="@page">@Messages("round.paused.reload")</a></p>
+        }
+        @if(openRounds.nonEmpty) {
+            <p class="mb-2">@Messages("round.state.open.rounds")</p>
+            <ul class="list-unstyled mb-0" id="round-state-open-rounds">
+            @for(open <- openRounds) {
+                <li><a class="btn btn-outline-primary mb-2" href="@routes.GalleryController.list(user.getId, 1, "all", open.getId)">@open.description</a></li>
+            }
+            </ul>
+        } else {
+            <p class="mb-0" id="round-state-no-open-round">@Messages("round.state.no.open.round")</p>
+        }
+    </div>
+}
+}

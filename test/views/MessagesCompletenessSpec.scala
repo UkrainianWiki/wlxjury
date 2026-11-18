@@ -93,7 +93,8 @@ class MessagesCompletenessSpec extends Specification {
     // linkStatus.scala.html: AccountToken.Status.key, and its time's text
     "link.status." -> Seq("active", "used", "expired", "revoked").flatMap(s => Seq(s, s"$s.at")),
     "link.purpose." -> db.scalikejdbc.AccountTokenJdbc.SetsPassword,                // editUser's set-password links
-    "account.change.field." -> db.scalikejdbc.AccountChangeJdbc.Fields              // accountChangeTable.scala.html
+    "account.change.field." -> db.scalikejdbc.AccountChangeJdbc.Fields,             // accountChangeTable.scala.html
+    "round.state.text." -> services.GalleryService.RoundState.All.map(_.reason)     // roundState.scala.html
   )
 
   /** Keys looked up from a value rather than a literal. */
@@ -121,7 +122,8 @@ class MessagesCompletenessSpec extends Specification {
     Seq(ListOrder.LatestComment.messageKey),                               // commentsReport's order menu
     Seq("round", "contest").flatMap(w => Seq(s"comments.report.scope.$w", s"comments.report.empty.$w",
       s"comments.report.empty.commenter.$w")),                             // commentsReport, by scope
-    Plural.Forms.map("comments.report.others." + _)                        // commentsReport's folded comments
+    Plural.Forms.map("comments.report.others." + _),                       // commentsReport's folded comments
+    services.GalleryService.RoundState.All.map("round.state.title." + _.reason) // roundState.scala.html's title
   ).flatten
 
   /** Texts in a key's place that are shown as they are, not keys, each with its reason. */

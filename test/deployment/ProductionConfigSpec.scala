@@ -221,6 +221,13 @@ class ProductionConfigSpec extends Specification {
       levels.values.toSeq must not(contain("TRACE"))
     }
 
+    "enable the support diagnostics' INFO loggers, and keep round.counts at WARN (D-0b)" in {
+      levels must havePairs("services.imports" -> "INFO", "services.jobs" -> "INFO",
+        "security.account" -> "INFO", "security.roles" -> "INFO", "round.admin" -> "INFO",
+        "round.access" -> "INFO")
+      levels.get("round.counts") must beNone // the root's WARN
+    }
+
     "be read by logback without errors" in {
       val directory = java.nio.file.Files.createTempDirectory("logback-production")
       val copy      = directory.resolve("logback.xml").toFile
@@ -236,6 +243,13 @@ class ProductionConfigSpec extends Specification {
           .filter(_.getLevel >= ch.qos.logback.core.status.Status.WARN).map(_.getMessage)
         errors must beEmpty
         context.getLogger("coi").getEffectiveLevel must_== ch.qos.logback.classic.Level.INFO
+        // the class loggers under the packages: the import handler's summary and the scheduler's
+        context.getLogger("services.imports.ImageImportHandler").getEffectiveLevel must_== ch.qos.logback.classic.Level.INFO
+        context.getLogger("services.jobs.JobScheduler").getEffectiveLevel must_== ch.qos.logback.classic.Level.INFO
+        context.getLogger("round.access").getEffectiveLevel must_== ch.qos.logback.classic.Level.INFO
+        context.getLogger("round.counts").getEffectiveLevel must_== ch.qos.logback.classic.Level.WARN
+        context.getLogger("services.distribution.RoundDistributionHandler").getEffectiveLevel must_==
+          ch.qos.logback.classic.Level.WARN
         context.getLogger("play.api.Play").getEffectiveLevel must_== ch.qos.logback.classic.Level.WARN
       } finally context.stop()
     }

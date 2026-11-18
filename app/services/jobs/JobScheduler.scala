@@ -409,7 +409,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
             None
           case NonFatal(e) =>
             val reference = controllers.Secured.newReference()
-            logger.error(s"Job $jobId (${job.kind}): preparing failed ref=$reference", e)
+            logger.error(s"job_crashed ${JobScheduler.jobFields(job)} ref=$reference preparing=true", e)
             fail(jobId, JobError.crashed(reference))
             h.forget(jobId)
             None
@@ -472,10 +472,11 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
             result match {
               case _: StepResult.Continue => return true
               case f: StepResult.Failed =>
-                logger.warn(s"Job $jobId (${job.kind}) failed: ${f.error.describe}")
+                logger.warn(s"job_failed ${JobScheduler.jobFields(job)} error=${controllers.Secured.logValue(f.error.describe)}")
                 h.forget(jobId)
                 return false
               case _ =>
+                logger.info(s"job_done ${JobScheduler.jobFields(job)}")
                 h.forget(jobId)
                 return false
             }
@@ -487,7 +488,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
           Thread.sleep(100L * attempt)
         case NonFatal(e) =>
           val reference = controllers.Secured.newReference()
-          logger.error(s"Job $jobId (${job.kind}): step failed ref=$reference", e)
+          logger.error(s"job_crashed ${JobScheduler.jobFields(job)} ref=$reference", e)
           fail(jobId, JobError.crashed(reference))
           h.forget(jobId)
           return false
@@ -509,7 +510,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
       }
       ctx.foreach(runAfterCommit)
     } catch {
-      case NonFatal(e) => logger.error(s"Job $jobId: could not record its failure (${error.describe})", e)
+      case NonFatal(e) => logger.error(s"Job $jobId: could not record its failure (${controllers.Secured.logValue(error.describe)})", e)
     }
 
   /** Fails a running job whose lease expired after `maxAttempts` claims instead of claiming
@@ -553,6 +554,12 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
 }
 
 object JobScheduler {
+
+  /** A job's fields of the `job_done`, `job_failed` and `job_crashed` lines (INFO / WARN /
+    * ERROR on `services.jobs`, operations §1): key-value, `-` for a job of no contest.
+    */
+  def jobFields(job: Job): String =
+    s"job=${job.id} kind=${job.kind} contestId=${job.contestId.getOrElse("-")}"
 
   /** Why a job can't be retried: a message key and its arguments. */
   final case class RetryRefused(messageKey: String, args: String*)

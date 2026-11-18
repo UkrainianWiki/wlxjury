@@ -317,12 +317,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     val progress = Progress(Some(next.seen), next.total, Some("files"))
     if (!page.last) StepResult.Continue(Json.toJsObject(next), progress)
     else {
-      logger.info(
-        s"Job ${job.id}, contest ${p.contestId}: ${title(job)}: ${next.seen} files, ${next.inserted} inserted, " +
-          s"${next.linked} linked, ${next.updated} updated, ${next.monumentIdsChanged} monument ids changed" +
-          (if (next.notInCountries > 0) s", ${next.notInCountries} left out as in no country category" else "") +
-          (if (next.byCountry.contains(false)) ", no file in a country category: none left out" else "")
-      )
+      logger.info(doneLine(job.id, p, next))
       StepResult.Done(Json.toJsObject(next), progress)
     }
   }
@@ -403,6 +398,28 @@ object ImageImportHandler {
     val Import = "import"
     val MonumentIds = "monument_ids"
   }
+
+  /** The summary of a done import (INFO, `services.imports`, operations §1): key-value, the
+    * source quoted ([[controllers.Secured.logValue]]). `titles`: the files of a pasted list (0:
+    * the source's files); `byCountry`: whether a page's files were limited to those in the
+    * contest's country categories (`-`: not a page, or not decided).
+    */
+  def doneLine(jobId: Long, p: ImportParams, st: ImportState): String =
+    s"import_done job=$jobId contestId=${p.contestId} mode=${p.mode} " +
+      s"source=${controllers.Secured.logValue(p.source)} titles=${p.titleCount} seen=${st.seen} " +
+      s"inserted=${st.inserted} linked=${st.linked} updated=${st.updated} " +
+      s"monumentIdsChanged=${st.monumentIdsChanged} missing=${st.missing} " +
+      s"notInCountries=${st.notInCountries} byCountry=${st.byCountry.fold("-")(_.toString)}"
+
+  /** Whether a done import of files found none to keep: every file its source or list gave was
+    * missing on Commons or left out as in no country category, or it gave none (a name of
+    * nothing on Commons, an empty category). The files page says so.
+    */
+  def foundNoFiles(job: Job): Boolean =
+    job.kind == Kind && job.status == services.jobs.JobStatus.Done && paramsOf(job).mode == Mode.Import && {
+      val st = stateOf(job)
+      st.inserted == 0 && st.linked == 0 && st.seen <= st.missing + st.notInCountries
+    }
 
   /** One active import per contest, of either mode. */
   def dedupeKey(contestId: Long): String = s"$Kind:$SubjectType:$contestId"

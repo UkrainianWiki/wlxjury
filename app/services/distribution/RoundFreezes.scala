@@ -81,6 +81,19 @@ object RoundFreezes {
     released
   }
 
+  /** Whether an active distribution that holds the round frozen will close it at its end: one
+    * that completes a creation (its round being created, `distributing`, or
+    * `params.completingCreation`), which releases its previous rounds closed
+    * ([[RoundDistributionHandler]]'s `complete`, `Round.release(…, close = true)`). A plain read.
+    */
+  def closedByHolder(roundId: Long)(implicit session: DBSession = AutoSession): Boolean =
+    JobJdbc.activeOfKind(RoundDistributionHandler.Kind)
+      .filter(j => (j.state \ "frozen").asOpt[Seq[Long]].exists(_.contains(roundId)))
+      .exists { j =>
+        (j.params \ "completingCreation").asOpt[Boolean].getOrElse(false) ||
+          j.subjectId.flatMap(Round.findById(_)).exists(_.distributing)
+      }
+
   /** The jobs that hold the round frozen now (for the log): plain reads. */
   def holdingJobs(roundId: Long)(implicit session: DBSession = AutoSession): Seq[Long] =
     FreezingKinds.flatMap(JobJdbc.activeOfKind(_)).filter(j => (j.state \ "frozen").asOpt[Seq[Long]].exists(_.contains(roundId)))

@@ -1010,6 +1010,30 @@ takes a Commons category or a page, or a pasted list of files in **Or image list
 files** adds them.
 Imports only add: no file is removed, and all the contest's rounds choose from these files.
 
+**A name without `Category:`.** A source that starts with `Category:` or `Template:` (or another
+namespace, such as `Commons:`) is read as it is, and so is a pasted list. A name without any such
+prefix, for example `Images from Wiki Loves Monuments 2026 in Nepal`, is checked on Commons first,
+for **Import files** and **Update monuments** alike, before anything starts:
+
+- if Commons has only a page of that name, or only the category `Category:<name>`, the import
+  uses that one (a category is saved as the contest's source with its `Category:` prefix);
+- if it has both, the page asks which one you mean and shows each one's file count, with a link
+  to look at it on Commons. The category is chosen, as it usually is the one meant; check that
+  the names and counts are what you expected (a page of the same name may exist by chance, or the
+  name may have been copied from the wrong place), change the choice if needed, and press the
+  button again;
+- if it has neither, nothing starts, and the page says so: check the name, or add `Category:` in
+  front of a category's name;
+- if Commons can't be reached to check it (within a few seconds), nothing starts and the page
+  says so, keeping the name: the import needs Commons anyway. Try again later, or add
+  `Category:` in front of a category's name yourself.
+
+**An import that found nothing.** When a finished import added no file (its source gave none, or
+only files that are missing on Commons or in none of the contest's country categories), the page
+says so under the import, so that you can check the name. When an import from a page left files
+out as in no country category of this contest, it says how many: the page is likely another
+contest's or another year's.
+
 For monuments contests **Update monuments** refreshes the files' monument ids, and for Ukrainian
 contests reads the monument lists on Wikipedia: each monument's name, place, Commons category
 and Wikidata item, which the [monument's page](organizer-guide.md#o-monuments) shows. Monuments

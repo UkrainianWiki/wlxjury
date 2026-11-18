@@ -227,9 +227,11 @@ class RoundImagesReviewSpec extends PlaySpecification with PlayTestDb {
         val large = get(app, "juror@example.com", s"/large/round/$r/user/$j/pageid/1")
         val vote = route(app, request(POST, Some("juror@example.com"), s"/rate/round/$r/pageid/1/select/1?rate=0")).get
         val largeVote = route(app, request(POST, Some("juror@example.com"), s"/large/round/$r/pageid/1/select/1")).get
-        (status(gallery) must beOneOf(FORBIDDEN, SEE_OTHER)) and
+        // its juror gets the round's state page, without its files (DG7 of the support diagnostics plan)
+        (status(gallery) === OK) and
+          (contentAsString(gallery) must contain("data-reason=\"round_distributing\"")) and
           (contentAsString(gallery) must not(contain("data-pageId=\"1\""))) and
-          (status(large) must beOneOf(FORBIDDEN, SEE_OTHER)) and
+          (status(large) === OK) and (contentAsString(large) must contain("data-reason=\"round_distributing\"")) and
           (status(vote) must beOneOf(CONFLICT, FORBIDDEN)) and
           (status(largeVote) must beOneOf(CONFLICT, FORBIDDEN, SEE_OTHER)) and
           (VoteJdbc.findBy(1L, j, r).map(_.rate) === Some(0)) and

@@ -60,13 +60,17 @@ class ErrorHandler @Inject() (
     val request = ErrorHandler.withCookieCells(unparsed)
     implicit val impReq: RequestHeader = request
     val reference = Secured.newReference()
-    logger.error(s"server_error ref=$reference method=${request.method} path=${Secured.logPath(request.path)}", exception)
+    // the line first, from the signed session's ids: the user's lookup needs a connection, which
+    // a server error (e.g. an exhausted pool) may make wait
+    logger.error(s"server_error ref=$reference method=${request.method} path=${Secured.logPath(request.path)} " +
+      Secured.accountFields(request, None), exception)
+    val user = sessionUser(request)
     Future.successful(securityHeaders(request,
       if (ApiFailure.isApiRequest(request))
         InternalServerError(Json.obj("error" -> ApiFailure.serverError(reference).body.error, "reference" -> reference))
       else
         InternalServerError(
-          views.html.errorPage(sessionUser(request), "error.title", "error.server", Seq(reference),
+          views.html.errorPage(user, "error.title", "error.server", Seq(reference),
             Some(reference), Some(Secured.referenceTime()))
         )
     ))

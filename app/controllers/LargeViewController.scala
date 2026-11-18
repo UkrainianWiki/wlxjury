@@ -128,10 +128,21 @@ class LargeViewController @Inject() (
             NotFound(Json.obj("error" -> (if (roundId == 0) "no_round" else "round_not_found")))
         }
       case Some(round) if !galleryService.mayViewRound(user, round) =>
-        val denial = Secured.Denial.round(round, Secured.ViewerRoles)
-        render {
-          case Accepts.Html() => onUnAuthorized(user, request, denial)
-          case Accepts.Json() => onUnAuthorizedJson(user, request, denial)
+        val rounds = galleryService.viewerRounds(user, round)
+        galleryService.refusal(user, Some(round), round.contestId, rounds) match {
+          // its juror on a round stopped, still being distributed, or with the juror stopped on
+          // it: a state, not a denial (DG7)
+          case Some(state: GalleryService.RoundState) =>
+            render {
+              case Accepts.Html() => roundStateResult(user, round, state, rounds, json = false)
+              case Accepts.Json() => roundStateResult(user, round, state, rounds, json = true)
+            }
+          case _ =>
+            val denial = Secured.Denial.round(round, Secured.ViewerRoles)
+            render {
+              case Accepts.Html() => onUnAuthorized(user, request, denial)
+              case Accepts.Json() => onUnAuthorizedJson(user, request, denial)
+            }
         }
       case Some(round) if galleryService.pausedFor(user, round) =>
         // its juror while a job moves the round's files: a state, not a denial (no authz line)

@@ -32,8 +32,8 @@ the move to Ubuntu 24.04, [`2026-10-19-mariadb-10.11.md`](../plans/2026-10-19-ma
 **1.1 One event, one key-value line.** An event name first, then `key=value` fields, untrusted
 text quoted by `Secured.logValue` so a line stays single and parseable:
 `authorization_denied ref=… accountId=… method=… path=… reason=missing_role`
-(`Secured.denialLogLine`), `server_error ref=… method=… path=…` (`ErrorHandler`),
-`image_fetch_refused host=…` (`LocalImageCacheService`). *Why:* support and fail2ban match lines
+(`Secured.denialLogLine`), `server_error ref=… method=… path=… accountId=… contestId=…`
+(`ErrorHandler`), `image_fetch_refused host=…` (`LocalImageCacheService`). *Why:* support and fail2ban match lines
 by event and field, not by prose that changes.
 
 **1.2 A reference links what the user saw to the line.** A denial, a refused CSRF token and a
@@ -47,7 +47,9 @@ server error show a short reference on the page or in the JSON (`{error, referen
 account chooser, `OAuthChooserController`; the password sign-in form, `LoginController`, logs no
 failure line: OP4), `security.roles`, `security.password`; `coi` (conflict-of-interest
 removals, the only record of them, INFO); `readiness`; `services.ApiTokenService` (refused tokens by
-prefix). A new class of security event gets a `security.*` logger and a level the production
+prefix); `round.admin` (a round's admin changes: `freeze_release`, `juror_add`, `juror_reassign`);
+`round.access` (a juror refused a round's gallery or large view, §1.7); `services.imports` and
+`services.jobs` (the class loggers of the imports and the job scheduler, §1.7). A new class of security event gets a `security.*` logger and a level the production
 logback writes.
 
 **1.4 Ids, never personal data.** Accounts by `accountId`/`userId`; no email, name, password,
@@ -73,6 +75,43 @@ into the repository's copy only, so its removal lines were not written in produc
 (2026-10-30; [logging plan](../plans/2026-10-30-logging-config-in-releases.md)). *In effect*
 after the playbook run that installs the unit and the app's next restart; until then production
 reads `/etc/wlxjury-runtime/logback.xml`.
+
+**1.7 The support lines** (D-0b of the [support diagnostics
+plan](../plans/2026-11-18-support-diagnostics.md)). Production writes these at INFO
+(`conf/logback-production.xml`: `services.imports`, `services.jobs`, `security.account`,
+`security.roles`, `round.admin`, `round.access`; `round.counts` stays at WARN, its INFO being
+the periodic recompute's summary). `services.imports` at INFO also writes `CommonsFileCheck`'s
+per-file lines (a file renamed, changed or deleted on Commons, as a check of the stored files
+finds them):
+
+- `import_done job=… contestId=… mode=import|monument_ids source="…" titles=… seen=… inserted=…
+  linked=… updated=… monumentIdsChanged=… missing=… notInCountries=… byCountry=true|false|-`
+  (`ImageImportHandler`): an import's summary, the source quoted; `titles` the files of a
+  pasted list (0: the source's), `byCountry` whether a page's files were limited to the contest's
+  country categories. `monument_lists_done job=… contestId=… lists="…" pages=… monuments=…`
+  (`MonumentListImportHandler`).
+- `job_done job=… kind=… contestId=…` (INFO), `job_failed job=… kind=… contestId=… error="…"`
+  (WARN), `job_crashed job=… kind=… contestId=… ref=…` (ERROR, with the exception; `preparing=true`
+  when its fetch failed) (`JobScheduler`); `contestId=-` for a job of no contest.
+- `round_access_refused reason=round_stopped|round_preparing|round_closing|round_distributing|juror_stopped
+  roundId=… accountId=… contestId=…` (`round.access`, INFO): a juror of the round opened its
+  gallery, large view or region menu, or commented on it, while it was stopped, frozen as the
+  previous round of a distribution that gives it back (`round_preparing`, e.g. "Distribute new
+  files") or of a creation that closes it (`round_closing`), still being distributed, or they
+  were stopped on it. They see a page saying so (200, DG7), or a script the 409 `round_closed` with
+  the `reason`, so there is no `authorization_denied` line; anyone else refused there still gets
+  one.
+- `import_source_check_failed contestId=… source="…" error=<class name>` (WARN,
+  `services.imports.SourceName`): the files page could not check a source name without a
+  namespace prefix on Commons (DG11); the admin was told and nothing was queued.
+- `server_error` and `csrf_failure` carry `accountId=… contestId=… accountFrom=…`:
+  `accountFrom=user`, the session's user as the database told it, with their current contest;
+  `session`, the signed session's own ids, unchecked; `none`, signed out (`-`). `server_error`
+  is logged first, from the session's ids, so that a lookup waiting for a connection never
+  delays it.
+- The Commons and image-cache WARN lines (`MwApi`, `CommonsLogin`, `CommonsFileCheck`,
+  `LocalImageCacheService`) quote file titles, URLs, response bodies and exception text with
+  `logValue`.
 
 ## 2. Health and readiness
 

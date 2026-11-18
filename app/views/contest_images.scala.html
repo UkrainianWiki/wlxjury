@@ -3,9 +3,12 @@
         user: db.scalikejdbc.User,
         sourceImages: Long,
         dbImages: Long,
-        importJobs: Seq[(services.jobs.Job, String)] = Nil
+        importJobs: Seq[(services.jobs.Job, String)] = Nil,
+        sourceCheck: Option[controllers.ImageController.SourceCheck] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
     @import helper._
+    @import services.imports.{ImageImportHandler, SourceName}
+    @import controllers.ImageController.{AsCategory, AsPage, BothExist, Unreachable}
 
     @* the source's Commons suggestions (category-suggest.js) are a Tom Select control *@
     @mainAdmin("contest.files", user, user.getId, contestId = contest.id, head = snippets.tomSelectScripts()) {
@@ -22,6 +25,15 @@
             <div class="card card-body p-2 mb-3" id="import-jobs">
                 @for((job, title) <- importJobs) {
                     <div>@title: @snippets.jobStatus(job, req.uri)</div>
+                    @* a done import that kept no file, or left some out as in no country category of
+                       this contest (support diagnostics plan, D-0b) *@
+                    @if(ImageImportHandler.foundNoFiles(job)) {
+                        <div class="alert alert-warning py-1 px-2 my-1 import-no-files" role="status">@Messages("import.found.no.files")</div>
+                    } else {
+                        @if(job.kind == ImageImportHandler.Kind && job.isDone && ImageImportHandler.stateOf(job).notInCountries > 0) {
+                            <div class="alert alert-warning py-1 px-2 my-1 import-not-in-countries" role="status">@Messages("import.not.in.countries", ImageImportHandler.stateOf(job).notInCountries)</div>
+                        }
+                    }
                 }
             </div>
             <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
@@ -35,6 +47,32 @@
             @* a category or a page: Commons' categories suggested once it starts with Category: *@
             @bs.text(importImagesForm("source"), Symbol("_label") -> "commons.category.or.page.with.files",
                 Symbol("_help") -> Messages("import.files.help"), Symbol("data-category-suggest") -> "mixed")
+
+            @* a name without a namespace prefix that Commons has as both a page and a category, or
+               that Commons couldn't be checked for (DG11): the choice, the category preselected;
+               or the notice (nothing is read without Commons) *@
+            @sourceCheck.map {
+                case both: BothExist => {
+                    <fieldset id="source-choice" class="border rounded px-3 py-2 mb-3">
+                        <legend class="fs-6 float-none w-auto mb-1">@Messages("import.source.check.both", both.name)</legend>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="sourceAs" id="source-as-category" value="@AsCategory" checked>
+                            <label class="form-check-label" for="source-as-category">@Messages("import.source.check.category", SourceName.category(both.name), both.categoryFiles)</label>
+                            <a class="ms-1" href="@SourceName.commonsUrl(SourceName.category(both.name))" target="_blank" rel="noopener noreferrer">@Messages("import.source.check.open")</a>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="sourceAs" id="source-as-page" value="@AsPage">
+                            <label class="form-check-label" for="source-as-page">@Messages("import.source.check.page", both.name, both.pageFilesText)</label>
+                            <a class="ms-1" href="@SourceName.commonsUrl(both.name)" target="_blank" rel="noopener noreferrer">@Messages("import.source.check.open")</a>
+                        </div>
+                        <input type="hidden" name="sourceFor" value="@both.name">
+                        <div class="form-text">@Messages("import.source.check.both.send")</div>
+                    </fieldset>
+                }
+                case _: Unreachable => {
+                    <div id="source-unreachable" class="alert alert-warning" role="status">@Messages("import.source.check.unreachable")</div>
+                }
+            }
 
             @bs.textarea(importImagesForm("list"), Symbol("_label") -> "or.image.list", Symbol("_help") -> Messages("image.list.help"), Symbol("rows") -> 10 )
 

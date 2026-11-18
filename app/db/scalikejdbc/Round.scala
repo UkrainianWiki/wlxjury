@@ -510,6 +510,14 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       services.distribution.RoundDistributionHandler.SubjectType + ":"}, $table.id)
                           AND pj.kind = ${services.distribution.RoundRebalanceHandler.Kind}))"""
 
+  /** Whether the round is frozen while open: inactive only because a job reads or moves it
+    * (`freeze_count > 0`, `active_before_freeze = 1`, not being distributed), e.g. the previous
+    * round of a distribution; it opens again when the job ends. A plain read.
+    */
+  def isFrozenOpen(roundId: Long)(implicit session: DBSession = AutoSession): Boolean =
+    sql"""SELECT 1 FROM round WHERE id = $roundId AND freeze_count > 0 AND active_before_freeze = 1
+          AND distributing = 0""".map(_ => ()).single().isDefined
+
   /** Whether the round is paused for its jurors ([[pausedCond]]), a plain read. */
   def isPaused(roundId: Long)(implicit session: DBSession = AutoSession): Boolean =
     sql"SELECT ${pausedCond(sqls"round")} FROM round WHERE id = $roundId"

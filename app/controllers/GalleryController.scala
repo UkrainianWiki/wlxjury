@@ -155,12 +155,18 @@ class GalleryController @Inject() (
   )(implicit request: Request[AnyContent]): Result = {
     val rounds = galleryService.viewerRounds(user, round)
 
-    if (galleryService.isNotAuthorized(user, Some(round), round.contestId, rounds)) {
-      // not a viewer of the round (another contest, an inactive membership, a round stopped or
-      // still being distributed for a juror): JSON to a script, as the comments refusal below
+    val refusal = galleryService.refusal(user, Some(round), round.contestId, rounds)
+    if (refusal.contains(GalleryService.Refusal.Denied)) {
+      // not a viewer of the round (another contest, an inactive membership, not a juror of the
+      // round): JSON to a script, as the comments refusal below
       val denial = Secured.Denial.round(round, Secured.ViewerRoles)
       if (Secured.isScriptRequest(request)) onUnAuthorizedJson(user, request, denial)
       else onUnAuthorized(user, request, denial)
+    } else if (refusal.isDefined) {
+      // its juror on a round stopped, still being distributed, or with the juror stopped on it:
+      // a state, not a denial (DG7)
+      roundStateResult(user, round, refusal.collect { case s: GalleryService.RoundState => s }.get, rounds,
+        json = Secured.isScriptRequest(request))
     } else if (galleryService.pausedFor(user, round)) {
       // its juror while a job moves the round's files: a state, not a denial (no authz line)
       if (Secured.isScriptRequest(request)) Conflict(play.api.libs.json.Json.obj("error" -> "round_paused"))
@@ -435,7 +441,10 @@ class GalleryController @Inject() (
       Round.findById(roundId).fold[Result](NotFound(Json.obj("error" -> "round_not_found"))) { round =>
         val user = Secured.inContest(sessionUser, round.contestId)
         if (!galleryService.mayViewRound(user, round))
-          onUnAuthorizedJson(user, request, Secured.Denial.round(round, Secured.ViewerRoles))
+          // its juror on a round not open to them now: the gallery's 409 with its reason (DG7)
+          galleryService.roundState(user, round).fold(
+            onUnAuthorizedJson(user, request, Secured.Denial.round(round, Secured.ViewerRoles))
+          )(state => roundStateResult(user, round, state, Nil, json = true))
         else
           galleryService.viewAs(user, round, asUserId) match {
             case refusal if refusal != GalleryService.ViewAs.Allowed => viewAsRefused(user, round, refusal, json = true)

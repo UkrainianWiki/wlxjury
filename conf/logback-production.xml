@@ -23,6 +23,18 @@
     <logger name="coi" level="INFO"/>
     <!-- refused personal API tokens (services.ApiTokenService): unknown ones at INFO, by prefix -->
     <logger name="services.ApiTokenService" level="INFO"/>
+    <!-- support diagnostics (docs/plans/2026-11-18-support-diagnostics.md, D-0b; operations §1):
+         the imports' summaries (import_done, monument_lists_done), the jobs' outcomes (job_done,
+         job_failed), account and role changes, the round admin's changes (freeze_release,
+         juror_add, juror_reassign) and a juror's refused gallery or large view of a stopped round
+         (round_access_refused). round.counts stays at WARN: its INFO is the periodic recompute's
+         summary, its failures are WARN -->
+    <logger name="services.imports" level="INFO"/>
+    <logger name="services.jobs" level="INFO"/>
+    <logger name="security.account" level="INFO"/>
+    <logger name="security.roles" level="INFO"/>
+    <logger name="round.admin" level="INFO"/>
+    <logger name="round.access" level="INFO"/>
     <!-- a request for another host (AllowedHostsFilter): ErrorHandler logs it once as client_error;
          the filter's own WARN would double every scanner's request -->
     <logger name="play.filters.hosts.AllowedHostsFilter" level="ERROR"/>

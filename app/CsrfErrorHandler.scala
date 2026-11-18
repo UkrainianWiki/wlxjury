@@ -27,7 +27,7 @@ class CsrfErrorHandler @Inject() (val messagesApi: MessagesApi) extends CSRF.Err
     val reference = Secured.newReference()
     val user = sessionUser(request)
     logger.warn(s"csrf_failure ref=$reference method=${request.method} path=${Secured.logPath(request.path)} " +
-      s"signedIn=${user.isDefined} message=${Secured.logValue(msg)}")
+      s"signedIn=${user.isDefined} ${Secured.accountFields(request, user)} message=${Secured.logValue(msg)}")
     Future.successful(
       if (ApiFailure.isApiRequest(request))
         Forbidden(Json.obj("error" -> "csrf", "reference" -> reference, "hint" -> CsrfErrorHandler.ApiHint))

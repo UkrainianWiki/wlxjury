@@ -20,6 +20,8 @@ final case class FakeFile(image: Image, text: Option[String] = None, categories:
   * @param parents          the parent categories of categories, by title
   * @param renamed          renamed files: their old titles, which redirect to their current ones
   * @param templates        the text of templates' pages, by name without the namespace
+  * @param names            what [[probeName]] finds under a prefix-less name (DG11); any other
+  *                         name is neither a page nor a category
   */
 class FakeCommonsSource(
     files: Seq[FakeFile],
@@ -27,7 +29,8 @@ class FakeCommonsSource(
     categoryCounts: Map[String, Long] = Map.empty,
     parents: Map[String, Seq[String]] = Map.empty,
     renamed: Map[String, String] = Map.empty,
-    templates: Map[String, String] = Map.empty
+    templates: Map[String, String] = Map.empty,
+    names: Map[String, NameProbe] = Map.empty
 ) extends CommonsSource {
 
   private val sorted = files.sortBy(_.image.pageId)
@@ -80,6 +83,24 @@ class FakeCommonsSource(
   }
 
   def categoryFileCount(category: String): Option[Long] = categoryCounts.get(category).orElse(Some(files.size.toLong))
+
+  /** Fails [[probeName]], as Commons down or timing out does, while set. */
+  @volatile var probeFailure: Option[Throwable] = None
+
+  /** The names [[probeName]] was asked about, in order. */
+  val probed = new java.util.concurrent.ConcurrentLinkedQueue[String]()
+
+  /** Fails [[probeName]]'s count of a page's files (its second request), as a timeout does. */
+  @volatile var pageCountFailure: Option[Throwable] = None
+
+  def probeName(name: String, timeout: scala.concurrent.duration.FiniteDuration,
+      countPageFiles: Boolean = true): NameProbe = {
+    probed.add(name)
+    probeFailure.foreach(e => throw e)
+    val found = names.getOrElse(name.trim, NameProbe(page = false, category = false))
+    if (found.page && found.category && countPageFiles) pageCountFailure.foreach(e => throw e)
+    if (countPageFiles) found else found.copy(pageFiles = None, pageFilesCapped = false)
+  }
 
   def categoriesByTitle(titles: Seq[String]): Map[String, Seq[String]] = {
     categoryCalls.incrementAndGet()

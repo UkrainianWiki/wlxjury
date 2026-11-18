@@ -104,6 +104,28 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
         if (json) onUnAuthorizedJson(user, request, denial) else onUnAuthorized(user, request, denial)
     }
 
+  /** A juror's gallery or large view of a round not open to them now
+    * ([[services.GalleryService.RoundState]], DG7 of the support diagnostics plan): a 200 page
+    * saying so, with links to their open rounds (`openRounds`), and a Reload button for a state
+    * that passes shortly (to `back`, else to this page if it was a GET); `commentLost`: from a
+    * comment's send, which says the comment was not saved; to a script, the vote path's 409 `round_closed` (what vote-errors.js
+    * reads) with the state's `reason`. A state, not a denial: no `security.authz` line, but one
+    * INFO line on `round.access` ([[services.GalleryService.accessRefusedLine]]).
+    */
+  def roundStateResult(user: User, round: Round, state: services.GalleryService.RoundState, openRounds: Seq[Round],
+      json: Boolean, back: Option[String] = None, commentLost: Boolean = false)(implicit request: RequestHeader): Result = {
+    services.GalleryService.accessLogger.info(services.GalleryService.accessRefusedLine(state, round, user))
+    if (json) Results.Conflict(Json.obj("error" -> "round_closed", "reason" -> state.reason))
+    else {
+      // the page to try again: `back` (a comment's file in the large view), else this page if a GET
+      val reload = Option.when(services.GalleryService.RoundState.Transient(state))(
+        back.orElse(Option.when(request.method == "GET")(request.uri))).flatten
+      Results.Ok(views.html.roundState(user, round, state.reason, openRounds.filterNot(_.id == round.id), reload,
+        commentLost)(
+        cc.messagesApi.preferred(request), request))
+    }
+  }
+
   /** A useful destination from an active membership, the current contest's first: the
     * contest's files if the user may view them, else a gallery of one of its active rounds.
     */
@@ -518,13 +540,31 @@ object Secured {
       fields.map { case (key, value) => s" $key=$value" }.mkString
   }
 
-  /** Escape untrusted text so log fields stay single-line and key-value parseable. */
+  /** The account and contest fields of a request's `server_error` and `csrf_failure` lines,
+    * and where they come from (`accountFrom`): `user`, the session's user as the database told
+    * it ([[sessionUserOf]]), with their current contest; else `session`, the signed session's
+    * own ids, unchecked (an ended or another account's session, or the database not asked);
+    * `none` without any (signed out: `-`). Ids only, never the email.
+    */
+  def accountFields(request: RequestHeader, user: Option[User]): String = {
+    def fromSession(key: String) = request.session.get(key).filter(_.nonEmpty).filter(_.forall(_.isDigit))
+    user.flatMap(_.id) match {
+      case Some(id) => s"accountId=$id contestId=${user.flatMap(_.contestId).getOrElse("-")} accountFrom=user"
+      case None =>
+        val accountId = fromSession(AccountId)
+        val contestId = fromSession(CurrentContestId)
+        s"accountId=${accountId.getOrElse("-")} contestId=${contestId.getOrElse("-")} " +
+          s"accountFrom=${if (accountId.isDefined) "session" else "none"}"
+    }
+  }
+
   /** A request path for a log line: [[logValue]], with the token of a mailed link
     * (`/invitation/<token>`, `/email/confirm/<token>`) masked.
     */
   def logPath(path: String): String =
     logValue(path.replaceAll("^/(invitation|email/confirm|oauth/choose/confirm)/[^/]+", "/$1/***"))
 
+  /** Escape untrusted text so log fields stay single-line and key-value parseable. */
   def logValue(value: String): String =
     "\"" + value.flatMap {
       case '\\' => "\\\\"

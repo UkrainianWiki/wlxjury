@@ -155,11 +155,16 @@ class CommentAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "be refused on a stopped round to its juror" in {
+    "be refused on a stopped round to its juror: the round's state page, not a 403 (DG7)" in {
       testDbApp { app =>
         val f = stop(fixture())
-        status(comment(app, f.juror, f)) === FORBIDDEN
+        val refused = comment(app, f.juror, f)
+        status(refused) === OK
+        contentAsString(refused) must contain("data-reason=\"round_stopped\"")
         commented(f.juror) must beFalse
+        // a juror of the contest who is not one of the round: a 403, not the round's state
+        status(comment(app, f.member, f)) === FORBIDDEN
+        commented(f.member) must beFalse
       }
     }
 

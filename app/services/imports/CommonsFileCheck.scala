@@ -212,20 +212,20 @@ class CommonsFileCheck(
       results
     } catch {
       case NonFatal(e) =>
-        logger.warn(s"Could not check ${images.size} files on Commons: $e")
+        logger.warn(s"Could not check ${images.size} files on Commons: ${controllers.Secured.logValue(e.toString)}")
         images.map(_.pageId -> FileCheck.Unknown).toMap
     }
 
   /** Left out of the answer, but not missing on Commons: most likely its page didn't parse. */
   private def unparsed(stored: Image): FileCheck = {
-    logger.warn(s"Commons left page ${stored.pageId} (${stored.title}) out of its answer, but doesn't say it is missing")
+    logger.warn(s"Commons left page ${stored.pageId} (${controllers.Secured.logValue(stored.title)}) out of its answer, but doesn't say it is missing")
     FileCheck.Unknown
   }
 
   private def compare(stored: Image, p: Page): FileCheck =
     p.images.headOption match {
       case None =>
-        logger.warn(s"Commons has page ${stored.pageId} (${p.title}) without a file")
+        logger.warn(s"Commons has page ${stored.pageId} (${controllers.Secured.logValue(p.title)}) without a file")
         FileCheck.Unknown
       case Some(info) =>
         val current = stored.copy(
@@ -267,16 +267,16 @@ class CommonsFileCheck(
         try DeletedFiles.settle(deleted)
         catch {
           case NonFatal(e) =>
-            logger.warn(s"Could not settle the votes of ${deleted.size} files deleted on Commons: $e")
+            logger.warn(s"Could not settle the votes of ${deleted.size} files deleted on Commons: ${controllers.Secured.logValue(e.toString)}")
             Nil
         }
       RoundImageCounts.invalidate(rounds ++ settled: _*)
       changed.foreach { image =>
         val former = stored(image.pageId).title
-        if (former != image.title) logger.info(s"Commons file ${image.pageId} was renamed: $former -> ${image.title}")
-        else logger.info(s"Commons file ${image.pageId} (${image.title}) changed")
+        if (former != image.title) logger.info(s"Commons file ${image.pageId} was renamed: ${controllers.Secured.logValue(former)} -> ${controllers.Secured.logValue(image.title)}")
+        else logger.info(s"Commons file ${image.pageId} (${controllers.Secured.logValue(image.title)}) changed")
       }
-      deleted.foreach(id => logger.info(s"Commons file $id (${stored(id).title}) was deleted; its votes are moved aside"))
+      deleted.foreach(id => logger.info(s"Commons file $id (${controllers.Secured.logValue(stored(id).title)}) was deleted; its votes are moved aside"))
     }
   }
 }

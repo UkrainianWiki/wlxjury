@@ -55,7 +55,13 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
               addReviewComment(user, targetRound, pageId, region)
             else onUnAuthorized(user, request, Secured.Denial.round(targetRound, RoundReviewController.ViewRoles))
           } else if (!mayComment(user, targetRound, pageId, commenterRoles))
-            onUnAuthorized(user, request, Secured.Denial.round(targetRound, commenterRoles))
+            // its juror on a round not open to them now: the round's state page, or the 409 to a
+            // script (DG7), logged on round.access; anyone else is denied
+            galleryService.roundState(user, targetRound).fold(
+              onUnAuthorized(user, request, Secured.Denial.round(targetRound, commenterRoles))
+            )(state => roundStateResult(user, targetRound, state, galleryService.viewerRounds(user, targetRound),
+              json = Secured.isScriptRequest(request),
+              back = Some(listOf(user, targetRound, region, asUserId).largeUrl(pageId)), commentLost = true))
           else if (!targetRound.active) {
             val denial = Secured.Denial.round(targetRound, commenterRoles)
               .copy(reason = Some(ImageDiscussionController.RoundStopped))

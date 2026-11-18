@@ -79,8 +79,34 @@ No next release is set yet (`build.sbt` says `26.12-SNAPSHOT`). Everything devel
   when only root can then give such a person a sign-in link. **Import users** only counts such rows
   ("Not added yet"), linking the users page. Secure coding §14's rule changes with it (its risk
   stated there). No migration. Admin guide.
+- **A page saying why a round can't be opened, and the import source checked on Commons** (D-0b
+  of the support diagnostics plan, developed 2026-11-18, `stack/191-diagnostics-quick-fixes`): a
+  juror of a round who opens its gallery or large view (or its region menu, or comments on it)
+  while it is stopped, frozen as the previous round of a distribution (given back, or closing
+  for a round creation), still being
+  distributed, or they are stopped on it gets a page saying which (200, not the 403 "access
+  denied" page; DG7), with buttons for their open rounds; a script gets the vote's 409
+  `round_closed` with the `reason`; anyone else refused there still gets the 403. On the files page, a source name
+  without a namespace prefix is checked on Commons for **Import files** and **Update monuments**
+  before anything starts (DG11): the page or `Category:<name>`, whichever exists; when both do,
+  the choice with each one's file count, the category preselected; when neither does, refused
+  with a message; when Commons can't be reached in `diagnostics.sourceCheckTimeout` (5 s), the
+  page says so and nothing starts (try again later, or add `Category:`). A prefixed source and a
+  pasted list are unchanged. The files page says when a finished import found no files to add, or
+  left a page's files out as in no country category of the contest. The import action runs on the
+  blocking pool. No migration. Admin and juror guides.
 
 **Development**
+
+- **Support log lines** (D-0b of the support diagnostics plan, developed 2026-11-18,
+  `stack/191-diagnostics-quick-fixes`): the import's summary as `import_done job= contestId=
+  mode= source="…" …` (the source quoted), `monument_lists_done`, and the scheduler's
+  `job_done` / `job_failed` / `job_crashed` lines with `contestId`; `round_access_refused reason=
+  roundId= accountId= contestId=` on the new `round.access` logger (INFO) for each juror shown the
+  state page; `server_error` and `csrf_failure` gain `accountId` and `contestId`; the Commons and
+  image-cache WARN lines quote titles, URLs and exception text. The production logback writes
+  `services.imports`, `services.jobs`, `security.account`, `security.roles`, `round.admin` and
+  `round.access` at INFO (`round.counts` stays at WARN). Operations §1.7.
 
 - **Licence: GPL-3.0-or-later** (developed 2026-11-17, `stack/182-gpl-relicense`): relicensed from
   Apache-2.0; releases before this stay available under Apache-2.0. `LICENSE` is the GPL-3.0

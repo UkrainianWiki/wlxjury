@@ -1,6 +1,7 @@
 package services
 
 import controllers.Global
+import controllers.Secured.{logValue => q}
 import db.scalikejdbc.ImageJdbc
 import org.apache.pekko.actor.ActorSystem
 import org.apache.pekko.http.scaladsl.Http
@@ -125,7 +126,7 @@ class LocalImageCacheService(
         saveResized(image, sourceImg, sourcePx, Some(requestedPx))
       } catch {
         case ex: Exception =>
-          logger.warn(s"Cascade failed for ${image.title}: ${ex.getMessage}")
+          logger.warn(s"Cascade failed for ${q(image.title)}: ${q(String.valueOf(ex.getMessage))}")
           None
       }
       val requestedImg = imgOpt.getOrElse(scale(sourceImg, requestedPx))
@@ -428,7 +429,7 @@ class LocalImageCacheService(
     */
   private def afterFailedDownload(image: Image, ex: Throwable, counts: FailureCounts): Future[Unit] = {
     def error(e: Throwable): Unit = {
-      logger.warn(s"Failed to cache ${image.title}: ${e.getMessage}")
+      logger.warn(s"Failed to cache ${q(image.title)}: ${q(String.valueOf(e.getMessage))}")
       counts.errors.incrementAndGet()
     }
     checkOnCommons(image, ex)
@@ -536,7 +537,7 @@ class LocalImageCacheService(
 
     urlOpt match {
       case None =>
-        logger.warn(s"No cacheable URL for ${image.title} (url=${image.url})")
+        logger.warn(s"No cacheable URL for ${q(image.title)} (url=${q(image.url.getOrElse(""))})")
         Future.failed(new Exception(s"No cacheable URL for ${image.title}"))
       case Some(url) =>
         downloadWithRetry(url, attempt = 1).flatMap {
@@ -575,23 +576,23 @@ class LocalImageCacheService(
           entity.toStrict(10.seconds).flatMap { strict =>
             val body = strict.data.utf8String
             if (attempt >= maxAttempts) {
-              logger.warn(s"Giving up on $url after $attempt attempts (429): $body")
+              logger.warn(s"Giving up on ${q(url)} after $attempt attempts (429): ${q(body.take(500))}")
               Future.successful(None)
             } else {
               val delay = retryDelay(respHeaders, attempt)
-              logger.info(s"429 on attempt $attempt for $url, retrying in ${delay.toSeconds}s: $body")
+              logger.info(s"429 on attempt $attempt for ${q(url)}, retrying in ${delay.toSeconds}s: ${q(body.take(500))}")
               after(delay)(downloadWithRetry(url, attempt + 1))
             }
           }
 
         case resp if resp.status == StatusCodes.NotFound =>
           resp.entity.discardBytes()
-          logger.warn(s"HTTP ${resp.status} for $url")
+          logger.warn(s"HTTP ${resp.status} for ${q(url)}")
           Future.failed(new ThumbnailNotFound(url))
 
         case resp =>
           resp.entity.discardBytes()
-          logger.warn(s"HTTP ${resp.status} for $url")
+          logger.warn(s"HTTP ${resp.status} for ${q(url)}")
           Future.successful(None)
       }
 
@@ -662,7 +663,7 @@ class LocalImageCacheService(
               throw ex
           }
         }.recover { case ex =>
-          logger.warn(s"Failed to write ${file.getName}: ${ex.getMessage}")
+          logger.warn(s"Failed to write ${q(file.getName)}: ${q(String.valueOf(ex.getMessage))}")
           registry.remove(filePath)  // release claim on failure
         }
       }
@@ -720,7 +721,7 @@ class LocalImageCacheService(
 
   private[services] val unusedSizesCleanedUp: Future[Unit] =
     registryReady.flatMap(_ => cleanUpUnusedSizes()).recover { case ex =>
-      logger.warn(s"Failed to delete the cached files of sizes no longer cached: ${ex.getMessage}", ex)
+      logger.warn(s"Failed to delete the cached files of sizes no longer cached: ${q(String.valueOf(ex.getMessage))}", ex)
     }
 }
 

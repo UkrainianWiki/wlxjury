@@ -255,23 +255,25 @@ class JurorCommentsReportSpec extends PlaySpecification with PlayTestDb {
     "be refused in a round stopped or still being distributed, as a page or JSON" in {
       testDbApp { app =>
         val f = fixture()
-        def refused(): org.specs2.execute.Result = {
+        // the juror's state page, or the vote's 409 round_closed to a script (DG7 of the support
+        // diagnostics plan), never the report
+        def refused(reason: String): org.specs2.execute.Result = {
           val html = get(app, f.juror1, report(f, f.juror1.getId))
           val json = get(app, f.juror1, report(f, f.juror1.getId), "X-Requested-With" -> "XMLHttpRequest")
-          (status(html) must_== FORBIDDEN) and (contentType(html) must beSome("text/html")) and
+          (status(html) must_== OK) and (contentType(html) must beSome("text/html")) and
+            (contentAsString(html) must contain(s"data-reason=\"$reason\"")) and
             (contentAsString(html) must not(contain("one by org"))) and
-            (status(json) must_== FORBIDDEN) and
-            ((Json.parse(contentAsString(json)) \ "error").as[String] must_== "forbidden") and
-            ((Json.parse(contentAsString(json)) \ "reference").as[String] must not(beEmpty))
+            (status(json) must_== CONFLICT) and
+            ((Json.parse(contentAsString(json)) \ "error").as[String] must_== "round_closed")
         }
         Round.setActive(f.round.getId, false)
-        val stopped = refused()
+        val stopped = refused("round_stopped")
         Round.setActive(f.round.getId, true)
         scalikejdbc.DB.autoCommit { implicit s =>
           import scalikejdbc._
           sql"update round set distributing = 1 where id = ${f.round.getId}".update.apply()
         }
-        stopped and refused()
+        stopped and refused("round_distributing")
       }
     }
 

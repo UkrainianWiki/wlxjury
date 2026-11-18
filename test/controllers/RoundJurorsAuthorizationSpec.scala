@@ -246,8 +246,9 @@ class RoundJurorsAuthorizationSpec extends PlaySpecification with PlayTestDb {
           .withSession(Secured.UserName -> "juror2@example.com", Secured.CurrentContestId -> contestId.toString)
           .withHeaders("X-Requested-With" -> "XMLHttpRequest").withCSRFToken).get
         val gallery = get(app, Some("juror2@example.com"), s"/gallery/round/$r/user/${users("juror2").getId}/page/1")
+        // the gallery: the juror's state page (DG7 of the support diagnostics plan), not a 403
         (status(vote) === CONFLICT) and (contentAsString(vote) must contain("round_closed")) and
-          (status(gallery) === FORBIDDEN)
+          (status(gallery) === OK) and (contentAsString(gallery) must contain("data-reason=\"juror_stopped\""))
       }
     }
 

@@ -71,7 +71,7 @@ class JobControllerSpec extends PlaySpecification with PlayTestDb {
         val json = contentAsJson(result)
         val view = contentAsString(views.html.snippets.jobStatus(failed, "/admin/rounds")(
           app.injector.instanceOf[MessagesApi].preferred(Seq.empty), FakeRequest().withCSRFToken))
-        val line = logged.find(_.getFormattedMessage.contains("step failed")).get
+        val line = logged.find(_.getFormattedMessage.startsWith("job_crashed ")).get
 
         (failed.status === JobStatus.Failed) and (reference must not(beEmpty)) and
           (failed.error must beSome(not(contain("example")))) and
@@ -83,6 +83,7 @@ class JobControllerSpec extends PlaySpecification with PlayTestDb {
           (contentAsString(result) must not(contain("example"))) and
           (view must contain(reference)) and (view must not(contain("example"))) and
           (line.getFormattedMessage must contain(s"ref=$reference")) and
+          (line.getFormattedMessage must contain(s"job=${failed.id} kind=${Crashing.kind} contestId=${contest.getId} ")) and
           (line.getThrowableProxy.getMessage === Secret)
       }
     }

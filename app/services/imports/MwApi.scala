@@ -82,7 +82,9 @@ class MwApi(bot: MwBot, retryDelay: FiniteDuration = MwApi.RetryDelay) extends L
         case e: MwException if !retryable(e) => throw e
         case NonFatal(e) if attempt < Retries =>
           attempt += 1
-          logger.warn(s"${bot.host} request failed, retry $attempt of $Retries: ${e.getMessage} ($what)")
+          // the exception's text and the request (titles) are the wiki's and the users': quoted
+          logger.warn(s"${bot.host} request failed, retry $attempt of $Retries: " +
+            s"error=${controllers.Secured.logValue(String.valueOf(e.getMessage))} request=${controllers.Secured.logValue(what)}")
           Thread.sleep(retryDelay.toMillis * (1L << (attempt - 1)))
       }
     }

@@ -95,17 +95,17 @@ class CommonsLogin(
             if (result == LoginSuccess) loggedIn(c)
             else {
               if (!TransientLoginResults(result)) retry = loginRetry
-              logger.warn(s"${bot.host}: login as ${c.user} failed: $result; trying again in $retry")
+              logger.warn(s"${bot.host}: login as ${c.user} failed: ${controllers.Secured.logValue(result.toString)}; trying again in $retry")
               Status.Anonymous
             }
           }
       } catch {
         case NonFatal(e) if !answered =>
-          logger.warn(s"${bot.host}: could not check the account: ${e.getMessage}; " +
+          logger.warn(s"${bot.host}: could not check the account: ${controllers.Secured.logValue(String.valueOf(e.getMessage))}; " +
             s"keeping the last answer (${status.describe}), checking again in $recheck")
           status
         case NonFatal(e) =>
-          logger.warn(s"${bot.host}: could not log in the account: ${e.getMessage}; trying again in $recheck")
+          logger.warn(s"${bot.host}: could not log in the account: ${controllers.Secured.logValue(String.valueOf(e.getMessage))}; trying again in $recheck")
           Status.Anonymous
       }
     if (checked != status || nextCheck.isEmpty) logger.info(s"${bot.host}: ${checked.describe}")

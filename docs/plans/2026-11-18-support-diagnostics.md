@@ -1,7 +1,8 @@
 # Support diagnostics: what happened and what could be wrong (plan, 2026-11-18)
 
-**Status:** plan, no code. Revised after its independent review and a follow-up review
-(2026-11-18).
+**Status:** D-0a built (#372, `stack/189-logging-config-in-releases`); D-0b built
+(`stack/191-diagnostics-quick-fixes`, 2026-11-18); D-1a onwards not built. The plan was revised
+after its independent review and a follow-up review (2026-11-18).
 
 - **Decided by the maintainer, 2026-11-18:** the whole first batch.
   - **DG1:** D-0a + D-0b + D-1a first, then D-1b and D-1c.
@@ -9,7 +10,8 @@
   - **DG3:** a new "read-only, from the server only" scope for personal API tokens.
   - **DG7:** a 200 state page, with an INFO `round.access` line.
   - **DG10:** warn on the import form and the health page, no refusal.
-  - **DG11:** for a prefix-less source, check Commons for the page and the category.
+  - **DG11:** for a prefix-less source, check Commons for the page and the category; when both
+    exist, show the choice with both counts, the category preselected (refined 2026-11-18).
 - **Deferred** until their PRs are scheduled: DG4, DG5, DG6, DG8, DG9.
 
 The maintainer asked on 2026-11-18: "as often reports are like this — I'm having trouble / it's
@@ -622,8 +624,12 @@ option 4). It would bypass the app's scoping and duplicate the checks in SQL.
   - **Outcomes:**
     - **Only one exists:** the import uses it.
     - **Both exist:** the form asks the admin to choose, showing the file count of each: the
-      category's (`CommonsSource.categoryFileCount`) and the page's (the files it shows, one
-      `prop=images` request, capped).
+      category's (its `categoryinfo`, as `CommonsSource.categoryFileCount` reads it) and the
+      page's (the files it shows, one `prop=images` request, capped at 500, shown as "500+").
+      **The category is preselected**, as the usual intent; the admin confirms it or picks the
+      page. *Refined by the maintainer, 2026-11-18:* the choice is still shown even though the
+      category is the likely answer, because a page of the same name can exist by coincidence,
+      or the admin may have pasted the wrong name, and the two counts make either visible.
     - **Neither exists:** the form refuses with a clear message ("No page or category named …
       on Commons. Check the name, or add `Category:`.").
     - **An import that still finds 0 files** says so on the images page (D-0b's f4).
@@ -635,10 +641,13 @@ option 4). It would bypass the app's scoping and duplicate the checks in SQL.
       (`diagnostics.sourceCheckTimeout`, default 5 s).
     - **When Commons is unreachable** or times out, nothing is guessed and no job is queued. The
       form is shown again, with the typed source kept in the field and the message "Commons
-      could not be reached to check this name. Add `Category:` in front of a category's name
-      and send again; to import from a page, send it again as it is."
-    - **On that second send**, a prefix-less name is read as a page, as today, so the admin is
-      never blocked. The form marks the field so the second send skips the check.
+      could not be reached to check this name, so nothing was started. Try again later, or add
+      `Category:` in front of a category's name."
+    - **No fallback to a page.** *Decided by the maintainer, 2026-11-18,* replacing the first
+      text's "a second send reads it as a page": "the import needs Commons anyway, so deciding
+      without Commons won't get any further." Every send of a prefix-less name is checked; the
+      form's `sourceAs` (page or category) is only the both-exist choice's, and counts only when
+      the check finds both again.
   - **Scope.** `ImportSource.apply` (page vs category) changes only for input without a
     namespace prefix. A source with an explicit `Category:` or `Template:` prefix, and a pasted
     file list, behave exactly as today, with no Commons check.
@@ -649,8 +658,8 @@ option 4). It would bypass the app's scoping and duplicate the checks in SQL.
     - category only;
     - both (the choice is shown with both counts, and the chosen one is queued);
     - neither (refused, no job);
-    - Commons down or timing out (the form says so and queues no job; the second send imports
-      from the page; a prefixed source still works);
+    - Commons down or timing out (the form says so and queues no job, on every send; a
+      prefixed source still works);
     - a prefixed source makes no check;
     - a done import with 0 files says so.
   - **The options that were offered:**

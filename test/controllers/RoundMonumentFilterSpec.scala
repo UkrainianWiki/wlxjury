@@ -117,7 +117,10 @@ class RoundMonumentFilterSpec extends PlaySpecification with PlayTestDb {
         // never another juror's file of the monument in their own list
         tiles(page(f.gallery(f.juror.getId, q), f.juror)) must not contain 7L
         DB.autoCommit { implicit s => sql"UPDATE round SET distributing = 1 WHERE id = ${f.round.getId}".update() }
-        status(get(f.gallery(f.juror.getId, q), f.juror)) === FORBIDDEN
+        // its juror: the round's state page, without its files (DG7 of the support diagnostics plan)
+        val creating = get(f.gallery(f.juror.getId, q), f.juror)
+        status(creating) === OK
+        tiles(contentAsString(creating)) must beEmpty
       }
     }
 
