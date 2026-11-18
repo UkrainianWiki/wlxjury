@@ -13,6 +13,11 @@
 @* the round's files with fewer jurors than its jurors per file (§7): everyone who sees the table, while
    the round is running (a stopped or finished round has nothing to give out) *@
 @waiting = @{ if (running) services.distribution.RoundReassign.waitingCount(round).filter(_ > 0) else None }
+@* each juror's files a reassign would hand on, as the reassign page and job count them (unrated, `in`, not
+   deleted on Commons, and unrated rows set aside; the Unrated column counts every rate-0 vote): the
+   button only for a juror with some; read once, by the `defining` around the rows (a definition like
+   this one is evaluated at each use) *@
+@reassignableJurors = @{ if (running && mayPause) services.distribution.RoundReassign.reassignableJurors(round.getId) else Set.empty[Long] }
 
 <table class="table table-striped table-sm">
     <thead>
@@ -34,6 +39,7 @@
             </tr>
     </thead>
     <tbody>
+    @defining(reassignableJurors) { reassignable =>
     @for((juror, index) <- stat.jurors.zipWithIndex) {
         <tr>
             <td> @{index + 1} </td>
@@ -46,7 +52,7 @@
                         <a class="btn btn-sm btn-outline-secondary round-juror-share" href="@routes.RoundJurorsController.addPage(round.getId, juror.id)" title="@Messages("round.juror.share")" aria-label="@Messages("round.juror.share")"><i class="bi bi-person-plus" aria-hidden="true"></i></a>
                     }
                     @* their unrated files to the other jurors; they end stopped (the reassign page) *@
-                    @if(running) {
+                    @if(reassignable.contains(juror.getId)) {
                         <a class="btn btn-sm btn-outline-secondary round-juror-reassign" href="@routes.RoundJurorsController.reassignPage(round.getId, juror.getId)" title="@Messages("round.juror.reassign")" aria-label="@Messages("round.juror.reassign.of", juror.fullname)"><i class="bi bi-arrow-left-right" aria-hidden="true"></i></a>
                     }
                 </td>
@@ -85,6 +91,7 @@
                 </td>
             }
         </tr>
+    }
     }
     </tbody>
     @defining(stat.total) { total =>

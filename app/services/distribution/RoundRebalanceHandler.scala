@@ -836,6 +836,10 @@ object RoundRebalanceHandler {
   val ReassignNotRunningKey = "job.error.rebalance.reassign.not.running"
   val ReassignLegacyKey = "job.error.rebalance.reassign.legacy"
   val FromKey = "job.error.rebalance.from"
+  /** The juror has no unrated file to hand on ([[RoundReassign.reassignableCount]] 0): refused by the
+    * page and the POST, no job queued.
+    */
+  val NothingKey = "job.error.rebalance.reassign.nothing"
   val ReceiverKey = "job.error.rebalance.receiver"
   val FewReceiversKey = "job.error.rebalance.receivers.few"
   val ReassignVerifyKey = "job.error.rebalance.reassign.verify"
@@ -1058,8 +1062,13 @@ object RoundRebalanceHandler {
     * contest (an inactive or removed membership can't be started again); in a round where each file
     * goes to N > 0 jurors, fewer receivers than N ("add a juror first"). Receivers don't matter in a
     * round where every file goes to every juror: nothing is given there.
+    *
+    * @param fromName the juror's name, given by the page and the POST (not the steps, whose juror has
+    *                 nothing left once the files moved): then, after `from` not a juror of the round,
+    *                 also refused if the juror has nothing to reassign ([[RoundReassign.reassignableCount]] 0)
     */
-  def reassignRefusal(round: Round, run: RoundRun, from: Long, receivers: Seq[Long], frozenByUs: Boolean)(implicit
+  def reassignRefusal(round: Round, run: RoundRun, from: Long, receivers: Seq[Long], frozenByUs: Boolean,
+      fromName: Option[String] = None)(implicit
       session: DBSession
   ): Option[JobError] = {
     val n = round.number.toString
@@ -1068,6 +1077,8 @@ object RoundRebalanceHandler {
     else if (!run.running(frozenByUs)) Some(JobError(ReassignNotRunningKey, Seq(n)))
     else if (!hasRoundUsers(round.getId)) Some(JobError(ReassignLegacyKey, Seq(n)))
     else if (!isRoundJuror(round.getId, from)) Some(JobError(FromKey, Seq(from.toString, n)))
+    else if (fromName.exists(_ => RoundReassign.reassignableCount(round.getId, from) == 0))
+      Some(JobError(NothingKey, fromName.toSeq :+ n))
     else to.find(r => !isRoundJuror(round.getId, r) || eligibleJuror(round.contestId, r).isEmpty)
       .map(r => JobError(ReceiverKey, Seq(r.toString, n)))
       .orElse(Option.when(round.distribution > 0 && to.size < round.distribution)(

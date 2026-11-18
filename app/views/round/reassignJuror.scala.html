@@ -18,6 +18,8 @@
    round where every file goes to every juror nothing is given: no receivers. *@
 @import helper._
 @shares = @{ round.distribution > 0 }
+@* nothing to reassign (no unrated file, the job's count): the refusal says so, no receivers to tick *@
+@nothing = @{ p.files.unrated + p.files.unratedAside == 0 }
 @others = @{ p.jury.jurors.filterNot(r => p.from.exists(_.user.id == r.user.id)) }
 @nameOf(id: Long) = @{ p.jury.jurors.find(_.user.id.contains(id)).fold(id.toString)(_.user.fullname) }
 @scripts = {
@@ -43,7 +45,7 @@
                 @if(!from.active) { <span class="badge text-bg-secondary">@Messages("round.juror.stopped")</span> }
             </p>
 
-            @if(shares) {
+            @if(shares && !nothing) {
                 <form method="get" action="@routes.RoundJurorsController.reassignPage(round.getId, from.user.getId)" id="round-juror-reassign-choose">
                     <input type="hidden" name="picked" value="1">
                     <input type="hidden" name="juror" value="@from.user.getId">
@@ -78,8 +80,6 @@
                     <div id="round-juror-reassign-figures" data-moved="@p.moved" data-waiting="@p.waiting">
                         @if(!shares) {
                             <p>@Messages("round.juror.reassign.all", name, p.files.unrated + p.files.unratedAside)</p>
-                        } else { @if(p.files.unrated + p.files.unratedAside == 0) {
-                            <p>@Messages("round.juror.reassign.none", name)</p>
                         } else {
                             @if(p.files.unrated > 0) {
                                 <p id="round-juror-reassign-result">@Messages("round.juror.reassign.result", p.files.unrated, p.receivers.size,
@@ -91,7 +91,7 @@
                             @if(p.files.unratedAside > 0) {
                                 <p class="text-muted" id="round-juror-reassign-aside">@Messages("round.juror.reassign.aside", p.files.unratedAside, p.asideGiven)</p>
                             }
-                        } }
+                        }
                         @if(p.restarted.nonEmpty) {
                             <p class="text-muted" id="round-juror-reassign-restart">@Messages("round.juror.reassign.restart", p.restarted.map(nameOf).mkString(", "))</p>
                         }

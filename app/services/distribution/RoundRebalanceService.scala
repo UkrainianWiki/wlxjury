@@ -150,7 +150,7 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
       val busy = JobJdbc.activeByDedupeKey(RoundDistributionHandler.dedupeKey(round.getId))
       val run = RoundRun(round.active, round.distributing, round.freezeCount, activeBeforeFreeze = false)
       val refused = busy.map(_ => JobError(BusyKey, Seq(round.number.toString)))
-        .orElse(reassignRefusal(round, run, from, ticked, frozenByUs = false))
+        .orElse(reassignRefusal(round, run, from, ticked, frozenByUs = false, fromName = Some(nameOf(j, from))))
       val files = RoundReassign.jurorFiles(round.getId, from)
       val shares = round.distribution > 0
       val to = if (shares) ticked else Nil
@@ -187,9 +187,11 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
             case Some(active) => Busy(active)
             case None =>
               val to = if (fresh.distribution > 0) ticked else Nil
-              reassignRefusal(fresh, run, from, ticked, frozenByUs = false) match {
+              val shown = jury(fresh)
+              // nothing to reassign (0 unrated): refused, no job (the juror isn't stopped either)
+              reassignRefusal(fresh, run, from, ticked, frozenByUs = false, fromName = Some(nameOf(shown, from))) match {
                 case Some(error) => Refused(error)
-                case None if signature(jury(fresh).jurors) != shownJury => JuryChanged
+                case None if signature(shown.jurors) != shownJury => JuryChanged
                 case None =>
                   // outside an account join (J-2), read before and after the receivers' users rows are
                   // share-locked (A-4: retired meanwhile, refused); the job's "stop" checks again
@@ -214,6 +216,9 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
       case other => other
     }
   }
+
+  private def nameOf(j: Jury, id: Long): String =
+    j.jurors.find(_.user.id.contains(id)).fold(id.toString)(_.user.fullname)
 
   private def enqueueReassign(fresh: Round, from: Long, to: Seq[Long], by: User)(implicit session: DBSession): Outcome =
     jobs.enqueue(NewJob(

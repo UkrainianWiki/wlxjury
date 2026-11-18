@@ -133,6 +133,23 @@ class RoundReassignAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "say there is nothing to reassign, with no receivers and no form, for a juror with no unrated file" in {
+      testDbApp { app =>
+        val (round, _, users) = setUp()
+        val r = round.getId
+        // juror2: files 4 and 5 rated, file 6 deleted on Commons (an unrated vote the Unrated column counts,
+        // but a reassign doesn't move)
+        sql"UPDATE vote SET rate = 1 WHERE round_id = $r AND page_id IN (4, 5)".update()
+        sql"UPDATE images SET deleted_at = NOW() WHERE page_id = 6".update()
+        val result = get(app, Some("admin@example.com"), page(r, users("juror2")))
+        val body = contentAsString(result)
+        (status(result) === OK) and (body must contain("round-juror-reassign-refused")) and
+          (body must contain("nothing to reassign")) and (body must contain("data-unrated=\"0\"")) and
+          (body must not(contain("round-juror-reassign-form"))) and (body must not(contain("round-juror-reassign-choose"))) and
+          (rebalanceJobs() === 0)
+      }
+    }
+
     "say the round must be started first, with no form, when it isn't running" in {
       testDbApp { app =>
         val (round, _, users) = setUp()
@@ -159,6 +176,21 @@ class RoundReassignAuthorizationSpec extends PlaySpecification with PlayTestDb {
           (active(r, users("juror")) must beSome(false)) and
           (Round.findById(r).map(r => r.active -> r.freezeCount) must beSome(true -> 0)) and
           (RoundImageInvariants.violations(r) must beEmpty)
+      }
+    }
+
+    "refuse a juror with no unrated file, queueing nothing and leaving the juror running" in {
+      testDbApp { app =>
+        val (round, _, users) = setUp()
+        val r = round.getId
+        sql"UPDATE vote SET rate = 1 WHERE round_id = $r AND jury_id = ${users("juror2").getId}".update()
+        val result = post(app, Some("admin@example.com"), path(r), "juror" -> users("juror2").getId.toString,
+          "jury" -> jury(r), "receiver[]" -> users("juror").getId.toString)
+        (status(result) === CONFLICT) and (contentAsString(result) must contain("nothing to reassign")) and
+          (contentAsString(result) must not(contain("round-juror-reassign-form"))) and
+          (rebalanceJobs() === 0) and (active(r, users("juror2")) must beSome(true)) and
+          (files(r, users("juror2")) === 3) and (files(r, users("juror")) === 3) and
+          (Round.findById(r).map(r => r.active -> r.freezeCount) must beSome(true -> 0))
       }
     }
 
@@ -265,6 +297,28 @@ class RoundReassignAuthorizationSpec extends PlaySpecification with PlayTestDb {
   }
 
   "the round's statistics and form" should {
+
+    "link Reassign files… only for a juror with unrated files a reassign moves (in, not deleted; or set aside)" in {
+      testDbApp { app =>
+        val (round, _, users) = setUp()
+        val r = round.getId
+        val stat = s"/roundstat/$r"
+        def link(u: User) = s"""href="${page(r, u)}""""
+        // juror2: files 4 and 5 rated, file 6 deleted on Commons (still in the Unrated column)
+        sql"UPDATE vote SET rate = 1 WHERE round_id = $r AND page_id IN (4, 5)".update()
+        sql"UPDATE images SET deleted_at = NOW() WHERE page_id = 6".update()
+        val before = contentAsString(get(app, Some("admin@example.com"), stat))
+        val jurorsBefore = RoundReassign.reassignableJurors(r)
+        // an unrated row of juror2's set aside: a reassign hands it on too
+        sql"INSERT INTO vote_aside (page_id, jury_id, round_id, rate) VALUES (6, ${users("juror2").getId}, $r, 0)".update()
+        val aside = contentAsString(get(app, Some("admin@example.com"), stat))
+        (before must contain(link(users("juror")))) and (before must not(contain(link(users("juror2"))))) and
+          (before must contain(users("juror2").email)) and
+          (jurorsBefore === Set(users("juror").getId)) and
+          (aside must contain(link(users("juror2")))) and
+          (RoundReassign.reassignableJurors(r) === Set(users("juror").getId, users("juror2").getId))
+      }
+    }
 
     "link Reassign files… for the admin only, while the round runs; show the waiting files to its organizer too" in {
       testDbApp { app =>

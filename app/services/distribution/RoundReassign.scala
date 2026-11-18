@@ -149,6 +149,24 @@ object RoundReassign {
       .map(_.long(1)).single().getOrElse(0L)
   }
 
+  /** The juror's rows a reassign would hand on: [[unratedCount]] in vote plus vote_aside, the job's
+    * `total`. At 0 there is nothing to reassign: the page says so, the POST refuses, no job.
+    */
+  def reassignableCount(roundId: Long, jurorId: Long)(implicit session: DBSession): Long =
+    unratedCount(roundId, jurorId, sqls"vote") + unratedCount(roundId, jurorId, sqls"vote_aside")
+
+  /** The round's jurors (round_user) with [[reassignableCount]] above 0: the round's statistics show
+    * "Reassign files…" only for them. Per juror an EXISTS on vote_round_jury_rate_idx that stops at the
+    * first row found, not a count of every unrated row (most of a new round's). A legacy round (no
+    * round_user rows) has none: a reassign is refused there.
+    */
+  def reassignableJurors(roundId: Long)(implicit session: DBSession = AutoSession): Set[Long] =
+    sql"""SELECT ru.user_id FROM round_user ru WHERE ru.round_id = $roundId AND (
+            EXISTS (SELECT 1 FROM vote v WHERE v.round_id = $roundId AND v.jury_id = ru.user_id
+                    AND ${movableVote(roundId, sqls"v")})
+            OR EXISTS (SELECT 1 FROM vote_aside v WHERE v.round_id = $roundId AND v.jury_id = ru.user_id
+                       AND ${unrated(sqls"v")}))""".map(_.long(1)).list().toSet
+
   /** The juror's rated rows of the round, in vote and vote_aside: they stay with the juror. */
   def ratedCount(roundId: Long, jurorId: Long)(implicit session: DBSession): Long =
     Seq(sqls"vote", sqls"vote_aside").map { table =>
