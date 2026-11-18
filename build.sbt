@@ -162,10 +162,16 @@ Universal / mappings ~= (_.filterNot { case (_, path) =>
 // Instrumented classes call the scoverage runtime and write measurement files: never package them.
 // `sbt coverage ...` keeps coverage on for the rest of that sbt session; `coverageOff`, or a new
 // session, recompiles without it.
+// The production logback ships in the release: the systemd unit starts the app with
+// -Dlogger.file=/opt/wlxjury/current/conf/logback-production.xml (logging plan 2026-10-30). Play
+// exits, logging nothing, when that file can't be read; the unit falls back to the runtime copy
+// only for releases that predate the file, during one release cycle.
 Universal / mappings := {
   val packaged = (Universal / mappings).value
   if (coverageEnabled.value)
     throw new MessageOnlyException("Coverage instrumentation is on: run `coverageOff`, or start a new sbt session, before packaging")
+  if (!packaged.exists { case (_, path) => path.replace('\\', '/') == "conf/logback-production.xml" })
+    throw new MessageOnlyException("The release must contain conf/logback-production.xml (the systemd unit's -Dlogger.file)")
   packaged
 }
 Test / unmanagedSources += baseDirectory.value / "project" / "BuildIdentity.scala"

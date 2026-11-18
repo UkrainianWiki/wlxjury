@@ -33,8 +33,8 @@ import scalikejdbc._
   * (its vote row locked by primary key), so a disqualify waits for it and moves the voted row,
   * or the vote finds its row gone and changes nothing.
   *
-  * Each action is a log line on the `coi` logger, written at INFO (both logback.xml files), with
-  * ids and codes only.
+  * Each action is a log line on the `coi` logger, written at INFO (`conf/logback.xml` and
+  * production's `conf/logback-production.xml`), with ids and codes only.
   */
 object RoundConflicts {
 

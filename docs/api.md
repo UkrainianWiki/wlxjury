@@ -64,9 +64,8 @@ Errors are JSON, with a fixed code and never the request's text:
 - A refused token is logged as `api_token_refused reason=… tokenId=…`, never its value
   (logger `services.ApiTokenService`): a revoked or expired token, or one of a deleted user,
   at WARN (a revoked token still in use is a sign it leaked); an unknown one at INFO with its
-  prefix (`services.ApiTokenService` is at INFO in `conf/logback.xml` and
-  `conf/wlxjury/logback.xml`; the server's `/etc/wlxjury-runtime/logback.xml`, from the infra
-  role's `logback.xml.j2`, needs the same line); a malformed token or another
+  prefix (`services.ApiTokenService` is at INFO in `conf/logback.xml` and in production's
+  `conf/logback-production.xml`, which ships in the release); a malformed token or another
   `Authorization` scheme only at DEBUG, without a database lookup. A denial is logged on `security.authz` with its
   reference and `auth=session` or `auth=token tokenId=…`.
 - Revoking a token for a user (root) is not in the UI yet: set `revoked_at` on their row,

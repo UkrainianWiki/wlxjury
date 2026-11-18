@@ -45,8 +45,8 @@ class Fixture(unittest.TestCase):
         (self.base / 'app' / 'releases').mkdir()
         env = ''.join(k + '=' + deploy.env_quote(v) + '\n' for k, v in runtime_values().items())
         deploy.atomic_write(self.base / 'runtime' / 'runtime.env', env)
-        for name in ('production.conf', 'logback.xml'):
-            (self.base / 'runtime' / name).write_text('original ' + name)
+        # No logback.xml: each release ships its own (conf/logback-production.xml).
+        (self.base / 'runtime' / 'production.conf').write_text('original production.conf')
         deploy.atomic_write(self.base / 'runtime' / 'db-admin.cnf', '[client]\nuser=root\n')
         self.tool = deploy.Deployment(self.settings)
 
@@ -640,6 +640,29 @@ class FailurePathTest(Fixture):
         self.assertEqual(deploy.read_json(directory / 'deployment.json')['phase'], 'restored')
         self.tool.reopen(directory.name)
         self.assertFalse(self.tool.maintenance.exists())
+
+    def test_the_logging_config_is_not_snapshotted_or_needed(self):
+        directory = self.tool.deploy(self.new)
+        self.assertEqual(sorted(path.name for path in (directory / 'config').iterdir()),
+                         ['production.conf', 'runtime.env'])
+        self.assertFalse((self.tool.runtime / 'logback.xml').exists())
+        with patch.object(deploy.subprocess, 'Popen', self.restore_process()):
+            self.tool.restore(directory.name)
+        self.assertEqual(self.tool.current.resolve(), self.old)
+        self.assertFalse((self.tool.runtime / 'logback.xml').exists())
+
+    def test_restore_of_a_record_made_before_ignores_its_logback_snapshot(self):
+        # The runtime file the infra role installed, kept for one release cycle.
+        (self.tool.runtime / 'logback.xml').write_text('runtime logback.xml')
+        directory = self.tool.deploy(self.new)
+        (directory / 'config' / 'logback.xml').write_text('snapshot logback.xml')
+        self.tool.runtime.joinpath('production.conf').write_text('changed config')
+        with patch.object(deploy.subprocess, 'Popen', self.restore_process()):
+            self.tool.restore(directory.name)
+        self.assertEqual(self.tool.current.resolve(), self.old)
+        self.assertEqual((self.tool.runtime / 'production.conf').read_text(), 'original production.conf')
+        self.assertEqual((self.tool.runtime / 'logback.xml').read_text(), 'runtime logback.xml')
+        self.assertEqual(deploy.read_json(directory / 'deployment.json')['phase'], 'restored')
 
     def test_lock_excludes_concurrent_deployment(self):
         with self.tool.locked():

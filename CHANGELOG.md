@@ -89,6 +89,17 @@ No next release is set yet (`build.sbt` says `26.12-SNAPSHOT`). Everything devel
   clause) is excluded.
 - **User guides (docs only)** (developed 2026-11-17, `stack/184-codex-guide-shots`): the guides'
   screenshots regenerated in the Codex look.
+- **The production logging config ships in the release** (developed 2026-11-18,
+  `stack/189-logging-config-in-releases`, D-0a of the support diagnostics plan):
+  `conf/wlxjury/logback.xml` moved to `conf/logback-production.xml`, which the ZIP carries
+  (`sbt dist` refuses a ZIP without it); the `wlxjury-infra` unit starts the selected release
+  with it, so a logger change ships with its code and a backout brings back the old release's
+  file (a release that predates it falls back to `/etc/wlxjury-runtime/logback.xml`, kept for one
+  release cycle). The deploy tools no longer snapshot or restore `logback.xml`; the loggers
+  themselves are unchanged. The infra playbook now takes the deploy tools' source per run, from
+  a worktree at the running release's commit (or a later pushed one), and refuses an older or
+  unrelated commit before any change. In effect after the playbook run and the app's next
+  restart.
 
 ## 26.11.12 (2026-11-17)
 

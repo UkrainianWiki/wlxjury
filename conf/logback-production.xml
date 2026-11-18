@@ -1,3 +1,9 @@
+<!-- Production's logging, shipped in the release ZIP as conf/logback-production.xml: the systemd
+     unit (wlxjury-infra's wlxjury.service.j2) starts the app with
+     -Dlogger.file=/opt/wlxjury/current/conf/logback-production.xml, so a release brings its own
+     loggers and a backout restores the old ones (docs/plans/2026-10-30-logging-config-in-releases.md).
+     Logback finds only logback.xml or logback-test.xml by itself: this file changes nothing in
+     development (conf/logback.xml) or tests. Checked by deployment.ProductionConfigSpec. -->
 <configuration>
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder><pattern>%date [%level] %logger{36} - %message%n%xException</pattern></encoder>

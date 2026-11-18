@@ -1,5 +1,15 @@
 # Ship the production logging config with each release
 
+**Status:** built 2026-11-18 as D-0a of the
+[support diagnostics plan](2026-11-18-support-diagnostics.md) (DG1), on
+`stack/189-logging-config-in-releases`: steps 1 and 5 here, steps 2 and 4 on a `wlxjury-infra`
+branch. Step 1 adds a build check (`sbt dist` refuses a ZIP without the file). Changed after
+review: Play exits silently when `-Dlogger.file` can't be read, so step 2's unit falls back to
+`/etc/wlxjury-runtime/logback.xml` when the selected release lacks the file, and step 4 keeps
+templating that file for the cycle. That removes step 3's ordering constraint; the cleanup after
+one release cycle removes the fallback, the runtime file and the template together. The loggers
+are as before; D-0b adds its own.
+
 Production starts the app with `-Dlogger.file=/etc/wlxjury-runtime/logback.xml`, a file the
 infra role installs once (`wlxjury-infra/roles/wlxjury_app/templates/logback.xml.j2`, a copy of
 this repository's `conf/wlxjury/logback.xml`). Which loggers are written is code's business, but

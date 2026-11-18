@@ -57,6 +57,12 @@ after a change that a gallery with Cyrillic file names gets its thumbnails from 
 
 It can also recreate a new server. For this server, follow its `docs/adopting-the-existing-server.md`. It replaces the manual steps below, apart from `adopt-legacy` and `scrub-legacy`. Those steps, and the files under `conf/apache`, `conf/systemd` and `conf/wlxjury`, stay here until production is configured from that repository.
 
+Each playbook run takes the deployment tools from a worktree (`-e wlxjury_tools_source=…`) at the running release's commit, or at a later pushed commit for a tools fix the next deploy needs, and refuses an older or unrelated commit before any change. Its README, Running, has the three steps: the worktree and the preview, the apply, removing the worktree. The playbook never restarts the app; after a run that changed the unit (`wlxjury.service`), restart it at a quiet time, as the last step:
+
+```bash
+ssh -t wlm.org.ua 'sudo systemctl restart wlxjury'
+```
+
 Run from a reviewed checkout. `/etc/wlxjury` points into the old Debian installation (`/usr/share/wlxjury`), so runtime settings go in a new real directory. No credentials belong in the checkout, ZIP, command-line arguments or console output.
 
 ```bash
@@ -64,14 +70,13 @@ sudo install -D -o root -g root -m 0755 scripts/deployment/wlxjury-deploy.py /us
 sudo install -d -o root -g root -m 0755 /etc/wlxjury-runtime
 sudo wlxjury-deploy init-runtime --legacy-config /etc/wlxjury/application.conf
 sudo install -o root -g wlxjury -m 0640 conf/wlxjury/production.conf /etc/wlxjury-runtime/production.conf
-sudo install -o root -g wlxjury -m 0640 conf/wlxjury/logback.xml /etc/wlxjury-runtime/logback.xml
 sudo install -o root -g root -m 0600 conf/wlxjury/deployment.json.example /etc/wlxjury-runtime/deployment.json
 sudo install -o root -g root -m 0600 conf/wlxjury/db-admin.cnf.example /etc/wlxjury-runtime/db-admin.cnf
 ```
 
 `init-runtime` copies supported literal credentials directly on the server, retaining the signing key without printing it. It leaves old config and services unchanged and refuses to replace an existing `runtime.env`. It rejects complex HOCON, duplicate keys, multiline strings and unsupported URLs instead of guessing. If rejected, populate `runtime.env` directly on the server using the example's key list. Use one fully double-quoted value per line; escape backslashes and double quotes. Spaces, `$`, `#` and backticks are literal. Omit unused Commons variables. Never source this file as shell.
 
-The runtime directory is `0755` so Apache can stat its nonsecret maintenance flag. Secrets are root-only `0600`; app-readable nonsecret config is `0640 root:wlxjury`. Preserve `/etc/default/wlxjury` JVM tuning. The production overlay explicitly includes the release's classpath defaults, requires the signing key, maps DB/Commons credentials to the environment and enables Flyway migration/validation while prohibiting automatic baseline/clean behavior. Review intentional production URL, greeting and mail overrides once; leave application tuning with the release.
+The runtime directory is `0755` so Apache can stat its nonsecret maintenance flag. Secrets are root-only `0600`; app-readable nonsecret config is `0640 root:wlxjury`. Preserve `/etc/default/wlxjury` JVM tuning. The logging config is not installed here: each release ships `conf/logback-production.xml` and the unit starts the selected release with it (`-Dlogger.file=/opt/wlxjury/current/conf/logback-production.xml`), so a release brings its loggers and a backout's next start reads the old release's file. The `wlxjury-infra` unit falls back to `/etc/wlxjury-runtime/logback.xml` for a release that predates the file, for one release cycle; the manual drop-in in `conf/systemd` has none, so it starts only releases that ship the file. The production overlay explicitly includes the release's classpath defaults, requires the signing key, maps DB/Commons credentials to the environment and enables Flyway migration/validation while prohibiting automatic baseline/clean behavior. Review intentional production URL, greeting and mail overrides once; leave application tuning with the release.
 
 Sign-in with Google and Wikimedia accounts is off until `production.conf` lists hosts and credentials for it; [oauth.md](oauth.md) covers registering the clients, the `runtime.env` variables and the hosts (each also in `WLXJURY_ALLOWED_HOSTS`).
 

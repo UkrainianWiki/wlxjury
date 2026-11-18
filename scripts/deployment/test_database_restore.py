@@ -206,9 +206,13 @@ class PackagedReleaseTest(DatabaseFixture):
             self.skipTest(message)
         archive = archives[-1]
         with zipfile.ZipFile(str(archive)) as bundle:
-            deployment_only = [name for name in bundle.namelist()
-                               if any('/conf/' + part + '/' in name for part in ('wlxjury', 'apache', 'systemd'))]
+            names = bundle.namelist()
+        deployment_only = [name for name in names
+                           if any('/conf/' + part + '/' in name for part in ('wlxjury', 'apache', 'systemd'))]
         self.assertEqual(deployment_only, [], 'Server setup files belong in the checkout, not the release')
+        # The unit starts the app with the release's own logging config.
+        self.assertTrue(any(name.endswith('/conf/logback-production.xml') for name in names),
+                        'The release must ship conf/logback-production.xml')
         with contextlib.redirect_stdout(io.StringIO()):
             release = self.tool.prepare(archive, deploy.digest(archive))
         env = deploy.read_env(self.tool.runtime / 'runtime.env')
@@ -229,7 +233,7 @@ class PackagedReleaseTest(DatabaseFixture):
         environment['WLXJURY_ALLOWED_HOSTS'] = 'jury.example.org'
         command = [str(release / 'bin' / 'wlxjury'),
                    '-Dconfig.file=/workspace/conf/wlxjury/production.conf',
-                   '-Dlogger.file=/workspace/conf/wlxjury/logback.xml',
+                   '-Dlogger.file=' + str(release / 'conf' / 'logback-production.xml'),
                    '-Dhttp.address=127.0.0.1', '-Dhttp.port=9000',
                    '-Dplay.mailer.mock=true', '-Dpidfile.path=' + str(self.base / 'play.pid'),
                    '-Dwlxjury.thumbs.local-path=' + str(self.base / 'images')]
@@ -238,6 +242,10 @@ class PackagedReleaseTest(DatabaseFixture):
         failed = subprocess.run(command, env=missing, cwd=str(release), capture_output=True, timeout=30)
         self.assertNotEqual(failed.returncode, 0)
         self.assertIn(b'PLAY_HTTP_SECRET_KEY', failed.stdout + failed.stderr)
+        # The shipped config writes here, as on the server; start from an empty file.
+        log = Path('/var/log/wlxjury/application.log')
+        if log.exists():
+            log.unlink()
         console = self.base / 'app-console.log'
         with console.open('wb') as output:
             app = subprocess.Popen(command, env=environment, cwd=str(release), stdout=output, stderr=subprocess.STDOUT)
@@ -270,6 +278,13 @@ class PackagedReleaseTest(DatabaseFixture):
                         listed = urllib.request.Request('http://127.0.0.1:9000/auth', headers={'Host': 'jury.example.org'})
                         with self.tool.http.open(listed, timeout=5) as page:
                             self.assertEqual(page.status, 200)
+                        # A well-formed unknown API token: refused, and logged at INFO by a
+                        # logger only the shipped config enables (root is WARN).
+                        token = urllib.request.Request('http://127.0.0.1:9000/api/contests', headers={
+                            'Host': 'jury.example.org', 'Authorization': 'Bearer wlxj_' + 'A' * 43})
+                        with self.assertRaises(urllib.error.HTTPError) as unknown:
+                            self.tool.http.open(token, timeout=5)
+                        self.assertEqual(unknown.exception.code, 401)
                         break
                     time.sleep(1)
                 else:
@@ -282,6 +297,11 @@ class PackagedReleaseTest(DatabaseFixture):
                     app.kill()
                     app.wait(timeout=5)
         self.assertNotIn('heartbeat failed', console.read_text())
+        written = log.read_text()
+        self.assertIn('[INFO] services.ApiTokenService - api_token_refused reason=unknown prefix="wlxj_AAAAAA"', written)
+        # Root at WARN: neither Play's INFO start-up lines nor any DEBUG line.
+        self.assertNotIn('[INFO] play.', written)
+        self.assertNotIn('[DEBUG]', written)
 
     def test_localhost_preserves_explicit_socket_authentication(self):
         values = deploy.read_env(self.tool.runtime / 'runtime.env')

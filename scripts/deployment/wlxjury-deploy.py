@@ -29,6 +29,9 @@ import zipfile
 
 # Text of the ErrorDocument in conf/apache/wlxjury-maintenance.conf.
 MAINTENANCE_PAGE = b'undergoing maintenance'
+# Snapshotted before a deployment and written back by restore. The logging config is not among
+# them: each release ships conf/logback-production.xml, which the unit names.
+RUNTIME_CONFIGS = ('runtime.env', 'production.conf')
 
 
 class DeploymentError(Exception):
@@ -891,7 +894,7 @@ class Deployment:
         self.save(directory, record, 'created')
         configs = directory / 'config'
         configs.mkdir(mode=0o700)
-        for name in ('runtime.env', 'production.conf', 'logback.xml'):
+        for name in RUNTIME_CONFIGS:
             shutil.copyfile(str(self.runtime / name), str(configs / name))
             os.chmod(str(configs / name), 0o600)
         if Path('/etc/default/wlxjury').exists():
@@ -1036,7 +1039,9 @@ class Deployment:
             require(process.wait() == 0, 'DB restore failed; maintenance remains enabled')
         require(self.query('SELECT installed_rank, version, checksum, success FROM flyway_schema_history ORDER BY installed_rank')
                 == record['history'], 'Restored Flyway history does not match backup')
-        for name in ('runtime.env', 'production.conf', 'logback.xml'):
+        # A record made before releases shipped their logging config also holds logback.xml;
+        # it is not written back (the runtime directory's copy, if any, is the infra role's).
+        for name in RUNTIME_CONFIGS:
             target = self.runtime / name
             mode = stat.S_IMODE(target.stat().st_mode)
             atomic_write(target, (directory / 'config' / name).read_text(encoding='utf-8'), mode)

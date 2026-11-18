@@ -176,6 +176,71 @@ class ProductionConfigSpec extends Specification {
     }
   }
 
+  "the production logback (conf/logback-production.xml, shipped in the release)" should {
+    val source = new File("conf/logback-production.xml")
+    lazy val xml = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(source)
+    def elements(name: String) = {
+      val nodes = xml.getElementsByTagName(name)
+      (0 until nodes.getLength).map(nodes.item(_).asInstanceOf[org.w3c.dom.Element])
+    }
+    def text(name: String) = elements(name).map(_.getTextContent.trim)
+    lazy val levels = elements("logger").map(e => e.getAttribute("name") -> e.getAttribute("level")).toMap
+
+    "be the only production copy: no conf/wlxjury/logback.xml beside it" in {
+      source.isFile must beTrue
+      new File("conf/wlxjury/logback.xml").exists must beFalse
+    }
+
+    "neither rescan itself nor print logback's own status (no scan or debug attribute)" in {
+      val root = xml.getDocumentElement
+      root.getTagName must_== "configuration"
+      root.hasAttribute("scan") must beFalse
+      root.hasAttribute("scanPeriod") must beFalse
+      root.hasAttribute("debug") must beFalse
+    }
+
+    "write to /var/log/wlxjury, rolled and capped, and to the console (the journal)" in {
+      text("file") must_== Seq("/var/log/wlxjury/application.log")
+      text("fileNamePattern") must_== Seq("/var/log/wlxjury/application.%d{yyyy-MM-dd}.%i.log.gz")
+      text("maxFileSize") must_== Seq("50MB")
+      text("maxHistory") must_== Seq("30")
+      text("totalSizeCap") must_== Seq("1GB")
+      elements("root") must haveSize(1)
+      val root = elements("root").head
+      root.getAttribute("level") must_== "WARN"
+      val refs = root.getElementsByTagName("appender-ref")
+      (0 until refs.getLength).map(refs.item(_).asInstanceOf[org.w3c.dom.Element].getAttribute("ref")) must
+        containTheSameElementsAs(Seq("STDOUT", "FILE"))
+    }
+
+    "enable the app's INFO loggers and silence the noisy or value-quoting ones" in {
+      levels must havePairs("application" -> "INFO", "coi" -> "INFO", "services.ApiTokenService" -> "INFO",
+        "play.filters.hosts.AllowedHostsFilter" -> "ERROR", "play.filters.CSRF" -> "ERROR",
+        "org.mariadb.jdbc" -> "ERROR")
+      levels.values.toSeq must not(contain("DEBUG"))
+      levels.values.toSeq must not(contain("TRACE"))
+    }
+
+    "be read by logback without errors" in {
+      val directory = java.nio.file.Files.createTempDirectory("logback-production")
+      val copy      = directory.resolve("logback.xml").toFile
+      val content   = java.nio.file.Files.readString(source.toPath)
+        .replace("/var/log/wlxjury", directory.toString.replace('\\', '/'))
+      java.nio.file.Files.write(copy.toPath, content.getBytes("UTF-8"))
+      val context = new ch.qos.logback.classic.LoggerContext
+      try {
+        val configurator = new ch.qos.logback.classic.joran.JoranConfigurator
+        configurator.setContext(context)
+        configurator.doConfigure(copy)
+        val errors = context.getStatusManager.getCopyOfStatusList.asScala
+          .filter(_.getLevel >= ch.qos.logback.core.status.Status.WARN).map(_.getMessage)
+        errors must beEmpty
+        context.getLogger("coi").getEffectiveLevel must_== ch.qos.logback.classic.Level.INFO
+        context.getLogger("play.api.Play").getEffectiveLevel must_== ch.qos.logback.classic.Level.WARN
+      } finally context.stop()
+    }
+  }
+
   "modules.AllowedHosts" should {
     def config(entries: (String, Any)*) = Configuration(ConfigFactory.parseMap((Map[String, Any](
       "play.filters.hosts.allowed"                  -> List("127.0.0.1").asJava,

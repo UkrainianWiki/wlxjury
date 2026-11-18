@@ -370,14 +370,15 @@ in production logs. Paths with a token are masked (`Secured.logPath`).
 
 **Example.** `Secured.denialLogLine` (key-value, `accountId`, quoted untrusted text);
 `db.scalikejdbc.SqlLogging` (slow and failed statements as templates, `?` for values, the
-exception's class, SQLState and code); `conf/wlxjury/logback.xml` keeps `org.mariadb.jdbc` at
+exception's class, SQLState and code); `conf/logback-production.xml` keeps `org.mariadb.jdbc` at
 ERROR (the driver's WARN lines carry bound values).
 
 **Guards.** `security.LogHygieneSpec` (G9), `SqlLoggingSpec`, `SecuredSpec` (denial line),
 `AccountReviewFixesSpec` (no token in log lines).
 
-**Exceptions** (`LogHygieneSpec.Allowed`): none. The production logback is in `wlxjury-infra`;
-its `org.mariadb.jdbc` line is a pre-deploy item until the infra plan's Step 4.
+**Exceptions** (`LogHygieneSpec.Allowed`): none. The production logback ships in the release
+(`conf/logback-production.xml`, checked by `ProductionConfigSpec`), so a logger change reaches
+production with the code that logs.
 
 ## 14. Accounts: linking and verification
 

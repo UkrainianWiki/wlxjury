@@ -20,7 +20,7 @@ in progress; S6 on `ukwikidev/security-s6` (not merged); S7 queued; S4 and S8 fo
 | O1 | Infra `production.conf.j2` lacks B5's allowed hosts and Secure-cookie lines | Medium | Open; applied by hand before any followups deploy (roadmap) | infra | S8 (infra plan, postponed) | `ProductionConfigSpec` (repo side); planned G14 | 2026-11-02 |
 | P1 | No sign-in throttling per address or account | Medium | Open; fail2ban on a `security.auth` line (user decision) | infra | S4 (infra plan, postponed) | — | 2026-11-02 |
 | P2 | No HSTS on the HTTPS vhosts | Low | Open; pre-deploy item | infra | S8 | planned infra `test_check_vhosts.py` | 2026-11-02 |
-| P15 | Infra logback lacks `ApiTokenService`/`coi` at INFO (and `org.mariadb.jdbc` at ERROR) | Info | Open; pre-deploy item (the repo's `conf/wlxjury/logback.xml` has all three) | infra | S8 | — | 2026-11-02 |
+| P15 | Infra logback lacks `ApiTokenService`/`coi` at INFO (and `org.mariadb.jdbc` at ERROR) | Info | Fixed in the app (`stack/189`): the release ships `conf/logback-production.xml` with all three; closes when the infra unit starts the app with it | infra | S8 | `ProductionConfigSpec` | 2026-11-18 |
 | N11 / P12 | SQL logged with bound values; JDBC `useSSL=false` | Info | App part fixed (S5, driver logger `e02a86de`); `useSSL` open (only if the DB is remote) | app + infra | S5, S8 | `LogHygieneSpec` (G9), `SqlLoggingSpec` | 2026-11-02 |
 | P13 | API: failed tokens unlimited; root revocation; double click | Info | Root revocation and double click fixed (S10); failed-token limit open | app / infra | S4, S10 | `ApiTokenPageSpec` | 2026-11-02 |
 | P3 | `style-src 'unsafe-inline'`; broad `img-src`/`media-src` | Low | Later (user decision) | app | S7 (later) | `ContentSecurityPolicySpec` | 2026-11-02 |

@@ -60,12 +60,19 @@ logged exceptions still quote values (`Duplicate entry '<email>'`): R227-1 plans
 converter (db §1.6, §11 V2). Until it lands, a new `logger.error(…, e)` on a database path is a
 review item.
 
-**1.6 The production logback lives on the server.** Production starts with
-`-Dlogger.file=/etc/wlxjury-runtime/logback.xml`, installed from `wlxjury-infra`'s template, a
-copy of `conf/wlxjury/logback.xml`: root WARN, rolling `/var/log/wlxjury/application.log` (50 MB
-files, 30 days, 1 GB cap). A logger change in the repository is a pre-deploy item for the server
-until the logging plan ships the file with each release. *Why:* the `coi` logger went into the
-repository's copy only, so its removal lines were not written in production (2026-10-30).
+**1.6 The production logback ships in the release.** `conf/logback-production.xml`: root WARN,
+rolling `/var/log/wlxjury/application.log` (50 MB files, 30 days, 1 GB cap), the app's INFO
+loggers. The unit (`wlxjury-infra`'s `wlxjury.service.j2`) starts the selected release with
+`-Dlogger.file=/opt/wlxjury/current/conf/logback-production.xml`, so a logger change ships with
+the code that logs. A backout (`wlxjury-release restore`) selects the old release, and its next
+start reads that release's own file; for one release cycle the unit falls back to the infra
+role's `/etc/wlxjury-runtime/logback.xml` when the selected release predates the file (without a
+readable `-Dlogger.file` the app exits before any log exists). The deploy tools no longer
+snapshot a `logback.xml`. `sbt dist` refuses a ZIP without the file. *Why:* the `coi` logger went
+into the repository's copy only, so its removal lines were not written in production
+(2026-10-30; [logging plan](../plans/2026-10-30-logging-config-in-releases.md)). *In effect*
+after the playbook run that installs the unit and the app's next restart; until then production
+reads `/etc/wlxjury-runtime/logback.xml`.
 
 ## 2. Health and readiness
 
@@ -204,7 +211,7 @@ secure-coding §18. A new pool, worker count or limit is checked against those b
 | 1.1, 1.4 key-value denial line by `accountId` | `SecuredSpec` (denial line), `security.LogHygieneSpec` | enforced |
 | 1.5 SQL logged as templates | `SqlLoggingSpec` | enforced |
 | 1.5 driver text redacted (R227-1) | a spec logging a duplicate-key error (db §10, proposed 2) | planned |
-| 1.6 the server's logback equals the repository's | — | planned (logging plan: ship it with each release) |
+| 1.6 the release ships the production logback | `sbt dist` (the `Universal / mappings` check), `ProductionConfigSpec`, `test_database_restore` (starts the ZIP with it) | enforced; production uses it once the infra unit points at it |
 | 2.1 readiness: local only, schema and READ COMMITTED | `ReadinessControllerSpec`, `ReadinessDatabaseSpec` | enforced |
 | 3.3 restore path | `test_database_restore`, `test_release_script` (`deployment.yml`) | enforced on every PR; at a release build `test_database_restore` always, `test_release_script` when `scripts/deployment/` changed |
 | 3.3a retention: prune keeps what a restore needs | `test_release_script` (the prune tests) | enforced on every PR; at a release build when `scripts/deployment/` changed |
@@ -216,9 +223,10 @@ secure-coding §18. A new pool, worker count or limit is checked against those b
 
 ## 8. Where the setup doesn't follow these yet (for triage)
 
-- **OP1 (1.6, 1.3):** `conf/wlxjury/logback.xml` sets no `security.*` logger, so with root at WARN
+- **OP1 (1.6, 1.3):** `conf/logback-production.xml` sets no `security.*` logger, so with root at WARN
   the INFO lines of `security.account` (`oauth_*`, invitations) are not written; the OAuth port's
-  pre-deploy list asks for `security.account` at INFO. The infra template also lacks `coi`.
+  pre-deploy list asks for `security.account` at INFO (D-0b of the support diagnostics plan adds
+  it). The infra template also lacks `coi` until the unit uses the release's file (1.6).
 - **OP2 (1.5):** whole exceptions with driver text are logged (db §11 V2).
 - **OP3 (5.1):** no external monitoring or alerting; a stopped service is noticed by users. The
   local monit check (`conf/monit/wlxjury`) covers a stopped or unready app where it is installed
