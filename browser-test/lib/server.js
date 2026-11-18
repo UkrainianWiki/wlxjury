@@ -61,6 +61,10 @@ export function fixtureFor(browserName) {
     // this engine's two accounts in no contest with one wiki account nobody verified, for the add
     // row's confirmation (users.spec.js, A-3)
     wikiConfirm: (s.wikiConfirm || [])[i],
+    // "Add people from another of your contests" (users.spec.js): its source and target contests,
+    // their admin, an account known only by an unverified wiki account, and this engine's three
+    // jurors in the source; null in the guides' screenshot mode
+    addFrom: s.addFrom ? { ...s.addFrom, targets: (s.addFrom.targets || [])[i] || [] } : null,
     // this engine's groups of possible duplicates (their shared wiki accounts), for the
     // duplicates report (duplicates.spec.js); none in the guides' screenshot mode
     duplicateGroups: (s.duplicateGroups || [])[i] || [],

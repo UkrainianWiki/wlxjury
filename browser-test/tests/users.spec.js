@@ -5,7 +5,7 @@
 // that invitation, so a rerun against the same server finds the account as before.
 import { test, expect } from '../lib/fixtures.js';
 import AxeBuilder from '@axe-core/playwright';
-import { one } from '../lib/actions.js';
+import { one, signIn } from '../lib/actions.js';
 
 const isSearch = (r) => new URL(r.url()).pathname === '/admin/users/search';
 
@@ -233,5 +233,52 @@ test.describe('root editing an empty member', () => {
       await expect(page.getByRole('row').filter({ hasText: target.name }).first()).toBeVisible();
       await members();
       await expect(page.getByRole('row').filter({ hasText: edited.name })).toHaveCount(0);
+    });
+});
+
+// "Add people from another of your contests" (asked for on 2026-11-18): the engine's admin of two
+// contests of their own (UiShotsServer) opens it from the target's users page, picks the source,
+// and sees its members with nobody ticked and "Send an invitation email" unticked; the admin
+// (already a member) can't be ticked, the account known only by an unverified wiki account can. It
+// ticks the first of its engine's jurors not yet added, who joins at once (a verified email). A rerun
+// takes the next; none left: skipped.
+test.describe('an admin of two contests', () => {
+  test('adds a person from their other contest, nobody ticked at first', { tag: '@A-30' },
+    async ({ page, fixture, browserName }) => {
+      const data = fixture.addFrom;
+      test.skip(!data, 'the fixture has no add-from contests (the guides\' screenshot mode)');
+      await signIn(page, data.admin);
+      await page.goto(`/admin/users?contestId=${data.targetId}`);
+      await page.getByRole('link', { name: 'Add people from another of your contests' }).click();
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Add people from another of your contests');
+      await page.getByLabel('Contest to add people from').selectOption({ label: 'UI add-from source 2025 in Ukraine' });
+      await page.getByRole('button', { name: 'Show its people' }).click();
+      await expect(page.getByRole('heading', { name: 'People of UI add-from source 2025 in Ukraine' })).toBeVisible();
+
+      const form = page.locator('#add-from-form');
+      await expect(form.locator('input[type=checkbox]:checked')).toHaveCount(0);
+      await expect(page.getByLabel('Send an invitation email')).not.toBeChecked();
+      await expect(page.getByLabel('Add-from Admin', { exact: true })).toBeDisabled();
+      await expect(page.getByLabel(data.wikiOnly, { exact: true })).not.toBeChecked();
+      await expect(page.getByLabel('Tick all shown')).toBeVisible();
+      if (browserName === 'chromium') {
+        const results = await new AxeBuilder({ page })
+          .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+        expect(results.violations.map((v) => v.id), 'the add-from page: no accessibility findings').toEqual([]);
+      }
+
+      // the engine's first juror not yet in the target contest
+      let target = null;
+      for (const t of data.targets) {
+        if (await page.getByLabel(t.name, { exact: true }).isEnabled()) { target = t; break; }
+      }
+      test.skip(!target, 'this engine\'s jurors were all added by earlier runs: restart the fixture');
+      await expect(page.getByLabel(`Role in this contest for ${target.name}`)).toHaveValue('jury');
+      await page.getByLabel(target.name, { exact: true }).check();
+      await page.getByRole('button', { name: 'Add the ticked people' }).click();
+      await expect(page).toHaveURL((url) => url.pathname === '/admin/users');
+      await expect(page.getByText('Joined the contest: 1. Invited (role given once they accept): 0. Skipped: 0.'))
+        .toBeVisible();
+      await expect(page.getByRole('cell', { name: target.name, exact: true })).toBeVisible();
     });
 });

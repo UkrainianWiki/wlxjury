@@ -102,6 +102,9 @@ GET         /admin/users                                                        
 POST        /admin/users/search                                                     @controllers.UserController.searchAccounts(contestId: Option[Long] ?= None)
 POST        /admin/users/add-existing                                               @controllers.UserController.addExistingAccount(contestId: Option[Long] ?= None)
 POST        /admin/users/add-wiki-confirmed                                         @controllers.UserController.confirmWikiAccount(contestId: Option[Long] ?= None)
+# "Add people from another of your contests" (AddFromContest): the contest's admins and root
+GET         /admin/users/add-from                                                   @controllers.AddFromContestController.page(contestId: Option[Long] ?= None, from: Option[Long] ?= None, role: Option[String] ?= None)
+POST        /admin/users/add-from                                                   @controllers.AddFromContestController.add(contestId: Option[Long] ?= None)
 # the contest's account change log (V96): its admins and root only
 GET         /admin/account-changes                                                  @controllers.AccountChangeController.changes(contestId: Long, page: Int ?= 1)
 # the duplicates report (the account join plan's J-1): a contest's for its admins and root, all for root

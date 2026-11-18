@@ -143,6 +143,7 @@
                         @for(n <- accountNotices) {
                             <li class="account-notice">@Messages("account.notices.item", n.contestName,
                                 services.AccountNotices.byText(n.byName), Messages("role." + n.role))
+                                @for(from <- n.fromContest) {@Messages("account.notices.from", from)}
                                 @Messages(services.AccountNotices.outcomeKey(n.role, n.invited))</li>
                         }
                     </ul>

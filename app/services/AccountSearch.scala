@@ -11,7 +11,9 @@ import play.api.Logger
   * rebuilt one character at a time. A result shows the address in full only for an account in
   * the actor's contests (a member or a live invitee, as their users pages show it) and to root;
   * otherwise masked ([[UserService.maskEmail]]). Never shown to an admin: the account's other
-  * contests (not even a count), its identities or sign-in times.
+  * contests (not even a count), its identities or sign-in times. One exception, decided by the
+  * maintainer on 2026-11-18: an add from another contest ([[AddFromContest]]) records that
+  * contest in the account change log, which the new contest's admins see (by name, linked).
   */
 object AccountSearch {
 

@@ -221,6 +221,55 @@ an account: a wiki account nobody verified is counted as **Not added yet**, with
 users page, where you type each such wiki account in the add row and
 [confirm the account](#a-wiki-confirm).
 
+To bring the people of another contest you administer, last year's jurors say, you don't need to
+copy their emails into an import: see [Adding people from another of your
+contests](#a-add-from-contest).
+
+<a id="a-add-from-contest"></a>
+### Adding people from another of your contests
+
+**Add people from another of your contests**, on the users page, adds people who are members of
+another contest of yours, for example last year's jurors. The button is there when you are an
+admin of another contest (root sees it always). Pick the contest under **Contest to add people
+from**: the contests where you are an admin, the newest first (root: every contest), and press
+**Show its people**.
+
+The list shows that contest's members: **Full name**, **Role there**, **Wiki account** (with
+**verified** if its owner proved it), **Email** (in full: they are in a contest of yours) and
+**Role in this contest**, which starts as their role there; a row whose role here is **Admin** is
+bold. Root accounts are not listed for admins, nor retired accounts. **All**, **Jurors**, **Organizers** and
+**Admins** show only the people with that role there.
+
+- Nobody is ticked. Tick the people to add, or **Tick all shown**, and change a role where you
+  need another.
+- A person already in this contest can't be ticked: the row says **Already in this contest**, with
+  their role here. Nor can a person already invited into it (**Invited already**): adding them
+  again would cancel that invitation and make a new one.
+- A person known only by a wiki account nobody verified (no email) can be ticked too: you pick the
+  account itself, a member of your other contest, so there is nothing to
+  [confirm](#a-wiki-confirm) as in the add row.
+- **Send an invitation email** is unticked: nothing is mailed. Tick it to mail the invitations, as
+  on the users page; ticked, the people who join at once also get the contest's
+  [greeting](#a-greeting) by email.
+- At most 200 people are added at a time.
+
+Press **Add the ticked people**. Each person is added as **Add to this contest** in the search
+adds an account (see [Finding an existing account](#a-find-account)): one whose owner proved the
+email joins at once; so does one with an email but no password, which only needs the invitation
+to set a password; another gets an invitation, and the role applies when they accept it
+(unticked, it waits in the invitations list as **Not sent**). A person with neither an email nor
+a password joins at once, and no invitation can reach them: the result says so, and they sign in
+once you [share a link](#a-share-link) with them (or with a link from root, where you may not
+create one). A person with a password but no email can't be invited and is skipped: ask root.
+The role counts for [conflicts of
+interest](organizer-guide.md#o-conflicts) as any role does. Each person added sees a notice in
+the tool when they next sign in, which names the contest they were added from. Each add is listed
+under [Account changes](#a-account-changes) with that contest, as "from Wiki Loves Earth 2020 in
+Nepal (#20)", a link to its users page: this contest's admins see where the people came from
+(the link opens only for that contest's admins and root). The users page then says how many
+joined, how many were invited, how many were given the Admin role, and how many were skipped and
+why.
+
 <a id="a-edit-person"></a>
 ### Changing a person
 

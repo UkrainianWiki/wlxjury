@@ -95,6 +95,25 @@ No next release is set yet (`build.sbt` says `26.12-SNAPSHOT`). Everything devel
   pasted list are unchanged. The files page says when a finished import found no files to add, or
   left a page's files out as in no country category of the contest. The import action runs on the
   blocking pool. No migration. Admin and juror guides.
+- **Add people from another of your contests** (asked for by the maintainer on 2026-11-18,
+  developed 2026-11-18, `stack/193-add-people-from-contest`): a button on the users page opens a
+  page where an admin picks one of their other contests (an active Admin membership; root: any),
+  newest first, and sees its members (no root accounts for admins, no retired ones), with a role
+  filter, none ticked, each with their role there to keep or change (an Admin row in bold).
+  Members of this contest already, and people with a live invitation into it, can't be ticked;
+  accounts known only by a wiki account nobody verified can (the admin picks the account itself,
+  so A-3's confirmation doesn't apply; the maintainer, 2026-11-18): one with neither an email nor
+  a password joins and the result says to share a link. **Add the ticked people** (a form
+  POST with the CSRF token) checks every id again (a source that isn't the admin's, or an id that
+  isn't its member, is a 404 and adds nobody) and adds each as the search's **Add to this
+  contest** does (it joins, or an invitation; "Send an invitation email" unticked by default;
+  ticked, it also mails the greeting to those who join at once), at most 200 at a time,
+  recorded in the account change log with the comment `from contest #<id>`, which gives the owner
+  the search's notice in the tool; Account changes, the edit page and the notice show it as the
+  source contest's name and year (the change log's link opens its users page). The users page
+  says how many joined, were invited, were made Admin and were skipped, with the reasons.
+  `security.account` lines by ids and counts (`add_from_list`, `add_from_contest`). No
+  migration. Admin guide.
 
 **Development**
 

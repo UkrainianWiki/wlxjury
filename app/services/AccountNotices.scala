@@ -7,9 +7,11 @@ import scalikejdbc._
 import java.time.Instant
 
 /** The in-app notices of an account's owner: the adds from another admin's users page search
-  * (accounts plan A-1, the maintainer's correction of 2026-11-16: never an automatic mail), and the
-  * adds by an unverified wiki account an admin confirmed (A-3). Each is an account change log row
-  * of the account with one of the comments only the tool writes ([[UserService.NoticeComments]]): the
+  * (accounts plan A-1, the maintainer's correction of 2026-11-16: never an automatic mail), the
+  * adds by an unverified wiki account an admin confirmed (A-3), and the adds from another of the
+  * admin's contests ([[AddFromContest]]). Each is an account change log row of the account with one
+  * of the comments only the tool writes ([[UserService.NoticeComments]], or a
+  * [[UserService.fromContestComment]]): the
   * role given (`role`), or an invitation that waits to give one (`invitation` with a role), of
   * the last [[ShownDays]] days. No table of their own: the owner dismisses them in this browser
   * (a cookie with the newest row's id they saw, [[CookieName]]); at sign-in a session flag
@@ -31,26 +33,32 @@ object AccountNotices {
     * with `role`; `invited`: the role waits for an invitation.
     */
   final case class Notice(changeId: Long, contestId: Option[Long], contestName: String, role: String, byName: String,
-      invited: Boolean, createdAt: Instant)
+      invited: Boolean, createdAt: Instant, fromContest: Option[String] = None)
 
   /** The account's notices after `seenUpTo` (a change id), the newest first. */
   def pending(accountId: Long, seenUpTo: Long)(implicit session: DBSession = AutoSession): Seq[Notice] =
     sql"""SELECT ac.id, ac.contest_id, c.name, c.year, c.country, ac.field, ac.new_value, a.fullname,
-                 ${db.scalikejdbc.DbTime.epoch("ac.created_at")}
+                 ${db.scalikejdbc.DbTime.epoch("ac.created_at")}, ac.comment, s.name, s.year, s.country
           FROM account_change ac
           LEFT JOIN contest_jury c ON c.id = ac.contest_id
           LEFT JOIN users a ON a.id = ac.actor_id
+          LEFT JOIN contest_jury s ON ac.comment IS NOT NULL AND BINARY ac.comment = CONCAT('from contest #', s.id)
           WHERE ac.user_id = $accountId AND ac.id > $seenUpTo
-            AND BINARY ac.comment IN (${UserService.NoticeComments})
+            AND (BINARY ac.comment IN (${UserService.NoticeComments})
+                 OR BINARY ac.comment REGEXP ${UserService.FromContestCommentPattern})
             AND ac.field IN (${AccountChangeJdbc.Role}, ${AccountChangeJdbc.Invitation})
             AND ac.new_value IS NOT NULL
             AND ac.created_at > NOW(3) - INTERVAL $ShownDays DAY
           ORDER BY ac.id DESC LIMIT $MaxShown"""
       .map { rs =>
         val name = rs.stringOpt(3).map(n => s"$n ${rs.int(4)} in ${rs.stringOpt(5).getOrElse("")}".trim)
+        // an add from another contest: that contest by name (its id, if it no longer exists)
+        val from = rs.stringOpt(10).flatMap(UserService.fromContestId).map { id =>
+          rs.stringOpt(11).fold(s"#$id")(n => s"$n ${rs.int(12)} in ${rs.stringOpt(13).getOrElse("")}".trim + s" (#$id)")
+        }
         Notice(rs.long(1), rs.longOpt(2), name.getOrElse(rs.longOpt(2).fold("")(_.toString)), rs.string(7),
           rs.stringOpt(8).getOrElse(""), invited = rs.string(6) == AccountChangeJdbc.Invitation,
-          db.scalikejdbc.DbTime.instant(rs, "ac.created_at"))
+          db.scalikejdbc.DbTime.instant(rs, "ac.created_at"), from)
       }.list.apply()
 
   /** The newest notice id dismissed in this browser by `accountId` (0: none). */

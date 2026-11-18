@@ -181,6 +181,39 @@ object UiShotsServer {
       s"""{"wiki": ${q(wiki)}, "target": {"id": $target, "name": ${q(targetName)}, "login": ${q(targetEmail)}}, """ +
         s""""other": {"id": $other, "name": ${q(otherName)}}}"""
     }
+    // "Add people from another of your contests" (users.spec.js): a source contest and a target
+    // contest of their own (the fixture's admin keeps one contest, so no other test's session lands
+    // elsewhere), an admin of both, and in the source, per engine three jurors with a verified
+    // email and a password (each added joins at once; a rerun takes the next) and one account
+    // known only by a wiki account nobody verified (tickable there too). Not in the guides'
+    // screenshot mode; in this run's container only
+    val addFrom: String = if (f.docsPhotos.nonEmpty) "null" else {
+      import db.scalikejdbc.{ContestJuryJdbc, User, UserContestJdbc}
+      def contest(name: String, year: Int) =
+        ContestJuryJdbc.findAll().find(c => c.name == name && c.year == year).map(_.getId)
+          .getOrElse(ContestJuryJdbc.create(None, name, year, "Ukraine").getId)
+      val (source, target) = (contest("UI add-from source", 2025), contest("UI add-from target", 2026))
+      def account(name: String, email: String, password: String, contestId: Long, role: String,
+          wiki: Option[String] = None): Long =
+        User.findByEmail(email).headOption.map(_.getId).getOrElse(
+          User.create(User(name, email, None, Set(role), Some(services.PasswordHasher.default.hash(password)),
+            Some(contestId), wikiAccount = wiki, emailVerifiedAt = Some(java.time.ZonedDateTime.now))).getId)
+      val (adminEmail, adminPassword) = ("addfrom-admin@ui-shots.test", "addfrompass")
+      val admin = account("Add-from Admin", adminEmail, adminPassword, target, User.ADMIN_ROLE)
+      UserContestJdbc.createMembership(admin, source, User.ADMIN_ROLE)
+      val wikiOnlyName = "Add-from Wiki Only"
+      if (User.findByAccount(wikiOnlyName).isEmpty)
+        User.create(User(wikiOnlyName, "", None, Set(User.JURY_ROLE), None, Some(source), wikiAccount = Some(wikiOnlyName)))
+      val targets = (1 to 3).map { n =>
+        (1 to 3).map { k =>
+          val name = s"Add-from Juror $n-$k"
+          val id = account(name, s"addfrom-$n-$k@ui-shots.test", s"addfrom-$n-$k-pass", source, User.JURY_ROLE)
+          s"""{"id": $id, "name": ${q(name)}}"""
+        }.mkString("[", ", ", "]")
+      }
+      s"""{"sourceId": $source, "targetId": $target, "admin": {"login": ${q(adminEmail)}, """ +
+        s""""password": ${q(adminPassword)}}, "wikiOnly": ${q(wikiOnlyName)}, "targets": [${targets.mkString(", ")}]}"""
+    }
     // pairs for retiring an account from the "wiki account taken" panel (users.spec.js, accounts
     // plan A-4), per engine three, as root in a contest of their own with no rounds (a round job another
     // test queues in the fixture's contest, review.spec.js's say, would refuse a retirement): an empty
@@ -364,6 +397,7 @@ object UiShotsServer {
          |  "searchTargets": [${searchTargets.mkString(", ")}],
          |  "wikiTaken": [${wikiTaken.mkString(", ")}],
          |  "wikiConfirm": [${wikiConfirm.mkString(", ")}],
+         |  "addFrom": $addFrom,
          |  "duplicateGroups": [${duplicateGroups.mkString(", ")}],
          |  "retireTargets": [${retireTargets.mkString(", ")}],
          |  "joinPairs": [${joinPairs.mkString(", ")}],

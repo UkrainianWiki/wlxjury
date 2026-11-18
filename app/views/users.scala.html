@@ -46,6 +46,10 @@
 
                 <div class="mb-2">
                     <a href="@routes.UserController.importUsers(contest.id)" class="btn btn-outline-secondary me-1">@Messages("mass.import")</a>
+                    @* only where the admin has another contest to add people from (root: any) *@
+                    @for(id <- contest.id if services.AddFromContest.hasSources(adminUser, id)) {
+                        <a href="@routes.AddFromContestController.page(contest.id)" class="btn btn-outline-secondary me-1 add-from-link">@Messages("users.add.from.link")</a>
+                    }
                     <a href="@routes.UserController.editGreeting(contest.id)" class="btn btn-outline-secondary me-1">@Messages("edit.greeting.message")</a>
                     @for(id <- contest.id) {
                         <a href="@routes.AccountChangeController.changes(id)" class="btn btn-outline-secondary me-1 account-changes-link">@Messages("account.changes.title")</a>

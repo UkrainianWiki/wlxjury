@@ -73,6 +73,8 @@ const TOUR = [
   // reassigning a juror's unrated files: the fixture's juror, the round's other jurors as receivers
   ['reassign juror page', 'admin', (f) => `/admin/rounds/${f.roundBinaryId}/reassign-juror?juror=${f.accounts.juror.id}`],
   ['users', 'admin', (f) => `/admin/users?contestId=${f.contestId}`],
+  // its picker without a contest to pick (the fixture's admin has one contest; users.spec.js opens a list)
+  ['add people from another contest', 'admin', (f) => `/admin/users/add-from?contestId=${f.contestId}`],
   // the duplicates report (the account join plan's J-1): the contest's, and root's of every account
   ['duplicates report', 'admin', (f) => `/admin/duplicates?contestId=${f.contestId}`],
   ['duplicates report, all', 'root', () => '/admin/duplicates/all'],

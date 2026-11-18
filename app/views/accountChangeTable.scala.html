@@ -47,7 +47,12 @@
                 @* an email change's notice to the former address goes out after the save: queued *@
                 @* an invitation's flag is set after its mail: none there is not known (UserService.invite) *@
                 <td>@row.change.mailSent.map(s => Messages(if (!s) "account.change.mail.not.sent" else if (row.change.field == AccountChangeJdbc.Email) "account.change.mail.notice.queued" else "account.change.mail.sent")).getOrElse(if (row.change.field == AccountChangeJdbc.Invitation) Messages("account.change.mail.unknown") else "")</td>
-                <td class="account-change-comment">@row.change.comment.getOrElse("")</td>
+                @* an add from another contest: that contest, a link to its users page (opened as
+                   any page is: its admins and root only, others get the usual refusal) *@
+                <td class="account-change-comment">@row.fromContest match {
+                    case Some((id, Some(c))) => {<a href="@routes.UserController.users(Some(id))" class="account-change-from">@Messages("account.change.from.contest", c.fullName, id.toString)</a>}
+                    case _ => {@row.change.comment.getOrElse("")}
+                }</td>
             </tr>
         }
         </tbody>

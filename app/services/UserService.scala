@@ -132,7 +132,8 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     * [[UserService.RoleNotAssignable]] for a role that is not a contest role.
     */
   def addAccountToContest(creator: User, accountId: Long, contest: ContestJury, role: String,
-      sendInvitation: Boolean = false, tellOwner: Boolean = false, comment: String = SearchComment)(implicit
+      sendInvitation: Boolean = false, tellOwner: Boolean = false, comment: String = SearchComment,
+      keepLiveInvitation: Boolean = false)(implicit
       messages: Messages, linkHost: LinkHost = LinkHost.None): SearchAdded = {
     if (!User.mayAssignRoles(creator, Set(role))) throw new RoleNotAssignable
     val creatorRoot = creator.isRoot || creator.hasRole(User.ROOT_ROLE)
@@ -140,7 +141,7 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     val account = User.findById(accountId).filterNot(gone).getOrElse(throw new AccountNotFound)
     val cId = contest.getId
     val added = addExisting(creator, account, byEmail = true, Some(contest), contest.id, role, sendInvitation,
-      comment = Some(comment), mailFrom = Some(systemSender), goneIf = Some(gone))
+      comment = Some(comment), mailFrom = Some(systemSender), goneIf = Some(gone), keepLiveInvitation = keepLiveInvitation)
       .getOrElse(throw new AccountNotFound)
     // what the add gave: a membership (direct, or one waiting for a password), or an invitation
     // that waits to give the role; nothing where none may be sent
@@ -243,7 +244,8 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
       sendInvitation: Boolean,
       comment: Option[String] = None,
       mailFrom: Option[User] = None,
-      goneIf: Option[User => Boolean] = None)(implicit messages: Messages, linkHost: LinkHost): Option[Added] = {
+      goneIf: Option[User => Boolean] = None,
+      keepLiveInvitation: Boolean = false)(implicit messages: Messages, linkHost: LinkHost): Option[Added] = {
     val access = User.ACCESS_ROLES.contains(role)
     contestId.fold[Option[Added]](Some(AlreadyMember(account))) { cId =>
       // matched by email: whoever can sign in owns the address (or nobody can); matched by
@@ -301,12 +303,15 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
               // an address an admin set, of an account this creator may not hand a password to
               Invited(account, Mail.NotPossible)
             case None if byEmail =>
-              // the role waits for an invitation: kept unsent if no mail was asked for
-              Invited(account, retiredMeanwhile {
+              // the role waits for an invitation: kept unsent if no mail was asked for; with
+              // keepLiveInvitation, a live one into the contest found under the row lock stays as
+              // it is (another add of the same person got there first)
+              try Invited(account, retiredMeanwhile {
                 val sent = invite(creator, account, contest, Some(role), mail = sendInvitation, comment = comment,
-                  from = mailFrom)
+                  from = mailFrom, keepLiveInvitation = keepLiveInvitation)
                 if (sendInvitation) Mail.of(sent) else Mail.NotAsked
               })
+              catch { case _: LiveInvitationKept => AlreadyInvited(account) }
             case None =>
               accountLogger.info(
                 s"add_refused reason=wiki_account_unverified accountId=${account.getId} byAccountId=${creator.getId} contestId=$cId")
@@ -391,7 +396,8 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     * account is deleted (retired) when its row is locked.
     */
   def invite(creator: User, account: User, contestOpt: Option[ContestJury], role: Option[String],
-      mail: Boolean = true, comment: Option[String] = None, from: Option[User] = None)(implicit
+      mail: Boolean = true, comment: Option[String] = None, from: Option[User] = None,
+      keepLiveInvitation: Boolean = false)(implicit
       messages: Messages, linkHost: LinkHost = LinkHost.None
   ): Boolean = {
     require(!account.isRoot, "a root account is never invited")
@@ -411,6 +417,10 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
       // a deleted (retired, A-4) account is never invited: retired after the caller read it (an
       // add's join committed first, then this), refused with nothing written
       if (!User.lockRow(account.getId).exists(_.deletedAt.isEmpty)) throw new AccountNotFound
+      // keepLiveInvitation (an add from another contest, AddFromContest): a live invitation into
+      // the contest, made after the caller's check, stays as it is; nothing written, no mail
+      if (keepLiveInvitation && AccountTokenJdbc.liveInvitationsOf(Seq(account.getId)).getOrElse(account.getId, Nil)
+          .exists(t => t.contestId == contestId)) throw new LiveInvitationKept
       AccountTokenJdbc.revokeUnused(account.getId, Seq(AccountTokenJdbc.Invitation), contestId)
       val (tokenId, token) = AccountTokenService.create(account.getId, AccountTokenJdbc.Invitation, account.emailLo,
         contestId, role, creator.id, unsent = !mail, logCreated = false)
@@ -846,11 +856,12 @@ object UserService {
     * the password, whatever became of that invitation), `invited` (the role waits for an
     * invitation), `already_member`, `in_join` (a join holds the account), `no_email` (no address
     * for the invitation it needs), `not_possible` (no invitation this admin may send), `retired`
-    * (retired before its invitation).
+    * (retired before its invitation), `already_invited` (a live invitation kept, nothing written).
     */
   def confirmedOutcome(added: Added, member: Boolean): String = added match {
     case _: AlreadyMember             => "already_member"
     case _: InJoin                    => "in_join"
+    case _: AlreadyInvited            => "already_invited"
     case _ if member                  => "added"
     case _: JoinedContest             => "added"
     case Invited(_, Mail.NotPossible) => "not_possible"
@@ -871,6 +882,14 @@ object UserService {
 
   /** An account an account join holds (J-2): no membership or invitation meanwhile. */
   case class InJoin(user: User) extends Added
+
+  /** Not added: the account already had a live invitation into the contest, found under its row
+    * lock ([[UserService.invite]]'s `keepLiveInvitation`); it stays as it was, nothing mailed.
+    */
+  case class AlreadyInvited(user: User) extends Added
+
+  /** Thrown inside an invitation's transaction that keeps a live one: rolled back, nothing written. */
+  private[services] final class LiveInvitationKept extends RuntimeException(null, null, false, false)
 
   /** Thrown inside an add's transaction for an account a join holds: rolled back, nothing written. */
   private[services] final class InJoinRefused extends RuntimeException(null, null, false, false)
@@ -905,13 +924,35 @@ object UserService {
   /** The comments only the tool writes, each of which makes a notice for the owner. */
   val NoticeComments: Seq[String] = Seq(SearchComment, WikiConfirmedComment)
 
-  /** Whether a comment typed in the edit form would read as one of [[NoticeComments]], which only
-    * the tool writes: the column compares case- and trailing-space-insensitively, so any case and
-    * spacing.
+  /** The account change log's comment on a role or an invitation given by "Add people from another
+    * of your contests" ([[AddFromContest]]): the contest the person was picked from. Like
+    * [[SearchComment]], it makes the owner's notice ([[AccountNotices]], by
+    * [[FromContestCommentPattern]]).
+    */
+  def fromContestComment(sourceContestId: Long): String = s"from contest #$sourceContestId"
+
+  /** [[fromContestComment]]'s rows, as a MariaDB regular expression matched case-sensitively: to
+    * the very end (`\z`; `$` would also match before a final newline).
+    */
+  val FromContestCommentPattern = "^from contest #[0-9]+\\z"
+
+  private val FromContestStored = """from contest #(\d{1,18})""".r
+
+  /** The source contest's id of a [[fromContestComment]], exactly as the tool writes it. */
+  def fromContestId(comment: String): Option[Long] = comment match {
+    case FromContestStored(id) => id.toLongOption
+    case _                     => None
+  }
+
+  private val FromContestTyped = """(?i)from contest #\d+""".r
+
+  /** Whether a comment typed in the edit form would read as one of [[NoticeComments]] or a
+    * [[fromContestComment]], which only the tool writes: the column compares case- and
+    * trailing-space-insensitively, so any case and spacing.
     */
   def isReservedComment(comment: String): Boolean = {
     val typed = comment.trim.replaceAll("\\s+", " ")
-    NoticeComments.exists(typed.equalsIgnoreCase)
+    NoticeComments.exists(typed.equalsIgnoreCase) || FromContestTyped.matches(typed)
   }
 
   /** An address with all but its first character before the `@` hidden: `a***@example.org`. */

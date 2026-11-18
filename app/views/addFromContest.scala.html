@@ -1,0 +1,143 @@
+@import org.intracer.wmua.ContestJury
+@(
+        adminUser: db.scalikejdbc.User,
+        contest: ContestJury,
+        sources: Seq[ContestJury],
+        source: Option[ContestJury],
+        role: Option[String],
+        rows: Seq[services.AddFromContest.Row]
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+
+@* "Add people from another of your contests" (services.AddFromContest): the admin picks one of
+   their other contests (root: any) and ticks some of its members, none ticked at first, each with
+   the role they have there, which they may change. Addresses as the users page's search shows them
+   (in full: the source is one of the admin's contests); a member of this contest already, or a
+   person with a live invitation into it, can't be ticked. A row whose role here is Admin is bold
+   (add-from-contest.js follows the select). "Send an invitation email" is
+   unticked. A form POST with the CSRF token; the server checks every id again *@
+@pageScripts = {
+    <script src="@routes.Assets.versioned("javascripts/add-from-contest.js")"></script>
+}
+@roleNames(roles: Set[String]) = @{ roles.toSeq.sorted.map(r => Messages("role." + r)).mkString(", ") }
+@mainAdmin("users", adminUser, adminUser.getId, contestId = contest.id, head = pageScripts) {
+    <div class="row add-from-contest">
+        <h1 class="h3">@Messages("users.add.from.title")</h1>
+        <p>@Messages("users.add.from.intro", contest.fullName)</p>
+        <p><a href="@routes.UserController.users(contest.id)">@Messages("account.changes.back")</a></p>
+
+        @for(key <- flash.get("add-from").filter(_ == "users.add.from.none.ticked")) {
+            <div class="alert alert-warning" role="status">@Messages(key)</div>
+        }
+
+        @if(sources.isEmpty) {
+            <p id="add-from-no-source">@Messages(if (services.AccountSearch.isRoot(adminUser)) "users.add.from.none.root" else "users.add.from.none")</p>
+        } else {
+            <form method="get" action="@routes.AddFromContestController.page()" id="add-from-source" class="mb-3">
+                <input type="hidden" name="contestId" value="@contest.id">
+                <label for="add-from-select" class="form-label">@Messages("users.add.from.source")</label>
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <select id="add-from-select" name="from" class="form-select w-auto mw-100">
+                        @for(c <- sources; id <- c.id) {
+                            <option value="@id" @if(source.exists(_.id.contains(id))) {selected}>@c.fullName</option>
+                        }
+                    </select>
+                    <button type="submit" class="btn btn-outline-primary">@Messages("users.add.from.show")</button>
+                </div>
+            </form>
+        }
+
+        @for(s <- source; sourceId <- s.id) {
+            <section aria-labelledby="add-from-members-title" id="add-from-members">
+                <h2 class="h5" id="add-from-members-title">@Messages("users.add.from.members", s.fullName)</h2>
+
+                @* the role filters: links, so the list works without scripts *@
+                <nav aria-label="@Messages("users.add.from.filter")" class="mb-2">
+                    <ul class="nav nav-pills add-from-filters">
+                        @for((value, key) <- (None -> "users.add.from.filter.all") +: services.AddFromContest.RoleFilters.map(r => Some(r) -> s"users.add.from.filter.$r")) {
+                            <li class="nav-item">
+                                <a class="nav-link py-1 px-2 @if(role == value) {active}" @if(role == value) {aria-current="page"}
+                                    href="@routes.AddFromContestController.page(contest.id, Some(sourceId), value)">@Messages(key)</a>
+                            </li>
+                        }
+                    </ul>
+                </nav>
+
+                @if(rows.isEmpty) {
+                    <p id="add-from-empty">@Messages("users.add.from.empty")</p>
+                } else {
+                    <form method="post" action="@routes.AddFromContestController.add(contest.id)" id="add-from-form">
+                        @csrfField()
+                        <input type="hidden" name="from" value="@sourceId">
+
+                        @* shown by add-from-contest.js *@
+                        <div class="form-check mb-2" id="add-from-all-box" hidden>
+                            <input class="form-check-input" type="checkbox" id="add-from-all">
+                            <label class="form-check-label" for="add-from-all">@Messages("users.add.from.tick.all")</label>
+                        </div>
+
+                        <div class="table-responsive position-relative">
+                        <table class="table table-sm align-middle" id="add-from-table">
+                            <caption class="visually-hidden">@Messages("users.add.from.members", s.fullName)</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">@Messages("users.add.from.pick")</th>
+                                    <th scope="col">@Messages("full.name")</th>
+                                    <th scope="col">@Messages("users.add.from.role.there")</th>
+                                    <th scope="col">@Messages("wiki.account")</th>
+                                    <th scope="col">@Messages("email")</th>
+                                    <th scope="col">@Messages("users.add.from.role.here")</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for(row <- rows) {
+                                    @defining(if (row.found.name.trim.nonEmpty) row.found.name else Messages("wiki.confirm.no.name")) { name =>
+                                    <tr class="add-from-row@if(row.blocked.nonEmpty) { add-from-blocked}@if(row.sourceRole == db.scalikejdbc.User.ADMIN_ROLE) { fw-bold}">
+                                        <td>
+                                            <input class="form-check-input add-from-pick" type="checkbox" name="accountId" value="@row.id"
+                                                id="add-from-@row.id" @if(row.blocked.nonEmpty) {disabled aria-describedby="add-from-why-@row.id"}>
+                                        </td>
+                                        <td>
+                                            <label for="add-from-@row.id">@name</label>
+                                            @for(key <- row.blocked) {
+                                                <div class="small text-body-secondary" id="add-from-why-@row.id">@Messages(key, row.found.member.fold("")(roleNames))</div>
+                                            }
+                                        </td>
+                                        <td>@Messages("role." + row.sourceRole)</td>
+                                        <td>@row.found.wikiAccount.getOrElse("")@if(row.found.wikiAccount.nonEmpty && row.found.account.wikiAccountVerified) { <span class="badge text-bg-success">@Messages("account.search.verified")</span>}</td>
+                                        <td>@row.found.email.getOrElse(Messages("account.search.no.email"))</td>
+                                        <td>
+                                            <label class="visually-hidden" for="add-from-role-@row.id">@Messages("users.add.from.role.label", name)</label>
+                                            <select id="add-from-role-@row.id" name="role-@row.id" class="form-select form-select-sm w-auto add-from-role"
+                                                @if(row.blocked.nonEmpty) {disabled}>
+                                                @for(r <- db.scalikejdbc.User.FORM_ROLES) {
+                                                    <option value="@r" @if(r == row.sourceRole) {selected}>@Messages("role." + r)</option>
+                                                }
+                                            </select>
+                                        </td>
+                                    </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                        </div>
+
+                        <p class="form-text">@Messages("coi.role.help")</p>
+                        @* never a mail nobody chose: unticked; each person added sees a notice in the tool *@
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="sendInvitation" value="true" id="add-from-send"
+                                aria-describedby="add-from-send-help">
+                            <label class="form-check-label" for="add-from-send">@Messages("invitation.send.email")</label>
+                            <div class="form-text" id="add-from-send-help">@Messages("invitation.send.email.help")</div>
+                        </div>
+                        <p class="mt-2" id="add-from-notice">@Messages("users.add.from.notice.before")</p>
+
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary" id="add-from-submit">@Messages("users.add.from.submit")</button>
+                            <a href="@routes.UserController.users(contest.id)" class="btn btn-outline-secondary">@Messages("cancel")</a>
+                        </div>
+                    </form>
+                }
+            </section>
+        }
+    </div>
+}
