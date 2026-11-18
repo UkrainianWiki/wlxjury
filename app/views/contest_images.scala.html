@@ -4,19 +4,30 @@
         sourceImages: Long,
         dbImages: Long,
         importJobs: Seq[(services.jobs.Job, String)] = Nil,
-        sourceCheck: Option[controllers.ImageController.SourceCheck] = None
+        sourceCheck: Option[controllers.ImageController.SourceCheck] = None,
+        identityWarning: Option[services.diagnostics.ContestIdentity.SourceCheck] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
     @import helper._
     @import services.imports.{ImageImportHandler, SourceName}
+    @import controllers.ImageController
     @import controllers.ImageController.{AsCategory, AsPage, BothExist, Unreachable}
+
+    @* the box's warning for the form's source, unless the flash above says the same *@
+    @shownWarning = @{ identityWarning.map(ImageController.identityWarningText(contest, _))
+        .filterNot(w => flash.get(ImageController.SourceWarningFlash).contains(w)) }
 
     @* the source's Commons suggestions (category-suggest.js) are a Tom Select control *@
     @mainAdmin("contest.files", user, user.getId, contestId = contest.id, head = snippets.tomSelectScripts()) {
         <h1 class="h3">@Messages("contest") @contest.fullName</h1>
-        <p><a id="browse-files" href="@routes.GalleryController.contestFiles(contest.getId)">&larr; @Messages("contest.files")</a></p>
+        <p><a id="browse-files" href="@routes.GalleryController.contestFiles(contest.getId)">&larr; @Messages("contest.files")</a>
+            · <a id="contest-health-link" class="text-decoration-underline" href="@routes.ContestHealthController.page(contest.getId)">@Messages("health.title")</a></p>
 
         @flash.get("error").map { err =>
             <div class="alert alert-danger">@err</div>
+        }
+        @* the import just queued names another contest, year or country (DG10): said with its job *@
+        @flash.get(ImageController.SourceWarningFlash).map { w =>
+            <div class="alert alert-warning" id="import-identity-flash" role="status">@w</div>
         }
         @snippets.formError(importImagesForm)
 
@@ -47,6 +58,14 @@
             @* a category or a page: Commons' categories suggested once it starts with Category: *@
             @bs.text(importImagesForm("source"), Symbol("_label") -> "commons.category.or.page.with.files",
                 Symbol("_help") -> Messages("import.files.help"), Symbol("data-category-suggest") -> "mixed")
+
+            @* the source names another contest, year or country than this contest's (support diagnostics
+               plan, DG10: the health page's H1 check): a warning, never a refusal. Shown with the form
+               for its source, and updated by source-identity.js as the admin types, before anything
+               is queued (hidden while there is none) *@
+            <div id="source-identity-warning" class="alert alert-warning py-2" role="status"
+                 data-src="@routes.ImageController.sourceIdentity(contest.getId)"
+                 @if(shownWarning.isEmpty) {hidden}>@for(w <- shownWarning) {@w}</div>
 
             @* a name without a namespace prefix that Commons has as both a page and a category, or
                that Commons couldn't be checked for (DG11): the choice, the category preselected;
@@ -98,6 +117,7 @@
             </div>
         }
         <script src="@routes.Assets.versioned("javascripts/category-suggest.js")"></script>
+        <script src="@routes.Assets.versioned("javascripts/source-identity.js")"></script>
 
         <hr/>
         <h2 class="h4">@Messages("local.image.cache")</h2>

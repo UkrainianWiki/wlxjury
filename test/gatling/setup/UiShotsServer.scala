@@ -258,6 +258,62 @@ object UiShotsServer {
       }
       pairs.mkString("[", ", ", "]")
     }
+    // the contest health page's Nepal case (health.spec.js, support diagnostics plan D-1a): an old
+    // international WLE 2020 contest of its own, reused for WLM 2026 in Nepal: 20 of the fixture's
+    // files in its country categories, 12 in none (imported from the WLM 2026 Nepal category), its
+    // import jobs (done: the scheduler never takes them), round 1 of every file and round 2 from
+    // round 1's selected files, empty, both without jurors (no juror's menus change). Root opens it
+    // (no member's contest menu changes either). Not in the guides' screenshot mode
+    val healthContest: Option[Long] = Option.when(f.docsPhotos.isEmpty) {
+      val name = "Wiki Loves Earth"
+      db.scalikejdbc.ContestJuryJdbc.findAll().find(c => c.name == name && c.year == 2020).map(_.getId).getOrElse {
+        import db.scalikejdbc.{CategoryJdbc, CategoryLinkJdbc, ContestJuryJdbc, Round}
+        import services.imports.{ImageImportHandler, ImportParams, ImportState}
+        import services.jobs.{JobJdbc, JobStatus, NewJob, Progress}
+        import play.api.libs.json.Json
+        val nepalSource = "Category:Images from Wiki Loves Monuments 2026 in Nepal"
+        val contest = ContestJuryJdbc.create(None, name, 2020, "")
+        val id = contest.getId
+        val files = sql"SELECT page_id FROM images ORDER BY page_id LIMIT 32".map(_.long(1)).list()
+        val (old, nepal) = files.splitAt(20)
+        DB.localTx { implicit session =>
+          val categoryId = CategoryJdbc.findOrInsert(services.ImageService.ownCategory(id))
+          ContestJuryJdbc.setImagesSource(id, Some(nepalSource), Some(categoryId))
+          CategoryLinkJdbc.linkIgnore(categoryId, files)
+          val prefix = "Category:Images from Wiki Loves Earth 2020 in "
+          CategoryLinkJdbc.addCountries(old.zipWithIndex.map { case (p, i) =>
+            p -> (prefix + (if (i < 8) "Armenia" else if (i < 14) "Sri Lanka" else "Bhutan")) })
+          def job(source: String, st: ImportState, at: Option[java.time.Instant] = None): Long = {
+            val params = ImportParams(id, ImageImportHandler.Mode.Import, source, Some(categoryId))
+            val jobId = JobJdbc.insert(NewJob(ImageImportHandler.Kind, Some(id), Some(ImageImportHandler.SubjectType),
+              Some(id), params = Json.toJsObject(params)), None)
+            JobJdbc.update(jobId, JobStatus.Done, Json.toJsObject(st), Progress(), None)
+            at.foreach(t => sql"UPDATE job SET created_at = ${java.sql.Timestamp.from(t)} WHERE id = $jobId".update())
+            jobId
+          }
+          // imported again since imports record countries (ContestHealth.Countries): its files have theirs
+          job("Category:Images from Wiki Loves Earth 2020", ImportState(seen = 20, inserted = 20),
+            at = Some(services.diagnostics.ContestHealth.Settings().countriesRecordedSince.plus(java.time.Duration.ofDays(1))))
+          job("Wiki Loves Monuments 2026 in Nepal", ImportState(seen = 40, notInCountries = 40, byCountry = Some(true)))
+          job(nepalSource, ImportState(seen = 12, inserted = 12))
+          job("Commons:Wiki Loves Monuments 2026 in Nepal/Winners",
+            ImportState(seen = 15, linked = 3, notInCountries = 12, byCountry = Some(true)))
+        }
+        val r1 = Round.create(Round(None, 1, Some("All files"), id, active = true)).getId
+        val r2 = Round.create(Round(None, 2, Some("Selected"), id, active = true, previous = Some(r1.toString),
+          prevSelectedBy = Some(1))).getId
+        DB.localTx { implicit session =>
+          sql"UPDATE round SET status = 'active' WHERE id IN ($r1, $r2)".update()
+          sql"INSERT INTO round_image (round_id, page_id, status, added_how) VALUES (?, ?, 'in', 'fill')"
+            .batch(files.map(p => Seq(r1, p)): _*).apply()
+          val jobId = JobJdbc.insert(NewJob(services.distribution.RoundDistributionHandler.Kind, Some(id),
+            Some(services.distribution.RoundDistributionHandler.SubjectType), Some(r2)), None)
+          JobJdbc.update(jobId, JobStatus.Done, Json.obj("phase" -> "verify", "candidatesSeen" -> 0, "imagesAdded" -> 0,
+            "imagesBefore" -> 0), Progress(), None)
+        }
+        id
+      }
+    }
     // in one transaction: as autocommitted statements (a commit per row) it took about 2.5 minutes
     val filled = DB.localTx { tx => CommonsFileUrl.fillMissing()(tx) }
     println(s"[ui-shots] set the Commons url of $filled images")
@@ -311,6 +367,7 @@ object UiShotsServer {
          |  "duplicateGroups": [${duplicateGroups.mkString(", ")}],
          |  "retireTargets": [${retireTargets.mkString(", ")}],
          |  "joinPairs": [${joinPairs.mkString(", ")}],
+         |  "healthContestId": ${healthContest.getOrElse(0L)},
          |  "commentFile": {"juror": $commentJuror, "pageId": $commentPage, "otherRounds": $commentOthers},
          |  "pageId": $pageId,
          |  "ratedPageId": $ratedPageId

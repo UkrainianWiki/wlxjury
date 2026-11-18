@@ -170,6 +170,14 @@ object JobJdbc {
   def latestByDedupeKey(key: String)(implicit session: DBSession = AutoSession): Option[Job] =
     sql"SELECT $columns FROM job WHERE contest_id IS NULL AND dedupe_key = $key ORDER BY id DESC LIMIT 1".map(extract).single()
 
+  /** The contest's jobs of these kinds, the newest first, at most `limit` (the contest index). */
+  def ofContest(contestId: Long, kinds: Seq[String], limit: Int)(implicit session: DBSession = AutoSession): Seq[Job] =
+    if (kinds.isEmpty || limit <= 0) Nil
+    else
+      sql"SELECT $columns FROM job WHERE contest_id = $contestId AND kind IN ($kinds) ORDER BY id DESC LIMIT $limit"
+        .map(extract)
+        .list()
+
   def activeOfKind(kind: String)(implicit session: DBSession = AutoSession): Seq[Job] =
     sql"SELECT $columns FROM job WHERE status IN (${JobStatus.active.toSeq}) AND kind = $kind ORDER BY id"
       .map(extract)

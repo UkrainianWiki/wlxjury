@@ -173,6 +173,8 @@ POST        /admin/rounds/:id/reassign-juror                                    
 # root's Release of a round left frozen with no job holding it
 POST        /admin/rounds/:id/release-freeze                                        @controllers.RoundJurorsController.releaseFreeze(id: Long)
 GET         /admin/rounds/newfiles                                                  @controllers.RoundController.newFilesCount(id: Long)
+# a contest's health report (support diagnostics plan, D-1a): its admins and root only
+GET         /admin/contests/:id/health                                              @controllers.ContestHealthController.page(id: Long)
 GET         /admin/jobs/:id                                                         @controllers.JobController.status(id: Long)
 POST        /admin/jobs/:id/cancel                                                  @controllers.JobController.cancel(id: Long)
 POST        /admin/jobs/:id/retry                                                   @controllers.JobController.retry(id: Long)
@@ -205,6 +207,8 @@ GET         /contest/:contestId/files/regions                                   
 GET         /contest/:contestId/files/countries                                     @controllers.GalleryController.contestFileCountries(contestId: Long, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None, author: Option[String] ?= None, monument: Option[String] ?= None)
 GET         /contest/:contestId/authors                                             @controllers.AuthorsController.list(contestId: Long, round: Option[Long] ?= None, sort: Option[String] ?= None)
 GET         /contest/:contestId/files/:pageId                                       @controllers.GalleryController.contestFileLarge(contestId: Long, pageId: Long, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None, coi: Boolean ?= false, author: Option[String] ?= None, monument: Option[String] ?= None)
+# the import form's identity warning for a typed source (support diagnostics plan, DG10): its admins and root
+GET         /contest/:id/importimages/source-identity                               @controllers.ImageController.sourceIdentity(id: Long, source: String ?= "")
 POST        /contest/:id/importimages                                               @controllers.ImageController.importImages(id: Long)
 POST        /contest/:id/images/cache/start                                         @controllers.ImageController.startImageCache(id: Long)
 GET         /contest/:id/images/cache/status                                        @controllers.ImageController.imageCacheStatus(id: Long)

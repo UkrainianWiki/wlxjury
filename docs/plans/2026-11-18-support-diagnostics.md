@@ -1,7 +1,10 @@
 # Support diagnostics: what happened and what could be wrong (plan, 2026-11-18)
 
 **Status:** D-0a built (#372, `stack/189-logging-config-in-releases`); D-0b built
-(`stack/191-diagnostics-quick-fixes`, 2026-11-18); D-1a onwards not built. The plan was revised
+(`stack/191-diagnostics-quick-fixes`, 2026-11-18); D-1a built (`stack/192-contest-health`,
+2026-11-18: `services.diagnostics.ContestHealth`, `/admin/contests/:id/health`, the import form's
+DG10 warning; H2's read measured on the Gatling fixture DB, `ContestHealthBenchmark`); D-1b onwards
+not built. The plan was revised
 after its independent review and a follow-up review (2026-11-18).
 
 - **Decided by the maintainer, 2026-11-18:** the whole first batch.

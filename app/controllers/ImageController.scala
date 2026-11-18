@@ -11,6 +11,7 @@ import play.api.mvc.{AnyContent, ControllerComponents, EssentialAction, Request,
 import play.api.libs.json.Json
 import services.imports.{CommonsSource, FileTitles, ImportSource, SourceName}
 import services.jobs.Job
+import services.diagnostics.ContestHealth
 import services.{ImageService, LocalImageCacheService}
 
 import javax.inject.Inject
@@ -45,8 +46,23 @@ class ImageController @Inject() (
           importImagesForm.fill((contest.images.getOrElse(""), "", ""))
         Ok(
           views.html
-            .contest_images(filledForm, contest, user, sourceImageNum, dbImagesNum, importJobs(contestId))
+            .contest_images(filledForm, contest, user, sourceImageNum, dbImagesNum, importJobs(contestId),
+              identityWarning = ContestHealth.sourceWarning(contest, contest.images.getOrElse("")))
         )
+      }
+    }
+
+  /** The typed import source's warning (support diagnostics plan, DG10), asked by the files page's
+    * script as the admin types: the same check as the health page's H1 ([[ContestHealth.sourceWarning]]),
+    * before anything is queued; a warning only, never a refusal. `{"warning": text}` or
+    * `{"warning": null}`; no Commons call.
+    */
+  def sourceIdentity(contestId: Long, source: String): EssentialAction =
+    withAuthJson(contestPermission(User.ADMIN_ROLES, Some(contestId))) { _ => implicit request =>
+      ContestJuryJdbc.findById(contestId).fold[Result](NotFound(Json.obj("error" -> "not_found"))) { contest =>
+        val warning = ContestHealth.sourceWarning(contest, source.take(ImageController.MaxSourceLength))
+          .map(check => ImageController.identityWarningText(contest, check)(messagesApi.preferred(request)))
+        Ok(Json.obj("warning" -> warning)).withHeaders(CACHE_CONTROL -> "no-store")
       }
     }
 
@@ -81,9 +97,10 @@ class ImageController @Inject() (
   def importImages(contestId: Long): EssentialAction =
     withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
       withContest(user, contestId) { contest =>
+        // the typed source's identity warning (DG10): shown again with the form, never a refusal
         def page(form: Form[(String, String, String)], check: Option[ImageController.SourceCheck] = None) =
           views.html.contest_images(form, contest, user, 0, ImageJdbc.countByContest(contest), importJobs(contestId),
-            check)
+            check, form("source").value.flatMap(ContestHealth.sourceWarning(contest, _)))
         importImagesForm
           .bindFromRequest()
           .fold(
@@ -154,9 +171,13 @@ class ImageController @Inject() (
       if (action == "import.files") Seq(imageService.importFiles(contest, source, list, user.id))
       else if (action == "update.monuments") imageService.updateMonuments(contest, source, user.id)
       else Nil
+    // the source's identity warning (DG10) with the queued job: also for a send without the script
+    val warning = Option.when(list.trim.isEmpty || action == "update.monuments")(source)
+      .flatMap(s => ContestHealth.sourceWarning(contest, s.take(ImageController.MaxSourceLength)))
+      .map(ImageController.identityWarningText(contest, _)(messagesApi.preferred(request)))
     val back = Redirect(routes.ImageController.images(contest.getId))
     jobs.collect { case Left(running) => running } match {
-      case Nil => back
+      case Nil => warning.fold(back)(w => back.flashing(ImageController.SourceWarningFlash -> w))
       case running =>
         back.flashing("error" ->
           running.map(j => messagesApi.preferred(request)("import.already.running", imageService.title(j))).mkString(" "))
@@ -215,6 +236,20 @@ class ImageController @Inject() (
 }
 
 object ImageController {
+
+  /** The flash key of the identity warning shown with a queued import (DG10). */
+  val SourceWarningFlash = "sourceWarning"
+
+  /** The longest source the identity check reads (a Commons title is at most 255 bytes). */
+  val MaxSourceLength = 512
+
+  /** The form's identity warning (DG10): the contest and what the source names, both escaped where
+    * shown (Twirl, the script's textContent).
+    */
+  def identityWarningText(contest: ContestJury, check: services.diagnostics.ContestIdentity.SourceCheck)(implicit
+      messages: play.api.i18n.Messages): String =
+    messages("import.source.identity.warn", services.diagnostics.ContestIdentity.describe(contest),
+      check.identity.describe)
 
   /** A source name's failed check (WARN): the name quoted, never Commons' text. */
   private val logger = play.api.Logger("services.imports.SourceName")

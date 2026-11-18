@@ -72,6 +72,9 @@ export function fixtureFor(browserName) {
     // their own: two members without a role sharing a wiki account written two ways; none in the
     // guides' screenshot mode
     joinPairs: (s.joinPairs || [])[i] || [],
+    // the contest health page's Nepal case (health.spec.js): an old WLE 2020 contest of its own,
+    // reused for WLM 2026 in Nepal; 0 in the guides' screenshot mode
+    healthContestId: s.healthContestId || 0,
   };
 }
 

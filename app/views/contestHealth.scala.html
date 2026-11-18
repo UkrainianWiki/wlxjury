@@ -1,0 +1,169 @@
+@(
+        user: db.scalikejdbc.User,
+        report: services.diagnostics.ContestHealth.Report
+)(implicit messages: Messages, req: RequestHeader)
+@import services.diagnostics.ContestHealth
+@import services.diagnostics.ContestIdentity
+@* A contest's health report (support diagnostics plan, D-1a; ContestHealthController): the checks
+   with their results and hints, then the facts they read: the import sources and jobs, the files
+   by country, the rounds. Read-only, for the contest's admins and root. Every text from Commons or
+   an admin (sources, category and round names) is escaped by Twirl; member names have any
+   address in them masked (ContestHealth.creatorsOf) *@
+@contest = @{ report.contest }
+@outcomeBadge(outcome: ContestHealth.Outcome) = {<span class="badge @outcome.css health-outcome" data-outcome="@outcome.key.stripPrefix("health.outcome.")">@Messages(outcome.key)</span>}
+@identityText(identity: ContestIdentity) = {@if(identity.isEmpty) {<span class="text-body-secondary">@Messages("health.identity.none")</span>} else {@identity.describe}}
+@differences(check: ContestIdentity.SourceCheck) = {@if(check.mismatch) {@for(d <- check.differences) {<span class="badge text-bg-warning me-1 health-difference" data-difference="@d.toString">@Messages(d.key)</span>}}}
+
+@mainAdmin("health.title", user, user.getId, contestId = contest.id) {
+    <h1 class="h3">@Messages("health.title")</h1>
+    @* the contest by name and year (and country unless it is of many): fullName's "in " has no
+       country for an international contest *@
+    <p class="text-body-secondary">@Messages("contest") <span id="health-identity">@ContestIdentity.describe(contest)</span>. @Messages("health.intro")</p>
+
+    <dl class="row health-summary mb-3" id="health-summary">
+        <dt class="col-sm-3">@Messages("health.summary.files")</dt>
+        <dd class="col-sm-9" id="health-files">@report.files</dd>
+        <dt class="col-sm-3">@Messages("health.summary.rounds")</dt>
+        <dd class="col-sm-9" id="health-rounds-count">@report.rounds.size</dd>
+    </dl>
+
+    <h2 class="h4">@Messages("health.checks")</h2>
+    <ul class="list-unstyled health-checks" id="health-checks">
+        @for(check <- report.checks) {
+            <li class="health-check mb-2" id="check-@check.code" data-code="@check.code">
+                @outcomeBadge(check.outcome)
+                <strong>@check.code · @Messages(check.titleKey)</strong>
+                <ul class="mb-0 ps-4">
+                    @for(hint <- check.hints) {
+                        <li class="health-hint" data-key="@hint.key">@hint.message</li>
+                    }
+                </ul>
+            </li>
+        }
+    </ul>
+
+    <h2 class="h4" id="health-sources">@Messages("health.sources.title")</h2>
+    <p>@Messages("health.sources.contest"):
+        @report.contestSource match {
+            case Some(source) => {<span class="health-contest-source">@source.source</span> @differences(source)@if(source.mismatch) { <span class="text-body-secondary">(@identityText(source.identity))</span>}}
+            case None => {<span class="text-body-secondary">@Messages("health.none")</span>}
+        }
+        · <a class="text-decoration-underline" href="@routes.ImageController.images(contest.getId)" id="health-files-link">@Messages("contest.files")</a>
+    </p>
+    @if(report.imports.isEmpty) {
+        <p class="text-body-secondary" id="health-no-imports">@Messages("health.h4.none")</p>
+    } else {
+        <div class="table-responsive position-relative">
+        <table class="table table-striped table-sm health-imports" id="health-imports">
+            <caption class="visually-hidden">@Messages("health.sources.title")</caption>
+            <thead>
+                <tr>
+                    <th scope="col">@Messages("health.imports.job")</th>
+                    <th scope="col">@Messages("health.imports.status")</th>
+                    <th scope="col">@Messages("health.imports.source")</th>
+                    <th scope="col">@Messages("health.imports.by")</th>
+                    <th scope="col">@Messages("health.imports.created")</th>
+                    <th scope="col" class="text-end">@Messages("health.imports.inserted")</th>
+                    <th scope="col" class="text-end">@Messages("health.imports.linked")</th>
+                    <th scope="col" class="text-end">@Messages("health.imports.missing")</th>
+                    <th scope="col" class="text-end">@Messages("health.imports.notInCountries")</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for(i <- report.imports) {
+                    <tr class="health-import" data-job="@i.job.id">
+                        <td>@i.job.id</td>
+                        <td class="health-job-status" data-status="@i.job.status">@Messages("health.job.status." + i.job.status)@for(e <- i.job.failure) {: @e.message}</td>
+                        <td>@if(i.params.mode == services.imports.ImageImportHandler.Mode.MonumentIds) {<span class="text-body-secondary">@Messages("health.imports.monumentIds")</span> }
+                            @if(i.params.titleCount > 0) {@Messages("health.imports.list", i.params.titleCount)} else {<span class="health-import-source">@i.params.source</span>}
+                            @differences(i.identity)@if(i.identity.mismatch) { <span class="text-body-secondary">(@identityText(i.identity.identity))</span>}</td>
+                        <td>@i.creator match {
+                            case Some(ContestHealth.Creator(Some(name), member)) => {@name@if(!member) { <span class="text-body-secondary">(@Messages("health.creator.notMember"))</span>}}
+                            case Some(_) => {<span class="text-body-secondary">@Messages("health.creator.other")</span>}
+                            case None => {<span class="text-body-secondary">@Messages("health.none")</span>}
+                        }</td>
+                        <td>@ContestHealth.time(i.job.createdAt)</td>
+                        <td class="text-end">@i.state.inserted</td>
+                        <td class="text-end">@i.state.linked</td>
+                        <td class="text-end">@i.state.missing</td>
+                        <td class="text-end">@i.state.notInCountries</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+
+    <h2 class="h4" id="health-countries">@Messages("health.countries.title")</h2>
+    @report.countries match {
+        case None => {<p class="text-body-secondary" id="health-countries-national">@Messages("health.h2.national")</p>}
+        case Some(countries) => {
+            <div class="table-responsive position-relative">
+            <table class="table table-striped table-sm w-auto health-countries" id="health-countries-table">
+                <caption class="visually-hidden">@Messages("health.countries.title")</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">@Messages("health.countries.country")</th>
+                        <th scope="col" class="text-end">@Messages("health.countries.files")</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for((country, n) <- countries.byCountry) {
+                        <tr class="health-country"><td>@country</td><td class="text-end">@n</td></tr>
+                    }
+                    <tr class="health-country-none" id="health-country-none">
+                        <th scope="row">@Messages("health.countries.none")</th>
+                        <td class="text-end">@countries.none</td>
+                    </tr>
+                </tbody>
+            </table>
+            </div>
+        }
+    }
+
+    <h2 class="h4" id="health-rounds">@Messages("health.rounds.title")</h2>
+    @if(report.rounds.isEmpty) {
+        <p class="text-body-secondary">@Messages("health.rounds.none")</p>
+    } else {
+        <div class="table-responsive position-relative">
+        <table class="table table-striped table-sm health-rounds" id="health-rounds-table">
+            <caption class="visually-hidden">@Messages("health.rounds.title")</caption>
+            <thead>
+                <tr>
+                    <th scope="col">@Messages("health.rounds.round")</th>
+                    <th scope="col">@Messages("health.rounds.status")</th>
+                    <th scope="col" class="text-end">@Messages("health.rounds.files")</th>
+                    <th scope="col" class="text-end">@Messages("health.rounds.jurors")</th>
+                    <th scope="col">@Messages("health.rounds.source")</th>
+                    <th scope="col">@Messages("health.rounds.filters")</th>
+                    <th scope="col">@Messages("health.rounds.distribution")</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for(f <- report.rounds) {
+                    <tr class="health-round" data-round="@f.round.getId" data-flagged="@f.flagged.mkString(" ")">
+                        <td><a class="text-decoration-underline" href="@routes.RoundController.editRound(f.round.id, contest.getId)">@f.round.number</a> @f.round.name.filter(_.trim.nonEmpty)
+                            @for(code <- f.flagged) {<span class="badge text-bg-warning ms-1 health-flag">@code</span>}</td>
+                        <td>@Messages("health.status." + f.round.lifecycle)@if(f.leftFrozen > 0) { · @Messages("health.rounds.frozen")}</td>
+                        <td class="text-end health-round-files">@f.files</td>
+                        <td class="text-end">@f.jurors</td>
+                        <td>@for(s <- f.sources) {<div class="health-round-source">@s.round match {
+                            case Some(r) => {@Messages("health.rounds.source.round", r.number.toString, s.files)}
+                            case None if f.round.previousIds.isEmpty => {@Messages("health.rounds.source.all", s.files)}
+                            case None => {@Messages("health.rounds.source.gone")}
+                        }</div>}</td>
+                        <td>@if(f.filters.isEmpty) {<span class="text-body-secondary">@Messages("health.filter.none")</span>} else {
+                            @for(x <- f.filters) {<div class="health-round-filter">@Messages(x.key): @x.value</div>}}</td>
+                        <td>@f.distribution match {
+                            case Some(d) => {<div class="health-distribution" data-job="@d.job.id">@Messages("health.distribution.job", d.job.id.toString, Messages("health.job.status." + d.job.status), ContestHealth.time(d.job.createdAt))</div>
+                                <div>@Messages("health.distribution.counts", d.candidatesSeen, d.imagesAdded)</div>
+                                @for((count, expected) <- d.mismatch) {<div class="health-count-mismatch">@Messages("health.distribution.mismatch", count, expected)</div>}}
+                            case None => {<span class="text-body-secondary">@Messages("health.none")</span>}
+                        }</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+}
