@@ -1,6 +1,6 @@
 package services.diagnostics
 
-import db.scalikejdbc.{Round, SharedTestDb, TestDb, User}
+import db.scalikejdbc.{Round, RoundUser, SharedTestDb, TestDb, User}
 import scalikejdbc._
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
@@ -192,7 +192,9 @@ class ContestHealthSpec extends Specification with TestDb with BeforeAll with Be
       inCountries("Category:Images from Wiki Loves Earth 2019 in ", "Nepal" -> (231L to 235L))
       importJob(contest, "Commons:Wiki Loves Earth 2019/Winners",
         ImportState(seen = 8, inserted = 5, notInCountries = 3, byCountry = Some(true)))
-      round(contest, 4, "Every file", files = 201L to 235L)
+      // with a juror: an open round nobody can vote in is H12's warning
+      round(contest, 4, "Every file", files = 201L to 235L,
+        jurors = Seq(User.create(User("J", "j@example.org", None, Set("jury"), contestId = contest.id))))
       val report = ContestHealth.report(contest, root)
       report.countries.map(c => (c.none, c.noneRecorded)) must beSome((30L, 0L))
       keys(report, "H2") === Seq((Outcome.Info, "health.h2.partly", Seq(30L)))
@@ -272,7 +274,61 @@ class ContestHealthSpec extends Specification with TestDb with BeforeAll with Be
       importJob(busy, "Category:Images from Wiki Loves Earth 2026", ImportState(seen = 1, inserted = 1))
       keys(ContestHealth.report(busy, root), "H12") === Seq((Outcome.Info, "health.h12.noactive", Nil))
       round(busy, 1, "Open, nobody", files = Seq(2L))
-      keys(ContestHealth.report(busy, root), "H12") === Seq((Outcome.Info, "health.h12.nojurors", Seq(1L)))
+      keys(ContestHealth.report(busy, root), "H12") === Seq((Outcome.Warn, "health.h12.jurorspaused", Seq(1L)))
+    }
+
+    "warn of each open round no juror can vote in, in a contest with recent activity (H12)" in {
+      val contest = contestWithFiles("Wiki Loves Earth", 2026, "", None, Seq(1L, 2L))
+      def juror(n: Int) = User.create(User(s"J$n", s"j$n@example.org", None, Set("jury"), contestId = contest.id))
+      val (j1, j2, j3) = (juror(1), juror(2), juror(3))
+      val voting = round(contest, 1, "Voting", files = Seq(1L), jurors = Seq(j1))
+      val paused = round(contest, 2, "All paused", files = Seq(2L), jurors = Seq(j2, j3))
+      val stopped = round(contest, 3, "Stopped", status = Round.Status.Paused, files = Seq(2L))
+      keys(ContestHealth.report(contest, root), "H12") === Seq((Outcome.Pass, "health.h12.pass", Nil))
+
+      // its jurors' voting paused, one of them a NULL `active` (stopped, as the juror's pages take it)
+      DB.autoCommit { implicit s =>
+        sql"UPDATE round_user SET active = FALSE WHERE round_id = ${paused.getId} AND user_id = ${j2.getId}".update()
+        sql"UPDATE round_user SET active = NULL WHERE round_id = ${paused.getId} AND user_id = ${j3.getId}".update()
+      }
+      val report = ContestHealth.report(contest, root)
+      keys(report, "H12") === Seq((Outcome.Warn, "health.h12.jurorspaused", Seq(2L)))
+      report.rounds.find(_.round.id == paused.id).map(_.flagged) must beSome(Seq("H12"))
+      report.rounds.find(_.round.id == voting.id).map(_.flagged) must beSome(Seq.empty[String])
+      report.rounds.find(_.round.id == stopped.id).map(_.flagged) must beSome(Seq.empty[String])
+
+      // active round_user rows of jurors who can't vote: a deleted account, one removed from the
+      // contest, one now its organizer; and a round frozen while open (a job reads it)
+      val (gone, removed, organizer) = (juror(4), juror(5), juror(6))
+      val noVoter = round(contest, 4, "No voter", files = Seq(1L), jurors = Seq(gone, removed, organizer))
+      val frozen = round(contest, 5, "Frozen open", status = Round.Status.Paused, files = Seq(1L), freezeCount = 1)
+      DB.autoCommit { implicit s =>
+        sql"UPDATE users SET deleted_at = NOW() WHERE id = ${gone.getId}".update()
+        sql"DELETE FROM user_contest WHERE user_id = ${removed.getId}".update()
+        sql"UPDATE user_contest SET role = 'organizer' WHERE user_id = ${organizer.getId}".update()
+        sql"UPDATE round SET active_before_freeze = 1 WHERE id = ${frozen.getId}".update()
+      }
+      keys(ContestHealth.report(contest, root), "H12") === Seq(
+        (Outcome.Warn, "health.h12.jurorspaused", Seq(2L)),
+        (Outcome.Warn, "health.h12.jurorspaused", Seq(4L)),
+        (Outcome.Warn, "health.h12.jurorspaused", Seq(5L)))
+      RoundUser.activeCounts(Seq(voting.getId, noVoter.getId)) === Map(voting.getId -> 1)
+
+      // a contest whose only open round is frozen while open, with a juror who can vote: it passes,
+      // not "no round is open"
+      val frozenOnly = contestWithFiles("Wiki Loves Earth", 2026, "", None, Seq(4L))
+      val frozenJuror = User.create(User("F", "f@example.org", None, Set("jury"), contestId = frozenOnly.id))
+      val frozenOpen = round(frozenOnly, 1, "Frozen open", status = Round.Status.Paused, files = Seq(4L),
+        jurors = Seq(frozenJuror), freezeCount = 1)
+      DB.autoCommit { implicit s =>
+        sql"UPDATE round SET active_before_freeze = 1 WHERE id = ${frozenOpen.getId}".update()
+      }
+      keys(ContestHealth.report(frozenOnly, root), "H12") === Seq((Outcome.Pass, "health.h12.pass", Nil))
+
+      // an old contest's open round nobody can vote in: not checked, as the other checks
+      val old = contestWithFiles("Wiki Loves Earth", 2019, "", None, Seq(3L))
+      round(old, 1, "Left open", files = Seq(3L), daysAgo = 400)
+      keys(ContestHealth.report(old, root), "H12") === Seq((Outcome.Info, "health.h12.quiet", Seq(14L)))
     }
   }
 

@@ -4,7 +4,7 @@
 @import db.scalikejdbc.RoundConflicts
 @import org.intracer.wmua.CommentJdbc
 @(user: User, round: Round, stat: RoundStat, comments: CommentJdbc.RoundCounts,
-  filter: controllers.RoundsFilter = controllers.RoundsFilter.Default)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+  filter: controllers.RoundsFilter = controllers.RoundsFilter.Default, noActiveJuror: Boolean = false)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @* the label templates roundstat-counts.js fills in with the counts (`{0}` kept as it is) *@
 @template(key: String) = @{ Messages(key, "{0}") }
@@ -58,6 +58,16 @@
         }
         @for(text <- flash.get("success")) {
             <div class="alert alert-info" role="status" id="flash-success">@text</div>
+        }
+        @* done, with a warning (DG10): a juror started in a stopped round, the last juror stopped *@
+        @for(text <- flash.get(controllers.RoundController.WarningFlash)) {
+            <div class="alert alert-warning" role="status" id="flash-warning">@text</div>
+        }
+        @* the round is open, but no juror can vote in it (all paused, gone, or none). Its staff only
+           (this page is theirs): what to do for those who can (its admins, root), the fact for its
+           organizers; not twice under the flash that said it *@
+        @if(noActiveJuror && user.canViewOrgInfo(round) && flash.get(controllers.RoundController.WarningFlash).isEmpty) {
+            <div class="alert alert-warning" role="status" id="round-no-active-juror">@Messages(if (controllers.Secured.administersRound(user, round)) "round.warning.nojurors.act" else "round.warning.nojurors", round.number)</div>
         }
 
         @* the jurors table scrolls sideways in its own box on a phone, never the page *@

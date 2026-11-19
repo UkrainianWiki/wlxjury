@@ -518,6 +518,20 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     sql"""SELECT 1 FROM round WHERE id = $roundId AND freeze_count > 0 AND active_before_freeze = 1
           AND distributing = 0""".map(_ => ()).single().isDefined
 
+  /** A round `r` open to jurors as stored now: not being created, and active or frozen while
+    * active ([[isFrozenOpen]]: a job reads it, it opens again when the job ends). The round
+    * warnings' "open" ([[RoundUser.openWithoutActiveJuror]], [[openToJurorsIds]]).
+    */
+  private[scalikejdbc] val openToJurorsNowCond: SQLSyntax =
+    sqls"r.distributing = 0 AND (r.active = 1 OR (r.freeze_count > 0 AND r.active_before_freeze = 1))"
+
+  /** Of these rounds, those open to jurors as stored now ([[openToJurorsNowCond]]). One read. */
+  def openToJurorsIds(rounds: Seq[Round])(implicit session: DBSession = AutoSession): Set[Long] = {
+    val ids = rounds.flatMap(_.id)
+    if (ids.isEmpty) Set.empty
+    else sql"SELECT r.id FROM round r WHERE r.id IN ($ids) AND $openToJurorsNowCond".map(_.long(1)).list().toSet
+  }
+
   /** Whether the round is paused for its jurors ([[pausedCond]]), a plain read. */
   def isPaused(roundId: Long)(implicit session: DBSession = AutoSession): Boolean =
     sql"SELECT ${pausedCond(sqls"round")} FROM round WHERE id = $roundId"
@@ -828,7 +842,9 @@ object RoundUser extends JoinTable[RoundUser] {
       rs.long(ru.roundId),
       rs.long(ru.userId),
       rs.string(ru.role),
-      rs.boolean(ru.active)
+      // a NULL `active` is stopped, as Round.activeRounds takes it (read as is, it threw and
+      // broke the round statistics page)
+      rs.booleanOpt(ru.active).getOrElse(false)
     )
 
   def apply(r: Round, u: User): Option[RoundUser] =
@@ -839,6 +855,44 @@ object RoundUser extends JoinTable[RoundUser] {
 
   def byRoundId(roundId: Long): List[RoundUser] =
     where("roundId" -> roundId).apply()
+
+  /** A round_user row `ru` (of round `r`) of a juror who can vote: `active` TRUE (a NULL
+    * `active` is stopped, as [[Round.activeRounds(user*]] takes it), the account not deleted, and
+    * an active jury membership of the round's contest (the role exactly `jury`, as
+    * [[User.contestMembers]] keeps it and [[services.distribution.RoundRebalanceService.jury]]
+    * takes its candidates).
+    */
+  private def votingJurorCond: SQLSyntax =
+    sqls"""ru.active = TRUE
+           AND EXISTS (SELECT 1 FROM users u WHERE u.id = ru.user_id AND u.deleted_at IS NULL)
+           AND EXISTS (SELECT 1 FROM user_contest uc WHERE uc.user_id = ru.user_id
+                       AND uc.contest_id = r.contest_id AND BINARY uc.role = ${User.JURY_ROLE})"""
+
+  /** The rounds' jurors who can vote ([[votingJurorCond]]) by round; a round with none is absent.
+    * One grouped read.
+    */
+  def activeCounts(roundIds: Seq[Long])(implicit session: DBSession = AutoSession): Map[Long, Int] =
+    if (roundIds.isEmpty) Map.empty
+    else
+      sql"""SELECT ru.round_id, COUNT(*) FROM round_user ru JOIN round r ON r.id = ru.round_id
+            WHERE ru.round_id IN ($roundIds) AND $votingJurorCond
+            GROUP BY ru.round_id""".map(rs => rs.long(1) -> rs.int(2)).list().toMap
+
+  /** Of these rounds, as stored now, those open to jurors with no juror who can vote
+    * ([[votingJurorCond]]): all their jurors paused, gone, or none. Open: not being created, and
+    * active or frozen while active ([[Round.openToJurorsNowCond]], as [[Round.openToJurorsIds]]).
+    * Nobody can vote in them (DG10: the staff are warned, nothing is refused): the Rounds table's
+    * icon, the statistics page's notice, the flash after a start or a pause, health H12. One read.
+    */
+  def openWithoutActiveJuror(rounds: Seq[Round])(implicit session: DBSession = AutoSession): Set[Long] = {
+    val ids = rounds.flatMap(_.id)
+    if (ids.isEmpty) Set.empty
+    else
+      sql"""SELECT r.id FROM round r
+            WHERE r.id IN ($ids) AND ${Round.openToJurorsNowCond}
+              AND NOT EXISTS (SELECT 1 FROM round_user ru WHERE ru.round_id = r.id AND $votingJurorCond)"""
+        .map(_.long(1)).list().toSet
+  }
 
   /** Whether the user is stopped on the round: their round_user row is inactive (P6). They
     * get no new images ([[User.distributionJurors]]) and may not vote; a juror without a row (a

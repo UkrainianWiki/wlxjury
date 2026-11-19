@@ -70,7 +70,9 @@ class RoundController @Inject() (
               // rounds left frozen with no job holding them: flagged, root may release them
               RoundFreezes.leftFrozen(rounds),
               // the Status, Type and Order menus' choices (unknown values: the default)
-              RoundsFilter.fromRequest(request)
+              RoundsFilter.fromRequest(request),
+              // open rounds nobody can vote in (no active juror): a warning icon (DG10)
+              RoundUser.openWithoutActiveJuror(rounds)
             )
           )
         }
@@ -565,10 +567,13 @@ class RoundController @Inject() (
                   // back to the list as it was filtered (the form's hidden fields)
                   else Redirect(RoundsFilter.fromForm(request).addTo(routes.RoundController.rounds(Some(round.contestId)).url))
                 if (roundsService.setCurrentRound(Nil, round.copy(active = selectRound.active), user.id)) {
-                  if (toConflicts)
-                    back.flashing("success" ->
-                      messages(if (selectRound.active) "coi.round.started" else "coi.round.stopped", round.number))
-                  else back
+                  val done = Option.when(toConflicts)("success" ->
+                    messages(if (selectRound.active) "coi.round.started" else "coi.round.stopped", round.number))
+                  // started with no active juror (DG10: warned, never refused): nobody can vote in it
+                  val noJuror = Option.when(selectRound.active && RoundUser.openWithoutActiveJuror(Seq(round)).nonEmpty)(
+                    RoundController.WarningFlash -> messages("round.warning.nojurors.act", round.number))
+                  val flashed = done.toSeq ++ noJuror
+                  if (flashed.isEmpty) back else back.flashing(flashed: _*)
                 } else back.flashing("error" -> messages("round.still.distributing", round.number, round.description))
               }
             }
@@ -577,7 +582,9 @@ class RoundController @Inject() (
 
   /** Activates or deactivates a juror in a round of a contest the user administers.
     * Only that round's round_user row changes, under the round's lock; refused while a job holds
-    * the round (a distribution, or a juror being added).
+    * the round (a distribution, or a juror being added). Done, with a warning (DG10, never a
+    * refusal): a juror started in a round that is stopped (they can't vote until it is started),
+    * or the last active juror of an open round stopped (nobody can vote in it).
     */
   def setRoundUser(): EssentialAction =
     withAuth(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
@@ -592,9 +599,18 @@ class RoundController @Inject() (
                   // under the round's lock, refused while a job holds the round (its jurors as read);
                   // back to the statistics as filtered (the form's hidden fields)
                   val back = Redirect(RoundsFilter.fromForm(request).addTo(routes.RoundController.roundStat(roundId).url))
-                  if (RoundRebalanceService.setJurorActive(roundId, userId, setRoundUser.active))
-                    back
-                  else
+                  if (RoundRebalanceService.setJurorActive(roundId, userId, setRoundUser.active)) {
+                    val messages = messagesApi.preferred(request)
+                    val warning =
+                      if (setRoundUser.active)
+                        // stopped: not open to jurors, nor only frozen while open (a job reads it)
+                        Option.when(!round.openToJurors && !Round.isFrozenOpen(roundId))(
+                          messages("round.warning.stopped.juror", round.number))
+                      else
+                        Option.when(RoundUser.openWithoutActiveJuror(Seq(round)).nonEmpty)(
+                          messages("round.warning.nojurors.act", round.number))
+                    warning.fold(back)(w => back.flashing(RoundController.WarningFlash -> w))
+                  } else
                     back
                       .flashing("error" -> messagesApi.preferred(request)("round.juror.busy", round.number))
                 }
@@ -696,9 +712,11 @@ class RoundController @Inject() (
               val stat = roundsService.getRoundStat(roundId, round, withDeletedFiles = true)
               // the link to the comments report, with its header's numbers (one statement, inline)
               val comments = org.intracer.wmua.CommentJdbc.roundCounts(round.contestId, round.getId)
+              // open, but nobody can vote in it: a notice (DG10)
+              val noActiveJuror = RoundUser.openWithoutActiveJuror(Seq(round)).nonEmpty
 
               Secured.switchingContest(sessionUser, user)(
-                Ok(views.html.roundStat(user, round, stat, comments, RoundsFilter.fromRequest(request))))
+                Ok(views.html.roundStat(user, round, stat, comments, RoundsFilter.fromRequest(request), noActiveJuror)))
             }
           }
           .getOrElse {
@@ -774,6 +792,12 @@ class RoundController @Inject() (
 }
 
 object RoundController {
+
+  /** The flash key of a warning after a done action (DG10: warned, never refused): a juror
+    * started in a stopped round, an open round left with no active juror. Shown on the rounds
+    * list, the round statistics and the round's conflicts page.
+    */
+  val WarningFlash = "warning"
 
   /** "Count new files" runs here, one at a time: a full read of the round's candidates. */
   private[controllers] lazy val countContext: ExecutionContext =

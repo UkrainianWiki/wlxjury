@@ -1,6 +1,6 @@
 package services.diagnostics
 
-import db.scalikejdbc.{CountryFilesCache, ImageJdbc, Round, RoundImageJdbc, User}
+import db.scalikejdbc.{CountryFilesCache, ImageJdbc, Round, RoundImageJdbc, RoundUser, User}
 import org.intracer.wmua.ContestJury
 import play.api.Configuration
 import scalikejdbc._
@@ -24,7 +24,8 @@ import java.time.{Duration, Instant}
   *  - **H7** empty or tiny rounds; **H8** a round of every file of a mixed contest;
   *  - **H9** rounds being created too long, or whose distribution failed; **H10** rounds frozen
   *    with no job;
-  *  - **H12** no round open to jurors, in a contest with recent activity.
+  *  - **H12** in a contest with recent activity: a round open to jurors that no juror can vote
+  *    in (a warning per round); else no round open to jurors.
   */
 object ContestHealth {
 
@@ -335,7 +336,7 @@ object ContestHealth {
     val roundIds = rounds.flatMap(_.id)
     // uncached: the report shows the stored counts now
     val counts = RoundImageJdbc.countsIn(roundIds).map { case (k, v) => k -> v.toLong }
-    val jurors = activeJurors(roundIds)
+    val jurors = RoundUser.activeCounts(roundIds)
     val distributions = JobJdbc.latestBySubjects(RoundDistributionHandler.Kind, RoundDistributionHandler.SubjectType, roundIds)
     val frozen = RoundFreezes.leftFrozen(rounds)
     val recentRounds = recentlyChanged(contestId, settings.recentDays)
@@ -386,11 +387,18 @@ object ContestHealth {
     val h10 = facts.filter(_.leftFrozen > 0).map(f => Hint(Fail, "health.h10.fail", Seq(f.round.number)))
 
     val recent = recentActivity(contestId, settings.recentDays)
+    // only for a contest with recent activity (the maintainer's decision, as the other checks):
+    // each open round no juror can vote in (the Rounds table's icon, the statistics page's
+    // notice: RoundUser.openWithoutActiveJuror), else whether any round is open to jurors, by the
+    // same "open" (frozen while open too: Round.openToJurorsIds)
     val h12 = {
-      val openToJurors = facts.filter(f => f.round.openToJurors)
+      lazy val openToJurors = Round.openToJurorsIds(rounds)
+      lazy val nobodyVotes = RoundUser.openWithoutActiveJuror(rounds)
+      lazy val noVoter = facts.filter(f => nobodyVotes.contains(f.round.getId))
+        .map(f => Hint(Warn, "health.h12.jurorspaused", Seq(f.round.number)))
       if (!recent) Seq(Hint(Info, "health.h12.quiet", Seq(settings.recentDays.toLong)))
+      else if (noVoter.nonEmpty) noVoter
       else if (openToJurors.isEmpty) Seq(Hint(Info, "health.h12.noactive"))
-      else if (openToJurors.forall(_.jurors == 0)) openToJurors.map(f => Hint(Info, "health.h12.nojurors", Seq(f.round.number)))
       else Seq(Hint(Pass, "health.h12.pass"))
     }
 
@@ -418,13 +426,6 @@ object ContestHealth {
     }
     Distribution(job, st.candidatesSeen, st.imagesAdded, st.imagesBefore, st.removed, mismatch)
   }
-
-  /** The rounds' active jurors (round_user), by round. */
-  private def activeJurors(roundIds: Seq[Long])(implicit session: DBSession = AutoSession): Map[Long, Int] =
-    if (roundIds.isEmpty) Map.empty
-    else
-      sql"""SELECT round_id, COUNT(*) FROM round_user WHERE round_id IN ($roundIds) AND active = TRUE
-            GROUP BY round_id""".map(rs => rs.long(1) -> rs.int(2)).list().toMap
 
   /** A job of the contest, a new round or a round's status change in the last `days` (the
     * database's clock, as the rows' times).

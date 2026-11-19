@@ -35,6 +35,10 @@
             @for(text <- flash.get("error")) {
                 <div class="alert alert-danger" role="alert">@text</div>
             }
+            @* the round started here with no active juror: done, with a warning (DG10) *@
+            @for(text <- flash.get(controllers.RoundController.WarningFlash)) {
+                <div class="alert alert-warning" role="status" id="flash-warning">@text</div>
+            }
             @if(mayEdit && (round.active || round.distributing)) {
                 <div class="alert alert-warning" id="coi-round-open">
                     @Messages("coi.action.open", round.number)

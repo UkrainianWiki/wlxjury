@@ -15,7 +15,8 @@
         imageCheckJob: Option[services.jobs.Job] = None,
         authorNormalizeJob: Option[services.jobs.Job] = None,
         leftFrozen: Map[Long, Int] = Map.empty,
-        filter: controllers.RoundsFilter = controllers.RoundsFilter.Default
+        filter: controllers.RoundsFilter = controllers.RoundsFilter.Default,
+        noActiveJuror: Set[Long] = Set.empty
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @* The rounds the Status and Type menus keep, in the Order menu's order (RoundsFilter; the
@@ -43,6 +44,10 @@
             }
             @flash.get("success").map { msg =>
                 <div class="alert alert-info" id="flash-success">@msg</div>
+            }
+            @* a round started with no active juror: done, with a warning (DG10) *@
+            @flash.get(controllers.RoundController.WarningFlash).map { msg =>
+                <div class="alert alert-warning" role="status" id="flash-warning">@msg</div>
             }
 
             @if(rounds.nonEmpty && shown.isEmpty) {
@@ -89,7 +94,9 @@
                                 <!--                            <td>              @round.limits.min </td>
                             <td>@round.limits.max </td>
                             <td>@round.limits.recommended.fold("")(_.toString) </td> -->
-                            <td>@snippets.startStop(round.active, round.getId, contest.getId, routes.RoundController.setRound, extraFields = filterFields)</td>
+                            @* an open round with no active juror, nobody can vote in it (DG10): a warning icon after
+                               the Yes, its words in the tooltip and for screen readers *@
+                            <td>@snippets.startStop(round.active, round.getId, contest.getId, routes.RoundController.setRound, extraFields = filterFields)@if(noActiveJuror.contains(round.getId)) {<span class="wlx-round-warning text-warning-emphasis ms-1" data-round="@round.getId" title="@Messages("round.warning.nojurors.short")"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i><span class="visually-hidden">, @Messages("round.warning.nojurors.short")</span></span>}</td>
                             <td>@roundsStat.getOrElse(round.getId, 0) </td>
                             @* a distribution's job while it matters (a fill that left the round in review: the
                                review line below instead); a juror's add (round_rebalance) also done, with the files it

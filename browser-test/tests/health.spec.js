@@ -2,7 +2,7 @@
 // DG10), on UiShotsServer's Nepal case: an old international WLE 2020 contest of its own, reused for
 // WLM 2026 in Nepal (healthContestId). As root (no member's contest menu changes): the page opened
 // from the Rounds page, its checks (H1 and H2 warn, H7 fails on the empty round 2, H8 warns on
-// round 1 of every file), its facts in light and dark mode, and an axe-core scan of each in
+// round 1 of every file, H12 warns on both open rounds, as none has a juror who can vote), its facts in light and dark mode, and an axe-core scan of each in
 // Chromium; the files page's warning for the contest's source, hidden for a matching typed source
 // and back for the Nepal one (the script's check), the import never refused. An organizer is
 // refused the page. HEALTH_SHOTS=<dir> (Chromium) saves the screenshots.
@@ -47,14 +47,23 @@ for (const mode of ['light', 'dark']) {
         await expect(check(page, 'H7').locator('.health-outcome')).toHaveText('Problem');
         await expect(check(page, 'H7')).toContainText('Round 2 has no files.');
         await expect(check(page, 'H8')).toContainText('Round 1 takes every file of the contest');
+        await expect(check(page, 'H12').locator('.health-outcome')).toHaveText('Warning');
+        await expect(check(page, 'H12')).toContainText('Round 1 is open, but no juror can vote in it');
+        await expect(check(page, 'H12')).toContainText('Round 2 is open, but no juror can vote in it');
 
         // the facts: the sources with their differences, the countries and none, the empty round's source
         await expect(page.locator('.health-contest-source')).toHaveText('Category:Images from Wiki Loves Monuments 2026 in Nepal');
         await expect(page.locator('#health-country-none')).toContainText('12');
-        const empty = page.locator('tr.health-round[data-flagged="H7"]');
+        // a row's flags are a space-separated list: match each code as a word, never the whole list
+        const empty = page.locator('tr.health-round[data-flagged~="H7"]');
         await expect(empty).toContainText('Round 1: 32 files');
         await expect(empty).toContainText('Selected by at least: 1');
         await expect(empty.locator('.health-round-files')).toHaveText('0');
+        await expect(empty).toHaveAttribute('data-flagged', /(^| )H12( |$)/);
+        const everyFile = page.locator('tr.health-round[data-flagged~="H8"]');
+        await expect(everyFile.locator('.health-round-files')).toHaveText('32');
+        await expect(everyFile).toHaveAttribute('data-flagged', /(^| )H12( |$)/);
+        await expect(page.locator('tr.health-round[data-flagged~="H12"]')).toHaveCount(2);
 
         // the warning badge's text stays legible: Bootstrap's text-bg pair in both modes (axe checks contrast)
         if (browserName === 'chromium') await axe(page, testInfo, `health ${mode}`);

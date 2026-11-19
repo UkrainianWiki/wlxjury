@@ -50,6 +50,28 @@ is listed below.
   (`contestsTable.scala.html`) with it; a contest's own users page has no menus. On both users
   pages the row's edit pencil is now a link named "Edit" for screen readers (it was an unnamed
   button inside a link, which the new browser test's axe scan flagged). No migration.
+- **Warnings for a round nobody can vote in** (reported by an organizer on 26.11.12, the
+  maintainer's decisions of 2026-11-19, DG10: warn, never block; developed 2026-11-19,
+  `stack/202-round-warnings`): resuming a juror's voting in a stopped round still resumes it, with
+  a warning that they can't vote until the round is started (none in a round only frozen while
+  open). Pausing the last juror who can vote in an open round, or starting a round with none, is
+  done with a warning that no juror can vote in it and what to do. A juror can vote if their
+  `round_user` row is active (a NULL `active` counts as paused), their account is not deleted and
+  they are still a juror of the contest (an active `jury` membership). An open round (active, or
+  frozen while active; never one being created) with no such juror gets a lasting notice on its
+  statistics page (for its admins and root with what to do, for its organizers only the fact;
+  not repeated under the flash that says it), a warning icon after its Active "Yes" in the
+  Rounds table (its words in the tooltip and for screen readers), and a **Warn** in the contest
+  health report's H12 for each such round (`health.h12.jurorspaused`; a contest with no recent
+  activity stays "not checked", as for the other checks), flagging the round there. It replaces
+  H12's Info `health.h12.nojurors` (removed), which only said so when no open round had jurors.
+  Adding a juror or reassigning gives no warning (the statistics page's notice covers what they
+  leave). One read (`RoundUser.openWithoutActiveJuror`). Jurors' pages are unchanged. Fixed with
+  it: a juror row with a NULL `round_user.active` no longer breaks the round statistics page (it
+  is read as paused). New keys `round.warning.stopped.juror`, `round.warning.nojurors`,
+  `round.warning.nojurors.act`, `round.warning.nojurors.short`. The health report's rounds
+  "Jurors" column now counts only jurors who can vote, and H12 takes a round frozen while open as
+  open (`Round.openToJurorsIds`). No migration.
 
 **Fixes**
 
