@@ -62,5 +62,5 @@ object Criterion {
 
   /** The round form's errors of its criteria (the section opens to show them). */
   val ErrorKeys: Set[String] = Set(RatedOnly, "error.criteria.count", "error.criteria.distinct",
-    "error.criteria.unknown", "error.criteria.voted")
+    "error.criteria.unknown", "criteria.locked")
 }

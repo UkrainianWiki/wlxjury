@@ -83,6 +83,18 @@ is listed below.
   became editable text only once Tom Select's own focus handling ran, on a timer. It now does on
   the field's own focus; a field left before that timer keeps its value as before
   (`category-suggest.js`). No migration.
+- **A started round's criteria are read only** (found on production round 1969, the
+  maintainer's decisions of 2026-11-19; developed 2026-11-19, `stack/203-criteria-voted-form`):
+  the edit form of a rated round showed the ten criteria selects even after its first vote. Once a
+  round is started, running (active, or frozen while active) or with a vote, its form has no
+  criteria selects: it lists the round's criteria in order, read only, or says that a round
+  without criteria can no longer get any, under a line saying why. Its save refuses any change of
+  the criteria, a replacement in its place too (which was taken after the first vote, moving the
+  criterion's rates), with that line as the error; the vote check keeps its locks. A post without
+  the selects keeps the stored criteria. A round stopped before its first vote keeps the full form.
+  `RoundCriterion.started` / `hasVote` (plain reads for the form, criterion rates read only for a
+  criteria round). `criteria.help` updated; new keys `criteria.locked`, `criteria.locked.none`;
+  `error.criteria.voted` removed. No migration.
 
 **Development**
 

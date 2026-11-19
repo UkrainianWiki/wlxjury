@@ -501,11 +501,26 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "keep a running criteria round's criteria when its locked page is saved as the browser sends it" in {
+      testDbApp { implicit app =>
+        val (contest, admin, voted) = fixture()
+        val round = roundDao.create(Round(None, 2, Some("Running"), contest.getId, rates = Round.ratesById(5),
+          active = true, criterionIds = Seq(6L, 7L)))
+        val page = editPage(contest, admin, round)
+        val saved = saveSent(page, admin, "Running, renamed", voted)
+        (page.select("#round-criteria-list li").size === 2) and
+          (page.select("select[name^=criteria], input[name=criteriaShown]").size === 0) and
+          (status(saved) === SEE_OTHER) and (flash(saved).get("error") must beNone) and
+          (db.scalikejdbc.RoundCriterion.idsOf(round.getId) === Seq(6L, 7L)) and
+          (roundDao.findById(round.getId).flatMap(_.name) must beSome("Running, renamed"))
+      }
+    }
+
     "show both on a rated round's page, its own form saved" in {
       testDbApp { implicit app =>
         val (contest, admin, voted) = fixture()
-        val round = roundDao.create(Round(None, 2, Some("Rated"), contest.getId, rates = Round.ratesById(5),
-          active = true))
+        // stopped, without votes: its criteria editable (a running one's are read only, RoundCriteriaSpec)
+        val round = roundDao.create(Round(None, 2, Some("Rated"), contest.getId, rates = Round.ratesById(5)))
         val page = editPage(contest, admin, round)
         val saved = saveSent(page, admin, "Rated, renamed", voted)
         (sections(page) === Seq(1, org.intracer.wmua.Criterion.MaxPerRound, 1, 1, 1, 1)) and

@@ -28,8 +28,8 @@ import scalikejdbc._
   *    ([[services.distribution.RoundImageCheckHandler]]). [[VoteJdbc.deleteVotes]] marks too, but
   *    only the test-only writers call it (`TestVoteWrites`, since W8).
   *  - Writes that need no mark, since the counts read only `vote`'s rows and rates: a change of
-  *    a round's criteria ([[RoundCriterion.update]]: before the first vote no rate is set, after
-  *    it only a criterion's renaming, which moves `criteria_rate` rows and leaves `vote.rate`);
+  *    a round's criteria ([[RoundCriterion.update]]: only before the first vote, when no rate is
+  *    set; refused once the round is running or has a vote);
   *    monument id and region updates (no count reads them); a juror stopped or started on the
   *    round (`round_user.active`: their vote rows stay). So the counts include a stopped juror's
   *    votes, as today's grouped reads over `vote` do (`ImageDbNew` doesn't join `round_user`);

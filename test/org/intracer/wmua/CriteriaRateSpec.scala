@@ -29,8 +29,9 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
   private var nextAsideId = 1000L
 
   /** A criteria round, of `criteria` (V83's 1, 2 by default). */
-  private def round(contest: ContestJury, number: Int = 1, criteria: Seq[Long] = Seq(1L, 2L)): Round =
-    roundDao.create(Round(None, number, contestId = contest.getId, rates = Round.ratesById(10), active = true,
+  private def round(contest: ContestJury, number: Int = 1, criteria: Seq[Long] = Seq(1L, 2L),
+      active: Boolean = true): Round =
+    roundDao.create(Round(None, number, contestId = contest.getId, rates = Round.ratesById(10), active = active,
       criterionIds = criteria))
 
   /** A vote with a rate row per criterion (criteria 1, 2, ...), `rates` of them, and the vote's
@@ -137,11 +138,11 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
   private def ids(table: String): Set[Long] =
     DB.readOnly(implicit s => SQL(s"SELECT id FROM $table").map(_.long(1)).list()).toSet
 
-  private def setUp(criteria: Seq[Long] = Seq(1L, 2L)): (ContestJury, Round, Seq[User]) = {
+  private def setUp(criteria: Seq[Long] = Seq(1L, 2L), active: Boolean = true): (ContestJury, Round, Seq[User]) = {
     implicit val session: DBSession = AutoSession
     implicit val contest: ContestJury = createContests(10).head
     val jurors = createUsers(1, 2)
-    (contest, round(contest, criteria = criteria), jurors)
+    (contest, round(contest, criteria = criteria, active = active), jurors)
   }
 
   "a criterion vote" should {
@@ -258,8 +259,8 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
       } finally pool.shutdownNow(): Unit
     }
 
-    "hold up a change of the round's criteria until a criterion vote in progress ends, which then refuses it" in {
-      val (_, round, Seq(juror, _)) = setUp()
+    "hold up a change of a stopped round's criteria until a criterion vote in progress ends, which then refuses it" in {
+      val (_, round, Seq(juror, _)) = setUp(active = false)
       val id = vote(1, juror, round, rates = Nil)
       val pool = Executors.newFixedThreadPool(2)
       implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(pool)
@@ -280,23 +281,21 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
         RoundCriterion.idsOf(round.getId) === Seq(1L, 2L)
         commit.countDown()
         Await.result(first, 30.seconds) must beTrue
-        Await.result(change, 30.seconds) must beLeft(RoundCriterion.Refusal.Voted: RoundCriterion.Refusal)
+        Await.result(change, 30.seconds) must beLeft(RoundCriterion.Refusal.Started: RoundCriterion.Refusal)
         RoundCriterion.idsOf(round.getId) === Seq(1L, 2L)
         ratesOf(id) === Map(2L -> 5)
       } finally pool.shutdownNow(): Unit
     }
 
-    "refuse a criterion vote waiting while its criterion is replaced, the rates then under the new one" in {
-      val (_, round, Seq(juror, other)) = setUp()
+    "refuse a criterion vote waiting while the stopped round's criteria change before its first vote" in {
+      val (_, round, Seq(juror, _)) = setUp(active = false)
       val id = vote(1, juror, round, rates = Nil)
-      val others = vote(1, other, round, rates = Nil)
-      CriteriaRate.updateRate(others, 2, 4) must beTrue // a vote: after it, criteria only replaced
       val pool = Executors.newFixedThreadPool(2)
       implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(pool)
       try {
         val changed = new CountDownLatch(1)
         val commit = new CountDownLatch(1)
-        // criterion 2 replaced by 3 in its place, not committed yet
+        // criterion 2 changed to 3, not committed yet
         val change = Future(DB.localTx { implicit s =>
           val r = RoundCriterion.updateIn(round.getId, Seq(1L, 3L))
           changed.countDown()
@@ -310,14 +309,14 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
         Await.result(change, 30.seconds) must beRight(true)
         Await.result(voting, 30.seconds) must beFalse
         ratesOf(id) must beEmpty
-        ratesOf(others) === Map(3L -> 4)
         CriteriaRate.updateRate(id, 3, 5) must beTrue
+        ratesOf(id) === Map(3L -> 5)
       } finally pool.shutdownNow(): Unit
     }
 
     "refuse a plain vote waiting while criteria are given to its round (no rate without criteria rates)" in {
       val (contest, _, Seq(juror, _)) = setUp()
-      val plain = round(contest, 2, criteria = Nil)
+      val plain = round(contest, 2, criteria = Nil, active = false)
       vote(1, juror, plain, rates = Nil)
       val pool = Executors.newFixedThreadPool(2)
       implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(pool)

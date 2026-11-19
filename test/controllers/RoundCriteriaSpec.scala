@@ -15,7 +15,7 @@ import scala.jdk.CollectionConverters._
 
 /** A criteria round's criteria (C2, V83): chosen from the global catalogue in the round form,
   * written with a new round, prefilled from the contest's latest criteria round; changed
-  * freely before the round's first vote, then only replaced in their places (U10). The
+  * freely while the round is stopped and without votes, read only once it is started. The
   * catalogue: listed and added to by root and the admins of the session's contest. Refusals:
   * a juror, an organizer, another contest's admin (403, nothing written), no CSRF token.
   */
@@ -86,6 +86,20 @@ class RoundCriteriaSpec extends PlaySpecification with PlayTestDb {
     roundDao.findById(round.getId).get
   }
 
+  /** The round stopped (or started) as setRound does: a stopped round without a vote has its
+    * criteria editable, a running one not.
+    */
+  private def setActive(round: Round, active: Boolean): Round = {
+    Round.setActive(round.getId, active)
+    roundDao.findById(round.getId).get
+  }
+
+  /** The refusal of a started round's criteria change, and its form's help line. */
+  private val Locked = "The round's criteria can't be changed while it is running or once it has votes."
+
+  /** The page's text (entities decoded: the apostrophes are escaped in its HTML). */
+  private def textOf(result: Future[Result]): String = Jsoup.parse(contentAsString(result)).text
+
   /** The selected value of each criteria select, by position. */
   private def selected(html: String): Seq[String] = {
     val doc = Jsoup.parse(html)
@@ -153,17 +167,18 @@ class RoundCriteriaSpec extends PlaySpecification with PlayTestDb {
         status(save(app, "admin@example.com", a.getId, roundForm(a.getId, jurors, Nil, rates = 1))) === SEE_OTHER
         val next = contentAsString(page(app, "admin@example.com", a.getId, s"/admin/rounds/edit?contestId=${a.getId}"))
         selected(next).forall(_.isEmpty) must beTrue
-        // an existing round's own
+        // an existing round's own (stopped: running, they would be read only)
+        setActive(first, active = false)
         selected(contentAsString(page(app, "admin@example.com", a.getId,
           s"/admin/rounds/edit?contestId=${a.getId}&id=${first.getId}"))).take(2) === Seq("9", "6")
         custom.messageKey === Criterion.customKey(custom.id)
       }
     }
 
-    "change an existing round's criteria freely before its first vote, also to none" in {
+    "change a stopped round's criteria freely before its first vote, also to none" in {
       testDbApp { app =>
         val (a, _, jurors) = fixture()
-        val round = created(app, a, jurors, Seq(6L, 7L))
+        val round = setActive(created(app, a, jurors, Seq(6L, 7L)), active = false)
         def edit(criteria: Seq[Long]) =
           save(app, "admin@example.com", a.getId, roundForm(a.getId, jurors, criteria, id = round.id))
         status(edit(Seq(7L, 9L, 6L))) === SEE_OTHER
@@ -200,47 +215,40 @@ class RoundCriteriaSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "after the first vote, take a criterion replaced in its place with its rates, and refuse adding, removing or moving one" in {
+    "refuse any change of a round's criteria once it has votes, a replacement in its place too, nothing saved" in {
       testDbApp { app =>
         val (a, _, jurors) = fixture()
-        val round = created(app, a, jurors, Seq(6L, 7L))
+        val round = setActive(created(app, a, jurors, Seq(6L, 7L)), active = false)
         val votes = VoteJdbc.byRound(round.getId).filter(_.juryId == jurors.head.getId).sortBy(_.pageId)
         CriteriaRate.updateRate(votes.head.getId, 6L, 3) must beTrue
         CriteriaRate.updateRate(votes.head.getId, 7L, 4) must beTrue
-        // a vote moved aside keeps its rates: they follow the criterion too
-        CriteriaRate.updateRate(votes(1).getId, 7L, 5) must beTrue
-        DB.localTx(implicit s => services.imports.DeletedFiles.markDeleted(Seq(votes(1).pageId)))
-        def edit(criteria: Seq[Long], name: String = "Criteria") =
+        def edit(criteria: Seq[Long], name: String) =
           save(app, "admin@example.com", a.getId, roundForm(a.getId, jurors, criteria, id = round.id, name = name))
         def rates(voteId: Long) = CriteriaRate.getRates(voteId).map(r => r.criterionId -> r.rate).toMap
 
-        forall(Seq(Seq(6L, 7L, 8L), Seq(6L), Seq(7L, 6L), Seq(6L, 6L), Nil, Seq(7L, 8L))) { criteria =>
+        // added, moved, replaced in its place, both replaced, none (no longer a criteria round)
+        forall(Seq(Seq(6L, 7L, 8L), Seq(7L, 6L), Seq(6L, 9L), Seq(8L, 9L), Nil)) { criteria =>
           val result = edit(criteria, name = "Not saved")
           status(result) === BAD_REQUEST
-          if (criteria.size == 2 && criteria.distinct.size == 2)
-            contentAsString(result) must contain("its criteria can only be replaced in their places")
+          textOf(result) must contain(Locked)
           criteriaOf(round.getId) === Seq(6L, 7L)
         }
+        // one criterion: refused by the form's own check first, not saved either
+        status(edit(Seq(6L), name = "Not saved")) === BAD_REQUEST
+        criteriaOf(round.getId) === Seq(6L, 7L)
         roundDao.findById(round.getId).flatMap(_.name) must beSome("Criteria")
         rates(votes.head.getId) === Map(6L -> 3, 7L -> 4)
-
-        // 7 replaced by 9 in its place: a renaming, the rates kept under 9
-        status(edit(Seq(6L, 9L))) === SEE_OTHER
-        criteriaOf(round.getId) === Seq(6L, 9L)
-        rates(votes.head.getId) === Map(6L -> 3, 9L -> 4)
-        rates(votes(1).getId) === Map(9L -> 5)
-        VoteJdbc.findBy(votes.head.pageId, jurors.head.getId, round.getId).map(_.rate) must beSome(7)
-        // and voted under the new criterion
-        CriteriaRate.updateRate(votes.head.getId, 9L, 2) must beTrue
-        CriteriaRate.updateRate(votes.head.getId, 7L, 2) must beFalse
-        rates(votes.head.getId) === Map(6L -> 3, 9L -> 2)
+        // the same criteria posted: the rest of the form saved
+        status(edit(Seq(6L, 7L), name = "Renamed")) === SEE_OTHER
+        roundDao.findById(round.getId).flatMap(_.name) must beSome("Renamed")
+        criteriaOf(round.getId) === Seq(6L, 7L)
       }
     }
 
     "be refused to a juror, an organizer, another contest's admin and a juror who is another contest's admin, nothing written" in {
       testDbApp { app =>
         val (a, b, jurors) = fixture()
-        val round = created(app, a, jurors, Seq(6L, 7L))
+        val round = setActive(created(app, a, jurors, Seq(6L, 7L)), active = false)
         val users = Seq("juror1@example.com" -> a, "organizer@example.com" -> a, "other-admin@example.com" -> b,
           "both@example.com" -> a)
         forall(users) { case (email, current) =>
@@ -344,6 +352,176 @@ class RoundCriteriaSpec extends PlaySpecification with PlayTestDb {
           (contentAsString(reapply) must contain("Criteria are for rated rounds only.")) and
           (criteriaOf(round.getId) === Seq(6L, 7L)) and (hasCriteria(round.getId) must beSome(true)) and
           (roundDao.findById(round.getId).flatMap(_.name) must beSome("Legacy"))
+      }
+    }
+  }
+
+  "a rated round's edit form" should {
+
+    def editPage(app: Application, a: ContestJury, round: Round) =
+      Jsoup.parse(contentAsString(page(app, "admin@example.com", a.getId,
+        s"/admin/rounds/edit?contestId=${a.getId}&id=${round.getId}")))
+
+    /** Each criteria select's offered values, by position. */
+    def offered(doc: org.jsoup.nodes.Document): Seq[Seq[String]] =
+      doc.select("select[name^=criteria]").asScala.toSeq.map(_.select("option").asScala.toSeq.map(_.attr("value")))
+
+    /** The read-only criteria of a started round (its help line there): the listed names. */
+    def locked(doc: org.jsoup.nodes.Document): Option[Seq[String]] =
+      Option.when(doc.select("#round-criteria-locked").size == 1)(
+        doc.select("#round-criteria-list li").asScala.toSeq.map(_.text))
+
+    def noSelects(doc: org.jsoup.nodes.Document) =
+      doc.select("select[name^=criteria], input[name=criteriaShown]").size === 0
+
+    /** A first vote: a juror's file rated (a round without criteria) or a criterion rated. */
+    def voteIn(round: Round, juror: User, criterion: Option[Long] = None): Unit = {
+      val vote = VoteJdbc.byRound(round.getId).filter(_.juryId == juror.getId).minBy(_.pageId)
+      criterion.fold(VoteJdbc.rate(vote.pageId, juror.getId, round.getId, 5): Any)(c =>
+        CriteriaRate.updateRate(vote.getId, c, 3) must beTrue)
+    }
+
+    /** The edit form posted: with its criteria selects, or, `shown = false`, as a locked page
+      * posts it (no selects, no criteriaShown).
+      */
+    def posted(a: ContestJury, jurors: Seq[User], round: Round, criteria: Seq[Long], name: String,
+        shown: Boolean = true, extra: Seq[(String, String)] = Nil): Seq[(String, String)] =
+      roundForm(a.getId, jurors, criteria, id = round.id, name = name, shown = shown)
+        .filterNot(f => !shown && f._1.startsWith("criteria")) ++ extra
+
+    "lock a stopped round without criteria once it has votes: no selects, a line that none can be added" in {
+      testDbApp { app =>
+        val (a, _, jurors) = fixture()
+        val round = setActive(created(app, a, jurors, Nil), active = false)
+        voteIn(round, jurors.head)
+        RoundCriterion.hasVote(round.getId, criteriaRates = false) must beTrue
+        val doc = editPage(app, a, round)
+        noSelects(doc)
+        locked(doc) must beSome(Seq.empty[String])
+        doc.select("#round-criteria-locked").text === Locked
+        doc.select("#round-criteria-none").text === "It has no criteria, and none can be added."
+
+        // saved as its page posts it, with the worst mark (no criteriaShown): saved, no criteria
+        doc.select("input[name=worstMarkShown]").size === 1
+        status(save(app, "admin@example.com", a.getId, posted(a, jurors, round, Nil, "Renamed", shown = false,
+          extra = Seq("worstMarkShown" -> "true", "worstMark" -> "true")))) === SEE_OTHER
+        roundDao.findById(round.getId).flatMap(_.name) must beSome("Renamed")
+        roundDao.findById(round.getId).map(_.worstMark) must beSome(true)
+        criteriaOf(round.getId) must beEmpty
+
+        // criteria posted anyway (an older page): refused, nothing saved
+        val result = save(app, "admin@example.com", a.getId, posted(a, jurors, round, Seq(6L, 7L), "Not saved"))
+        status(result) === BAD_REQUEST
+        textOf(result) must contain(Locked)
+        criteriaOf(round.getId) must beEmpty
+        hasCriteria(round.getId) must beSome(false)
+        roundDao.findById(round.getId).flatMap(_.name) must beSome("Renamed")
+      }
+    }
+
+    "lock a stopped criteria round once it has votes: its criteria listed in order, read only" in {
+      testDbApp { app =>
+        val (a, _, jurors) = fixture()
+        val round = setActive(created(app, a, jurors, Seq(7L, 6L)), active = false)
+        // the names as the editable form offers them
+        val before = editPage(app, a, round)
+        val names = before.select("select[name='criteria[0]'] option").asScala.map(o => o.attr("value") -> o.text).toMap
+        voteIn(round, jurors.head, Some(7L))
+        val doc = editPage(app, a, round)
+        noSelects(doc)
+        locked(doc) must beSome(Seq(names("7"), names("6")))
+        doc.select("#round-criteria-none").size === 0
+
+        // a replacement in its place posted (an older page): refused, nothing saved, read only again
+        val result = save(app, "admin@example.com", a.getId, posted(a, jurors, round, Seq(7L, 9L), "Not saved"))
+        status(result) === BAD_REQUEST
+        textOf(result) must contain(Locked)
+        locked(Jsoup.parse(contentAsString(result))) must beSome(Seq(names("7"), names("6")))
+        criteriaOf(round.getId) === Seq(7L, 6L)
+        roundDao.findById(round.getId).flatMap(_.name) must beSome("Criteria")
+        // saved as its page posts it: kept, the name saved
+        status(save(app, "admin@example.com", a.getId, posted(a, jurors, round, Nil, "Renamed", shown = false))) ===
+          SEE_OTHER
+        criteriaOf(round.getId) === Seq(7L, 6L)
+        roundDao.findById(round.getId).flatMap(_.name) must beSome("Renamed")
+      }
+    }
+
+    "lock a running round without votes (active, or frozen while active), editable again once stopped" in {
+      testDbApp { app =>
+        val (a, _, jurors) = fixture()
+        val round = setActive(created(app, a, jurors, Seq(6L, 7L)), active = true)
+        RoundCriterion.hasVote(round.getId, criteriaRates = true) must beFalse
+        val doc = editPage(app, a, round)
+        noSelects(doc)
+        locked(doc).map(_.size) must beSome(2)
+        val result = save(app, "admin@example.com", a.getId, posted(a, jurors, round, Seq(6L, 9L), "Not saved"))
+        status(result) === BAD_REQUEST
+        textOf(result) must contain(Locked)
+        criteriaOf(round.getId) === Seq(6L, 7L)
+        roundDao.findById(round.getId).flatMap(_.name) must beSome("Criteria")
+
+        // frozen while active (a job reads it): still running
+        Round.setActive(round.getId, false)
+        sql"UPDATE round SET freeze_count = 1, active_before_freeze = 1 WHERE id = ${round.getId}".update()(AutoSession)
+        RoundCriterion.started(round.getId, criteriaRates = true) must beTrue
+        noSelects(editPage(app, a, round))
+        status(save(app, "admin@example.com", a.getId, posted(a, jurors, round, Seq(6L, 9L), "Not saved"))) ===
+          BAD_REQUEST
+        criteriaOf(round.getId) === Seq(6L, 7L)
+
+        // stopped (unfrozen), no vote: the full form, and a change taken
+        sql"UPDATE round SET freeze_count = 0, active_before_freeze = 0 WHERE id = ${round.getId}".update()(AutoSession)
+        val stopped = editPage(app, a, round)
+        locked(stopped) must beNone
+        offered(stopped).size === Criterion.MaxPerRound
+        status(save(app, "admin@example.com", a.getId, posted(a, jurors, round, Seq(6L, 9L), "Renamed"))) === SEE_OTHER
+        criteriaOf(round.getId) === Seq(6L, 9L)
+      }
+    }
+
+    "show a stopped round without votes and without criteria the ten selects with their empty option" in {
+      testDbApp { app =>
+        val (a, _, jurors) = fixture()
+        val round = setActive(created(app, a, jurors, Nil), active = false)
+        RoundCriterion.started(round.getId, criteriaRates = false) must beFalse
+        val doc = editPage(app, a, round)
+        val options = offered(doc)
+        options.size === Criterion.MaxPerRound
+        forall(options)(values => values must contain(allOf("", "6", "7")))
+        doc.select("input[name=criteriaShown]").size === 1
+        locked(doc) must beNone
+      }
+    }
+
+    "show a stopped criteria round without votes the ten selects, its criteria chosen, any criterion offered" in {
+      testDbApp { app =>
+        val (a, _, jurors) = fixture()
+        val round = setActive(created(app, a, jurors, Seq(6L, 7L)), active = false)
+        // the jurors' vote rows, not rated (rate 0, no criterion rate), are no vote
+        val rows = VoteJdbc.byRound(round.getId)
+        rows must not(beEmpty)
+        rows.map(_.rate).distinct === Seq(0)
+        ratesCount === 0L
+        RoundCriterion.started(round.getId, criteriaRates = true) must beFalse
+        val doc = editPage(app, a, round)
+        selected(doc.outerHtml).take(3) === Seq("6", "7", "")
+        val options = offered(doc)
+        options.size === Criterion.MaxPerRound
+        forall(options)(values => values must contain(allOf("", "6", "7", "8")))
+        locked(doc) must beNone
+      }
+    }
+
+    "count a criterion rate of a vote moved aside (vote_aside) as a vote" in {
+      testDbApp { app =>
+        val (a, _, jurors) = fixture()
+        val round = setActive(created(app, a, jurors, Seq(6L, 7L)), active = false)
+        val vote = VoteJdbc.byRound(round.getId).filter(_.juryId == jurors.head.getId).minBy(_.pageId)
+        CriteriaRate.updateRate(vote.getId, 6L, 3) must beTrue
+        DB.localTx(implicit s => services.imports.DeletedFiles.markDeleted(Seq(vote.pageId)))
+        RoundCriterion.hasVote(round.getId, criteriaRates = true) must beTrue
+        locked(editPage(app, a, round)).map(_.size) must beSome(2)
       }
     }
   }

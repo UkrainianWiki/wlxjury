@@ -118,7 +118,8 @@ class RoundController @Inject() (
       val filledRound = editRoundForm.fill(EditRound(withTopImages, jurors.flatMap(_.id), None))
       Ok(
         roundFormView(user, withTopImages, filledRound, Some(rounds), Some(jurors),
-          submitToken = Option.when(withTopImages.id.isEmpty)(RoundController.newSubmitToken()))
+          submitToken = Option.when(withTopImages.id.isEmpty)(RoundController.newSubmitToken()),
+          storedCriteria = withTopImages.id.map(_ => withTopImages.criterionIds))
       )
     }
 
@@ -136,7 +137,8 @@ class RoundController @Inject() (
       form: Form[EditRound],
       knownRounds: Option[Seq[Round]] = None,
       knownJurors: Option[Seq[User]] = None,
-      submitToken: Option[String] = None
+      submitToken: Option[String] = None,
+      storedCriteria: Option[Seq[Long]] = None
   )(implicit request: RequestHeader): Html = {
     val contestId = round.contestId
     val rounds = knownRounds.getOrElse(Round.findByContest(contestId))
@@ -165,6 +167,7 @@ class RoundController @Inject() (
       // an existing yes/no or comments-only round, by its stored rating (the form's is not
       // editable): no criteria, no worst mark
       unratedRound = stored.exists(!_.isRated),
+      lockedCriteria = stored.flatMap(RoundController.lockedCriteria(_, storedCriteria)),
       // its files waiting for a juror (round-editing plan §7): "Also give out the N waiting files"
       waiting = stored.flatMap(r => services.distribution.RoundReassign.waitingCount(r)).filter(_ > 0)
     )
@@ -320,7 +323,8 @@ class RoundController @Inject() (
                   submitToken = RoundController.submitToken(request),
                   criteria = CriterionJdbc.all(),
                   // an existing yes/no or comments-only round: by its stored rating, as on its page
-                  unratedRound = roundId.flatMap(id => rounds.find(_.id.contains(id))).exists(!_.isRated)
+                  unratedRound = roundId.flatMap(id => rounds.find(_.id.contains(id))).exists(!_.isRated),
+                  lockedCriteria = roundId.flatMap(id => rounds.find(_.id.contains(id))).flatMap(RoundController.lockedCriteria(_))
                 )
               )
             }
@@ -399,8 +403,8 @@ class RoundController @Inject() (
                 try {
                   var disqualified = Seq.empty[(Long, String, CoiMembers.Member)]
                   roundsService.reapplyFilters(round, user.id, titles, alsoWrite = { s =>
-                    // after the first vote criteria are only replaced in their places (U10): a re-apply
-                    // has none, but a refusal rolls everything back
+                    // a started round's criteria are not changed (running or voted): a re-apply's round
+                    // is neither, but a refusal rolls everything back
                     if (editForm.criteriaShown)
                       RoundCriterion.updateIn(roundId, round.criterionIds)(s).left.foreach(r =>
                         throw RoundController.CriteriaRefused(r.messageKey))
@@ -535,9 +539,9 @@ class RoundController @Inject() (
                   // criteria are written in the re-apply's transaction
                   case stored if RoundController.reapplyPosted(request) => reapplyFilters(stored)
                   case stored =>
-                    // first: after the first vote criteria are only replaced in their places
-                    // (U10), and a refused change saves nothing of the form; a plain save, whose filters
-                    // aren't changed
+                    // first: a started round's criteria (running or voted) are not changed, and a
+                    // refused change saves nothing of the form (shown again, its criteria read only);
+                    // a plain save, whose filters aren't changed
                     val criteria =
                       if (editForm.criteriaShown) RoundCriterion.update(roundId, round.criterionIds) else Right(false)
                     criteria.fold(refused => reRender(round, refused.messageKey), _ => saveEdit(stored))
@@ -792,6 +796,18 @@ class RoundController @Inject() (
 }
 
 object RoundController {
+
+  /** A rated round's stored criteria if it is started ([[RoundCriterion.started]]: running or
+    * with a vote, criterion rates included, as the save checks), for its edit form: its
+    * criteria can't be changed ([[RoundCriterion.update]]), so the form lists them, read
+    * only, without selects. None for a round not started (stopped before its first vote: the
+    * selects), and for a yes/no or comments-only round (no criteria in its form).
+    *
+    * @param storedIds the round's stored criteria, if already read (read here only if it is started)
+    */
+  def lockedCriteria(round: Round, storedIds: Option[Seq[Long]] = None): Option[Seq[Long]] =
+    round.id.filter(id => round.isRated && RoundCriterion.started(id, criteriaRates = true))
+      .map(id => storedIds.getOrElse(RoundCriterion.idsOf(id)))
 
   /** The flash key of a warning after a done action (DG10: warned, never refused): a juror
     * started in a stopped round, an open round left with no active juror. Shown on the rounds

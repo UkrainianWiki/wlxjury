@@ -88,35 +88,48 @@ class CriterionJdbcSpec extends Specification with BeforeAll {
       RoundCriterion.updateIn(12345L, Seq(1L, 2L)) must beLeft(RoundCriterion.Refusal.NotFound: RoundCriterion.Refusal)
     }
 
-    "after the first vote, take only criteria replaced in their places, moving their rates" in new AutoRollbackDb {
+    "refuse any change once the round has a vote, a replacement in its place too, its rates kept" in new AutoRollbackDb {
       imageDao.batchInsert(Seq(Image(1, "File:1.jpg"), Image(2, "File:2.jpg")))
       val round = roundDao.create(rated.copy(criterionIds = Seq(6L, 7L, 8L)))
       val other = roundDao.create(rated.copy(criterionIds = Seq(6L, 7L, 8L)))
       VoteJdbc.batchInsert(Seq(org.intracer.wmua.Vote(1, 5, round.getId, 0), org.intracer.wmua.Vote(1, 5, other.getId, 0)))
-      val vote = voteOf(round.getId)
       val others = voteOf(other.getId)
-      org.intracer.wmua.CriteriaRate.updateRateIn(vote, 7L, 4) must beTrue
-      org.intracer.wmua.CriteriaRate.updateRateIn(others, 7L, 2) must beTrue
-      // a vote of the round moved aside, with its rate
+      // the round's only vote moved aside, with a criterion rate
       sql"""INSERT INTO vote_aside (id, page_id, jury_id, round_id, rate) VALUES (9999, 2, 5, ${round.getId}, 0)""".update()
       sql"INSERT INTO criteria_rate (vote_id, criterion_id, rate) VALUES (9999, 7, 3)".update()
+      RoundCriterion.hasVote(round.getId, criteriaRates = false) must beFalse
+      RoundCriterion.hasVote(round.getId, criteriaRates = true) must beTrue
+      RoundCriterion.hasVote(other.getId, criteriaRates = true) must beFalse
 
-      val refused = RoundCriterion.Refusal.Voted: RoundCriterion.Refusal
+      val refused = RoundCriterion.Refusal.Started: RoundCriterion.Refusal
       RoundCriterion.updateIn(round.getId, Seq(6L, 7L, 8L, 9L)) must beLeft(refused) // added
       RoundCriterion.updateIn(round.getId, Seq(6L, 7L)) must beLeft(refused)         // removed
       RoundCriterion.updateIn(round.getId, Seq(7L, 6L, 8L)) must beLeft(refused)     // moved
-      RoundCriterion.updateIn(round.getId, Seq(6L, 8L, 9L)) must beLeft(refused)     // 8 in another place
+      RoundCriterion.updateIn(round.getId, Seq(6L, 1L, 2L)) must beLeft(refused)     // replaced in their places
       RoundCriterion.updateIn(round.getId, Nil) must beLeft(refused)
+      RoundCriterion.updateIn(round.getId, Seq(6L, 7L, 8L)) must beRight(false)      // the same: no change
       RoundCriterion.idsOf(round.getId) === Seq(6L, 7L, 8L)
+      rates(9999L) === Map(7L -> 3)
 
-      // 7 and 8 replaced in their places
-      RoundCriterion.updateIn(round.getId, Seq(6L, 1L, 2L)) must beRight(true)
-      RoundCriterion.idsOf(round.getId) === Seq(6L, 1L, 2L)
-      rates(vote) === Map(1L -> 4)
-      rates(9999L) === Map(1L -> 3)
-      // another round's rates of 7 stay
-      rates(others) === Map(7L -> 2)
-      RoundCriterion.idsOf(other.getId) === Seq(6L, 7L, 8L)
+      // another round, without a vote: changed
+      RoundCriterion.updateIn(other.getId, Seq(6L, 1L, 2L)) must beRight(true)
+      RoundCriterion.idsOf(other.getId) === Seq(6L, 1L, 2L)
+      rates(others) must beEmpty
+    }
+
+    "refuse any change while the round is running (active, or frozen while active), without a vote" in new AutoRollbackDb {
+      val round = roundDao.create(rated.copy(criterionIds = Seq(6L, 7L), active = true))
+      RoundCriterion.started(round.getId, criteriaRates = true) must beTrue
+      RoundCriterion.updateIn(round.getId, Seq(6L, 8L)) must beLeft(RoundCriterion.Refusal.Started: RoundCriterion.Refusal)
+      sql"UPDATE round SET active = 0, freeze_count = 1, active_before_freeze = 1 WHERE id = ${round.getId}".update()
+      RoundCriterion.started(round.getId, criteriaRates = true) must beTrue
+      RoundCriterion.updateIn(round.getId, Seq(6L, 8L)) must beLeft(RoundCriterion.Refusal.Started: RoundCriterion.Refusal)
+      RoundCriterion.idsOf(round.getId) === Seq(6L, 7L)
+      // stopped: changed
+      sql"UPDATE round SET freeze_count = 0, active_before_freeze = 0 WHERE id = ${round.getId}".update()
+      RoundCriterion.started(round.getId, criteriaRates = true) must beFalse
+      RoundCriterion.updateIn(round.getId, Seq(6L, 8L)) must beRight(true)
+      RoundCriterion.idsOf(round.getId) === Seq(6L, 8L)
     }
   }
 }

@@ -290,12 +290,15 @@ object WritePathStress {
           val cs = criteriaOfRound
           CriteriaRate.updateRate(id, cs(rnd.nextInt(cs.size)), 1 + rnd.nextInt(5)) }),
       // round edits (request threads)
+      // a started round's criteria are refused: a running one under the round's lock only, a stopped
+      // one with a vote also under its votes' locks, as the request does
       Path("criteria_change", 1, adminThinkMs * 4, "request: RoundController.saveRound -> RoundCriterion.update (retried once)",
         (_, _) => {
           val next = if (criteriaOfRound.last == 3L) Seq(1L, 2L, 4L) else Seq(1L, 2L, 3L)
           RoundCriterion.update(f.criteria, next) match {
-            case Right(changed) => criteriaOfRound = next; changed
-            case Left(refused)  => throw Visible(s"criteria change refused: ${refused.messageKey}")
+            case Right(changed)                           => criteriaOfRound = next; changed
+            case Left(RoundCriterion.Refusal.Started)     => false
+            case Left(refused)                            => throw Visible(s"criteria change refused: ${refused.messageKey}")
           }
         }),
       Path("round_edit", 1, adminThinkMs * 4, "request: Round.updateRound + setExcludeCoi (autocommit)",

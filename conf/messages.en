@@ -786,7 +786,9 @@ api.tokens.revoked.all = Tokens revoked: {0}.
 
 # criteria rounds (C2): the round form, the catalogue, and the shipped criteria (V83)
 criteria = Criteria
-criteria.help = For a rated round: {0} to {1} criteria from the catalogue, in their order, each rated on the round stars. A file is rated once all its criteria are, with their sum. None: a round without criteria. After the first vote a criterion can only be replaced in its place.
+criteria.help = For a rated round: {0} to {1} criteria from the catalogue, in their order, each rated on the round stars. A file is rated once all its criteria are, with their sum. None: a round without criteria. Criteria can''t be changed while the round is running or once it has votes.
+criteria.locked = The round''s criteria can''t be changed while it is running or once it has votes.
+criteria.locked.none = It has no criteria, and none can be added.
 criteria.catalogue = Criteria catalogue
 criteria.catalogue.help = The criteria the round forms of every contest offer. A criterion added here is named by its text in every language until it is translated. Criteria are not changed or removed here.
 criteria.catalogue.added = Criterion added.
@@ -822,7 +824,6 @@ error.criteria.rated.only = Criteria are for rated rounds only.
 error.criteria.count = Choose {0} to {1} criteria, or none.
 error.criteria.distinct = Choose each criterion once.
 error.criteria.unknown = Choose criteria from the catalogue.
-error.criteria.voted = The round has votes: its criteria can only be replaced in their places, not added, removed or moved.
 error.criteria.name.length = The name is too long.
 criterion.science = Scientific value
 criterion.caption = Caption

@@ -94,31 +94,54 @@ object RoundCriterion {
   /** A refused change of a round's criteria. */
   sealed trait Refusal { def messageKey: String }
   object Refusal {
-    /** After the first vote: criteria added, removed, moved or replaced by one the round has. */
-    case object Voted extends Refusal { val messageKey = "error.criteria.voted" }
+    /** The round is started ([[started]]): its criteria can no longer be changed. */
+    case object Started extends Refusal { val messageKey = "criteria.locked" }
     case object NotFound extends Refusal { val messageKey = "error.round.not.found" }
   }
 
-  /** Whether the round has a vote: a rate other than 0, or a criterion rate, in vote or in
-    * vote_aside; read with a lock (the caller has locked the round's votes).
+  /** The round is running: active, or frozen while active (a job reads or moves it, and it
+    * opens again when the job ends).
     */
-  private def voted(roundId: Long)(implicit session: DBSession): Boolean =
+  private def runningCond: SQLSyntax = sqls"(active = 1 OR (freeze_count > 0 AND active_before_freeze = 1))"
+
+  /** Whether the round is started, read plainly, as its form shows whether its criteria can be
+    * changed: running ([[runningCond]]) or with a vote ([[hasVote]]). A round stopped before its
+    * first vote is not.
+    *
+    * @param criteriaRates read its criterion rates too (a criteria round)
+    */
+  def started(roundId: Long, criteriaRates: Boolean)(implicit session: DBSession = AutoSession): Boolean =
+    sql"SELECT 1 FROM round WHERE id = $roundId AND $runningCond".map(_.int(1)).single().isDefined ||
+      hasVote(roundId, criteriaRates)
+
+  /** Whether the round has a vote, read plainly: a rate other than 0, in vote or in vote_aside,
+    * or, with `criteriaRates` (a criteria round), a criterion rate.
+    */
+  def hasVote(roundId: Long, criteriaRates: Boolean)(implicit session: DBSession = AutoSession): Boolean =
+    votedIn(roundId, criteriaRates, sqls"")
+
+  /** Whether the round has a vote: a rate other than 0, or a criterion rate, in vote or in
+    * vote_aside; read with a lock ([[updateIn]]: the caller has locked the round's votes).
+    */
+  private def hasVoteLocked(roundId: Long)(implicit session: DBSession): Boolean =
+    votedIn(roundId, criteriaRates = true, sqls"LOCK IN SHARE MODE")
+
+  private def votedIn(roundId: Long, criteriaRates: Boolean, lock: SQLSyntax)(implicit session: DBSession): Boolean =
     Seq(sqls"vote", sqls"vote_aside").exists { table =>
-      sql"SELECT 1 FROM $table v WHERE v.round_id = $roundId AND ${VoteSql.voted(VoteSql.v)} LIMIT 1 LOCK IN SHARE MODE"
+      sql"SELECT 1 FROM $table v WHERE v.round_id = $roundId AND ${VoteSql.voted(VoteSql.v)} LIMIT 1 $lock"
         .map(_.int(1)).single().isDefined ||
-      sql"""SELECT 1 FROM $table v STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = v.id
-            WHERE v.round_id = $roundId LIMIT 1 LOCK IN SHARE MODE""".map(_.int(1)).single().isDefined
+      criteriaRates && sql"""SELECT 1 FROM $table v STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = v.id
+            WHERE v.round_id = $roundId LIMIT 1 $lock""".map(_.int(1)).single().isDefined
     }
 
   /** Changes the round's criteria to `criterionIds` (checked by the round form: none, or 2 to
-    * 10 of the catalogue, each once). Before the round's first vote any change is taken (none:
-    * no longer a criteria round). After it only a criterion's replacement by one the round
-    * hasn't, in its place, as a renaming (U10): its rates are moved to the new criterion; a
-    * criterion added, removed or moved is refused, nothing written.
+    * 10 of the catalogue, each once): taken while the round is not started (none: no longer a
+    * criteria round), refused once it is, running or with a vote, nothing written. The same
+    * criteria are no change, started or not.
     *
-    * One transaction, locking in the order of every vote write: the round, its votes (vote,
-    * then vote_aside: the criterion votes wait, [[org.intracer.wmua.CriteriaRate.updateRate]]),
-    * then round_criterion and criteria_rate.
+    * One transaction, locking in the order of every vote write: the round (read as stored, under
+    * its lock; a running one refused there), its votes (vote, then vote_aside: the criterion votes wait,
+    * [[org.intracer.wmua.CriteriaRate.updateRate]]), then round_criterion.
     *
     * @return whether anything changed, or the refusal
     */
@@ -127,37 +150,23 @@ object RoundCriterion {
 
   /** [[update]] in the caller's transaction. */
   def updateIn(roundId: Long, criterionIds: Seq[Long])(implicit session: DBSession): Either[Refusal, Boolean] =
-    if (sql"SELECT id FROM round WHERE id = $roundId FOR UPDATE".map(_.long(1)).single().isEmpty)
-      Left(Refusal.NotFound)
-    else {
-      RoundWrites.recordRounds(Seq(roundId))
-      val stored = idsOf(roundId)
-      if (stored == criterionIds) Right(false)
-      else {
-        VoteJdbc.lockVotes(sqls"vote", sqls"v.round_id = $roundId")
-        VoteJdbc.lockVotes(sqls"vote_aside", sqls"v.round_id = $roundId")
-        if (!voted(roundId)) {
-          sql"DELETE FROM round_criterion WHERE round_id = $roundId".update()
-          if (criterionIds.isEmpty) sql"UPDATE round SET has_criteria = 0 WHERE id = $roundId".update()
-          else insert(roundId, criterionIds)
-          Right(true)
-        } else {
-          val renamed = stored.zip(criterionIds).filter { case (from, to) => from != to }
-          val sameShape = stored.size == criterionIds.size && renamed.forall { case (_, to) => !stored.contains(to) }
-          if (!sameShape) Left(Refusal.Voted)
+    sql"SELECT $runningCond FROM round WHERE id = $roundId FOR UPDATE".map(_.boolean(1)).single() match {
+      case None => Left(Refusal.NotFound)
+      case Some(running) =>
+        RoundWrites.recordRounds(Seq(roundId))
+        if (idsOf(roundId) == criterionIds) Right(false)
+        // running: refused before its votes are locked
+        else if (running) Left(Refusal.Started)
+        else {
+          VoteJdbc.lockVotes(sqls"vote", sqls"v.round_id = $roundId")
+          VoteJdbc.lockVotes(sqls"vote_aside", sqls"v.round_id = $roundId")
+          if (hasVoteLocked(roundId)) Left(Refusal.Started)
           else {
-            renamed.foreach { case (from, to) =>
-              sql"""UPDATE round_criterion SET criterion_id = $to
-                    WHERE round_id = $roundId AND criterion_id = $from""".update()
-              Seq(sqls"vote", sqls"vote_aside").foreach { table =>
-                sql"""UPDATE $table v STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = v.id
-                      SET cr.criterion_id = $to
-                      WHERE v.round_id = $roundId AND cr.criterion_id = $from""".update()
-              }
-            }
+            sql"DELETE FROM round_criterion WHERE round_id = $roundId".update()
+            if (criterionIds.isEmpty) sql"UPDATE round SET has_criteria = 0 WHERE id = $roundId".update()
+            else insert(roundId, criterionIds)
             Right(true)
           }
         }
-      }
     }
 }

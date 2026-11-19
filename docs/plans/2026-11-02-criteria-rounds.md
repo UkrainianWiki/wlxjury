@@ -486,6 +486,11 @@ changing anything):
   After it, only a criterion replaced in its place by one the round hasn't (the catalogue's
   "renaming"), whose rates in `vote` and `vote_aside` move to the new criterion; adding, removing,
   moving or reusing one is refused (`error.criteria.voted`, 400, nothing of the form saved).
+  **Replaced by the maintainer's decision of 2026-11-19** (`stack/203-criteria-voted-form`): a
+  started round's criteria are read only. While the round is running (active, or frozen while
+  active) or once it has a vote, its form lists them without selects and its save refuses any
+  change, a replacement in its place too (`criteria.locked`); the U10 replace-in-place rule and
+  `error.criteria.voted` are gone. A round stopped before its first vote is edited as above.
 - **Votes (U6):** `CriteriaRate.updateRate` upserts (`INSERT … ON DUPLICATE KEY UPDATE`) a
   criterion of the vote's round (`round_criterion`; another is false → 404); the distribution
   writes no rates (`addCriteriaRates`, its `MAX(id) FOR UPDATE` and `CriteriaIds` gone;

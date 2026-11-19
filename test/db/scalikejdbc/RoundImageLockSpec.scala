@@ -65,7 +65,7 @@ class RoundImageLockSpec extends Specification with TestDb with BeforeAll with B
       implicit val contest: ContestJury = createContests(10).head
       val jurors = createUsers("jury", 1, 2)
       val round = roundDao.create(Round(None, 1, Some("Criteria"), contest.getId, rates = Round.ratesById(10),
-        criterionIds = Seq(1L, 2L), active = true))
+        criterionIds = Seq(1L, 2L), active = false))
       val votes = images(1L, 2L, 3L).flatMap(i => jurors.map(j => Vote(i.pageId, j.getId, round.getId, 0)))
       val held = new CountDownLatch(1)
       val go = new CountDownLatch(1)
