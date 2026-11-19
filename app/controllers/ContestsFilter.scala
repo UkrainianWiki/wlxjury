@@ -43,12 +43,7 @@ final case class ContestsFilter(
   /** `url` with this filter's params added (after its own, if it has a query); as it is for the
     * default filter.
     */
-  def addTo(url: String): String =
-    if (params.isEmpty) url
-    else {
-      val query = params.map { case (k, v) => s"$k=${URLEncoder.encode(v, StandardCharsets.UTF_8)}" }.mkString("&")
-      url + (if (url.contains('?')) "&" else "?") + query
-    }
+  def addTo(url: String): String = ContestsFilter.addParams(url, params)
 }
 
 object ContestsFilter {
@@ -60,6 +55,14 @@ object ContestsFilter {
   val OrderParam = "order"
 
   val Default: ContestsFilter = ContestsFilter()
+
+  /** `url` with the params added (after its own, if it has a query), URL-encoded; as it is for none. */
+  def addParams(url: String, params: Seq[(String, String)]): String =
+    if (params.isEmpty) url
+    else {
+      val query = params.map { case (k, v) => s"$k=${URLEncoder.encode(v, StandardCharsets.UTF_8)}" }.mkString("&")
+      url + (if (url.contains('?')) "&" else "?") + query
+    }
 
   private val InternationalText = "international"
 
@@ -223,7 +226,7 @@ final case class ContestsFilterBar(
     url: ContestsFilter => String,
     contests: Seq[ContestJury],
     locale: Locale = Locale.ENGLISH
-) {
+) extends ContestMenuCounts {
 
   import ContestsFilter._
 
@@ -315,4 +318,14 @@ final case class ContestsFilterBar(
 
   /** The Year menu's choice for a year (None: all years). */
   def yearChoice(y: Option[Int]): Year = y.fold[Year](Year.All)(Year.In)
+}
+
+/** The counts of the Type, Country and Year menus' items (contestFilterMenus.scala.html): the
+  * contests each choice keeps on the contests page ([[ContestsFilterBar]]), the accounts on root's
+  * all-users page ([[UsersFilterBar]]); each within the other menus' choices.
+  */
+trait ContestMenuCounts {
+  def countKind(k: Option[String]): Int
+  def countCountry(c: ContestsFilter.Country): Int
+  def countYear(y: Option[Int]): Int
 }

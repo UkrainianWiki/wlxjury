@@ -31,6 +31,26 @@ No next release is set yet (`build.sbt` says `26.12-SNAPSHOT`). Everything up to
 deployed in `26.11.13`, and three fixes in the hotfix `26.11.13.1`; what is developed after them
 is listed below.
 
+**Features**
+
+- **All-users page menus** (the maintainer's decision of 2026-11-19, for 26.11.14; developed
+  2026-11-19, `stack/198-users-contest-filter`, a follow-up of the contests page menus): root's
+  all-users page (`/admin/allUsers`) gets the contests page's **Type**, **Country** and **Year**
+  menus (the same parsing, country rule and menus: `contestFilterMenus.scala.html`) and a **Role**
+  menu (All, Admin, Organizer, Juror) in the navbar; as on `/contests`, a bar with filters, so the
+  page links (Contests, Users and the others) move into the Pages menu. They filter the accounts by their contest
+  memberships: an account is listed if it has an active membership (not "No role", Board, Audit
+  committee or Staff) in a contest of the chosen type, country and year with the chosen role in
+  that same contest. By default every menu is on **All** (all years, not the latest) and the page
+  lists every account, those in no contest too, in its usual order. Each item shows the accounts
+  it lists within the other menus' choices, counted in memory from the memberships the page
+  already loads (no extra query); the menus are plain links keeping the other choices. A choice
+  that lists nobody says so, with a link to all accounts (new keys `users.filter.none`,
+  `users.filter.reset`). The contest type-and-year grid is gone from the page, and its template
+  (`contestsTable.scala.html`) with it; a contest's own users page has no menus. On both users
+  pages the row's edit pencil is now a link named "Edit" for screen readers (it was an unnamed
+  button inside a link, which the new browser test's axe scan flagged). No migration.
+
 ## 26.11.13.1 (2026-11-19)
 
 Built 2026-11-19, from `26.11.13`: a hotfix of three fixes. **No migration**: the schema stays

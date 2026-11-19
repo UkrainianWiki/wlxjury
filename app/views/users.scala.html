@@ -9,9 +9,25 @@
         pending: Seq[db.scalikejdbc.AccountToken] = Nil,
         accounts: Map[Long, db.scalikejdbc.User] = Map.empty,
         shareable: Set[Long] = Set.empty,
-        wikimediaSignIn: Boolean = false
+        wikimediaSignIn: Boolean = false,
+        usersBar: Option[controllers.UsersFilterBar] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
     @import helper._
+    @import controllers.UsersFilter
+
+@* root's all-users page (`usersBar`, UsersFilter: the maintainer's decision of 2026-11-19): the
+   contests page's Type, Country and Year menus (contestFilterMenus.scala.html) and a Role menu, in
+   the navbar's filter group; each choice the page with it, the other menus' choices kept; each item
+   with the count of the accounts it lists within the other menus' choices *@
+@filterMenus(b: controllers.UsersFilterBar) = {
+    @contestFilterMenus(b.contestsBar, b, "users")
+    @(new UiSelectionDto[Option[String]](
+        (r: Option[String]) => Call("GET", b.url(b.filter.withRole(r))),
+        b.filter.role,
+        UsersFilter.Roles.map(r => Some(r) -> SelectionItem(Messages("role." + r), localized = false, count = Some(b.countRole(Some(r))))),
+        Some(None -> SelectionItem("rounds.filter.type.all", count = Some(b.countRole(None))))
+    ).toDropDown(id = Some("users-role-menu"), label = Some(Messages("role")), labelShown = true))
+}
 
 @* the search for existing accounts (account-search.js): only on a contest's users page, which has it *@
 @pageScripts = {
@@ -20,21 +36,23 @@
     }
 }
 
-    @mainAdmin("users", adminUser, adminUser.getId, contestId = contestOpt.flatMap(_.id), head = pageScripts) {
+    @mainAdmin("users", adminUser, adminUser.getId, contestId = contestOpt.flatMap(_.id), head = pageScripts,
+            filters = usersBar.fold(play.twirl.api.HtmlFormat.empty)(filterMenus)) {
         <div class="row">
 
             @* the page's title: the contest's name, or for all the contests the page's *@
             @if(contestOpt.isEmpty) {
                 <h1 class="visually-hidden">@Messages("users")</h1>
             }
-            @if(contests.nonEmpty) {
-                @contestsTable(contests)
-            }
             @* root's list of every account: the full duplicates report *@
             @if(contestOpt.isEmpty) {
                 <div class="mb-2">
                     <a href="@routes.DuplicateAccountsController.all()" class="btn btn-outline-secondary duplicates-link">@Messages("duplicates.link")</a>
                 </div>
+            }
+            @for(b <- usersBar if b.shown.isEmpty && !b.filter.isAll) {
+                <p class="text-muted" id="users-filter-none">@Messages("users.filter.none")
+                    <a href="@b.url(UsersFilter.Default)" id="users-filter-reset">@Messages("users.filter.reset")</a></p>
             }
 
             @for(contest <- contestOpt) {
@@ -78,6 +96,8 @@
 
                 <tbody>
 
+                    @* the contests by id, built once for the role column (root's all-users page) *@
+                    @defining(contests.flatMap(c => c.id.map(_ -> c)).toMap) { contestsById =>
                     @for((user, index) <- users.zipWithIndex) {
                         <tr>
                             <td> @{index + 1} </td>
@@ -160,18 +180,19 @@
                                 <td>
                                     @if(user.isRoot) { @Messages("role.root")<br/> }
                                     @for(uc <- user.userContests) {
-                                        @contests.find(_.id.contains(uc.contestId)).fold(uc.contestId.toString)(_.fullName): @uc.roles.map(r => Messages("role." + r)).mkString(", ")<br/>
+                                        @contestsById.get(uc.contestId).fold(uc.contestId.toString)(_.fullName): @uc.roles.map(r => Messages("role." + r)).mkString(", ")<br/>
                                     }
                                 </td>
                             }
                             <td>
-                                <a href="@routes.UserController.editUser(user.getId, contestOpt.flatMap(_.id))">
-                                    <button type="button" class="btn btn-outline-secondary btn-sm">
-                                        <i class="bi bi-pencil-square" aria-hidden="true"></i>
-                                    </button>
+                                @* a link styled as a button, named for screen readers (no button inside a link) *@
+                                <a href="@routes.UserController.editUser(user.getId, contestOpt.flatMap(_.id))" class="btn btn-outline-secondary btn-sm"
+                                    title="@Messages("edit")" aria-label="@Messages("edit")">
+                                    <i class="bi bi-pencil-square" aria-hidden="true"></i>
                                 </a>
                             </td>
                         </tr>
+                    }
                     }
 
                     @for(contest <- contestOpt) {

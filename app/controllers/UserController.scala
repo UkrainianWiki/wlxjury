@@ -256,17 +256,25 @@ class UserController @Inject()(cc: ControllerComponents,
       }
     }
 
-  def allUsers(): EssentialAction =
+  /** Root's list of every account, filtered by the Type, Country, Year and Role menus (the
+    * maintainer's decision of 2026-11-19, [[UsersFilter]]): by default every account. The menus'
+    * counts are computed from the accounts' memberships loaded here, in no further query.
+    */
+  def allUsers(contestType: Option[String] = None, year: Option[String] = None, country: Option[String] = None,
+      role: Option[String] = None): EssentialAction =
     withAuth(rolePermission(Set(User.ROOT_ROLE))) { user => implicit request =>
       // retired accounts (A-4) are not listed: no memberships, no address, never signed in to
       val users = User.withMemberships(User.findAllLive())
       val contests = ContestJuryJdbc.findAll()
+      val bar = UsersFilterBar(UsersFilter.of(contestType, year, country, role), f => f.addTo(routes.UserController.allUsers().url),
+        users, contests, request2Messages(request).lang.locale)
       Ok(
         views.html.users(user,
-                         users,
+                         bar.shown,
                          editUserForm.copy(data = Map("roles" -> "jury")),
                          None,
-                         contests))
+                         contests,
+                         usersBar = Some(bar)))
     }
 
   /**

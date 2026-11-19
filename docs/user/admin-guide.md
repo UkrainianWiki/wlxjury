@@ -1277,13 +1277,22 @@ stopped.
 
 - Create contests, and import them from a Commons list, on **Contests**, and change a contest's
   settings there.
-- See **Users** across all contests, and make an account root: tick **Root (every contest)** on
-  its **Edit user** page. An account that has a password but no verified email can't be made
-  root; an invitee who hasn't set a password yet can. A new account can't be made root when it
-  is added: add the person, and tick it once they have accepted the invitation. Root can't
-  change their own root, and the last root can't be taken away. Root and the email can't be
-  changed in one save: save one, then the other. Changing the person's role in a contest leaves
-  root as it is.
+- See **Users** across all contests, every account by default. The **Type**, **Country**, **Year**
+  and **Role** menus in the top bar narrow the list to the accounts that are an **Admin**, an
+  **Organizer** or a **Juror** (or any of these, with **All**) of a contest of that type, country
+  and year: the role must be in that same contest, so an admin of a 2024 contest who is a juror in
+  2025 isn't listed for Admin in 2025. A membership with **No role**, or with Board, Audit committee
+  or Staff, doesn't count for these menus. Each item shows how many accounts it lists,
+  given the other menus' choices; the menus are links, so a filtered list can be bookmarked or
+  shared with another root. With every menu on **All** the page also lists the accounts in no
+  contest. Root accounts are listed only under **All**, unless they are also a member of a
+  contest with a role there: root is not a role of a contest.
+- Make an account root: tick **Root (every contest)** on its **Edit user** page. An account that
+  has a password but no verified email can't be made root; an invitee who hasn't set a password
+  yet can. A new account can't be made root when it is added: add the person, and tick it once
+  they have accepted the invitation. Root can't change their own root, and the last root can't
+  be taken away. Root and the email can't be changed in one save: save one, then the other.
+  Changing the person's role in a contest leaves root as it is.
 
   <img src="images/admin-user-edit-root.png" alt="The checkbox Root (every contest) on the Edit user page, above the role and its help" width="427">
 

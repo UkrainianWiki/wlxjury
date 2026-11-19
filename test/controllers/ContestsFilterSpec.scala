@@ -238,9 +238,6 @@ class ContestsFilterSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         rows(page(app, f.root, "/contests?contestType=Wiki%20Loves%20Monuments&year=2024")) === Seq(row(f.wlmUa2024))
         rows(page(app, f.root, "/contests?year=2023")) === Seq(row(f.wlmUa2023))
-        // root's all-users page still links to them
-        val users = contentAsString(get(app, Some(f.root), "/admin/allUsers"))
-        users must contain("/contests?contestType=Wiki+Loves+Monuments&amp;year=2024")
       }
     }
 

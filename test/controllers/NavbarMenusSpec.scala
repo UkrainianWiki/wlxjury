@@ -390,6 +390,14 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
               (doc.select("nav.navbar [id]").asScala.map(_.id).groupBy(identity).collect { case (i, s) if s.size > 1 => i } must beEmpty)
           } and
           (menu(stat).map(_._1) === List("page-contest-files", "page-statistics")) and
+          // root's all-users page has its Type, Country, Year and Role menus (2026-11-19): a bar
+          // with filters, so its page links are in the Pages menu, as on /contests
+          {
+            val allUsers = page(app, f.root, "/admin/allUsers")
+            (allUsers.select(".wlx-nav-pages-inline, .wlx-page-link").size === 0) and
+              (allUsers.select("#pages-menu").size === 1) and
+              (allUsers.select("#users-role-menu").size === 1)
+          } and
           // a bar with filters, order and pager (a round's gallery) keeps the menu alone
           (orgGallery.select(".wlx-nav-pages-inline, .wlx-page-link").size === 0) and
           (orgGallery.select("#pages-menu").size === 1) and

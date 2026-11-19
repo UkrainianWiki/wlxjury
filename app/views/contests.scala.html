@@ -13,33 +13,10 @@
    maintainer's request of 2026-11-19), in the navbar as the Rounds page's (navbar.scala.html
    roundsFilterMenus): each choice the page with it, the other menus' choices kept; each toggle
    with its menu's name shown ("Type: All", "Year: 2026"); Type, Country and Year items with their
-   counts (the contests each keeps within the other menus' choices). The Country menu's long list
-   scrolls inside it, as the galleries' region menu (main.css region-menu-list) *@
+   counts (the contests each keeps within the other menus' choices): contestFilterMenus.scala.html,
+   shared with root's all-users page *@
 @filterMenus(b: controllers.ContestsFilterBar) = {
-    @(new UiSelectionDto[Option[String]](
-        (k: Option[String]) => Call("GET", b.url(b.filter.withKind(k))),
-        b.filter.kind,
-        b.kinds.map(k => Some(k) -> SelectionItem(k, localized = false, count = Some(b.countKind(Some(k))))),
-        Some(None -> SelectionItem("rounds.filter.type.all", count = Some(b.countKind(None)))),
-        unlisted = SelectionItem(b.filter.kind.getOrElse("—"), localized = false)
-    ).toDropDown(id = Some("contests-type-menu"), label = Some(Messages("rounds.filter.type")), labelShown = true))
-    @(new UiSelectionDto[ContestsFilter.Country](
-        (c: ContestsFilter.Country) => Call("GET", b.url(b.filter.withCountry(c))),
-        b.country,
-        (if (b.hasInternational) Seq(ContestsFilter.Country.International -> SelectionItem("contests.filter.international",
-            count = Some(b.countCountry(ContestsFilter.Country.International)))) else Nil) ++
-        b.countries.map(c => c -> SelectionItem(b.name(c), localized = false, count = Some(b.countCountry(c)))),
-        Some(ContestsFilter.Country.All -> SelectionItem("country.all", count = Some(b.countCountry(ContestsFilter.Country.All)))),
-        unlisted = SelectionItem(Some(b.name(b.country)).filter(_.nonEmpty).getOrElse("—"), localized = false)
-    ).toDropDown(id = Some("contests-country-menu"), label = Some(Messages("country")), labelShown = true,
-        menuClass = "region-menu-list"))
-    @(new UiSelectionDto[Option[Int]](
-        (y: Option[Int]) => Call("GET", b.url(b.filter.withYear(b.yearChoice(y)))),
-        b.year,
-        b.years.map(y => Some(y) -> SelectionItem(y.toString, localized = false, count = Some(b.countYear(Some(y))))),
-        Some(None -> SelectionItem("contests.filter.year.all", count = Some(b.countYear(None)))),
-        unlisted = SelectionItem(b.year.fold("—")(_.toString), localized = false)
-    ).toDropDown(id = Some("contests-year-menu"), label = Some(Messages("year")), labelShown = true))
+    @contestFilterMenus(b, b, "contests")
 }
 @orderMenu(b: controllers.ContestsFilterBar) = {
     @(new UiSelectionDto[ContestsFilter.Order](

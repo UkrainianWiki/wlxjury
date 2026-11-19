@@ -1432,6 +1432,8 @@ contests.filter.year.all = Усі роки
 contests.filter.none = Жоден конкурс не відповідає цьому вибору.
 contests.filter.reset = Показати всі конкурси
 contests.order.country = За країною
+users.filter.none = Жоден обліковий запис не відповідає цьому вибору.
+users.filter.reset = Показати всі облікові записи
 
 # The contest health page (support diagnostics plan, D-1a; ContestHealth, contestHealth.scala.html)
 health.title = Стан конкурсу

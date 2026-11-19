@@ -1440,6 +1440,8 @@ contests.filter.year.all = Toutes les années
 contests.filter.none = Aucun concours ne correspond à ces choix.
 contests.filter.reset = Afficher tous les concours
 contests.order.country = Par pays
+users.filter.none = Aucun compte ne correspond à ces choix.
+users.filter.reset = Afficher tous les comptes
 
 # The contest health page (support diagnostics plan, D-1a; ContestHealth, contestHealth.scala.html)
 health.title = État du concours

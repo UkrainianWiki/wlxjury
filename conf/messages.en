@@ -1456,6 +1456,8 @@ contests.filter.year.all = All years
 contests.filter.none = No contests match these choices.
 contests.filter.reset = Show all contests
 contests.order.country = By country
+users.filter.none = No accounts match these choices.
+users.filter.reset = Show all accounts
 
 # The contest health page (support diagnostics plan, D-1a; ContestHealth, contestHealth.scala.html)
 health.title = Contest health

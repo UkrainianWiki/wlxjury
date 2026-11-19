@@ -120,7 +120,7 @@ POST        /admin/accounts/join                                                
 GET         /admin/accounts/join/:jobId                                             @controllers.AccountJoinController.job(jobId: Long)
 # root abandons a failed join after its first round (Cancel is refused then)
 POST        /admin/accounts/join/:jobId/abandon                                     @controllers.AccountJoinController.abandon(jobId: Long)
-GET         /admin/allUsers                                                         @controllers.UserController.allUsers()
+GET         /admin/allUsers                                                         @controllers.UserController.allUsers(contestType: Option[String] ?= None, year: Option[String] ?= None, country: Option[String] ?= None, role: Option[String] ?= None)
 GET         /admin/importusers                                                      @controllers.UserController.showImportUsers(contestId: Option[Long] ?= None)
 POST        /admin/importusers                                                      @controllers.UserController.importUsers(contestId: Option[Long] ?= None)
 GET         /admin/greeting                                                         @controllers.UserController.editGreeting(contestId: Option[Long] ?= None)
