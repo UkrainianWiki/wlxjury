@@ -201,7 +201,7 @@ GET         /monuments/id/:id                                                   
 # only the webjars listed in controllers.WebJars.Served
 GET         /webjars/*file                                                          @controllers.WebJars.at(file)
 
-GET         /contests                                                               @controllers.ContestController.list(contestType: Option[String] ?= None, year: Option[Int] ?= None, country: Option[String] ?= None)
+GET         /contests                                                               @controllers.ContestController.list(contestType: Option[String] ?= None, year: Option[String] ?= None, country: Option[String] ?= None, order: Option[String] ?= None)
 POST        /contests/save                                                          @controllers.ContestController.saveContest()
 POST        /contests/import                                                        @controllers.ContestController.importContests()
 GET         /contest/:id/images                                                     @controllers.ImageController.images(id: Long)

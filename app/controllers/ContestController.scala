@@ -9,7 +9,7 @@ import services.regions.RegionScheme
 import play.api.data.Form
 import play.api.data.Forms._
 import play.api.i18n.I18nSupport
-import play.api.mvc.ControllerComponents
+import play.api.mvc.{ControllerComponents, RequestHeader}
 import services.ContestService
 
 import javax.inject.Inject
@@ -39,44 +39,53 @@ class ContestController @Inject() (
     }
   }
 
-  def list(contestType: Option[String], year: Option[Int], country: Option[String]) =
+  /** The contests page, root's: the contests of the Type, Country, Year and Order menus
+    * ([[ContestsFilter]]; by default those of the latest year of the contests, oldest first).
+    */
+  def list(contestType: Option[String], year: Option[String], country: Option[String], order: Option[String]) =
     withAuth(rolePermission(Set(User.ROOT_ROLE))) { user => implicit request =>
-      val contests = contestService.findContests()
-      val filtered = contests.filter { c =>
-        contestType.forall(c.name.equals) && year.forall(c.year.equals)
-      }
+      val bar = listBar(ContestsFilter.of(contestType, year, country, order))
 
       Ok(
         views.html.contests(
           user,
-          contests,
-          filtered,
+          bar.shown,
           editContestForm,
           importContestsForm,
-          contestType,
-          year
+          Some(bar)
         )
       )
     }
 
+  /** The contests page's list and menus with this filter, the countries named in the request's language. */
+  private def listBar(filter: ContestsFilter)(implicit request: RequestHeader): ContestsFilterBar =
+    ContestsFilterBar(filter, f => f.addTo(routes.ContestController.list().url), contestService.findContests(),
+      request2Messages(request).lang.locale)
+
+  /** Adds a contest; then the list in the new contest's year, with the type, country and order the
+    * add form carried (ContestsFilter.fromForm) where the new contest is of them, so it is listed.
+    */
   def saveContest() = withAuth(rolePermission(Set(User.ROOT_ROLE))) { user => implicit request =>
+    val form = request.body.asFormUrlEncoded.getOrElse(Map.empty)
+    val carried = ContestsFilter.fromForm(name => form.get(name).flatMap(_.headOption))
     editContestForm
       .bindFromRequest()
       .fold(
         formWithErrors => {
+          val bar = listBar(carried)
           BadRequest(
             views.html.contests(
               user,
-              contestService.findContests(),
-              Seq.empty,
+              bar.shown,
               formWithErrors,
-              importContestsForm
+              importContestsForm,
+              Some(bar)
             )
           )
         },
         formContest => {
-          contestService.createContest(formContest)
-          Redirect(routes.ContestController.list())
+          val added = contestService.createContest(formContest)
+          Redirect(ContestsFilter.afterAdd(carried, added).addTo(routes.ContestController.list().url))
         }
       )
   }
@@ -86,19 +95,21 @@ class ContestController @Inject() (
       .bindFromRequest()
       .fold(
         formWithErrors => {
+          val bar = listBar(ContestsFilter.Default)
           BadRequest(
             views.html.contests(
               user,
-              contestService.findContests(),
-              Seq.empty,
+              bar.shown,
               editContestForm,
-              formWithErrors
+              formWithErrors,
+              Some(bar)
             )
           )
         },
         formContest => {
-          contestService.importContests(formContest)
-          Redirect(routes.ContestController.list())
+          // the imported contests' year if they share one, else all years, so they are listed
+          val imported = contestService.importContests(formContest)
+          Redirect(ContestsFilter.afterImport(imported).addTo(routes.ContestController.list().url))
         }
       )
   }

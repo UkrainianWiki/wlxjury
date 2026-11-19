@@ -10,13 +10,17 @@
         pager: Html = Html(""),
         contestId: Option[Long] = None,
         head: Html = Html(""),
-        roundFilter: Option[RoundsFilterBar] = None)(content: Html)(implicit messages: Messages, request: RequestHeader)
+        roundFilter: Option[RoundsFilterBar] = None,
+        filters: Html = Html(""),
+        orders: Html = Html(""))(content: Html)(implicit messages: Messages, request: RequestHeader)
 @* `title`: a message key, as main's; `head`: the page's own scripts and styles; `roundFilter`: the
-   Rounds page's Status, Type and Order menus (navbar.scala.html) *@
+   Rounds page's Status, Type and Order menus (navbar.scala.html); `filters`, `orders`: a page's own
+   menus in the navbar's filter and order groups (the contests page's) *@
 @layout(Messages(title), bodyClass = if (gallery) "gallery" else "") {
         @head
 } {
-        @navbar(title, user, asUserId, selectedRound, rounds, pager = pager, contestId = contestId, pagesInline = !gallery, roundFilter = roundFilter)
+        @navbar(title, user, asUserId, selectedRound, rounds, pager = pager, contestId = contestId, pagesInline = !gallery, roundFilter = roundFilter,
+            filters = filters, orders = orders)
         @accountNoticeBar(user)
 
         @* admin pages and their tables: up to the xxl container's width; forms narrow

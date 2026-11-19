@@ -534,10 +534,11 @@ div.thumb_small.wlx-thumb-failed img {
     margin: 0;
 }
 
-/* A gallery's region or country menu in the navbar (regionMenu.scala.html) and its round menu
-   (navbar.scala.html roundMenu): a long list scrolls inside itself */
-.region-menu .region-menu-list { min-width: 240px; }
-.region-menu .region-menu-list, .dropdown-menu.wlx-round-menu { max-height: 70vh; overflow-y: auto; }
+/* A gallery's region or country menu in the navbar (regionMenu.scala.html), the contests page's
+   country menu (contests.scala.html) and the galleries' round menu (navbar.scala.html roundMenu):
+   a long list scrolls inside itself */
+.dropdown-menu.region-menu-list { min-width: 240px; }
+.dropdown-menu.region-menu-list, .dropdown-menu.wlx-round-menu { max-height: 70vh; overflow-y: auto; }
 .region-menu-status { color: var(--bs-secondary-color); white-space: normal; }
 .region-menu-status:empty { display: none; }
 

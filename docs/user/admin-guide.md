@@ -650,7 +650,16 @@ tokens: the owner revokes them on the profile, and root on any account's tokens 
 
 A contest has a name, a country, a year, the Commons category or page its files come from (**Files source**),
 a **monument id template** for monuments contests, a greeting, and its rounds. Root creates and
-changes the contests on the **Contests** page. Admins of a contest set up its
+changes the contests on the **Contests** page. Its **Type**, **Country** and **Year** menus at the
+top pick which contests are listed (by default those of the latest contest year; **All years**
+lists every year), and **Order** lists the oldest or the newest first, or **By country**: by the
+country's name in the page's language, International last, each country's contests by year.
+**Country** goes by the contest's campaign if the tool knows it, else by its country text. A known country is one entry
+under its name, however it is written ("UA" or "Ukraine"). **International** has the contests of
+an international campaign and those whose country is empty or "International". Any other text
+("Ukraine, Animals", a misspelling) is an entry of its own. After **Add** the list shows
+the new contest's year, and after **Import** the imported contests' year (all years if they are
+of several). Admins of a contest set up its
 people ([People](#a-users)), its [greeting](#a-greeting), its [files](#a-import-files) and its
 [rounds](#a-running).
 

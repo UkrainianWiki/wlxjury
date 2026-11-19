@@ -7,7 +7,7 @@
             <td>@contestType</td>
             @for(year <- contests.map(_.year).distinct.sorted) {
                 @if(contests.exists(c => c.name == contestType && c.year == year)) {
-                    <td><a href="@routes.ContestController.list(Some(contestType), Some(year))">@year</a></td>
+                    <td><a href="@routes.ContestController.list(Some(contestType), Some(year.toString))">@year</a></td>
                 } else {
                     <td></td>
                 }

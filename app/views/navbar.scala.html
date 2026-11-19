@@ -17,7 +17,8 @@
         commentsBy: Html = Html(""),
         commentsByName: Option[String] = None,
         pagesInline: Boolean = true,
-        roundFilter: Option[RoundsFilterBar] = None)(implicit messages: Messages, request: RequestHeader)
+        roundFilter: Option[RoundsFilterBar] = None,
+        orders: Html = Html(""))(implicit messages: Messages, request: RequestHeader)
 
 @* The organisers' bar of a round's results (another's votes, or all together): with its round,
    juror, filter, order, view and region menus and the pager it is the most crowded, so its links
@@ -518,6 +519,8 @@
     @for(bar <- roundFilter) {
         @roundsOrderMenu(bar)
     }
+    @* a page's own order menu (the contests page's) *@
+    @orders
 }
 
 @* whether a group has an item: a list item, not only whitespace or a comment *@

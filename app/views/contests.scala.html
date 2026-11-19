@@ -1,17 +1,57 @@
 @import db.scalikejdbc.User
 @(
         user: db.scalikejdbc.User,
-        contests: Seq[org.intracer.wmua.ContestJury],
         filtered: Seq[org.intracer.wmua.ContestJury],
         editContestForm: Form[org.intracer.wmua.ContestJury],
         importForm: Form[String],
-        contestType: Option[String] = None,
-        year: Option[Int] = None
+        bar: Option[controllers.ContestsFilterBar] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 @import helper._
+@import controllers.ContestsFilter
+
+@* The Type, Country and Year menus and the Order menu of the list (`bar`, ContestsFilter: the
+   maintainer's request of 2026-11-19), in the navbar as the Rounds page's (navbar.scala.html
+   roundsFilterMenus): each choice the page with it, the other menus' choices kept; each toggle
+   with its menu's name shown ("Type: All", "Year: 2026"); Type, Country and Year items with their
+   counts (the contests each keeps within the other menus' choices). The Country menu's long list
+   scrolls inside it, as the galleries' region menu (main.css region-menu-list) *@
+@filterMenus(b: controllers.ContestsFilterBar) = {
+    @(new UiSelectionDto[Option[String]](
+        (k: Option[String]) => Call("GET", b.url(b.filter.withKind(k))),
+        b.filter.kind,
+        b.kinds.map(k => Some(k) -> SelectionItem(k, localized = false, count = Some(b.countKind(Some(k))))),
+        Some(None -> SelectionItem("rounds.filter.type.all", count = Some(b.countKind(None)))),
+        unlisted = SelectionItem(b.filter.kind.getOrElse("—"), localized = false)
+    ).toDropDown(id = Some("contests-type-menu"), label = Some(Messages("rounds.filter.type")), labelShown = true))
+    @(new UiSelectionDto[ContestsFilter.Country](
+        (c: ContestsFilter.Country) => Call("GET", b.url(b.filter.withCountry(c))),
+        b.country,
+        (if (b.hasInternational) Seq(ContestsFilter.Country.International -> SelectionItem("contests.filter.international",
+            count = Some(b.countCountry(ContestsFilter.Country.International)))) else Nil) ++
+        b.countries.map(c => c -> SelectionItem(b.name(c), localized = false, count = Some(b.countCountry(c)))),
+        Some(ContestsFilter.Country.All -> SelectionItem("country.all", count = Some(b.countCountry(ContestsFilter.Country.All)))),
+        unlisted = SelectionItem(Some(b.name(b.country)).filter(_.nonEmpty).getOrElse("—"), localized = false)
+    ).toDropDown(id = Some("contests-country-menu"), label = Some(Messages("country")), labelShown = true,
+        menuClass = "region-menu-list"))
+    @(new UiSelectionDto[Option[Int]](
+        (y: Option[Int]) => Call("GET", b.url(b.filter.withYear(b.yearChoice(y)))),
+        b.year,
+        b.years.map(y => Some(y) -> SelectionItem(y.toString, localized = false, count = Some(b.countYear(Some(y))))),
+        Some(None -> SelectionItem("contests.filter.year.all", count = Some(b.countYear(None)))),
+        unlisted = SelectionItem(b.year.fold("—")(_.toString), localized = false)
+    ).toDropDown(id = Some("contests-year-menu"), label = Some(Messages("year")), labelShown = true))
+}
+@orderMenu(b: controllers.ContestsFilterBar) = {
+    @(new UiSelectionDto[ContestsFilter.Order](
+        (o: ContestsFilter.Order) => Call("GET", b.url(b.filter.withOrder(o))),
+        b.filter.order,
+        ContestsFilter.Order.values.map(o => o -> SelectionItem(o.messageKey))
+    ).toDropDown(id = Some("contests-order-menu"), label = Some(Messages("rounds.order")), labelShown = true))
+}
 
 @* the category fields' Commons suggestions (category-suggest.js) are Tom Select controls *@
-@mainAdmin("contests", user, user.getId, head = snippets.tomSelectScripts()) {
+@mainAdmin("contests", user, user.getId, head = snippets.tomSelectScripts(),
+        filters = bar.fold(play.twirl.api.HtmlFormat.empty)(filterMenus), orders = bar.fold(play.twirl.api.HtmlFormat.empty)(orderMenu)) {
     @* the page's title, shown; then its two sections: the import, the list *@
     <h1 class="h3">@Messages("contests")</h1>
     <div class="row" xmlns="http://www.w3.org/1999/html">
@@ -38,7 +78,10 @@
     <div class="row" >
         <h2 class="h4 mt-4">@Messages("contests.list")</h2>
 
-        @contestsTable(contests)
+        @for(b <- bar if b.contests.nonEmpty && b.shown.isEmpty) {
+            <p class="text-muted" id="contests-filter-none">@Messages("contests.filter.none")
+                <a href="@b.url(ContestsFilter.Default.withYear(ContestsFilter.Year.All).withOrder(b.filter.order))" id="contests-filter-reset">@Messages("contests.filter.reset")</a></p>
+        }
 
         @* scrolls inside its box on a narrow screen; the add row's field widths: main.css
            (.wlx-contests-table). position-relative: the box contains the absolutely placed
@@ -64,6 +107,8 @@
                 @if(user.hasRole(User.ROOT_ROLE)) {
                     @form(routes.ContestController.saveContest(), Symbol("class") -> "form-vertical", Symbol("id") -> "add-contest") {
                         @csrfField()
+                        @* the list's type, country and order, kept after Add (ContestsFilter.fromForm, afterAdd) *@
+                        @for(b <- bar.toSeq; (name, value) <- b.filter.copy(year = ContestsFilter.Year.Latest).params) {<input type="hidden" name="@(ContestsFilter.FormPrefix + name)" value="@value">}
                         <tr>
                             @if(editContestForm.hasGlobalErrors) {
                                 <p class="error">
@@ -106,7 +151,7 @@
                 }
 
                 @for(contest <- filtered) {
-                    <tr>
+                    <tr class="contest-row" data-contest="@contest.getId">
                         <td>@Messages(contest.name)</td>
                         <td>@Messages(contest.country)</td>
                         <td>@contest.year</td>

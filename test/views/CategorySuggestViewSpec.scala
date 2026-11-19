@@ -67,7 +67,7 @@ class CategorySuggestViewSpec extends PlaySpecification {
 
   "the contests page" should {
     "load the script and mark the import source and a new contest's images as mixed" in {
-      val page = contentAsString(views.html.contests(root, Seq(contest), Seq(contest),
+      val page = contentAsString(views.html.contests(root, Seq(contest),
         Form(ignored(contest)), Form(single("source" -> nonEmptyText))))
       page must contain(script)
       page must contain(tomSelect)
@@ -76,7 +76,7 @@ class CategorySuggestViewSpec extends PlaySpecification {
       input(page, "name") must not contain "data-category-suggest"
     }
     "be titled Contests, shown as its heading, the import a section of its own" in {
-      val doc = org.jsoup.Jsoup.parse(contentAsString(views.html.contests(root, Seq(contest), Seq(contest),
+      val doc = org.jsoup.Jsoup.parse(contentAsString(views.html.contests(root, Seq(contest),
         Form(ignored(contest)), Form(single("source" -> nonEmptyText)))))
       val h2 = doc.select("h2").eachText()
       (doc.title === messages("contests")) and (doc.select("h1").text === messages("contests")) and
@@ -88,7 +88,7 @@ class CategorySuggestViewSpec extends PlaySpecification {
       val noSource = contest.copy(id = Some(2), images = None)
       val blank = contest.copy(id = Some(3), images = Some("  "))
       val all = Seq(contest, noSource, blank)
-      val doc = org.jsoup.Jsoup.parse(contentAsString(views.html.contests(root, all, all,
+      val doc = org.jsoup.Jsoup.parse(contentAsString(views.html.contests(root, all,
         Form(ignored(contest)), Form(single("source" -> nonEmptyText)))))
       val links = doc.select("tbody a[href]").asScala.toSeq
       (links.forall(a => a.text.trim.nonEmpty || a.attr("aria-label").nonEmpty) must beTrue) and
@@ -105,7 +105,7 @@ class CategorySuggestViewSpec extends PlaySpecification {
         (doc.select("thead th").eachText().contains(messages("files.source")) must beTrue)
     }
     "name its icon links, and its import field apart from the field's example" in {
-      val doc = org.jsoup.Jsoup.parse(contentAsString(views.html.contests(root, Seq(contest), Seq(contest),
+      val doc = org.jsoup.Jsoup.parse(contentAsString(views.html.contests(root, Seq(contest),
         Form(ignored(contest)), Form(single("source" -> nonEmptyText)))))
       val source = doc.getElementById("source")
       forall(Seq("contest.users.edit", "contest.rounds.edit")) { key =>

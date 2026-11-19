@@ -191,6 +191,24 @@ No next release is set yet (`build.sbt` says `26.12-SNAPSHOT`). Everything devel
   `services.imports`, `services.jobs`, `security.account`, `security.roles`, `round.admin` and
   `round.access` at INFO (`round.counts` stays at WARN). Operations §1.7.
 
+- **Contests page menus** (the maintainer's request of 2026-11-19, for 26.11.13, developed
+  2026-11-19, `stack/196-contests-filter`): root's contests page has **Type**, **Country** and
+  **Year** menus and an **Order** menu in the navbar, in the design of the Rounds page's, each item
+  with its count within the other menus' choices and every link keeping the others. Country goes
+  by the contest's campaign, else its country text: a known country is one entry however written
+  ("UA", "Ukraine": `country=ua`), **International** has international campaigns and an empty or
+  "International" country, any other text is an entry of its own; the menu scrolls inside its box.
+  By default the page lists the latest year of the contests, not the calendar's; **All years** is
+  `year=all`. Oldest first by default, by year and then as added (before, the list was in the
+  order the contests were added, all years together); the old `?contestType=…&year=…` links still
+  work. The type-and-year grid above the list is gone from that page (kept on root's all-users
+  page). After **Add** the page opens on the new contest's year, keeping the list's type, country
+  and order where the new contest is of them; after **Import**, on the imported contests' year
+  (all years if several, or if the import added none, all of them being there already). A country
+  written in another language ("Україна") joins its entry. **Order** also has **By country**
+  (`order=country`, A to Z only, new key `contests.order.country`): by the name the Country menu
+  shows, in the page language's alphabetical order, International last, each country's contests
+  by year and then as added. No migration.
 - **Licence: GPL-3.0-or-later** (developed 2026-11-17, `stack/182-gpl-relicense`): relicensed from
   Apache-2.0; releases before this stay available under Apache-2.0. `LICENSE` is the GPL-3.0
   text, `NOTICE` lists the bundled components and the option chosen for each dual-licensed one;

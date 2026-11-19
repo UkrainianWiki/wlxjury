@@ -122,6 +122,8 @@ test.describe('root', () => {
   test('opens the contests page', { tag: '@R-01' }, async ({ page }) => {
     await page.goto('/contests');
     await expect(page.getByRole('heading', { level: 1, name: 'Contests' })).toBeAttached();
+    // the latest year of the contests by default (2026); the fixture's 2025 contest in All years
+    await page.goto('/contests?year=all');
     await expect(page.getByRole('cell', { name: /Wiki Loves Monuments/ }).first()).toBeVisible();
   });
 

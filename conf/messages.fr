@@ -1424,6 +1424,13 @@ round.badge.active = Actif
 round.badge.inactive = Inactif
 link.new.tab = s’ouvre dans un nouvel onglet
 
+# The contests page's Type, Country, Year and Order menus (ContestsFilter, contests.scala.html)
+contests.filter.international = Internationaux
+contests.filter.year.all = Toutes les années
+contests.filter.none = Aucun concours ne correspond à ces choix.
+contests.filter.reset = Afficher tous les concours
+contests.order.country = Par pays
+
 # The contest health page (support diagnostics plan, D-1a; ContestHealth, contestHealth.scala.html)
 health.title = État du concours
 health.intro = Ce que montrent maintenant les données du concours, et ce qui peut poser problème. Cette page ne modifie rien.
