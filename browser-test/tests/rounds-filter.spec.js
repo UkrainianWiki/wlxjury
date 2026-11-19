@@ -115,8 +115,10 @@ async function checkLook(page, mode, { active, inactive, backgrounds, link }) {
   await expect(active.locator('.badge')).toHaveCount(0);
   await checkIcons(page, mode, active, COLOURED, backgrounds, 'the active round');
   const grey = await colour(page, 'var(--bs-secondary-color)');
+  // once settled: the inactive class was just given, and a pager link's colour changes with a
+  // transition (Bootstrap's .page-link, 0.15 s), so a read at once may find it a step short
+  await expect(inactive, `${mode}: the inactive round's text in the secondary grey`).toHaveCSS('color', grey);
   const text = await inactive.evaluate((el) => getComputedStyle(el).color);
-  expect(text, `${mode}: the inactive round's text in the secondary grey`).toBe(grey);
   for (const bg of backgrounds) {
     expect(contrast(text, bg), `${mode}: the inactive round's text on ${bg}`).toBeGreaterThanOrEqual(4.5);
   }

@@ -288,6 +288,11 @@ texts, for view specs. Each can get a browser test with its fix.
   no cookie changed, as after a vote. In Chromium `voting.spec.js`'s four Back checks assert it
   (the `pageshow` event `persisted`, the old vote shown, a fresh load showing the stored one,
   annotated `U23`), so they fail once Chromium stops restoring the stale page, the signal to
-  revisit this (2026-11-04); to confirm in a real Chrome by hand. A fix would
+  revisit this (2026-11-04); to confirm in a real Chrome by hand. One exception, local runs
+  only: when Chromium reports (over CDP) that it dropped its whole back/forward cache for the
+  host's critical memory pressure (`CacheLimitPrunedOnCriticalMemoryPressure`, seen in full
+  parallel runs on a 16 GB Windows host), the check takes the reloaded page's stored vote instead,
+  as in Firefox and WebKit, annotated `U23` "not checked" with the reasons on the console; on CI
+  that reason fails, and any other reason fails everywhere (2026-11-19). A fix would
   reload on `pageshow` with `persisted` (`Secured.noStore`'s comment weighs that against a flash
   of the old votes), or change a cookie on a vote.

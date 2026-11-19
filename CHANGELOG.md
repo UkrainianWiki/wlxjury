@@ -51,6 +51,26 @@ is listed below.
   pages the row's edit pencil is now a link named "Edit" for screen readers (it was an unnamed
   button inside a link, which the new browser test's axe scan flagged). No migration.
 
+**Fixes**
+
+- **The first keys typed in a saved category or import source are kept** (a follow-up of the
+  26.11.13.1 hotfix item "A saved category or import source can be edited again"; developed
+  2026-11-19, `stack/201-chromium-ci`): on a phone or a busy page, the first keys typed after a
+  tap on a field with a saved value were dropped (typing "Category:Images from Wiki Loves
+  Monuments 2026 in Armenia" could send "Wiki Loves Monuments 2026 in Armenia"), since the value
+  became editable text only once Tom Select's own focus handling ran, on a timer. It now does on
+  the field's own focus; a field left before that timer keeps its value as before
+  (`category-suggest.js`). No migration.
+
+**Development**
+
+- **Chromium browser tests green on CI** (`stack/201-chromium-ci`): `category-suggest.spec.js`'s
+  phone tests (A-09) by the fix above; `rounds-filter.spec.js` (O-07) waits for a pager link's
+  colour transition before comparing it with the secondary grey; `voting.spec.js`'s Back checks
+  (U23) print Chromium's back/forward cache reasons when it doesn't restore the page, and, off CI
+  only, take its pruning for the host's critical memory pressure (the full local run's flake) as
+  "not checked", checking the reloaded page's stored vote instead (UI practices, U23).
+
 ## 26.11.13.1 (2026-11-19)
 
 Built 2026-11-19, from `26.11.13`: a hotfix of three fixes. **No migration**: the schema stays

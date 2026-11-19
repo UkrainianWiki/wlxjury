@@ -7,7 +7,11 @@
 // with them a page without no-store would pass too. Without no-store they fail in Firefox. In
 // Chromium, Back restores the no-store large view from the back/forward cache with the old vote
 // (U23): there they assert just that (the page restored, the old vote shown, a fresh load showing
-// the stored one), so they fail once Chromium stops doing it, the signal to revisit U23.
+// the stored one), so they fail once Chromium stops doing it, the signal to revisit U23. Only
+// off CI, when Chromium says (over CDP) that it dropped the cache for the host's critical memory
+// pressure, as in a full parallel run on a busy 16 GB Windows host, do they check the reloaded
+// page instead, as in the other engines (U23 annotated "not checked", the reasons on the
+// console); on CI, or for any other reason, they fail, with Chromium's reasons in the message.
 // Each engine votes as its own juror (lib/server.js), so the engines can share a server; each
 // test reads the file's vote first and casts one that changes it, so a rerun votes again.
 import AxeBuilder from '@axe-core/playwright';
@@ -70,19 +74,39 @@ async function voteAndLoad(page, act) {
   return new URL(request.url());
 }
 
+/** Chromium's reason for dropping its whole back/forward cache under the host's critical memory
+  * pressure (the 16 GB Windows host of a full parallel run, its free memory low): nothing about
+  * the page. Accepted locally only: on CI it fails as any other reason. */
+const MEMORY_PRUNED = 'CacheLimitPrunedOnCriticalMemoryPressure';
+
 /** Back after the vote: the voted file, showing the stored vote `expected`, as a fresh load of
   * it does; in Chromium (U23), the page restored from the back/forward cache with the vote it had
-  * `before`. */
+  * `before`, unless, off CI, Chromium says it dropped the cache only for the host's critical memory
+  * pressure: then the page is loaded again, and shows `expected` as in the other engines. */
 async function expectBackShowsVote(page, url, read, expected, before, browserName) {
   // 'commit': a page the back/forward cache restores fires no load event
   await page.goBack({ waitUntil: 'commit' });
   await expect(page).toHaveURL(url);
+  let restored = false;
   if (browserName === 'chromium') {
-    test.info().annotations.push({ type: 'U23', description: 'Chromium restores the no-store large view from its back/forward cache (UI practices §9)' });
-    await expect.poll(() => page.evaluate(() => window.wlxPageshow), { message: 'U23: restored from the back/forward cache' })
-      .toEqual({ persisted: true });
-    expect(await read(page), 'U23: the restored page shows the vote from before').toBe(before);
-  } else {
+    // not restored: Chromium's reasons (largeView's CDP session) in the message
+    let outcome;
+    await expect.poll(async () => {
+      const shown = await page.evaluate(() => window.wlxPageshow);
+      const reasons = notRestored.get(page) || [];
+      if (shown && shown.persisted) outcome = 'restored';
+      else if (!process.env.CI && shown && reasons.length && reasons.every((r) => r === MEMORY_PRUNED)) outcome = 'pruned';
+      else outcome = JSON.stringify({ ...shown, notRestored: reasons });
+      return outcome;
+    }, { message: 'U23: restored from the back/forward cache' }).toMatch(/^(restored|pruned)$/);
+    restored = outcome === 'restored';
+    if (!restored) console.warn(`U23 not checked (${test.info().title}): Chromium didn't restore the page: ${notRestored.get(page).join(', ')}`);
+    test.info().annotations.push({ type: 'U23', description: restored
+      ? 'Chromium restores the no-store large view from its back/forward cache (UI practices §9)'
+      : `not checked: Chromium dropped its back/forward cache for the host's memory pressure (${notRestored.get(page).join(', ')})` });
+    if (restored) expect(await read(page), 'U23: the restored page shows the vote from before').toBe(before);
+  }
+  if (!restored) {
     // the reloaded page parsed: its buttons are there (expect.poll doesn't retry a reader that throws)
     await page.waitForLoadState('domcontentloaded');
     await expect.poll(() => read(page), { message: 'Back shows the stored vote' }).toBe(expected);
@@ -93,14 +117,22 @@ async function expectBackShowsVote(page, url, read, expected, before, browserNam
   await fresh.close();
 }
 
+/** Chromium's reasons for not restoring a page from the back/forward cache, by page (CDP). */
+const notRestored = new WeakMap();
+
 /** The juror's large view of `url`, in the routeless browser. */
-async function largeView(routelessAs, url) {
+async function largeView(routelessAs, url, browserName) {
   const context = await routelessAs('juror');
   // each pageshow: persisted is true for a page the back/forward cache brought back
   await context.addInitScript(() => {
     window.addEventListener('pageshow', (e) => { window.wlxPageshow = { persisted: e.persisted }; });
   });
   const page = await context.newPage();
+  if (browserName === 'chromium') {
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Page.enable');
+    cdp.on('Page.backForwardCacheNotUsed', (e) => notRestored.set(page, e.notRestoredExplanations.map((r) => r.reason)));
+  }
   await page.goto(url);
   return page;
 }
@@ -219,7 +251,7 @@ test.describe('a juror votes', () => {
   test('in the binary round\'s large view by key, then Back shows the vote', { tag: ['@J-21', '@J-24'] }, async ({ routelessAs, fixture, baseURL, browserName }) => {
     const { juror } = fixture.accounts;
     const url = baseURL + largePath(fixture.roundBinaryId, juror.id, juror.pageId);
-    const page = await largeView(routelessAs, url);
+    const page = await largeView(routelessAs, url, browserName);
     const before = await binaryVote(page);
     // Space selects unless selected; Delete rejects
     const [key, expected] = before === 1 ? ['Delete', -1] : ['Space', 1];
@@ -232,7 +264,7 @@ test.describe('a juror votes', () => {
   test('in the binary round\'s large view by its button, then Back shows the vote', { tag: ['@J-20', '@J-24'] }, async ({ routelessAs, fixture, baseURL, browserName }) => {
     const { juror } = fixture.accounts;
     const url = baseURL + largePath(fixture.roundBinaryId, juror.id, juror.pageId);
-    const page = await largeView(routelessAs, url);
+    const page = await largeView(routelessAs, url, browserName);
     const before = await binaryVote(page);
     const [button, expected] = before === -1 ? [selectButton(page), 1] : [rejectButton(page), -1];
     const posted = await voteAndMove(page, () => button.click());
@@ -243,7 +275,7 @@ test.describe('a juror votes', () => {
   test('in the rated round\'s large view by key, then Back shows the rate', { tag: ['@J-21', '@J-24'] }, async ({ routelessAs, fixture, baseURL, browserName }) => {
     const { juror } = fixture.accounts;
     const url = baseURL + largePath(fixture.roundRatingId, juror.id, juror.ratedPageId);
-    const page = await largeView(routelessAs, url);
+    const page = await largeView(routelessAs, url, browserName);
     const before = await ratedVote(page);
     const expected = before === 3 ? 4 : 3;
     const posted = await voteAndMove(page, () => page.keyboard.press(String(expected)));
@@ -255,7 +287,7 @@ test.describe('a juror votes', () => {
   test('in the rated round\'s large view by a star, then Back shows the rate', { tag: ['@J-20', '@J-24'] }, async ({ routelessAs, fixture, baseURL, browserName }) => {
     const { juror } = fixture.accounts;
     const url = baseURL + largePath(fixture.roundRatingId, juror.id, juror.ratedPageId);
-    const page = await largeView(routelessAs, url);
+    const page = await largeView(routelessAs, url, browserName);
     const before = await ratedVote(page);
     const expected = before === 6 ? 7 : 6;
     // raty's stars: <i data-alt="n"> in the stars' element (no role: see the accessibility report)

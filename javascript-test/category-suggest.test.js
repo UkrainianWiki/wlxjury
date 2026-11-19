@@ -312,6 +312,56 @@ describe("categorySuggest", () => {
         expect(ts.items).toEqual(["Category:Other"]);
     });
 
+    test("a click on it makes the value the text at once, before Tom Select's own focus timer, and keys typed then are kept", () => {
+        const input = field("mixed", SAVED);
+        const ts = suggest.categorySuggest(input);
+        ts.control.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+        expect(document.activeElement).toBe(ts.control_input);
+        expect(ts.isFocused).toBe(false); // Tom Select's focus() handles the focus on a timer
+        expect(ts.items).toEqual([]);
+        expect(ts.control_input.value).toBe(SAVED);
+        expect(ts.control_input.selectionStart).toBe(0);
+        expect(ts.control_input.selectionEnd).toBe(SAVED.length);
+        expect(input.value).toBe(SAVED);
+        // a key typed now reaches the box (Tom Select drops it while the item is shown)
+        const key = new KeyboardEvent("keydown", { key: "W", keyCode: 87, bubbles: true, cancelable: true });
+        ts.control_input.dispatchEvent(key);
+        expect(key.defaultPrevented).toBe(false);
+
+        // Tom Select's own focus handling, later, keeps the text
+        jest.runOnlyPendingTimers();
+        expect(ts.isFocused).toBe(true);
+        expect(ts.items).toEqual([]);
+        expect(ts.control_input.value).toBe(SAVED);
+        expect(input.value).toBe(SAVED);
+        type(ts, "Category:Other");
+        ts.blur();
+        jest.runOnlyPendingTimers();
+        expect(input.value).toBe("Category:Other");
+        expect(ts.items).toEqual(["Category:Other"]);
+    });
+
+    test("left before Tom Select's own focus timer, the value is the item again, the field left", () => {
+        const input = field("mixed", SAVED);
+        const changes = jest.fn();
+        input.addEventListener("change", changes);
+        const ts = suggest.categorySuggest(input);
+        ts.control.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+        expect(ts.items).toEqual([]);
+        ts.control_input.blur();
+        expect(ts.items).toEqual([SAVED]);
+        expect(input.value).toBe(SAVED);
+        expect(ts.control_input.value).toBe("");
+        jest.runOnlyPendingTimers();
+        expect(ts.isFocused).toBe(false);
+        expect(ts.items).toEqual([SAVED]);
+        expect(input.value).toBe(SAVED);
+        expect(changes).not.toHaveBeenCalled();
+        // and the next focus makes it the text again
+        ts.control_input.focus();
+        expect(ts.control_input.value).toBe(SAVED);
+    });
+
     test("leaving it unchanged keeps the value, also on focusing it again", () => {
         const input = field("category", "Category:Paris, France");
         const ts = suggest.categorySuggest(input);

@@ -130,6 +130,11 @@
     * typed with the item. Leaving or Enter keeps that text as the value (createOnBlur, create):
     * focus and blur unchanged keep it, a box cleared and left empties the field.
     * setSelectionRange rather than select(), which iOS Safari ignores.
+    * This is done on the box's own focus event too: a click or a tap on the field focuses the box
+    * through Tom Select's focus(), whose own focus handling (and 'focus' event) waits for a timer;
+    * until then the item stayed and the box hid what was typed (Tom Select drops the keys while
+    * the item is shown), so a busy page (a phone, CI) lost the first keys typed. Whichever comes
+    * first does it, the other finds no item.
     * While the field is focused, the form's own input follows its text, silently (the item is
     * removed without a change event, and no event as it is typed): a send then (a tap on plain
     * text leaves the field focused on a phone), the browser's restore of the form (F5, Back) or a
@@ -144,9 +149,9 @@
     * in the box and still in the form's input, never lost. */
   function editOnFocus(ts) {
     var kept = false; // a value made text on focus, until the field is left
-    ts.on('focus', function () {
+    function edit() {
       var box = ts.control_input;
-      if (!ts.items.length || box.value) return;
+      if (ts.isDisabled || ts.isReadOnly || !ts.items.length || box.value) return;
       var value = ts.items[0];
       var option = ts.options[value];
       var text = option ? option[ts.settings.labelField] : value;
@@ -154,10 +159,36 @@
       ts.input.value = value;
       kept = true;
       if (!box.value) ts.setTextboxValue(text);
+      ts.inputState(); // the box shown and typed in at once, before Tom Select's own focus handling
       box.setSelectionRange(0, box.value.length);
-    });
+    }
+    ts.on('focus', edit);
+    ts.control_input.addEventListener('focus', edit);
     ts.control_input.addEventListener('input', function () {
       if (kept && !ts.items.length) ts.input.value = ts.control_input.value.trim();
+    });
+    // left before Tom Select's own focus handling ran (its timer; its blur handling skips a field
+    // it never saw focused): the text, as typed or kept, is the value again, an item, silently
+    // (a cleared box empties the field, with one change), as Tom Select's blur would have done
+    ts.control_input.addEventListener('blur', function () {
+      if (!kept || ts.isFocused || ts.items.length) return;
+      var text = ts.control_input.value.trim();
+      kept = false;
+      ts.setTextboxValue('');
+      if (text) {
+        if (!ts.options[text]) {
+          var option = {};
+          option[ts.settings.valueField] = text;
+          option[ts.settings.labelField] = text;
+          ts.addOption(option);
+        }
+        ts.addItem(text, true);
+        ts.input.value = text;
+      } else {
+        ts.input.value = '';
+        ts.input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      ts.inputState();
     });
     ts.on('blur', function () {
       if (ts.refreshTimeout) {
