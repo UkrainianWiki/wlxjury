@@ -56,10 +56,10 @@
                             <div id="deleted-file" class="card card-body large-box">
                                 <span class="badge text-bg-danger">@Messages("deleted.on.commons", at.toLocalDate)</span>
                                 <div class="mt-1">
-                                    <a href="@Global.commonsPageUrl(image)" target="_blank" rel="noopener">@Messages("files.open.on.commons")</a>
+                                    <a href="@Global.commonsPageUrl(image)" target="_blank" rel="noopener">@views.ExternalLinks.marked(Messages("files.open.on.commons"), Global.commonsPageUrl(image))</a>
                                 </div>
                                 <div>
-                                    <a href="@Global.commonsUndeleteUrl(image)" target="_blank" rel="noopener">@Messages("files.undelete.on.commons")</a>
+                                    <a href="@Global.commonsUndeleteUrl(image)" target="_blank" rel="noopener">@views.ExternalLinks.marked(Messages("files.undelete.on.commons"), Global.commonsUndeleteUrl(image))</a>
                                 </div>
                             </div>
                         }
@@ -71,9 +71,9 @@
                         @monumentInfo(image, monument, view.contest.id)
 
                         <div class="file-title large-line">
-                            <a href="@Global.commonsPageUrl(image)" target="_blank" rel="noopener">@image.title</a>
+                            <a href="@Global.commonsPageUrl(image)" target="_blank" rel="noopener">@views.ExternalLinks.marked(image.title, Global.commonsPageUrl(image))</a>
                             @if(file.deletedAt.isEmpty) {
-                                <br><a href="@image.url">@Html(Messages("full.resolution", image.resolutionStr, image.mpxStr))</a>
+                                <br><a href="@image.url" target="_blank" rel="noopener">@views.ExternalLinks.marked(Html(Messages("full.resolution", image.resolutionStr, image.mpxStr)), image.url.getOrElse(""))</a>
                             }
                         </div>
                     }

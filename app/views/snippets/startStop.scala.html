@@ -3,10 +3,10 @@
    which (round.start, round.stop, juror.start, juror.stop). Grey with or without the Yes/No
    text: the play or stop icon and the name show the state, red and green stood out too much
    for something rarely used. `extraFields`: hidden fields posted with it (the Rounds page's
-   filter, so that it comes back to the same list: RoundController.setRound) *@
+   filter, so that it comes back to the same list: RoundController.setRound). Its text, if any,
+   after the button *@
 @import helper._
 @label = @{ Messages(s"$what.${if (active) "stop" else "start"}") }
-@if(withText){@if(active) { @Messages("yes") } else { @Messages("no") }}
 @form(submit(), Symbol("class") -> "d-inline", Symbol("id") -> s"set-active-form-$id", Symbol("role") -> "form") {
     @csrfField()
     <input type="hidden" id="current-@id" name="currentId" value='@id' />
@@ -18,3 +18,7 @@
         <i class="bi @if(active) {bi-stop-fill} else {bi-play-fill}" aria-hidden="true"></i>
     </button>
 }
+@* the Yes/No after the button, so that every row's button starts at one place whatever the
+   word's width ("Так"/"Ні"), the words left-aligned after them (the Rounds table's Active column,
+   the maintainer, 2026-11-19) *@
+@if(withText){<span class="wlx-start-stop-text">@if(active) {@Messages("yes")} else {@Messages("no")}</span>}

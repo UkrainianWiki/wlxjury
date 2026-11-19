@@ -76,11 +76,11 @@ class AverageRulePagesSpec extends PlaySpecification with PlayTestDb {
   /** Each rule's expected views. */
   private val expected: Map[AverageRule, Views] = Map(
     AverageRule.Rated -> ((Seq("1" -> "7.50 (15 / 2 of 3 jurors)", "2" -> "6.00 (18 / 3 jurors)"),
-      "7.50 (15 / 2 of 3 jurors)",
+      "(15 / 2 of 3 jurors)",
       Map("File:F1.jpg" -> "7.50 (15 / 2 of 3 jurors)", "File:F2.jpg" -> "6.00 (18 / 3 jurors)"),
       Map("File:F1.jpg" -> "7.50 (15 / 2)", "File:F2.jpg" -> "6.00 (18 / 3)"))),
     AverageRule.Assigned -> ((Seq("2" -> "6.00 (18 / 3 jurors)", "1" -> "5.00 (15 / 3 jurors)"),
-      "5.00 (15 / 3 jurors)",
+      "(15 / 3 jurors)",
       Map("File:F1.jpg" -> "5.00 (15 / 3 jurors)", "File:F2.jpg" -> "6.00 (18 / 3 jurors)"),
       Map("File:F1.jpg" -> "5.00 (15 / 3)", "File:F2.jpg" -> "6.00 (18 / 3)"))),
     AverageRule.Sum -> ((Seq("2" -> "18 (sum of 3 jurors)", "1" -> "15 (sum of 3 jurors)"),
@@ -131,7 +131,7 @@ class AverageRulePagesSpec extends PlaySpecification with PlayTestDb {
         VoteJdbc.rate(1, f.jurors(2).getId, f.round.getId, 10) must be_>(0)
         val dirty = RoundCounts.state(f.round.getId).map(_.dirtyFiles)
         (dirty must beSome(1L)) and agree(views(app, f),
-          (Seq("1" -> "8.33 (25 / 3 jurors)", "2" -> "6.00 (18 / 3 jurors)"), "8.33 (25 / 3 jurors)",
+          (Seq("1" -> "8.33 (25 / 3 jurors)", "2" -> "6.00 (18 / 3 jurors)"), "(25 / 3 jurors)",
             Map("File:F1.jpg" -> "8.33 (25 / 3 jurors)", "File:F2.jpg" -> "6.00 (18 / 3 jurors)"),
             Map("File:F1.jpg" -> "8.33 (25 / 3)", "File:F2.jpg" -> "6.00 (18 / 3)")))
       }(Map("roundImage.read" -> "true"))

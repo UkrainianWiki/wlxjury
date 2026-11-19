@@ -79,6 +79,9 @@ export function fixtureFor(browserName) {
     // the contest health page's Nepal case (health.spec.js): an old WLE 2020 contest of its own,
     // reused for WLM 2026 in Nepal; 0 in the guides' screenshot mode
     healthContestId: s.healthContestId || 0,
+    // the rounds' type icons (rounds-filter.spec.js): a contest of its own with 30 rounds of every
+    // type, active and not, names of very different lengths; 0 in the guides' screenshot mode
+    roundsContestId: s.roundsContestId || 0,
   };
 }
 

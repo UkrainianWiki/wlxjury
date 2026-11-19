@@ -100,6 +100,10 @@ class ImportSourceCheckSpec extends PlaySpecification with PlayTestDb {
         page must not(beMatching("""(?s).*id="source-as-page" value="page" checked.*"""))
         page must contain(s"""<input type="hidden" name="sourceFor" value="$name">""")
         page must contain(s"""value="$name"""") // the field keeps the name
+        // the category's and the page's links to Commons: a new tab, Commons' mark
+        val doc = org.jsoup.Jsoup.parse(page)
+        doc.select("#source-choice a[href^=https://commons.wikimedia.org/]").size === 2
+        views.ExternalLinksCheck.problems(doc) must beEmpty
         jobs(contest) === 0
 
         status(send(app, contest, admin, "source" -> name, "sourceAs" -> "category", "sourceFor" -> name)) === SEE_OTHER

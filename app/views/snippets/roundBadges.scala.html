@@ -1,9 +1,0 @@
-@(round: db.scalikejdbc.Round)(implicit messages: Messages)
-@* A round's badges, the same wherever the round is named (the maintainer's decisions of
-   2026-11-18): the Rounds table, the statistics page's round menu and the galleries' round menu.
-   An open round's pale green "Active" (Codex's success badge, codex-theme.css), the one that
-   stands out; its type, "Yes/No" or "Rated" (criteria rounds too: RoundsFilter.Kind.of), in the
-   neutral grey badge, from the Type menu's own items; a comments-only round has no type badge.
-   An inactive round's text and type badge are grey (wlx-round-inactive, main.css). Each badge after
-   a ", " read by screen readers only, so a link or menu item reads "Final, Active, Yes/No", not
-   "FinalActiveYes/No". No white space around it *@<span class="wlx-round-badges">@if(round.active) {<span class="visually-hidden">, </span><span class="badge text-bg-success wlx-round-active">@Messages("round.badge.active")</span>}@for(kind <- controllers.RoundsFilter.Kind.of(round)) {<span class="visually-hidden">, </span><span class="badge text-bg-secondary wlx-round-type" data-type="@kind.param">@Messages(kind.messageKey)</span>}</span>

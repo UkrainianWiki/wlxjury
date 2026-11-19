@@ -111,8 +111,10 @@ class MonumentControllerSpec extends Specification with PlayTestDb {
       testDbApp { implicit app =>
         val f = fixture()
         val body = page(f.juror)
-        body must contain("Замок Любарта")
-        body must contain("""<a href="https://uk.wikipedia.org/wiki/%D0%9B%D1%83%D1%86%D1%8C%D0%BA">Луцьк</a>""")
+        // the name's last character in the span with the link's mark (views.ExternalLinks.marked)
+        org.jsoup.Jsoup.parse(body).select("h1").text must contain("Замок Любарта")
+        // a link that leaves the tool: a new tab, Wikipedia's mark after its text (snippets/externalMark)
+        body must contain("""<a href="https://uk.wikipedia.org/wiki/%D0%9B%D1%83%D1%86%D1%8C%D0%BA" target="_blank" rel="noopener">Луць<span class="wlx-ext-nowrap">к<span class="wlx-ext-tail">&nbsp;<span class="wlx-ext-mark" data-site="wikipedia" aria-hidden="true">""")
         body must contain("вул. Кафедральна, 1")
         body must contain("07-101-0001 · А-нац · XIV ст.")
         // the list's row: its id is the anchor of the regional lists' rows
@@ -120,9 +122,13 @@ class MonumentControllerSpec extends Specification with PlayTestDb {
           beSome(MonumentPage.wikiUrl("uk.wikipedia.org", "Вікіпедія:Вікі любить пам'ятки/Волинська область") + "#07-101-0001")
         body must contain("""href="https://uk.wikipedia.org/wiki/%D0%92%D1%96%D0%BA%D1%96%D0%BF%D0%B5%D0%B4%D1%96%D1%8F:""")
         body must contain("/%D0%92%D0%BE%D0%BB%D0%B8%D0%BD%D1%81%D1%8C%D0%BA%D0%B0_%D0%BE%D0%B1%D0%BB%D0%B0%D1%81%D1%82%D1%8C#07-101-0001\"")
-        body must contain(" #07-101-0001 ↗")
+        body must contain(""" #07-101-000<span class="wlx-ext-nowrap">1<span class="wlx-ext-tail">&nbsp;<span class="wlx-ext-mark" data-site="wikipedia" aria-hidden="true">""")
         body must contain("""id="monument-commons-link" href="https://commons.wikimedia.org/wiki/Category:Lubart%27s_Castle"""")
         body must contain("""id="monument-wikidata-link" href="https://www.wikidata.org/wiki/Q1229950"""")
+        // every link that leaves the tool: a new tab, its site's mark (the list's, Commons', Wikidata's)
+        val doc = org.jsoup.Jsoup.parse(body)
+        views.ExternalLinksCheck.problems(doc) must beEmpty
+        views.ExternalLinksCheck.sites(doc) === Set("wikipedia", "commons", "wikidata")
         // no contest: no files
         body must not contain "monument-files"
         body must not contain Author

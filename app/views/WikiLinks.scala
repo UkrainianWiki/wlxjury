@@ -8,7 +8,8 @@ import play.twirl.api.{Html, HtmlFormat}
 import scala.util.matching.Regex
 
 /** Wiki text with `[[Target]]` and `[[Target|label]]` links (a monument's name, place or city
-  * from the wiki lists) as HTML: each link becomes an `<a>` to the article on `host`, and
+  * from the wiki lists) as HTML: each link becomes an `<a>` to the article on `host`, opening in
+  * a new tab (`target="_blank" rel="noopener"`), and
   * every other character, the labels included, is escaped. scalawiki's
   * `Monument.wikiLinkToUrl` builds the same links but leaves the text around them, and the
   * labels, unescaped, so any wiki editor's markup would reach the page.
@@ -36,7 +37,19 @@ object WikiLinks {
 
   def apply(wikiText: Option[String], host: String): Html = apply(wikiText.getOrElse(""), host)
 
-  def apply(wikiText: String, host: String): Html = {
+  def apply(wikiText: String, host: String): Html = render(wikiText, host, (label, _) => label)
+
+  /** As [[apply]], each link's text followed by the mark of a link that leaves the tool
+    * (snippets/externalMark: Wikipedia's W and " (opens in a new tab)" for screen readers): the
+    * pages' links.
+    */
+  def marked(wikiText: Option[String], host: String)(implicit messages: play.api.i18n.Messages): Html =
+    marked(wikiText.getOrElse(""), host)
+
+  def marked(wikiText: String, host: String)(implicit messages: play.api.i18n.Messages): Html =
+    render(wikiText, host, (label, url) => ExternalLinks.withMark(label, views.html.snippets.externalMark(url).body))
+
+  private def render(wikiText: String, host: String, mark: (String, String) => String): Html = {
     val text = withoutHidden(wikiText)
     val out = new StringBuilder
     var last = 0
@@ -45,7 +58,8 @@ object WikiLinks {
       val target = decodeReferences(m.group(1)).replace(' ', ' ').trim
       val label = Option(m.group(2)).getOrElse(m.group(1))
       val url = s"https://$host/wiki/" + URLEncoder.encode(target.replace(' ', '_'), StandardCharsets.UTF_8)
-      out ++= s"""<a href="${HtmlFormat.escape(url).body}">${escaped(label)}</a>"""
+      // an article on the wiki: a new tab, as every link that leaves the tool
+      out ++= s"""<a href="${HtmlFormat.escape(url).body}" target="_blank" rel="noopener">${mark(escaped(label), url)}</a>"""
       last = m.end
     }
     out ++= escaped(text.substring(last))

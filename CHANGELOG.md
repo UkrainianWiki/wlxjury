@@ -31,6 +31,70 @@ No next release is set yet (`build.sbt` says `26.12-SNAPSHOT`). Everything devel
 
 **Features**
 
+- **Round type icons** (the maintainer's browser check of `26.11.13`, decisions of 2026-11-19;
+  developed 2026-11-19, `stack/195-round-type-icons`, a follow-up of #370): the rounds' text
+  badges ("Active", "Yes/No", "Rated"), which followed names of different lengths and so never
+  lined up, become icons before the name in a slot of one width: ✓ ✗ for a yes/no round, a star
+  for a rated one (criteria rounds too), an empty slot for a comments-only one; coloured (the vote
+  green and red, the star gold) for an active round, grey for an inactive one, whose text stays
+  grey. No "Active" badge: screen readers hear "Final, Yes/No, Active" after the name, and the
+  icons' tooltip says "Yes/No, Active" / "Rated, Inactive" (new key `round.badge.inactive`). The
+  same in the Rounds table, the statistics page's round pager (whose centred chips leave out a
+  comments-only round's empty slot) and the galleries' round menu; the Type menu shows the icons
+  as a legend. The galleries' round menu now scrolls inside itself, as the region menu does (the
+  same 70vh rule), instead of running off the screen with many rounds, and never sideways: a name
+  too long for a narrow window is cut with an ellipsis (wrapped on a phone). The browser tests'
+  fixture gets a contest of 30 rounds of every kind, named by their types, for these checks.
+  The Rounds table's Number, File distribution, Rating type, Active and Images columns are as
+  wide as their contents, so the names take the width left (they wrapped over four or five
+  lines beside a wide Number column); on a phone those columns wrap and a name keeps 14rem. On
+  a phone the galleries' round menu is at least 20rem wide (or the window less 1rem), so a name
+  wraps by lines, not word by word. In the Active column the start/stop button comes first and its
+  "Yes"/"No" after it, so the buttons line up whatever the word's width ("Так"/"Ні").
+  On the round statistics the jurors table's icon links (gallery, file list, by rate; the
+  Total row's) are square and centred with the count beside them, and the cells centred in
+  their rows: since the Codex restyle (#366, already in `26.11.13`) the 28 px small buttons left
+  the icons at their top and the counts on their baseline, the buttons taller than wide.
+- **Large view fixes** (the maintainer's browser check of `26.11.13`; developed 2026-11-19,
+  `stack/195-round-type-icons`):
+  - the rank numbers of the jurors' vote list ("1.", "2.") were half off the window's left edge
+    (the lists' reset left no room for them): the list is indented for them, as much as the
+    numbers need (1.75em; 2.5em for "100." from a hundred jurors on), so the stars keep their row.
+  - the score was written twice for all the jurors' votes, "7.67" in bold, then "7.67 (23 / 3
+    jurors)": the line under the number is now only "(23 / 3 jurors)" and the worst marks. A
+    round scored by the sum keeps "15 (sum of 3 jurors)" (its bold number is the average), and a
+    half-star round "7.50 (15 / 2 of 3 jurors)" (its bold number is in stars, 3.75); a rated
+    round's file of one juror has no line. A criteria round's line drops its leading stars and
+    keeps the sum, "(Σ 14.50: 29 / 2 jurors)", one juror's "(Σ 7)" too
+    (`ImageWithRating.rateDetail`, `criteriaRateDetail`; the same messages).
+  - the **full resolution** link opened in the same tab, while a click on the image opens Commons
+    in a new one: it opens in a new tab too (`target="_blank" rel="noopener"`), in a round's and
+    a contest file's large view; the image's link gets `rel="noopener"`, and so do the file
+    list's links to Commons. Every other link that leaves the tool opens in a new tab too: the
+    monument box's Wikipedia links (city, name, place: `WikiLinks`), the contest's Commons
+    category on the images page, the users page's Commons user page, talk and email links, and the
+    gallery caption's Commons link; the monument's own page (in the tool) stays in the tab
+    (`ExternalLinksViewSpec` guards the large views and the templates' `https://` links).
+  - a text link that leaves the tool has a small mark after its text, by its site
+    (`snippets/externalMark`, the maintainer's decision of 2026-11-19): the Commons logo, the
+    Wikipedia W (`bi-wikipedia`), the Wikidata logo (both logos at the text's size, in the
+    link's colour, symbols defined once per page by the layout and drawn with `<use>`, from
+    Codex's single-colour logo icons) or the outward arrow (`bi-box-arrow-up-right`) for any
+    other site; after a no-break space, in one span with the link's last character that doesn't
+    wrap, so the mark never starts a line alone; hidden from screen readers, which hear " (opens
+    in a new tab)" (new key `link.new.tab`); the space, the mark and those words can't be
+    selected, so a copied link's text is its text alone; a long title without spaces wraps inside
+    the large view's side column. In
+    the large views (the monument's Wikipedia links, the author's Commons page, the title and
+    the full resolution), the monument page (the "↗" glyphs replaced; `author.commons` loses its
+    "↗"; the author links' title is the new `author.commons.page`, without the new-tab words the
+    link already says), the images page, the users page and the contest files page; not on image
+    links, icon-only links or the file list's copyable list of titles. Exempt: the galleries'
+    caption link to Commons and unitegallery's Deleted badge, both inside the vendored gallery.
+    `ExternalLinksCheck` checks the links of the large views, the monument page, the contest
+    files page (author filter), the users page and the images page's source choice.
+  - a browser test of all three (`large-side.spec.js`).
+
 - **The wordmark on the signed-out pages** (developed 2026-11-17, `stack/181-signin-wordmark`):
   the "WLX Jury" wordmark is the page's heading above the form on the sign-in page, and the one
   heading of the invitation, set-up, invalid-link and email-change pages; the signed-out error,

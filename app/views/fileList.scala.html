@@ -123,11 +123,11 @@
                 @cell {
                     @outputFormat match {
                         case "wiki" => {
-                            <a href="https://commons.wikimedia.org/wiki/@file.title" target="_blank">@file.title</a> <br/>
+                            <a href="https://commons.wikimedia.org/wiki/@file.title" target="_blank" rel="noopener">@file.title</a> <br/>
                         }
                         case "html" => {
                             @defining(
-                                s"""<a href="https://commons.wikimedia.org/wiki/${file.title}" target="_blank">
+                                s"""<a href="https://commons.wikimedia.org/wiki/${file.title}" target="_blank" rel="noopener">
                                    |    <img src="${resizeTo(file.image, gallerySizeX, gallerySizeY)}">
                                    |</a>""".stripMargin
                             ) { str => @str <br/> }

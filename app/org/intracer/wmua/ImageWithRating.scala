@@ -163,6 +163,19 @@ case class ImageWithRating(
     else if (round.averageRule == AverageRule.Sum) messages("average.sum", rateSum.toString, assignedJurors.toString)
     else messages("average.rate", Formatter.fmt.format(totalRate(round)), denominator(round))
 
+  /** What the large view for all the jurors writes under the file's score, which its bold number
+    * shows (the maintainer's browser check of 26.11.13: "7.67" then "7.67 (23 / 3 jurors)"):
+    * [[rateText]] without that number, `(23 / 3 jurors)`; the whole of it in an
+    * [[AverageRule.Sum]] round, whose bold number is the average and its text the sum,
+    * `15 (sum of 3 jurors)`, and in a half-star round, whose bold number is in stars and its
+    * text in points (`3.75` over `7.50 (15 / 2 of 3 jurors)`); nothing for a file of fewer than
+    * two jurors (its text the number alone) or in a yes/no round.
+    */
+  def rateDetail(round: Round)(implicit messages: play.api.i18n.Messages): String =
+    if (round.isBinary || ownVote || assignedJurors < 2) ""
+    else if (round.averageRule == AverageRule.Sum || round.starUnits != 1) rateText(round)
+    else withoutLead(rateText(round), Formatter.fmt.format(totalRate(round)))
+
   /** The sum and the jurors it is averaged over, in words: `29 / 2 of 3 jurors` (the rated of the
     * assigned, or `29 / 3 jurors` when all rated), `29 / 3 jurors` (the assigned); in an
     * [[AverageRule.Sum]] round, `sum of 3 jurors`.
@@ -194,12 +207,29 @@ case class ImageWithRating(
     * `3.63 (Σ 29, sum of 3 jurors)`, the stars of the rated jurors' average ([[starRate]]).
     */
   def criteriaRateString(round: Round)(implicit messages: play.api.i18n.Messages): String = {
-    val stars = CriteriaResults.format(BigDecimal(round.perCriterion(starRate(round)) / round.starUnits))
+    val stars = criteriaStars(round)
     if (ownVote || assignedJurors < 2) messages("criteria.rate.one", stars, rateSum.toString)
     else if (round.averageRule == AverageRule.Sum)
       messages("criteria.rate.sum", stars, rateSum.toString, assignedJurors.toString)
     else messages("criteria.rate.many", stars, CriteriaResults.format(BigDecimal(totalRate(round))), denominator(round))
   }
+
+  /** A criteria round's rate per criterion in stars, the number [[criteriaRateString]] starts with
+    * and the large view shows in bold. */
+  private def criteriaStars(round: Round): String =
+    CriteriaResults.format(BigDecimal(round.perCriterion(starRate(round)) / round.starUnits))
+
+  /** What the large view for all the jurors writes under a criteria round's bold number:
+    * [[criteriaRateString]] without that number, `(Σ 14.50: 29 / 2 of 3 jurors)`, `(Σ 29, sum of 3
+    * jurors)`, one vote's `(Σ 7)` (as [[rateDetail]]).
+    */
+  def criteriaRateDetail(round: Round)(implicit messages: play.api.i18n.Messages): String =
+    withoutLead(criteriaRateString(round), criteriaStars(round))
+
+  /** `text` without its leading `number` (a message whose first part is it, `{0} (...)`), or the
+    * whole text in a language whose message puts the number elsewhere. */
+  private def withoutLead(text: String, number: String): String =
+    if (text.startsWith(number)) text.drop(number.length).trim else text
 
   def pageId: Long = image.pageId
 

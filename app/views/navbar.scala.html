@@ -40,7 +40,8 @@
 
 @* The rounds the viewer may see, each opening the list in it (RoundList.inRound): another juror's
    votes only in the rounds they are a juror of, read for all the menu's rounds in one query. Each
-   item with the round's badges, an inactive one grey (snippets/roundBadges); a long name cut in the
+   item with the round's type icons before its name, an inactive one grey (snippets/roundIcon); the
+   menu scrolls inside itself, as the region menu does (main.css); a long name cut in the
    toggle below 992 px (whole in its title) and wrapped in the menu on a phone, so both fit (main.css
    #round-menu, wlx-round-item) *@
 @roundMenu(l: RoundList) = {
@@ -51,7 +52,7 @@
             l.inRound(r, user.getId, jurorRounds.contains(r.getId)).pageUrl(1))),
         l.roundId,
         rounds.map(r => (r.getId, SelectionItem(r.description, localized = false,
-            itemClass = if (r.active) "wlx-round-item" else "wlx-round-item wlx-round-inactive", after = snippets.roundBadges(r))))
+            itemClass = if (r.active) "wlx-round-item" else "wlx-round-item wlx-round-inactive", before = snippets.roundIcon(r), after = snippets.roundSpoken(r))))
     ).toDropDown(truncate = true, menuClass = "wlx-round-menu", id = Some("round-menu")))
     }
 }
@@ -419,7 +420,9 @@
    are listed (the Rounds table, the statistics page's round menu) and in what order, each choice
    the same page with it (RoundsFilter, kept in the URL). Status and Type items with their counts
    (the rounds the other menu keeps), as the Votes menu's; each toggle with its menu's name shown before its choice ("Status: All"), as the
-   region menu's ("Region: All regions"), so their two "All"s are told apart, also on a phone *@
+   region menu's ("Region: All regions"), so their two "All"s are told apart, also on a phone. The
+   Type menu's items with the round type icons (snippets/roundTypeIcon, coloured; All's slot empty),
+   a legend of the icons before the rounds' names *@
 @roundsFilterMenus(bar: RoundsFilterBar) = {
     @(new UiSelectionDto[RoundsFilter.Status](
         (s: RoundsFilter.Status) => Call("GET", bar.url(bar.filter.withStatus(s))),
@@ -430,7 +433,8 @@
     @(new UiSelectionDto[RoundsFilter.Kind](
         (k: RoundsFilter.Kind) => Call("GET", bar.url(bar.filter.withKind(k))),
         bar.filter.kind,
-        RoundsFilter.Kind.values.map(k => k -> SelectionItem(k.messageKey, count = Some(bar.count(k))))
+        RoundsFilter.Kind.values.map(k => k -> SelectionItem(k.messageKey, count = Some(bar.count(k)),
+            before = snippets.roundTypeIcon(Option(k).filter(_ != RoundsFilter.Kind.All))))
     ).toDropDown(id = Some("rounds-type-menu"), label = Some(Messages("rounds.filter.type")),
         labelShown = true))
 }

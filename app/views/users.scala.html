@@ -87,7 +87,7 @@
                                 @* the name URL-encoded (N4): a & or ? in it must not add parameters *@
                                 @for(name <- user.wikiAccount.map(views.WikiLinks.encodedUserName)) {
                                 @if(user.accountValid) {
-                                    <a href="https://commons.wikimedia.org/w/index.php?title=User_talk:@name&action=edit&section=new&preload=&preloadtitle=@{java.net.URLEncoder.encode(contest.name + " Jury", "UTF-8")}">
+                                    <a href="https://commons.wikimedia.org/w/index.php?title=User_talk:@name&action=edit&section=new&preload=&preloadtitle=@{java.net.URLEncoder.encode(contest.name + " Jury", "UTF-8")}" target="_blank" rel="noopener">
                                         <button type="button" class="btn btn-outline-secondary btn-sm">
                                             <i class="bi bi-chat-text" aria-hidden="true"></i>
                                         </button>
@@ -96,7 +96,7 @@
                                             "https://commons.wikimedia.org/wiki/Special:EmailUser/@name?wpSubject=@{java.net.URLEncoder.encode(contest.name + " Jury", "UTF-8")}&wpText=@{java.net.URLEncoder.encode("Hi " + user.wikiAccount.getOrElse("") + ",\nRegards, " + adminUser.fullname, "UTF-8")}"
                                         } else {
                                             "https://commons.wikimedia.org/w/index.php?title=User_talk:@name&action=edit&section=new&preload=User:Example/enableEmailText&preloadtitle=Please%20enable%20wiki%20email"
-                                        } >
+                                        } target="_blank" rel="noopener">
 
                                         <button type="button" class="btn btn-outline-secondary btn-sm">
                                             <i class="bi bi-envelope@if(!user.hasWikiEmail){ text-danger}" aria-hidden="true"></i>
@@ -107,9 +107,7 @@
                                 }
 
                                 @for(name <- user.wikiAccount) {
-                                <a href="https://commons.wikimedia.org/wiki/User:@views.WikiLinks.encodedUserName(name)" @if(!user.accountValid){class="text-danger"}>
-                                    @name
-                                </a>
+                                <a href="https://commons.wikimedia.org/wiki/User:@views.WikiLinks.encodedUserName(name)" target="_blank" rel="noopener" @if(!user.accountValid){class="text-danger"}>@views.ExternalLinks.marked(name, "https://commons.wikimedia.org/wiki/")</a>
                                 @if(!user.wikiAccountVerified) {
                                     <span class="badge text-bg-secondary wiki-unverified" title="@Messages("wiki.account.unverified.hint")">@Messages("unverified")</span>
                                 }

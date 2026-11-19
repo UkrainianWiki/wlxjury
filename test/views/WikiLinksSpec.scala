@@ -8,6 +8,8 @@ import play.api.i18n.{Lang, Messages}
 import play.api.mvc.Flash
 import play.api.test.{FakeRequest, Helpers}
 
+import scala.jdk.CollectionConverters._
+
 /** A monument's name, place and city come from the wiki lists, which anyone can edit: their
   * `[[links]]` become links, and any other markup is shown as text ([[WikiLinks]]).
   */
@@ -18,13 +20,13 @@ class WikiLinksSpec extends Specification {
   "WikiLinks" should {
     "turn [[Target]] and [[Target|label]] into links to the article" in {
       WikiLinks("в [[Київ]]і та [[Львів|Львові]]", host).body ===
-        "в <a href=\"https://uk.wikipedia.org/wiki/%D0%9A%D0%B8%D1%97%D0%B2\">Київ</a>і та " +
-        "<a href=\"https://uk.wikipedia.org/wiki/%D0%9B%D1%8C%D0%B2%D1%96%D0%B2\">Львові</a>"
+        "в <a href=\"https://uk.wikipedia.org/wiki/%D0%9A%D0%B8%D1%97%D0%B2\" target=\"_blank\" rel=\"noopener\">Київ</a>і та " +
+        "<a href=\"https://uk.wikipedia.org/wiki/%D0%9B%D1%8C%D0%B2%D1%96%D0%B2\" target=\"_blank\" rel=\"noopener\">Львові</a>"
     }
 
     "replace spaces in the target with underscores and encode it" in {
       WikiLinks("[[St Mary's \"x\"|a]]", host).body ===
-        "<a href=\"https://uk.wikipedia.org/wiki/St_Mary%27s_%22x%22\">a</a>"
+        "<a href=\"https://uk.wikipedia.org/wiki/St_Mary%27s_%22x%22\" target=\"_blank\" rel=\"noopener\">a</a>"
     }
 
     "escape the text around the links and the labels" in {
@@ -32,7 +34,7 @@ class WikiLinksSpec extends Specification {
       body must not(contain("<script"))
       body must not(contain("<img"))
       body === "&lt;script&gt;alert(1)&lt;/script&gt; " +
-        "<a href=\"https://uk.wikipedia.org/wiki/A\">&lt;img src=x onerror=alert(1)&gt;</a> &amp; &quot;q&quot;"
+        "<a href=\"https://uk.wikipedia.org/wiki/A\" target=\"_blank\" rel=\"noopener\">&lt;img src=x onerror=alert(1)&gt;</a> &amp; &quot;q&quot;"
     }
 
     "leave text without links, or an unclosed link, as escaped text" in {
@@ -45,7 +47,7 @@ class WikiLinksSpec extends Specification {
       WikiLinks("О.&nbsp;П.&nbsp;Ляшка", host).body === "О. П. Ляшка"
       WikiLinks("А&sup1;, 1941&ndash;1945, &#8470;&#x20;5", host).body === "А¹, 1941–1945, № 5"
       WikiLinks("[[A&nbsp;B|вул. Ю.&nbsp;Здановської]]", host).body ===
-        "<a href=\"https://uk.wikipedia.org/wiki/A_B\">вул. Ю. Здановської</a>"
+        "<a href=\"https://uk.wikipedia.org/wiki/A_B\" target=\"_blank\" rel=\"noopener\">вул. Ю. Здановської</a>"
       WikiLinks("&unknown; &#0; & co", host).body === "&amp;unknown; &amp;#0; &amp; co"
     }
 
@@ -54,7 +56,7 @@ class WikiLinksSpec extends Specification {
       body must not(contain("<script"))
       body must not(contain("<img"))
       body === "&lt;script&gt;alert(1)&lt;/script&gt; " +
-        "<a href=\"https://uk.wikipedia.org/wiki/A\">&lt;img src=x onerror=y()&gt;</a>"
+        "<a href=\"https://uk.wikipedia.org/wiki/A\" target=\"_blank\" rel=\"noopener\">&lt;img src=x onerror=y()&gt;</a>"
     }
 
     "show a line break as a space and drop the formatting tags, keeping their text" in {
@@ -87,7 +89,10 @@ class WikiLinksSpec extends Specification {
         place = Some("<img src=x onerror=y()>"), city = Some("[[Київ]] --> <i>"), typ = Some("--><script>z()</script>"))
       val html = views.html.large.monumentInfo(Image(pageId = 1, title = "File:1.jpg"), Some(monument)).body
       val doc = Jsoup.parseBodyFragment(html)
-      doc.select("script, img, b, i").size === 0
+      // no markup of the fields' own: only the links' marks (snippets/externalMark, Wikipedia's W)
+      doc.select("script, img, b").size === 0
+      doc.select("i").asScala.filterNot(_.parent.hasClass("wlx-ext-mark")).size === 0
+      doc.select(".wlx-ext-mark[data-site=wikipedia] > i.bi-wikipedia").size === 2
       doc.select("a").eachAttr("href").toArray.toSeq === Seq(
         "https://uk.wikipedia.org/wiki/%D0%9A%D0%B8%D1%97%D0%B2",
         "https://uk.wikipedia.org/wiki/%D0%A6%D0%B5%D1%80%D0%BA%D0%B2%D0%B0",

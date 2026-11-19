@@ -85,28 +85,76 @@ body.gallery {
     background-clip: padding-box;
 }
 .dropdown-item.active > .wlx-count.wlx-count-pill { color: var(--bs-body-color); }
-/* a round's look, the same wherever it is named (the maintainer's decisions of 2026-11-18;
-   snippets/roundBadges.scala.html): its badges after its name, a little apart; an inactive round's
-   text and its type badge's in the secondary grey (--bs-secondary-color: 7:1 on white, 7.8:1 on the
-   dark page, 6:1 or more on the stripes, the menus' hover grey and the neutral badge, in both
-   modes; asserted by browser-test rounds-filter.spec.js), no strikethrough: the Rounds table's
-   rows (its links keep the link colour), the round menus' items (the galleries' bar, the
-   statistics page's); the current item keeps the selected highlight's colour */
-.wlx-round-badges { white-space: nowrap; }
-/* a round menu's items: on one line (the menu as wide as its longest), wrapping a long name only on
-   a phone, the menu no wider than the window */
-.dropdown-menu.wlx-round-menu { max-width: calc(100vw - 1rem); }
+/* a round's look, the same wherever it is named (the maintainer's decisions of 2026-11-18 and
+   2026-11-19; snippets/roundIcon.scala.html): its type icons before its name, in a slot of one
+   width (the ✓ ✗ pair, the star, or empty), so that every icon and every name start at the same
+   place whatever the names' lengths; a long name wraps under itself, not under the icons (flex).
+   An inactive round's text and icons in the secondary grey (--bs-secondary-color: 7:1 on white,
+   7.8:1 on the dark page, 6:1 or more on the stripes and the menus' hover grey in both modes;
+   asserted by browser-test rounds-filter.spec.js), no strikethrough: the Rounds table's rows (its
+   links keep the link colour), the round menus' items (the galleries' bar, the statistics page's
+   pager); the current item keeps the selected highlight's colour */
+.wlx-round-icon {
+    display: inline-flex; flex: none; align-items: baseline; gap: .15em;
+    width: 2.15em; margin-inline-end: .4em; white-space: nowrap;
+}
+.wlx-round-icon > i { line-height: 1; }
+/* an active round's and the Type menu legend's icons: the vote green and red, the star gold
+   (theme.css: 3:1 or more on the page, the stripes, the hover grey and the selected highlight,
+   in both modes; asserted by browser-test rounds-filter.spec.js) */
+.wlx-round-icon > .wlx-round-yes { color: var(--wlx-selected); }
+.wlx-round-icon > .wlx-round-no { color: var(--wlx-rejected); }
+.wlx-round-icon > .wlx-round-star { color: var(--wlx-star); }
+.wlx-round-icon.wlx-round-icon-inactive > i { color: var(--bs-secondary-color); }
+.wlx-round-named, .dropdown-item.wlx-round-item, #round-stat-rounds .page-link {
+    display: flex; align-items: baseline;
+}
+/* a round menu's items: on one line (the menu as wide as its longest), the menu no wider than the
+   window and never with a horizontal scrollbar (it scrolls down, as the region menu: below): a
+   name too long for the window cut with an ellipsis on a desktop (wlx-item-text,
+   dropDownSelection), wrapped on a phone */
+.dropdown-menu.wlx-round-menu { max-width: calc(100vw - 1rem); overflow-x: hidden; }
+.dropdown-item.wlx-round-item > .wlx-item-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 575.98px) {
     .dropdown-item.wlx-round-item { white-space: normal; }
+    /* wider than Bootstrap's 10rem, so a name wraps by lines, not word by word */
+    .dropdown-menu.wlx-round-menu { min-width: min(20rem, calc(100vw - 1rem)); }
 }
-/* the type badge (neutral grey) with a subtle border, so that it stands apart on the stripes, a
-   pointed-at menu item and the menus' hover grey, whose fill is its own in both modes */
-.badge.text-bg-secondary.wlx-round-type { box-shadow: inset 0 0 0 1px var(--border-color-subtle); }
-.wlx-round-badges > .badge { margin-inline-start: .35em; vertical-align: .1em; }
 .table > tbody > tr.wlx-round-inactive > * { color: var(--bs-secondary-color); }
-.wlx-round-inactive .wlx-round-type.badge.text-bg-secondary,
+/* the Rounds table (rounds.scala.html): the Number, File distribution, Rating type, Active and
+   Images columns as wide as their contents, on one line, so that the name takes the width left
+   (it wrapped over four or five lines beside a wide Number column: the maintainer, 2026-11-19);
+   the distribution's state a fifth. On a phone those columns wrap and the name keeps 14rem, so it
+   reads by lines, not a word or two to a line; the table may scroll sideways in its own box
+   (table-responsive), never the page */
+.wlx-rounds-table > * > tr > :is(:nth-child(1), :nth-child(3), :nth-child(4), :nth-child(5), :nth-child(6)) {
+    width: 1%;
+}
+@media (min-width: 576px) {
+    .wlx-rounds-table > * > tr > :is(:nth-child(1), :nth-child(3), :nth-child(4), :nth-child(5), :nth-child(6)) {
+        white-space: nowrap;
+    }
+}
+@media (max-width: 575.98px) {
+    .wlx-rounds-table > * > tr > :nth-child(2) { min-width: 14rem; }
+}
+.wlx-rounds-table > * > tr > :nth-child(7) { width: 20%; }
+/* the start/stop button first, its Yes/No after it, a little apart (snippets/startStop) */
+.wlx-start-stop-text { margin-inline-start: .35em; }
 .dropdown-item.wlx-round-inactive:not(.active),
 .page-item:not(.active) > .page-link.wlx-round-inactive { color: var(--bs-secondary-color) !important; }
+/* the round statistics' icon links (a juror's gallery, file list, by rate; the Total row's) and
+   the count beside them, centred on one line (roundStatTable, roundStatLinks): Codex's 28 px
+   small buttons (codex-theme.css, #366: min-height 28 px) are taller than their icon and the
+   line, which left the icons at the top of their buttons and the count on their baseline, the
+   buttons taller than wide (its padding and py-0 px-1), and Bootstrap's tables align to the top */
+.wlx-links-count { display: inline-flex; align-items: center; gap: .25rem; vertical-align: middle; }
+/* square, the icon in the middle: Codex's small button height (28 px) both ways, no padding (its
+   .btn-sm padding and py-0 px-1 made them taller than wide) */
+.wlx-links-count .btn { display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; min-height: 28px; padding: 0; }
+/* the statistics table's cells centred in their rows (Bootstrap's tables align to the top) */
+.wlx-stat-table > * > tr > * { vertical-align: middle; }
 /* the icon before a menu's choice that says which menu it is (the Votes menu's vote, the organisers'
    juror menu's people: decision C of 2026-11-14), close to its text */
 .wlx-lead-icon { margin-right: .25rem; }
@@ -466,13 +514,30 @@ div.thumb_small.wlx-thumb-failed img {
     pointer-events: none;
 }
 
+/* the mark after a link that leaves the tool (snippets/externalMark: Commons, Wikipedia, Wikidata
+   or another site), in the link's colour (currentColor), after a no-break space; never underlined
+   with the link. The link's last character and the mark in one span that doesn't wrap, so the
+   mark never starts a line of its own and a long word may still wrap before it
+   (views.ExternalLinks.marked); the space, the mark and the words
+   for screen readers can't be selected, so a copied link's text is its text alone. Wikipedia's W
+   and the arrow a little smaller than the text; the two logos (symbols defined once per page:
+   snippets/externalLogos) at the text's size, to be recognised */
+.wlx-ext-nowrap { white-space: nowrap; }
+.wlx-ext-tail { -webkit-user-select: none; user-select: none; }
+.wlx-ext-mark { display: inline-block; font-size: .85em; line-height: 1; text-decoration: none; }
+.wlx-ext-mark[data-site=commons], .wlx-ext-mark[data-site=wikidata] { font-size: 1em; }
+.wlx-ext-logo { width: 1em; height: 1em; vertical-align: -.125em; fill: currentColor; }
+.wlx-ext-logos { position: absolute; width: 0; height: 0; overflow: hidden; }
+
 /* A POST form in a dropdown menu (sign out, switch contest): its button is a dropdown-item */
 .dropdown-menu .navbar-menu-form {
     margin: 0;
 }
 
-/* A gallery's region or country menu in the navbar (regionMenu.scala.html): a long list scrolls */
-.region-menu .region-menu-list { min-width: 240px; max-height: 70vh; overflow-y: auto; }
+/* A gallery's region or country menu in the navbar (regionMenu.scala.html) and its round menu
+   (navbar.scala.html roundMenu): a long list scrolls inside itself */
+.region-menu .region-menu-list { min-width: 240px; }
+.region-menu .region-menu-list, .dropdown-menu.wlx-round-menu { max-height: 70vh; overflow-y: auto; }
 .region-menu-status { color: var(--bs-secondary-color); white-space: normal; }
 .region-menu-status:empty { display: none; }
 
@@ -552,7 +617,8 @@ a:has(> .btn) { text-decoration: none; }
    attributes' proportions, so mw-100 mh-100 make it as tall as the loaded file; a file drawn while
    it loads, in them, at the box's start */
 #large_image[width][height] { height: auto; object-fit: contain; object-position: left top; }
-.large-side { min-width: 220px; }
+/* the side column: a word longer than the column (a file title without spaces) wraps inside it */
+.large-side { min-width: 220px; overflow-wrap: break-word; }
 .large-main { margin-left: 5px; margin-top: 10px; }
 /* the large views' buttons (a round's, large/navigationButtons, and a contest file's,
    large/contestFile): back to the gallery, previous, next and a juror's ✓ and ✗, each a button of its own with its complete border, apart by a small gap (a Bootstrap
@@ -565,6 +631,17 @@ a:has(> .btn) { text-decoration: none; }
 .large-box, .large-line { margin-right: 5px; padding: 5px; }
 .large-box { margin-top: 10px; }
 .large-line { margin-top: 5px; }
+/* the jurors' votes (large/juryStat.scala.html): room for the rank numbers, drawn outside the
+   items, which the lists' reset (no padding, above) put off the window's left edge (the
+   maintainer's browser check of 26.11.13); outside, so a long name wraps under itself. As much as
+   they need, so the stars keep their width: "99." in 1.75em, "100." from a hundred jurors on
+   (wlx-ranks-3) in 2.5em (browser-test large-side.spec.js) */
+.large-line > ol { --wlx-rank-room: 1.75em; padding-left: var(--wlx-rank-room); }
+.large-line > ol.wlx-ranks-3 { --wlx-rank-room: 2.5em; }
+/* a juror's stars under their name from the list's left edge, under the rank number, so that
+   the room for the numbers doesn't take the stars' (ten stars on two lines of 8 + 2 at 1280 px,
+   as before) */
+.large-line > ol > li .rank-line > .rate-stars { display: block; margin-left: calc(-1 * var(--wlx-rank-room)); }
 /* a collapsible section of the side column (large/sideSection.scala.html): its heading, a
    button in the page's text colour, its chevron turned while the section is closed */
 .large-section { margin-top: 10px; }

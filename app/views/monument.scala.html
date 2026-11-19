@@ -12,25 +12,25 @@
 @defining(page.monument) { m =>
 @main("monument.page.title", user, contestId = page.context.flatMap(_.contest.id)) {
     <div class="container mt-3" id="monument">
-        <h1 class="h4 mb-1">@views.WikiLinks(m.name, MonumentPage.ListsHost)
-            <small class="text-body-secondary fs-6 ms-1" id="monument-meta">@m.id@for(t <- m.typ.filter(_.trim.nonEmpty)) { · @t}@for(y <- m.year.filter(_.trim.nonEmpty)) { · @views.WikiLinks(y, MonumentPage.ListsHost)}</small>
+        <h1 class="h4 mb-1">@views.WikiLinks.marked(m.name, MonumentPage.ListsHost)
+            <small class="text-body-secondary fs-6 ms-1" id="monument-meta">@m.id@for(t <- m.typ.filter(_.trim.nonEmpty)) { · @t}@for(y <- m.year.filter(_.trim.nonEmpty)) { · @views.WikiLinks.marked(y, MonumentPage.ListsHost)}</small>
         </h1>
         <p class="mb-3" id="monument-place">
-            @for(c <- m.city.filter(_.trim.nonEmpty)) {@views.WikiLinks(c, MonumentPage.ListsHost)@if(m.place.exists(_.trim.nonEmpty)) {, }}@for(p <- m.place.filter(_.trim.nonEmpty)) {@views.WikiLinks(p, MonumentPage.ListsHost)}
+            @for(c <- m.city.filter(_.trim.nonEmpty)) {@views.WikiLinks.marked(c, MonumentPage.ListsHost)@if(m.place.exists(_.trim.nonEmpty)) {, }}@for(p <- m.place.filter(_.trim.nonEmpty)) {@views.WikiLinks.marked(p, MonumentPage.ListsHost)}
         </p>
 
         <dl class="row mb-0" id="monument-links">
             @for(url <- page.listUrl; title <- page.listPage) {
                 <dt class="col-sm-2 fw-normal text-body-secondary">@Messages("monument.list")</dt>
-                <dd class="col-sm-10"><a id="monument-list-link" href="@url" target="_blank" rel="noopener">@title@if(page.listAnchored) { #@m.id} ↗</a></dd>
+                <dd class="col-sm-10"><a id="monument-list-link" href="@url" target="_blank" rel="noopener">@views.ExternalLinks.marked(title + (if (page.listAnchored) " #" + m.id else ""), url)</a></dd>
             }
             @for(url <- page.commonsCategoryUrl; category <- page.commonsCategory) {
                 <dt class="col-sm-2 fw-normal text-body-secondary">@Messages("monument.commons")</dt>
-                <dd class="col-sm-10"><a id="monument-commons-link" href="@url" target="_blank" rel="noopener">Category:@category ↗</a></dd>
+                <dd class="col-sm-10"><a id="monument-commons-link" href="@url" target="_blank" rel="noopener">@views.ExternalLinks.marked("Category:" + category, url)</a></dd>
             }
             @for(url <- page.wikidataUrl; q <- page.wikidata) {
                 <dt class="col-sm-2 fw-normal text-body-secondary">@Messages("monument.wikidata")</dt>
-                <dd class="col-sm-10"><a id="monument-wikidata-link" href="@url" target="_blank" rel="noopener">@q ↗</a></dd>
+                <dd class="col-sm-10"><a id="monument-wikidata-link" href="@url" target="_blank" rel="noopener">@views.ExternalLinks.marked(q, url)</a></dd>
             }
             @for(context <- page.context if context.files.isDefined || context.round.isDefined) {
                 <dt class="col-sm-2 fw-normal text-body-secondary">@Messages("monument.files")</dt>

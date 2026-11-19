@@ -923,8 +923,9 @@ users.import.problems.more = Не додано й не показано тут �
 account.change.mail.unknown = невідомо
 # автори файлів конкурсу, лише для його адміністраторів, організаторів і root (ніколи для журі)
 author.files.title = Файли конкурсу автора {0}
-author.commons = Commons ↗
+author.commons = Commons
 author.commons.title = Сторінка користувача {0} на Вікісховищі (відкривається в новій вкладці)
+author.commons.page = Сторінка користувача {0} на Вікісховищі
 author.filter.chip = Автор: {0}
 author.filter.label = Автор:
 author.filter.remove = Показати файли всіх авторів
@@ -1412,6 +1413,8 @@ rounds.order.active = Спершу активні
 rounds.filter.none = Жоден раунд не відповідає цьому вибору.
 rounds.filter.reset = Показати всі раунди
 round.badge.active = Активний
+round.badge.inactive = Неактивний
+link.new.tab = відкривається в новій вкладці
 
 # The contest health page (support diagnostics plan, D-1a; ContestHealth, contestHealth.scala.html)
 health.title = Стан конкурсу

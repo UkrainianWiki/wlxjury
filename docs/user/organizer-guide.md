@@ -43,9 +43,10 @@ After you sign in, the tool opens the **Statistics** of a round of your contest:
 open round, or the latest round if none is open. A contest with no round yet shows **No round
 configured yet**.
 
-- The row of round names above the statistics table switches round. A pale green **Active** badge
-  marks a started round and a grey one its type, **Yes/No** or **Rated**; a stopped round's name
-  is in grey. With many rounds, the **Status** (**All**, **Active**, **Not active**), **Type**
+- The row of round names above the statistics table switches round. An icon before each name shows
+  its type: a tick and a cross for **Yes/No**, a star for **Rated** (none for a comments-only
+  round), in colour for a started round and in grey for a stopped one, whose name is grey too;
+  point at the icon for its type and state. With many rounds, the **Status** (**All**, **Active**, **Not active**), **Type**
   (**All**, **Yes/No**, **Rated**) and **Order** (**Oldest first**, **Newest first**, **Active
   first**) menus in the top bar narrow and order this row; each item shows in grey how many rounds
   it would list. The round you are looking at stays in the row, selected, even when the choices
@@ -424,9 +425,11 @@ round's lists (the gallery, by rate, the file list, the comments report and its 
 keeps to the pages, the votes choices, orders, views, the region, round and juror menus and the
 large view, whose next and previous files stay among the author's files (a compact chip there
 says so). The votes menu and the pager count only the author's files, and the filter combines
-with the monument filter and **Only with comments**. The small link **Commons ↗** beside a name
-on the contest files page, or **↗** on a round's chip, opens the author's user page on Wikimedia
-Commons in a new tab.
+with the monument filter and **Only with comments**. The small link **Commons**, with the Commons
+logo, beside a name on the contest files page, or **↗** on a round's chip, opens the author's user
+page on Wikimedia Commons in a new tab. Every link that leaves the tool opens in a new tab and
+shows where it goes after its text: the Commons logo, the Wikipedia "W", the Wikidata logo, or an
+arrow for any other site.
 
 The filter takes the author exactly as stored: "Ivan", "ivan" and "Iván" are three different
 authors. It is yours, the admins' and root's only: a juror who opens a link with an author gets

@@ -141,6 +141,44 @@ class AverageRuleSpec extends Specification {
     }
   }
 
+  "the large view's line under the score (all the jurors)" should {
+    "not repeat the number: only the denominator in an averaged round" in {
+      (both(_.rateDetail(round(AverageRule.Rated))) === Seq("(15 / 2 of 3 jurors)")) and
+        (both(_.rateDetail(round(AverageRule.Assigned))) === Seq("(15 / 3 jurors)"))
+    }
+    "keep the whole text in a half-star round, its bold number in stars and its text in points" in {
+      // the bold 3.75 (stars) doesn't say the 7.50 (points)
+      val r = round(AverageRule.Rated, halfStar = true)
+      (r.starUnits === 2) and (both(_.rateDetail(r)) === Seq("7.50 (15 / 2 of 3 jurors)")) and
+        (both(_.rateDetail(round(AverageRule.Assigned, halfStar = true))) === Seq("5.00 (15 / 3 jurors)"))
+    }
+    "keep the whole sum in a round scored by the sum, its bold number the average" in {
+      both(_.rateDetail(round(AverageRule.Sum))) === Seq("15 (sum of 3 jurors)")
+    }
+    "say nothing for a file of one juror (its text the number alone) or in a yes/no round" in {
+      val one = ImageWithRating(image, Seq(Vote(1, 11, 1, 7)))
+      (forall(AverageRule.all)(rule => one.rateDetail(round(rule)) === "")) and
+        (both(_.rateDetail(round(AverageRule.Rated, rates = 1))) === Seq(""))
+    }
+    "not repeat a criteria round's stars, keeping its sum and denominator" in {
+      val one = ImageWithRating(image, Seq(Vote(1, 11, 1, 7)))
+      (both(_.criteriaRateDetail(round(AverageRule.Rated, criteria = 2))) === Seq("(Σ 7.50: 15 / 2 of 3 jurors)")) and
+        (both(_.criteriaRateDetail(round(AverageRule.Assigned, criteria = 2))) === Seq("(Σ 5.00: 15 / 3 jurors)")) and
+        (both(_.criteriaRateDetail(round(AverageRule.Sum, criteria = 2))) === Seq("(Σ 15, sum of 3 jurors)")) and
+        (one.criteriaRateDetail(round(AverageRule.Rated, criteria = 2)) === "(Σ 7)")
+    }
+    "read in each language with the parenthesised part alone" in {
+      forall(Seq("uk", "ru", "fr")) { lang =>
+        val source = play.api.i18n.Messages.UrlMessageSource(new java.io.File(s"conf/messages.$lang").toURI.toURL)
+        val msgs = play.api.i18n.Messages.parse(source, s"messages.$lang").fold(e => throw e, identity)
+        val m: Messages = play.api.i18n.MessagesImpl(play.api.i18n.Lang(lang),
+          new play.api.i18n.DefaultMessagesApi(Map(lang -> msgs)))
+        (rows.rateDetail(round(AverageRule.Rated))(m) must startWith("(15 / 2")) and
+          (rows.criteriaRateDetail(round(AverageRule.Rated, criteria = 2))(m) must startWith("(Σ 7"))
+      }
+    }
+  }
+
   "a yes/no round" should {
     "count approvals and rejections whatever its rule" in {
       val tally = ImageWithRating(image, Seq(Vote(1, 0, 0, 1)), 3, approvalsFromDb = Some(2), rejectionsFromDb = Some(1))

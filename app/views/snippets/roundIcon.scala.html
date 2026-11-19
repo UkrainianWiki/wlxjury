@@ -1,0 +1,6 @@
+@(round: db.scalikejdbc.Round)(implicit messages: Messages)
+@* A round's type icons before its name, wherever the round is named (the Rounds table, the
+   statistics page's round pager, the galleries' round menu): roundTypeIcon, coloured if the round
+   is active, grey if not, its tooltip the type and the state ("Yes/No, Active", "Rated,
+   Inactive"; a comments-only round's empty slot has none). The text after the name for screen
+   readers is roundSpoken. No white space around it *@@defining(controllers.RoundsFilter.Kind.of(round)) { kind =>@snippets.roundTypeIcon(kind, round.active, kind.map(k => Messages(k.messageKey) + ", " + Messages(if (round.active) "round.badge.active" else "round.badge.inactive")))}

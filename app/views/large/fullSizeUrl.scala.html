@@ -3,10 +3,6 @@
 @(image: Image, round: Round)(implicit flash: Flash, request: Request[Any], messages: Messages)
 
     <div class="large-line">
-        <a href="@image.url">@Html(Messages(
-            "full.resolution",
-            image.resolutionStr,
-            image.mpxStr
-        ))</a>
+        <a href="@image.url" target="_blank" rel="noopener">@views.ExternalLinks.marked(Html(Messages("full.resolution", image.resolutionStr, image.mpxStr)), image.url.getOrElse(""))</a>
     </div>
 

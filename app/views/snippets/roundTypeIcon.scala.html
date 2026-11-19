@@ -1,0 +1,13 @@
+@(kind: Option[controllers.RoundsFilter.Kind], active: Boolean = true, tooltip: Option[String] = None)
+@* A round type's icons in a slot of one width, before a round's name (the maintainer's decisions
+   of 2026-11-19), so that every icon and every name start at the same place whatever the names'
+   lengths: a yes/no round's ✓ and ✗ (bi-check-lg, bi-x-lg, as the vote buttons), a rated round's
+   star (bi-star-fill; criteria rounds too: RoundsFilter.Kind.of), a comments-only round's slot
+   empty. Coloured (the vote green and red, the star gold: theme.css) for an active round and the
+   Type menu's legend, grey for an inactive round (main.css wlx-round-icon). Hidden from screen
+   readers, which read the type after the name (roundSpoken); `tooltip` for the mouse (roundIcon).
+   No white space around it *@<span class="wlx-round-icon@if(!active) { wlx-round-icon-inactive}" data-type="@kind.fold("none")(_.param)" aria-hidden="true"@for(t <- tooltip) { title="@t"}>@kind match {
+    case Some(controllers.RoundsFilter.Kind.Binary) => {<i class="bi bi-check-lg wlx-round-yes"></i><i class="bi bi-x-lg wlx-round-no"></i>}
+    case Some(controllers.RoundsFilter.Kind.Rated) => {<i class="bi bi-star-fill wlx-round-star"></i>}
+    case _ => {}
+}</span>

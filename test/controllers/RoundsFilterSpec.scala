@@ -83,8 +83,19 @@ class RoundsFilterSpec extends PlaySpecification with PlayTestDb {
   /** The statistics page's round menu, by name, in order. */
   private def statMenu(doc: Document): Seq[String] =
     doc.select("#round-stat-rounds .page-link").asScala.toSeq.map { a =>
-      val c = a.clone(); c.select(".wlx-round-badges").remove(); c.text.trim
+      val c = a.clone(); c.select(".wlx-round-spoken").remove(); c.text.trim
     }
+
+  /** A round's icon slot (snippets/roundIcon) in `e`: its type, whether grey (inactive), its icons
+    * and its tooltip; and the text after the name for screen readers.
+    */
+  private def icon(e: org.jsoup.nodes.Element): (String, Boolean, List[String], String) = {
+    val slot = e.selectFirst(".wlx-round-icon[aria-hidden=true]")
+    (slot.attr("data-type"), slot.hasClass("wlx-round-icon-inactive"),
+      slot.select("i").asScala.toList.flatMap(_.classNames.asScala.find(_.startsWith("wlx-round-"))), slot.attr("title"))
+  }
+  private def spoken(e: org.jsoup.nodes.Element): String =
+    Option(e.selectFirst(".wlx-round-spoken.visually-hidden")).fold("")(_.text)
 
   private def current(doc: Document, menuId: String): String =
     NavMenus.items(doc, menuId).find(_.active).map(_.name).getOrElse("")
@@ -104,6 +115,10 @@ class RoundsFilterSpec extends PlaySpecification with PlayTestDb {
         current(doc, "rounds-order-menu") === "Oldest first"
         counts(doc, "rounds-status-menu") === Seq("All" -> Some(5), "Active" -> Some(3), "Not active" -> Some(2))
         counts(doc, "rounds-type-menu") === Seq("All" -> Some(5), "Yes/No" -> Some(2), "Rated" -> Some(2))
+        // the Type menu's items a legend of the round icons, coloured; All's slot empty
+        doc.select("#rounds-type-menu .dropdown-item").asScala.toList.map(icon) === List(
+          ("none", false, Nil, ""), ("binary", false, List("wlx-round-yes", "wlx-round-no"), ""),
+          ("rated", false, List("wlx-round-star"), ""))
         NavMenus.items(doc, "rounds-order-menu").map(_.name) === Seq("Oldest first", "Newest first", "Active first")
         NavMenus.items(doc, "rounds-order-menu").forall(_.count.isEmpty) must beTrue
         // in the navbar's groups: Status and Type with the filters, Order in the order group
@@ -126,19 +141,22 @@ class RoundsFilterSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "show the Active and type badges, inactive rows grey, the round form's link kept on the number" in {
+    "show the type icons before the names, inactive rows grey, the round form's link kept on the number" in {
       testDbApp { app =>
         val f = fixture()
         val doc = page(app, f.admin, rounds(f))
         def row(r: Round) = doc.selectFirst(s"tbody tr.round-row[data-round=${r.getId}]")
-        def badges(r: Round) = row(r).select(".wlx-round-badges .badge").asScala.map(_.text).toList
-        badges(f.pre) === List("Yes/No")
-        badges(f.stars) === List("Active", "Rated")
-        badges(f.criteria) === List("Rated")
-        badges(f.comments) === List("Active")
-        badges(f.fin) === List("Active", "Yes/No")
-        row(f.stars).select(".badge.text-bg-success.wlx-round-active").size === 1
-        row(f.stars).select(".badge.text-bg-secondary.wlx-round-type").size === 1
+        icon(row(f.pre)) === (("binary", true, List("wlx-round-yes", "wlx-round-no"), "Yes/No, Inactive"))
+        icon(row(f.stars)) === (("rated", false, List("wlx-round-star"), "Rated, Active"))
+        icon(row(f.criteria)) === (("rated", true, List("wlx-round-star"), "Rated, Inactive"))
+        icon(row(f.comments)) === (("none", false, Nil, ""))
+        icon(row(f.fin)) === (("binary", false, List("wlx-round-yes", "wlx-round-no"), "Yes/No, Active"))
+        spoken(row(f.fin)) === ", Yes/No, Active"
+        spoken(row(f.pre)) === ", Yes/No"
+        spoken(row(f.comments)) === ", Active"
+        // the slot before the name, the name its statistics link; no "Active" badge any more
+        row(f.fin).selectFirst(".wlx-round-named > .wlx-round-icon + a.round-stat-link") must not(beNull)
+        doc.select("tbody .badge").size === 0
         Seq(f.pre, f.criteria).forall(r => row(r).hasClass("wlx-round-inactive")) must beTrue
         Seq(f.stars, f.comments, f.fin).exists(r => row(r).hasClass("wlx-round-inactive")) must beFalse
         // no strikethrough
@@ -315,15 +333,22 @@ class RoundsFilterSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "show the rounds' badges and the inactive ones in grey in its round menu" in {
+    "show the rounds' type icons and the inactive ones in grey in its round menu" in {
       testDbApp { app =>
         val f = fixture()
         val doc = page(app, f.organizer, s"/roundstat/${f.fin.getId}")
         def link(r: Round) = doc.selectFirst(s"#round-stat-rounds .page-item[data-round=${r.getId}] > .page-link")
         link(f.pre).hasClass("wlx-round-inactive") must beTrue
         link(f.stars).hasClass("wlx-round-inactive") must beFalse
-        link(f.stars).select(".badge").asScala.map(_.text).toList === List("Active", "Rated")
-        link(f.pre).select(".badge").asScala.map(_.text).toList === List("Yes/No")
+        icon(link(f.stars)) === (("rated", false, List("wlx-round-star"), "Rated, Active"))
+        icon(link(f.pre)) === (("binary", true, List("wlx-round-yes", "wlx-round-no"), "Yes/No, Inactive"))
+        spoken(link(f.stars)) === ", Rated, Active"
+        // the icons first, then the name
+        link(f.stars).child(0).hasClass("wlx-round-icon") must beTrue
+        // a comments-only round's chip without the empty slot (its name and "Active" for screen readers)
+        link(f.comments).select(".wlx-round-icon").size === 0
+        spoken(link(f.comments)) === ", Active"
+        link(f.stars).select(".badge").size === 0
       }
     }
 
@@ -399,7 +424,7 @@ class RoundsFilterSpec extends PlaySpecification with PlayTestDb {
         // the params don't change (no filter there)
         def jurorMenu(q: String) =
           page(app, f.juror, s"/gallery/round/${f.fin.getId}/user/${f.juror.getId}/page/1$q")
-            .select("nav .wlx-nav-filters .dropdown-item:has(.wlx-round-badges)").asScala.map(_.attr("href")).toList
+            .select("nav .wlx-nav-filters .dropdown-item:has(.wlx-round-icon)").asScala.map(_.attr("href")).toList
         val baseline = jurorMenu("")
         def roundOf(href: String) = """/round/(\d+)/""".r.findFirstMatchIn(href).map(_.group(1)).get
         baseline must not(beEmpty)
@@ -421,26 +446,32 @@ class RoundsFilterSpec extends PlaySpecification with PlayTestDb {
 
   "the galleries' round menu [O-07]" should {
 
-    "show each round's badges and the inactive ones in grey, with no filter menus" in {
+    "show each round's type icons and the inactive ones in grey, with no filter menus" in {
       testDbApp { app =>
         val f = fixture()
         // the organisers' view of all the jurors' votes: every round of the contest
         val doc = page(app, f.organizer, s"/gallery/round/${f.pre.getId}/user/0/page/1")
-        val items = doc.select("nav .wlx-nav-filters .dropdown-item:has(.wlx-round-badges)").asScala.toList
+        val items = doc.select("nav .wlx-nav-filters .dropdown-item:has(.wlx-round-icon)").asScala.toList
         items.size === 5
         def item(r: Round) = items.find(_.attr("href").contains(s"/round/${r.getId}/")).get
         item(f.pre).hasClass("wlx-round-inactive") must beTrue
         item(f.pre).hasClass("active") must beTrue
         item(f.fin).hasClass("wlx-round-inactive") must beFalse
-        item(f.fin).select(".badge").asScala.map(_.text).toList === List("Active", "Yes/No")
-        item(f.criteria).select(".badge").asScala.map(_.text).toList === List("Rated")
+        icon(item(f.fin)) === (("binary", false, List("wlx-round-yes", "wlx-round-no"), "Yes/No, Active"))
+        icon(item(f.criteria)) === (("rated", true, List("wlx-round-star"), "Rated, Inactive"))
+        icon(item(f.comments)) === (("none", false, Nil, ""))
+        spoken(item(f.fin)) === ", Yes/No, Active"
+        item(f.fin).child(0).hasClass("wlx-round-icon") must beTrue
+        item(f.fin).select(".badge").size === 0
+        // the menu scrolls inside itself, as the region menu (main.css)
+        doc.select("#round-menu > ul.dropdown-menu.wlx-round-menu").size === 1
         doc.select("#rounds-status-menu, #rounds-type-menu, #rounds-order-menu").size === 0
 
         // a juror's round menu: the same look on their rounds
         val juror = page(app, f.juror, s"/gallery/round/${f.fin.getId}/user/${f.juror.getId}/page/1")
-        val jurorItems = juror.select("nav .wlx-nav-filters .dropdown-item:has(.wlx-round-badges)").asScala.toList
+        val jurorItems = juror.select("nav .wlx-nav-filters .dropdown-item:has(.wlx-round-icon)").asScala.toList
         jurorItems.nonEmpty must beTrue
-        jurorItems.forall(_.select(".wlx-round-type").size == 1) must beTrue
+        jurorItems.forall(_.select(".wlx-round-icon i").size >= 1) must beTrue
         juror.select("#rounds-status-menu").size === 0
       }
     }

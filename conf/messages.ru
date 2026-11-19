@@ -908,8 +908,9 @@ users.import.problems.more = Не добавлено и не показано з
 account.change.mail.unknown = неизвестно
 # авторы файлов конкурса, только для его администраторов, организаторов и root (никогда для жюри)
 author.files.title = Файлы конкурса автора {0}
-author.commons = Commons ↗
+author.commons = Commons
 author.commons.title = Страница участника {0} на Викискладе (открывается в новой вкладке)
+author.commons.page = Страница участника {0} на Викискладе
 author.filter.chip = Автор: {0}
 author.filter.label = Автор:
 author.filter.remove = Показать файлы всех авторов
@@ -1397,6 +1398,8 @@ rounds.order.active = Сначала активные
 rounds.filter.none = Ни один раунд не соответствует этому выбору.
 rounds.filter.reset = Показать все раунды
 round.badge.active = Активный
+round.badge.inactive = Неактивный
+link.new.tab = открывается в новой вкладке
 
 # The contest health page (support diagnostics plan, D-1a; ContestHealth, contestHealth.scala.html)
 health.title = Состояние конкурса

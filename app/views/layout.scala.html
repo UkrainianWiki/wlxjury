@@ -56,6 +56,7 @@
         @head
     </head>
     <body@defining((bodyClass +: (if (fullHeight) Seq("h-100") else Nil)).filter(_.nonEmpty).mkString(" ")) { classes =>@if(classes.nonEmpty){ class="@classes"}}>
+        @snippets.externalLogos()
         @content
     </body>
 </html>

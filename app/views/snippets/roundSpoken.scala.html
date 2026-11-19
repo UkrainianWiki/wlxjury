@@ -1,0 +1,4 @@
+@(round: db.scalikejdbc.Round)(implicit messages: Messages)
+@* After a round's name, for screen readers only, what its icons show (roundIcon, hidden from
+   them): its type, if yes/no or rated, and "Active" if it is, each after a ", ", so that a link or
+   menu item reads "Final, Yes/No, Active", not "FinalYes/NoActive". No white space around it *@@defining(controllers.RoundsFilter.Kind.of(round).map(k => Messages(k.messageKey)).toSeq ++ Option.when(round.active)(Messages("round.badge.active"))) { said =>@if(said.nonEmpty) {<span class="visually-hidden wlx-round-spoken">, @said.mkString(", ")</span>}}

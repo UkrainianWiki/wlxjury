@@ -65,6 +65,15 @@ class LargeViewSideSpec extends Specification {
         checkSections(doc, stripShown = true)
     }
 
+    "open the full resolution and the image's Commons page in a new tab, as the other Commons links" in {
+      // the maintainer's browser check of 26.11.13: the full resolution loaded in the same tab
+      val doc = Jsoup.parse(large(ratedRound, middle))
+      val full = doc.selectFirst("#large-info a[href$=/Image_107.jpg]")
+      val image = doc.selectFirst("#mainContent > a[href^=https://commons.wikimedia.org/wiki/]")
+      (full.attr("target") must_== "_blank") and (full.attr("rel") must_== "noopener") and
+        (image.attr("target") must_== "_blank") and (image.attr("rel") must_== "noopener")
+    }
+
     "show its details under the buttons in a binary round" in {
       val doc = Jsoup.parse(large(binaryRound, middle))
       (doc.selectFirst(".large-nav").nextElementSibling must_== doc.selectFirst("button[aria-controls=large-info]").parent) and
@@ -104,6 +113,17 @@ class LargeViewSideSpec extends Specification {
         Seq((1, 0, "selected"), (0, 1, "rejected"), (0, 0, "unrated"))
       items.last.select(".wlx-vote-unrated").text must_== "·"
     }
+
+    "leave the rank numbers the room they need: three digits from a hundred jurors (main.css)" in {
+      implicit val msgs: play.api.i18n.Messages = messages(request("/"))
+      val list = controllers.RoundList(binaryRound, 0, view = controllers.GalleryView.ByRate)
+      def votes(n: Int) = (1 to n).map { id =>
+        (org.intracer.wmua.Vote(101L, id.toLong, binaryRound.getId, 1),
+          db.scalikejdbc.User(s"Juror $id", s"j$id@example.org", id = Some(id.toLong)))
+      }
+      def ol(n: Int) = Jsoup.parse(views.html.large.juryStat(votes(n), list).body).selectFirst(".large-line > ol")
+      (ol(99).hasClass("wlx-ranks-3") must beFalse) and (ol(100).hasClass("wlx-ranks-3") must beTrue)
+    }
   }
 
   "a contest file's large view" should {
@@ -114,6 +134,12 @@ class LargeViewSideSpec extends Specification {
         (doc.select("#large-info .file-title").size must_== 1) and
         checkSections(doc, stripShown = true) and
         (strip(doc) must_== (middle + 1 to middle + 5).map(pageIdAt))
+    }
+
+    "open its Commons page and its full resolution in a new tab" in {
+      val links = Jsoup.parse(contestFile(middle)).select("#large-info .file-title a").asScala.toSeq
+      (links.size must_== 2) and
+        (links.map(a => (a.attr("target"), a.attr("rel"))) must_== Seq(("_blank", "noopener"), ("_blank", "noopener")))
     }
 
     "have no strip at the list's last file" in {

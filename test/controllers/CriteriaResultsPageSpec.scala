@@ -160,7 +160,7 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
         val doc = Jsoup.parse(html)
         // 29 / 2 rated jurors, over 2 criteria
         doc.getElementById("rate-number").text() === "7.25"
-        doc.select(".wlx-criteria-overall-rate").text() === "7.25 (Σ 14.50: 29 / 2 of 3 jurors)"
+        doc.select(".wlx-criteria-overall-rate").text() === "(Σ 14.50: 29 / 2 of 3 jurors)"
         doc.getElementById("rate-number1").text() === "7"
         doc.getElementById("rate-number2").text() === "7.5"
         doc.select(".large-side .wlx-criterion-name").asScala.map(_.text).take(2) === Seq("Scientific value", hostileName)
@@ -184,7 +184,7 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
         val doc = Jsoup.parse(contentAsString(get(app, f.organizer, large(f, 0, f.images.head.pageId))))
         (rows("File:Image0.jpg").slice(2, 5) === Seq("29 (sum of 3 jurors)", "7.00", "7.50")) and
           // the large view: the stars of the rated jurors' average per criterion, the sum beside them
-          (doc.select(".wlx-criteria-overall-rate").text() === "7.25 (Σ 29, sum of 3 jurors)")
+          (doc.select(".wlx-criteria-overall-rate").text() === "(Σ 29, sum of 3 jurors)")
       }
     }
 
@@ -195,7 +195,7 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
         val (_, rows) = table(contentAsString(get(app, f.organizer, fileList(f, 0))))
         val doc = Jsoup.parse(contentAsString(get(app, f.organizer, large(f, 0, f.images.head.pageId))))
         (rows("File:Image0.jpg").slice(2, 5) === Seq("9.67 (29 / 3 jurors)", "7.00", "7.50")) and
-          (doc.select(".wlx-criteria-overall-rate").text() === "4.83 (Σ 9.67: 29 / 3 jurors)")
+          (doc.select(".wlx-criteria-overall-rate").text() === "(Σ 9.67: 29 / 3 jurors)")
       }
     }
   }

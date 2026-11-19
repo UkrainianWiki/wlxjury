@@ -716,9 +716,11 @@ Open **Rounds** at the start of the top bar (or in the pages menu there). The li
 round form), its **Name** (a link to the round's statistics), the **File distribution**, the **Rating type**, whether it is
 **Active** (started), the number of **Images** and the state of its distribution.
 
-After each name, a pale green **Active** badge marks a started round, and a grey badge its type:
-**Yes/No** or **Rated** (a criteria round is rated too; a comments-only round has no type badge).
-A stopped round's row is in grey; its links still work.
+Before each name, an icon shows the round's type: a tick and a cross for **Yes/No**, a star for
+**Rated** (a criteria round is rated too; a comments-only round has no icon). The icons are in
+colour for a started round and in grey for a stopped one; pointing at them shows the type and the
+state. The **Type** menu shows the same icons as a legend. A stopped round's row is in grey; its
+links still work.
 
 With many rounds, the menus in the top bar narrow and order the list:
 

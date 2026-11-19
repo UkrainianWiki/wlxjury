@@ -76,6 +76,22 @@ class AccountOverrideSpec extends PlaySpecification with PlayTestDb with Account
   private def authVersion(id: Long): Int =
     DB.readOnly(implicit s => sql"SELECT auth_version FROM users WHERE id = $id".map(_.int(1)).single().get)
 
+  "the users page's links to Commons" should {
+    "open in a new tab, the user page's with Commons' mark, the talk and email buttons unmarked" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        account("wiki@example.com", Some(10), "jury", wikiAccount = Some("Jane Doe"))
+        val doc = Jsoup.parse(usersPage(admin, 10))
+        // the user page and the talk page
+        (doc.select("a[href^=https://commons.wikimedia.org/wiki/User:Jane_Doe]").size === 1) and
+          (doc.select("a[href*=User_talk:Jane_Doe]").size must be_>=(1)) and
+          (views.ExternalLinksCheck.problems(doc) must beEmpty) and
+          (views.ExternalLinksCheck.sites(doc) === Set("commons"))
+      }
+    }
+  }
+
   "an admin's change of another account's email" should {
     "be made directly for an account with a password and a verified address, which keeps the password" in {
       testDbApp { implicit app =>

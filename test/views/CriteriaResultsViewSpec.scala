@@ -125,7 +125,8 @@ class CriteriaResultsViewSpec extends PlaySpecification {
       // 7.25 per criterion
       doc.getElementById("rate-number").text() === "7.25"
       doc.getElementById("rate-image").attr("data-score") === "7.25"
-      doc.select(".wlx-criteria-overall-rate").text() === "7.25 (Σ 14.50: 29 / 2 jurors)"
+      // the number once: under it only the sum and its jurors
+      doc.select(".wlx-criteria-overall-rate").text() === "(Σ 14.50: 29 / 2 jurors)"
       doc.select(".large-side .wlx-criterion-name").asScala.map(_.text) === Seq("Quality", xss)
       doc.getElementById("rate-number1").text() === "7"
       doc.getElementById("rate-number2").text() === "7.5"
@@ -209,6 +210,37 @@ class CriteriaResultsViewSpec extends PlaySpecification {
       tile.select(".rate-stars i.bi-star-fill").size === 7
       tile.select(".rate-stars").text() must contain("7.00 (Σ 7)")
       tile.select(".wlx-criteria-averages li").asScala.map(_.text) === Seq("Quality: 7.00")
+    }
+  }
+
+  "the large view of a rated round for all the jurors" should {
+    // the maintainer's browser check of 26.11.13: the score was written twice, "14.50" then
+    // "14.50 (29 / 2 jurors)"; under the bold number now only what it doesn't say
+    val plain = round.copy(hasCriteria = false)
+    val one = ImageWithRating(Image(303, "File:Image 303.jpg"), Seq(Vote(303, 0, 1, 7)), countFromDb = 1, approvalsFromDb = Some(1))
+    def render(r: Round, fs: Seq[ImageWithRating]) = Jsoup.parse(contentAsString(views.html.large.large(
+      juror.copy(roles = Set("organizer")), RoundList(r, 0, view = GalleryView.ByRate), Neighbourhood(fs, 0, 0), None, Nil, Nil, Nil)))
+
+    "write the averaged score once, its denominator under it" in {
+      val doc = render(plain, files)
+      val number = doc.getElementById("rate-number").text()
+      (number must not(beEmpty)) and
+        (doc.select(".wlx-overall-rate").text() === "(29 / 2 jurors)") and
+        (doc.select(".wlx-overall-rate").text() must not(startWith(number)))
+    }
+    "keep the whole sum in a round scored by the sum, the bold number its average" in {
+      render(plain.copy(averageRule = AverageRule.Sum), files).select(".wlx-overall-rate").text() === "29 (sum of 2 jurors)"
+    }
+    "have no line under the number for a file of one juror" in {
+      val doc = render(plain, Seq(one))
+      (doc.getElementById("rate-number").text() must not(beEmpty)) and (doc.select(".wlx-overall-rate").size === 0)
+    }
+    "write a criteria round's stars once, the sum and its jurors under them" in {
+      val doc = Jsoup.parse(contentAsString(views.html.large.large(juror.copy(roles = Set("organizer")),
+        RoundList(round, 0, view = GalleryView.ByRate), Neighbourhood(files, 0, 0), None, Nil, Nil,
+        criteria.map(c => c -> results.of(301).toMap.apply(c).fold(0.0)(_.toDouble)))))
+      (doc.getElementById("rate-number").text() === "7.25") and
+        (doc.select(".wlx-criteria-overall-rate").text() === "(Σ 14.50: 29 / 2 jurors)")
     }
   }
 }

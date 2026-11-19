@@ -947,8 +947,9 @@ account.change.mail.unknown = not known
 # from an author's name to their files (the contest files page's author filter, its chip) and to
 # their Commons user page; the authors list of the contest or a round (AuthorsController)
 author.files.title = The contest''s files by {0}
-author.commons = Commons ↗
+author.commons = Commons
 author.commons.title = {0}''s user page on Wikimedia Commons (opens in a new tab)
+author.commons.page = {0}''s user page on Wikimedia Commons
 author.filter.chip = Author: {0}
 author.filter.label = Author:
 author.filter.remove = Show the files of all authors
@@ -1436,6 +1437,8 @@ rounds.order.active = Active first
 rounds.filter.none = No rounds match these choices.
 rounds.filter.reset = Show all rounds
 round.badge.active = Active
+round.badge.inactive = Inactive
+link.new.tab = opens in a new tab
 
 # The contest health page (support diagnostics plan, D-1a; ContestHealth, contestHealth.scala.html)
 health.title = Contest health

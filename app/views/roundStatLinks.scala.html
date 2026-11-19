@@ -13,7 +13,8 @@
         => y
     }).sum) { count =>
         @if(count != 0) {
-        <div class="btn-group">
+        <span class="wlx-links-count">
+        <span class="btn-group">
             @if(round.isBinary || rate == 0) {
                 @snippets.iconLink(RoundList(round, user.getId, filter = VoteFilter.ofRate(rate)).pageUrl(1), "grid-3x3-gap-fill", Messages("gallery"), count != 0)
             } else {
@@ -24,8 +25,8 @@
             } else {
                 @snippets.iconLink(RoundList(round, user.getId, view = GalleryView.FileList).pageUrl(1), "list-ul", Messages("filelist"), count != 0)
             }
-        </div>
-    @count
+        </span>
+        <span class="wlx-links-count-n">@count</span></span>
     }
 
     }

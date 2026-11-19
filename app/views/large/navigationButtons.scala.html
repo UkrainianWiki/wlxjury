@@ -147,8 +147,9 @@
        @if(list.asUserId == 0) {
            <div class="wlx-criteria-overall">@Messages("criteria.overall")</div>
            @rateNumber("rate-number", score)
-           @* the number with the sum and its jurors beside it, as the by-rate gallery has it *@
-           <div class="wlx-criteria-overall-rate small">@hood.file.criteriaRateString(round)</div>
+           @* under the number, the sum and its jurors, as the by-rate gallery has them, without the
+              number again (ImageWithRating.criteriaRateDetail) *@
+           <div class="wlx-criteria-overall-rate small">@hood.file.criteriaRateDetail(round)</div>
            @stars("rate-image", "rate-number", score, k, None)
        }
        @criteria.zipWithIndex.map { case ((criterion, rate), index) =>
@@ -159,10 +160,18 @@
        }
     } else if (round.rates.id > 0)  {
         @rateNumber("rate-number", score, worst = hood.file.isWorstMark)
-        @* all the jurors' votes on a rated round: the score by the round's rule, with its denominator
-           (ImageWithRating.rateText), as the by-rate gallery has it, and its worst marks *@
+        @* all the jurors' votes on a rated round: under the score, what the number doesn't say, its
+           denominator by the round's rule, the whole sum in a round scored by the sum
+           (ImageWithRating.rateDetail), and its worst marks; no line for a file of one juror
+           without a worst mark *@
         @if(list.asUserId == 0 && !round.isBinary) {
-            <div class="wlx-overall-rate small">@hood.file.rateText(round) @snippets.worstMarks(hood.file, round)</div>
+            @defining(hood.file.rateDetail(round)) { detail =>
+            @defining(snippets.worstMarks(hood.file, round)) { worst =>
+            @if(detail.nonEmpty || worst.body.trim.nonEmpty) {
+            <div class="wlx-overall-rate small">@detail @worst</div>
+            }
+            }
+            }
         }
         @stars("rate-image", "rate-number", score, if (round.rates.id > 5 && round.halfStar) 2 else 1, None)
         @if(worstVotes) {

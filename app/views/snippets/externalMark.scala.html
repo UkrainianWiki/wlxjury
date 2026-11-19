@@ -1,0 +1,21 @@
+@(url: String)(implicit messages: Messages)
+@* The mark after the text of a link that leaves the tool, which opens in a new tab (the
+   maintainer's decision of 2026-11-19), by the link's host (views.ExternalLinks): Commons' logo,
+   Wikipedia's W (bi-wikipedia), Wikidata's logo, or the outward arrow (bi-box-arrow-up-right)
+   for any other site, as Wikipedia marks external links. A no-break space before it, so it never
+   starts a line of its own; hidden from screen readers, which hear " (opens in a new tab)"
+   instead (link.new.tab). The space, the mark and those words in one span that can't be
+   selected (wlx-ext-tail, main.css), so copying the link's text copies the text alone; the
+   link's last character and this in one span that doesn't wrap (views.ExternalLinks.marked, which
+   the links use). The two logos are symbols defined once per page (snippets/externalLogos,
+   layout.scala.html), each mark a <use> of its one, in the link's colour.
+
+   Only after a link's text: not on an image's or a thumbnail's link or a link that is only an
+   icon. Exempt, without the mark and the words: the galleries' caption link to Commons, which
+   unitegallery builds from the thumbnail's alt (gallery.scala.html), whose text the thumbnail's
+   own alt also is, and unitegallery's Deleted badge (unitegallery.js), both inside the vendored
+   gallery. No white space around it *@@defining(views.ExternalLinks.site(url)) { site =><span class="wlx-ext-tail">&nbsp;<span class="wlx-ext-mark" data-site="@site.name" aria-hidden="true">@site match {
+    case views.ExternalLinks.Commons | views.ExternalLinks.Wikidata => {<svg class="wlx-ext-logo" viewBox="0 0 20 20" focusable="false"><use href="#wlx-logo-@site.name"></use></svg>}
+    case views.ExternalLinks.Wikipedia => {<i class="bi bi-wikipedia"></i>}
+    case _ => {<i class="bi bi-box-arrow-up-right"></i>}
+}</span><span class="visually-hidden"> (@Messages("link.new.tab"))</span></span>}

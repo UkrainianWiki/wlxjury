@@ -931,8 +931,9 @@ users.import.problems.more = Lignes non ajoutées et non listées ici : {0}. Vé
 account.change.mail.unknown = inconnu
 # les auteurs des fichiers d''un concours, pour ses administrateurs, organisateurs et root seulement (jamais les jurés)
 author.files.title = Les fichiers du concours de {0}
-author.commons = Commons ↗
+author.commons = Commons
 author.commons.title = Page utilisateur de {0} sur Wikimedia Commons (s''ouvre dans un nouvel onglet)
+author.commons.page = Page utilisateur de {0} sur Wikimedia Commons
 author.filter.chip = Auteur : {0}
 author.filter.label = Auteur :
 author.filter.remove = Afficher les fichiers de tous les auteurs
@@ -1420,6 +1421,8 @@ rounds.order.active = Actifs d''abord
 rounds.filter.none = Aucun tour ne correspond à ces choix.
 rounds.filter.reset = Afficher tous les tours
 round.badge.active = Actif
+round.badge.inactive = Inactif
+link.new.tab = s’ouvre dans un nouvel onglet
 
 # The contest health page (support diagnostics plan, D-1a; ContestHealth, contestHealth.scala.html)
 health.title = État du concours

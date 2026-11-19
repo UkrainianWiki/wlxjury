@@ -53,33 +53,36 @@
                 @* scrolls inside its box on a narrow screen, not the page; nothing in it opens
                    outside its box (start/stop are buttons, a job's status is text) *@
                 <div class="table-responsive position-relative">
-                <table class="table table-striped table-sm">
+                @* the Number, File distribution, Rating type, Active and Images columns as wide as their
+                   contents, on one line; the name takes the width left, the distribution's state a
+                   fifth (main.css wlx-rounds-table) *@
+                <table class="table table-striped table-sm wlx-rounds-table">
 
                     <thead>
                         <tr>
-                            <th width="10%">@Messages("number") </th>
-                            <th width="10%">@Messages("name") </th>
+                            <th>@Messages("number") </th>
+                            <th>@Messages("name") </th>
                                 <!--  <th width="10%">@Messages("Jury role") </th> -->
-                            <th width="10%">@Messages("file.distribution") </th>
-                            <th width="10%">@Messages("rating.type") </th>
+                            <th>@Messages("file.distribution") </th>
+                            <th>@Messages("rating.type") </th>
                                 <!--                        <th width="10%">@Messages("Min selected") </th>
                             <th width="10%">@Messages("Max selected") </th>
                             <th width="10%">@Messages("Recommended selected") </th> -->
-                            <th width="10%">@Messages("active")</th>
-                            <th width="10%">@Messages("images")</th>
-                            <th width="20%">@Messages("job.status")</th>
+                            <th>@Messages("active")</th>
+                            <th>@Messages("images")</th>
+                            <th>@Messages("job.status")</th>
                         </tr>
                     </thead>
 
                     <tbody>
 
-                    @* an inactive round's row in the secondary grey, an active one's "Active" badge and each
-                       one's type (snippets/roundBadges) after its name, which opens its statistics; the
+                    @* an inactive round's row in the secondary grey, each one's type icons, coloured if active
+                       (snippets/roundIcon), before its name, which opens its statistics; the
                        number its form, as before; both keep the filter *@
                     @for(round <- shown) {
                         <tr class="round-row@if(!round.active) { wlx-round-inactive}" data-round="@round.getId">
                             <td> <a class="round-edit-link" href="@filter.addTo(routes.RoundController.editRound(id = round.id, contestId = contest.getId).url)">@round.number</a> </td>
-                            <td> <a class="round-stat-link" href="@filter.addTo(routes.RoundController.roundStat(round.getId).url)">@round.description</a>@snippets.roundBadges(round) </td>
+                            <td> <div class="wlx-round-named">@snippets.roundIcon(round)<a class="round-stat-link" href="@filter.addTo(routes.RoundController.roundStat(round.getId).url)">@round.description</a>@snippets.roundSpoken(round)</div> </td>
                                 <!--                            <td>              @round.roles.mkString(",") </td> -->
                             <td>@Option(round.distribution).filter(_ != 0).fold(Messages("each.file.to.all.jurors"))(i => Messages("each.file.to.i.juror.s", i))</td>
                             <td>@views.RatingType.label(round.rates)</td>

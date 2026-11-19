@@ -77,12 +77,12 @@
                         <div class="form-check">
                             <input class="form-check-input" type="radio" name="sourceAs" id="source-as-category" value="@AsCategory" checked>
                             <label class="form-check-label" for="source-as-category">@Messages("import.source.check.category", SourceName.category(both.name), both.categoryFiles)</label>
-                            <a class="ms-1" href="@SourceName.commonsUrl(SourceName.category(both.name))" target="_blank" rel="noopener noreferrer">@Messages("import.source.check.open")</a>
+                            <a class="ms-1" href="@SourceName.commonsUrl(SourceName.category(both.name))" target="_blank" rel="noopener noreferrer">@views.ExternalLinks.marked(Messages("import.source.check.open"), SourceName.commonsUrl(SourceName.category(both.name)))</a>
                         </div>
                         <div class="form-check">
                             <input class="form-check-input" type="radio" name="sourceAs" id="source-as-page" value="@AsPage">
                             <label class="form-check-label" for="source-as-page">@Messages("import.source.check.page", both.name, both.pageFilesText)</label>
-                            <a class="ms-1" href="@SourceName.commonsUrl(both.name)" target="_blank" rel="noopener noreferrer">@Messages("import.source.check.open")</a>
+                            <a class="ms-1" href="@SourceName.commonsUrl(both.name)" target="_blank" rel="noopener noreferrer">@views.ExternalLinks.marked(Messages("import.source.check.open"), SourceName.commonsUrl(both.name))</a>
                         </div>
                         <input type="hidden" name="sourceFor" value="@both.name">
                         <div class="form-text">@Messages("import.source.check.both.send")</div>
@@ -97,9 +97,7 @@
 
             @if(contest.images.isDefined) {
                 @Messages("files.on.commons"):
-                <a id="commonscat" href="https://commons.wikimedia.org/wiki/@contest.images.get">
-                @sourceImages
-                </a>
+                <a id="commonscat" href="https://commons.wikimedia.org/wiki/@contest.images.get" target="_blank" rel="noopener">@views.ExternalLinks.marked(sourceImages.toString, "https://commons.wikimedia.org/wiki/")</a>
             }
             <br>
             @Messages("files.in.database"): @dbImages (<a class="text-decoration-underline" href="/thumb_urls/@contest.id" title="@Messages("thumbnail.urls.help")">@Messages("thumbnail.urls")</a>)

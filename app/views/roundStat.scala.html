@@ -27,11 +27,14 @@
         @* the page's title, for screen readers: the navbar shows where it is *@
         <h1 class="visually-hidden">@Messages("statistics")</h1>
 
+        @* the rounds as chips, wrapped and centred, each with its type icons before its name
+           (snippets/roundIcon); a comments-only round's chip without the empty slot the Rounds
+           table and the galleries' menu keep to line their names up, which chips never are *@
         @if(user.canViewOrgInfo(round)) {
             <nav>
                 <ul class="pagination flex-wrap justify-content-center mt-2 mb-1" id="round-stat-rounds">
                 @for(r <- listed) {
-                    <li class="page-item@if(r.id == round.id){ active}" data-round="@r.getId"><a class="page-link@if(!r.active) { wlx-round-inactive}" href="@filter.addTo(routes.RoundController.roundStat(r.getId).url)" @if(r.id == round.id){aria-current="page"}>@r.description@snippets.roundBadges(r)</a></li>
+                    <li class="page-item@if(r.id == round.id){ active}" data-round="@r.getId"><a class="page-link@if(!r.active) { wlx-round-inactive}" href="@filter.addTo(routes.RoundController.roundStat(r.getId).url)" @if(r.id == round.id){aria-current="page"}>@if(controllers.RoundsFilter.Kind.of(r).nonEmpty) {@snippets.roundIcon(r)}@r.description@snippets.roundSpoken(r)</a></li>
                 }
                 </ul>
             </nav>
@@ -44,8 +47,11 @@
             <div class="alert alert-info" role="status" id="flash-success">@text</div>
         }
 
+        @* the jurors table scrolls sideways in its own box on a phone, never the page *@
         <div class="row">
+            <div class="table-responsive">
             @roundStatTable(user, round, stat)
+            </div>
         </div>
 
         @* how the round scores its files in its results (V90), for a rated round *@

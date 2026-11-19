@@ -147,8 +147,9 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
   /** The authors list's rows: author -> its cells' texts from the files' count on. */
   private def rows(page: String): Seq[(String, Seq[String])] =
     Jsoup.parse(page).select("#authors-table tbody tr").asScala.toSeq.map { tr =>
-      val cells = tr.select("td").asScala.toSeq.map(_.text)
-      (cells(1).stripSuffix(" Commons ↗"), cells.drop(2))
+      // the author's name, without the link to their Commons page beside it
+      val cells = tr.select("td").asScala.toSeq.map { td => val c = td.clone(); c.select("a.author-commons").remove(); c.text.trim }
+      (cells(1), cells.drop(2))
     }
 
   "the author links" should {
@@ -185,7 +186,9 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
               (coiDoc.select("#coi-tab.active > span.wlx-count").text === "1") and
               (coiDoc.select("#coi-people > li > span.wlx-count-pill > [aria-hidden=true]").asScala.map(_.text).toList === List("1")) and
               (coiDoc.select("#coi-people > li > span.wlx-count-pill > .visually-hidden").text === ", 1 file") and
-              (coiDoc.select("#coi-people > li").text must not(contain("("))) and
+              // (the words " (opens in a new tab)" of a Commons link, for screen readers, aside)
+              (coiDoc.select("#coi-people > li").asScala.map { li => val c = li.clone(); c.select(".wlx-ext-mark + .visually-hidden").remove(); c.text }
+                .mkString(" ") must not(contain("("))) and
               (all.select("#file-tabs a").text must not(contain("(")))
           }
       }
@@ -233,6 +236,16 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
           (tiles(get(app, f.organizer, filesUrl(f, Some("Ivan ")))._2) === Nil) and
           (tiles(get(app, f.organizer, filesUrl(f, Some(Petro)))._2) === List(4L)) and
           (tiles(get(app, f.organizer, filesUrl(f, Some("Ivan"), deleted = true))._2) === List(5L))
+      }
+    }
+
+    "link the author's Commons page beside the filter in a new tab, with Commons' mark" in {
+      testDbApp { app =>
+        val f = fixture()
+        val doc = Jsoup.parse(get(app, f.organizer, filesUrl(f, Some(Petro)))._2)
+        (doc.select("a.author-commons").size === 1) and
+          (views.ExternalLinksCheck.problems(doc) must beEmpty) and
+          (views.ExternalLinksCheck.sites(doc) === Set("commons"))
       }
     }
 

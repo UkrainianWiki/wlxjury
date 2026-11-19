@@ -70,7 +70,7 @@
                 </span>
                 @for(account <- services.imports.StoredAuthors.account(author)) {
                     <a class="author-commons small ms-2" href="@views.WikiLinks.commonsUserUrl(account)" target="_blank" rel="noopener"
-                       title="@Messages("author.commons.title", account)">@Messages("author.commons")</a>
+                       title="@Messages("author.commons.page", account)">@views.ExternalLinks.marked(Messages("author.commons"), views.WikiLinks.commonsUserUrl(account))</a>
                 }
             </div>
         }

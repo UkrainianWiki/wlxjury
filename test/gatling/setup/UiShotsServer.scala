@@ -347,6 +347,39 @@ object UiShotsServer {
         id
       }
     }
+    // the rounds' type icons (rounds-filter.spec.js, the maintainer's decisions of 2026-11-19): a
+    // contest of its own with many rounds, yes/no, rated and comments-only, active and not, their
+    // names of very different lengths, so that the Rounds page, the statistics pager and the
+    // galleries' round menu show the icons lined up and the round menu scrolls inside itself. No
+    // files, no jurors (no member's menus change); root opens it. Not in the guides' screenshot mode
+    val roundsContest: Option[Long] = Option.when(f.docsPhotos.isEmpty) {
+      val name = "Round icons"
+      db.scalikejdbc.ContestJuryJdbc.findAll().find(c => c.name == name && c.year == 2019).map(_.getId).getOrElse {
+        import db.scalikejdbc.Round
+        val id = db.scalikejdbc.ContestJuryJdbc.create(None, name, 2019, "").getId
+        // each name says its type: yes/no, rated (stars), criteria (rated), comments only
+        val binary = Round.binaryRound
+        val (five, ten) = (Round.rateRounds(2), Round.rateRounds(7))
+        val kinds: Seq[(String, db.scalikejdbc.Rates, Seq[Long])] = Seq(
+          ("Pre-screening, yes/no", binary, Nil),
+          ("Pre-screening of all the uploaded files of the national campaign, yes/no", binary, Nil),
+          ("Stars", five, Nil),
+          ("Stars of the national jury, monuments of Kyiv", ten, Nil),
+          ("Criteria: science, caption, usefulness", ten, Seq(1L, 2L, 3L)),
+          ("Comments", Round.commentsOnlyRound, Nil),
+          ("Re-check, yes/no", binary, Nil),
+          ("Stars, top 50", five, Nil),
+          ("Comments of the jury on the special nomination: wooden churches", Round.commentsOnlyRound, Nil),
+          ("Criteria", ten, Seq(4L, 6L)))
+        (1 to 30).foreach { n =>
+          val (name, rates, criteria) = kinds((n - 1) % kinds.size)
+          val suffix = if (n > kinds.size) s" ${(n - 1) / kinds.size + 1}" else ""
+          Round.create(Round(None, n, Some(name + suffix), id, rates = rates, criterionIds = criteria,
+            active = n % 3 != 1))
+        }
+        id
+      }
+    }
     // in one transaction: as autocommitted statements (a commit per row) it took about 2.5 minutes
     val filled = DB.localTx { tx => CommonsFileUrl.fillMissing()(tx) }
     println(s"[ui-shots] set the Commons url of $filled images")
@@ -402,6 +435,7 @@ object UiShotsServer {
          |  "retireTargets": [${retireTargets.mkString(", ")}],
          |  "joinPairs": [${joinPairs.mkString(", ")}],
          |  "healthContestId": ${healthContest.getOrElse(0L)},
+         |  "roundsContestId": ${roundsContest.getOrElse(0L)},
          |  "commentFile": {"juror": $commentJuror, "pageId": $commentPage, "otherRounds": $commentOthers},
          |  "pageId": $pageId,
          |  "ratedPageId": $ratedPageId

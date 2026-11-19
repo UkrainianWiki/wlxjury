@@ -30,9 +30,9 @@
 @monument match {
     case Some(m) => {
     <div class="card card-body large-box" id="monument-card">
-        @Messages(image.region.getOrElse("")), @views.WikiLinks(m.city, "uk.wikipedia.org") <br>
-        @views.WikiLinks(m.name, "uk.wikipedia.org") <br>
-        @views.WikiLinks(m.place, "uk.wikipedia.org")
+        @Messages(image.region.getOrElse("")), @views.WikiLinks.marked(m.city, "uk.wikipedia.org") <br>
+        @views.WikiLinks.marked(m.name, "uk.wikipedia.org") <br>
+        @views.WikiLinks.marked(m.place, "uk.wikipedia.org")
         @idLine(m.id, Some(routes.MonumentController.byId(m.id, contestId, roundId)), true)
     </div>
     }
