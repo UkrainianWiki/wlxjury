@@ -27,8 +27,7 @@ class RawHtmlSinksSpec extends Specification {
     "app/views/main.scala.html" -> "empty defaults",
     "app/views/mainAdmin.scala.html" -> "empty defaults",
     "app/views/navbar.scala.html" -> "empty defaults",
-    "app/views/pageLinks.scala.html" -> "constant entities (&laquo; &lsaquo; &rsaquo; &raquo;)",
-    "public/javascripts/cache-status.js" -> "formatCacheStatus: numbers and constant English text"
+    "app/views/pageLinks.scala.html" -> "constant entities (&laquo; &lsaquo; &rsaquo; &raquo;)"
   )
 
   /** `Html(` not preceded by a name part or a dot (`Accepts.Html()`, `setHtml(`), and `HtmlFormat.raw`. */

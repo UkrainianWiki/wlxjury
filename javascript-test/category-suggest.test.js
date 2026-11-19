@@ -290,6 +290,119 @@ describe("categorySuggest", () => {
         expect(input.value).toBe("Category:Paris, France");
     });
 
+    // The value the page comes with is an item, which a click can't select or edit: on focus it
+    // becomes the text typed, wholly selected; leaving keeps it, or empties a cleared field.
+    const SAVED = "Category:Images from Wiki Loves Monuments 2026 in Ukraine";
+
+    test("focusing a field with a value makes it the text typed, wholly selected", () => {
+        const input = field("mixed", SAVED);
+        const ts = suggest.categorySuggest(input);
+        ts.control_input.focus();
+        expect(ts.items).toEqual([]);
+        expect(ts.control_input.value).toBe(SAVED);
+        expect(ts.control_input.selectionStart).toBe(0);
+        expect(ts.control_input.selectionEnd).toBe(SAVED.length);
+        expect(window.fetch).not.toHaveBeenCalled(); // no Commons request for a focus
+
+        // typing replaces it, and the new text is the value once the field is left
+        type(ts, "Category:Other");
+        ts.blur();
+        jest.runOnlyPendingTimers();
+        expect(input.value).toBe("Category:Other");
+        expect(ts.items).toEqual(["Category:Other"]);
+    });
+
+    test("leaving it unchanged keeps the value, also on focusing it again", () => {
+        const input = field("category", "Category:Paris, France");
+        const ts = suggest.categorySuggest(input);
+        for (let i = 0; i < 2; i++) {
+            ts.control_input.focus();
+            ts.blur();
+            jest.runOnlyPendingTimers();
+            expect(ts.items).toEqual(["Category:Paris, France"]);
+            expect(input.value).toBe("Category:Paris, France");
+            expect(ts.control_input.value).toBe("");
+        }
+    });
+
+    test("a value typed, then left, is the text again on the next focus, and kept on leaving", () => {
+        const input = field("category");
+        const ts = suggest.categorySuggest(input);
+        type(ts, "Category:Lakes of Ukraine");
+        ts.blur();
+        jest.runOnlyPendingTimers();
+        expect(ts.items).toEqual(["Category:Lakes of Ukraine"]);
+
+        // its option is the user's (persist: false drops it with the item): the text is put back all the same
+        // (Tom Select handles this focus once its own focus() of the created item has run: the timers)
+        ts.control_input.blur();
+        ts.control_input.focus();
+        jest.runOnlyPendingTimers();
+        expect(ts.control_input.value).toBe("Category:Lakes of Ukraine");
+        expect(ts.control_input.selectionStart).toBe(0);
+        expect(ts.control_input.selectionEnd).toBe("Category:Lakes of Ukraine".length);
+        ts.blur();
+        jest.runOnlyPendingTimers();
+        expect(input.value).toBe("Category:Lakes of Ukraine");
+        expect(ts.items).toEqual(["Category:Lakes of Ukraine"]);
+    });
+
+    test("left within the pause in typing, the field stays left, its value kept, Commons not asked", () => {
+        const input = field("category");
+        const ts = suggest.categorySuggest(input);
+        const focuses = jest.fn();
+        ts.on("focus", focuses);
+        type(ts, "Category:Lakes of Ukraine");
+        focuses.mockClear();
+        ts.blur(); // a quick Tab, before the 250 ms pause
+        jest.advanceTimersByTime(1000);
+        expect(focuses).not.toHaveBeenCalled(); // the waiting refresh would open the list and focus it again
+        expect(ts.isFocused).toBe(false);
+        expect(ts.isOpen).toBe(false);
+        expect(ts.items).toEqual(["Category:Lakes of Ukraine"]);
+        expect(input.value).toBe("Category:Lakes of Ukraine");
+        expect(window.fetch).not.toHaveBeenCalled();
+    });
+
+    test("the form's input keeps the value while the field is focused, and follows the text typed, without a change event", () => {
+        const input = field("mixed", SAVED);
+        const changes = jest.fn();
+        input.addEventListener("change", changes);
+        const ts = suggest.categorySuggest(input);
+        ts.control_input.focus();
+        expect(ts.items).toEqual([]);
+        expect(ts.control_input.value).toBe(SAVED);
+        expect(input.value).toBe(SAVED); // a send, or the browser's restore of the form, finds it
+        expect(changes).not.toHaveBeenCalled();
+        type(ts, " Category:Other "); // the text typed, as leaving would keep it, silently
+        expect(input.value).toBe("Category:Other");
+        expect(changes).not.toHaveBeenCalled();
+    });
+
+    test("an item shows its whole value in its title, as text", () => {
+        const input = field("category", "Category:A <b>&amp;</b> B");
+        const ts = suggest.categorySuggest(input);
+        const item = ts.control.querySelector(".item");
+        expect(item.getAttribute("title")).toBe(input.value);
+        expect(item.textContent).toBe(input.value);
+        expect(item.querySelector("b")).toBeNull();
+    });
+
+    test("clearing it and leaving empties the field, with one change event", () => {
+        const input = field("mixed", SAVED);
+        const changes = jest.fn();
+        input.addEventListener("change", changes);
+        const ts = suggest.categorySuggest(input);
+        ts.control_input.focus();
+        type(ts, "");
+        expect(input.value).toBe(""); // at once: Enter then sends it empty
+        ts.blur();
+        jest.runOnlyPendingTimers();
+        expect(ts.items).toEqual([]);
+        expect(input.value).toBe("");
+        expect(changes).toHaveBeenCalledTimes(1);
+    });
+
     test("leaves a readonly field, and does nothing without Tom Select or fetch", () => {
         expect(suggest.categorySuggest(field("category", "Category:A", " readonly"))).toBeNull();
         expect(document.querySelector(".ts-wrapper")).toBeNull();

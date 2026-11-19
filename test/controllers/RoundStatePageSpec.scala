@@ -263,5 +263,26 @@ class RoundStatePageSpec extends PlaySpecification with PlayTestDb {
         VoteJdbc.findBy(pageId, f.juror.getId, f.round.getId).map(_.rate) === Some(0)
       }
     }
+
+    // pins the current behaviour, a known gap (the 2026-11-19 review of #381): a round_user row
+    // whose `active` is NULL is not active for the juror's rounds and pages (Round.activeRounds,
+    // RoundUser.isNotActive: "juror stopped"), but the vote path checks RoundUser.isStopped
+    // (FALSE only), so a direct vote is still taken. Not changed here
+    "show a NULL round_user.active as juror stopped, while the vote path still takes a vote" in {
+      testDbApp { implicit app =>
+        val f = fixture(c => Round(None, 2, Some("Null one"), contestId = c, active = true))
+        scalikejdbc.DB.autoCommit(implicit s => scalikejdbc.SQL(
+          "UPDATE round_user SET active = NULL WHERE round_id = ? AND user_id = ?")
+          .bind(f.round.getId, f.juror.getId).update.apply())
+        val gallery = get(app, galleryUrl(f.round, f.juror), f.juror)
+        status(gallery) === OK
+        contentAsString(gallery) must contain("data-reason=\"juror_stopped\"")
+        val vote = route(app, FakeRequest(POST, s"/rate/round/${f.round.getId}/pageid/$pageId/select/1")
+          .withSession(Secured.UserName -> f.juror.email).withHeaders("X-Requested-With" -> "XMLHttpRequest")
+          .withCSRFToken).get
+        status(vote) === OK
+        VoteJdbc.findBy(pageId, f.juror.getId, f.round.getId).map(_.rate) === Some(1)
+      }
+    }
   }
 }

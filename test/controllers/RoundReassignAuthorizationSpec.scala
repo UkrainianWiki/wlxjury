@@ -86,6 +86,17 @@ class RoundReassignAuthorizationSpec extends PlaySpecification with PlayTestDb {
 
   private def active(r: Long, u: User): Option[Boolean] = RoundUser.byRoundId(r).find(_.userId == u.getId).map(_.active)
 
+  /** A running round `number` of contest 10 with each file to `distribution` jurors (0: every juror): the
+    * juror, active with unrated files 1 and 2, and `others` (key -> active) with no file.
+    */
+  private def lone(users: Map[String, User], number: Int, distribution: Int, others: (String, Boolean)*): Long = {
+    val rd = roundDao.create(Round(None, number, Some(s"R$number"), contestId, distribution = distribution, active = true))
+    rd.addUsers(RoundUser(rd.getId, users("juror").getId, "jury", active = true) +:
+      others.map { case (k, on) => RoundUser(rd.getId, users(k).getId, "jury", active = on) })
+    Seq(1L, 2L).foreach(p => VoteJdbc.create(p, 0, users("juror").getId, rd.getId))
+    rd.getId
+  }
+
   "the reassign page" should {
 
     "show its contest's admin and root the juror's files, the receivers ticked, the figures and the form" in {
@@ -150,6 +161,50 @@ class RoundReassignAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "say there is nobody to reassign to, with no receivers and no form, when too few other jurors could take the files" in {
+      testDbApp { app =>
+        val (_, _, users) = setUp()
+        // N = 1 and N = 0, the juror alone; N = 1, the other juror without an active jury membership (inactive:
+        // no role in the contest) or with a deleted account; N = 0, the only other juror stopped or deleted; N = 2,
+        // one other juror
+        val rounds = Seq(
+          lone(users, 2, 1) -> "no other juror of the round has an active jury membership",
+          lone(users, 3, 0) -> "every file goes to every juror, and no other juror",
+          lone(users, 4, 1, "inactive" -> true) -> "no other juror of the round has an active jury membership",
+          lone(users, 5, 1, "newjuror" -> true) -> "no other juror of the round has an active jury membership",
+          lone(users, 6, 0, "juror2" -> false) -> "every file goes to every juror, and no other juror",
+          lone(users, 7, 0, "newjuror" -> true) -> "every file goes to every juror, and no other juror",
+          lone(users, 8, 2, "juror2" -> true) -> "each file goes to 2 jurors, and fewer than 2 other jurors")
+        sql"UPDATE users SET deleted_at = NOW() WHERE id = ${users("newjuror").getId}".update()
+        rounds.map { case (r, why) =>
+          val result = get(app, Some("admin@example.com"), page(r, users("juror")))
+          val body = contentAsString(result)
+          val stat = contentAsString(get(app, Some("admin@example.com"), s"/roundstat/$r"))
+          (status(result) aka s"round $r" must_=== OK) and (body must contain("round-juror-reassign-refused")) and
+            (body must contain("be reassigned: " + why)) and (body must contain("data-unrated=\"2\"")) and
+            (body must not(contain("round-juror-reassign-form"))) and (body must not(contain("round-juror-reassign-choose"))) and
+            // no Reassign files… on the round's statistics, though the juror has unrated files
+            (stat must contain(users("juror").email)) and (stat must not(contain(path(r)))) and
+            (RoundReassign.reassignableJurors(Round.findById(r).get) must beEmpty) and (rebalanceJobs() === 0)
+        }.reduce(_ and _)
+      }
+    }
+
+    "link Reassign files… when enough other jurors could take the files: N = 1 a stopped one, N = 2 two" in {
+      testDbApp { app =>
+        val (_, _, users) = setUp()
+        val stoppedOther = lone(users, 2, 1, "juror2" -> false)
+        val two = lone(users, 3, 2, "juror2" -> true, "newjuror" -> false)
+        Seq(stoppedOther, two).map { r =>
+          val stat = contentAsString(get(app, Some("admin@example.com"), s"/roundstat/$r"))
+          val body = contentAsString(get(app, Some("admin@example.com"), page(r, users("juror"))))
+          (stat aka s"round $r" must contain(s"""href="${page(r, users("juror"))}"""")) and
+            (RoundReassign.reassignableJurors(Round.findById(r).get) === Set(users("juror").getId)) and
+            (body must contain("round-juror-reassign-choose")) and (body must not(contain("be reassigned:")))
+        }.reduce(_ and _)
+      }
+    }
+
     "say the round must be started first, with no form, when it isn't running" in {
       testDbApp { app =>
         val (round, _, users) = setUp()
@@ -191,6 +246,23 @@ class RoundReassignAuthorizationSpec extends PlaySpecification with PlayTestDb {
           (rebalanceJobs() === 0) and (active(r, users("juror2")) must beSome(true)) and
           (files(r, users("juror2")) === 3) and (files(r, users("juror")) === 3) and
           (Round.findById(r).map(r => r.active -> r.freezeCount) must beSome(true -> 0))
+      }
+    }
+
+    "refuse a juror too few other jurors could take files from, queueing nothing and leaving the juror running" in {
+      testDbApp { app =>
+        val (_, _, users) = setUp()
+        // each file to every juror (nothing is given: the juror's unrated rows would only be removed), alone
+        // or with the only other juror stopped; one juror per file, alone
+        val refused = Seq(lone(users, 2, 0), lone(users, 3, 0, "juror2" -> false), lone(users, 4, 1)).map { r =>
+          val result = post(app, Some("admin@example.com"), path(r), "juror" -> users("juror").getId.toString, "jury" -> jury(r),
+            "receiver[]" -> users("juror2").getId.toString)
+          (status(result) aka s"round $r" must_=== CONFLICT) and (contentAsString(result) must contain("be reassigned: ")) and
+            (contentAsString(result) must not(contain("round-juror-reassign-form"))) and
+            (active(r, users("juror")) must beSome(true)) and (files(r, users("juror")) === 2) and
+            (Round.findById(r).map(r => r.active -> r.freezeCount) must beSome(true -> 0))
+        }.reduce(_ and _)
+        refused and (rebalanceJobs() === 0)
       }
     }
 
@@ -308,7 +380,7 @@ class RoundReassignAuthorizationSpec extends PlaySpecification with PlayTestDb {
         sql"UPDATE vote SET rate = 1 WHERE round_id = $r AND page_id IN (4, 5)".update()
         sql"UPDATE images SET deleted_at = NOW() WHERE page_id = 6".update()
         val before = contentAsString(get(app, Some("admin@example.com"), stat))
-        val jurorsBefore = RoundReassign.reassignableJurors(r)
+        val jurorsBefore = RoundReassign.reassignableJurors(Round.findById(r).get)
         // an unrated row of juror2's set aside: a reassign hands it on too
         sql"INSERT INTO vote_aside (page_id, jury_id, round_id, rate) VALUES (6, ${users("juror2").getId}, $r, 0)".update()
         val aside = contentAsString(get(app, Some("admin@example.com"), stat))
@@ -316,7 +388,7 @@ class RoundReassignAuthorizationSpec extends PlaySpecification with PlayTestDb {
           (before must contain(users("juror2").email)) and
           (jurorsBefore === Set(users("juror").getId)) and
           (aside must contain(link(users("juror2")))) and
-          (RoundReassign.reassignableJurors(r) === Set(users("juror").getId, users("juror2").getId))
+          (RoundReassign.reassignableJurors(Round.findById(r).get) === Set(users("juror").getId, users("juror2").getId))
       }
     }
 

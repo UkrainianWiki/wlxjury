@@ -155,17 +155,47 @@ object RoundReassign {
   def reassignableCount(roundId: Long, jurorId: Long)(implicit session: DBSession): Long =
     unratedCount(roundId, jurorId, sqls"vote") + unratedCount(roundId, jurorId, sqls"vote_aside")
 
-  /** The round's jurors (round_user) with [[reassignableCount]] above 0: the round's statistics show
-    * "Reassign files…" only for them. Per juror an EXISTS on vote_round_jury_rate_idx that stops at the
-    * first row found, not a count of every unrated row (most of a new round's). A legacy round (no
-    * round_user rows) has none: a reassign is refused there.
+  /** The round's jurors (round_user) with [[reassignableCount]] above 0 and enough other jurors to
+    * take their files ([[enoughReceivers]]): the round's statistics show "Reassign files…" only for
+    * them. Per juror an EXISTS on vote_round_jury_rate_idx that stops at the first row found, not a
+    * count of every unrated row (most of a new round's); the receivers read once for all the jurors.
+    * A legacy round (no round_user rows) has none: a reassign is refused there.
     */
-  def reassignableJurors(roundId: Long)(implicit session: DBSession = AutoSession): Set[Long] =
-    sql"""SELECT ru.user_id FROM round_user ru WHERE ru.round_id = $roundId AND (
+  def reassignableJurors(round: Round)(implicit session: DBSession = AutoSession): Set[Long] = {
+    val roundId = round.getId
+    val withFiles = sql"""SELECT ru.user_id FROM round_user ru WHERE ru.round_id = $roundId AND (
             EXISTS (SELECT 1 FROM vote v WHERE v.round_id = $roundId AND v.jury_id = ru.user_id
                     AND ${movableVote(roundId, sqls"v")})
             OR EXISTS (SELECT 1 FROM vote_aside v WHERE v.round_id = $roundId AND v.jury_id = ru.user_id
                        AND ${unrated(sqls"v")}))""".map(_.long(1)).list().toSet
+    if (withFiles.isEmpty) withFiles
+    else {
+      val receivers = possibleReceivers(roundId, round.contestId)
+      withFiles.filter(j => enoughReceivers(j, receivers, round.distribution))
+    }
+  }
+
+  /** The round's jurors (round_user) who could receive a reassigned juror's files, each with whether
+    * they are active in the round: an active jury membership of the contest, the account not deleted
+    * (as [[RoundRebalanceHandler.eligibleJuror]], the receivers' check).
+    */
+  def possibleReceivers(roundId: Long, contestId: Long)(implicit session: DBSession = AutoSession): Map[Long, Boolean] = {
+    val jurors = sql"SELECT user_id, active FROM round_user WHERE round_id = $roundId"
+      .map(rs => rs.long(1) -> rs.boolean(2)).list().toMap
+    User.contestMembers(contestId, roles = Some(Seq(User.JURY_ROLE)), ids = Some(jurors.keys.toSeq))
+      .filter(_.deletedAt.isEmpty).map(u => u.getId -> jurors(u.getId)).toMap
+  }
+
+  /** Whether `from`'s files could go somewhere, of `receivers` ([[possibleReceivers]]): in a round where
+    * each file goes to N > 0 jurors, at least N others (stopped ones too: a ticked one is started again);
+    * where every file goes to every juror (N = 0), nothing is given and nobody is started, so at least one
+    * other active one (else the files are left with no juror voting). If not: no "Reassign files…", and
+    * the page, the POST and the job's "stop" refuse ([[RoundRebalanceHandler.AloneKey]]).
+    */
+  def enoughReceivers(from: Long, receivers: Map[Long, Boolean], distribution: Int): Boolean = {
+    val others = receivers - from
+    if (distribution <= 0) others.values.exists(identity) else others.size >= distribution
+  }
 
   /** The juror's rated rows of the round, in vote and vote_aside: they stay with the juror. */
   def ratedCount(roundId: Long, jurorId: Long)(implicit session: DBSession): Long =

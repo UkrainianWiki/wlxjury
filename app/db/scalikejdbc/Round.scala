@@ -579,6 +579,24 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       .getOrElse(Nil)
   }
 
+  /** The user's rounds in their current contest (a round_user row of theirs, active or not) that
+    * are not open to them as [[activeRounds(user*]] takes one: stopped, being distributed, or with
+    * the user stopped on it (an inactive round_user row, or a NULL `active`, which
+    * [[activeRounds(user*]] takes as inactive too); each with whether their round_user row is
+    * active. One query; the
+    * start page's "no round" list of closed rounds (controllers.JurorContests.noRoundPage).
+    */
+  def jurorRoundsNotOpen(user: User)(implicit session: DBSession = AutoSession): Seq[(Round, Boolean)] =
+    user.currentContest.fold(Seq.empty[(Round, Boolean)]) { contestId =>
+      // a NULL round_user.active is inactive, as activeRounds takes it (`ru.active = TRUE`)
+      sql"""SELECT ${r.result.*}, COALESCE(ru.active, FALSE) AS ru_active FROM ${Round.as(r)}
+            JOIN round_user ru ON ru.round_id = ${r.id} AND ru.user_id = ${user.getId}
+            WHERE ${r.contestId} = $contestId
+              AND NOT (${openOrPausedCond(sqls"r")} AND ${r.distributing} = FALSE AND COALESCE(ru.active, FALSE) = TRUE)
+            ORDER BY ${r.id}"""
+        .map(rs => (extract(rs, r.resultName), rs.boolean("ru_active"))).list()
+    }
+
   def findByContest(contest: Long): Seq[Round] =
     where("contestId" -> contest)
       .orderBy(r.id)
@@ -829,6 +847,14 @@ object RoundUser extends JoinTable[RoundUser] {
   def isStopped(roundId: Long, userId: Long)(implicit session: DBSession = AutoSession): Boolean =
     sql"""SELECT 1 FROM round_user WHERE round_id = $roundId AND user_id = $userId AND active = FALSE"""
       .map(_.int(1)).single.apply().isDefined
+
+  /** Whether the user's round_user row of the round is not active: FALSE or NULL, as
+    * [[Round.activeRounds(user*]] takes it (its `ru.active = TRUE`). The round state the juror is
+    * shown ([[services.GalleryService.refusal]]); [[isStopped]] (FALSE only) gates the votes.
+    */
+  def isNotActive(roundId: Long, userId: Long)(implicit session: DBSession = AutoSession): Boolean =
+    sql"""SELECT 1 FROM round_user WHERE round_id = $roundId AND user_id = $userId
+          AND COALESCE(active, FALSE) = FALSE""".map(_.int(1)).single.apply().isDefined
 
   def setActive(roundId: Long, userId: Long, active: Boolean): Int =
     updateBy(sqls.eq(ru.roundId, roundId).and.eq(ru.userId, userId))

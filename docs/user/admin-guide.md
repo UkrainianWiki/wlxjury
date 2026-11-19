@@ -1099,7 +1099,8 @@ contests reads the monument lists on Wikipedia: each monument's name, place, Com
 and Wikidata item, which the [monument's page](organizer-guide.md#o-monuments) shows. Monuments
 read before the Wikidata items were stored get theirs the next time it runs. Where the tool's
 operators have set up a local image cache, **Download images locally** fills it. These run as
-background jobs, with their progress.
+background jobs, with their progress. When the download has nothing to fetch, it says whether all
+the files were already cached or there were none, with the time it checked.
 
 <img src="images/admin-contest-images.png" alt="The page for importing the contest's files" width="1280">
 
@@ -1179,7 +1180,12 @@ When a juror can't go on, their unrated files can go to the round's other jurors
 two arrows next to a juror's name (**Reassign files…**) opens a page with the juror's files: how
 many they have, how many are rated (a ✗ and, in a round with criteria, a file with any criterion
 rated count as rated), how many unrated, and how many set aside (files deleted on Commons or
-disqualified). The button is there only while the round is running.
+disqualified). The button is there only while the round is running, for a juror with unrated
+files to move, and only if enough other jurors of the round could take them, each with an active
+jury membership of the contest: in a round where each file goes to N jurors, at least N others
+(stopped ones count: they are started again); in a round where every file goes to every juror, at
+least one other active juror. Otherwise add a juror first (**Add juror…**), or resume a stopped
+one. Opened directly, the page says why there is nothing to do.
 
 - Only unrated files move. The juror's votes stay as they are, in every view and in the results.
   Afterwards the juror is stopped in the round.

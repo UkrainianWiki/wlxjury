@@ -25,6 +25,14 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
   def appLogin(implicit app: Application) =
     new LoginController(userService, app.injector.instanceOf[ControllerComponents], signIn)
 
+  /** The start page in the session a sign-in made: a sign-in always redirects (303) to it, or to
+    * its returnTo, never answering its POST with a page (a reload posted it again). */
+  private def startPage(signedIn: scala.concurrent.Future[Result])(implicit app: Application) = {
+    redirectLocation(signedIn) must beSome("/")
+    route(app, FakeRequest(GET, "/").withHeaders(ACCEPT -> "text/html")
+      .withSession(session(signedIn).data.toSeq: _*)).get
+  }
+
   "auth [J-02]" should {
     "fail empty request" in {
       testDbApp { implicit app =>
@@ -91,10 +99,11 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
               )
               .withCSRFToken)
 
-        // the denial page, saying whom to ask, not a redirect to /error
-        status(result) === FORBIDDEN
-        contentAsString(result) must contain("If you need access, ask your contest admin.")
         session(result).get(Secured.UserName) === Some("qwerty@dot.com")
+        // the denial page, saying whom to ask, not a redirect to /error
+        val start = startPage(result)
+        status(start) === FORBIDDEN
+        contentAsString(start) must contain("If you need access, ask your contest admin.")
       }
     }
 
@@ -118,7 +127,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
               .withCSRFToken)
 
         status(result) === SEE_OTHER
-        header(LOCATION, result) === Some("/contests")
+        redirectLocation(startPage(result)) === Some("/contests")
       }
     }
 
@@ -157,9 +166,10 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
         )
 
         // a juror of contest 10 without a round yet: the page saying so, not a denial
-        status(result) === OK
-        contentAsString(result) must contain("No round configured yet.")
         session(result).get(Secured.CurrentContestId) === Some("10")
+        val start = startPage(result)
+        status(start) === OK
+        contentAsString(start) must contain("No round configured yet.")
       }
     }
 
@@ -174,8 +184,9 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
           FakeRequest().withFormUrlEncodedBody("login" -> "former@dot.com", "password" -> "strong").withCSRFToken
         )
 
-        status(result) === FORBIDDEN
-        contentAsString(result) must contain("Your membership in this contest has been deactivated.")
+        val start = startPage(result)
+        status(start) === FORBIDDEN
+        contentAsString(start) must contain("Your membership in this contest has been deactivated.")
         val signedIn = Secured.inCurrentContest(User.findById(former.getId).get, None)
         Secured.denialLogLine(signedIn, FakeRequest(POST, "/auth"),
           Secured.denialOf(Secured.RolePermission(Secured.ViewerRoles)), "0a1b2c3d") must
@@ -206,7 +217,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
         )
 
         status(result) === SEE_OTHER
-        header(LOCATION, result) === Some("/contests")
+        redirectLocation(startPage(result)) === Some("/contests")
       }
     }
 

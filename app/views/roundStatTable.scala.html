@@ -15,9 +15,10 @@
 @waiting = @{ if (running) services.distribution.RoundReassign.waitingCount(round).filter(_ > 0) else None }
 @* each juror's files a reassign would hand on, as the reassign page and job count them (unrated, `in`, not
    deleted on Commons, and unrated rows set aside; the Unrated column counts every rate-0 vote): the
-   button only for a juror with some; read once, by the `defining` around the rows (a definition like
+   button only for a juror with some and enough other jurors of the round to take them (RoundReassign.
+   enoughReceivers; a round of one juror has none: the page would only refuse); read once, by the `defining` around the rows (a definition like
    this one is evaluated at each use) *@
-@reassignableJurors = @{ if (running && mayPause) services.distribution.RoundReassign.reassignableJurors(round.getId) else Set.empty[Long] }
+@reassignableJurors = @{ if (running && mayPause) services.distribution.RoundReassign.reassignableJurors(round) else Set.empty[Long] }
 
 <table class="table table-striped table-sm wlx-stat-table">
     <thead>

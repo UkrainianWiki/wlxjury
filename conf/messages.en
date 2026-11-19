@@ -15,6 +15,10 @@ access.denied.title=Access denied
 access.denied.account=You are signed in as {0}.
 access.denied.explanation=This account does not have permission to open the requested page.
 access.denied.switch.account=Sign out and sign in with another account
+signed.in.already.title=Already signed in
+signed.in.already=You are already signed in as {0}.
+signed.in.already.other=To sign in with another account, sign out first.
+signed.in.already.continue=Continue
 access.denied.suggested.gallery=Open a gallery available to this account
 access.denied.suggested.files=Open contest files available to this account
 access.denied.required=This page is for: {0}.
@@ -140,6 +144,7 @@ format.boolean=
 
 no.round.yet=No round configured yet. Please wait until contest admin configures the tool.
 no.round.yet.title = No round yet
+no.round.yet.closed = Your rounds are closed now
 no.round.yet.other.contests = Your other contests:
 
 
@@ -241,6 +246,10 @@ thumbnail.urls = thumbnail urls
 thumbnail.urls.help = URLs of the thumbnails on this server, one per line. To download them with wget or a script, send your session cookie.
 local.image.cache = Local image cache
 download.images.locally = Download images locally
+# cache-status.js fills {0} and {1} in these three (a formatted count, a date and time): keep them plain, no {0,number} or choice format, which would throw when the page renders
+image.cache.all.cached = All {0} images are already cached (checked {1}).
+image.cache.nothing = No images to download (checked {0}).
+image.cache.also.cached = {0} already cached
 round.images.check.title = Round images
 round.images.check = Check round images
 round.images.check.all = Check every round''s images
@@ -1113,7 +1122,6 @@ round.juror.reassign.help=The juror''s unrated files go to the jurors ticked bel
 round.juror.reassign.counts={0} has {1} files in this round: {2} rated (✗ and partly rated included; they stay), {3} unrated, and {4} set aside (files deleted on Commons or disqualified).
 round.juror.reassign.receivers=Jurors who receive the files
 round.juror.reassign.receivers.help=The round''s active jurors are ticked. Stopped jurors are listed unticked: a ticked stopped juror is started again, and can then change their earlier votes in the round. A file goes only to a juror who doesn''t have it yet.
-round.juror.reassign.no.receivers=The round has no other juror: add a juror first.
 round.juror.reassign.show=Show what this does
 round.juror.reassign.result={0,choice,1#1 unrated file|1<{0,number,integer} unrated files} → {1,choice,1#1 juror|1<{1,number,integer} jurors}: {2}.
 round.juror.reassign.waiting={0} files can''t move (every ticked juror already has them): they wait for a juror. The round''s statistics show them, and “Distribute new files” can give them out.
@@ -1128,6 +1136,7 @@ job.error.rebalance.reassign.not.running=Round {0} isn''t running: start it firs
 job.error.rebalance.reassign.legacy=Round {0} has no list of jurors (an old round): its files can''t be reassigned.
 job.error.rebalance.from=Account {0} isn''t a juror of round {1}.
 job.error.rebalance.reassign.nothing={0} has no unrated files in round {1}: there is nothing to reassign. If they are still voting, pause them with “Pause the juror''s voting” in the round''s statistics.
+job.error.rebalance.reassign.alone=Juror {0}''s files in round {1} can''t be reassigned: {2,choice,0#every file goes to every juror, and no other juror of the round is active with an active jury membership of the contest. Resume the voting of one, or add a juror with “Add juror…”|1#no other juror of the round has an active jury membership of the contest. Add a juror first with “Add juror…”|1<each file goes to {2,number,integer} jurors, and fewer than {2,number,integer} other jurors of the round have an active jury membership of the contest. Add a juror first with “Add juror…”} in the round''s statistics.
 job.error.rebalance.receiver=Account {0}, ticked to receive files, isn''t a juror of round {1} with an active jury membership of the contest.
 job.error.rebalance.receivers.few=Round {0} gives each file to {1,choice,1#1 juror|1<{1,number,integer} jurors}: tick at least {1,choice,1#1 juror|1<{1,number,integer} jurors} to receive files, or add a juror first.
 job.error.rebalance.reassign.verify=Round {0}: juror {1} still has {2} unrated files. Retry checks again.

@@ -1,11 +1,19 @@
 /**
  * Image cache status poller for the contest images admin page.
  *
- * formatCacheStatus(p) – pure function: given a status object, returns the
- * text to display (or null when there is nothing to show yet).
+ * formatCacheStatus(p, texts) – pure function: given a status object, returns the
+ * text to display (or null when there is nothing to show yet). A finished run with
+ * nothing to download says whether all its images were already cached (p.cached) or it
+ * had none, with the time it checked (p.startedAtMs), so an old run's text read on a
+ * later page load is dated, not stale; one that downloaded some adds how many were
+ * cached before. Those texts are the page's (cacheStatusTexts), none hard-coded.
+ *
+ * cacheStatusTexts(el) – the element's data-text-* messages ({0}, {1} filled in here,
+ * as plain text: the messages must not format them, no {0,number} or choice) and the
+ * page's language, for the counts and the time.
  *
  * pollCacheStatus(statusUrl, elementId) – starts the fetch/poll loop, wiring the
- * result into the element with that id (#cache-status by default).  On 401 or
+ * result into the element with that id (#cache-status by default), as text.  On 401 or
  * 403 (signed out, or no longer an admin of the contest) it stops; on other
  * failures it retries, slower.
  *
@@ -15,7 +23,33 @@
  * file does it by itself once the page is parsed.
  */
 
-function formatCacheStatus(p) {
+function fillCacheText(template, values) {
+    return template.replace(/\{(\d)\}/g, function (m, i) {
+        return values[i] !== undefined ? String(values[i]) : m;
+    });
+}
+
+function formatCacheTime(ms, lang) {
+    var d = new Date(ms);
+    try {
+        return d.toLocaleString(lang || undefined, { dateStyle: "short", timeStyle: "short" });
+    } catch (e) {
+        return d.toLocaleString();
+    }
+}
+
+function formatCacheCount(n, lang) {
+    try {
+        return n.toLocaleString(lang || undefined);
+    } catch (e) {
+        return String(n);
+    }
+}
+
+function formatCacheStatus(p, texts) {
+    texts = texts || {};
+    var cached   = p.cached > 0 ? p.cached : 0;
+    var finished = !p.running && !p.failed && p.startedAtMs > 0;
     if (p.total > 0) {
         var pct    = Math.round(100 * p.done / p.total);
         var errStr = (p.renamed > 0 ? ", " + p.renamed + " renamed on Commons" : "")
@@ -28,14 +62,35 @@ function formatCacheStatus(p) {
                 ? " \u2013 ETA " + Math.floor(p.etaSeconds / 60) + "m " + (p.etaSeconds % 60) + "s"
                 : " \u2013 ETA " + p.etaSeconds + "s";
         }
+        var alsoCached = finished && cached > 0 && texts.alsoCached
+            ? " \u2013 " + fillCacheText(texts.alsoCached, [formatCacheCount(cached, texts.lang)]) : "";
         return p.done + " / " + p.total + " downloaded (" + pct + "%" + errStr + ")"
-            + rate + eta + (p.running ? " \u2013 running\u2026" : p.failed ? " \u2013 failed" : " \u2013 done");
+            + rate + eta + (p.running ? " \u2013 running\u2026" : p.failed ? " \u2013 failed" : " \u2013 done")
+            + alsoCached;
     } else if (p.running) {
         return "Starting\u2026";
     } else if (p.failed) {
         return "Download failed";
+    } else if (finished) {
+        var when = formatCacheTime(p.startedAtMs, texts.lang);
+        if (cached > 0 && texts.allCached) return fillCacheText(texts.allCached, [formatCacheCount(cached, texts.lang), when]);
+        if (cached === 0 && texts.nothing) return fillCacheText(texts.nothing, [when]);
     }
     return null;
+}
+
+function cacheStatusTexts(el) {
+    function text(name) {
+        var value = el && el.getAttribute ? el.getAttribute("data-text-" + name) : null;
+        return value || undefined;
+    }
+    var root = typeof document !== "undefined" && document.documentElement;
+    return {
+        allCached: text("all-cached"),
+        nothing: text("nothing"),
+        alsoCached: text("also-cached"),
+        lang: (root && root.lang) || undefined
+    };
 }
 
 function pollCacheStatus(statusUrl, elementId) {
@@ -50,9 +105,10 @@ function pollCacheStatus(statusUrl, elementId) {
             })
             .then(function(p) {
                 if (p.denied) { return p; }
-                var text = formatCacheStatus(p);
+                var el = document.getElementById(elementId);
+                var text = formatCacheStatus(p, cacheStatusTexts(el));
                 if (text !== null) {
-                    document.getElementById(elementId).innerHTML = text;
+                    el.textContent = text;
                 }
                 if (p.running) { setTimeout(update, 3000); }
                 return p;
@@ -82,6 +138,9 @@ if (typeof document !== "undefined" && typeof module === "undefined") {
 if (typeof module !== "undefined") {
     module.exports = {
         formatCacheStatus: formatCacheStatus,
+        formatCacheTime: formatCacheTime,
+        formatCacheCount: formatCacheCount,
+        cacheStatusTexts: cacheStatusTexts,
         pollCacheStatus: pollCacheStatus,
         initCacheStatuses: initCacheStatuses
     };

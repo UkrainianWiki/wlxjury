@@ -202,4 +202,101 @@ class JurorContestsSpec extends PlaySpecification with PlayTestDb {
       }
     }
   }
+
+  "a juror whose rounds are closed now" should {
+
+    /** The no-round page's closed-round items: (round id, reason, text). */
+    def closedItems(html: String): Seq[(String, String, String)] =
+      Jsoup.parse(html).select("#no-round-closed-rounds li").asScala.toSeq
+        .map(li => (li.attr("data-round"), li.attr("data-reason"), li.text))
+
+    "see each of their rounds and why it is closed, headed 'Your rounds are closed now'" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val juror = member("juror@example.com", 10L -> "jury")
+        val stopped = Round.create(Round(None, 1, contestId = 10, active = false, name = Some("Stopped round")))
+        stopped.addUsers(Seq(RoundUser(stopped.getId, juror.getId, "jury", active = true)))
+        val paused = Round.create(Round(None, 2, contestId = 10, active = true, name = Some("Paused juror round")))
+        paused.addUsers(Seq(RoundUser(paused.getId, juror.getId, "jury", active = false)))
+        val start = send(app, GET, "/", juror, 10)
+        val html = contentAsString(start)
+        val page = Jsoup.parse(html)
+        (status(start) === OK) and
+          (page.select(".alert h1").text === "Your rounds are closed now") and
+          (page.title must contain("Your rounds are closed now")) and
+          (html must not(contain("No round configured yet."))) and
+          (closedItems(html).map(i => (i._1, i._2)) === Seq(
+            stopped.getId.toString -> "round_stopped", paused.getId.toString -> "juror_stopped")) and
+          (closedItems(html).head._3 must contain("Stopped round: Round stopped")) and
+          (closedItems(html).head._3 must contain("Round “Stopped round” is stopped")) and
+          (closedItems(html)(1)._3 must contain("Paused juror round: Your voting in this round is stopped")) and
+          (closedItems(html)(1)._3 must contain("has stopped your voting in round “Paused juror round”")) and
+          // the page's own forms keep working: Sign out is there
+          (page.select("form.no-round-logout").size === 1)
+      }
+    }
+
+    "see an open round whose round_user row has no active value as their voting stopped" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val juror = member("juror@example.com", 10L -> "jury")
+        val round = openRound(10, juror)
+        scalikejdbc.DB.autoCommit(implicit s => scalikejdbc.SQL(
+          "UPDATE round_user SET active = NULL WHERE round_id = ? AND user_id = ?")
+          .bind(round.getId, juror.getId).update.apply())
+        val inContest = Secured.inCurrentContest(User.findById(juror.getId).get, Some("10"))
+        val start = send(app, GET, "/", juror, 10)
+        // not open to them, as activeRounds takes it, so the start page lists it
+        (Round.activeRounds(inContest) must beEmpty) and
+          (status(start) === OK) and
+          (closedItems(contentAsString(start)).map(i => (i._1, i._2)) ===
+            Seq(round.getId.toString -> "juror_stopped")) and
+          // and its gallery says the same, not a denial
+          (new services.GalleryService().roundState(inContest, round).map(_.reason) must beSome("juror_stopped"))
+      }
+    }
+
+    "see a round still being prepared, and the same list in the gallery without a round" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val juror = member("juror@example.com", 10L -> "jury")
+        val distributing = openRound(10, juror, distributing = true)
+        val gallery = send(app, GET, s"/gallery/user/${juror.getId}/page/1", juror, 10)
+        (status(gallery) === OK) and
+          (closedItems(contentAsString(gallery)).map(i => (i._1, i._2)) ===
+            Seq(distributing.getId.toString -> "round_distributing"))
+      }
+    }
+
+    "never see another contest's rounds or rounds they are not a juror of" in {
+      testDbApp { implicit app =>
+        createContests(10, 20)
+        val juror = member("juror@example.com", 10L -> "jury", 20L -> "jury")
+        val other = member("other@example.com", 10L -> "jury")
+        // their own stopped round, but of another contest
+        openRound(20, juror, active = false)
+        // a stopped round and a juror-stopped one of the current contest, of another juror only
+        openRound(10, other, active = false)
+        openRound(10, other, jurorActive = false)
+        // a stopped round of the current contest with no juror
+        Round.create(Round(None, 3, contestId = 10, active = false))
+        val start = send(app, GET, "/", juror, 10)
+        val html = contentAsString(start)
+        (status(start) === OK) and
+          (closedItems(html) must beEmpty) and
+          (Jsoup.parse(html).select(".alert h1").text === "No round yet") and
+          (html must contain("No round configured yet.")) and
+          (services.GalleryService.closedRounds(Secured.inCurrentContest(User.findById(juror.getId).get, Some("10"))) must beEmpty)
+      }
+    }
+
+    "not be listed for an organizer, who sees every round" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val organizer = member("org@example.com", 10L -> "organizer")
+        openRound(10, organizer, active = false)
+        services.GalleryService.closedRounds(Secured.inCurrentContest(User.findById(organizer.getId).get, Some("10"))) must beEmpty
+      }
+    }
+  }
 }

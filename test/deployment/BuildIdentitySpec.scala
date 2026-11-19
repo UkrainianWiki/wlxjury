@@ -32,21 +32,32 @@ class BuildIdentitySpec extends Specification {
     }
   }
 
+  /** YY.MM, YY.MM.N or YY.MM.N.H, a snapshot of any of them. */
+  private val CalendarVersion = """[0-9]{2}\.(0[1-9]|1[0-2])(\.[1-9][0-9]*){0,2}(-SNAPSHOT)?"""
+
   "a calendar version" should {
-    // YY.MM, .N for an extra deploy in the same month; the snapshot carries the next release
-    // (workflow practices §7.4).
-    "name snapshot, release and same-month builds" in {
+    // YY.MM, .N for an extra deploy in the same month, .H for a hotfix of a deployed YY.MM.N
+    // (CHANGELOG, Versioning); the snapshot carries the next release (workflow practices §7.4).
+    "name snapshot, release, same-month and hotfix builds" in {
       BuildIdentity.buildId("26.11-SNAPSHOT", Some("dbedca565807"), dirty = false, None) must
         beRight("26.11-SNAPSHOT-dbedca565807")
       BuildIdentity.buildId("26.11", Some("dbedca565807"), dirty = false, Some("26.11")) must
         beRight("26.11-dbedca565807")
       BuildIdentity.buildId("26.11.1", Some("dbedca565807"), dirty = false, Some("26.11.1-hotfix")) must
         beRight("26.11.1-hotfix-dbedca565807")
+      BuildIdentity.buildId("26.11.13.1", Some("dbedca565807"), dirty = false, Some("26.11.13.1")) must
+        beRight("26.11.13.1-dbedca565807")
+    }
+    "accept the four-part hotfix version, and no fifth number" in {
+      "26.11.13.1" must beMatching(CalendarVersion)
+      "26.11.13" must beMatching(CalendarVersion)
+      "26.12-SNAPSHOT" must beMatching(CalendarVersion)
+      "26.11.13.1.1" must not(beMatching(CalendarVersion))
     }
     "be the version build.sbt sets, in the packaged manifest" in {
       val stream = getClass.getClassLoader.getResourceAsStream("wlxjury-build.json")
       val manifest = try Json.parse(stream) finally stream.close()
-      (manifest \ "version").as[String] must beMatching("""[0-9]{2}\.(0[1-9]|1[0-2])(\.[1-9][0-9]*)?(-SNAPSHOT)?""")
+      (manifest \ "version").as[String] must beMatching(CalendarVersion)
     }
   }
 

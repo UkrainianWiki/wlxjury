@@ -82,6 +82,12 @@ export function fixtureFor(browserName) {
     // the rounds' type icons (rounds-filter.spec.js): a contest of its own with 30 rounds of every
     // type, active and not, names of very different lengths; 0 in the guides' screenshot mode
     roundsContestId: s.roundsContestId || 0,
+    // this engine's juror whose only round is stopped, in a contest of its own (sign-in.spec.js);
+    // none in the guides' screenshot mode
+    closedRoundJuror: (s.closedRoundJurors || [])[i] || null,
+    // a running round of one juror per file whose one juror has unrated files, in a contest of its
+    // own (organizer.spec.js: no "Reassign files…"); null in the guides' screenshot mode
+    aloneRound: s.aloneRound || null,
   };
 }
 

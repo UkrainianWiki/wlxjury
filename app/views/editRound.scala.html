@@ -273,7 +273,10 @@
             ) {
               <hr/>
               <h2 class="h4">@Messages("local.image.cache")</h2>
-              <div id="round-cache-status" data-cache-status-url="@routes.ImageController.roundImageCacheStatus(cid, rid)"></div>
+              <div id="round-cache-status" data-cache-status-url="@routes.ImageController.roundImageCacheStatus(cid, rid)"
+                   data-text-all-cached="@Messages("image.cache.all.cached", "{0}", "{1}")"
+                   data-text-nothing="@Messages("image.cache.nothing", "{0}")"
+                   data-text-also-cached="@Messages("image.cache.also.cached", "{0}")"></div>
               <form method="post" action="@routes.ImageController.startRoundImageCache(cid, rid)">
                 @csrfField()
                 <button type="submit" class="btn btn-outline-secondary">@Messages("download.images.locally")</button>

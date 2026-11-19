@@ -583,6 +583,9 @@ div.thumb_small.wlx-thumb-failed img {
 /* the category fields (category-suggest.js): a text field, without a select's arrow and its room */
 :root .wlx-category-suggest.single { --ts-pr-caret: 0px; }
 :root .wlx-category-suggest.single .ts-control, :root .wlx-category-suggest.single .ts-control input { cursor: text; }
+/* its value on one line, as the text it becomes on focus: a long one wrapped (a phone) made the
+   field a line taller once left, moving what is below it under a tap that leaves it (iOS) */
+:root .wlx-category-suggest.single .ts-control > .item { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* a button inside a link (round stat tables): no underline under the spaces around it */
 /* stylelint-disable-next-line plugin/no-unsupported-browser-features -- cosmetic: Firefox 115-120

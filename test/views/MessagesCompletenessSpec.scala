@@ -95,6 +95,7 @@ class MessagesCompletenessSpec extends Specification {
     "link.purpose." -> db.scalikejdbc.AccountTokenJdbc.SetsPassword,                // editUser's set-password links
     "account.change.field." -> db.scalikejdbc.AccountChangeJdbc.Fields,             // accountChangeTable.scala.html
     "round.state.text." -> services.GalleryService.RoundState.All.map(_.reason),    // roundState.scala.html
+    "round.state.title." -> services.GalleryService.RoundState.All.map(_.reason),   // noRoundYet.scala.html
     "health.job.status." -> Seq("queued", "running", "done", "failed", "cancelled"), // contestHealth.scala.html
     "health.status." -> db.scalikejdbc.Round.Status.All                             // contestHealth.scala.html
   )
@@ -125,7 +126,8 @@ class MessagesCompletenessSpec extends Specification {
     Seq("round", "contest").flatMap(w => Seq(s"comments.report.scope.$w", s"comments.report.empty.$w",
       s"comments.report.empty.commenter.$w")),                             // commentsReport, by scope
     Plural.Forms.map("comments.report.others." + _),                       // commentsReport's folded comments
-    services.GalleryService.RoundState.All.map("round.state.title." + _.reason) // roundState.scala.html's title
+    services.GalleryService.RoundState.All.map("round.state.title." + _.reason), // roundState.scala.html's title
+    Seq("no.round.yet.closed")                                                   // noRoundYet.scala.html's title
   ).flatten
 
   /** Texts in a key's place that are shown as they are, not keys, each with its reason. */

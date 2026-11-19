@@ -32,3 +32,16 @@ test("does nothing on a page without one", () => {
     expect(initCacheStatuses(document)).toBe(0);
     expect(global.fetch).not.toHaveBeenCalled();
 });
+
+test("writes a finished run's 'all cached' text from the element's own messages, as text", async () => {
+    document.body.innerHTML = '<div id="cache-status" data-cache-status-url="/contest/1/images/cache/status"' +
+        ' data-text-all-cached="All {0} images are &lt;b&gt;cached&lt;/b&gt; ({1})."' +
+        ' data-text-nothing="No images to download ({0})." data-text-also-cached="{0} already cached"></div>';
+    global.fetch = jest.fn(() => Promise.resolve({ status: 200, json: () => Promise.resolve(
+        { total: 0, done: 0, errors: 0, running: false, cached: 300, startedAtMs: Date.UTC(2026, 10, 19, 12, 5) }) }));
+    initCacheStatuses(document);
+    await new Promise(r => setTimeout(r, 0));
+    const el = document.getElementById("cache-status");
+    expect(el.textContent).toMatch(/^All 300 images are <b>cached<\/b> \(.+\)\.$/);
+    expect(el.querySelector("b")).toBeNull();
+});

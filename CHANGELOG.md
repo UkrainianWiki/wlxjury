@@ -21,13 +21,85 @@ later ones in the roadmap and its deploy records).
 
 **Versioning:** from the next release on, versions are calendar-based, `YY.MM` (e.g. `26.11`),
 with `.N` for an extra deploy in the same month (`26.11.1`), and release headings will read
-`## 26.11 (YYYY-MM-DD)`. Past releases keep their dates, and their tag names where tags exist
+`## 26.11 (YYYY-MM-DD)`. A hotfix of a deployed `YY.MM.N` release gets a fourth number,
+`YY.MM.N.H` (`26.11.13.1`). Past releases keep their dates, and their tag names where tags exist
 (`0.8`, `0.9`, `0.10`); they are not renumbered.
 
 ## Unreleased (developed, not yet deployed)
 
-No next release is set yet (`build.sbt` says `26.12-SNAPSHOT`). Everything developed up to
-2026-11-17 before the entries below was deployed in `26.11.12`.
+No next release is set yet (`build.sbt` says `26.12-SNAPSHOT`). Everything up to #381 was
+deployed in `26.11.13`, and three fixes in the hotfix `26.11.13.1`; what is developed after them
+is listed below.
+
+## 26.11.13.1 (2026-11-19)
+
+Built 2026-11-19, from `26.11.13`: a hotfix of three fixes. **No migration**: the schema stays
+V107, so the release tool skips the database backup, and going back to `26.11.13` needs no
+database restore.
+
+**Fixes**
+
+- **"Download images locally" says when everything is already cached** (the contest's images
+  page and a round's form), or when there is nothing to download, instead of showing nothing;
+  with the time it checked, so a later visit doesn't take an old result as current. A run that
+  downloaded some files also says how many were cached before.
+- **No "Reassign files…" in a round of one juror** (the maintainer's note on 26.11.13; developed
+  2026-11-19, `stack/200-reassign-single-juror`, a follow-up of #368 and #377): the round's
+  statistics showed the button for the one juror of a round, whose reassign page could only refuse
+  ("tick at least 1 juror… or add a juror first") or, in a round where every file goes to every
+  juror, would have stopped the juror and removed their unrated files with nobody else voting on
+  them. The button now shows only if enough other jurors of the round could take the files, each
+  with an active jury membership of the contest and an account not deleted
+  (`RoundReassign.enoughReceivers`): at least N others where each file goes to N jurors (stopped
+  ones included: a ticked one is started again), at least one other active one where every file goes
+  to every juror (nobody is started there). The page and the POST refuse otherwise, as with nothing
+  to reassign, with no receivers and no confirm, saying why and to add a juror first (new key
+  `job.error.rebalance.reassign.alone`); the job checks again under the round's lock at each "stop"
+  step, a Retry's too, so a juror stopped or removed after the reassign was queued fails it before
+  anything changes (the error stores and logs the juror's account id, not their name). The page's
+  unreachable "no other juror" line and its key `round.juror.reassign.no.receivers` are gone. Admin
+  guide. No migration.
+- **A saved category or import source can be edited again** (since 68c4716c of 2026-11-01): the
+  import source and the round form's categories showed their value as an item that a click could
+  neither select nor edit. Focus now makes it the text, wholly selected; leaving unchanged keeps
+  it, a cleared one is emptied, and a quick Tab no longer focuses the field again. A long value
+  now shows on one line with an ellipsis, whole as its tooltip and when edited
+  (`category-suggest.js`, `main.css`; `hotfix/category-suggest-focus`, developed 2026-11-19).
+
+## 26.11.13 (2026-11-19)
+
+Deployed 2026-11-19 (built 2026-11-18, rebuilt 2026-11-19); from `26.11.12`, PRs #364-#381. **No
+migration**: the schema stays V107, so the release tool skips the database backup. Going back to
+`26.11.12` needs no database restore, but first let each reassign job, and each distribution or add
+in its `topup` or `waiting` phase, finish or cancel it (`docs/deployment.md`). Changes to know
+about:
+- **Look:** the Wikimedia Codex look across the tool (the vote colours kept), and the "WLX Jury"
+  wordmark as the heading of the sign-in and other signed-out pages.
+- **Rounds:** the Rounds and Round Statistics pages filter rounds by status and type and sort
+  them (the same menus on both, kept between them); each round's type is an icon before its name
+  (✓ ✗ yes/no, a star rated; coloured when active, grey when not), on those pages and in the
+  galleries' round menu; on Statistics a filter choice that leaves out the round shown opens the
+  first round it lists; a juror's unrated files can be reassigned to other jurors of a running
+  round.
+- **Contests (root):** the contests page filters by type, country and year (the latest by
+  default) and sorts oldest first, newest first or by country.
+- **Large view:** the jurors' rank numbers are fully visible, the score is shown once, and links
+  that leave the tool open in a new tab, with a mark of their site (Commons, Wikipedia, Wikidata).
+- **People:** admins add people from another of their contests, and can add an account by a wiki
+  account nobody verified once they confirm it is the person they mean; no mail is sent unless a
+  box is ticked.
+- **Support:** a contest health page for root and the contest's admins, a warning on the import
+  form when the source doesn't match the contest, the import source checked on Commons before an
+  import starts, and a page telling a juror why a round can't be opened.
+- **Sign-in:** every sign-in redirects, so a reload or Sign out no longer meets the CSRF error page;
+  a stale sign-in form while signed in opens "You are already signed in as"; a juror whose rounds
+  are all closed is told which and why instead of "No round configured yet".
+- **Licence:** GPL-3.0-or-later from this release on.
+- **Logging (server):** the production logging config now ships in the release
+  (`conf/logback-production.xml`). After the deploy, run the `wlxjury-infra` playbook, then
+  restart the app (`docs/deployment.md`). Until then, the new INFO support lines aren't written.
+  For this one release cycle, a rollback to `26.11.12` starts with the unit's fallback,
+  `/etc/wlxjury-runtime/logback.xml`, so leave that file in place.
 
 **Features**
 
@@ -77,48 +149,48 @@ No next release is set yet (`build.sbt` says `26.12-SNAPSHOT`). Everything devel
     (`ExternalLinksViewSpec` guards the large views and the templates' `https://` links).
   - a text link that leaves the tool has a small mark after its text, by its site
     (`snippets/externalMark`, the maintainer's decision of 2026-11-19): the Commons logo, the
-    Wikipedia W (`bi-wikipedia`), the Wikidata logo (both logos at the text's size, in the
-    link's colour, symbols defined once per page by the layout and drawn with `<use>`, from
-    Codex's single-colour logo icons) or the outward arrow (`bi-box-arrow-up-right`) for any
-    other site; after a no-break space, in one span with the link's last character that doesn't
-    wrap, so the mark never starts a line alone; hidden from screen readers, which hear " (opens
-    in a new tab)" (new key `link.new.tab`); the space, the mark and those words can't be
-    selected, so a copied link's text is its text alone; a long title without spaces wraps inside
-    the large view's side column. In
-    the large views (the monument's Wikipedia links, the author's Commons page, the title and
-    the full resolution), the monument page (the "↗" glyphs replaced; `author.commons` loses its
+    Wikipedia W (`bi-wikipedia`), the Wikidata logo (both logos at the text's size, in the link's
+    colour, symbols defined once per page by the layout and drawn with `<use>`, from Codex's
+    single-colour logo icons) or the outward arrow (`bi-box-arrow-up-right`) for any other site;
+    after a no-break space, in one span with the link's last character that doesn't wrap, so the
+    mark never starts a line alone; hidden from screen readers, which hear " (opens in a new tab)"
+    (new key `link.new.tab`); the space, the mark and those words can't be selected, so a copied
+    link's text is its text alone; a long title without spaces wraps inside the large view's side
+    column. In the large views (the monument's Wikipedia links, the author's Commons page, the title
+    and the full resolution), the monument page (the "↗" glyphs replaced; `author.commons` loses its
     "↗"; the author links' title is the new `author.commons.page`, without the new-tab words the
     link already says), the images page, the users page and the contest files page; not on image
     links, icon-only links or the file list's copyable list of titles. Exempt: the galleries'
     caption link to Commons and unitegallery's Deleted badge, both inside the vendored gallery.
-    `ExternalLinksCheck` checks the links of the large views, the monument page, the contest
-    files page (author filter), the users page and the images page's source choice.
+    `ExternalLinksCheck` checks the links of the large views, the monument page, the contest files
+    page (author filter), the users page and the images page's source choice.
   - a browser test of all three (`large-side.spec.js`).
-- **The statistics page's filter switches round** (the maintainer's decision of 2026-11-19,
-  "switch to first in order"; developed 2026-11-19, `stack/197-stat-filter-switch`, a follow-up
-  of #370): on a round's statistics, a **Status**, **Type** or **Order** choice that leaves out
-  the round you are looking at opens the first round it lists, in its order (the oldest, the
-  newest or the first active), so a choice that lists one round opens it; a choice that keeps
-  the round stays on it (changing only the order does, unless the round is already outside the
-  filter). The links are worked out on the server (`RoundsFilter.statRound`), with no redirect
-  and no script, among the rounds the viewer may see; the counts in the menus are as before. If
-  no round matches, the page stays on the round and says "No rounds match these choices." with a
-  link to all rounds. **Statistics** in the pages menu, from a filtered Rounds page, follows the
-  same rule (`currentRoundStat`: the round it opens otherwise if the filter keeps it, else the
-  first the filter lists, else the round itself, which says none match); its own open round
-  counts only if the viewer may see its statistics (an admin of one contest who is a juror of
-  another is no longer sent to that round's statistics, which refused them). A round opened with a
-  filter that leaves it out (a saved or shared link) is still shown in the row, selected, with a
-  dashed outline (solid when focused, so the focus shows in forced-colours mode) and the tooltip
-  "Not in the chosen filter", read by screen readers after its name (new key
-  `rounds.filter.outside`). The Rounds page and the galleries' round menu are unchanged.
+- **The statistics page's filter switches round** (the maintainer's decision of 2026-11-19, "switch
+  to first in order"; developed 2026-11-19, `stack/197-stat-filter-switch`, a follow-up of #370): on
+  a round's statistics, a **Status**, **Type** or **Order** choice that leaves out the round you are
+  looking at opens the first round it lists, in its order (the oldest, the newest or the first
+  active), so a choice that lists one round opens it; a choice that keeps the round stays on it
+  (changing only the order does, unless the round is already outside the filter). The links are
+  worked out on the server (`RoundsFilter.statRound`), with no redirect and no script, among the
+  rounds the viewer may see; the counts in the menus are as before. If no round matches, the page
+  stays on the round and says "No rounds match these choices." with a link to all rounds.
+  **Statistics** in the pages menu, from a filtered Rounds page, follows the same rule
+  (`currentRoundStat`: the round it opens otherwise if the filter keeps it, else the first the
+  filter lists, else the round itself, which says none match); its own open round counts only if the
+  viewer may see its statistics (an admin of one contest who is a juror of another is no longer sent
+  to that round's statistics, which refused them). A round opened with a filter that leaves it out
+  (a saved or shared link) is still shown in the row, selected, with a dashed outline (solid when
+  focused, so the focus shows in forced-colours mode) and the tooltip "Not in the chosen filter",
+  read by screen readers after its name (new key `rounds.filter.outside`). The Rounds page and the
+  galleries' round menu are unchanged.
 
 - **The wordmark on the signed-out pages** (developed 2026-11-17, `stack/181-signin-wordmark`):
   the "WLX Jury" wordmark is the page's heading above the form on the sign-in page, and the one
   heading of the invitation, set-up, invalid-link and email-change pages; the signed-out error,
   sign-out and account-chooser pages show it as a banner. The signed-out navbar no longer carries
   the brand, and the signed-out pages' title is `application.title`, WLX and the translated
-  suffix. Its accessible name stays "WLX Jury" whatever the layout.
+  suffix. Its accessible name is "WLX" and the translated suffix (e.g. "WLX Журі") whatever the
+  layout.
 - **The Wikimedia Codex look** (developed 2026-11-17, `stack/183-codex-theme`): the Codex design
   tokens 2.7.0, vendored unmodified (`docs/vendor/codex.md`), mapped onto Bootstrap in each
   colour mode (`codex-theme.css`): 2 px corners, 32 px controls (44 large, 28 small), bold
@@ -146,7 +218,15 @@ No next release is set yet (`build.sbt` says `26.12-SNAPSHOT`). Everything devel
   The add and reassign pages' confirm is greyed out until the figures are shown for the ticks.
   No migration. Admin and organizer guides. Rolling back past it: let each reassign job, and each
   distribution or add in its new `topup` or `waiting` phase, finish or cancel it first
-  (`docs/deployment.md`).
+  (`docs/deployment.md`). The conflicts-of-interest counts say "1 of the contest's files is a
+  conflict" for one file, and the French author-normalisation messages keep their apostrophes.
+- **Reassign files… only for jurors with files to move** (found in the 26.11.13 browser check,
+  developed 2026-11-18, `stack/194-reassign-button-unrated`): the round statistics show
+  **Reassign files…** only for a juror with at least one file a reassign would move (an unrated
+  file in the round and not deleted on Commons, or an unrated file set aside). For a juror with
+  none, the reassign page says there is nothing to reassign (suggesting "Pause the juror's voting"
+  if they are still voting), and its POST refuses with 409 and queues no job; before, it queued a
+  job that only stopped the juror. No migration.
 - **Adding by a wiki account nobody verified** (A-3 of the existing accounts plan, decision A2;
   developed 2026-11-17, `stack/186-unverified-wiki-add`): the users page's add row given a wiki
   account and no email, for a role with access, that names accounts whose wiki account nobody
@@ -161,22 +241,45 @@ No next release is set yet (`build.sbt` says `26.12-SNAPSHOT`). Everything devel
   when only root can then give such a person a sign-in link. **Import users** only counts such rows
   ("Not added yet"), linking the users page. Secure coding §14's rule changes with it (its risk
   stated there). No migration. Admin guide.
-- **A page saying why a round can't be opened, and the import source checked on Commons** (D-0b
-  of the support diagnostics plan, developed 2026-11-18, `stack/191-diagnostics-quick-fixes`): a
-  juror of a round who opens its gallery or large view (or its region menu, or comments on it)
-  while it is stopped, frozen as the previous round of a distribution (given back, or closing
-  for a round creation), still being
-  distributed, or they are stopped on it gets a page saying which (200, not the 403 "access
-  denied" page; DG7), with buttons for their open rounds; a script gets the vote's 409
-  `round_closed` with the `reason`; anyone else refused there still gets the 403. On the files page, a source name
-  without a namespace prefix is checked on Commons for **Import files** and **Update monuments**
-  before anything starts (DG11): the page or `Category:<name>`, whichever exists; when both do,
-  the choice with each one's file count, the category preselected; when neither does, refused
-  with a message; when Commons can't be reached in `diagnostics.sourceCheckTimeout` (5 s), the
-  page says so and nothing starts (try again later, or add `Category:`). A prefixed source and a
-  pasted list are unchanged. The files page says when a finished import found no files to add, or
-  left a page's files out as in no country category of the contest. The import action runs on the
-  blocking pool. No migration. Admin and juror guides.
+- **Filter and sort rounds** (asked for by the maintainer on 2026-11-18, developed 2026-11-18,
+  `stack/187-rounds-filter`): the Rounds and Round Statistics pages get the same top-bar menus,
+  Status (All / Active / Not active), Type (All / Yes/No / Rated, criteria rounds under Rated) and
+  Order (Oldest first, as before / Newest first / Active first), Status and Type with counts; the
+  defaults list the same rounds in the same order as before. The choice is kept in the URL
+  (`status`, `type`, `order`) and between the two pages (their links, Start/Stop, the round form);
+  on Statistics the menus narrow and order the round menu. Each round's type is an icon before its
+  name (**Round type icons** above; they replaced the text badges this PR first had), and inactive
+  rounds are in secondary grey, also in the gallery's round menu (no filters there). The page links
+  of these two pages fold into the Pages menu; the round name in the Rounds table links to its
+  statistics. The filter only narrows what each viewer already sees. No migration. Admin and
+  organizer guides.
+- **A page saying why a round can't be opened, and the import source checked on Commons** (D-0b of
+  the support diagnostics plan, developed 2026-11-18, `stack/191-diagnostics-quick-fixes`): a juror
+  of a round who opens its gallery or large view (or its region menu, or comments on it) while it is
+  stopped, frozen as the previous round of a distribution (given back, or closing for a round
+  creation), still being distributed, or they are stopped on it gets a page saying which (200, not
+  the 403 "access denied" page; DG7), with buttons for their open rounds; a script gets the vote's
+  409 `round_closed` with the `reason`; anyone else refused there still gets the 403. On the files
+  page, a source name without a namespace prefix is checked on Commons for **Import files** and
+  **Update monuments** before anything starts (DG11): the page or `Category:<name>`, whichever
+  exists; when both do, the choice with each one's file count, the category preselected; when
+  neither does, refused with a message; when Commons can't be reached in
+  `diagnostics.sourceCheckTimeout` (5 s), the page says so and nothing starts (try again later, or
+  add `Category:`). A prefixed source and a pasted list are unchanged. The files page says when a
+  finished import found no files to add, or left a page's files out as in no country category of the
+  contest. The import action runs on the blocking pool. No migration. Admin and juror guides.
+- **Contest health page and the import form's identity warning** (D-1a of the support diagnostics
+  plan, DG1, DG2, DG10; developed 2026-11-18, `stack/192-contest-health`):
+  `/admin/contests/:id/health`, for root and the contest's admins only, linked from the Rounds and
+  contest files pages, checks the contest against its import sources (type, year, country), its
+  files by country, failed or empty imports, sources read as a page, empty or tiny open rounds, an
+  open round with no source round or filter in a contest that looks mixed, rounds stuck being
+  created or frozen, and no round open to jurors; each check gives pass, info, warn or fail with a
+  hint (thresholds in `diagnostics.health.*`; files in no country category are counted only for
+  imports since 2026-11-11, when imports began to record countries). Creators outside the contest
+  are named to root only, emails masked. While an admin types an import source, the files page warns
+  when it doesn't match the contest (also after queueing, without JavaScript); it never refuses. No
+  migration. Not in the user guides yet.
 - **Add people from another of your contests** (asked for by the maintainer on 2026-11-18,
   developed 2026-11-18, `stack/193-add-people-from-contest`): a button on the users page opens a
   page where an admin picks one of their other contests (an active Admin membership; root: any),
@@ -196,6 +299,56 @@ No next release is set yet (`build.sbt` says `26.12-SNAPSHOT`). Everything devel
   says how many joined, were invited, were made Admin and were skipped, with the reasons.
   `security.account` lines by ids and counts (`add_from_list`, `add_from_contest`). No
   migration. Admin guide.
+- **Contests page menus** (the maintainer's request of 2026-11-19, developed 2026-11-19,
+  `stack/196-contests-filter`): root's contests page has **Type**, **Country** and **Year** menus
+  and an **Order** menu in the navbar, in the design of the Rounds page's, each item with its count
+  within the other menus' choices and every link keeping the others. Country goes by the contest's
+  campaign, else its country text: a known country is one entry however written ("UA", "Ukraine":
+  `country=ua`), **International** has international campaigns and an empty or "International"
+  country, any other text is an entry of its own; the menu scrolls inside its box. By default the
+  page lists the latest year of the contests, not the calendar's; **All years** is `year=all`.
+  Oldest first by default, by year and then as added (before, the list was in the order the
+  contests were added, all years together); the old `?contestType=…&year=…` links still work.
+  **By country** (`order=country`, A to Z only, new key `contests.order.country`) sorts by the
+  name the Country menu shows, in the page language's alphabetical order, International last, each
+  country's contests by year and then as added. The type-and-year grid above the list is gone from
+  that page (kept on root's all-users page). After **Add** the page opens on the new contest's
+  year, keeping the list's type, country and order where the new contest is of them; after
+  **Import**, on the imported contests' year (all years if several, or if the import added none,
+  all of them being there already). A country written in another language ("Україна") joins its
+  entry. No migration. Admin guide.
+
+**Fixes**
+
+- **Sign-in always redirects; the start page explains closed rounds** (a report of 2026-11-19:
+  an organiser who is also a juror signed in as a juror whose round was stopped, saw "No round
+  configured yet", and reloading gave the CSRF error page, refs ba1126f9 and 92ca61d7; Sign out
+  failed the same way; developed 2026-11-19, `stack/199-signin-redirect`):
+  - a password sign-in without `returnTo` answered its POST with the start page itself (a juror
+    without an open round got the "no round" page): a reload posted the sign-in form again, and
+    the page's own forms (Sign out, the contest switch) failed CSRF, since the new session had no
+    token until a page was opened. Every sign-in (password, Google, Wikimedia, invitation) now
+    redirects (303) to the start page, or to its `returnTo` as before, so the page opens by a GET
+    with its token;
+  - a signed-in user's sign-in form posted again without a valid token (a page still open from
+    before, the Back button, a stale sign-in tab on a shared computer while another account is
+    signed in) signs nobody in and switches neither the account nor the contest; it goes (303)
+    to a new page, `/auth/signed-in`, instead of the error page: **You are already signed in
+    as** the account's name, that to sign in with another account one signs out first, and
+    **Continue** (the start page) or **Logout** (new keys `signed.in.already.title`,
+    `signed.in.already`, `signed.in.already.other`, `signed.in.already.continue`). As with any
+    refused form, Play clears the session's CSRF token, so the account's other open tabs need a
+    reload before their next vote or form. Logged as before (`csrf_failure`, with its
+    reference). A signed-out one and other refused forms keep the error page. A signed-out visit
+    to `/auth/signed-in` asks to sign in and then opens the start page, not that page;
+  - the "no round" page of a juror whose own rounds of the contest are closed to them now says
+    **Your rounds are closed now** (new key `no.round.yet.closed`) and lists each with why, the
+    round state page's title and text (stopped, still being prepared, closed for now, closing, or
+    their voting stopped; a `round_user` row with no `active` value counts as stopped, as the
+    juror's open rounds already took it, though the vote path still takes such a juror's vote, a
+    known gap); only rounds with their own `round_user` row, never other jurors' or another
+    contest's; one query. With no such round it says "No round configured yet" as before. Juror
+    guide.
 
 **Development**
 
@@ -208,25 +361,6 @@ No next release is set yet (`build.sbt` says `26.12-SNAPSHOT`). Everything devel
   image-cache WARN lines quote titles, URLs and exception text. The production logback writes
   `services.imports`, `services.jobs`, `security.account`, `security.roles`, `round.admin` and
   `round.access` at INFO (`round.counts` stays at WARN). Operations §1.7.
-
-- **Contests page menus** (the maintainer's request of 2026-11-19, for 26.11.13, developed
-  2026-11-19, `stack/196-contests-filter`): root's contests page has **Type**, **Country** and
-  **Year** menus and an **Order** menu in the navbar, in the design of the Rounds page's, each item
-  with its count within the other menus' choices and every link keeping the others. Country goes
-  by the contest's campaign, else its country text: a known country is one entry however written
-  ("UA", "Ukraine": `country=ua`), **International** has international campaigns and an empty or
-  "International" country, any other text is an entry of its own; the menu scrolls inside its box.
-  By default the page lists the latest year of the contests, not the calendar's; **All years** is
-  `year=all`. Oldest first by default, by year and then as added (before, the list was in the
-  order the contests were added, all years together); the old `?contestType=…&year=…` links still
-  work. The type-and-year grid above the list is gone from that page (kept on root's all-users
-  page). After **Add** the page opens on the new contest's year, keeping the list's type, country
-  and order where the new contest is of them; after **Import**, on the imported contests' year
-  (all years if several, or if the import added none, all of them being there already). A country
-  written in another language ("Україна") joins its entry. **Order** also has **By country**
-  (`order=country`, A to Z only, new key `contests.order.country`): by the name the Country menu
-  shows, in the page language's alphabetical order, International last, each country's contests
-  by year and then as added. No migration.
 - **Licence: GPL-3.0-or-later** (developed 2026-11-17, `stack/182-gpl-relicense`): relicensed from
   Apache-2.0; releases before this stay available under Apache-2.0. `LICENSE` is the GPL-3.0
   text, `NOTICE` lists the bundled components and the option chosen for each dual-licensed one;

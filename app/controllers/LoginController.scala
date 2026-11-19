@@ -268,6 +268,15 @@ class LoginController @Inject() (
     MessageDigest.isEqual(sha(given), sha(expected))
   }
 
+  /** "You are already signed in as ...": where a signed-in user's sign-in form, posted again
+    * without a valid token, leads ([[CsrfErrorHandler]]; a stale sign-in tab on a shared
+    * computer): Continue (the start page) or Sign out (a POST with the token this GET gives the
+    * session). Any signed-in user, a role or not; signed out, the sign-in page.
+    */
+  def signedInPage: EssentialAction = withAuth(_ => true) { user => implicit request =>
+    noStore(Ok(views.html.alreadySignedIn(user)))
+  }
+
   /** The sign-out page: a button that signs out (POST, [[logout]]), for old links and
     * bookmarks to `GET /logout`, which no longer sign out by themselves.
     */

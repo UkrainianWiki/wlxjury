@@ -170,7 +170,9 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
       ReassignPreview(round, j.jurors.find(_.user.id.contains(from)), refused, files, j, signature(j.jurors), ticked,
         unrated, given, waiting, asideGiven,
         restarted = ticked.filter(r => others.exists(o => o.user.id.contains(r) && !o.active)),
-        noMembership = others.map(_.user.getId).filter(id => eligibleJuror(round.contestId, id).isEmpty).toSet)
+        noMembership = others.map(_.user.getId).filter(id => eligibleJuror(round.contestId, id).isEmpty).toSet,
+        tooFewReceivers = !RoundReassign.enoughReceivers(from, RoundReassign.possibleReceivers(round.getId, round.contestId),
+          round.distribution))
   }
 
   /** Queues the reassign of `from`'s unrated files by `by` to `receivers`, if the round's jury is still
@@ -329,10 +331,13 @@ object RoundRebalanceService {
     * @param restarted  ticked receivers who are stopped: started again
     * @param noMembership the round's other jurors with no active jury membership of the contest: they can't
     *                   receive files (listed unticked, marked)
+    * @param tooFewReceivers too few other jurors could take the files ([[RoundReassign.enoughReceivers]]):
+    *                   refused ([[RoundRebalanceHandler.AloneKey]]), no receivers to tick
     */
   final case class ReassignPreview(round: Round, from: Option[JurorRow], refusal: Option[JobError],
       files: RoundReassign.JurorFiles, jury: Jury, signature: String, receivers: Seq[Long], unrated: Map[Long, Long],
-      given: Map[Long, Long], waiting: Long, asideGiven: Long, restarted: Seq[Long], noMembership: Set[Long] = Set.empty) {
+      given: Map[Long, Long], waiting: Long, asideGiven: Long, restarted: Seq[Long], noMembership: Set[Long] = Set.empty,
+      tooFewReceivers: Boolean = false) {
 
     /** Files given in all (N > 0). */
     def moved: Long = given.values.sum

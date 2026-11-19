@@ -1,6 +1,6 @@
 "use strict";
 
-const { formatCacheStatus, pollCacheStatus } = require("../public/javascripts/cache-status");
+const { formatCacheStatus, formatCacheTime, cacheStatusTexts, pollCacheStatus } = require("../public/javascripts/cache-status");
 
 // ---------------------------------------------------------------------------
 // formatCacheStatus – pure logic, no DOM needed
@@ -144,6 +144,99 @@ describe("formatCacheStatus", () => {
 });
 
 // ---------------------------------------------------------------------------
+// formatCacheStatus – a finished run with nothing to download, or some cached before
+// ---------------------------------------------------------------------------
+
+describe("formatCacheStatus after a finished run", () => {
+
+    // the page's texts, as contest_images and editRound render them (data-text-*)
+    const texts = {
+        allCached: "All {0} images are already cached (checked {1}).",
+        nothing: "No images to download (checked {0}).",
+        alsoCached: "{0} already cached",
+        lang: "en"
+    };
+    const startedAtMs = Date.UTC(2026, 10, 19, 12, 5);
+    const when = formatCacheTime(startedAtMs, "en");
+    const finished = { done: 0, total: 0, errors: 0, running: false, ratePerSec: 0, etaSeconds: 0, startedAtMs };
+
+    test("says all the images were already cached, with when it checked", () => {
+        expect(formatCacheStatus({ ...finished, cached: 300 }, texts))
+            .toBe("All 300 images are already cached (checked " + when + ").");
+    });
+
+    test("says there was nothing to download when the run had no images", () => {
+        expect(formatCacheStatus({ ...finished, cached: 0 }, texts))
+            .toBe("No images to download (checked " + when + ").");
+        expect(formatCacheStatus(finished, texts)) // a status without cached
+            .toBe("No images to download (checked " + when + ").");
+    });
+
+    test("dates the text, so an old run's status read later is not taken as current", () => {
+        const short = lang => new Intl.DateTimeFormat(lang, { dateStyle: "short", timeStyle: "short" }).format(startedAtMs);
+        expect(when).toBe(short("en"));
+        expect(formatCacheTime(startedAtMs, "uk")).toBe(short("uk"));
+        expect(formatCacheTime(startedAtMs, "fr")).toBe(short("fr"));
+    });
+
+    test("formats the counts in the page's language", () => {
+        const count = lang => new Intl.NumberFormat(lang).format(38367);
+        expect(count("en")).toBe("38,367");
+        expect(formatCacheStatus({ ...finished, cached: 38367 }, texts))
+            .toBe("All 38,367 images are already cached (checked " + when + ").");
+        expect(formatCacheStatus({ ...finished, done: 12, total: 12, cached: 38367 }, { ...texts, lang: "uk" }))
+            .toBe("12 / 12 downloaded (100%) – done – " + count("uk") + " already cached");
+    });
+
+    test("adds the images cached before to a run that downloaded some", () => {
+        expect(formatCacheStatus({ ...finished, done: 12, total: 12, cached: 300 }, texts))
+            .toBe("12 / 12 downloaded (100%) – done – 300 already cached");
+    });
+
+    test("keeps the text of a run that downloaded all its images", () => {
+        expect(formatCacheStatus({ ...finished, done: 12, total: 12, cached: 0 }, texts))
+            .toBe("12 / 12 downloaded (100%) – done");
+    });
+
+    test("keeps the running, starting and failed texts", () => {
+        expect(formatCacheStatus({ ...finished, done: 5, total: 12, cached: 300, running: true }, texts))
+            .toBe("5 / 12 downloaded (42%) – running…");
+        expect(formatCacheStatus({ ...finished, cached: 300, running: true }, texts)).toBe("Starting…");
+        expect(formatCacheStatus({ ...finished, cached: 300, failed: true }, texts)).toBe("Download failed");
+        expect(formatCacheStatus({ ...finished, done: 4, total: 12, cached: 300, failed: true }, texts))
+            .toBe("4 / 12 downloaded (33%) – failed");
+    });
+
+    test("shows nothing before any run (startedAtMs 0), as before", () => {
+        expect(formatCacheStatus({ ...finished, startedAtMs: 0 }, texts)).toBeNull();
+        expect(formatCacheStatus({ total: 0, done: 0, errors: 0, running: false }, texts)).toBeNull();
+    });
+
+    test("writes no English of its own: without the page's texts it shows nothing new", () => {
+        expect(formatCacheStatus({ ...finished, cached: 300 })).toBeNull();
+        expect(formatCacheStatus({ ...finished, cached: 0 }, {})).toBeNull();
+        expect(formatCacheStatus({ ...finished, done: 12, total: 12, cached: 300 }))
+            .toBe("12 / 12 downloaded (100%) – done");
+    });
+
+    test("reads the texts from the element's data-text-* attributes", () => {
+        const attrs = {
+            "data-text-all-cached": "Усі зображення ({0}) уже в кеші (перевірено {1}).",
+            "data-text-nothing": "Немає зображень для завантаження (перевірено {0}).",
+            "data-text-also-cached": "уже в кеші: {0}"
+        };
+        const el = { getAttribute: name => attrs[name] || null };
+        const t = cacheStatusTexts(el);
+        expect(t.allCached).toBe(attrs["data-text-all-cached"]);
+        expect(t.nothing).toBe(attrs["data-text-nothing"]);
+        expect(t.alsoCached).toBe(attrs["data-text-also-cached"]);
+        expect(formatCacheStatus({ ...finished, cached: 7 }, t))
+            .toBe("Усі зображення (7) уже в кеші (перевірено " + formatCacheTime(startedAtMs, t.lang) + ").");
+        expect(cacheStatusTexts(null).allCached).toBeUndefined();
+    });
+});
+
+// ---------------------------------------------------------------------------
 // pollCacheStatus – uses jest fake timers + fetch mock
 // ---------------------------------------------------------------------------
 
@@ -155,7 +248,7 @@ describe("pollCacheStatus", () => {
         jest.useFakeTimers();
 
         // Minimal DOM stub
-        statusEl = { innerHTML: "" };
+        statusEl = { textContent: "" };
         global.document = {
             getElementById: jest.fn((id) => id === "cache-status" ? statusEl : null)
         };
@@ -185,11 +278,11 @@ describe("pollCacheStatus", () => {
             { credentials: "same-origin", headers: { "X-Requested-With": "XMLHttpRequest" } });
     });
 
-    test("updates #cache-status innerHTML", async () => {
+    test("updates #cache-status text", async () => {
         mockFetch({ total: 100, done: 60, errors: 0, running: false, ratePerSec: 0, etaSeconds: 0 });
         pollCacheStatus("/status/1");
         await flushPromises();
-        expect(statusEl.innerHTML).toBe("60 / 100 downloaded (60%) \u2013 done");
+        expect(statusEl.textContent).toBe("60 / 100 downloaded (60%) \u2013 done");
     });
 
     test("schedules a follow-up poll when running", async () => {
@@ -223,14 +316,14 @@ describe("pollCacheStatus", () => {
 
     test("stops polling and leaves the text when access is denied (401/403)", async () => {
         for (const code of [401, 403]) {
-            statusEl.innerHTML = "before";
+            statusEl.textContent = "before";
             global.fetch = jest.fn(() => Promise.resolve({ status: code, json: () => Promise.reject(new Error("html")) }));
             pollCacheStatus("/status/1");
             await flushPromises();
             jest.advanceTimersByTime(30000);
             await flushPromises();
             expect(global.fetch).toHaveBeenCalledTimes(1);
-            expect(statusEl.innerHTML).toBe("before");
+            expect(statusEl.textContent).toBe("before");
         }
     });
 
@@ -244,13 +337,13 @@ describe("pollCacheStatus", () => {
     });
 
     test("uses custom elementId when provided", async () => {
-        const customEl = { innerHTML: "" };
+        const customEl = { textContent: "" };
         global.document = {
             getElementById: jest.fn((id) => id === "round-cache-status" ? customEl : null)
         };
         mockFetch({ total: 100, done: 60, errors: 0, running: false, ratePerSec: 0, etaSeconds: 0 });
         pollCacheStatus("/status/1", "round-cache-status");
         await flushPromises();
-        expect(customEl.innerHTML).toBe("60 / 100 downloaded (60%) \u2013 done");
+        expect(customEl.textContent).toBe("60 / 100 downloaded (60%) \u2013 done");
     });
 });

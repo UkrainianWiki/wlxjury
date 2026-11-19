@@ -119,7 +119,10 @@
 
         <hr/>
         <h2 class="h4">@Messages("local.image.cache")</h2>
-        <div id="cache-status" data-cache-status-url="@routes.ImageController.imageCacheStatus(contest.getId)"></div>
+        <div id="cache-status" data-cache-status-url="@routes.ImageController.imageCacheStatus(contest.getId)"
+             data-text-all-cached="@Messages("image.cache.all.cached", "{0}", "{1}")"
+             data-text-nothing="@Messages("image.cache.nothing", "{0}")"
+             data-text-also-cached="@Messages("image.cache.also.cached", "{0}")"></div>
         <form method="post" action="@routes.ImageController.startImageCache(contest.getId)">
             @csrfField()
             <button type="submit" class="btn btn-outline-secondary">@Messages("download.images.locally")</button>

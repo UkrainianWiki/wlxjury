@@ -111,12 +111,10 @@ test('the import form warns for a source of another contest, as the admin types,
       body: JSON.stringify({ batchcomplete: true, query: { prefixsearch: [] } }),
     }));
     const typed = async (text) => {
-      // the field's input (a 1-character one beside the chosen item, so focused, not clicked), then the keys
+      // the field's input, then the keys: focus makes the chosen item the text typed, wholly
+      // selected (category-suggest.js), so the keys type over it
       await page.locator('#source-ts-control').focus();
       await expect(page.locator('#source-ts-control')).toBeFocused();
-      // Backspace gives the chosen item's text back to edit (category-suggest.js): select it, type over it
-      await page.keyboard.press('Backspace');
-      await page.keyboard.press('ControlOrMeta+a');
       await page.keyboard.type(text);
       await page.keyboard.press('Tab');
       await expect(page.locator('#source')).toHaveValue(text);

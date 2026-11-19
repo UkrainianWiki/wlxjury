@@ -15,6 +15,10 @@ access.denied.title=Accès refusé
 access.denied.account=Vous êtes connecté avec le compte {0}.
 access.denied.explanation=Ce compte n’a pas l’autorisation d’ouvrir cette page.
 access.denied.switch.account=Se déconnecter et utiliser un autre compte
+signed.in.already.title=Déjà connecté
+signed.in.already=Vous êtes déjà connecté en tant que {0}.
+signed.in.already.other=Pour vous connecter avec un autre compte, déconnectez-vous d''abord.
+signed.in.already.continue=Continuer
 access.denied.suggested.gallery=Ouvrir une galerie accessible à ce compte
 access.denied.suggested.files=Ouvrir les fichiers d’un concours accessible à ce compte
 access.denied.required=Cette page est réservée aux rôles suivants : {0}.
@@ -142,6 +146,7 @@ format.boolean=
 
 no.round.yet=Aucun tour configuré pour le moment. Veuillez attendre que l''administrateur du concours configure l''outil.
 no.round.yet.title = Pas encore de tour
+no.round.yet.closed = Vos tours sont fermés pour le moment
 no.round.yet.other.contests = Vos autres concours :
 
 
@@ -228,6 +233,10 @@ thumbnail.urls = urls des vignettes
 thumbnail.urls.help = URL des vignettes sur ce serveur, une par ligne. Pour les télécharger avec wget ou un script, envoyez votre cookie de session.
 local.image.cache = Cache d''images local
 download.images.locally = Télécharger les images localement
+# cache-status.js fills {0} and {1} in these three (a formatted count, a date and time): keep them plain, no {0,number} or choice format, which would throw when the page renders
+image.cache.all.cached = Les {0} images sont déjà en cache (vérifié le {1}).
+image.cache.nothing = Aucune image à télécharger (vérifié le {0}).
+image.cache.also.cached = {0} déjà en cache
 round.images.check.title = Images du tour
 round.images.check = Vérifier les images du tour
 round.images.check.all = Vérifier les images de tous les tours
@@ -1097,7 +1106,6 @@ round.juror.reassign.help=Les fichiers non notés du juré vont aux jurés coch�
 round.juror.reassign.counts={0} a {1} fichiers dans ce tour : {2} notés (✗ et votes partiellement notés compris ; ils restent), {3} non notés, et {4} mis de côté (fichiers supprimés de Commons ou disqualifiés).
 round.juror.reassign.receivers=Jurés qui reçoivent les fichiers
 round.juror.reassign.receivers.help=Les jurés actifs du tour sont cochés. Les jurés arrêtés sont listés non cochés : un juré arrêté coché est redémarré, et peut alors modifier ses votes précédents dans le tour. Un fichier ne va qu''à un juré qui ne l''a pas encore.
-round.juror.reassign.no.receivers=Le tour n''a pas d''autre juré : ajoutez d''abord un juré.
 round.juror.reassign.show=Voir ce que cela fait
 round.juror.reassign.result={0,choice,1#1 fichier non noté|1<{0,number,integer} fichiers non notés} → {1,choice,1#1 juré|1<{1,number,integer} jurés} : {2}.
 round.juror.reassign.waiting={0} fichiers ne peuvent pas être déplacés (tous les jurés cochés les ont déjà) : ils attendent un juré. Les statistiques du tour les montrent, et « Distribuer les nouveaux fichiers » peut les attribuer.
@@ -1112,6 +1120,7 @@ job.error.rebalance.reassign.not.running=Le tour {0} n''est pas en cours : déma
 job.error.rebalance.reassign.legacy=Le tour {0} n''a pas de liste de jurés (un ancien tour) : ses fichiers ne peuvent pas être réattribués.
 job.error.rebalance.from=Le compte {0} n''est pas juré du tour {1}.
 job.error.rebalance.reassign.nothing={0} n''a aucun fichier non noté dans le tour {1} : il n''y a rien à réattribuer. Si ses votes sont encore ouverts, suspendez-les avec « Suspendre les votes du juré » dans les statistiques du tour.
+job.error.rebalance.reassign.alone=Les fichiers du juré {0} dans le tour {1} ne peuvent pas être réattribués : {2,choice,0#chaque fichier va à tous les jurés, et aucun autre juré du tour n’y vote avec une adhésion active au jury du concours. Reprenez les votes de l’un d’eux, ou ajoutez un juré avec « Ajouter un juré… »|1#aucun autre juré du tour n’a d’adhésion active au jury du concours. Ajoutez d’abord un juré avec « Ajouter un juré… »|1<chaque fichier va à {2,number,integer} jurés, et moins de {2,number,integer} autres jurés du tour ont une adhésion active au jury du concours. Ajoutez d’abord un juré avec « Ajouter un juré… »} dans les statistiques du tour.
 job.error.rebalance.receiver=Le compte {0}, coché pour recevoir des fichiers, n''est pas juré du tour {1} avec une adhésion active au jury du concours.
 job.error.rebalance.receivers.few=Le tour {0} donne chaque fichier à {1,choice,1#1 juré|1<{1,number,integer} jurés} : cochez au moins {1,choice,1#1 juré|1<{1,number,integer} jurés} pour recevoir des fichiers, ou ajoutez d''abord un juré.
 job.error.rebalance.reassign.verify=Tour {0} : le juré {1} a encore {2} fichiers non notés. Réessayer vérifie à nouveau.

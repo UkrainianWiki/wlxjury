@@ -107,14 +107,69 @@
         option_create: function (data, escape) {
           return shouldSuggest(data.input, mode) ? '<div class="create">' + escape(data.input) + '</div>' : null;
         },
-        no_results: function () { return null; }
+        no_results: function () { return null; },
+        // the value, on one line (main.css: a long one cut with an ellipsis), whole in its title
+        item: function (data, escape) {
+          return '<div title="' + escape(data.text) + '">' + escape(data.text) + '</div>';
+        }
       }
     });
+    editOnFocus(ts);
     if (dropdownParent) {
       keepInWindow(ts);
       followScrollingBox(ts, input);
     }
     return ts;
+  }
+
+  /** A value the field already has (the page's, or one chosen) is an item, not text: a click
+    * could neither select nor edit it (Tom Select keeps the mouse from its box), only Backspace
+    * made it text again. On focus it becomes the text typed, wholly selected, so that typing
+    * replaces it and the caret moves in it. The text is put in the box here: restore_on_backspace
+    * does it only while the item's option is there, and persist: false drops the option of a value
+    * typed with the item. Leaving or Enter keeps that text as the value (createOnBlur, create):
+    * focus and blur unchanged keep it, a box cleared and left empties the field.
+    * setSelectionRange rather than select(), which iOS Safari ignores.
+    * While the field is focused, the form's own input follows its text, silently (the item is
+    * removed without a change event, and no event as it is typed): a send then (a tap on plain
+    * text leaves the field focused on a phone), the browser's restore of the form (F5, Back) or a
+    * blur Tom Select skips (the window without focus) finds the text as typed, never an old value
+    * or none. A box cleared empties it (Enter then sends it empty), and leaving it cleared fires
+    * one change; leaving it with text makes that the item, with Tom Select's change.
+    * Leaving the field cancels the list's refresh still waiting for the pause in typing
+    * (refreshThrottle, Tom Select's internal refreshTimeout, of the version javascript-test's
+    * package.json pins with build.sbt's webjar): left within it (a quick Tab), the refresh would
+    * open the list and focus the field again, which turned the value just kept back into text.
+    * Without that property the refresh isn't cancelled: the field may be focused again, its value
+    * in the box and still in the form's input, never lost. */
+  function editOnFocus(ts) {
+    var kept = false; // a value made text on focus, until the field is left
+    ts.on('focus', function () {
+      var box = ts.control_input;
+      if (!ts.items.length || box.value) return;
+      var value = ts.items[0];
+      var option = ts.options[value];
+      var text = option ? option[ts.settings.labelField] : value;
+      ts.removeItem(value, true);
+      ts.input.value = value;
+      kept = true;
+      if (!box.value) ts.setTextboxValue(text);
+      box.setSelectionRange(0, box.value.length);
+    });
+    ts.control_input.addEventListener('input', function () {
+      if (kept && !ts.items.length) ts.input.value = ts.control_input.value.trim();
+    });
+    ts.on('blur', function () {
+      if (ts.refreshTimeout) {
+        clearTimeout(ts.refreshTimeout);
+        ts.refreshTimeout = null;
+      }
+      var cleared = kept && !ts.items.length;
+      kept = false;
+      if (!cleared) return;
+      ts.input.value = '';
+      ts.input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
   }
 
   /** A list hung from the body is placed by Tom Select under its field, which may reach past

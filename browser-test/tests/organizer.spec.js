@@ -119,6 +119,26 @@ test.describe('an admin', () => {
 test.describe('root', () => {
   test.use({ role: 'root' });
 
+  // a round of one juror (the maintainer's note of 2026-11-19), read only: the juror has unrated files,
+  // but nobody else in the round could receive them, so no "Reassign files…"; the page opened directly
+  // refuses, with no receivers and no confirm
+  test("shows no Reassign files… in a round of one juror; the page says there is nobody to reassign to",
+    { tag: '@A-04' }, async ({ page, fixture }) => {
+      test.skip(!fixture.aloneRound, "no one-juror round in the guides' screenshot mode");
+      const { roundId, jurorId } = fixture.aloneRound;
+      await page.goto(`/roundstat/${roundId}`);
+      const row = page.getByRole('row').filter({ has: page.getByRole('cell', { name: 'one-juror@ui-shots.test', exact: true }) });
+      await expect(row).toHaveCount(1);
+      await expect(page.locator('a.round-juror-reassign')).toHaveCount(0);
+      await page.goto(`/admin/rounds/${roundId}/reassign-juror?juror=${jurorId}`);
+      await expect(page.getByRole('heading', { level: 1 })).toContainText('unrated files in round');
+      await expect(page.locator('#round-juror-reassign-files')).toHaveAttribute('data-unrated', '3');
+      await expect(page.locator('#round-juror-reassign-refused')).toContainText('be reassigned: no other juror of the round has an active jury membership');
+      await expect(page.locator('#round-juror-reassign-form')).toHaveCount(0);
+      await expect(page.locator('#round-juror-reassign-receivers')).toHaveCount(0);
+      await expect(page.getByRole('link', { name: "Back to the round's statistics" })).toBeVisible();
+    });
+
   test('opens the contests page', { tag: '@R-01' }, async ({ page }) => {
     await page.goto('/contests');
     await expect(page.getByRole('heading', { level: 1, name: 'Contests' })).toBeAttached();

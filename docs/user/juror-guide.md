@@ -112,6 +112,12 @@ account can't be used to sign in: ask your contest admin which account to use.
 
 Open the person icon at the top right and choose **Logout**.
 
+On a shared computer, sign out before someone else signs in. If someone signs in from an old
+sign-in page while you are still signed in, the tool signs nobody in and switches neither the
+account nor the contest: it says **You are already signed in as** your name, with **Continue**
+and **Logout**. To sign in with another account, sign out first. Your other open tabs then need
+a reload before your next vote, as after any expired page.
+
 To sign out on every computer and browser at once, open your **Profile** and press **Sign out
 everywhere** under **Sessions**. Changing your password does this too, except in the browser
 you changed it in.
@@ -133,6 +139,11 @@ example this year's, while you were still in last year's), the tool opens that o
 says **No round configured yet. Please wait until contest admin configures the tool.**, with a
 **Logout** button and buttons for your other contests where you can go (for example last year's,
 if its round is still open). Come back later, or ask your contest admin when the round opens.
+
+If you are a juror of rounds in the contest but none of them is open to you now, the page says
+**Your rounds are closed now** instead, and lists each of your rounds with why it is closed, as
+in [Rounds you don't see](#rounds-you-dont-see): for example **Round stopped** or **Your voting
+in this round is stopped**. Only your own rounds are listed.
 
 ### Rounds you don't see
 

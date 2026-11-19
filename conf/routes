@@ -25,6 +25,8 @@ POST        /logout/everywhere                                                  
 POST        /auth                                                                   @controllers.LoginController.auth()
 
 GET         /auth                                                                   @controllers.LoginController.login(returnTo: Option[String] ?= None)
+# a signed-in user's sign-in form posted again without a valid token comes here (CsrfErrorHandler)
+GET         /auth/signed-in                                                         @controllers.LoginController.signedInPage
 
 # no sign-up: accounts come from an organizer's invitation. A mailed link (invitation, password
 # link, email change) opens a page; its form posts with the CSRF token. /setup: the first account

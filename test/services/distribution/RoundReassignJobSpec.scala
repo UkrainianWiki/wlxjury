@@ -40,9 +40,12 @@ class RoundReassignJobSpec extends Specification with TestDb with BeforeAll with
     @volatile var locked: Option[Seq[Long] => Unit] = None
     @volatile var atVerify: Option[() => Unit] = None
     @volatile var afterStep: Option[(String, () => Unit)] = None
+    @volatile var beforeStep: Option[(String, () => Unit)] = None
     @volatile var sleepMs = 0L
     override def step(job: Job, ctx: StepContext): StepResult = {
       val phase = RoundRebalanceHandler.reassignStateOf(job).phase
+      // committed on its own connection before the step takes the round's lock
+      beforeStep.filter(_._1 == phase).foreach { case (_, f) => beforeStep = None; f() }
       val result = super.step(job, ctx)
       afterStep.filter(_._1 == phase).foreach { case (_, f) => afterStep = None; ctx.afterCommit(f()) }
       result
@@ -471,6 +474,33 @@ class RoundReassignJobSpec extends Specification with TestDb with BeforeAll with
       val plain = run(None)
       val retried = run(Some(2))
       (retried === plain) and (plain._3 === 1L)
+    }
+
+    "fail its first step, nothing changed, when every file goes to every juror and no other juror is active any more" in {
+      // queued while the other juror could take the files; then, before its first step runs, that juror
+      // is stopped (paused), loses their jury membership, or is removed from the round
+      val changes: Seq[(String, (Long, User) => Unit)] = Seq(
+        "stopped" -> ((r, a) => sql"UPDATE round_user SET active = FALSE WHERE round_id = $r AND user_id = ${a.getId}".update()),
+        "no membership" -> ((_, a) => sql"UPDATE user_contest SET role = 'no' WHERE user_id = ${a.getId}".update()),
+        "removed" -> ((r, a) => sql"DELETE FROM round_user WHERE round_id = $r AND user_id = ${a.getId}".update()))
+      changes.map { case (what, change) =>
+        SharedTestDb.truncateAll()
+        val (round, js, admin) = setUp(4, 0, jurors = 2)
+        val r = round.getId
+        val Seq(x, a) = js
+        val xBefore = rows(r, x.getId)
+        val h = new Hooks(chunkRows = 10)
+        h.beforeStep = Some(RoundRebalanceHandler.Phase.Stop -> (() => change(r, a)))
+        val (service, _) = inline(h)
+        val job = queued(service.reassign(round, x.getId, admin, service.preview(round, 0L).signature, Nil))
+        val failed = JobJdbc.findById(job.id).get
+        (failed.status aka what must_=== JobStatus.Failed) and
+          (failed.failure.map(_.key) must beSome(RoundRebalanceHandler.AloneKey)) and
+          // the juror's id, not their name, stored (and logged)
+          (failed.failure.map(_.args) must beSome(Seq(x.getId.toString, round.number.toString, "0"))) and
+          // the juror not stopped, their rows kept, the round released
+          (roundUser(r, x.getId) must beSome(true)) and (rows(r, x.getId) === xBefore) and (flags(r) === (true -> 0))
+      }.reduce(_ and _)
     }
 
     "on Cancel before any row moved put the juror and restarted receivers back; after, keep them" in {

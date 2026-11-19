@@ -291,6 +291,11 @@ libraryDependencies ++= Seq(
   // Bootstrap 5's bundle JS includes Popper; Tom Select's complete build includes its two deps
   "org.webjars" % "bootstrap" % "5.3.8" exclude ("org.webjars", "popper.js"),
   "org.webjars.npm" % "bootstrap-icons" % "1.13.1",
+  // the same version as javascript-test/package.json's tom-select (the Jest tests'; JSON has no
+  // comments) and the templates' webjars/tom-select/2.6.2 paths: change them together.
+  // category-suggest.js reads Tom Select's internal refreshTimeout to cancel a refresh when a
+  // field is left; a version without it degrades (a quick Tab may focus the field again), but no
+  // value is lost
   "org.webjars.npm" % "tom-select" % "2.6.2" excludeAll (ExclusionRule("org.webjars.npm")),
   "org.scalikejdbc" %% "scalikejdbc" % ScalikejdbcVersion,
   "org.scalikejdbc" %% "scalikejdbc-config" % ScalikejdbcVersion,

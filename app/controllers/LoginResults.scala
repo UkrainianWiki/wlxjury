@@ -70,7 +70,14 @@ trait LoginResults { this: Secured with I18nSupport =>
     val sessionData = Secured.signedInSession(user, login, keep) ++
       inContest.contestId.map(id => Secured.CurrentContestId -> id.toString) ++
       Option.when(notices)(services.AccountNotices.SessionKey -> "1")
-    val nextPage = Secured.safeLocalPath(returnTo).fold(indexRedirect(inContest))(url => Redirect(url))
+    // always a redirect (303), never a page in answer to the sign-in's POST: reloading such a
+    // page posted the form again, and its own forms (Sign out, a contest switch) failed CSRF,
+    // since this session has no token until a GET renders one. The start page (index) runs
+    // indexRedirect in the new session
+    // never back to "already signed in" (a signed-out visit to it keeps it as the returnTo)
+    val nextPage = Redirect(Secured.safeLocalPath(returnTo)
+      .filterNot(_ == routes.LoginController.signedInPage.url)
+      .getOrElse(routes.LoginController.index.url))
     val result = nextPage.withSession(sessionData: _*)
     // the user's colour mode, if they chose one, follows them to this browser
     val withTheme = themeCookies.setStored(result, user.theme)

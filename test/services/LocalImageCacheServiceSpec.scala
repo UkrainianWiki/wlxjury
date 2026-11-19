@@ -701,6 +701,100 @@ class LocalImageCacheServiceSpec extends Specification {
     }
   }
 
+  // ── a run's cached count ─────────────────────────────────────────────────
+
+  "a finished run" should {
+
+    // 400×300: only the widths below 400 need files ("allSizesCached")
+    def smallImg(id: Long) = mkImage(id, w = 400, h = 300, filename = s"Cached_$id.jpg")
+    def neededWidths = Global.thumbnailWidths(400, 300).filter(_ < 400)
+
+    /** A service whose contest 1 and round 2 have `images`, those in `cached` cached, and
+      * whose downloads succeed without Wikimedia.
+      */
+    def withImages(images: Seq[Image], cached: Seq[Image])(body: LocalImageCacheService => Unit) = {
+      val dir = Files.createTempDirectory("cache-counts").toFile
+      val svc = new LocalImageCacheService(mkConfig(dir), system) {
+        override private[services] def contestImages(contestId: Long) = images
+        override private[services] def roundImages(roundId: Long) = images
+        override private[services] def downloadAndResize(image: Image) = Future.unit
+      }
+      Await.result(svc.unusedSizesCleanedUp, 30.seconds)
+      for (img <- cached; px <- neededWidths) {
+        val f = svc.localFile(img, px)
+        f.getParentFile.mkdirs()
+        f.createNewFile()
+      }
+      Await.result(svc.initRegistry(), 10.seconds)
+      try body(svc)
+      finally {
+        val paths = Files.walk(dir.toPath)
+        try paths.iterator().asScala.toSeq.reverse.foreach(p => Files.deleteIfExists(p))
+        finally paths.close()
+      }
+    }
+
+    def finished(progress: => CacheProgress): CacheProgress = {
+      val deadline = System.currentTimeMillis() + 10000L
+      while ((progress.running || progress.startedAtMs == 0L) && System.currentTimeMillis() < deadline)
+        Thread.sleep(20)
+      progress
+    }
+
+    "count the images already cached when all are: nothing to download" in {
+      val images = (1L to 3L).map(smallImg)
+      withImages(images, cached = images) { svc =>
+        svc.startDownload(1L)
+        val p = finished(svc.progress(1L))
+        (p.running, p.failed, p.done, p.total, p.cached) === ((false, false, 0, 0, 3))
+        p.startedAtMs must beGreaterThan(0L)
+      }
+      ok
+    }
+
+    "tell no images from all cached: 0 to download, 0 cached" in {
+      withImages(Nil, cached = Nil) { svc =>
+        svc.startDownload(1L)
+        val p = finished(svc.progress(1L))
+        (p.running, p.failed, p.done, p.total, p.cached) === ((false, false, 0, 0, 0))
+        p.startedAtMs must beGreaterThan(0L)
+      }
+      ok
+    }
+
+    "count those downloaded and those cached before apart" in {
+      val images = (1L to 3L).map(smallImg)
+      withImages(images, cached = images.take(2)) { svc =>
+        svc.startDownload(1L)
+        val p = finished(svc.progress(1L))
+        (p.running, p.failed, p.done, p.total, p.cached) === ((false, false, 1, 1, 2))
+      }
+      ok
+    }
+
+    "count a round's cached images, and its no images, the same way" in {
+      val images = (1L to 2L).map(smallImg)
+      withImages(images, cached = images) { svc =>
+        svc.startDownloadForRound(contestId = 1L, roundId = 2L)
+        val p = finished(svc.progressForRound(2L))
+        (p.running, p.failed, p.done, p.total, p.cached) === ((false, false, 0, 0, 2))
+        svc.progress(1L).startedAtMs === 0L // the contest's own progress is untouched
+      }
+      withImages(images, cached = images.take(1)) { svc =>
+        svc.startDownloadForRound(contestId = 1L, roundId = 2L)
+        val p = finished(svc.progressForRound(2L))
+        (p.running, p.failed, p.done, p.total, p.cached) === ((false, false, 1, 1, 1))
+      }
+      withImages(Nil, cached = Nil) { svc =>
+        svc.startDownloadForRound(contestId = 1L, roundId = 2L)
+        val p = finished(svc.progressForRound(2L))
+        (p.running, p.failed, p.done, p.total, p.cached) === ((false, false, 0, 0, 0))
+        p.startedAtMs must beGreaterThan(0L)
+      }
+      ok
+    }
+  }
+
   // ── registry ─────────────────────────────────────────────────────────────
 
   "registry" should {

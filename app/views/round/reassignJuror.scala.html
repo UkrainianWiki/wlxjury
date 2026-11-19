@@ -21,6 +21,10 @@
 @* nothing to reassign (no unrated file, the job's count): the refusal says so, no receivers to tick *@
 @nothing = @{ p.files.unrated + p.files.unratedAside == 0 }
 @others = @{ p.jury.jurors.filterNot(r => p.from.exists(_.user.id == r.user.id)) }
+@* too few other jurors to take the files (a round of one juror, the others without an active jury
+   membership, fewer than N, or with every file to every juror no other active one): the refusal says so,
+   no receivers to tick, as with nothing to reassign *@
+@alone = @{ p.tooFewReceivers }
 @nameOf(id: Long) = @{ p.jury.jurors.find(_.user.id.contains(id)).fold(id.toString)(_.user.fullname) }
 @scripts = {
     <script src="@routes.Assets.versioned("javascripts/submit-once.js")"></script>
@@ -45,16 +49,13 @@
                 @if(!from.active) { <span class="badge text-bg-secondary">@Messages("round.juror.stopped")</span> }
             </p>
 
-            @if(shares && !nothing) {
+            @if(shares && !nothing && !alone) {
                 <form method="get" action="@routes.RoundJurorsController.reassignPage(round.getId, from.user.getId)" id="round-juror-reassign-choose">
                     <input type="hidden" name="picked" value="1">
                     <input type="hidden" name="juror" value="@from.user.getId">
                     <fieldset aria-describedby="round-juror-reassign-receivers-help">
                         <legend class="h5">@Messages("round.juror.reassign.receivers")</legend>
                         <p class="text-muted" id="round-juror-reassign-receivers-help">@Messages("round.juror.reassign.receivers.help")</p>
-                        @if(others.isEmpty) {
-                            <p id="round-juror-reassign-no-receivers">@Messages("round.juror.reassign.no.receivers")</p>
-                        }
                         <ul id="round-juror-reassign-receivers" class="list-unstyled">
                         @for(row <- others) {
                             <li data-juror="@row.user.getId" data-active="@row.active">

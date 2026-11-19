@@ -77,7 +77,16 @@ class RoundEditingFormatsSpec extends Specification {
     "format in every language, a missing key as before" in {
       foreach(langs) { l =>
         implicit val m: MessagesImpl = messages(l)
+        // too few receivers: every file to every juror (0), one juror per file, two
+        val alone = Seq("0", "1", "2").map(n => n -> JobError(RoundRebalanceHandler.AloneKey, Seq("Alice", "3", n)).message)
         (JobError(RoundRebalanceHandler.FewReceiversKey, Seq("3", "1")).message must not(beEmpty)) and
+          foreach(alone) { case (n, text) =>
+            (text aka s"$l N=$n" must contain("Alice")) and (text must contain("3")) and (text must not(contain("{"))) and
+              (text must not(contain("''")))
+          } and
+          // N = 2: the count is in the text; each N its own wording
+          (alone.last._2 must contain("2")) and (alone.map(_._2).distinct.size === 3) and
+          (JobError.numericArgs(RoundRebalanceHandler.AloneKey) === Set(2)) and
           (JobError("job.error.no.such.key", Seq("1")).message === "job.error.no.such.key")
       }
     }

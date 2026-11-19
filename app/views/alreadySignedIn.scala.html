@@ -1,0 +1,22 @@
+@import db.scalikejdbc.User
+@(user: User)(implicit messages: Messages, request: RequestHeader)
+
+@* GET /auth/signed-in: where a signed-in user's sign-in form, posted again without a valid
+   token, leads (CsrfErrorHandler): a stale sign-in tab on a shared computer, while another
+   account is signed in here. The refused POST changed nothing: the page names the account that
+   is signed in (its display name, as the navbar's user menu; with none, its wiki account or email) and offers to go on as it, or to
+   sign out first (a POST with the CSRF token this GET gives the session). *@
+@main("signed.in.already.title", user, user.getId, backHere = false) {
+    <div class="alert alert-warning" role="status" id="signed-in-already">
+        <h1 class="h4">@Messages("signed.in.already.title")</h1>
+        <p id="signed-in-account">@Messages("signed.in.already", Option(user.fullname).filter(_.trim.nonEmpty).orElse(user.wikiAccount).getOrElse(user.emailLo))</p>
+        <p>@Messages("signed.in.already.other")</p>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-primary" id="signed-in-continue" href="@routes.LoginController.index">@Messages("signed.in.already.continue")</a>
+            <form method="post" action="@routes.LoginController.logout()" class="signed-in-logout">
+                @csrfField()
+                <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-power" aria-hidden="true"></i> @Messages("logout")</button>
+            </form>
+        </div>
+    </div>
+}

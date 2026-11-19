@@ -76,19 +76,8 @@ class GalleryService {
       case Some(round) =>
         // only the round's own jurors learn its state: to anyone else it stays a denial
         if (!User.isRoundJuror(round.getId, user.getId)) Some(Refusal.Denied)
-        else if (round.distributing) Some(RoundState.Distributing)
-        // a round paused while a job moves its files is open to its jurors (Round.pausedCond); one
-        // frozen while open by another job (the previous round of a distribution) opens again
-        // when the job ends; otherwise inactive is stopped
-        else if (!round.active && !(round.mayBePaused && Round.isPaused(round.getId)))
-          Some(
-            if (round.mayBePaused && Round.isFrozenOpen(round.getId))
-              // a creation that holds it closes it at its end; anything else gives it back open
-              if (services.distribution.RoundFreezes.closedByHolder(round.getId)) RoundState.Closing
-              else RoundState.Preparing
-            else RoundState.Stopped)
-        else if (db.scalikejdbc.RoundUser.isStopped(round.getId, user.getId)) Some(RoundState.JurorStopped)
-        else Some(Refusal.Denied)
+        else GalleryService.jurorRoundState(round, db.scalikejdbc.RoundUser.isNotActive(round.getId, user.getId))
+          .orElse(Some(Refusal.Denied))
     }
   }
 
@@ -125,6 +114,46 @@ class GalleryService {
 }
 
 object GalleryService {
+
+  /** Whether [[GalleryService.refusal]] may give `user` a [[RoundState]] of a round of their
+    * current contest: a role that sees galleries, and not one that sees every round.
+    */
+  private def mayGetRoundState(user: User): Boolean =
+    user.hasAnyRole(User.ADMIN_ROLES ++ User.JURY_ROLES ++ User.ORG_COM_ROLES) &&
+      user.roles.intersect(Set("admin", "organizer", "root")).isEmpty
+
+  /** The state of a round for its juror ([[GalleryService.refusal]] checked that) to whom it is
+    * not one of their open rounds; None: the round tells no state (open to them). `jurorStopped`:
+    * whether their round_user row is inactive, read only for an open (or paused) round.
+    */
+  private[services] def jurorRoundState(round: Round, jurorStopped: => Boolean): Option[RoundState] = {
+    if (round.distributing) Some(RoundState.Distributing)
+    // a round paused while a job moves its files is open to its jurors (Round.pausedCond); one
+    // frozen while open by another job (the previous round of a distribution) opens again
+    // when the job ends; otherwise inactive is stopped
+    else if (!round.active && !(round.mayBePaused && Round.isPaused(round.getId)))
+      Some(
+        if (round.mayBePaused && Round.isFrozenOpen(round.getId))
+          // a creation that holds it closes it at its end; anything else gives it back open
+          if (services.distribution.RoundFreezes.closedByHolder(round.getId)) RoundState.Closing
+          else RoundState.Preparing
+        else RoundState.Stopped)
+    else if (jurorStopped) Some(RoundState.JurorStopped)
+    else None
+  }
+
+  /** The user's rounds of their current contest that are not open to them, each with the state
+    * [[GalleryService.roundState]] gives it: their own rounds only (a round_user row of theirs),
+    * never another juror's. One query ([[Round.jurorRoundsNotOpen]]); a round frozen by a job
+    * (rare) reads its freeze as roundState does. None for a user who sees every round (an
+    * organizer). The start page's "no round" page lists them (controllers.JurorContests).
+    */
+  def closedRounds(user: User): Seq[(Round, RoundState)] =
+    if (!mayGetRoundState(user)) Nil
+    else
+      Round.jurorRoundsNotOpen(user).flatMap { case (round, jurorActive) =>
+        jurorRoundState(round, !jurorActive).map(round -> _)
+      }
 
   /** [[GalleryService.viewAs]]'s answer. */
   sealed trait ViewAs

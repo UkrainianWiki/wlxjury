@@ -39,7 +39,8 @@ case class CacheProgress(
     etaSeconds: Long   = 0L,
     renamed: Int       = 0, // renamed on Commons, downloaded under the new name (in done)
     deleted: Int       = 0, // deleted on Commons (in done, not in errors)
-    failed: Boolean    = false // stopped by an error (logged), not finished
+    failed: Boolean    = false, // stopped by an error (logged), not finished
+    cached: Int        = 0 // of the run's images, those cached before it started (not in total)
 )
 
 /** Wikimedia has no file at `url` (HTTP 404): perhaps the file was renamed or deleted on
@@ -328,10 +329,12 @@ class LocalImageCacheService(
       if (cur.running) cur else { shouldStart.set(true); cur.copy(running = true) }
     })
     if (!shouldStart.get()) return
-    Try(ImageJdbc.byRound(roundId)) match {
+    Try(roundImages(roundId)) match {
       case Success(images) =>
         val filtered = images.filter(downloadable)
-        if (filtered.isEmpty) roundProgressMap.put(roundId, CacheProgress(0, 0, 0, running = false))
+        // no images: a run that ended at once, 0 to download and 0 cached ("nothing to download")
+        if (filtered.isEmpty)
+          roundProgressMap.put(roundId, CacheProgress(0, 0, 0, running = false, startedAtMs = System.currentTimeMillis()))
         else runDownloadForRound(contestId, roundId, filtered)
       case Failure(ex) =>
         logger.warn(s"Failed to load images for round $roundId", ex)
@@ -340,6 +343,8 @@ class LocalImageCacheService(
   }
 
   private[services] def contestImages(contestId: Long): Seq[Image] = ImageJdbc.findByContestId(contestId)
+
+  private[services] def roundImages(roundId: Long): Seq[Image] = ImageJdbc.byRound(roundId)
 
   private def downloadable(img: Image): Boolean =
     img.isImage && img.url.isDefined && img.width > 0 && img.height > 0
@@ -375,7 +380,8 @@ class LocalImageCacheService(
 
     registryReady.flatMap { _ =>
       val toDownload = images.filterNot(allSizesCached)
-      logger.info(s"$logLabel: ${images.size} images total, ${images.size - toDownload.size} already cached, ${toDownload.size} to download")
+      val cached     = images.size - toDownload.size
+      logger.info(s"$logLabel: ${images.size} images total, $cached already cached, ${toDownload.size} to download")
 
       // Start the clock only after the scan, so elapsed/rate/ETA reflect download time only.
       val startMs = System.currentTimeMillis()
@@ -389,7 +395,7 @@ class LocalImageCacheService(
         val eta     = if (rate > 0) ((total - d) / rate).toLong else 0L
         CacheProgress(d, total, counts.errors.get, running,
           startedAtMs = startMs, elapsedMs = elapsed, ratePerSec = rate, etaSeconds = eta,
-          renamed = counts.renamed.get, deleted = counts.deleted.get)
+          renamed = counts.renamed.get, deleted = counts.deleted.get, cached = cached)
       }
 
       update(_ => mkProgress(0, running = true))

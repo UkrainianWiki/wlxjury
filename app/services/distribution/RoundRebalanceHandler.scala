@@ -603,6 +603,11 @@ class RoundRebalanceHandler @Inject() (config: Configuration) extends JobHandler
 
     st.phase match {
       case Phase.Stop =>
+        // enough other jurors to take the files, checked again under the round's lock before the juror is
+        // stopped (with every file to every juror the others aren't the job's receivers): one stopped,
+        // removed or no longer a member meanwhile refuses, nothing changed; at each "stop", a Retry's too
+        // the juror's account id, not their name, in job.error and the log lines (as FromKey and ReceiverKey)
+        aloneRefusal(round, from, from.toString).foreach(e => return fail(e))
         // the receivers' users rows share-locked and re-checked (A-4), outside an account join (J-2),
         // as the add checks its juror
         val accounts = (to :+ from).distinct
@@ -840,6 +845,20 @@ object RoundRebalanceHandler {
     * page and the POST, no job queued.
     */
   val NothingKey = "job.error.rebalance.reassign.nothing"
+  /** Too few other jurors of the round could receive the juror's files ([[RoundReassign.enoughReceivers]]:
+    * a round of one juror, the others without an active jury membership, fewer than N, or with every
+    * file to every juror no other active one): refused by the page, the POST and the job's "stop", no
+    * job queued; the statistics show no "Reassign files…" for the juror.
+    */
+  val AloneKey = "job.error.rebalance.reassign.alone"
+
+  /** [[AloneKey]] if too few other jurors of the round could receive `from`'s files now
+    * ([[RoundReassign.enoughReceivers]]); its third argument is the round's N (0: every file to every juror).
+    * `fromName`: the juror's name on the page and the POST, their account id in a job step (stored and logged).
+    */
+  def aloneRefusal(round: Round, from: Long, fromName: String)(implicit session: DBSession): Option[JobError] =
+    Option.unless(RoundReassign.enoughReceivers(from, RoundReassign.possibleReceivers(round.getId, round.contestId),
+      round.distribution))(JobError(AloneKey, Seq(fromName, round.number.toString, round.distribution.max(0).toString)))
   val ReceiverKey = "job.error.rebalance.receiver"
   val FewReceiversKey = "job.error.rebalance.receivers.few"
   val ReassignVerifyKey = "job.error.rebalance.reassign.verify"
@@ -1065,7 +1084,8 @@ object RoundRebalanceHandler {
     *
     * @param fromName the juror's name, given by the page and the POST (not the steps, whose juror has
     *                 nothing left once the files moved): then, after `from` not a juror of the round,
-    *                 also refused if the juror has nothing to reassign ([[RoundReassign.reassignableCount]] 0)
+    *                 also refused if the juror has nothing to reassign ([[RoundReassign.reassignableCount]] 0),
+    *                 then if too few other jurors of the round could receive the files ([[aloneRefusal]])
     */
   def reassignRefusal(round: Round, run: RoundRun, from: Long, receivers: Seq[Long], frozenByUs: Boolean,
       fromName: Option[String] = None)(implicit
@@ -1079,10 +1099,11 @@ object RoundRebalanceHandler {
     else if (!isRoundJuror(round.getId, from)) Some(JobError(FromKey, Seq(from.toString, n)))
     else if (fromName.exists(_ => RoundReassign.reassignableCount(round.getId, from) == 0))
       Some(JobError(NothingKey, fromName.toSeq :+ n))
-    else to.find(r => !isRoundJuror(round.getId, r) || eligibleJuror(round.contestId, r).isEmpty)
-      .map(r => JobError(ReceiverKey, Seq(r.toString, n)))
-      .orElse(Option.when(round.distribution > 0 && to.size < round.distribution)(
-        JobError(FewReceiversKey, Seq(n, round.distribution.toString))))
+    else fromName.flatMap(aloneRefusal(round, from, _)).orElse(
+      to.find(r => !isRoundJuror(round.getId, r) || eligibleJuror(round.contestId, r).isEmpty)
+        .map(r => JobError(ReceiverKey, Seq(r.toString, n)))
+        .orElse(Option.when(round.distribution > 0 && to.size < round.distribution)(
+          JobError(FewReceiversKey, Seq(n, round.distribution.toString)))))
   }
 
   def hasRoundUsers(roundId: Long)(implicit session: DBSession): Boolean =

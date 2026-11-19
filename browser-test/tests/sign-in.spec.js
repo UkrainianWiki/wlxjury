@@ -63,4 +63,62 @@ test.describe('signing in and out', () => {
     await expect(page).toHaveURL(/\/auth/);
     await expect(page.getByRole('alert')).toBeVisible();
   });
+
+  // the sign-in answers with a redirect to the start page, which opens by a GET with its CSRF
+  // token: reloading it posts nothing again, and its own Sign out works (refs ba1126f9, 92ca61d7)
+  test('a juror of a stopped round sees it closed, reloads, and signs out', { tag: ['@J-02', '@J-06', '@S-02'] }, async ({ page, fixture }) => {
+    const juror = fixture.closedRoundJuror;
+    test.skip(!juror, "no closed-round juror in the guides' screenshot mode");
+    await signIn(page, juror);
+    expect(new URL(page.url()).pathname).toBe('/');
+    const heading = page.getByRole('heading', { name: 'Your rounds are closed now' });
+    await expect(heading).toBeVisible();
+    const closed = page.locator('#no-round-closed-rounds li');
+    await expect(closed).toHaveCount(1);
+    await expect(closed).toContainText('Closed round: Round stopped');
+
+    const reloaded = await page.reload();
+    expect(reloaded.status()).toBe(200);
+    expect(reloaded.request().method()).toBe('GET');
+    await expect(heading).toBeVisible();
+
+    const logout = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/logout');
+    await page.locator('form.no-round-logout button').click();
+    expect((await logout).status()).toBe(303);
+    await expect(page).toHaveURL(/\/auth(\?|$)/);
+    await expect(page.getByLabel('Your login')).toBeVisible();
+  });
+
+  // a stale sign-in tab on a shared computer, submitted while another account is signed in here:
+  // no sign-in and no contest switch, but a page naming the signed-in account, with Continue and
+  // Logout (the refused POST's 303)
+  test('a stale sign-in tab, submitted while signed in, says who is signed in', { tag: ['@J-02', '@J-06', '@S-02'] }, async ({ page, fixture }) => {
+    const juror = fixture.closedRoundJuror;
+    test.skip(!juror, "no closed-round juror in the guides' screenshot mode");
+    const stale = await page.context().newPage();
+    await stale.goto('/auth');
+    await signIn(page, juror);
+    await expect(page.getByRole('heading', { name: 'Your rounds are closed now' })).toBeVisible();
+
+    await stale.getByLabel('Your login').fill('someone-else@example.org');
+    await stale.getByLabel('Your password').fill('their password');
+    await stale.getByLabel('Your password').press('Enter');
+    await expect(stale).toHaveURL(/\/auth\/signed-in$/);
+    await expect(stale.getByRole('heading', { name: 'Already signed in' })).toBeVisible();
+    await expect(stale.locator('#signed-in-already')).toContainText(`You are already signed in as ${juror.name}.`);
+    await expect(stale.locator('#signed-in-already')).toContainText('To sign in with another account, sign out first.');
+
+    // Continue: the start page, as the signed-in account
+    await stale.getByRole('link', { name: 'Continue' }).click();
+    await expect(stale).toHaveURL(/^[^?#]*:\/\/[^/]+\/$/);
+    await expect(stale.getByRole('heading', { name: 'Your rounds are closed now' })).toBeVisible();
+
+    // Logout, from the same page opened again
+    await stale.goto('/auth/signed-in');
+    const logout = stale.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/logout');
+    await stale.locator('form.signed-in-logout button').click();
+    expect((await logout).status()).toBe(303);
+    await expect(stale).toHaveURL(/\/auth(\?|$)/);
+    await expect(stale.getByLabel('Your login')).toBeVisible();
+  });
 });

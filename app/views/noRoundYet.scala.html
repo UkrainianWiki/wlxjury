@@ -1,15 +1,30 @@
-@import db.scalikejdbc.{User, UserContest}
+@import db.scalikejdbc.{Round, User, UserContest}
 @import org.intracer.wmua.ContestJury
-@(user: User, otherContests: Seq[(UserContest, ContestJury)])(implicit messages: Messages, request: RequestHeader)
+@(user: User, otherContests: Seq[(UserContest, ContestJury)], closedRounds: Seq[(Round, String)] = Nil)(implicit messages: Messages, request: RequestHeader)
 
 @* A state, not an error: no round is open to the user in the current contest (and, for a juror,
    in none of their contests: the start page goes on to one with a round, JurorContests). No
    link to the start page, which would come back here; signing out, or another of the user's
-   contests (POSTs with the CSRF token, as the navbar's) *@
-@main("no.round.yet.title", user, user.getId, backHere = false) {
+   contests (POSTs with the CSRF token, as the navbar's). `closedRounds`: the user's own rounds
+   of the contest closed to them now, with the reason of each (services.GalleryService.closedRounds,
+   the round state page's reasons and texts); with any, the page says their rounds are closed
+   instead of "no round configured yet" *@
+@defining(if(closedRounds.isEmpty) "no.round.yet.title" else "no.round.yet.closed") { titleKey =>
+@main(titleKey, user, user.getId, backHere = false) {
     <div class="alert alert-info" role="status">
-        <h1 class="h4">@Messages("no.round.yet.title")</h1>
-        <p>@Messages("no.round.yet")</p>
+        <h1 class="h4">@Messages(titleKey)</h1>
+        @if(closedRounds.isEmpty) {
+            <p>@Messages("no.round.yet")</p>
+        } else {
+            <ul class="list-unstyled" id="no-round-closed-rounds">
+            @for((round, reason) <- closedRounds) {
+                <li class="mb-3" data-round="@round.getId" data-reason="@reason">
+                    <div class="fw-semibold">@round.description: @Messages("round.state.title." + reason)</div>
+                    <div>@Messages("round.state.text." + reason, round.description)</div>
+                </li>
+            }
+            </ul>
+        }
         @if(otherContests.nonEmpty) {
             <p class="mb-2">@Messages("no.round.yet.other.contests")</p>
             <div class="d-flex flex-wrap gap-2 mb-3">
@@ -26,4 +41,5 @@
             <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-power" aria-hidden="true"></i> @Messages("logout")</button>
         </form>
     </div>
+}
 }

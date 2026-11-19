@@ -170,9 +170,13 @@ class OAuthControllerSpec extends PlaySpecification with Results with PlayTestDb
 
       val result = signIn("google", good)
 
+      // to the start page by a redirect, as a password sign-in (never a page in answer to the
+      // sign-in), which goes on to the user's page
       status(result) === SEE_OTHER
-      redirectLocation(result) === Some(routes.RoundController.currentRoundStat().url)
+      redirectLocation(result) === Some(routes.LoginController.index.url)
       val s = sessionOf(result)
+      redirectLocation(route(app, FakeRequest(GET, "/").withSession(s.data.toSeq: _*)).get) ===
+        Some(routes.RoundController.currentRoundStat().url)
       s.get(Secured.UserName) === Some("alice@example.com")
       s.get(Secured.AccountId) === Some(alice.getId.toString)
       s.get(Secured.AuthVersion) === Some(alice.authVersion.toString)
@@ -193,13 +197,13 @@ class OAuthControllerSpec extends PlaySpecification with Results with PlayTestDb
       redirectLocation(signIn("google", good, returnTo = Some("/round/stat"))) === Some("/round/stat")
       forall(Seq("//evil.example/", "https://evil.example/x")) { r =>
         (redirectLocation(signIn("google", good, returnTo = Some(r))) aka r) must_==
-          Some(routes.RoundController.currentRoundStat().url)
+          Some(routes.LoginController.index.url)
       }
       // a forged flow key in the session is checked again
       val started = controller.login("google")(get("/oauth/google/login"))
       val forged  = sessionOf(started) + (OAuthController.ReturnTo -> "//evil.example/")
       redirectLocation(controller.callback("google")(get(s"/oauth/google/callback?${good(forged.data)}", session = forged))) ===
-        Some(routes.RoundController.currentRoundStat().url)
+        Some(routes.LoginController.index.url)
     }
 
     "sign in a wiki-only placeholder by its wiki account, verifying it" in testDbApp { implicit app =>
@@ -223,7 +227,7 @@ class OAuthControllerSpec extends PlaySpecification with Results with PlayTestDb
 
         val result = signIn("google", good)
 
-        redirectLocation(result) === Some(routes.RoundController.currentRoundStat().url)
+        redirectLocation(result) === Some(routes.LoginController.index.url)
         val reloaded = User.findById(bob.getId).get
         reloaded.emailVerified must beTrue
         sessionOf(result).get(Secured.AuthVersion) === Some(reloaded.authVersion.toString)
@@ -398,7 +402,8 @@ class OAuthControllerSpec extends PlaySpecification with Results with PlayTestDb
 
       val result = signIn("google", good)
 
-      status(result) === FORBIDDEN
+      // the start page the sign-in redirects to
+      status(route(app, FakeRequest(GET, "/").withSession(sessionOf(result).data.toSeq: _*)).get) === FORBIDDEN
       val user = Secured.sessionUserOf(FakeRequest().withSession(sessionOf(result).data.toSeq: _*))
       user.exists(_.hasAnyRole(Secured.ViewerRoles)) must beFalse
     }

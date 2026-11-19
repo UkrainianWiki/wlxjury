@@ -60,8 +60,12 @@ object JurorContests {
 
   /** "No round yet" for the user in the current contest: no link back to the start page, which
     * would show it again, but a Sign out button and the user's other contests to switch to (the
-    * switcher's entries).
+    * switcher's entries). With the user's own rounds of the contest that are closed to them now
+    * and why (stopped, being prepared, their voting stopped: [[services.GalleryService.closedRounds]],
+    * one query), headed "Your rounds are closed now" instead of "No round configured yet".
     */
   def noRoundPage(user: User)(implicit messages: Messages, request: RequestHeader): Result =
-    Results.Ok(views.html.noRoundYet(user, switcherEntries(user).filterNot(e => user.contestId.contains(e._1.contestId))))
+    Results.Ok(views.html.noRoundYet(user,
+      switcherEntries(user).filterNot(e => user.contestId.contains(e._1.contestId)),
+      services.GalleryService.closedRounds(user).map { case (round, state) => round -> state.reason }))
 }

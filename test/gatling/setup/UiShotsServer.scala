@@ -347,6 +347,50 @@ object UiShotsServer {
         id
       }
     }
+    // jurors whose only round is stopped (sign-in.spec.js, the sign-in's redirect of 2026-11-19):
+    // per engine one, in a contest of its own with one stopped round, so that their start page
+    // lists it as closed; each signs in and out in its own session. Not in the guides' screenshot
+    // mode; in this run's container only
+    val closedRoundJurors: Seq[String] = if (f.docsPhotos.nonEmpty) Nil else {
+      import db.scalikejdbc.{ContestJuryJdbc, Round, RoundUser, User}
+      val name = "UI closed rounds"
+      val contest = ContestJuryJdbc.findAll().find(_.name == name).map(_.getId)
+        .getOrElse(ContestJuryJdbc.create(None, name, 2026, "Ukraine").getId)
+      val round = Round.findByContest(contest).headOption
+        .getOrElse(Round.create(Round(None, 1, name = Some("Closed round"), contestId = contest, active = false)))
+      (1 to 3).map { n =>
+        val (email, password) = (s"closed-round-$n@ui-shots.test", s"closed-round-$n-pass")
+        val id = User.findByEmail(email).headOption.map(_.getId).getOrElse(
+          User.create(User(s"Closed Round Juror $n", email, None, Set(User.JURY_ROLE),
+            Some(services.PasswordHasher.default.hash(password)), Some(contest),
+            emailVerifiedAt = Some(java.time.ZonedDateTime.now))).getId)
+        if (!User.isRoundJuror(round.getId, id))
+          round.addUsers(Seq(RoundUser(round.getId, id, User.JURY_ROLE, active = true)))
+        s"""{"id": $id, "name": ${q(s"Closed Round Juror $n")}, "login": ${q(email)}, "password": ${q(password)}, """ +
+          s""""roundId": ${round.getId}}"""
+      }
+    }
+    // a running round of one juror per file with one juror, who has unrated files (organizer.spec.js,
+    // the maintainer's note of 2026-11-19): no "Reassign files…" for them, and the reassign page opened
+    // directly says there is nobody to reassign to. A contest of its own (no member's menus change);
+    // root opens it, read only. Not in the guides' screenshot mode
+    val aloneRound: Option[(Long, Long)] = Option.when(f.docsPhotos.isEmpty) {
+      import db.scalikejdbc.{ContestJuryJdbc, Round, RoundUser, User, VoteJdbc}
+      val name = "UI one juror"
+      val contest = ContestJuryJdbc.findAll().find(_.name == name).map(_.getId)
+        .getOrElse(ContestJuryJdbc.create(None, name, 2026, "Ukraine").getId)
+      val email = "one-juror@ui-shots.test"
+      val juror = User.findByEmail(email).headOption.map(_.getId).getOrElse(
+        User.create(User("One Juror", email, None, Set(User.JURY_ROLE), None, Some(contest))).getId)
+      val round = Round.findByContest(contest).headOption.getOrElse {
+        val r = Round.create(Round(None, 1, name = Some("One juror"), contestId = contest, distribution = 1, active = true))
+        r.addUsers(Seq(RoundUser(r.getId, juror, User.JURY_ROLE, active = true)))
+        sql"SELECT page_id FROM images WHERE deleted_at IS NULL ORDER BY page_id LIMIT 3".map(_.long(1)).list()
+          .foreach(p => VoteJdbc.create(p, 0, juror, r.getId))
+        r
+      }
+      round.getId -> juror
+    }
     // the rounds' type icons (rounds-filter.spec.js, the maintainer's decisions of 2026-11-19): a
     // contest of its own with many rounds, yes/no, rated and comments-only, active and not, their
     // names of very different lengths, so that the Rounds page, the statistics pager and the
@@ -436,6 +480,8 @@ object UiShotsServer {
          |  "joinPairs": [${joinPairs.mkString(", ")}],
          |  "healthContestId": ${healthContest.getOrElse(0L)},
          |  "roundsContestId": ${roundsContest.getOrElse(0L)},
+         |  "closedRoundJurors": [${closedRoundJurors.mkString(", ")}],
+         |  "aloneRound": ${aloneRound.fold("null") { case (r, j) => s"""{"roundId": $r, "jurorId": $j}""" }},
          |  "commentFile": {"juror": $commentJuror, "pageId": $commentPage, "otherRounds": $commentOthers},
          |  "pageId": $pageId,
          |  "ratedPageId": $ratedPageId

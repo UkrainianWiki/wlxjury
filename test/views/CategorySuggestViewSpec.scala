@@ -1,7 +1,7 @@
 package views
 
 import controllers.EditRound
-import db.scalikejdbc.{Round, User}
+import db.scalikejdbc.{Round, SharedTestDb, User}
 import org.intracer.wmua.ContestJury
 import play.api.data.Form
 import play.api.data.Forms.{ignored, nonEmptyText, single, text, tuple}
@@ -57,6 +57,9 @@ class CategorySuggestViewSpec extends PlaySpecification {
   // the pages' forms with the controllers' field names: the fields are what matters here
   "the contest files page" should {
     "load the script and mark its source, a category or a page, as mixed" in {
+      // the admin navbar counts the contest's rounds (Round.countByContest): the shared test
+      // database, so the example doesn't depend on a database spec having run before it
+      SharedTestDb.initialized must beTrue
       val page = contentAsString(views.html.contest_images(
         Form(tuple("source" -> text, "list" -> text, "action" -> text)), contest, admin, 0, 0))
       page must contain(script)
