@@ -49,9 +49,15 @@ configured yet**.
   point at the icon for its type and state. With many rounds, the **Status** (**All**, **Active**, **Not active**), **Type**
   (**All**, **Yes/No**, **Rated**) and **Order** (**Oldest first**, **Newest first**, **Active
   first**) menus in the top bar narrow and order this row; each item shows in grey how many rounds
-  it would list. The round you are looking at stays in the row, selected, even when the choices
-  leave it out. The choices stay in the page's address and when you switch round. The round menu
-  of the galleries shows the same badges and grey names, without these menus.
+  it would list. A choice that leaves out the round you are looking at opens the first round it
+  lists, in the chosen order (the oldest, the newest or the first active), so a choice that lists
+  only one round opens it; a choice that keeps the round stays on it. If no round matches, the
+  page stays on the round and says so, with a link to all rounds. **Statistics** in the pages menu,
+  with choices made on the **Rounds** page, opens the round it would open otherwise if the
+  choices keep it, else the first round they list, else the round itself, which says none match.
+  A round opened from a saved or shared link whose choices leave it out still shows in the row,
+  selected, with a dashed outline: point at it for **Not in the chosen filter**. The choices stay
+  in the page's address and when you switch round. The round menu of the galleries shows the same badges and grey names, without these menus.
 - The pages menu at the start of the top bar (its button the menu icon and the page you are on,
   **Statistics** here) opens the other pages: **Contest files** opens the contest's files, and
   **Statistics**, on every page of the contest, the statistics of the round you are looking at,

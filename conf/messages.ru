@@ -1397,6 +1397,7 @@ rounds.order.newest = Сначала новые
 rounds.order.active = Сначала активные
 rounds.filter.none = Ни один раунд не соответствует этому выбору.
 rounds.filter.reset = Показать все раунды
+rounds.filter.outside = Не входит в выбранный фильтр
 round.badge.active = Активный
 round.badge.inactive = Неактивный
 link.new.tab = открывается в новой вкладке

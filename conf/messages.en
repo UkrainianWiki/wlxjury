@@ -1436,6 +1436,7 @@ rounds.order.newest = Newest first
 rounds.order.active = Active first
 rounds.filter.none = No rounds match these choices.
 rounds.filter.reset = Show all rounds
+rounds.filter.outside = Not in the chosen filter
 round.badge.active = Active
 round.badge.inactive = Inactive
 link.new.tab = opens in a new tab

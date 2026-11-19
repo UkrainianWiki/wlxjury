@@ -24,6 +24,8 @@ import { galleryPath } from '../lib/actions.js';
 
 const SHOTS = process.env.ROUNDS_FILTER_SHOTS;
 const ICON_SHOTS = process.env.ROUND_ICONS_SHOTS;
+// STAT_FILTER_SHOTS=<dir>: the statistics page's chip outside the filter, selected and focused (Chromium)
+const SHOTS_STAT = process.env.STAT_FILTER_SHOTS;
 
 /** WCAG contrast of two rgb(a) strings, the foreground drawn over the (opaque) background. */
 function contrast(fg, bg) {
@@ -504,6 +506,92 @@ for (const mode of ['light', 'dark']) {
       const items = menu.locator('.dropdown-menu .dropdown-item');
       await expect(items).toHaveCount(30);
       expectLinedUp(await edges(items), `${mode}: the galleries' round menu`);
+      await context.close();
+    });
+}
+
+// The statistics page's Status, Type and Order items (the maintainer's decision of 2026-11-19,
+// "switch to first in order"): a choice that leaves out the round shown opens the first round it
+// lists, in its order; one that keeps it (the order alone) stays; a round opened with a filter that
+// leaves it out is shown selected, with a dashed outline and its tooltip. On the round icons contest
+// (rounds 1-30 in creation order, every third from the first stopped: 1, 4, ..., 28), as root,
+// with an axe scan of the marked page, its Status menu open (Chromium), in light and dark mode.
+for (const mode of ['light', 'dark']) {
+  test(`the statistics filter opens the first round it lists, in ${mode}`, { tag: '@O-07' },
+    async ({ contextAs, fixture, baseURL, browserName }, testInfo) => {
+      test.skip(!fixture.roundsContestId, 'the fixture has no round icons contest (the guides\' screenshot mode)');
+      const context = await contextAs('root', { viewport: { width: 1440, height: 900 } });
+      await context.addCookies([{ name: 'theme', value: mode, url: baseURL }]);
+      const page = await context.newPage();
+      await page.goto(`/admin/rounds?contestId=${fixture.roundsContestId}`);
+      const ids = await page.locator('tbody tr.round-row').evaluateAll((trs) => trs.map((tr) => tr.dataset.round));
+      expect(ids).toHaveLength(30);
+      const selected = () => page.locator('#round-stat-rounds .page-item.active').getAttribute('data-round');
+      const status = page.locator('#rounds-status-menu');
+      const pickStatus = async (name, url) => {
+        await status.locator('> button').click();
+        await Promise.all([page.waitForURL(url), status.getByRole('link', { name }).click()]);
+      };
+
+      // round 2 (active): Not active leaves it out and opens round 1, the oldest stopped round
+      await page.goto(`/roundstat/${ids[1]}`);
+      await pickStatus(/^Not active/, new RegExp(`/roundstat/${ids[0]}\\?status=inactive$`));
+      expect(await selected()).toBe(ids[0]);
+      await expect(page.locator('#rounds-status-menu > button')).toHaveAccessibleName('Status: Not active');
+      await expect(page.locator('#round-stat-rounds .wlx-round-outside')).toHaveCount(0);
+      // the order alone keeps the round
+      const order = page.locator('#rounds-order-menu');
+      await order.locator('> button').click();
+      await Promise.all([page.waitForURL(new RegExp(`/roundstat/${ids[0]}\\?status=inactive&order=newest$`)),
+        order.getByRole('link', { name: 'Newest first' }).click()]);
+      expect(await selected()).toBe(ids[0]);
+      // newest first, from round 2: Not active opens round 28, the newest stopped round
+      await page.goto(`/roundstat/${ids[1]}?order=newest`);
+      await pickStatus(/^Not active/, new RegExp(`/roundstat/${ids[27]}\\?status=inactive&order=newest$`));
+      expect(await selected()).toBe(ids[27]);
+      // and back to Active: round 28 is stopped, so the newest active round, 30
+      await pickStatus(/^Active/, new RegExp(`/roundstat/${ids[29]}\\?status=active&order=newest$`));
+
+      // opened with a filter that leaves it out (an old link): shown, selected and marked
+      await page.goto(`/roundstat/${ids[1]}?status=inactive`);
+      expect(await selected()).toBe(ids[1]);
+      const chip = page.locator('#round-stat-rounds .page-item.active > .page-link');
+      await expect(chip).toHaveClass(/wlx-round-outside/);
+      // the tooltip on the item; the words read once, in the link's name, not again as its description
+      await expect(page.locator('#round-stat-rounds .page-item.active')).toHaveAttribute('title', 'Not in the chosen filter');
+      await expect(chip).toHaveAccessibleName(/Not in the chosen filter$/);
+      await expect(chip).toHaveAccessibleDescription('');
+      // a dashed outline in the chip's text colour (--wlx-current-fg), 3:1 or more on its fill
+      const look = await chip.evaluate((a) => {
+        const cs = getComputedStyle(a);
+        return { style: cs.outlineStyle, width: cs.outlineWidth, colour: cs.outlineColor, color: cs.color, bg: cs.backgroundColor };
+      });
+      expect(look.style).toBe('dashed');
+      expect(look.width).toBe('2px');
+      expect(look.colour).toBe(look.color);
+      expect(look.colour).toBe(await colour(page, 'var(--wlx-current-fg)'));
+      expect(contrast(look.colour, look.bg), `the outline on the chip's fill in ${mode}`).toBeGreaterThanOrEqual(3);
+      // focused: solid (seen also in forced-colours mode, where the focus ring isn't drawn)
+      await chip.focus();
+      await page.keyboard.press('Shift+Tab');
+      await page.keyboard.press('Tab');
+      await expect(chip).toBeFocused();
+      expect(await chip.evaluate((a) => getComputedStyle(a).outlineStyle)).toBe('solid');
+      await page.mouse.move(0, 0);
+      if (SHOTS_STAT) {
+        fs.mkdirSync(SHOTS_STAT, { recursive: true });
+        const row = page.locator('#round-stat-rounds');
+        await row.screenshot({ path: path.join(SHOTS_STAT, `outside-focused-${mode}.png`) });
+        await chip.evaluate((a) => a.blur());
+        await row.screenshot({ path: path.join(SHOTS_STAT, `outside-selected-${mode}.png`) });
+        await page.screenshot({ path: path.join(SHOTS_STAT, `roundstat-outside-${mode}.png`) });
+      }
+      await expect(page.locator('#round-stat-rounds .wlx-round-outside')).toHaveCount(1);
+      await expect(page.locator('#rounds-filter-none')).toHaveCount(0);
+      await status.locator('> button').click();
+      await expect(status.locator('.dropdown-menu')).toBeVisible();
+      // the statistics table's disabled view links: triaged as U20 (pages.spec.js KNOWN)
+      if (browserName === 'chromium') await axe(page, testInfo, `round statistics outside the filter ${mode}`, { 'aria-prohibited-attr': 'U20' });
       await context.close();
     });
 }

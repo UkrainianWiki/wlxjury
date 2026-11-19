@@ -629,37 +629,56 @@ class RoundController @Inject() (
         // the asked-for contest's rounds are checked as a member of it, if an active one
         val user = contestId.fold(sessionUser)(Secured.inContest(sessionUser, _))
         val currentContestId = contestId.orElse(user.currentContest)
-        val activeRound = Round
-          .activeRounds(user)
-          .headOption
-          .orElse {
-            currentContestId.flatMap { contestId =>
-              Round
-                .activeRounds(contestId)
-                .filter(r => user.canViewOrgInfo(r))
-                .lastOption
+        // the contest's statistics refused at once (the 403 page, logged) to whoever may not see
+        // them there: staff of another contest, a juror of it, a deactivated member. The page
+        // saying there is no round yet is only for those who may see them
+        val refused = currentContestId.filterNot(user.canViewContestStats)
+        if (refused.nonEmpty)
+          onUnAuthorized(user, request,
+            Secured.Denial.contest(refused, User.ADMIN_ROLES ++ User.ORG_COM_ROLES))
+        else {
+          // the contest's rounds the user may see the statistics of, read once (the last of them
+          // the fallback round; the filter's choice among them), only if needed
+          def visibleIn(c: Long) = Round.findByContest(c).filter(user.canViewOrgInfo)
+          lazy val visible: Seq[Round] = currentContestId.fold(Seq.empty[Round])(visibleIn)
+          // the user's own open round only if they may see its statistics (a juror there may not:
+          // an admin elsewhere would be sent to a round that refuses them)
+          val activeRound = Round
+            .activeRounds(user)
+            .filter(user.canViewOrgInfo)
+            .headOption
+            .orElse {
+              currentContestId.flatMap { contestId =>
+                Round
+                  .activeRounds(contestId)
+                  .filter(r => user.canViewOrgInfo(r))
+                  .lastOption
+              }
             }
-          }
-          .orElse {
-            currentContestId.flatMap { contestId =>
-              Round
-                .findByContest(contestId)
-                .filter(r => user.canViewOrgInfo(r))
-                .lastOption
-            }
-          }
+            .orElse(visible.lastOption)
 
-        Secured.switchingContest(sessionUser, user) {
-          activeRound
-            .map { round =>
-              // the Rounds page's filter kept (the navbar's Statistics link)
-              Redirect(RoundsFilter.fromRequest(request).addTo(routes.RoundController.roundStat(round.getId).url))
-            }
-            .getOrElse {
-              // a state, not an error, as for a juror ([[LoginController.index]]): no link back
-              // to the start page, which would come here again
-              JurorContests.noRoundPage(user)
-            }
+          Secured.switchingContest(sessionUser, user) {
+            activeRound
+              .map { round =>
+                // the Rounds page's filter kept (the navbar's Statistics link), and the round it
+                // opens chosen as the statistics page's own menus choose (RoundsFilter.statRound,
+                // the maintainer's decision of 2026-11-19): this round if the filter keeps it,
+                // else the first of the contest's rounds the user may see that it keeps, in order
+                val filter = RoundsFilter.fromRequest(request)
+                val target =
+                  if (filter.isDefault) round
+                  else
+                    filter.statRound(round,
+                      if (currentContestId.contains(round.contestId)) visible
+                      else visibleIn(round.contestId))
+                Redirect(filter.addTo(routes.RoundController.roundStat(target.getId).url))
+              }
+              .getOrElse {
+                // a state, not an error, as for a juror ([[LoginController.index]]): no link back
+                // to the start page, which would come here again
+                JurorContests.noRoundPage(user)
+              }
+          }
         }
     }
 

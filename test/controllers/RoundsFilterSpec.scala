@@ -316,12 +316,13 @@ class RoundsFilterSpec extends PlaySpecification with PlayTestDb {
         newest.select("#round-stat-rounds .page-link").asScala.map(_.attr("href")).toList ===
           List(f.fin, f.criteria, f.stars).map(r => s"/roundstat/${r.getId}?type=rated&order=newest")
         newest.select("#menu-statistics").attr("href") must endWith("?type=rated&order=newest")
+        // Final is yes/no, outside "rated": Active opens the one active rated round, Stars
         NavMenus.items(newest, "rounds-status-menu").find(_.name == "Active").flatMap(_.href) ===
-          Some(s"/roundstat/${f.fin.getId}?status=active&type=rated&order=newest")
+          Some(s"/roundstat/${f.stars.getId}?status=active&type=rated&order=newest")
       }
     }
 
-    "keep the current round, selected in its place, when the filter leaves it out; no redirect" in {
+    "keep the current round, selected in its place and marked, when opened with a filter that leaves it out; no redirect" in {
       testDbApp { app =>
         val f = fixture()
         val result = get(app, f.organizer, s"/roundstat/${f.stars.getId}?status=inactive")
@@ -330,6 +331,94 @@ class RoundsFilterSpec extends PlaySpecification with PlayTestDb {
         statMenu(doc) === Seq("Pre", "Stars", "Criteria")
         doc.select("#round-stat-rounds .page-item.active").attr("data-round") === f.stars.getId.toString
         doc.select("#round-stat-rounds .page-link[aria-current=page]").size === 1
+        // outside the filter: a dashed outline (its class), a tooltip and the words for screen readers
+        val chip = doc.selectFirst(s"#round-stat-rounds .page-item[data-round=${f.stars.getId}] > .page-link")
+        chip.hasClass("wlx-round-outside") must beTrue
+        // the tooltip on the item, not the link: its description would repeat its name's words
+        chip.parent.attr("title") === "Not in the chosen filter"
+        chip.hasAttr("title") must beFalse
+        chip.select(".wlx-round-outside-note.visually-hidden").text === ", Not in the chosen filter"
+        doc.select("#round-stat-rounds .wlx-round-outside").size === 1
+        doc.select("#round-stat-rounds [title=Not in the chosen filter]").size === 1
+        // other rounds match: no note
+        doc.select("#rounds-filter-none").size === 0
+        // the counts as before: each item the rounds its choice lists
+        counts(doc, "rounds-status-menu") === Seq("All" -> Some(5), "Active" -> Some(3), "Not active" -> Some(2))
+        counts(doc, "rounds-type-menu") === Seq("All" -> Some(2), "Yes/No" -> Some(1), "Rated" -> Some(1))
+        // a round the filter keeps: not marked
+        val kept = page(app, f.organizer, s"/roundstat/${f.pre.getId}?status=inactive")
+        kept.select("#round-stat-rounds .wlx-round-outside, #round-stat-rounds [title=Not in the chosen filter]").size === 0
+        kept.select("#round-stat-rounds .wlx-round-outside-note").size === 0
+      }
+    }
+
+    "link each Status, Type and Order item to this round if its filter keeps it, else to the first round it lists [2026-11-19]" in {
+      testDbApp { app =>
+        val f = fixture()
+        def href(doc: Document, menu: String, name: String) =
+          NavMenus.items(doc, menu).find(_.name == name).flatMap(_.href).getOrElse("")
+        def stat(r: Round, q: String = "") = s"/roundstat/${r.getId}$q"
+
+        // Final (yes/no, active): the choices that keep it stay on it, the order's too
+        val fin = page(app, f.organizer, stat(f.fin))
+        href(fin, "rounds-status-menu", "Active") === stat(f.fin, "?status=active")
+        href(fin, "rounds-status-menu", "All") === stat(f.fin)
+        href(fin, "rounds-type-menu", "Yes/No") === stat(f.fin, "?type=binary")
+        RoundsFilter.Order.values.map(o => href(fin, "rounds-order-menu", o match {
+          case RoundsFilter.Order.Oldest => "Oldest first"
+          case RoundsFilter.Order.Newest => "Newest first"
+          case RoundsFilter.Order.ActiveFirst => "Active first"
+        })) === Seq(stat(f.fin), stat(f.fin, "?order=newest"), stat(f.fin, "?order=active"))
+        // a choice that leaves it out: the first round it lists, oldest first (Not active: Pre, Criteria)
+        href(fin, "rounds-status-menu", "Not active") === stat(f.pre, "?status=inactive")
+        href(fin, "rounds-type-menu", "Rated") === stat(f.stars, "?type=rated")
+
+        // in each order, from Comments (comments only: never yes/no or rated)
+        def typeLinks(order: String) = {
+          val doc = page(app, f.organizer, stat(f.comments, order))
+          (href(doc, "rounds-type-menu", "Yes/No"), href(doc, "rounds-type-menu", "Rated"))
+        }
+        // Yes/No lists Pre (stopped) and Final (active); Rated Stars (active) and Criteria (stopped)
+        typeLinks("") === ((stat(f.pre, "?type=binary"), stat(f.stars, "?type=rated")))
+        typeLinks("?order=newest") === ((stat(f.fin, "?type=binary&order=newest"), stat(f.criteria, "?type=rated&order=newest")))
+        typeLinks("?order=active") === ((stat(f.fin, "?type=binary&order=active"), stat(f.stars, "?type=rated&order=active")))
+
+        // exactly one match: Not active within Yes/No is Pre alone
+        val binary = page(app, f.organizer, stat(f.fin, "?type=binary"))
+        href(binary, "rounds-status-menu", "Not active") === stat(f.pre, "?status=inactive&type=binary")
+        // and following it lands there, selected, not marked
+        val landed = page(app, f.organizer, stat(f.pre, "?status=inactive&type=binary"))
+        statMenu(landed) === Seq("Pre")
+        landed.select("#round-stat-rounds .page-item.active").attr("data-round") === f.pre.getId.toString
+        landed.select("#round-stat-rounds .wlx-round-outside").size === 0
+
+        // a round opened outside its filter: even the Order items open the first round listed
+        val outside = page(app, f.organizer, stat(f.comments, "?type=binary"))
+        href(outside, "rounds-order-menu", "Oldest first") === stat(f.pre, "?type=binary")
+        href(outside, "rounds-order-menu", "Newest first") === stat(f.fin, "?type=binary&order=newest")
+        href(outside, "rounds-order-menu", "Active first") === stat(f.fin, "?type=binary&order=active")
+        // and the counts are the rounds each choice lists, as before
+        counts(outside, "rounds-type-menu") === Seq("All" -> Some(5), "Yes/No" -> Some(2), "Rated" -> Some(2))
+        counts(outside, "rounds-status-menu") === Seq("All" -> Some(2), "Active" -> Some(1), "Not active" -> Some(1))
+      }
+    }
+
+    "stay on the round and say so when no round matches, with a link to all rounds keeping the order" in {
+      testDbApp { app =>
+        val f = fixture()
+        // contest B: one round, yes/no and active
+        val doc = page(app, f.adminB, s"/roundstat/${f.roundB.getId}?order=newest")
+        NavMenus.items(doc, "rounds-type-menu").find(_.name == "Rated").flatMap(_.href) ===
+          Some(s"/roundstat/${f.roundB.getId}?type=rated&order=newest")
+        NavMenus.items(doc, "rounds-status-menu").find(_.name == "Not active").flatMap(_.href) ===
+          Some(s"/roundstat/${f.roundB.getId}?status=inactive&order=newest")
+        doc.select("#rounds-filter-none").size === 0
+
+        val none = page(app, f.adminB, s"/roundstat/${f.roundB.getId}?type=rated&order=newest")
+        statMenu(none) === Seq("Other contest")
+        none.select("#round-stat-rounds .page-item.active .wlx-round-outside").size === 1
+        none.select("#rounds-filter-none").text must startWith("No rounds match these choices.")
+        none.selectFirst("#rounds-filter-reset").attr("href") === s"/roundstat/${f.roundB.getId}?order=newest"
       }
     }
 
@@ -379,11 +468,34 @@ class RoundsFilterSpec extends PlaySpecification with PlayTestDb {
     "carry the filter from the current round's statistics link to the round" in {
       testDbApp { app =>
         val f = fixture()
+        // the organizer's current round: the contest's last active one, Final
         val result = get(app, f.organizer, s"/roundstat?contestId=${f.a.getId}&status=active&order=active")
         status(result) === SEE_OTHER
-        redirectLocation(result).get must endWith("?status=active&order=active")
+        redirectLocation(result) === Some(s"/roundstat/${f.fin.getId}?status=active&order=active")
         val plain = get(app, f.organizer, s"/roundstat?contestId=${f.a.getId}")
-        redirectLocation(plain).get must not(contain("?"))
+        redirectLocation(plain) === Some(s"/roundstat/${f.fin.getId}")
+      }
+    }
+
+    "open from the current round's statistics link the first round the filter lists when it leaves the current one out [2026-11-19]" in {
+      testDbApp { app =>
+        val f = fixture()
+        def target(q: String) = redirectLocation(get(app, f.organizer, s"/roundstat?contestId=${f.a.getId}$q"))
+        // Final is active and yes/no: Not active opens the oldest stopped round, or the newest
+        target("&status=inactive") === Some(s"/roundstat/${f.pre.getId}?status=inactive")
+        target("&status=inactive&order=newest") === Some(s"/roundstat/${f.criteria.getId}?status=inactive&order=newest")
+        target("&type=rated&order=active") === Some(s"/roundstat/${f.stars.getId}?type=rated&order=active")
+        target("&type=rated&order=newest") === Some(s"/roundstat/${f.criteria.getId}?type=rated&order=newest")
+        // one match: opened
+        target("&status=inactive&type=binary") === Some(s"/roundstat/${f.pre.getId}?status=inactive&type=binary")
+        // a filter that keeps it: Final
+        target("&type=binary&order=newest") === Some(s"/roundstat/${f.fin.getId}?type=binary&order=newest")
+        // none matches (contest B has one yes/no round): its current round, which then says so
+        redirectLocation(get(app, f.adminB, s"/roundstat?contestId=${f.b.getId}&type=rated")) ===
+          Some(s"/roundstat/${f.roundB.getId}?type=rated")
+        // the Rounds page's Statistics link goes there, with its filter
+        page(app, f.admin, rounds(f, "&status=inactive")).select("#menu-statistics").attr("href") ===
+          s"/roundstat?contestId=${f.a.getId}&status=inactive"
       }
     }
 
@@ -419,6 +531,17 @@ class RoundsFilterSpec extends PlaySpecification with PlayTestDb {
           }
           (ids(page(app, viewer, url("?status=active")), sel) ++ ids(page(app, viewer, url("?status=inactive")), sel) ++
             Set(f.fin.getId.toString)) === all
+        }
+        // the statistics page's Status, Type and Order items open only rounds the viewer may see
+        // (contest B's round, the newest, never), for every choice, from a round no choice but All keeps
+        val contestA = Set(f.pre, f.stars, f.criteria, f.comments, f.fin).map(_.getId.toString)
+        def statRoundOf(href: String) = """/roundstat/(\d+)""".r.findFirstMatchIn(href).map(_.group(1)).getOrElse(href)
+        forall(combos) { c =>
+          val doc = page(app, f.organizer, s"/roundstat/${f.comments.getId}${c.addTo("")}")
+          val targets = doc.select("#rounds-status-menu a.dropdown-item, #rounds-type-menu a.dropdown-item, #rounds-order-menu a.dropdown-item")
+            .asScala.map(a => statRoundOf(a.attr("href"))).toSet
+          targets.nonEmpty must beTrue
+          targets.subsetOf(contestA) must beTrue
         }
         // a juror's gallery round menu: their active rounds (GalleryService.viewerRounds), which
         // the params don't change (no filter there)

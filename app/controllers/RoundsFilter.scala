@@ -39,6 +39,15 @@ final case class RoundsFilter(
     case Order.ActiveFirst => rounds.sortBy(r => (!r.active, r.id.getOrElse(Long.MaxValue)))
   }
 
+  /** The round the statistics page opens with this filter (its Status, Type and Order menus' items,
+    * the maintainer's decision of 2026-11-19, "switch to first in order"): `current` if this filter
+    * keeps it; else the first of `visible` it keeps, in its order (the oldest, the newest or the
+    * first active); else, no round matching, `current` (the page then says none matches). Only one
+    * of `visible`, the rounds the viewer may see on the page, or `current` itself.
+    */
+  def statRound(current: Round, visible: Seq[Round]): Round =
+    if (matches(current)) current else apply(visible).headOption.getOrElse(current)
+
   def withStatus(s: Status): RoundsFilter = copy(status = s)
   def withKind(k: Kind): RoundsFilter = copy(kind = k)
   def withOrder(o: Order): RoundsFilter = copy(order = o)

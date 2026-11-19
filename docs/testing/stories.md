@@ -81,7 +81,7 @@ a guide or a test needs them.
 | O-04 | An organizer reads a criteria round's results | – | |
 | O-05 | An organizer exports a round's results as CSV | – | |
 | O-06 | An organizer signs in with login and password | – | |
-| O-07 | An organizer narrows and orders the round statistics' row of rounds by status (all, active, not active), type (all, yes/no, rated) and order (oldest, newest, active first), kept in the URL and when switching round, the round shown kept; each round's type icons before its name, coloured if active, grey if not, lined up, also in the galleries' round menu, which scrolls inside itself | [organizer guide](../user/organizer-guide.md#where-to-start) | the same menus as the Rounds page (A-28) |
+| O-07 | An organizer narrows and orders the round statistics' row of rounds by status (all, active, not active), type (all, yes/no, rated) and order (oldest, newest, active first), kept in the URL and when switching round; a choice that leaves out the round shown opens the first round it lists in its order (none: stays, with a note), a round opened outside the filter shown selected with a dashed outline; each round's type icons before its name, coloured if active, grey if not, lined up, also in the galleries' round menu, which scrolls inside itself | [organizer guide](../user/organizer-guide.md#where-to-start) | the same menus as the Rounds page (A-28) |
 | O-08 | An organizer reads all the jurors' votes on a file in the large view: each juror's rank number in the window, the score once with its denominator under it (the sum in a round scored by the sum, the points in a half-star round), the full resolution opening in a new tab | – | browser: `large-side.spec.js` |
 
 ## Admin

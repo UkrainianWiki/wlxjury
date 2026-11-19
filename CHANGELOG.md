@@ -94,6 +94,24 @@ No next release is set yet (`build.sbt` says `26.12-SNAPSHOT`). Everything devel
     `ExternalLinksCheck` checks the links of the large views, the monument page, the contest
     files page (author filter), the users page and the images page's source choice.
   - a browser test of all three (`large-side.spec.js`).
+- **The statistics page's filter switches round** (the maintainer's decision of 2026-11-19,
+  "switch to first in order"; developed 2026-11-19, `stack/197-stat-filter-switch`, a follow-up
+  of #370): on a round's statistics, a **Status**, **Type** or **Order** choice that leaves out
+  the round you are looking at opens the first round it lists, in its order (the oldest, the
+  newest or the first active), so a choice that lists one round opens it; a choice that keeps
+  the round stays on it (changing only the order does, unless the round is already outside the
+  filter). The links are worked out on the server (`RoundsFilter.statRound`), with no redirect
+  and no script, among the rounds the viewer may see; the counts in the menus are as before. If
+  no round matches, the page stays on the round and says "No rounds match these choices." with a
+  link to all rounds. **Statistics** in the pages menu, from a filtered Rounds page, follows the
+  same rule (`currentRoundStat`: the round it opens otherwise if the filter keeps it, else the
+  first the filter lists, else the round itself, which says none match); its own open round
+  counts only if the viewer may see its statistics (an admin of one contest who is a juror of
+  another is no longer sent to that round's statistics, which refused them). A round opened with a
+  filter that leaves it out (a saved or shared link) is still shown in the row, selected, with a
+  dashed outline (solid when focused, so the focus shows in forced-colours mode) and the tooltip
+  "Not in the chosen filter", read by screen readers after its name (new key
+  `rounds.filter.outside`). The Rounds page and the galleries' round menu are unchanged.
 
 - **The wordmark on the signed-out pages** (developed 2026-11-17, `stack/181-signin-wordmark`):
   the "WLX Jury" wordmark is the page's heading above the form on the sign-in page, and the one

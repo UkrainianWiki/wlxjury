@@ -16,11 +16,18 @@
 
 @* The round menu's rounds: those whose statistics the viewer may see, the ones the navbar's Status
    and Type menus keep, in its Order menu's order (RoundsFilter, the maintainer's decisions of
-   2026-11-18), the links to each and to the Rounds page keeping the filter; this round always,
-   in its place in that order and selected, also if the filter leaves it out (never a redirect) *@
+   2026-11-18), the links to each and to the Rounds page keeping the filter. Each Status, Type and
+   Order item opens this round if its filter keeps it, else the first round it keeps in its order,
+   else (none) this round (RoundsFilter.statRound, the maintainer's decision of 2026-11-19: no
+   redirect, no script). This round always in the row, in its place in that order and selected:
+   opened with a filter that leaves it out (a saved or shared link), its chip marked as outside
+   the filter (`outside`: a dashed outline, main.css; a tooltip, the item's title, so that the
+   link's description doesn't repeat the words its name has for screen readers); and if no round
+   matches, a note with a link to all rounds *@
 @visible = @{ stat.rounds.filter(user.canViewOrgInfo) }
 @listed = @{ filter.sort(visible.filter(r => filter.matches(r) || r.id == round.id)) }
-@statUrl(f: controllers.RoundsFilter) = @{ f.addTo(routes.RoundController.roundStat(round.getId).url) }
+@outside = @{ !filter.matches(round) }
+@statUrl(f: controllers.RoundsFilter) = @{ f.addTo(routes.RoundController.roundStat(f.statRound(round, visible).getId).url) }
 
     @main("statistics", user, user.getId, Some(round), stat.rounds, gallery = false, head = countsScript,
         roundFilter = Some(controllers.RoundsFilterBar(filter, statUrl, visible))) {
@@ -34,10 +41,16 @@
             <nav>
                 <ul class="pagination flex-wrap justify-content-center mt-2 mb-1" id="round-stat-rounds">
                 @for(r <- listed) {
-                    <li class="page-item@if(r.id == round.id){ active}" data-round="@r.getId"><a class="page-link@if(!r.active) { wlx-round-inactive}" href="@filter.addTo(routes.RoundController.roundStat(r.getId).url)" @if(r.id == round.id){aria-current="page"}>@if(controllers.RoundsFilter.Kind.of(r).nonEmpty) {@snippets.roundIcon(r)}@r.description@snippets.roundSpoken(r)</a></li>
+                    @defining(r.id == round.id && outside) { marked =>
+                    <li class="page-item@if(r.id == round.id){ active}" data-round="@r.getId"@if(marked){ title="@Messages("rounds.filter.outside")"}><a class="page-link@if(!r.active) { wlx-round-inactive}@if(marked) { wlx-round-outside}" href="@filter.addTo(routes.RoundController.roundStat(r.getId).url)" @if(r.id == round.id){aria-current="page"}>@if(controllers.RoundsFilter.Kind.of(r).nonEmpty) {@snippets.roundIcon(r)}@r.description@snippets.roundSpoken(r)@if(marked) {<span class="visually-hidden wlx-round-spoken wlx-round-outside-note">, @Messages("rounds.filter.outside")</span>}</a></li>
+                    }
                 }
                 </ul>
             </nav>
+            @if(filter(visible).isEmpty) {
+                <p class="text-muted text-center" id="rounds-filter-none">@Messages("rounds.filter.none")
+                    <a href="@statUrl(controllers.RoundsFilter.Default.withOrder(filter.order))" id="rounds-filter-reset">@Messages("rounds.filter.reset")</a></p>
+            }
         }
 
         @for(text <- flash.get("error")) {

@@ -1103,6 +1103,31 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "never send an admin of A who is a juror of B to B's round stat, filter or not" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (a, b, bRound, _, _) = setup()
+        val adminA = userDao.create(User("Admin A", "admina@example.com", None, Set("admin"), contestId = a.id))
+        UserContestJdbc.createMembership(adminA.getId, b.getId, "jury")
+        bRound.addUsers(Seq(RoundUser(bRound.getId, adminA.getId, "jury", active = true)))
+
+        // their open round in B is one they may vote in, not see the statistics of: B's
+        // statistics refused at once (the 403 page), whatever the filter, never a redirect to it
+        forall(Seq("", "&type=rated", "&status=active&order=newest")) { q =>
+          val current = call(roundController(app).currentRoundStat(Some(b.getId)),
+            inA(s"/roundstat?contestId=${b.getId}$q", adminA.email, a.getId))
+          status(current) === FORBIDDEN
+          redirectLocation(current) must beNone
+          // nothing of B's round statistics: no link to them, no round row (the 403 page's bar
+          // may name the round as their own juror round, which they may see)
+          contentAsString(current) must not(contain(s"/roundstat/${bRound.getId}"))
+          contentAsString(current) must not(contain("round-stat-rounds"))
+        }
+        status(call(roundController(app).roundStat(bRound.getId),
+          inA(s"/roundstat/${bRound.getId}?type=rated", adminA.email, a.getId))) === FORBIDDEN
+      }
+    }
+
     "reach B's round stat as an organizer of B, a juror of A, by B's id and by the round's" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer

@@ -1420,6 +1420,7 @@ rounds.order.newest = Les plus récents d''abord
 rounds.order.active = Actifs d''abord
 rounds.filter.none = Aucun tour ne correspond à ces choix.
 rounds.filter.reset = Afficher tous les tours
+rounds.filter.outside = Hors du filtre choisi
 round.badge.active = Actif
 round.badge.inactive = Inactif
 link.new.tab = s’ouvre dans un nouvel onglet

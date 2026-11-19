@@ -143,6 +143,15 @@ body.gallery {
 .wlx-start-stop-text { margin-inline-start: .35em; }
 .dropdown-item.wlx-round-inactive:not(.active),
 .page-item:not(.active) > .page-link.wlx-round-inactive { color: var(--bs-secondary-color) !important; }
+/* the statistics page's round chip opened with a filter that leaves it out (roundStat.scala.html,
+   the maintainer's decision of 2026-11-19): a dashed outline over the chip's 1px border and the
+   first 1px of its padding (3px high), so clear of its content box (its icons and name), in its
+   text colour: the selected chip's --wlx-current-fg on --wlx-current-bg (codex-theme.css). It
+   overrides the theme's transparent 1px focus outline (codex-theme.css); focused, it turns solid,
+   so the focus shows also in forced-colours mode, where the focus ring (a box-shadow) is not
+   drawn */
+#round-stat-rounds .page-link.wlx-round-outside { outline: 2px dashed currentColor; outline-offset: -2px; }
+#round-stat-rounds .page-link.wlx-round-outside:focus-visible { outline-style: solid; }
 /* the round statistics' icon links (a juror's gallery, file list, by rate; the Total row's) and
    the count beside them, centred on one line (roundStatTable, roundStatLinks): Codex's 28 px
    small buttons (codex-theme.css, #366: min-height 28 px) are taller than their icon and the
