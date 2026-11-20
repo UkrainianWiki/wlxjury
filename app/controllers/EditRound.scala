@@ -68,10 +68,10 @@ object EditRound {
   }
 
   /** A criteria round's criteria (the form's criteria[0..9] selects, by position; the empty
-    * ones left out): none, or 2 to 10 of the catalogue, each once, in a rated round. A value
+    * ones left out): none, or 1 to 10 of the catalogue, each once, in a rated round. A value
     * that is no id is an unknown criterion. An existing round's criteria posted as stored are
-    * not checked: they are not changed, and a legacy criteria round's (V83: one criterion, more
-    * than 10, or a rating that isn't rated) stay as they are while the rest of its form is saved.
+    * not checked: they are not changed, and a legacy criteria round's (V83: more than 10, or a
+    * rating that isn't rated) stay as they are while the rest of its form is saved.
     */
   /** "Rejected by at least N" (V93): a mode needs its N, and N a mode (not "no filter"). A client
     * without the mode select (an older page) excludes with its N. That a new round's filter has a

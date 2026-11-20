@@ -225,12 +225,25 @@
                             open = chosen || editRoundForm.errors.exists(e => org.intracer.wmua.Criterion.ErrorKeys(e.message))) {
                             <p class="form-text">@Messages("criteria.help", org.intracer.wmua.Criterion.MinPerRound, org.intracer.wmua.Criterion.MaxPerRound)
                                 <a href="@routes.CriteriaController.list(contestId)">@Messages("criteria.catalogue")</a></p>
+                            @* all the selects for a page without scripts; round-form.js shows only the chosen
+                               ones, each with a remove button labelled by data-remove-label ($X its position),
+                               and the add button's row (#criteria-add-row, hidden as rendered): "Add criteria"
+                               with none chosen, else "Add another criterion", up to the selects' number *@
+                            <div id="round-criteria-selects" data-remove-label="@Messages("criteria.form.remove", "$X")">
                             @for(i <- 0 until selects) {
                                 @bs.select(editRoundForm(s"criteria[$i]"),
                                     criteria.map(c => (c.id.toString, c.name)),
                                     Symbol("_label") -> Messages("criteria.position", i + 1),
                                     Symbol("_default") -> "")
                             }
+                            </div>
+                            <div class="row mb-3" id="criteria-add-row" hidden>
+                                <div class="@implicitLayout.horizontal.fold("")(_.offsetFieldCol)">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" id="criteria-add"
+                                        data-text-first="@Messages("criteria.form.add")"
+                                        data-text-more="@Messages("criteria.form.add.another")">@Messages("criteria.form.add")</button>
+                                </div>
+                            </div>
                         }
                         </div>
                         }

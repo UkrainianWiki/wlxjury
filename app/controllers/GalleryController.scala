@@ -348,10 +348,12 @@ class GalleryController @Inject() (
   private def criteriaResults(list: RoundList, files: Seq[ImageWithRating]): CriteriaResults =
     CriteriaResults.of(list.round, files.map(_.pageId), list.asUserId)
 
-  /** The list with its round's number of criteria, which draws its stars per criterion. */
+  /** The list with its round's criteria and their number, which draws its stars per criterion
+    * (a round of one criterion: [[Round.singleCriterion]]). */
   private def withCriteria(list: RoundList, criteria: CriteriaResults): RoundList =
     if (!list.round.hasCriteria) list
-    else list.withRound(list.round.copy(criteriaCount = criteria.criteria.size.max(1)))
+    else list.withRound(list.round.copy(criteriaCount = criteria.criteria.size.max(1),
+      criterionIds = criteria.criteria.map(_.id)))
 
   /** The region menu of a round's list in a contest of monuments: the region shown, and the
     * URL of its regions ([[regions]]); None in a contest whose files have no monument ids, and
@@ -464,11 +466,14 @@ class GalleryController @Inject() (
       }
     }
 
-  def selectWS(roundId: Long, pageId: Long, select: Int): EssentialAction =
+  def selectWS(roundId: Long, pageId: Long, select: Int, criteria: Option[Long] = None): EssentialAction =
     // a tile's vote, sent by script: JSON answers (401, 403 with the denial's reference, 409,
-    // 400 for a rate the round doesn't take or any rate in a criteria round) that the gallery
-    // explains (vote-errors.js). It changes only the juror's own selection of the file in the
-    // round (VoteJdbc.rate): a file not assigned to them changes nothing and is a 404. Only a
+    // 400 for a rate the round doesn't take, a criteria round's vote without its criterion or
+    // another round's with one) that the gallery explains (vote-errors.js). It changes only the
+    // juror's own selection of the file in the round (VoteJdbc.rate), or its rate of a criterion
+    // (CriteriaRate.updateRate, as the large view's: the stars of a round of one criterion,
+    // TileStars): a file not assigned to them, or a criterion the round hasn't, changes nothing
+    // and is a 404. Only a
     // juror of the round's contest votes (Secured.VotePermission): an organizer, admin or root
     // without that role is a 403.
     withAuthJson(Secured.VotePermission(roundId)) { user => implicit request =>
@@ -484,11 +489,13 @@ class GalleryController @Inject() (
       Conflict(play.api.libs.json.Json.obj("error" -> "round_paused"))
     else if (!round.exists(_.openToJurors) || RoundUser.isStopped(roundId, user.getId))
       Conflict(play.api.libs.json.Json.obj("error" -> "round_closed"))
-    // a criteria round's votes are per criterion, in the large view: a file's own rate would
-    // overwrite the sum of its criteria (its tiles have no stars)
-    else if (!round.exists(r => r.acceptsRate(select) && !r.hasCriteria))
+    // a criteria round's votes are per criterion: a file's own rate would overwrite the sum of
+    // its criteria (only a round of one criterion has stars on its files, which rate it)
+    else if (!round.exists(r => r.acceptsRate(select) && r.hasCriteria == criteria.isDefined))
       BadRequest(play.api.libs.json.Json.obj("error" -> "invalid_rate"))
-    else if (VoteJdbc.rate(pageId = pageId, juryId = user.getId, roundId = roundId, rate = select) == 0)
+    else if (!criteria.fold(VoteJdbc.rate(pageId = pageId, juryId = user.getId, roundId = roundId, rate = select) > 0) {
+        criterion => VoteJdbc.findBy(pageId, user.getId, roundId).exists(v => CriteriaRate.updateRate(v.getId, criterion, select))
+      })
       NotFound(play.api.libs.json.Json.obj("error" -> "not_found"))
     else
       Ok("success")

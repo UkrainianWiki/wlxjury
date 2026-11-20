@@ -34,14 +34,15 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
     * criterion named [[hostileName]]) with jurors 1-3: file 0 rated 8 + 6 by juror 1, 6 + 9 by
     * juror 2 and only partly by juror 3 (2 in the first criterion: unrated, U5); file 1 5 + 5
     * by juror 1, nothing by juror 2. So file 0's averages are 7 and 7.5, file 1's 5 and 5.
-    * Contest B has a juror of its own.
+    * Contest B has a juror of its own. `single`: a round of "Scientific value" only, so juror
+    * 3's vote of file 0 (2) is rated: file 0's average is 16 / 3, file 1's 5.
     */
-  private def fixture(): Fixture = {
+  private def fixture(single: Boolean = false): Fixture = {
     val a = contestDao.create(None, "WLE", 2024, "Ukraine")
     val b = contestDao.create(None, "WLM", 2024, "Poland")
     val custom = CriterionJdbc.add(hostileName, None).toOption.get
     val round = roundDao.create(Round(None, 1, Some("Criteria round"), contestId = a.getId, rates = Round.ratesById(10),
-      active = true, criterionIds = Seq(1L, custom.id)))
+      active = true, criterionIds = if (single) Seq(1L) else Seq(1L, custom.id)))
     def user(name: String, role: String, contest: ContestJury) =
       userDao.create(User(name, s"${name.toLowerCase.replace(" ", "")}@example.com", None, Set(role), contestId = contest.id))
     val Seq(juror1, juror2, juror3) = (1 to 3).map(i => user(s"Juror $i", "jury", a))
@@ -54,7 +55,9 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
     selectionDao.batchInsert(for (j <- Seq(juror1, juror2, juror3); image <- images) yield Vote(image, j, round, rate = 0))
     def rate(image: Image, juror: User, rates: (Long, Int)*): Unit = {
       val vote = VoteJdbc.findBy(image.pageId, juror.getId, round.getId).get
-      rates.foreach { case (criterion, r) => CriteriaRate.updateRate(vote.getId, criterion, r) must beTrue }
+      rates.filter(r => !single || r._1 == 1L).foreach { case (criterion, r) =>
+        CriteriaRate.updateRate(vote.getId, criterion, r) must beTrue
+      }
     }
     rate(images(0), juror1, 1L -> 8, custom.id -> 6)
     rate(images(0), juror2, 1L -> 6, custom.id -> 9)
@@ -196,6 +199,155 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
         val doc = Jsoup.parse(contentAsString(get(app, f.organizer, large(f, 0, f.images.head.pageId))))
         (rows("File:Image0.jpg").slice(2, 5) === Seq("9.67 (29 / 3 jurors)", "7.00", "7.50")) and
           (doc.select(".wlx-criteria-overall-rate").text() === "(Σ 9.67: 29 / 3 jurors)")
+      }
+    }
+  }
+
+  "a round of one criterion (1 to 10 since 26.11)" should {
+
+    "show its results as a rated round's, with the criterion's name, in every view and the CSV" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        val f = fixture(single = true)
+        val (head, rows) = table(contentAsString(get(app, f.organizer, fileList(f, 0))))
+        // a rated round's header and rate text: no "sum of the criteria"
+        head.slice(2, 4) === Seq("Total rating", "Scientific value")
+        rows("File:Image0.jpg").slice(2, 4) === Seq("5.33 (16 / 3 jurors)", "5.33")
+        // the by-rate gallery: the criterion's stars are the file's, 5.33 of 10 drawn as 5, the
+        // rate text a rated round's; the criterion named once, above the list, not on a file
+        val page = Jsoup.parse(contentAsString(get(app, f.admin, byRate(f, 0))))
+        page.select("[data-stars-number]").size === 0
+        page.select(".wlx-single-criterion").asScala.map(_.text) === Seq("Rate: Scientific value")
+        val tile = page.getElementById(f.images.head.pageId.toString)
+        tile.select(".rate-stars i.wlx-star").size === 10
+        tile.select(".rate-stars i.bi-star-fill").size === 5
+        tile.select(".rate-stars").text() must contain("5.33 (16 / 3 jurors)")
+        tile.text() must not(contain("Scientific value"))
+        page.select(".wlx-criteria-averages").size === 0
+        val csvResult = csvRows(get(app, f.organizer, csv(f, 0)))
+        csvResult.head === Seq("Rank", "File", "Overall (sum of the criteria)", "Scientific value", "Juror 1", "Juror 2", "Juror 3")
+        csvResult.tail.map(r => r(1) -> r.drop(2)).toMap === Map(
+          "File:Image0.jpg" -> Seq("5.33 (16 / 3)", "5.33", "8", "6", "2"),
+          "File:Image1.jpg" -> Seq("5", "5.00", "5", "0", "0"))
+        val doc = Jsoup.parse(contentAsString(get(app, f.organizer, large(f, 0, f.images.head.pageId))))
+        doc.getElementById("rate-number").text() === "5.33"
+        doc.getElementById("rate-number1").text() === "5.33"
+        doc.select(".wlx-criteria-overall-rate").text() === "(16 / 3 jurors)"
+        // the overall line, then the one criterion (each juror's vote line names it too)
+        doc.select(".large-side .wlx-criterion-name").asScala.map(_.text).distinct === Seq("Scientific value")
+        doc.getElementById("rate-number2") must beNull
+      }
+    }
+
+    "be voted by its juror as a rated round: digit keys rate the criterion, a vote goes on to the next file" in {
+      testDbApp { app =>
+        val f = fixture(single = true)
+        val own = large(f, f.juror2.getId, f.images(1).pageId)
+        val doc = Jsoup.parse(contentAsString(get(app, f.juror2, own)))
+        doc.select(".large-side .wlx-criterion-name").asScala.map(_.text) === Seq("Scientific value")
+        val keys = doc.getElementById("large-keys")
+        forall(0 to 9)(i => keys.attr(s"data-vote-key-$i") must
+          (startWith("/") and contain(s"/select/$i") and contain("criteria=1")))
+        keys.hasAttr("data-vote-key-del") must beFalse
+
+        def vote(f: Fixture, juror: User, pageId: Long, rate: Int) =
+          route(app, FakeRequest(POST, s"/large/round/${f.round.getId}/pageid/$pageId/select/$rate?criteria=1")
+            .withSession(Secured.UserName -> juror.email, Secured.CurrentContestId -> f.round.contestId.toString)
+            .withHeaders("Accept" -> "text/html").withCSRFToken).get
+        // juror 2 rates file 0 again: its rate the criterion's, the next file (1) shown
+        val first = vote(f, f.juror2, f.images(0).pageId, 7)
+        status(first) === SEE_OTHER
+        redirectLocation(first) must beSome(contain(s"/pageid/${f.images(1).pageId}"))
+        VoteJdbc.findBy(f.images(0).pageId, f.juror2.getId, f.round.getId).map(_.rate) must beSome(7)
+        CriteriaRate.getRates(VoteJdbc.findBy(f.images(0).pageId, f.juror2.getId, f.round.getId).get.getId).map(_.rate) === Seq(7)
+        // in the list of rated files, a vote of 0 takes the file out of it: said, as in a rated round
+        val cleared = route(app, FakeRequest(POST,
+            s"/large/round/${f.round.getId}/pageid/${f.images(0).pageId}/select/0?filter=rated&criteria=1")
+          .withSession(Secured.UserName -> f.juror2.email, Secured.CurrentContestId -> f.round.contestId.toString)
+          .withHeaders("Accept" -> "text/html").withCSRFToken).get
+        status(cleared) === SEE_OTHER
+        flash(cleared).get(MovedVote.Key) must beSome(s"${f.images(0).pageId}:out:0")
+      }
+    }
+
+    "have stars in its juror's gallery, whose vote rates the criterion (TileStars, selectWS)" in {
+      testDbApp { app =>
+        val f = fixture(single = true)
+        val page = Jsoup.parse(contentAsString(get(app, f.juror2, byRate(f, f.juror2.getId))))
+        val list = page.selectFirst("[data-stars-number]")
+        list must not(beNull)
+        (list.attr("data-stars-number"), list.attr("data-stars-criterion"), list.attr("data-stars-worst")) ===
+          (("10", "1", "false"))
+        page.select(".wlx-byrate-stars").size === 2
+        page.select(".wlx-single-criterion").asScala.map(_.text) === Seq("Rate: Scientific value")
+
+        def tileVote(f: Fixture, pageId: Long, rate: Int, query: String) =
+          route(app, FakeRequest(POST, s"/rate/round/${f.round.getId}/pageid/$pageId/select/$rate$query")
+            .withSession(Secured.UserName -> f.juror2.email, Secured.CurrentContestId -> f.round.contestId.toString)
+            .withHeaders("X-Requested-With" -> "XMLHttpRequest").withCSRFToken).get
+        def stored(pageId: Long) = {
+          val vote = VoteJdbc.findBy(pageId, f.juror2.getId, f.round.getId).get
+          (vote.rate, CriteriaRate.getRates(vote.getId).map(_.rate))
+        }
+        // file 1, unrated: rated 8, the vote's rate the criterion's
+        status(tileVote(f, f.images(1).pageId, 8, "?criteria=1")) === OK
+        stored(f.images(1).pageId) === ((8, Seq(8)))
+        // a file's own rate (no criterion) is refused in a criteria round, as is a criterion it hasn't
+        status(tileVote(f, f.images(1).pageId, 3, "")) === BAD_REQUEST
+        status(tileVote(f, f.images(1).pageId, 3, s"?criteria=${f.custom.id}")) === NOT_FOUND
+        // a rate the round doesn't take
+        status(tileVote(f, f.images(1).pageId, 11, "?criteria=1")) === BAD_REQUEST
+        stored(f.images(1).pageId) === ((8, Seq(8)))
+        // cleared: rate 0, the criterion's 0
+        status(tileVote(f, f.images(1).pageId, 0, "?criteria=1")) === OK
+        stored(f.images(1).pageId) === ((0, Seq(0)))
+
+        // a file assigned only to another juror (juror 1): a 404, their vote unchanged
+        val other = Image(2L, "File:Image2.jpg", None, None, 640, 480, Some("12-345-2"))
+        imageDao.batchInsert(Seq(other))
+        val otherVote = VoteJdbc.create(other.pageId, 0, f.juror1.getId, f.round.getId)
+        status(tileVote(f, other.pageId, 5, "?criteria=1")) === NOT_FOUND
+        VoteJdbc.findBy(other.pageId, f.juror2.getId, f.round.getId) must beNone
+        VoteJdbc.findBy(other.pageId, f.juror1.getId, f.round.getId).map(_.rate) must beSome(0)
+        CriteriaRate.getRates(otherVote.getId) must beEmpty
+
+        // juror 2 stopped on the round: as a closed round (409), nothing written
+        RoundUser.setActive(f.round.getId, f.juror2.getId, active = false)
+        status(tileVote(f, f.images(1).pageId, 6, "?criteria=1")) === CONFLICT
+        stored(f.images(1).pageId) === ((0, Seq(0)))
+      }
+    }
+
+    "show no stars to an organizer or admin, in a juror's gallery or all the jurors'" in {
+      testDbApp { app =>
+        val f = fixture(single = true)
+        forall(Seq(f.organizer -> byRate(f, f.juror2.getId), f.admin -> byRate(f, f.juror2.getId),
+            f.organizer -> byRate(f, 0), f.admin -> byRate(f, 0))) { case (viewer, path) =>
+          val page = Jsoup.parse(contentAsString(get(app, viewer, path)))
+          (path, page.select("[data-stars-number]").size, page.select(".wlx-byrate-stars").size) === ((path, 0, 0))
+        }
+      }
+    }
+
+    "while a round of two criteria has no stars in its juror's gallery" in {
+      testDbApp { app =>
+        val f = fixture()
+        val page = Jsoup.parse(contentAsString(get(app, f.juror2, byRate(f, f.juror2.getId))))
+        (page.select("[data-stars-number]").size, page.select(".wlx-byrate-stars").size,
+          page.select(".wlx-single-criterion").size) === ((0, 0, 0))
+      }
+    }
+
+    "while a round of two criteria keeps the file after a criterion's vote, and has no digit keys" in {
+      testDbApp { app =>
+        val f = fixture()
+        val doc = Jsoup.parse(contentAsString(get(app, f.juror2, large(f, f.juror2.getId, f.images(1).pageId))))
+        doc.getElementById("large-keys").attributes.asScala.map(_.getKey).filter(_.startsWith("data-vote-key")) must beEmpty
+        val result = route(app, FakeRequest(POST, s"/large/round/${f.round.getId}/pageid/${f.images(1).pageId}/select/4?criteria=1")
+          .withSession(Secured.UserName -> f.juror2.email, Secured.CurrentContestId -> f.round.contestId.toString)
+          .withHeaders("Accept" -> "text/html").withCSRFToken).get
+        status(result) === SEE_OTHER
+        redirectLocation(result) must beSome(contain(s"/pageid/${f.images(1).pageId}"))
       }
     }
   }

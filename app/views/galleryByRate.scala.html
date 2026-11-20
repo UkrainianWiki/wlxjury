@@ -49,7 +49,8 @@
             }
             @rankChips(file)
         </div>
-        @if(criteria.nonEmpty) {
+        @* a round of one criterion names it once, above the list, never on a file *@
+        @if(criteria.nonEmpty && !list.round.singleCriterion) {
             @criteriaAverages(criteria.of(file.pageId))
         }
         }
@@ -89,6 +90,14 @@
             <h1 class="visually-hidden">@Messages("byrate")</h1>
             @large.voteMoved(list)
 
+            @* a round of one criterion: rated as a rated round, its stars that criterion's, named
+               once here (and above the large view's stars) *@
+            @if(round.singleCriterion) {
+            @for(c <- criteria.criteria.headOption) {
+            <p class="wlx-single-criterion mb-2">@Messages("criteria.single", c.name)</p>
+            }
+            }
+
             @* the vote chip the juror's stars draw a vote's new time from (tile-votes.js
                listVoteTimeAfter), as the gallery's tiles do *@
             @if(starsRound.nonEmpty && list.showsVoteTimes) {
@@ -108,8 +117,9 @@
             <div class="row" >
             }
             @for(r <- starsRound) {
+            @* a round of one criterion's stars rate it (data-stars-criterion, tile-votes.js) *@
             <div class="row" @voteTexts() data-stars-number="@{r.rates.id / r.starUnits}"
-                data-stars-half="@{r.starUnits == 2}" data-stars-worst="@{r.takesWorstMark}" data-changed-title="@Messages("byrate.changed.title")"@if(list.showsVoteTimes) { data-vote-times="true"}>
+                data-stars-half="@{r.starUnits == 2}" data-stars-worst="@{r.takesWorstMark && !r.hasCriteria}"@if(r.singleCriterion) { data-stars-criterion="@r.criterionIds.head"} data-changed-title="@Messages("byrate.changed.title")"@if(list.showsVoteTimes) { data-vote-times="true"}>
             }
 
                 <ul class="gallery mw-gallery-traditional">

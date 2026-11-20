@@ -11,13 +11,16 @@
 // sent one at a time and stored in the order shown. The tile
 // stays where it is, also in a gallery ordered by rate: only a reload orders it again. The
 // juror's own by-rate list (galleryByRate.scala.html) gets the same stars per file, its rate
-// text following the vote and the file marked changed, as its rank and place are stale.
+// text following the vote and the file marked changed, as its rank and place are stale. A
+// round of one criterion's list (data-stars-criterion) rates that criterion with its stars.
 (function () {
   'use strict';
 
-  /** The vote URL of the tile's file (`item`: unitegallery's, with data-roundId, data-pageId). */
+  /** The vote URL of the tile's file (`item`: unitegallery's, with data-roundId, data-pageId),
+    * of its criterion if it has one (`item.criterion`: a round of one criterion's by-rate list). */
   function voteUrl(item, rate) {
-    return '/rate/round/' + item.roundId + '/pageid/' + item.pageId + '/select/' + rate;
+    return '/rate/round/' + item.roundId + '/pageid/' + item.pageId + '/select/' + rate +
+      (item.criterion ? '?criteria=' + encodeURIComponent(item.criterion) : '');
   }
 
   /** The session's CSRF token, which the gallery page renders (data-csrf-token). */
@@ -392,7 +395,8 @@
   }
 
   /**
-   * The stars of the juror's own by-rate list (`list`: its data-stars-number / -half), in
+   * The stars of the juror's own by-rate list (`list`: its data-stars-number / -half, and
+   * -criterion in a round of one criterion, which they rate), in
    * place of each file's static ones (.wlx-byrate-stars, with its data-round-id / -page-id /
    * -rate). A stored vote shows the new rate in the text after the stars (.wlx-rate-text: the
    * juror's rate in stored units, as ImageWithRating.rateString) and leaves the file where it
@@ -411,13 +415,15 @@
     var hint = document.querySelector('.wlx-byrate-hint');
     var title = list.getAttribute('data-changed-title') || '';
     var voteTimes = list.getAttribute('data-vote-times') === 'true';
+    var criterion = list.getAttribute('data-stars-criterion') || '';
     Array.prototype.forEach.call(list.querySelectorAll('.wlx-byrate-stars'), function (holder) {
       var box = holder.closest('.gallerybox') || holder;
       var text = box.querySelector('.wlx-rate-text');
       var item = {
         roundId: holder.getAttribute('data-round-id'),
         pageId: holder.getAttribute('data-page-id'),
-        rate: holder.getAttribute('data-rate')
+        rate: holder.getAttribute('data-rate'),
+        criterion: criterion
       };
       var atLoad = +item.rate || 0;
       var stored = atLoad;

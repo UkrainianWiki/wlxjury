@@ -204,11 +204,13 @@ case class ImageWithRating(
     * sum in stored units, the scale of the CSV, the ranks and "min average rate" (U7): one
     * vote's `3.50 (Σ 7)`; several jurors' `7.25 (Σ 14.50: 29 / 2 of 3 jurors)`, their average
     * sum and its [[denominator]] by the round's [[AverageRule]]; in an [[AverageRule.Sum]] round
-    * `3.63 (Σ 29, sum of 3 jurors)`, the stars of the rated jurors' average ([[starRate]]).
+    * `3.63 (Σ 29, sum of 3 jurors)`, the stars of the rated jurors' average ([[starRate]]). A
+    * round of one criterion ([[Round.singleCriterion]]) as a rated round: [[rateText]].
     */
   def criteriaRateString(round: Round)(implicit messages: play.api.i18n.Messages): String = {
     val stars = criteriaStars(round)
-    if (ownVote || assignedJurors < 2) messages("criteria.rate.one", stars, rateSum.toString)
+    if (round.singleCriterion) rateText(round)
+    else if (ownVote || assignedJurors < 2) messages("criteria.rate.one", stars, rateSum.toString)
     else if (round.averageRule == AverageRule.Sum)
       messages("criteria.rate.sum", stars, rateSum.toString, assignedJurors.toString)
     else messages("criteria.rate.many", stars, CriteriaResults.format(BigDecimal(totalRate(round))), denominator(round))
@@ -221,10 +223,11 @@ case class ImageWithRating(
 
   /** What the large view for all the jurors writes under a criteria round's bold number:
     * [[criteriaRateString]] without that number, `(Σ 14.50: 29 / 2 of 3 jurors)`, `(Σ 29, sum of 3
-    * jurors)`, one vote's `(Σ 7)` (as [[rateDetail]]).
+    * jurors)`, one vote's `(Σ 7)` (as [[rateDetail]]); a round of one criterion's [[rateDetail]].
     */
   def criteriaRateDetail(round: Round)(implicit messages: play.api.i18n.Messages): String =
-    withoutLead(criteriaRateString(round), criteriaStars(round))
+    if (round.singleCriterion) rateDetail(round)
+    else withoutLead(criteriaRateString(round), criteriaStars(round))
 
   /** `text` without its leading `number` (a message whose first part is it, `{0} (...)`), or the
     * whole text in a language whose message puts the number elsewhere. */

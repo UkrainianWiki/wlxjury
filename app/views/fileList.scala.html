@@ -34,7 +34,7 @@
         @if(round.isBinary) { @Messages("selected")} else {@Messages("rating")}
     }
     @* a criteria round's rate is the sum of its criteria's (U2), as "min average rate" reads it (U7) *@
-    @if(round.hasCriteria) { <span class="small text-body-secondary">(@Messages("criteria.sum"))</span> }
+    @if(round.hasCriteria && !round.singleCriterion) { <span class="small text-body-secondary">(@Messages("criteria.sum"))</span> }
 }
 
 @* a criteria round's columns after the rate: each criterion's average, the list's juror's or all

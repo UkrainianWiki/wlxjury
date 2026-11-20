@@ -896,7 +896,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
     "be refused without the CSRF token for a criterion too" in {
       withCsrfApp { app =>
         setUpVote(app)
-        // a round of one criterion (the form takes 2 to 10; one makes the vote's rate the criterion's)
+        // a round of one criterion (the vote's rate is the criterion's)
         DB.autoCommit { implicit s => RoundCriterion.insert(round.getId, Seq(1L)) }
         val vote = VoteJdbc.findBy(images.head.pageId, user.getId, round.getId).get
         DB.autoCommit { implicit s =>

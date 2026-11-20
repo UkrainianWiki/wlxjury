@@ -337,6 +337,7 @@ function byRateList(rates, options = { number: 5, half: false }, times = null, c
         '<p class="wlx-byrate-hint" hidden>Changed rates are re-sorted when the page is reloaded</p>' +
         '<div class="row" data-csrf-token="token-1" data-vote-closed="Closed." data-stars-number="' + options.number +
         '" data-stars-half="' + options.half + '" data-changed-title="Rate changed"' +
+        (options.criterion ? ' data-stars-criterion="' + options.criterion + '"' : '') +
         (times ? ' data-vote-times="true"' : '') + '>' +
         '<ul class="gallery">' + files + '</ul></div>';
     addListStars(document.querySelector("[data-stars-number]"));
@@ -380,6 +381,16 @@ describe("the juror's by-rate list", () => {
             expect(b.classList.contains("wlx-rate-changed")).toBe(false);
             expect(b.hasAttribute("title")).toBe(false);
         });
+    });
+
+    test("rates a round of one criterion's criterion (data-stars-criterion), as a rated round's rate", () => {
+        const boxes = byRateList([0, 2], { number: 10, half: false, criterion: 6 });
+        star(listStars(boxes[0]), 7).trigger("click");
+        expect(requests[0].options.url).toBe("/rate/round/2/pageid/201/select/7?criteria=6");
+        requests[0].answer.resolve("success");
+        expect(rateText(boxes[0])).toBe("7");
+        $(listStars(boxes[1])).find("i.raty-cancel").trigger("click");
+        expect(requests[1].options.url).toBe("/rate/round/2/pageid/202/select/0?criteria=6");
     });
 
     test("unrates with the cancel icon: the text 0", () => {

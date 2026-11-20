@@ -53,9 +53,10 @@ class StructuralWritesSpec extends Specification {
       "criteria rates of no vote: their votes looked up FOR UPDATE first; no round has them",
     // a juror's own vote: row-level by design (never the round)
     "app/db/scalikejdbc/VoteJdbc.scala#rateIn" -> "the juror's vote row by primary key, then round_user and round_criterion shared",
-    "app/org/intracer/wmua/CriteriaRate.scala#updateRateIn" -> "the juror's vote row FOR UPDATE, then round_criterion shared, then criteria_rate",
+    "app/org/intracer/wmua/CriteriaRate.scala#rateCriterionIn" ->
+      "the juror's vote row FOR UPDATE, then round_criterion shared, then criteria_rate (updateRateIn delegates to it)",
     "app/db/scalikejdbc/RoundCounts.scala#markFile" ->
-      "a juror's vote marks its own file, last in its transaction (its callers rateIn / updateRateIn): no round lock by design"
+      "a juror's vote marks its own file, last in its transaction (its callers rateIn / rateCriterionIn): no round lock by design"
   )
 
   private val statement =

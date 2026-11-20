@@ -20,8 +20,9 @@ case class Criterion(id: Long, messageKey: String, fallbackName: String) {
 
 object Criterion {
 
-  /** A criteria round has 2 to 10 criteria, each once. */
-  val MinPerRound = 2
+  /** A criteria round has 1 to 10 criteria, each once (one: a rated round that shows the
+    * criterion's name, its rate the file's). */
+  val MinPerRound = 1
   val MaxPerRound = 10
 
   /** The catalogue's size limit: it is global, and every round form lists it. */
@@ -47,7 +48,7 @@ object Criterion {
   /** The key of a criterion an admin adds, by its id. */
   def customKey(id: Long): String = s"criterion.custom.$id"
 
-  /** Why a round's criteria are refused, as a message key, or none: 2 to 10, each once, all
+  /** Why a round's criteria are refused, as a message key, or none: 1 to 10, each once, all
     * in the catalogue (`known`), in a rated round. No criteria: a round without them.
     */
   def validationError(ids: Seq[Long], rated: Boolean, known: Seq[Long] => Set[Long]): Option[String] =

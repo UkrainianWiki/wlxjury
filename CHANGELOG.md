@@ -33,6 +33,23 @@ is listed below.
 
 **Features**
 
+- **The round form's criteria start small; one criterion allowed** (the maintainer's decisions of
+  2026-11-19; developed 2026-11-19, `stack/205-criteria-form-small`): the Criteria section showed
+  all ten selects, empty ones too. With script it now shows only the chosen criteria, each with a
+  remove button (×, "Remove criterion N"), then "Add criteria" with none chosen or "Add another
+  criterion", up to 10 (a legacy round's more); a removal moves the next criteria up, and focus
+  goes to the select in its place, else the one before, else the add button. A page shown again
+  after a refused save shows the posted selects. Without script all ten are shown as before
+  (`round-form.js` `initCriteriaSlots`; new keys `criteria.form.add`, `criteria.form.add.another`,
+  `criteria.form.remove`). A started round's read-only list is unchanged. A round may now have
+  **1** to 10 criteria (was 2 to 10; `Criterion.MinPerRound`, `criteria.help` says what one means):
+  a round of one criterion votes as a rated round, its file's rate the criterion's, and names the
+  criterion once: "Rate: <name>" above its by-rate gallery (new key `criteria.single`), above the
+  large view's stars. Its gallery has stars under each file, as a rated round's (they rate the
+  criterion: `selectWS` takes `criteria`), its large view's digit keys rate it and a vote goes on
+  to the next file, saying so if it left the list; its rate texts are a rated round's
+  ("5.33 (16 / 3 jurors)"), the file list's header without "sum of the criteria", the CSV as
+  before. A round of several criteria keeps large-view-only rating, the file kept after a vote.
 - **Back to the gallery keeps the top bar** (the maintainer's decisions of 2026-11-19; developed
   2026-11-19, `stack/204-small-ui-fixes`): Back and Esc from a file's large view opened its list
   at `#<pageId>`, the id of the file's tile in the by-rate gallery and of its row in the comments

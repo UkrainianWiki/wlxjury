@@ -44,25 +44,36 @@ object CriteriaRate extends SQLSyntaxSupport[CriteriaRate] {
     *         stopped on the round, or a criterion the round hasn't, which changes nothing
     */
   def updateRate(voteId: Long, criterionId: Long, rate: Int): Boolean =
+    rateCriterion(voteId, criterionId, rate).isDefined
+
+  /** [[updateRate]], with the number of the round's criteria read with the vote: whether a
+    * round of one criterion was voted (voted as a rated round: the large view goes on to the
+    * next file), with no query more. None: nothing changed.
+    */
+  def rateCriterion(voteId: Long, criterionId: Long, rate: Int): Option[Int] =
     db.scalikejdbc.DbErrors.retryOnDeadlock(db.scalikejdbc.ReadCommitted.localTx { implicit session =>
-      updateRateIn(voteId, criterionId, rate)
+      rateCriterionIn(voteId, criterionId, rate)
     })
 
   /** [[updateRate]] in the caller's transaction: at READ COMMITTED, or at REPEATABLE READ one
     * that has not read before (the sum's plain read must see the latest rates).
     */
   def updateRateIn(voteId: Long, criterionId: Long, rate: Int)(implicit session: DBSession): Boolean =
+    rateCriterionIn(voteId, criterionId, rate).isDefined
+
+  /** [[rateCriterion]] in the caller's transaction, as [[updateRateIn]]. */
+  def rateCriterionIn(voteId: Long, criterionId: Long, rate: Int)(implicit session: DBSession): Option[Int] =
     // not the vote of a juror stopped on the round (P6), also when the stop races the vote;
     // with its file and its rate before
     sql"""SELECT s.round_id, s.page_id, s.rate FROM vote s WHERE s.id = $voteId
             AND NOT EXISTS (SELECT 1 FROM round_user ru
                             WHERE ru.round_id = s.round_id AND ru.user_id = s.jury_id AND ru.active = FALSE)
-          FOR UPDATE""".map(rs => (rs.long(1), rs.long(2), rs.int(3))).single().exists {
+          FOR UPDATE""".map(rs => (rs.long(1), rs.long(2), rs.int(3))).single().flatMap {
       case (roundId, pageId, before) =>
       val criteria =
         sql"SELECT criterion_id FROM round_criterion WHERE round_id = $roundId LOCK IN SHARE MODE"
           .map(_.long(1)).list()
-      criteria.contains(criterionId) && {
+      Option.when(criteria.contains(criterionId)) {
         sql"""INSERT INTO criteria_rate (vote_id, criterion_id, rate) VALUES ($voteId, $criterionId, $rate)
               ON DUPLICATE KEY UPDATE rate = VALUES(rate)""".update()
         // the vote's rates, written only while it is locked, as now: a plain read at READ
@@ -77,7 +88,7 @@ object CriteriaRate extends SQLSyntaxSupport[CriteriaRate] {
         sql"UPDATE vote SET rate = $total, voted_at = ${VoteSql.votedAt(before, total)} WHERE id = $voteId".update()
         // the file's counts follow vote.rate only (P2a): marked dirty, last, if it changed
         if (total != before) db.scalikejdbc.RoundCounts.markFile(roundId, pageId)
-        true
+        criteria.size
       }
     }
 

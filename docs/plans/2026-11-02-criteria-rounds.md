@@ -473,8 +473,15 @@ changing anything):
   each; a lock would hold up every criterion vote's FK check). `created_by` records who added it;
   the add is logged with ids only.
 - **Round form:** a "Criteria" section with ten selects of the catalogue (`criteria[0..9]`, the
-  empty ones left out, by position); no JS (`round-form.js` unchanged, so no Jest run).
-  Validation (`Criterion.validationError`): none, or 2–10, each once, all in the catalogue, in a
+  empty ones left out, by position), at first without a script. Since 2026-11-19
+  (`stack/205-criteria-form-small`) `round-form.js` shows only the chosen selects, with remove
+  buttons and "Add criteria" / "Add another criterion" (all ten still rendered for a page without
+  script; Jest `round-form.test.js`), and one criterion is allowed (`MinPerRound` 1). A round of one
+  criterion (`Round.singleCriterion`) is voted and shown as a rated round: stars on its by-rate
+  gallery's files (`GalleryController.selectWS` with `criteria`, `CriteriaRate.updateRate`), the
+  criterion named once above them, the large view's digit keys rating it, a vote going on to the
+  next file (`CriteriaRate.rateCriterion`'s count of criteria), and a rated round's rate texts.
+  Validation (`Criterion.validationError`): none, or 2–10 (1–10 since 2026-11-19), each once, all in the catalogue, in a
   rated round (`error.criteria.*`). For an existing round its stored rating decides (the form's
   is read-only). A hidden `criteriaShown` marks a form with the selects: a client without them (a
   script, an older page) leaves an existing round's criteria as they are.

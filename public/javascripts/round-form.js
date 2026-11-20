@@ -11,7 +11,9 @@
 // - a new round's criteria (#round-criteria), hidden and disabled (so not sent) for a yes/no
 //   or comments-only rating (#rates 1 or 0); an existing round's rating is fixed (its select
 //   disabled), and its criteria stay as they are; an existing yes/no or comments-only round's
-//   page has neither the criteria nor the worst mark (editRound.scala.html);
+//   page has neither the criteria nor the worst mark (editRound.scala.html); its selects start
+//   small: the chosen ones, each with a remove button, and "Add criteria" / "Add another
+//   criterion" (initCriteriaSlots);
 // - the worst mark's checkbox (#round-worst-mark), hidden and disabled (so not sent) for a
 //   yes/no or comments-only rating; "rejected by at least" (#rejectFilters, classes "round<id>"
 //   of the binary rounds and the rated ones with the worst mark) shown when one is chosen;
@@ -144,6 +146,77 @@
     update();
   }
 
+  /** A criteria form's selects (#round-criteria-selects, all rendered for a page without
+    * scripts) start small: only the chosen ones are shown, each with a remove button, then the
+    * add button (#criteria-add, its row hidden as rendered): "Add criteria" with none chosen,
+    * which shows one select, else "Add another criterion", up to the selects' number (10, or a
+    * legacy round's more). A page shown again with the posted values (a refused save) shows the
+    * selects up to the last chosen one (the criteria's errors are the form's, not a select's). A removal moves the next criteria up a place, so the
+    * shown selects stay the first ones, and empties the last (an empty select isn't a
+    * criterion); focus goes to the select now in the removed one's place, else the one before,
+    * else the add button. Hidden selects stay empty, so what is sent is what is shown. */
+  function initCriteriaSlots(doc) {
+    var box = doc.getElementById('round-criteria-selects');
+    var add = doc.getElementById('criteria-add');
+    var addRow = doc.getElementById('criteria-add-row');
+    if (!box || !add || !addRow) return;
+    var selects = Array.prototype.slice.call(box.querySelectorAll('select'));
+    if (!selects.length) return;
+    var removeLabel = box.getAttribute('data-remove-label') || '';
+    var wrappers = selects.map(function (s) { return doc.getElementById(s.id + '_field') || s.parentNode; });
+    var shown = 0;
+    selects.forEach(function (s, i) { if (s.value !== '') shown = i + 1; });
+
+    function render() {
+      wrappers.forEach(function (w, i) { w.hidden = i >= shown; });
+      add.textContent = add.getAttribute(shown ? 'data-text-more' : 'data-text-first');
+      addRow.hidden = shown >= selects.length;
+    }
+
+    function changed(s) {
+      s.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function remove(i) {
+      for (var j = i; j < shown - 1; j++) {
+        selects[j].value = selects[j + 1].value;
+        changed(selects[j]);
+      }
+      selects[shown - 1].value = '';
+      changed(selects[shown - 1]);
+      shown--;
+      render();
+      if (shown === 0) add.focus();
+      else selects[Math.min(i, shown - 1)].focus();
+    }
+
+    selects.forEach(function (s, i) {
+      var group = doc.createElement('div');
+      group.className = 'input-group';
+      s.parentNode.insertBefore(group, s);
+      group.appendChild(s);
+      var button = doc.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn-outline-secondary wlx-criterion-remove';
+      button.setAttribute('aria-label', removeLabel.replace('$X', String(i + 1)));
+      button.title = button.getAttribute('aria-label');
+      var mark = doc.createElement('span');
+      mark.setAttribute('aria-hidden', 'true');
+      mark.textContent = '\u00d7';
+      button.appendChild(mark);
+      button.addEventListener('click', function () { remove(i); });
+      group.appendChild(button);
+    });
+
+    add.addEventListener('click', function () {
+      if (shown >= selects.length) return;
+      shown++;
+      render();
+      selects[shown - 1].focus();
+    });
+    render();
+  }
+
   /** Shows the worst mark's checkbox for a rated rating without criteria only (a criteria round's
     * votes are per criterion, and the server refuses the option there); disabled inputs aren't
     * sent, so a yes/no, comments-only or criteria round gets none. An existing round's rating is
@@ -202,6 +275,7 @@
     initRejectFilters();
     $('#jurors').change(jurorsChanged(t.distribution || {}));
     initCoiConfirm(doc);
+    initCriteriaSlots(doc);
     initCriteria(doc);
     initWorstMark(doc);
     initScoreRuleWarning(doc);

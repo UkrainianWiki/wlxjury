@@ -461,6 +461,10 @@ number. Click the stars of each criterion.
 The view stays on the file while you rate its criteria. Go to the next file yourself with the
 buttons or the Down key.
 
+A round with **one criterion** is rated like any rated round: the gallery names the criterion
+at its top ("Rate: …") and has stars under each file, the large view shows the criterion's name
+above its stars, the digit keys rate it, and a vote moves on to the next file.
+
 <!-- screenshot to add: the large view of a round with criteria -->
 
 ### Keyboard shortcuts in the large view
@@ -491,8 +495,9 @@ mouse.
 
 On a Mac keyboard, reject with Fn and Delete together (the forward delete).
 
-The vote keys work only in your own view of an open round. In a round with criteria, rate with
-the mouse: the digit keys don't rate criteria.
+The vote keys work only in your own view of an open round. In a round with several criteria,
+rate with the mouse: the digit keys don't rate criteria. In a round with one criterion, they
+rate it.
 
 Pointing at a button shows its key, for example **Next image <Down>**.
 

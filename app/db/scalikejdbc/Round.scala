@@ -152,6 +152,12 @@ case class Round(
     */
   def rejects: Boolean = isBinary || (isRated && !hasCriteria)
 
+  /** A round of one criterion, its criteria read ([[criterionIds]]: the galleries'
+    * `withCriteria`, the large view): voted and shown as a rated round, the criterion named once
+    * (gallery stars, its rate text, the large view's digit keys). False where they aren't read.
+    */
+  def singleCriterion: Boolean = hasCriteria && criterionIds.sizeIs == 1
+
   /** The stars of a file's result: the round's, also in a criteria round, whose result is
     * drawn per criterion ([[perCriterion]]).
     */

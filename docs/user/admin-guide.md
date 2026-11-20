@@ -703,9 +703,11 @@ The **Rating type** of a round is one of:
 The rating type is chosen when the round is created and can't be changed afterwards.
 
 A **rated round with criteria** (for example Aesthetics, Technical quality, Usefulness for
-Wikipedia) asks for stars on each criterion; a file's rate is the sum. You choose 2 to 10
+Wikipedia) asks for stars on each criterion; a file's rate is the sum. You choose 1 to 10
 criteria for the round from the shared **Criteria catalogue**, which has a link on the round
-form. After the round's first vote you can only replace a criterion by another in its place.
+form: **Add criteria** shows a criterion's list, **Add another criterion** one more, and × beside
+a criterion removes it. With one criterion the round is rated as usual (the file's rate is that
+criterion's stars, and the digit keys rate it), and the large view shows the criterion's name. After the round's first vote you can only replace a criterion by another in its place.
 
 <a id="a-stages"></a>
 ### The life of a round

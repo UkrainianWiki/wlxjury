@@ -246,3 +246,136 @@ describe("the score rule's warning", () => {
         expect(() => init(document)).not.toThrow();
     });
 });
+
+// The criteria selects start small (the maintainer's decisions of 2026-11-19): the server renders
+// them all (a page without scripts), the script shows only the chosen ones, each with a remove
+// button, and "Add criteria" / "Add another criterion" up to the selects' number.
+describe("the criteria selects", () => {
+    const OPTIONS = ["", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"];
+
+    /** The form's criteria section: `values` by position, `count` selects (10, or a legacy round's
+      * more). */
+    function slotsPage(values = [], { count = 10 } = {}) {
+        const selects = Array.from({ length: count }, (_, i) => `
+              <div class="row mb-3" id="criteria_${i}_field">
+                <label class="col-md-4 col-form-label" for="criteria_${i}">Criterion ${i + 1}</label>
+                <div class="col-md-8">
+                  <select id="criteria_${i}" name="criteria[${i}]" class="form-select">
+                    ${OPTIONS.map(v => `<option value="${v}"${(values[i] || "") === v ? " selected" : ""}>${v}</option>`).join("")}
+                  </select>
+                </div>
+              </div>`).join("");
+        document.body.innerHTML = `
+          <form id="round-form">
+            <select id="rates" name="rates"><option value="1">Yes/No</option><option value="10" selected>1-10</option></select>
+            <div id="round-worst-mark"><input type="checkbox" id="worstMark" name="worstMark" value="true"></div>
+            <div id="round-criteria">
+              <div id="round-criteria-selects" data-remove-label="Remove criterion $X">${selects}</div>
+              <div class="row mb-3" id="criteria-add-row" hidden>
+                <div class="offset-md-4 col-md-8">
+                  <button type="button" class="btn btn-outline-secondary btn-sm" id="criteria-add"
+                    data-text-first="Add criteria" data-text-more="Add another criterion">Add criteria</button>
+                </div>
+              </div>
+            </div>
+          </form>`;
+        init(document);
+    }
+
+    const add = () => document.getElementById("criteria-add");
+    const addShown = () => !document.getElementById("criteria-add-row").hidden;
+    const selects = () => Array.from(document.querySelectorAll("#round-criteria-selects select"));
+    const shownCount = () => selects().filter(s => !document.getElementById(`${s.id}_field`).hidden).length;
+    const values = () => selects().map(s => s.value);
+    const removeButton = i => document.querySelector(`#criteria_${i}_field .wlx-criterion-remove`);
+    const sent = () => new FormData(document.getElementById("round-form"));
+
+    test("with none chosen show only \"Add criteria\", which shows one select and focuses it", () => {
+        slotsPage();
+        expect(shownCount()).toBe(0);
+        expect([addShown(), add().textContent]).toEqual([true, "Add criteria"]);
+        add().click();
+        expect(shownCount()).toBe(1);
+        expect(document.activeElement).toBe(selects()[0]);
+        expect(add().textContent).toBe("Add another criterion");
+        // the worst mark stays for a round without criteria until one is chosen
+        expect(document.getElementById("round-worst-mark").hidden).toBe(false);
+    });
+
+    test("with some chosen show those, each with a labelled remove button, and \"Add another criterion\"", () => {
+        slotsPage(["6", "7"]);
+        expect(shownCount()).toBe(2);
+        expect([addShown(), add().textContent]).toEqual([true, "Add another criterion"]);
+        const button = removeButton(1);
+        expect(button.tagName).toBe("BUTTON");
+        expect(button.type).toBe("button");
+        expect(button.getAttribute("aria-label")).toBe("Remove criterion 2");
+        expect(button.querySelector("[aria-hidden=true]").textContent).toBe("\u00d7");
+        // the remove button beside its select
+        expect(button.parentNode).toBe(selects()[1].parentNode);
+        expect(document.querySelectorAll(".wlx-criterion-remove")).toHaveLength(10);
+        expect(document.getElementById("round-worst-mark").hidden).toBe(true);
+        // all ten still sent (enabled), the hidden ones empty (jsdom's FormData lists every option
+        // of a select whose selected option is empty, so the values are read)
+        expect(selects().every(s => !s.disabled)).toBe(true);
+        expect(values().slice(0, 3)).toEqual(["6", "7", ""]);
+    });
+
+    test("add selects up to the ten, then hide the add button", () => {
+        slotsPage(["1"]);
+        for (let i = 2; i <= 10; i++) {
+            add().click();
+            expect(shownCount()).toBe(i);
+            expect(document.activeElement).toBe(selects()[i - 1]);
+        }
+        expect(addShown()).toBe(false);
+        add().click(); // a stray click past the last does nothing
+        expect(shownCount()).toBe(10);
+    });
+
+    test("a legacy round's eleven criteria are all shown, nothing to add", () => {
+        slotsPage(OPTIONS.slice(1), { count: 11 });
+        expect(shownCount()).toBe(11);
+        expect(addShown()).toBe(false);
+    });
+
+    test("a removal moves the next criteria up, focusing the select now in its place, else the one before", () => {
+        slotsPage(["6", "7", "8"]);
+        removeButton(1).click();
+        expect(values().slice(0, 4)).toEqual(["6", "8", "", ""]);
+        expect(shownCount()).toBe(2);
+        expect(document.activeElement).toBe(selects()[1]);
+        expect(addShown()).toBe(true);
+        // the last shown: the one before gets the focus
+        removeButton(1).click();
+        expect(values().slice(0, 2)).toEqual(["6", ""]);
+        expect(shownCount()).toBe(1);
+        expect(document.activeElement).toBe(selects()[0]);
+    });
+
+    test("removing the last one returns to \"Add criteria\", focused, and the worst mark comes back", () => {
+        slotsPage(["6"]);
+        expect(document.getElementById("round-worst-mark").hidden).toBe(true);
+        removeButton(0).click();
+        expect(shownCount()).toBe(0);
+        expect([addShown(), add().textContent]).toEqual([true, "Add criteria"]);
+        expect(document.activeElement).toBe(add());
+        expect(document.getElementById("round-worst-mark").hidden).toBe(false);
+        expect(values()[0]).toBe("");
+    });
+
+    test("a page shown again shows the posted selects up to the last chosen one, gaps kept", () => {
+        slotsPage(["6", "", "8"]);
+        expect(shownCount()).toBe(3);
+        expect(values().slice(0, 3)).toEqual(["6", "", "8"]);
+    });
+
+    test("a yes/no rating still hides and disables the whole section", () => {
+        slotsPage(["6"]);
+        const rates = document.getElementById("rates");
+        rates.value = "1";
+        rates.dispatchEvent(new Event("change"));
+        expect(document.getElementById("round-criteria").hidden).toBe(true);
+        expect(sent().has("criteria[0]")).toBe(false);
+    });
+});

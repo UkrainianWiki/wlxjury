@@ -776,7 +776,7 @@ api.tokens.revoked.all = Jetons révoqués : {0}.
 
 # criteria rounds (C2): the round form, the catalogue, and the shipped criteria (V83)
 criteria = Critères
-criteria.help = Pour un tour noté : de {0} à {1} critères du catalogue, dans leur ordre, chacun noté avec les étoiles du tour. Un fichier est noté quand tous ses critères le sont, par leur somme. Aucun : un tour sans critères. Les critères ne peuvent pas être modifiés pendant que le tour est en cours ni une fois qu’il a des votes.
+criteria.help = Pour un tour noté : de {0} à {1} critères du catalogue, dans leur ordre, chacun noté avec les étoiles du tour. Un fichier est noté quand tous ses critères le sont, par leur somme ; avec un seul critère, la note du fichier est celle de ce critère. Aucun : un tour sans critères. Les critères ne peuvent pas être modifiés pendant que le tour est en cours ni une fois qu’il a des votes.
 criteria.locked = Les critères du tour ne peuvent pas être modifiés pendant qu’il est en cours ni une fois qu’il a des votes.
 criteria.locked.none = Il n’a pas de critères, et on ne peut plus en ajouter.
 criteria.catalogue = Catalogue des critères
@@ -785,6 +785,10 @@ criteria.catalogue.added = Critère ajouté.
 criteria.catalogue.full = Le catalogue est plein.
 criteria.catalogue.exists = Un critère de ce nom existe.
 criteria.position = Critère {0}
+criteria.form.add = Ajouter des critères
+criteria.form.add.another = Ajouter un autre critère
+criteria.form.remove = Retirer le critère {0}
+criteria.single = Note : {0}
 criteria.name = Nom
 criteria.fallback.name = Texte sans traduction
 criteria.add = Ajouter un critère

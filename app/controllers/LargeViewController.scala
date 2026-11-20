@@ -85,21 +85,25 @@ class LargeViewController @Inject() (
         // the juror's own vote of the file in the round, or of one of the round's criteria; a
         // file the juror has no vote for in the round, or a criterion the round hasn't,
         // changes nothing and is a 404
-        val voted = criteria match {
+        // the number of the round's criteria voted in (read with the vote), 0 for a plain vote
+        val voted: Option[Int] = criteria match {
           case None =>
-            VoteJdbc.rate(pageId = pageId, juryId = user.getId, roundId = round.getId, rate = select) > 0
+            Option.when(VoteJdbc.rate(pageId = pageId, juryId = user.getId, roundId = round.getId, rate = select) > 0)(0)
           case Some(criterion) =>
             VoteJdbc
               .findBy(pageId, user.getId, round.getId)
-              .exists(vote => CriteriaRate.updateRate(vote.getId, criterion, select))
+              .flatMap(vote => CriteriaRate.rateCriterion(vote.getId, criterion, select))
         }
 
-        if (!voted) NotFound(views.html.errorPage(Some(user), "error.title", "error.not.found"))
+        if (voted.isEmpty) NotFound(views.html.errorPage(Some(user), "error.title", "error.not.found"))
         else {
-          // the file itself in a round with criteria, voted for one by one; the list's first
-          // page if it has no other
-          val next = hood.flatMap(h => if (round.hasCriteria) Some(h.file) else h.next)
-          val moved = hood.filter(_ => criteria.isEmpty).flatMap(h => list.voteMoved(pageId, h.position, select))
+          // the file itself in a round of several criteria, voted for one by one; else, a
+          // round of one criterion too (its vote rates the file, as a rated round's), the next
+          // file, saying so if the vote moved the file out of the list; the list's first page
+          // if it has no other
+          val stays = voted.exists(_ > 1)
+          val next = hood.flatMap(h => if (stays) Some(h.file) else h.next)
+          val moved = hood.filter(_ => !stays).flatMap(h => list.voteMoved(pageId, h.position, select))
           Redirect(next.fold(list.pageUrl(1))(file => list.largeUrl(file.pageId))).flashing(moved.map(_.flash).toSeq: _*)
         }
     }
@@ -175,7 +179,7 @@ class LargeViewController @Inject() (
     val roundCriteria = if (viewed.round.hasCriteria) RoundCriterion.ofRound(viewed.round.getId) else Nil
     // a criteria round's results are drawn per criterion (Round.perCriterion)
     val list = if (roundCriteria.isEmpty) viewed
-      else viewed.withRound(viewed.round.copy(criteriaCount = roundCriteria.size))
+      else viewed.withRound(viewed.round.copy(criteriaCount = roundCriteria.size, criterionIds = roundCriteria.map(_.id)))
     val round = list.round
 
     val votes = if (user.canViewOrgInfo(round)) {

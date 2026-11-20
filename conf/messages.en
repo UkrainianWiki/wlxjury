@@ -790,7 +790,7 @@ api.tokens.revoked.all = Tokens revoked: {0}.
 
 # criteria rounds (C2): the round form, the catalogue, and the shipped criteria (V83)
 criteria = Criteria
-criteria.help = For a rated round: {0} to {1} criteria from the catalogue, in their order, each rated on the round stars. A file is rated once all its criteria are, with their sum. None: a round without criteria. Criteria can''t be changed while the round is running or once it has votes.
+criteria.help = For a rated round: {0} to {1} criteria from the catalogue, in their order, each rated on the round stars. A file is rated once all its criteria are, with their sum; with one criterion, the file''s rate is its stars on that criterion. None: a round without criteria. Criteria can''t be changed while the round is running or once it has votes.
 criteria.locked = The round''s criteria can''t be changed while it is running or once it has votes.
 criteria.locked.none = It has no criteria, and none can be added.
 criteria.catalogue = Criteria catalogue
@@ -799,6 +799,10 @@ criteria.catalogue.added = Criterion added.
 criteria.catalogue.full = The catalogue is full.
 criteria.catalogue.exists = A criterion of this name exists.
 criteria.position = Criterion {0}
+criteria.form.add = Add criteria
+criteria.form.add.another = Add another criterion
+criteria.form.remove = Remove criterion {0}
+criteria.single = Rate: {0}
 criteria.name = Name
 criteria.fallback.name = Text without a translation
 criteria.add = Add criterion

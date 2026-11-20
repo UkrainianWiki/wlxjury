@@ -130,17 +130,31 @@ class RoundCriteriaSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "refuse criteria in a binary round, one criterion, eleven, one twice, or one not in the catalogue, creating nothing" in {
+    "create a round of one criterion and one of ten, the bounds of 1 to 10 (0: none)" in {
       testDbApp { app =>
         val (a, _, jurors) = fixture()
+        val one = created(app, a, jurors, Seq(6L))
+        (criteriaOf(one.getId), hasCriteria(one.getId)) === ((Seq(6L), Some(true)))
+        val custom = CriterionJdbc.add("Composition", None).toOption.get.id
+        val ten = (1L to 9L) :+ custom
+        val tenRound = created(app, a, jurors, ten)
+        criteriaOf(tenRound.getId) === ten
+      }
+    }
+
+    "refuse criteria in a binary round, eleven, one twice, or one not in the catalogue, creating nothing" in {
+      testDbApp { app =>
+        val (a, _, jurors) = fixture()
+        val custom = Seq("Composition", "Lighting").map(n => CriterionJdbc.add(n, None).toOption.get.id)
         val refusals = Seq(
           roundForm(a.getId, jurors, Seq(6L, 7L), rates = 1) -> "Criteria are for rated rounds only.",
-          roundForm(a.getId, jurors, Seq(6L)) -> "Choose 2 to 10 criteria, or none.",
+          roundForm(a.getId, jurors, Seq(6L), rates = 1) -> "Criteria are for rated rounds only.",
+          roundForm(a.getId, jurors, (1L to 9L) ++ custom) -> "Choose 1 to 10 criteria, or none.",
           roundForm(a.getId, jurors, Seq(6L, 6L)) -> "Choose each criterion once.",
           roundForm(a.getId, jurors, Seq(6L, 12345L)) -> "Choose criteria from the catalogue.",
           (roundForm(a.getId, jurors, Nil).filterNot(_._1.startsWith("criteria[")) ++
             (0 to 10).map(i => s"criteria[$i]" -> (if (i < 9) (i + 1).toString else "x"))) ->
-            "Choose 2 to 10 criteria, or none."
+            "Choose 1 to 10 criteria, or none."
         )
         forall(refusals) { case (body, message) =>
           val result = save(app, "admin@example.com", a.getId, body)
@@ -301,7 +315,7 @@ class RoundCriteriaSpec extends PlaySpecification with PlayTestDb {
         (roundDao.findById(round.getId).flatMap(_.name) must beSome("Renamed"))
     }
 
-    "keep one criterion, saving the rest of its form" in {
+    "keep one criterion (as the form now creates too), saving the rest of its form" in {
       testDbApp { app =>
         val (a, _, jurors) = fixture()
         keptOnSave(app, a, jurors, roundDao.create(Round(None, 1, Some("Legacy"), a.getId,
@@ -491,6 +505,15 @@ class RoundCriteriaSpec extends PlaySpecification with PlayTestDb {
         forall(options)(values => values must contain(allOf("", "6", "7")))
         doc.select("input[name=criteriaShown]").size === 1
         locked(doc) must beNone
+        // all ten shown without scripts; round-form.js shows the chosen ones and the add button,
+        // whose row is hidden as rendered
+        doc.select("#round-criteria-selects select").size === Criterion.MaxPerRound
+        doc.select("#round-criteria-selects [hidden]").size === 0
+        doc.getElementById("round-criteria-selects").attr("data-remove-label") === "Remove criterion $X"
+        doc.getElementById("criteria-add-row").hasAttr("hidden") must beTrue
+        val add = doc.getElementById("criteria-add")
+        (add.tagName, add.attr("type"), add.text) === (("button", "button", "Add criteria"))
+        add.attr("data-text-more") === "Add another criterion"
       }
     }
 

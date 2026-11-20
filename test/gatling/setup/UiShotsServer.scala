@@ -413,6 +413,37 @@ object UiShotsServer {
       val files = sql"SELECT page_id FROM vote WHERE round_id = ${round.getId} ORDER BY page_id".map(_.long(1)).list()
       (round.getId, juror, files)
     }
+    // a round of one criterion (criteria-form.spec.js, the maintainer's decisions of 2026-11-20):
+    // running, rated 1-10 on "Scientific value" (V83's criterion 1), in a contest of its own, with
+    // one juror per engine, each with three files of their own vote rows, so that the gallery's
+    // stars (which rate the criterion) are voted by no other spec. Not in the guides' screenshot mode
+    val oneCriterion: String = if (f.docsPhotos.nonEmpty) "null" else {
+      import db.scalikejdbc.{ContestJuryJdbc, Round, RoundUser, User, VoteJdbc}
+      val name = "UI one criterion"
+      val contest = ContestJuryJdbc.findAll().find(_.name == name).map(_.getId)
+        .getOrElse(ContestJuryJdbc.create(None, name, 2026, "Ukraine").getId)
+      val jurors = (1 to 3).map { n =>
+        val (email, password) = (s"one-criterion-$n@ui-shots.test", s"one-criterion-$n-pass")
+        val id = User.findByEmail(email).headOption.map(_.getId).getOrElse(
+          User.create(User(s"One Criterion Juror $n", email, None, Set(User.JURY_ROLE),
+            Some(services.PasswordHasher.default.hash(password)), Some(contest),
+            emailVerifiedAt = Some(java.time.ZonedDateTime.now))).getId)
+        (id, email, password)
+      }
+      val round = Round.findByContest(contest).headOption.getOrElse {
+        val r = Round.create(Round(None, 1, name = Some("One criterion"), contestId = contest,
+          rates = Round.ratesById(10), active = true, criterionIds = Seq(1L)))
+        r.addUsers(jurors.map { case (id, _, _) => RoundUser(r.getId, id, User.JURY_ROLE, active = true) })
+        val files = sql"SELECT page_id FROM images WHERE deleted_at IS NULL ORDER BY page_id LIMIT 3 OFFSET 12"
+          .map(_.long(1)).list()
+        for ((id, _, _) <- jurors; p <- files) VoteJdbc.create(p, 0, id, r.getId)
+        r
+      }
+      val shown = jurors.map { case (id, email, password) =>
+        s"""{"id": $id, "login": ${q(email)}, "password": ${q(password)}}"""
+      }
+      s"""{"contestId": $contest, "roundId": ${round.getId}, "jurors": [${shown.mkString(", ")}]}"""
+    }
     // the rounds' type icons (rounds-filter.spec.js, the maintainer's decisions of 2026-11-19): a
     // contest of its own with many rounds, yes/no, rated and comments-only, active and not, their
     // names of very different lengths, so that the Rounds page, the statistics pager and the
@@ -502,6 +533,7 @@ object UiShotsServer {
          |  "joinPairs": [${joinPairs.mkString(", ")}],
          |  "healthContestId": ${healthContest.getOrElse(0L)},
          |  "roundsContestId": ${roundsContest.getOrElse(0L)},
+         |  "oneCriterion": $oneCriterion,
          |  "closedRoundJurors": [${closedRoundJurors.mkString(", ")}],
          |  "aloneRound": ${aloneRound.fold("null") { case (r, j) => s"""{"roundId": $r, "jurorId": $j}""" }},
          |  "commentFile": {"juror": $commentJuror, "pageId": $commentPage, "otherRounds": $commentOthers},
