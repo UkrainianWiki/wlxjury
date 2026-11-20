@@ -126,8 +126,25 @@ class ContestsFilterSpec extends PlaySpecification with PlayTestDb {
         items(wlm, "contests-year-menu") ===
           Seq("All years" -> Some(3), "2025" -> Some(1), "2024" -> Some(1), "2023" -> Some(1))
         items(wlm, "contests-type-menu") === Seq("All" -> Some(6), WLE -> Some(3), WLM -> Some(3))
-        items(wlm, "contests-country-menu") ===
-          Seq("All countries" -> Some(3), "International" -> Some(0), "Armenia" -> Some(0), "Ukraine" -> Some(3))
+        // International and Armenia, with no WLM contest, left out
+        items(wlm, "contests-country-menu") === Seq("All countries" -> Some(3), "Ukraine" -> Some(3))
+      }
+    }
+
+    "keep the chosen item and All in a menu, also at 0, and leave out the other items of 0" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val doc = page(app, f.root, "/contests?contestType=Wiki+Loves+Monuments&country=Armenia&year=all")
+        rows(doc) === Nil
+        items(doc, "contests-country-menu") === Seq("All countries" -> Some(3), "Armenia" -> Some(0), "Ukraine" -> Some(3))
+        active(doc, "contests-country-menu") === "Armenia"
+        toggle(doc, "contests-country-menu") === "Country: Armenia"
+        items(doc, "contests-type-menu") === Seq("All" -> Some(1), WLE -> Some(1), WLM -> Some(0))
+        active(doc, "contests-type-menu") === WLM
+        items(doc, "contests-year-menu") === Seq("All years" -> Some(0))
+        active(doc, "contests-year-menu") === "All years"
+        // the order menu has no counts: all its items
+        items(doc, "contests-order-menu").size === 3
       }
     }
 
@@ -221,8 +238,10 @@ class ContestsFilterSpec extends PlaySpecification with PlayTestDb {
         href(doc, "contests-year-menu", "2024") ===
           "/contests?contestType=Wiki+Loves+Monuments&country=ua&year=2024&order=newest"
         href(doc, "contests-type-menu", "All") === "/contests?country=ua&year=all&order=newest"
-        href(doc, "contests-country-menu", "International") ===
-          "/contests?contestType=Wiki+Loves+Monuments&country=international&year=all&order=newest"
+        // International has no WLM contest (left out there): from WLE's, where it has one
+        href(page(app, f.root, "/contests?contestType=Wiki+Loves+Earth&country=Ukraine&year=all&order=newest"),
+          "contests-country-menu", "International") ===
+          "/contests?contestType=Wiki+Loves+Earth&country=international&year=all&order=newest"
         href(doc, "contests-order-menu", "Oldest first") === "/contests?contestType=Wiki+Loves+Monuments&country=ua&year=all"
         // from the default page: the default year stays implicit
         val plain = page(app, f.root, "/contests")

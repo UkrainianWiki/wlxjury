@@ -42,6 +42,17 @@ async function lengthen(menu) {
   });
 }
 
+
+/** The menus' items that read 0, but each menu's first (All) and its chosen item (the maintainer's
+  * decision of 2026-11-19: UiSelectionDto.hideEmpty), as "menu: item"; and the menus whose chosen
+  * item, if any is marked, is not listed. */
+async function emptyItems(page, ids) {
+  return page.evaluate((menuIds) => menuIds.flatMap((id) => [...document.querySelectorAll(`#${id} .dropdown-item`)]
+    .filter((a, i) => i > 0 && !a.classList.contains('active'))
+    .filter((a) => (a.querySelector('.wlx-menu-count')?.textContent ?? '').trim() === '0')
+    .map((a) => `${id}: ${a.textContent.trim()}`)), ids);
+}
+
 /** The list's contests' names. */
 const names = (page) => page.locator('tr.contest-row > td:first-child').allTextContents();
 
@@ -74,11 +85,13 @@ for (const mode of ['light', 'dark']) {
     await expect(year.locator('.dropdown-item.active')).toContainText('2026');
     await expect(year.locator('.dropdown-item .wlx-menu-count').first()).toBeAttached();
 
-    // the Country menu: International listed; long, it scrolls inside its box within the window
+    // the Country menu: International left out in 2026, which has no international contest (an
+    // item of 0, UiSelectionDto.hideEmpty; listed for all years, below); long, it scrolls inside
+    // its box within the window
     await country.locator('> button').click();
     const list = country.locator('.dropdown-menu');
     await expect(list).toBeVisible();
-    await expect(list.getByRole('link', { name: /^International/ })).toHaveCount(1);
+    await expect(list.getByRole('link', { name: /^International/ })).toHaveCount(0);
     await lengthen(country);
     const style = await list.evaluate((ul) => ({ overflowY: getComputedStyle(ul).overflowY, maxHeight: getComputedStyle(ul).maxHeight,
       scroll: ul.scrollHeight, client: ul.clientHeight }));
@@ -96,6 +109,8 @@ for (const mode of ['light', 'dark']) {
     await Promise.all([page.waitForURL(/\/contests\?year=all$/), year.getByRole('link', { name: /^All years/ }).click()]);
     await expect(year.locator('> button')).toHaveAccessibleName('Year: All years');
     expect(await names(page)).toContain('Wiki Loves Monuments');
+    // (the menu closed: its items found by text, not by role)
+    await expect(country.locator('.dropdown-item', { hasText: /^\s*International/ })).toHaveCount(1);
     await type.locator('> button').click();
     await Promise.all([page.waitForURL(/contestType=Wiki\+Loves\+Monuments&year=all$/),
       type.getByRole('link', { name: /^Wiki Loves Monuments/ }).click()]);
@@ -138,6 +153,31 @@ test("the contests page's menus fit a phone's width", { tag: '@R-01' }, async ({
       await shot(page, 'contests-country-phone');
     }
     await page.keyboard.press('Escape');
+  }
+  await context.close();
+});
+
+test('the contests page lists no menu item of 0 but the chosen one and All', { tag: '@R-01' }, async ({ contextAs }) => {
+  const context = await contextAs('root', { viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  const MENUS = ['contests-type-menu', 'contests-country-menu', 'contests-year-menu'];
+  await page.goto('/contests?year=all');
+  const params = async (id) => (await page.locator(`#${id} .dropdown-item`).evaluateAll((as) => as.slice(1).map((a) => a.getAttribute('href'))))
+    .map((href) => new URL(href, 'http://x').searchParams);
+  const types = (await params('contests-type-menu')).map((q) => q.get('contestType'));
+  const countries = (await params('contests-country-menu')).map((q) => q.get('country'));
+  // the default, all years, and a type with a country, each choice listed, its count 0 or not
+  const paths = ['/contests', '/contests?year=all'];
+  for (const type of [types[0], types[types.length - 1]]) {
+    for (const country of [countries[0], countries[countries.length - 1]]) {
+      paths.push(`/contests?${new URLSearchParams({ contestType: type, country, year: 'all' })}`);
+    }
+  }
+  for (const path of paths) {
+    await page.goto(path);
+    expect(await emptyItems(page, MENUS), `${path}: items of 0`).toEqual([]);
+    // each menu's choice listed and marked, whatever its count
+    for (const id of MENUS) await expect(page.locator(`#${id} .dropdown-item.active`), `${path}: ${id}`).toHaveCount(1);
   }
   await context.close();
 });

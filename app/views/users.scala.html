@@ -18,14 +18,16 @@
 @* root's all-users page (`usersBar`, UsersFilter: the maintainer's decision of 2026-11-19): the
    contests page's Type, Country and Year menus (contestFilterMenus.scala.html) and a Role menu, in
    the navbar's filter group; each choice the page with it, the other menus' choices kept; each item
-   with the count of the accounts it lists within the other menus' choices *@
+   with the count of the accounts it lists within the other menus' choices, an item of 0 left out
+   but the chosen one and All (UiSelectionDto.hideEmpty) *@
 @filterMenus(b: controllers.UsersFilterBar) = {
     @contestFilterMenus(b.contestsBar, b, "users")
     @(new UiSelectionDto[Option[String]](
         (r: Option[String]) => Call("GET", b.url(b.filter.withRole(r))),
         b.filter.role,
         UsersFilter.Roles.map(r => Some(r) -> SelectionItem(Messages("role." + r), localized = false, count = Some(b.countRole(Some(r))))),
-        Some(None -> SelectionItem("rounds.filter.type.all", count = Some(b.countRole(None))))
+        Some(None -> SelectionItem("rounds.filter.type.all", count = Some(b.countRole(None)))),
+        hideEmpty = true
     ).toDropDown(id = Some("users-role-menu"), label = Some(Messages("role")), labelShown = true))
 }
 

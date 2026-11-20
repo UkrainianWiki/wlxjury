@@ -1026,3 +1026,8 @@ div.thumb_small.wlx-thumb-failed .wlx-video-mark {
 .wlx-wm-check { stroke: var(--wlx-vote-selected); }
 .wlx-wm-cross { stroke: var(--wlx-vote-rejected); }
 .wlx-wm-name { margin-left: .35em; font-weight: 500; }
+
+/* a list's file that Back or Esc from its large view scrolls to (file-anchor.js, data-file-anchor):
+   room above it for a top bar that stays in view, which the page has not yet (0 for now) */
+:root { --wlx-file-anchor-offset: 0px; }
+[data-file-anchor] { scroll-margin-top: var(--wlx-file-anchor-offset); }

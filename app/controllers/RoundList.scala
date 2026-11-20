@@ -772,7 +772,7 @@ final case class RoundList(
     withParams(path.url, params(module = false))
   }
 
-  /** The list's page with the file, scrolled to it. */
+  /** The list's page with the file, scrolled to it where it is out of view ([[RoundList.fileFragment]]). */
   def atUrl(pageId: Long): String = {
     val path = view match {
       case GalleryView.ByRate => routes.GalleryController.byRateAt(asUserId, pageId, regionParam, roundId)
@@ -780,7 +780,7 @@ final case class RoundList(
         routes.GalleryController.commentsAt(asUserId, pageId, regionParam, roundId)
       case _                  => routes.GalleryController.listAtId(asUserId, pageId, regionParam, roundId)
     }
-    withParams(path.url, params(module = false)) + "#" + pageId
+    withParams(path.url, params(module = false)) + RoundList.fileFragment(pageId)
   }
 
   /** The file's large view, in this list. */
@@ -949,6 +949,13 @@ object Neighbourhood {
 }
 
 object RoundList {
+
+  /** The fragment of a list's page with a file (Back and Esc from its large view): `#file-<pageId>`,
+    * which matches no element id, so the browser does not jump the file to the top edge, taking
+    * the navbar out of view; file-anchor.js scrolls to the file's element (data-file-anchor) only
+    * where it is not wholly in view, and without script the page opens at its top.
+    */
+  def fileFragment(pageId: Long): String = "#file-" + pageId
 
   /** A file list's files to a page: all the jurors' votes on 38,366 files at once ran a 1 GB
     * server out of memory (docs/history/2026-11-01-binary-aggregate-votes.md, issue 4).

@@ -391,6 +391,28 @@ object UiShotsServer {
       }
       round.getId -> juror
     }
+    // the comments report's Back checks (gallery-back.spec.js): a running yes/no round of one juror
+    // with six files, in a contest of its own, so that the comments the spec writes on them (as
+    // root, once per server) never reach another spec's files, lists or menus (comments are the
+    // contest's). Not in the guides' screenshot mode
+    val anchorRound: Option[(Long, Long, Seq[Long])] = Option.when(f.docsPhotos.isEmpty) {
+      import db.scalikejdbc.{ContestJuryJdbc, Round, RoundUser, User, VoteJdbc}
+      val name = "UI comments anchor"
+      val contest = ContestJuryJdbc.findAll().find(_.name == name).map(_.getId)
+        .getOrElse(ContestJuryJdbc.create(None, name, 2026, "Ukraine").getId)
+      val email = "anchor-juror@ui-shots.test"
+      val juror = User.findByEmail(email).headOption.map(_.getId).getOrElse(
+        User.create(User("Anchor Juror", email, None, Set(User.JURY_ROLE), None, Some(contest))).getId)
+      val round = Round.findByContest(contest).headOption.getOrElse {
+        val r = Round.create(Round(None, 1, name = Some("Comments anchor"), contestId = contest, distribution = 1, active = true))
+        r.addUsers(Seq(RoundUser(r.getId, juror, User.JURY_ROLE, active = true)))
+        sql"SELECT page_id FROM images WHERE deleted_at IS NULL ORDER BY page_id LIMIT 6 OFFSET 3".map(_.long(1)).list()
+          .foreach(p => VoteJdbc.create(p, 0, juror, r.getId))
+        r
+      }
+      val files = sql"SELECT page_id FROM vote WHERE round_id = ${round.getId} ORDER BY page_id".map(_.long(1)).list()
+      (round.getId, juror, files)
+    }
     // the rounds' type icons (rounds-filter.spec.js, the maintainer's decisions of 2026-11-19): a
     // contest of its own with many rounds, yes/no, rated and comments-only, active and not, their
     // names of very different lengths, so that the Rounds page, the statistics pager and the
@@ -483,6 +505,7 @@ object UiShotsServer {
          |  "closedRoundJurors": [${closedRoundJurors.mkString(", ")}],
          |  "aloneRound": ${aloneRound.fold("null") { case (r, j) => s"""{"roundId": $r, "jurorId": $j}""" }},
          |  "commentFile": {"juror": $commentJuror, "pageId": $commentPage, "otherRounds": $commentOthers},
+         |  "anchorRound": ${anchorRound.fold("null") { case (r, j, files) => s"""{"roundId": $r, "jurorId": $j, "pageIds": [${files.mkString(", ")}]}""" }},
          |  "pageId": $pageId,
          |  "ratedPageId": $ratedPageId
          |}

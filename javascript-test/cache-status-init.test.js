@@ -45,3 +45,36 @@ test("writes a finished run's 'all cached' text from the element's own messages,
     expect(el.textContent).toMatch(/^All 300 images are <b>cached<\/b> \(.+\)\.$/);
     expect(el.querySelector("b")).toBeNull();
 });
+
+test("a wlx:refresh event fetches the status at once and polls on while it runs, one loop at a time", async () => {
+    jest.useFakeTimers();
+    try {
+        document.body.innerHTML = '<div id="cache-status" data-cache-status-url="/contest/1/images/cache/status"></div>';
+        const answers = [
+            { total: 0, done: 0, errors: 0, running: false },
+            { total: 0, done: 0, errors: 0, running: true },
+            { total: 0, done: 0, errors: 0, running: true },
+            { total: 4, done: 4, errors: 0, running: false },
+        ];
+        global.fetch = jest.fn(() => Promise.resolve({ status: 200, json: () => Promise.resolve(answers.shift()) }));
+        initCacheStatuses(document);
+        await jest.advanceTimersByTimeAsync(0);
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+        const el = document.getElementById("cache-status");
+        el.dispatchEvent(new CustomEvent("wlx:refresh"));
+        await jest.advanceTimersByTimeAsync(0);
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+        expect(el.textContent).toBe("Starting\u2026");
+        // a second refresh while a poll is due: the due poll replaced, not added to
+        el.dispatchEvent(new CustomEvent("wlx:refresh"));
+        await jest.advanceTimersByTimeAsync(0);
+        expect(global.fetch).toHaveBeenCalledTimes(3);
+        await jest.advanceTimersByTimeAsync(3000);
+        expect(global.fetch).toHaveBeenCalledTimes(4);
+        expect(el.textContent).toBe("4 / 4 downloaded (100%) \u2013 done");
+        await jest.advanceTimersByTimeAsync(10000);
+        expect(global.fetch).toHaveBeenCalledTimes(4);
+    } finally {
+        jest.useRealTimers();
+    }
+});

@@ -18,7 +18,8 @@
    classes and markup before and after its text (a round's type icons and what they say for screen
    readers, snippets/roundIcon and roundSpoken); with markup before it, its text in a span of its
    own (wlx-item-text), which a round menu cuts with an ellipsis where it is too narrow (main.css).
-   The toggle is a real button, so Space opens it as Enter does (Bootstrap's dropdown) *@
+   The toggle is a real button, so Space opens it as Enter does (Bootstrap's dropdown). The items
+   listed are UiSelectionDto.shownValues: a filter menu's (hideEmpty) without those of count 0 *@
 @icon(iconClass: String) = {<i class="@iconClass" aria-hidden="true"></i>}
 <li class="nav-item dropdown"@for(i <- menuId) { id="@i"}>
     <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"
@@ -38,7 +39,7 @@
         }
     </button>
     <ul class="dropdown-menu@if(menuClass.nonEmpty) { @menuClass}">
-        @for((id, value) <- dto.optValues) {
+        @for((id, value) <- dto.shownValues) {
             <li>
                 <a class="dropdown-item@if(value.count.nonEmpty) { wlx-menu-item}@if(value.itemClass.nonEmpty) { @value.itemClass}@if(id == dto.selectedItemId) { active}" @if(id == dto.selectedItemId) {aria-current="page" }href="@dto.itemUrlFunction(id)">
                     @value.icon.map { iconClass => @icon(iconClass) }

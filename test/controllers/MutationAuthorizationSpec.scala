@@ -884,6 +884,93 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  // "Download images locally" (the files page's and the round form's): posted by script
+  // (async-form.js) a 204 and JSON refusals, so the page stays where it is; posted as a form, back to
+  // the page's cache section (its heading's id) and the denial page
+  "starting the local image cache [S-07]" should {
+    "answer a script with 204 and a form with the page at its section; refuse the others, as JSON to a script" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val a = contestDao.create(None, "WLE", 2024, "Ukraine")
+        val b = contestDao.create(None, "WLM", 2024, "Poland")
+        val round = roundDao.create(Round(None, 1, Some("A's round"), contestId = a.getId, active = true))
+        val bRound = roundDao.create(Round(None, 1, Some("B's round"), contestId = b.getId, active = true))
+        val admin = userDao.create(User("Admin", "admin@example.com", None, Set("admin"), contestId = a.id))
+        val organizer = userDao.create(User("Org", "org@example.com", None, Set("organizer"), contestId = a.id))
+        val juror = userDao.create(User("Juror", "juror@example.com", None, Set("jury"), contestId = a.id))
+        val images = app.injector.instanceOf[ImageController]
+        val contestUrl = s"/contest/${a.getId}/images/cache/start"
+        def roundUrl(r: Round) = s"/contest/${a.getId}/round/${r.getId}/images/cache/start"
+        val script = "X-Requested-With" -> "XMLHttpRequest"
+        def starts(email: Option[String], headers: (String, String)*) = {
+          def req(url: String) = {
+            val base = FakeRequest(POST, url).withHeaders(headers: _*)
+            email.fold(base)(e => base.withSession(Secured.UserName -> e)).withCSRFToken
+          }
+          Seq(
+            call(images.startImageCache(a.getId), req(contestUrl)),
+            call(images.startRoundImageCache(a.getId, round.getId), req(roundUrl(round))))
+        }
+
+        // the admin: a form back to the section, a script 204 with no body
+        starts(Some(admin.email)).map(redirectLocation(_)) === Seq(
+          Some(s"/contest/${a.getId}/images#image-cache"),
+          Some(s"/admin/rounds/edit?id=${round.getId}&contestId=${a.getId}#round-image-cache"))
+        starts(Some(admin.email), script).foreach { started =>
+          status(started) === NO_CONTENT
+          contentAsString(started) === ""
+        }
+        // another contest's round: not found, as JSON to a script
+        val other = call(images.startRoundImageCache(a.getId, bRound.getId),
+          FakeRequest(POST, roundUrl(bRound)).withHeaders(script).withSession(Secured.UserName -> admin.email).withCSRFToken)
+        status(other) === NOT_FOUND
+        (contentAsJson(other) \ "error").as[String] === "round_not_found"
+
+        // an organizer or a juror: the denial page to a form, JSON 403 with a reference to a script
+        for (user <- Seq(organizer, juror)) {
+          starts(Some(user.email)).foreach { denied =>
+            status(denied) === FORBIDDEN
+            contentType(denied) must beSome("text/html")
+          }
+          starts(Some(user.email), script).foreach { denied =>
+            status(denied) === FORBIDDEN
+            (contentAsJson(denied) \ "error").as[String] === "forbidden"
+            (contentAsJson(denied) \ "reference").as[String] must beMatching("[0-9a-f]{8}")
+          }
+        }
+        // signed out: the login page to a form, JSON 401 to a script
+        starts(None).foreach(r => redirectLocation(r) must beSome(startWith("/auth")))
+        starts(None, script).foreach { signedOut =>
+          status(signedOut) === UNAUTHORIZED
+          (contentAsJson(signedOut) \ "error").as[String] === "unauthenticated"
+        }
+        // a browser's own fetch says so by Sec-Fetch-Mode alone
+        starts(Some(juror.email), "Sec-Fetch-Mode" -> "cors").foreach(r => contentType(r) must beSome("application/json"))
+        ok
+      }
+    }
+  }
+
+  "starting the local image cache through the router, CSRF on [S-07]" should {
+    "take a script's post with the token in the Csrf-Token header alone, refuse one without as JSON" in {
+      CsrfTestApp.withCsrfApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val a = contestDao.create(None, "WLE", 2024, "Ukraine")
+        val admin = userDao.create(User("Admin", "admin@example.com", None, Set("admin"), contestId = a.id))
+        val sessionToken = CsrfTestApp.token(app)
+        def start(header: Option[String]) = route(app, FakeRequest(POST, s"/contest/${a.getId}/images/cache/start")
+          .withHeaders(Seq(COOKIE -> "PLAY_SESSION=x", "X-Requested-With" -> "XMLHttpRequest") ++
+            header.map("Csrf-Token" -> _): _*)
+          .withSession(Secured.UserName -> admin.email, "csrfToken" -> sessionToken)).get
+        val accepted = start(Some(sessionToken))
+        status(accepted) === NO_CONTENT
+        val refused = start(None)
+        status(refused) === FORBIDDEN
+        (contentAsJson(refused) \ "error").as[String] === "csrf"
+      }
+    }
+  }
+
   "a round's cache, started or read through a contest" should {
     "be refused for a round of another contest, by its admin there or not" in {
       testDbApp { app =>
@@ -901,10 +988,12 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
           sessionRequest(POST, s"/contest/${a.getId}/round/${round.getId}/images/cache/start", admin.email))
 
         status(statusOf(bRound)) === NOT_FOUND
+        (contentAsJson(statusOf(bRound)) \ "error").as[String] === "round_not_found"
         status(start(bRound)) === NOT_FOUND
 
         status(statusOf(aRound)) === OK
         status(start(aRound)) === SEE_OTHER
+        redirectLocation(start(aRound)) must beSome(endWith("#round-image-cache"))
       }
     }
   }

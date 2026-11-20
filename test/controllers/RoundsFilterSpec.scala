@@ -225,6 +225,10 @@ class RoundsFilterSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         val doc = page(app, f.adminB, s"/admin/rounds?contestId=${f.b.getId}&type=rated&order=newest")
         rows(doc) === Nil
+        // the chosen Rated kept in its menu at 0, as Status's All; Not active and Active (0) left out
+        counts(doc, "rounds-type-menu") === Seq("All" -> Some(1), "Yes/No" -> Some(1), "Rated" -> Some(0))
+        current(doc, "rounds-type-menu") === "Rated"
+        counts(doc, "rounds-status-menu") === Seq("All" -> Some(0))
         doc.select("#rounds-filter-none").size === 1
         doc.selectFirst("#rounds-filter-reset").attr("href") === s"/admin/rounds?contestId=${f.b.getId}&order=newest"
         // a contest without rounds: no such note
@@ -406,15 +410,20 @@ class RoundsFilterSpec extends PlaySpecification with PlayTestDb {
     "stay on the round and say so when no round matches, with a link to all rounds keeping the order" in {
       testDbApp { app =>
         val f = fixture()
-        // contest B: one round, yes/no and active
+        // contest B: one round, yes/no and active; the choices of no round not offered (count 0)
         val doc = page(app, f.adminB, s"/roundstat/${f.roundB.getId}?order=newest")
-        NavMenus.items(doc, "rounds-type-menu").find(_.name == "Rated").flatMap(_.href) ===
-          Some(s"/roundstat/${f.roundB.getId}?type=rated&order=newest")
-        NavMenus.items(doc, "rounds-status-menu").find(_.name == "Not active").flatMap(_.href) ===
-          Some(s"/roundstat/${f.roundB.getId}?status=inactive&order=newest")
+        counts(doc, "rounds-type-menu") === Seq("All" -> Some(1), "Yes/No" -> Some(1))
+        counts(doc, "rounds-status-menu") === Seq("All" -> Some(1), "Active" -> Some(1))
         doc.select("#rounds-filter-none").size === 0
 
+        // opened with such a choice (a link kept from another contest's): the choice still in its
+        // menu, selected at 0, and All at 0 too, the other items of 0 left out
         val none = page(app, f.adminB, s"/roundstat/${f.roundB.getId}?type=rated&order=newest")
+        counts(none, "rounds-type-menu") === Seq("All" -> Some(1), "Yes/No" -> Some(1), "Rated" -> Some(0))
+        current(none, "rounds-type-menu") === "Rated"
+        none.selectFirst("#rounds-type-menu > button").text === "Type: Rated"
+        counts(none, "rounds-status-menu") === Seq("All" -> Some(0))
+        current(none, "rounds-status-menu") === "All"
         statMenu(none) === Seq("Other contest")
         none.select("#round-stat-rounds .page-item.active .wlx-round-outside").size === 1
         none.select("#rounds-filter-none").text must startWith("No rounds match these choices.")

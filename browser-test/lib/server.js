@@ -53,6 +53,10 @@ export function fixtureFor(browserName) {
     // a binary round's file none of the listed jurors has, and its juror (id): where a test may
     // write a comment without giving the jurors above one (UiShotsServer)
     commentFile: s.commentFile,
+    // a yes/no round of one juror and six files in a contest of its own, where gallery-back.spec.js
+    // writes its own comments for the comments report's Back checks; null in the guides'
+    // screenshot mode
+    anchorRound: s.anchorRound || null,
     // an account in no contest, this engine's, for the users page's search (users.spec.js)
     searchTarget: (s.searchTargets || [])[i],
     // this engine's pair for the Edit user form's "wiki account taken" panel (users.spec.js): a

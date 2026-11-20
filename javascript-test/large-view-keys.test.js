@@ -213,7 +213,7 @@ describe("a binary round, the juror's own large view of an unrated file", () => 
 
     test("Esc goes back to the gallery on this origin", () => {
         press("esc");
-        expectNavigation("/gallery/round/1/user/1/region/all/pageid/107", "#107");
+        expectNavigation("/gallery/round/1/user/1/region/all/pageid/107", "#file-107");
     });
 
     test.each(["large-info", "large-next"])("Space and Enter on the %s toggle open or close it, and don't vote", id => {

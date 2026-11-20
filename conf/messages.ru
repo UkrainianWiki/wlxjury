@@ -183,6 +183,10 @@ down.key = Вниз
 format.boolean=
 local.image.cache = Локальный кеш изображений
 download.images.locally = Скачать изображения локально
+async.form.error.signed.out=Вы вышли из системы. Войдите снова и перезагрузите страницу.
+async.form.error.expired=Срок действия страницы истёк. Перезагрузите её и попробуйте ещё раз.
+async.form.error.forbidden=Вы больше не можете сделать это здесь. Перезагрузите страницу.
+async.form.error.failed=Не удалось это сделать. Попробуйте ещё раз.
 # cache-status.js fills {0} and {1} in these three (a formatted count, a date and time): keep them plain, no {0,number} or choice format, which would throw when the page renders
 image.cache.all.cached = Все изображения ({0}) уже в кеше (проверено {1}).
 image.cache.nothing = Нет изображений для загрузки (проверено {0}).

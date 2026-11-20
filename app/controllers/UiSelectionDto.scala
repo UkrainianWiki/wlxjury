@@ -4,11 +4,18 @@ import play.api.i18n.Messages
 import play.mvc.Call
 import play.twirl.api.Html
 
+/** A navbar menu. `hideEmpty`: the menu leaves out the items with a count of 0 (a filter menu's
+  * choices that show nothing within the other menus' choices), but never the selected item, the
+  * default one (`defaultPair`) or one `alwaysShown` names (a menu's "All" among its items), so the
+  * toggle's current item and the way back to all stay in the menu.
+  */
 class UiSelectionDto[T](val itemUrlFunction: T => Call,
                         val selectedItemId: T,
                         val items: Seq[(T, SelectionItem)],
                         val defaultPair: Option[(T, SelectionItem)] = None,
-                        val unlisted: SelectionItem = UiSelectionDto.Unlisted) {
+                        val unlisted: SelectionItem = UiSelectionDto.Unlisted,
+                        val hideEmpty: Boolean = false,
+                        val alwaysShown: T => Boolean = (_: T) => false) {
 
   val optValues: Seq[(T, SelectionItem)] = defaultPair.fold(
     Seq.empty[(T, SelectionItem)])(Seq(_)) ++
@@ -17,6 +24,14 @@ class UiSelectionDto[T](val itemUrlFunction: T => Call,
     }
 
   def map: Map[T, SelectionItem] = optValues.toMap
+
+  /** The items the menu lists: all of them, or with `hideEmpty` those with a count other than 0
+    * and the selected, default and `alwaysShown` ones. */
+  def shownValues: Seq[(T, SelectionItem)] =
+    if (!hideEmpty) optValues
+    else optValues.filter { case (id, item) =>
+      !item.count.contains(0) || id == selectedItemId || defaultPair.exists(_._1 == id) || alwaysShown(id)
+    }
 
   /** The selected item; `unlisted` if it is not in the menu (a neutral one by default), never an
     * error. */

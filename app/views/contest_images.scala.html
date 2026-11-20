@@ -118,15 +118,13 @@
         <script src="@routes.Assets.versioned("javascripts/source-identity.js")"></script>
 
         <hr/>
-        <h2 class="h4">@Messages("local.image.cache")</h2>
+        <h2 class="h4" id="@controllers.ImageController.ImageCacheSection">@Messages("local.image.cache")</h2>
         <div id="cache-status" data-cache-status-url="@routes.ImageController.imageCacheStatus(contest.getId)"
              data-text-all-cached="@Messages("image.cache.all.cached", "{0}", "{1}")"
              data-text-nothing="@Messages("image.cache.nothing", "{0}")"
              data-text-also-cached="@Messages("image.cache.also.cached", "{0}")"></div>
-        <form method="post" action="@routes.ImageController.startImageCache(contest.getId)">
-            @csrfField()
-            <button type="submit" class="btn btn-outline-secondary">@Messages("download.images.locally")</button>
-        </form>
+        @snippets.imageCacheForm(routes.ImageController.startImageCache(contest.getId), "cache-status")
 
         <script src="@routes.Assets.versioned("javascripts/cache-status.js")"></script>
+        <script src="@routes.Assets.versioned("javascripts/async-form.js")"></script>
     }

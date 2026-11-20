@@ -112,7 +112,7 @@ class RoundListSpec extends Specification {
 
     "keep its viewer, region, filter and order" in {
       list.pageUrl(2) === "/byrate/round/7/user/3/region/80/page/2?filter=unrated&sort=rate"
-      list.atUrl(105) === "/byrate/round/7/user/3/region/80/pageid/105?filter=unrated&sort=rate#105"
+      list.atUrl(105) === "/byrate/round/7/user/3/region/80/pageid/105?filter=unrated&sort=rate#file-105"
     }
 
     "keep its view too in a large view's, its votes' and its comments'" in {
@@ -128,7 +128,7 @@ class RoundListSpec extends Specification {
       val gallery = RoundList(round, 3)
       gallery.pageUrl(1) === "/gallery/round/7/user/3/page/1?sort=rate"
       gallery.largeUrl(105) === "/large/round/7/user/3/pageid/105?sort=rate"
-      gallery.atUrl(105) === "/gallery/round/7/user/3/region/all/pageid/105?sort=rate#105"
+      gallery.atUrl(105) === "/gallery/round/7/user/3/region/all/pageid/105?sort=rate#file-105"
     }
 
     "be paths, never absolute URLs" in {

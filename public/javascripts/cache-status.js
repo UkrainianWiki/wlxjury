@@ -15,7 +15,9 @@
  * pollCacheStatus(statusUrl, elementId) – starts the fetch/poll loop, wiring the
  * result into the element with that id (#cache-status by default), as text.  On 401 or
  * 403 (signed out, or no longer an admin of the contest) it stops; on other
- * failures it retries, slower.
+ * failures it retries, slower.  A 'wlx:refresh' event on the element (async-form.js,
+ * after "Download images locally" started a download) fetches it again at once and
+ * polls on while the download runs, one loop at a time.
  *
  * initCacheStatuses(doc) – starts pollCacheStatus for each element with a
  * data-cache-status-url (contest_images, editRound), the URL the template
@@ -95,7 +97,14 @@ function cacheStatusTexts(el) {
 
 function pollCacheStatus(statusUrl, elementId) {
     elementId = elementId || 'cache-status';
+    var timer = null;
+    function later(ms) {
+        clearTimeout(timer);
+        timer = setTimeout(update, ms);
+    }
     function update() {
+        clearTimeout(timer);
+        timer = null;
         // X-Requested-With: a poll, which must not switch the session's contest
         return fetch(statusUrl,
                 { credentials: "same-origin", headers: { "X-Requested-With": "XMLHttpRequest" } })
@@ -110,10 +119,14 @@ function pollCacheStatus(statusUrl, elementId) {
                 if (text !== null) {
                     el.textContent = text;
                 }
-                if (p.running) { setTimeout(update, 3000); }
+                if (p.running) { later(3000); }
                 return p;
             })
-            .catch(function() { setTimeout(update, 5000); });
+            .catch(function() { later(5000); });
+    }
+    var target = document.getElementById(elementId);
+    if (target && target.addEventListener) {
+        target.addEventListener("wlx:refresh", function () { update(); });
     }
     return update();
 }

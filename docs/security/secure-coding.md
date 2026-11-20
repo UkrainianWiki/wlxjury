@@ -243,8 +243,13 @@ data inserted through them in any script. The spec isn't changed yet.
 ## 9. Authorization and contest scoping
 
 **Rule.** Every action is built with a `Secured` builder (`withAuth`, `withAuthOn`,
-`withAuthJson`, `withAuthJsonOn`) with a contest-, round- or role-scoped permission, or is on
-the public list. A resource (round, job, comment, file) is checked in its own contest as the
+`withAuthJson`, `withAuthJsonOn`, `withAuthForm`) with a contest-, round- or role-scoped permission,
+or is on the public list. `withAuthForm` is for a form that a script may also post
+(`async-form.js`, `data-async-form`): it answers both ways, a script request
+(`Secured.isScriptRequest`) with 204 or JSON (401 signed out, a 403 denial with its reference, a
+404 such as `round_not_found`), the form posted without script with the 303 redirect, the login
+redirect or the HTML denial page, as `withAuth`; the CSRF token is checked either way (the script
+sends it in the `Csrf-Token` header). A resource (round, job, comment, file) is checked in its own contest as the
 user's membership there (`Secured.inContest`), never by switching the session's contest on a
 POST or poll. Only a page GET switches the session's contest (`Secured.isPageRequest`: not a
 script request, `Sec-Fetch-Mode` included, nor a prefetch); a background poll or fragment must

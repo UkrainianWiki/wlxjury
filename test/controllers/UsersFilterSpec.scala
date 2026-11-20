@@ -147,12 +147,12 @@ class UsersFilterSpec extends PlaySpecification with PlayTestDb {
           Seq("All" -> Some(8), "Admin" -> Some(2), "Organizer" -> Some(1), "Juror" -> Some(4))
 
         val chosen = page(app, f.root, s"$Page?year=2025&role=admin")
-        items(chosen, "users-type-menu") === Seq("All" -> Some(1), WLE -> Some(1), WLM -> Some(0))
+        items(chosen, "users-type-menu") === Seq("All" -> Some(1), WLE -> Some(1))
         items(chosen, "users-year-menu") === Seq("All years" -> Some(2), "2025" -> Some(1), "2024" -> Some(1))
         items(chosen, "users-role-menu") ===
           Seq("All" -> Some(5), "Admin" -> Some(1), "Organizer" -> Some(1), "Juror" -> Some(4))
-        items(chosen, "users-country-menu") === Seq("All countries" -> Some(1), "International" -> Some(1),
-          "Armenia" -> Some(0), "Ukraine" -> Some(0), "Ukraine, Animals" -> Some(0))
+        // the items of 0 left out
+        items(chosen, "users-country-menu") === Seq("All countries" -> Some(1), "International" -> Some(1))
 
         // each item's link lists what its count says
         for (menu <- Menus; doc <- Seq(doc, chosen); (item, count) <- items(doc, menu))
@@ -227,9 +227,24 @@ class UsersFilterSpec extends PlaySpecification with PlayTestDb {
         // a deleted account neither listed nor counted on a filtered page
         val doc = page(app, f.root, s"$Page?country=international&role=jury")
         names(doc) === Seq("Cat")
+        items(doc, "users-role-menu") === Seq("All" -> Some(2), "Admin" -> Some(1), "Juror" -> Some(1))
+        items(doc, "users-country-menu").find(_._1 == "International") must beSome("International" -> Some(1))
+      }
+    }
+
+    "keep the chosen item and All in a menu, also at 0, and leave out the other items of 0" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val doc = page(app, f.root, s"$Page?country=international&role=organizer")
+        names(doc) === Nil
         items(doc, "users-role-menu") ===
           Seq("All" -> Some(2), "Admin" -> Some(1), "Organizer" -> Some(0), "Juror" -> Some(1))
-        items(doc, "users-country-menu").find(_._1 == "International") must beSome("International" -> Some(1))
+        active(doc, "users-role-menu") === "Organizer"
+        toggle(doc, "users-role-menu") === "Role: Organizer"
+        items(doc, "users-country-menu") === Seq("All countries" -> Some(1), "International" -> Some(0), "Ukraine" -> Some(1))
+        active(doc, "users-country-menu") === "International"
+        items(doc, "users-type-menu") === Seq("All" -> Some(0))
+        items(doc, "users-year-menu") === Seq("All years" -> Some(0))
       }
     }
 
@@ -259,7 +274,9 @@ class UsersFilterSpec extends PlaySpecification with PlayTestDb {
         href(doc, "users-country-menu", "Ukraine, Animals") ===
           s"$Page?contestType=Wiki+Loves+Earth&country=Ukraine%2C+Animals&year=2025&role=jury"
         href(doc, "users-year-menu", "All years") === s"$Page?contestType=Wiki+Loves+Earth&role=jury"
-        href(doc, "users-year-menu", "2024") === s"$Page?contestType=Wiki+Loves+Earth&year=2024&role=jury"
+        // 2024 has no WLE juror (left out there): from WLM's admins, where it has one
+        href(page(app, f.root, s"$Page?contestType=Wiki+Loves+Monuments&year=2025&role=admin"), "users-year-menu", "2024") ===
+          s"$Page?contestType=Wiki+Loves+Monuments&year=2024&role=admin"
         href(doc, "users-role-menu", "All") === s"$Page?contestType=Wiki+Loves+Earth&year=2025"
         href(doc, "users-role-menu", "Admin") === s"$Page?contestType=Wiki+Loves+Earth&year=2025&role=admin"
         // from the default page: the defaults stay implicit

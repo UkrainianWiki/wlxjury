@@ -158,18 +158,33 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
 
   def withAuth(
       permission: Permission = rolePermission(Secured.ViewerRoles)
-  )(f: => User => Request[AnyContent] => Result): EssentialAction = {
+  )(f: => User => Request[AnyContent] => Result): EssentialAction =
+    authenticated(permission, onUnAuthorized(_, _, _))(f)
+
+  /** [[withAuth]] for a form that a script may post as well (async-form.js, `data-async-form`):
+    * a denial of a script request ([[Secured.isScriptRequest]]) is a JSON 403
+    * ([[onUnAuthorizedJson]]) instead of the denial page; signed out it is a JSON 401 already
+    * ([[onUnAuthenticated]]). A form posted without script gets [[withAuth]]'s answers.
+    */
+  def withAuthForm(
+      permission: Permission = rolePermission(Secured.ViewerRoles)
+  )(f: => User => Request[AnyContent] => Result): EssentialAction =
+    authenticated(permission, (user, request, denial) =>
+      if (Secured.isScriptRequest(request)) onUnAuthorizedJson(user, request, denial)
+      else onUnAuthorized(user, request, denial))(f)
+
+  private def authenticated(permission: Permission, denied: (User, RequestHeader, Secured.Denial) => Result)(
+      f: => User => Request[AnyContent] => Result): EssentialAction =
     Security.Authenticated(r => RequestTiming.within(r)(userFromRequest(r)), onUnAuthenticated) { user =>
       Action { request =>
         RequestTiming.within(request) {
           checked(user, permission).fold(
-            onUnAuthorized(user, request, _),
+            denied(user, request, _),
             permittedUser => Secured.switchingContest(user, permittedUser)(f(permittedUser)(request))(request)
           )
         }
       }
     }
-  }
 
   /** [[withAuth]] for JSON endpoints polled by script: signed out is a JSON 401 and a
     * denial a JSON 403 ([[onUnAuthorizedJson]]) instead of the login redirect and the

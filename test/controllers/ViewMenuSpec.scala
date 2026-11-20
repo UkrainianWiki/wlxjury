@@ -136,7 +136,7 @@ class ViewMenuSpec extends PlaySpecification with PlayTestDb {
         val at = get(s"/gallery/round/$r/user/0/region/all/pageid/2?sort=approvals-only", f.organizer)
         (status(at) === SEE_OTHER) and
           (redirectLocation(at).get must startWith(s"/gallery/round/$r/user/0/page/1?sort=approvals-only")) and
-          (redirectLocation(at).get must endWith("#2"))
+          (redirectLocation(at).get must endWith("#file-2"))
       }
     }
 

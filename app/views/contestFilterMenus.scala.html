@@ -5,7 +5,8 @@
    2026-11-19): the contests page's (contests.scala.html) and root's all-users page's
    (users.scala.html). Each choice the page with it (`b.url`), the other menus' choices kept; each
    toggle with its menu's name shown ("Type: All", "Year: 2026"); each item with its count
-   (`counts`: what it keeps within the other menus' choices, contests or accounts). The entries are
+   (`counts`: what it keeps within the other menus' choices, contests or accounts), an item of 0
+   left out but the chosen one and All (UiSelectionDto.hideEmpty). The entries are
    all the contests' types, countries (International, then the countries by name in the page's
    language) and years (ContestsFilterBar). The Country menu's long list scrolls inside it, as the
    galleries' region menu (main.css region-menu-list). Ids: `idPrefix`-type-menu and so on *@
@@ -14,7 +15,8 @@
         b.filter.kind,
         b.kinds.map(k => Some(k) -> SelectionItem(k, localized = false, count = Some(counts.countKind(Some(k))))),
         Some(None -> SelectionItem("rounds.filter.type.all", count = Some(counts.countKind(None)))),
-        unlisted = SelectionItem(b.filter.kind.getOrElse("—"), localized = false)
+        unlisted = SelectionItem(b.filter.kind.getOrElse("—"), localized = false),
+        hideEmpty = true
     ).toDropDown(id = Some(idPrefix + "-type-menu"), label = Some(Messages("rounds.filter.type")), labelShown = true))
     @(new UiSelectionDto[ContestsFilter.Country](
         (c: ContestsFilter.Country) => Call("GET", b.url(b.filter.withCountry(c))),
@@ -23,7 +25,8 @@
             count = Some(counts.countCountry(ContestsFilter.Country.International)))) else Nil) ++
         b.countries.map(c => c -> SelectionItem(b.name(c), localized = false, count = Some(counts.countCountry(c)))),
         Some(ContestsFilter.Country.All -> SelectionItem("country.all", count = Some(counts.countCountry(ContestsFilter.Country.All)))),
-        unlisted = SelectionItem(Some(b.name(b.country)).filter(_.nonEmpty).getOrElse("—"), localized = false)
+        unlisted = SelectionItem(Some(b.name(b.country)).filter(_.nonEmpty).getOrElse("—"), localized = false),
+        hideEmpty = true
     ).toDropDown(id = Some(idPrefix + "-country-menu"), label = Some(Messages("country")), labelShown = true,
         menuClass = "region-menu-list"))
     @(new UiSelectionDto[Option[Int]](
@@ -31,5 +34,6 @@
         b.year,
         b.years.map(y => Some(y) -> SelectionItem(y.toString, localized = false, count = Some(counts.countYear(Some(y))))),
         Some(None -> SelectionItem("contests.filter.year.all", count = Some(counts.countYear(None)))),
-        unlisted = SelectionItem(b.year.fold("—")(_.toString), localized = false)
+        unlisted = SelectionItem(b.year.fold("—")(_.toString), localized = false),
+        hideEmpty = true
     ).toDropDown(id = Some(idPrefix + "-year-menu"), label = Some(Messages("year")), labelShown = true))

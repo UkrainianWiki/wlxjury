@@ -1,0 +1,18 @@
+@(action: Call, statusId: String)(implicit messages: Messages, request: RequestHeader)
+@* "Download images locally" (the files page's and the round form's local image cache): posted by
+   script (async-form.js, data-async-form), so the page does not reload and move; the status block
+   `statusId` (cache-status.js) is refreshed at once and polled while the download runs. A failure is
+   said in place (data-async-error), in the page's language (the data-async-* texts). The CSRF token
+   as the Csrf-Token header (data-csrf-token) and as the form's field. Without script, the form posts
+   and the page comes back at the section's heading (ImageController.ImageCacheSection) *@
+<form method="post" action="@action" data-async-form data-async-refresh="@statusId"
+      data-csrf-token="@play.filters.csrf.CSRF.getToken.fold("")(_.value)"
+      data-async-signed-out="@Messages("async.form.error.signed.out")"
+      data-async-expired="@Messages("async.form.error.expired")"
+      data-async-forbidden="@Messages("async.form.error.forbidden")"
+      data-async-failed="@Messages("async.form.error.failed")"
+      data-async-reference="@Messages("vote.error.reference", "{0}")">
+    @csrfField()
+    <button type="submit" class="btn btn-outline-secondary">@Messages("download.images.locally")</button>
+    <p class="small text-danger mt-1 mb-0" data-async-error role="alert" hidden></p>
+</form>

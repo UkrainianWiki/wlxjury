@@ -27,6 +27,17 @@ async function axe(page, testInfo, name) {
   expect(serious, `${name}: serious or critical accessibility findings`).toEqual([]);
 }
 
+
+/** The menus' items that read 0, but each menu's first (All) and its chosen item (the maintainer's
+  * decision of 2026-11-19: UiSelectionDto.hideEmpty), as "menu: item"; and the menus whose chosen
+  * item, if any is marked, is not listed. */
+async function emptyItems(page, ids) {
+  return page.evaluate((menuIds) => menuIds.flatMap((id) => [...document.querySelectorAll(`#${id} .dropdown-item`)]
+    .filter((a, i) => i > 0 && !a.classList.contains('active'))
+    .filter((a) => (a.querySelector('.wlx-menu-count')?.textContent ?? '').trim() === '0')
+    .map((a) => `${id}: ${a.textContent.trim()}`)), ids);
+}
+
 /** The listed accounts' rows. */
 const rows = (page) => page.locator('div.table-responsive > table.table-striped > tbody > tr');
 
@@ -128,3 +139,24 @@ for (const mode of ['light', 'dark']) {
     await context.close();
   });
 }
+
+test('the all-users page lists no menu item of 0 but the chosen one and All', { tag: '@R-03' }, async ({ contextAs }) => {
+  const context = await contextAs('root', { viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  await page.goto('/admin/allUsers');
+  const params = async (id) => (await page.locator(`#${id} .dropdown-item`).evaluateAll((as) => as.slice(1).map((a) => a.getAttribute('href'))))
+    .map((href) => new URL(href, 'http://x').searchParams);
+  const types = (await params('users-type-menu')).map((q) => q.get('contestType'));
+  const roles = (await params('users-role-menu')).map((q) => q.get('role'));
+  // the default, and a type with a role, each choice listed, its count 0 or not
+  const paths = ['/admin/allUsers'];
+  for (const type of [types[0], types[types.length - 1]]) {
+    for (const role of roles) paths.push(`/admin/allUsers?${new URLSearchParams({ contestType: type, role })}`);
+  }
+  for (const path of paths) {
+    await page.goto(path);
+    expect(await emptyItems(page, MENUS), `${path}: items of 0`).toEqual([]);
+    for (const id of MENUS) await expect(page.locator(`#${id} .dropdown-item.active`), `${path}: ${id}`).toHaveCount(1);
+  }
+  await context.close();
+});

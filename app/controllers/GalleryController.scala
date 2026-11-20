@@ -194,7 +194,7 @@ class GalleryController @Inject() (
               page => galleryOf(user, list, page, rounds, contest).withCookies(RoundList.remembered(list, user, sessionSecure).toSeq: _*),
               // the page with the file, or where it would be if the filter now leaves it out
               pageId => Redirect(list.position(pageId).fold(list.pageUrl(1))(p =>
-                list.pageUrl(Pager.pageOf(p, list.pageSize)) + "#" + pageId))
+                list.pageUrl(Pager.pageOf(p, list.pageSize)) + RoundList.fileFragment(pageId)))
             )
           }
         }

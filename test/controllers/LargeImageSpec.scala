@@ -1101,8 +1101,8 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         createSelection(createImages(20))
         val order = RoundList(round, user.getId).query.list().map(_.pageId)
 
-        redirectLocation(back(app, order(14))) === Some(s"/gallery/round/${round.getId}/user/${user.getId}/page/1?sort=file#${order(14)}")
-        redirectLocation(back(app, order(15))) === Some(s"/gallery/round/${round.getId}/user/${user.getId}/page/2?sort=file#${order(15)}")
+        redirectLocation(back(app, order(14))) === Some(s"/gallery/round/${round.getId}/user/${user.getId}/page/1?sort=file#file-${order(14)}")
+        redirectLocation(back(app, order(15))) === Some(s"/gallery/round/${round.getId}/user/${user.getId}/page/2?sort=file#file-${order(15)}")
       }
     }
 
@@ -1115,7 +1115,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
 
         // 20 unrated files before it: page 2, where the juror was, not page 1
         redirectLocation(back(app, order(20), "?rate=0")) ===
-          Some(s"/gallery/round/${round.getId}/user/${user.getId}/page/2?filter=unrated&sort=file#${order(20)}")
+          Some(s"/gallery/round/${round.getId}/user/${user.getId}/page/2?filter=unrated&sort=file#file-${order(20)}")
       }
     }
 
@@ -1126,7 +1126,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         val order = RoundList(round, user.getId).query.list().map(_.pageId)
 
         redirectLocation(back(app, order(16), "?rate=0")) ===
-          Some(s"/gallery/round/${round.getId}/user/${user.getId}/page/2?filter=unrated&sort=file#${order(16)}")
+          Some(s"/gallery/round/${round.getId}/user/${user.getId}/page/2?filter=unrated&sort=file#file-${order(16)}")
         redirectLocation(back(app, 99999L)) === Some(s"/gallery/round/${round.getId}/user/${user.getId}/page/1?sort=file")
       }
     }

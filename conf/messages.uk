@@ -220,6 +220,10 @@ thumbnail.urls = адреси мініатюр
 thumbnail.urls.help = Адреси мініатюр на цьому сервері, по одній у рядку. Щоб завантажити їх через wget чи скрипт, передайте cookie вашої сесії.
 local.image.cache = Локальний кеш зображень
 download.images.locally = Завантажити зображення локально
+async.form.error.signed.out=Ви вийшли з системи. Увійдіть знову й перезавантажте сторінку.
+async.form.error.expired=Термін дії сторінки минув. Перезавантажте її та спробуйте ще раз.
+async.form.error.forbidden=Ви більше не можете зробити це тут. Перезавантажте сторінку.
+async.form.error.failed=Не вдалося це зробити. Спробуйте ще раз.
 # cache-status.js fills {0} and {1} in these three (a formatted count, a date and time): keep them plain, no {0,number} or choice format, which would throw when the page renders
 image.cache.all.cached = Усі зображення ({0}) уже в кеші (перевірено {1}).
 image.cache.nothing = Немає зображень для завантаження (перевірено {0}).

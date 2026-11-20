@@ -519,7 +519,7 @@ class CommentsReportSpec extends PlaySpecification with PlayTestDb {
         val at = get(app, f.organizer, s"/comments/round/${f.round.getId}/user/0/region/all/pageid/7?sort=latest-comment")
         status(at) === SEE_OTHER
         redirectLocation(at).get must startWith(s"/comments/round/${f.round.getId}/user/0/page/1?")
-        redirectLocation(at).get must endWith("#7")
+        redirectLocation(at).get must endWith("#file-7")
       }
     }
 

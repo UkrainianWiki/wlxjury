@@ -184,10 +184,15 @@ class ImageController @Inject() (
     }
   }
 
+  /** Starts downloading the contest's images to the local cache. The form posted by script
+    * (async-form.js) gets 204 and the page polls the status in place; posted without script, back
+    * to the files page at its cache section ([[ImageController.ImageCacheSection]]).
+    */
   def startImageCache(contestId: Long): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { _ => implicit request =>
+    withAuthForm(contestPermission(User.ADMIN_ROLES, Some(contestId))) { _ => implicit request =>
       localImageCacheService.startDownload(contestId)
-      Redirect(routes.ImageController.images(contestId))
+      if (Secured.isScriptRequest(request)) NoContent
+      else Redirect(routes.ImageController.images(contestId).url + "#" + ImageController.ImageCacheSection)
     }
 
   def imageCacheStatus(contestId: Long): EssentialAction =
@@ -199,19 +204,23 @@ class ImageController @Inject() (
   private def inContest(contestId: Long, roundId: Long): Boolean =
     Round.findById(roundId).exists(_.contestId == contestId)
 
+  /** [[startImageCache]] for a round's images, from its round form. */
   def startRoundImageCache(id: Long, rid: Long): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, Some(id))) { user => implicit request =>
+    withAuthForm(contestPermission(User.ADMIN_ROLES, Some(id))) { user => implicit request =>
+      val script = Secured.isScriptRequest(request)
       if (!inContest(id, rid))
-        NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found"))
+        if (script) NotFound(Json.obj("error" -> "round_not_found"))
+        else NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found"))
       else {
         localImageCacheService.startDownloadForRound(id, rid)
-        Redirect(routes.RoundController.editRound(Some(rid), id, None))
+        if (script) NoContent
+        else Redirect(routes.RoundController.editRound(Some(rid), id, None).url + "#" + ImageController.RoundImageCacheSection)
       }
     }
 
   def roundImageCacheStatus(id: Long, rid: Long): EssentialAction =
     withAuthJson(contestPermission(User.ADMIN_ROLES, Some(id))) { _ => _ =>
-      if (!inContest(id, rid)) NotFound(Json.obj("error" -> "round not found"))
+      if (!inContest(id, rid)) NotFound(Json.obj("error" -> "round_not_found"))
       else Ok(Json.toJson(localImageCacheService.progressForRound(rid)))
     }
 
@@ -236,6 +245,13 @@ class ImageController @Inject() (
 }
 
 object ImageController {
+
+  /** The id of the files page's "Local image cache" heading: where the form posted without script
+    * comes back to ([[ImageController.startImageCache]]). */
+  val ImageCacheSection = "image-cache"
+
+  /** The id of the round form's "Local image cache" heading ([[ImageController.startRoundImageCache]]). */
+  val RoundImageCacheSection = "round-image-cache"
 
   /** The flash key of the identity warning shown with a queued import (DG10). */
   val SourceWarningFlash = "sourceWarning"

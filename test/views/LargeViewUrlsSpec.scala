@@ -180,7 +180,7 @@ class LargeViewUrlsSpec extends Specification {
       moves must not(beEmpty)
       moves.filterNot(_.contains("filter=unrated")) must beEmpty
       u.keyVotes.filterNot(_.contains("filter=unrated")) must beEmpty
-      u.html must contain("/gallery/round/1/user/1/region/all/pageid/107?filter=unrated&amp;sort=rate#107")
+      u.html must contain("/gallery/round/1/user/1/region/all/pageid/107?filter=unrated&amp;sort=rate#file-107")
     }
 
     "link the previous and next files by paths, not http:// URLs" in {

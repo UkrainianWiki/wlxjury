@@ -233,6 +233,10 @@ thumbnail.urls = urls des vignettes
 thumbnail.urls.help = URL des vignettes sur ce serveur, une par ligne. Pour les télécharger avec wget ou un script, envoyez votre cookie de session.
 local.image.cache = Cache d''images local
 download.images.locally = Télécharger les images localement
+async.form.error.signed.out=Vous avez été déconnecté. Reconnectez-vous et rechargez la page.
+async.form.error.expired=Cette page a expiré. Rechargez-la et réessayez.
+async.form.error.forbidden=Vous ne pouvez plus faire cela ici. Rechargez la page.
+async.form.error.failed=Cela n''a pas pu être fait. Réessayez.
 # cache-status.js fills {0} and {1} in these three (a formatted count, a date and time): keep them plain, no {0,number} or choice format, which would throw when the page renders
 image.cache.all.cached = Les {0} images sont déjà en cache (vérifié le {1}).
 image.cache.nothing = Aucune image à télécharger (vérifié le {0}).

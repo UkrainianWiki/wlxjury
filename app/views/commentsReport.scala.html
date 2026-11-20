@@ -181,10 +181,13 @@
         }
 
         @for(file <- files) {
-            @* its id: where a list's link to the file (commentsAt, #pageId) scrolls *@
-            <article class="wlx-comments-row" id="@file.pageId" aria-labelledby="file-title-@file.pageId">
+            @* data-file-anchor: where a list's link to the file (commentsAt, #file-<pageId>,
+               RoundList.fileFragment) scrolls by file-anchor.js, if the file is out of view *@
+            <article class="wlx-comments-row" id="@file.pageId" data-file-anchor="@file.pageId" aria-labelledby="file-title-@file.pageId">
                 <a class="wlx-comments-thumb" href="@list.largeUrl(file.pageId)" tabindex="-1" aria-hidden="true">
-                    <img alt="" loading="lazy" src="@Global.resizeTo(file.image, Global.gallerySizeX, Global.gallerySizeY)"
+                    @* width and height: the file's, so that the box (main.css: 200 px wide) is kept
+                       before the lazy image loads, and file-anchor.js measures the rows as they end up *@
+                    <img alt="" loading="lazy"@if(file.image.width > 0 && file.image.height > 0) { width="@file.image.width" height="@file.image.height"} src="@Global.resizeTo(file.image, Global.gallerySizeX, Global.gallerySizeY)"
                     srcset="@Global.srcSet(file.image, Global.gallerySizeX, Global.gallerySizeY)">
                     @if(file.image.isVideo) {@snippets.videoMark()}
                 </a>

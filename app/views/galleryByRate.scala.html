@@ -114,8 +114,9 @@
 
                 <ul class="gallery mw-gallery-traditional">
                 @for((file, index) <- files.view.zipWithIndex) {
-                    @* its id: where a list's link to the file (byRateAt, #pageId) scrolls *@
-                    <li class="gallerybox" id="@file.pageId">
+                    @* data-file-anchor: where a list's link to the file (byRateAt, #file-<pageId>,
+                       RoundList.fileFragment) scrolls by file-anchor.js, if the file is out of view *@
+                    <li class="gallerybox" id="@file.pageId" data-file-anchor="@file.pageId">
 
                         <div class="thumb">
                             <a href="@list.largeUrl(file.pageId)" >

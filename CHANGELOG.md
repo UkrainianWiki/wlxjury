@@ -33,6 +33,41 @@ is listed below.
 
 **Features**
 
+- **Back to the gallery keeps the top bar** (the maintainer's decisions of 2026-11-19; developed
+  2026-11-19, `stack/204-small-ui-fixes`): Back and Esc from a file's large view opened its list
+  at `#<pageId>`, the id of the file's tile in the by-rate gallery and of its row in the comments
+  report, so the browser jumped the file to the window's top edge and the navbar scrolled out of
+  view, even for the first file, already in view. The link now ends in `#file-<pageId>`
+  (`RoundList.fileFragment`), which matches no id, and `file-anchor.js` scrolls the file
+  (`data-file-anchor`) to the middle of the window only if it is not wholly in view; on a reload or
+  Back/Forward the browser's own position stays; checked again once the page has loaded (its
+  images), unless the user scrolled; a row taller than the window is scrolled to its top, its title
+  never cut. The comments report's thumbnails keep their box before they load (the file's width and
+  height). Without script, the page opens at its top. The tile
+  gallery (Unite Gallery, to be replaced) has no such element and opens at its top, as before. A
+  CSS variable (`--wlx-file-anchor-offset`, 0 for now) keeps room above the file for a top bar that
+  stays in view, a later change.
+- **"Download images locally" without a reload** (the maintainer's decisions of 2026-11-19;
+  developed 2026-11-19, `stack/204-small-ui-fixes`): the button on the contest's files page and on
+  a round's form reloaded the page at its top, so the download's status was out of view. The form
+  is now posted by script (`async-form.js`, `data-async-form`: the CSRF token in the `Csrf-Token`
+  header): the page stays where it is, the status below the heading is refreshed at once and
+  polled while the download runs, and a failure is said under the button (signed out, an expired
+  page, a refusal with its reference; new keys `async.form.error.signed.out`,
+  `async.form.error.expired`, `async.form.error.forbidden`, `async.form.error.failed`). The server
+  answers a script with 204 and its refusals as JSON (`Secured.withAuthForm`: a JSON 403 with the
+  reference, 401 signed out, 404 `round_not_found` for another contest's round, which the round
+  cache's status endpoint now spells the same way); a form posted without script comes back to the
+  section (`#image-cache`, `#round-image-cache`, the headings' ids).
+- **Filter menus without empty items** (the maintainer's decisions of 2026-11-19; developed
+  2026-11-19, `stack/204-small-ui-fixes`): the Type, Country and Year menus of `/contests` and
+  `/admin/allUsers`, the users page's Role menu and the Rounds and round statistics pages' Status
+  and Type menus count each item within the other menus' choices, so some items read 0. Those
+  items are now left out (`UiSelectionDto.hideEmpty`), but never the chosen item (the toggle shows
+  it, and a link may carry a choice the other menus leave empty) or All. The Votes menu and the
+  other menus are unchanged. So on `/contests`, at the default latest year, **International**
+  disappears from the Country menu when that year has no international contest; "All years" (or
+  a year with one) brings it back.
 - **All-users page menus** (the maintainer's decision of 2026-11-19, for 26.11.14; developed
   2026-11-19, `stack/198-users-contest-filter`, a follow-up of the contests page menus): root's
   all-users page (`/admin/allUsers`) gets the contests page's **Type**, **Country** and **Year**

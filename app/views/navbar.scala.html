@@ -420,7 +420,8 @@
    (`roundFilter`, the maintainer's decisions of 2026-11-18): which of the rounds the viewer sees
    are listed (the Rounds table, the statistics page's round menu) and in what order, each choice
    the same page with it (RoundsFilter, kept in the URL). Status and Type items with their counts
-   (the rounds the other menu keeps), as the Votes menu's; each toggle with its menu's name shown before its choice ("Status: All"), as the
+   (the rounds the other menu keeps), as the Votes menu's, an item of 0 left out but the chosen one
+   and All (UiSelectionDto.hideEmpty); each toggle with its menu's name shown before its choice ("Status: All"), as the
    region menu's ("Region: All regions"), so their two "All"s are told apart, also on a phone. The
    Type menu's items with the round type icons (snippets/roundTypeIcon, coloured; All's slot empty),
    a legend of the icons before the rounds' names *@
@@ -428,14 +429,16 @@
     @(new UiSelectionDto[RoundsFilter.Status](
         (s: RoundsFilter.Status) => Call("GET", bar.url(bar.filter.withStatus(s))),
         bar.filter.status,
-        RoundsFilter.Status.values.map(s => s -> SelectionItem(s.messageKey, count = Some(bar.count(s))))
+        RoundsFilter.Status.values.map(s => s -> SelectionItem(s.messageKey, count = Some(bar.count(s)))),
+        hideEmpty = true, alwaysShown = (s: RoundsFilter.Status) => s == RoundsFilter.Status.All
     ).toDropDown(id = Some("rounds-status-menu"), label = Some(Messages("rounds.filter.status")),
         labelShown = true))
     @(new UiSelectionDto[RoundsFilter.Kind](
         (k: RoundsFilter.Kind) => Call("GET", bar.url(bar.filter.withKind(k))),
         bar.filter.kind,
         RoundsFilter.Kind.values.map(k => k -> SelectionItem(k.messageKey, count = Some(bar.count(k)),
-            before = snippets.roundTypeIcon(Option(k).filter(_ != RoundsFilter.Kind.All))))
+            before = snippets.roundTypeIcon(Option(k).filter(_ != RoundsFilter.Kind.All)))),
+        hideEmpty = true, alwaysShown = (k: RoundsFilter.Kind) => k == RoundsFilter.Kind.All
     ).toDropDown(id = Some("rounds-type-menu"), label = Some(Messages("rounds.filter.type")),
         labelShown = true))
 }

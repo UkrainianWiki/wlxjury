@@ -67,6 +67,15 @@ async function textOn(locator) {
   });
 }
 
+/** The menus' items that read 0, but each menu's first (All) and its chosen item (the maintainer's
+  * decision of 2026-11-19: UiSelectionDto.hideEmpty), as "menu: item". */
+async function emptyItems(page, ids) {
+  return page.evaluate((menuIds) => menuIds.flatMap((id) => [...document.querySelectorAll(`#${id} .dropdown-item`)]
+    .filter((a, i) => i > 0 && !a.classList.contains('active'))
+    .filter((a) => (a.querySelector('.wlx-menu-count')?.textContent ?? '').trim() === '0')
+    .map((a) => `${id}: ${a.textContent.trim()}`)), ids);
+}
+
 /** An axe scan: no serious or critical finding but those triaged for the page (`known`: rule ->
   * its triage entry, as pages.spec.js's KNOWN). */
 async function axe(page, testInfo, name, known = {}) {
@@ -782,5 +791,23 @@ test('the round icons screenshots', { tag: '@A-28' }, async ({ contextAs, fixtur
   await page.goto(galleryPath(ids[2], 0));
   await page.locator('#round-menu > button').click();
   await page.screenshot({ path: path.join(ICON_SHOTS, 'gallery-round-menu-phone.png') });
+  await context.close();
+});
+
+test('the Status and Type menus list no item of 0 but the chosen one and All', { tag: '@A-28' }, async ({ contextAs, fixture }) => {
+  const context = await contextAs('root', { viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  const MENUS = ['rounds-status-menu', 'rounds-type-menu'];
+  const pages = [`/admin/rounds?contestId=${fixture.contestId}`, `/roundstat/${fixture.roundBinaryId}`];
+  if (fixture.roundsContestId) pages.push(`/admin/rounds?contestId=${fixture.roundsContestId}`);
+  for (const base of pages) {
+    for (const query of ['', 'status=active', 'status=inactive', 'type=binary', 'type=rated', 'status=inactive&type=rated']) {
+      const path = query ? `${base}${base.includes('?') ? '&' : '?'}${query}` : base;
+      await page.goto(path);
+      expect(await emptyItems(page, MENUS), `${path}: items of 0`).toEqual([]);
+      // each menu's choice listed and marked, whatever its count
+      for (const id of MENUS) await expect(page.locator(`#${id} .dropdown-item.active`), `${path}: ${id}`).toHaveCount(1);
+    }
+  }
   await context.close();
 });
