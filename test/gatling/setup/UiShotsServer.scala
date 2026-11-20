@@ -477,6 +477,32 @@ object UiShotsServer {
         id
       }
     }
+    // the guides' screenshots only (-Dui.images=docs): a running round rated by criteria in the
+    // fixture's contest, Aesthetics, Technical quality and Usefulness for Wikipedia (V83's 4, 6
+    // and 7, as the juror guide names them), five stars each, with the juror above and the
+    // juror's first six files of the rated round; the first of them rated on every criterion, for
+    // the large view of a round with criteria (juror guide, "Rating by criteria"). Its files are
+    // among those the shots show at the top of a page (shownFiles), so none gets a degraded photo
+    val docsCriteria: Option[(Long, Long)] = Option.when(f.docsPhotos.nonEmpty) {
+      import db.scalikejdbc.{Round, RoundUser, User, VoteJdbc}
+      val name = "Criteria"
+      val round = Round.findByContest(f.contestId).find(_.name.contains(name)).getOrElse {
+        val number = Round.findByContest(f.contestId).map(_.number).maxOption.getOrElse(0L) + 1
+        val r = Round.create(Round(None, number, name = Some(name), contestId = f.contestId,
+          rates = Round.rateRounds(2), active = true, criterionIds = Seq(4L, 6L, 7L)))
+        r.addUsers(Seq(RoundUser(r.getId, jurorId, User.JURY_ROLE, active = true)))
+        val files = sql"""SELECT page_id FROM vote WHERE jury_id = $jurorId AND round_id = ${f.roundRatingId}
+                          ORDER BY page_id LIMIT 6""".map(_.long(1)).list()
+        files.foreach(p => VoteJdbc.create(p, 0, jurorId, r.getId))
+        for {
+          first             <- files.headOption.toSeq
+          voteId            <- VoteJdbc.findBy(first, jurorId, r.getId).flatMap(_.id).toSeq
+          (criterion, rate) <- Seq(4L -> 4, 6L -> 5, 7L -> 3)
+        } org.intracer.wmua.CriteriaRate.rateCriterion(voteId, criterion, rate)
+        r
+      }
+      (round.getId, firstPage(jurorId, round.getId))
+    }
     // in one transaction: as autocommitted statements (a commit per row) it took about 2.5 minutes
     val filled = DB.localTx { tx => CommonsFileUrl.fillMissing()(tx) }
     println(s"[ui-shots] set the Commons url of $filled images")
@@ -486,7 +512,8 @@ object UiShotsServer {
     f.docsPhotos.foreach { photos =>
       val files  = sql"SELECT page_id, title FROM images ORDER BY page_id".map(r => (r.long(1), r.string(2))).list()
       val titles = files.map(_._2)
-      val shown  = shownFiles(f.roundBinaryId, f.roundRatingId, (jurorId +: listedJurors.map(_._1)).distinct)
+      val shown  = shownFiles(f.roundBinaryId, f.roundRatingId, (jurorId +: listedJurors.map(_._1)).distinct,
+        docsCriteria.map(_._1).toSeq)
       photos.setFixture(DocsPhotos.Fixture(titles, shown))
       println(s"[images] docs photos for ${titles.size} files (${photos.pool.good.size} photos, " +
         s"${photos.pool.bad.size} degraded); ${shown.size} files shown at the top of the shots get no degraded one")
@@ -534,6 +561,7 @@ object UiShotsServer {
          |  "healthContestId": ${healthContest.getOrElse(0L)},
          |  "roundsContestId": ${roundsContest.getOrElse(0L)},
          |  "oneCriterion": $oneCriterion,
+         |  "docsCriteria": ${docsCriteria.fold("null") { case (r, p) => s"""{"roundId": $r, "pageId": $p}""" }},
          |  "closedRoundJurors": [${closedRoundJurors.mkString(", ")}],
          |  "aloneRound": ${aloneRound.fold("null") { case (r, j) => s"""{"roundId": $r, "jurorId": $j}""" }},
          |  "commentFile": {"juror": $commentJuror, "pageId": $commentPage, "otherRounds": $commentOthers},
@@ -555,10 +583,10 @@ object UiShotsServer {
     * page: the first [[DocsPhotos.ShownPerList]] of each juror's gallery of both rounds (the
     * large views open a juror's first file, with its neighbours), and of all the jurors' by-rate
     * gallery and file list of both, each in the order its page has without a cookie. */
-  private def shownFiles(binaryId: Long, ratedId: Long, jurorIds: Seq[Long]): Set[String] = {
+  private def shownFiles(binaryId: Long, ratedId: Long, jurorIds: Seq[Long], more: Seq[Long] = Nil): Set[String] = {
     import controllers.{GalleryView, Pager, RoundList}
     implicit val request: play.api.mvc.RequestHeader = play.api.test.FakeRequest()
-    val rounds = Seq(binaryId, ratedId).map(id => db.scalikejdbc.Round.findById(id).getOrElse(sys.error(s"no round $id")))
+    val rounds = (Seq(binaryId, ratedId) ++ more).map(id => db.scalikejdbc.Round.findById(id).getOrElse(sys.error(s"no round $id")))
     def top(list: RoundList): Seq[String] =
       list.files(Pager(1, Int.MaxValue, DocsPhotos.ShownPerList)).map(_.image.title)
     val ofJurors = for {

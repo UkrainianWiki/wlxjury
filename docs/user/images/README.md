@@ -10,7 +10,11 @@ The fixture's files carry real Commons file names and authors, so the spec repla
 numbered examples before each shot, and the link to share shows a neutral host. In docs mode the
 server also makes the yes/no round's last file Juror 12's own (`gatling.setup.UiShotsServer`), so
 that the round has a conflict of interest: its statistics page keeps the conflicts link, which
-the organizer guide follows to the conflicts page.
+the organizer guide follows to the conflicts page. It also adds a running round rated by
+criteria (Aesthetics, Technical quality, Usefulness for Wikipedia) to the contest, with that
+juror and six of their files, the first rated on every criterion, for the juror guide's large
+view of a round with criteria. Being the contest's latest round, it is the third round on the
+rounds list and the statistics, and the new round form starts with its criteria.
 
 **Platform of the current set:** Windows 11 Pro (10.0.26200), Playwright 1.64.1 with its bundled
 Chromium (156), the app's own font stack, 2026-11-17, all 28 regenerated together for the Codex
@@ -18,12 +22,19 @@ restyle (`stack/184`); the same day, on the same platform, the four that show th
 conflict of interest (below) again: `organizer-round-statistics-link`, `organizer-conflicts`,
 `organizer-contest-files` and `admin-new-round-form`; on 2026-11-18, on the same platform, the two
 whose bar and round menu the rounds' Status, Type and Order menus and badges changed (`stack/187`):
-`admin-rounds-list` and `organizer-round-statistics`. Text rendering depends on the operating system, so regenerate all the
-images together on one platform and update this line.
+`admin-rounds-list` and `organizer-round-statistics`; on 2026-11-20, on the same platform, all 28
+regenerated together with the new `juror-large-view-criteria` (`stack/207`), keeping the 18 whose
+only differences were dates, the share link's token or palette noise, and replacing the 10 the UI
+changed: `admin-contests` (its Type, Country, Year and Order menus), `admin-rounds-list` and
+`organizer-round-statistics` (type icons, and the docs fixture's criteria round as a third round),
+`organizer-round-statistics-link`, `admin-contest-images` (the contest health link),
+`admin-new-round-form` (the criteria section, from that latest round), `organizer-contest-files`
+and the three large views (the icon after **Full resolution**). Text rendering depends on the
+operating system, so regenerate all the images together on one platform and update this line.
 
-**Size:** 28 images, about 4.6 MiB in all. The largest are the two galleries (about 700 and 610
-KiB), the contest's files (about 650 KiB) and the by-rate results (about 720 KiB); the three large views are cropped to the controls
-column and the top of the photo (about 320 to 400 KiB each), with the comment box in its own small shot;
+**Size:** 29 images, about 5.0 MiB in all. The largest are the two galleries (about 700 and 610
+KiB), the contest's files (about 650 KiB) and the by-rate results (about 720 KiB); the four large views (yes/no, rated, worst mark, criteria) are cropped to the controls
+column and the top of the photo (about 320 to 410 KiB each), with the comment box in its own small shot;
 the others stay small. The profile, user-edit, share-link and score-rule shots are cropped to
 their forms, below the navbar, and the root user-edit shot to its Root and Role fields. Photos make 2x PNGs large, so
 `browser-test/docs-optimize-png.py` reduces each image to a 256-colour palette after the spec

@@ -707,7 +707,12 @@ Wikipedia) asks for stars on each criterion; a file's rate is the sum. You choos
 criteria for the round from the shared **Criteria catalogue**, which has a link on the round
 form: **Add criteria** shows a criterion's list, **Add another criterion** one more, and × beside
 a criterion removes it. With one criterion the round is rated as usual (the file's rate is that
-criterion's stars, and the digit keys rate it), and the large view shows the criterion's name. After the round's first vote you can only replace a criterion by another in its place.
+criterion's stars, and the digit keys rate it), and the large view shows the criterion's name.
+If the contest's latest round has criteria, a new round starts with them and with that round's
+rating type; otherwise it starts as Yes/No without criteria. Choose another rating type, or remove
+the criteria with ×, to drop them. Once a round is started (running, or with a vote), its criteria can't be
+changed: the form lists them, and a round started without criteria can't get any. A round
+stopped before its first vote keeps the full form.
 
 <a id="a-stages"></a>
 ### The life of a round
@@ -725,7 +730,9 @@ criterion's stars, and the digit keys rate it), and the large view shows the cri
 
 Open **Rounds** at the start of the top bar (or in the pages menu there). The list shows, for each round: its **Number** (a link to the
 round form), its **Name** (a link to the round's statistics), the **File distribution**, the **Rating type**, whether it is
-**Active** (started), the number of **Images** and the state of its distribution.
+**Active** (started), the number of **Images** and the state of its distribution. The
+**Contest health** link under the contest's name opens the contest's health report (see
+[Importing the contest's files](#a-import-files)).
 
 Before each name, an icon shows the round's type: a tick and a cross for **Yes/No**, a star for
 **Rated** (a criteria round is rated too; a comments-only round has no icon). The icons are in
@@ -748,7 +755,7 @@ comes back to the same list. Starting or stopping a round, and the round form's 
 
 **Add round** creates a new round.
 
-<img src="images/admin-rounds-list.png" alt="The rounds list, with the Status, Type and Order menus in the top bar and each round's Active and type badges" width="1280">
+<img src="images/admin-rounds-list.png" alt="The rounds list, with the Status, Type and Order menus in the top bar, each round's type icon before its name and the Active column" width="1280">
 
 <a id="a-create-round"></a>
 ### Creating a round
@@ -783,7 +790,10 @@ The jurors are chosen on the jurors form when the round is distributed, and can'
 the form of a distributed round. To work with other jurors, create another round. Later you can pause and resume
 a juror, see [Pausing a juror](#a-pause-juror).
 
-<img src="images/admin-new-round-form.png" alt="The round form, with the Media filtering and Add files sections opened" width="853">
+<img src="images/admin-new-round-form.png" alt="The round form, with the Media filtering and Add files sections opened, and the criteria of the contest's latest round" width="853">
+
+Here the contest's latest round has criteria, so the form starts with them and its 1–5 rating;
+with criteria the form has no worst mark.
 
 <a id="a-choose-files"></a>
 ### Choosing the round's files
@@ -1000,8 +1010,8 @@ Open the round from the rounds list: its number is a link. On an existing round 
 
 - the round's name;
 - the [file score](#a-score-rule) and, in a rated round, the [worst mark](#a-worst-mark), at any time;
-- in a rated round, the criteria, only by replacing one in its place once the round has votes
-  (a yes/no or comments-only round's form has neither);
+- in a rated round, the criteria, only before the round is started (not running and no vote
+  yet; a yes/no or comments-only round's form has neither);
 - **Leave out conflicts of interest**, see [Leaving them out of a round](#a-leave-out-conflicts);
 - **Add files** and **Distribute N new files**.
 
@@ -1103,6 +1113,11 @@ read before the Wikidata items were stored get theirs the next time it runs. Whe
 operators have set up a local image cache, **Download images locally** fills it. These run as
 background jobs, with their progress. When the download has nothing to fetch, it says whether all
 the files were already cached or there were none, with the time it checked.
+
+**Contest health**, under the contest's name, opens a read-only report on the contest: its
+files and import sources, and checks of its rounds (for example empty, frozen or being
+created, and which are open to jurors). Only the contest's admins and root see the link and the
+page.
 
 <img src="images/admin-contest-images.png" alt="The page for importing the contest's files" width="1280">
 

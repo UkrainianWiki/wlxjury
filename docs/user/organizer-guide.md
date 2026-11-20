@@ -57,7 +57,7 @@ configured yet**.
   choices keep it, else the first round they list, else the round itself, which says none match.
   A round opened from a saved or shared link whose choices leave it out still shows in the row,
   selected, with a dashed outline: point at it for **Not in the chosen filter**. The choices stay
-  in the page's address and when you switch round. The round menu of the galleries shows the same badges and grey names, without these menus.
+  in the page's address and when you switch round. The round menu of the galleries shows the same icons and grey names, without these menus.
 - The pages menu at the start of the top bar (its button the menu icon and the page you are on,
   **Statistics** here) opens the other pages: **Contest files** opens the contest's files, and
   **Statistics**, on every page of the contest, the statistics of the round you are looking at,
@@ -142,7 +142,7 @@ Under the table:
 A link whose number is 0 is plain text. The numbers of the conflicts and authors links appear
 a moment after the page; until then, the links work without them.
 
-<img src="images/organizer-round-statistics.png" alt="The statistics page: the Status, Type and Order menus in the top bar, the row of rounds with their Active and type badges, and a row for each juror, with the Voting column" width="1280">
+<img src="images/organizer-round-statistics.png" alt="The statistics page: the Status, Type and Order menus in the top bar, the row of rounds with their type icons, and a row for each juror, with the Voting column" width="1280">
 
 ## Results
 

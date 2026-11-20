@@ -393,8 +393,8 @@ upward arrow (**Previous image**) and the downward arrow (**Next image**). Point
 shows its name. Then come the vote buttons or stars. Click the image to open the file's page on Commons in a new tab.
 
 The left column also has **File details**: the full resolution with a link to the original
-file, and for monuments the place and the monument. **Next files** shows the files after this
-one. Click a heading to show or hide its section; the tool remembers which are open.
+file (the Commons icon after **Full resolution** marks a link that opens Commons in a new tab),
+and for monuments the place and the monument. **Next files** shows the files after this one. Click a heading to show or hide its section; the tool remembers which are open.
 
 Videos play in the large view.
 
@@ -458,14 +458,14 @@ to go back to that file.
 In a round with criteria, the large view lists the criteria, each with its own stars and
 number. Click the stars of each criterion.
 
+<img src="images/juror-large-view-criteria.png" alt="The large view of a round with criteria: each criterion's name, number and stars" width="820">
+
 The view stays on the file while you rate its criteria. Go to the next file yourself with the
 buttons or the Down key.
 
 A round with **one criterion** is rated like any rated round: the gallery names the criterion
 at its top ("Rate: …") and has stars under each file, the large view shows the criterion's name
 above its stars, the digit keys rate it, and a vote moves on to the next file.
-
-<!-- screenshot to add: the large view of a round with criteria -->
 
 ### Keyboard shortcuts in the large view
 

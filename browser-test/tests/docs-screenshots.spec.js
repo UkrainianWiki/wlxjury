@@ -188,6 +188,15 @@ test.describe('the guides\' screenshots', () => {
         await expect(page.locator('.bi-x-lg'), 'no worst-mark icon on the rated shot: restart the docs-mode server').toHaveCount(0);
       },
     });
+    // a round with criteria (docs mode's own round, UiShotsServer): the criteria's stars and numbers
+    expect(fixture.docsCriteria, 'the docs-mode server has a round with criteria: restart it').not.toBeNull();
+    await shot(contextAs, 'juror', largePath(fixture.docsCriteria.roundId, juror.id, fixture.docsCriteria.pageId), 'juror-large-view-criteria', {
+      // the controls column down to the "Voted" line under the last criterion, and the photo
+      ...LARGE_TOP, height: 322,
+      prepare: async (page) => {
+        await expect(page.locator('.large-stars'), 'a star row for each of the three criteria').toHaveCount(3);
+      },
+    });
     await shot(contextAs, 'juror', `/users/edit/${juror.id}`, 'juror-profile', { crop: '#edit-user' });
   });
 

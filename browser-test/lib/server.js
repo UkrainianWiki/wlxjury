@@ -86,6 +86,9 @@ export function fixtureFor(browserName) {
     // the rounds' type icons (rounds-filter.spec.js): a contest of its own with 30 rounds of every
     // type, active and not, names of very different lengths; 0 in the guides' screenshot mode
     roundsContestId: s.roundsContestId || 0,
+    // the guides' screenshots only: a running round with criteria in the fixture's contest, with
+    // the juror above, and the juror's file rated on every criterion; null in other runs
+    docsCriteria: s.docsCriteria || null,
     // a running round of one criterion in a contest of its own, and this engine's juror of it, with
     // three files (criteria-form.spec.js); null in the guides' screenshot mode
     oneCriterion: s.oneCriterion

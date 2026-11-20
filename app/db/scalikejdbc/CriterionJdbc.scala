@@ -134,7 +134,7 @@ object RoundCriterion {
             WHERE v.round_id = $roundId LIMIT 1 $lock""".map(_.int(1)).single().isDefined
     }
 
-  /** Changes the round's criteria to `criterionIds` (checked by the round form: none, or 2 to
+  /** Changes the round's criteria to `criterionIds` (checked by the round form: none, or 1 to
     * 10 of the catalogue, each once): taken while the round is not started (none: no longer a
     * criteria round), refused once it is, running or with a vote, nothing written. The same
     * criteria are no change, started or not.
