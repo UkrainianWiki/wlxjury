@@ -18,7 +18,7 @@
     @main("gallery", user, list.asUserId, Some(list.round), rounds, gallery = true, Some(list),
         pagerNav(pager, list.pageUrl), rates = rates, filters = views.html.regionMenu(regionMenu), commented = commented,
         head = play.twirl.api.HtmlFormat.fill(List(snippets.galleryScripts(),
-            snippets.tileVoteScripts(views.TileStars.round(user, list.asUserId, Some(list.round)).nonEmpty)))) {
+            snippets.tileVoteScripts(views.TileStars.round(user, list.asUserId, Some(list.round)).nonEmpty))), reappearingBar = true) {
 
         @defining(list.roundId) { roundId =>
 

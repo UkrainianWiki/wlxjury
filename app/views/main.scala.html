@@ -18,18 +18,24 @@
         commented: Option[Int] = None,
         commentsBy: Html = Html(""),
         commentsByName: Option[String] = None,
-        roundFilter: Option[RoundsFilterBar] = None)(content: Html)(implicit messages: Messages, request: RequestHeader)
+        roundFilter: Option[RoundsFilterBar] = None,
+        reappearingBar: Boolean = false)(content: Html)(implicit messages: Messages, request: RequestHeader)
 @* `head`: the page's own scripts and styles (snippets.galleryScripts, tileVoteScripts,
    multiSelectScripts), after the navbar's region menu and pager scripts, which every page with
    a navbar may show. `commented`: the number of the list's files with comments, for the navbar's
    Comments menu (a round's list pages only). `commentsBy`: the Comments menu's
    "Comments by" section and `commentsByName` the author it is filtered by (the organisers' comments
    report: navbar.scala.html commentsMenu). `roundFilter`: the round statistics page's Status, Type
-   and Order menus (navbar.scala.html) *@
-@layout(Messages(title), bodyClass = if (gallery) "gallery" else "") {
+   and Order menus (navbar.scala.html). `reappearingBar`: the navbar sticks to the window's top and
+   hides while the user scrolls down (a trial: topbar.js, main.css wlx-topbar-reappears), on the
+   galleries and lists; its script before file-anchor.js, which reads the bar's height *@
+@layout(Messages(title), bodyClass = Seq(if (gallery) "gallery" else "", if (reappearingBar) "wlx-topbar-reappears" else "").filter(_.nonEmpty).mkString(" ")) {
         <script src="@routes.Assets.versioned("javascripts/region-menu.js")"></script>
         <script src="@routes.Assets.versioned("javascripts/pager-jump.js")"></script>
         <script src="@routes.Assets.versioned("javascripts/vote-time.js")"></script>
+        @if(reappearingBar) {
+        <script src="@routes.Assets.versioned("javascripts/topbar.js")"></script>
+        }
         <script src="@routes.Assets.versioned("javascripts/file-anchor.js")"></script>
         @head
 } {

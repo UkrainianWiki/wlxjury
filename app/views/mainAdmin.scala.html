@@ -12,11 +12,17 @@
         head: Html = Html(""),
         roundFilter: Option[RoundsFilterBar] = None,
         filters: Html = Html(""),
-        orders: Html = Html(""))(content: Html)(implicit messages: Messages, request: RequestHeader)
+        orders: Html = Html(""),
+        reappearingBar: Boolean = false)(content: Html)(implicit messages: Messages, request: RequestHeader)
 @* `title`: a message key, as main's; `head`: the page's own scripts and styles; `roundFilter`: the
    Rounds page's Status, Type and Order menus (navbar.scala.html); `filters`, `orders`: a page's own
-   menus in the navbar's filter and order groups (the contests page's) *@
-@layout(Messages(title), bodyClass = if (gallery) "gallery" else "") {
+   menus in the navbar's filter and order groups (the contests page's); `reappearingBar`: the
+   navbar sticks to the window's top and hides while the user scrolls down, as main's (a trial:
+   topbar.js), on the lists *@
+@layout(Messages(title), bodyClass = Seq(if (gallery) "gallery" else "", if (reappearingBar) "wlx-topbar-reappears" else "").filter(_.nonEmpty).mkString(" ")) {
+        @if(reappearingBar) {
+        <script src="@routes.Assets.versioned("javascripts/topbar.js")"></script>
+        }
         @head
 } {
         @navbar(title, user, asUserId, selectedRound, rounds, pager = pager, contestId = contestId, pagesInline = !gallery, roundFilter = roundFilter,

@@ -87,6 +87,22 @@ New forms use them, not hand-written markup.
 pager's page box, the round form's dependent fields, the large view's keys and failed or deleted
 thumbnails still work after any restyling; the screenshots (§5) and the specs show it.
 
+**3.6 The reappearing top bar (a trial, 2026-11-20).** A gallery or list page opts in with
+`reappearingBar = true` on `main` or `mainAdmin` (the body class `wlx-topbar-reappears`; on now:
+the galleries, by-rate, file list, comments report, contest files, Rounds, round statistics,
+Contests, Users). Its navbar is sticky and `topbar.js` hides it (`wlx-topbar-hidden`, a transform;
+no transition under `prefers-reduced-motion`) on a scroll down, and shows it on a scroll up, at the
+top, under an open menu, on focus, and after `file-anchor.js` scrolled to a file (until the user's
+next wheel, key, tap or click). Not in the large views, nor on forms. `topbar.js` keeps the bar's
+height in `--wlx-topbar-height` on the root, which is the root's `scroll-padding-top`: a focused
+element, a fragment's target or a found text lands below the bar, also once it comes back (WCAG
+2.4.11). Something else sticky at the top of such a page must sit below the bar (`top:
+var(--wlx-topbar-height)`) and follow `wlx-topbar-hidden` (move up with it when the bar hides),
+or accept a gap above it while the bar is hidden; there is none yet. A menu in the bar fits the
+window and scrolls inside itself (main.css). *Why:* the bar's menus
+within reach on long pages without taking the screen; a trial, kept or dropped by what users say
+(`topbar.test.js`, `topbar.spec.js`).
+
 ## 4. Accessibility and the keyboard
 
 **4.1 Every control has an accessible name.** An icon-only button or link has `aria-label` or

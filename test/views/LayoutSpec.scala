@@ -89,5 +89,29 @@ class LayoutSpec extends PlaySpecification {
       page(views.html.mainAdmin("users")(Html(""))) must contain("<title>Users</title>")
       page(views.html.main("gallery")(Html(""))) must contain("<title>Gallery</title>")
     }
+
+    "have the reappearing top bar only where the page opts in, never in the large views" in {
+      val on = Seq(
+        page(views.html.main("gallery", gallery = true, reappearingBar = true)(Html(""))),
+        page(views.html.mainAdmin("users", reappearingBar = true)(Html("")))
+      )
+      forall(on) { p =>
+        p must beMatching("""(?s).*<body class="[^"]*\bwlx-topbar-reappears\b.*""")
+        p must contain("javascripts/topbar.js")
+      }
+      on.head must contain("""<body class="gallery wlx-topbar-reappears">""")
+      // topbar.js before file-anchor.js, which reads the bar's height on the same event
+      on.head.indexOf("javascripts/topbar.js") must be_<(on.head.indexOf("javascripts/file-anchor.js"))
+      val off = Seq(
+        page(views.html.main("gallery", gallery = true)(Html(""))),
+        page(views.html.mainAdmin("users")(Html(""))),
+        LargeViewRenders.large(LargeViewRenders.ratedRound, LargeViewRenders.middle),
+        LargeViewRenders.contestFile(LargeViewRenders.middle)
+      )
+      forall(off) { p =>
+        p must not contain "wlx-topbar-reappears"
+        p must not contain "javascripts/topbar.js"
+      }
+    }
   }
 }

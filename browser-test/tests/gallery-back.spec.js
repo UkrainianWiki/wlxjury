@@ -131,8 +131,15 @@ test('the cause: the old #<pageId> fragment jumps the first file to the top edge
     const pageId = await page.locator('li[data-file-anchor]').first().getAttribute('data-file-anchor');
     await page.goto('about:blank');
     await page.goto(`${list}#${pageId}`);
-    expect(await settledScrollY(page), 'the old fragment scrolls the navbar away').toBeGreaterThan(0);
-    await expect(page.locator('nav.navbar').first()).not.toBeInViewport({ ratio: 1 });
+    // the old fragment's jump: the by-rate gallery's bar is sticky now (the reappearing top bar,
+    // topbar.spec.js) and the root's scroll-padding-top its height, so the browser puts the file
+    // below the bar, never under it
+    await settledScrollY(page);
+    const nav = page.locator('nav.navbar').first();
+    await expect(nav).toBeInViewport({ ratio: 1 });
+    const file = page.locator(`li[data-file-anchor="${pageId}"]`);
+    const [n, f] = [await nav.boundingBox(), await file.boundingBox()];
+    expect(f.y, "the old fragment's file below the bar").toBeGreaterThanOrEqual(n.y + n.height - 1);
     await page.goto('about:blank');
     await page.goto(`${list}#file-${pageId}`);
     expect(await settledScrollY(page)).toBe(0);

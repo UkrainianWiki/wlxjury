@@ -148,7 +148,8 @@
 
 @defining(list.round) { round =>
 @main("comments", user, list.asUserId, Some(round), rounds, gallery = false, Some(list), pagerNav(pager, list.pageUrl), rates,
-    filters = views.html.regionMenu(regionMenu), commented = commented, commentsBy = commentsBySection, commentsByName = filteredName) {
+    filters = views.html.regionMenu(regionMenu), commented = commented, commentsBy = commentsBySection, commentsByName = filteredName,
+    reappearingBar = true) {
 
     <div class="wlx-comments-report">
         <div class="d-flex flex-wrap gap-2 align-items-center mb-2">

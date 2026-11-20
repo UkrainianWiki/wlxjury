@@ -28,7 +28,7 @@
 
     @mainAdmin("rounds", adminUser, adminUser.getId,
         rounds = rounds, selectedRound = round, contestId = contest.id,
-        roundFilter = Some(controllers.RoundsFilterBar(filter, roundsUrl, rounds))) {
+        roundFilter = Some(controllers.RoundsFilterBar(filter, roundsUrl, rounds)), reappearingBar = true) {
         <div class="row" >
             <h1 class="h3">@Messages("contest") @contest.fullName</h1>
             @* the contest's health report (support diagnostics plan, D-1a): this page is its admins' and root's *@

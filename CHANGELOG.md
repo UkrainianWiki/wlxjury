@@ -33,6 +33,21 @@ is listed below.
 
 **Features**
 
+- **A reappearing top bar, as a trial** (the maintainer's decision of 2026-11-20, "let's try and
+  see how it works"; developed 2026-11-20, `stack/206-reappearing-topbar`): on the galleries, the
+  by-rate gallery, the file list, the comments report, the contest files, the Rounds, round
+  statistics, Contests and Users pages the navbar with its contest, round, region and juror menus
+  sticks to the window's top: it slides up out of view while the user scrolls down (past its own
+  height, 10 px or more at a time) and back as soon as they scroll up a little, on desktops and
+  phones. It stays shown at the page's top, while one of its menus is open (a menu that would end
+  below the window scrolls inside itself), when the focus moves into it, and after Back to gallery
+  scrolled to a lower file, which lands below it, until the user's next wheel, key, tap or click.
+  Whatever the browser scrolls into view there (a focused element, a link's target, a found text,
+  that file) lands below the bar (the root's `scroll-padding-top` is the bar's height). No
+  animation for those who prefer reduced motion. Not in the large views, nor on the forms and
+  other pages (`topbar.js`; `main`/`mainAdmin` `reappearingBar`, the body class
+  `wlx-topbar-reappears`; `--wlx-file-anchor-offset` is 0.5 rem on those pages). To be kept,
+  changed or removed after the trial.
 - **The round form's criteria start small; one criterion allowed** (the maintainer's decisions of
   2026-11-19; developed 2026-11-19, `stack/205-criteria-form-small`): the Criteria section showed
   all ten selects, empty ones too. With script it now shows only the chosen criteria, each with a

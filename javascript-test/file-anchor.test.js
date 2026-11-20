@@ -112,3 +112,17 @@ test("does nothing without a matching file", () => {
     document.body.innerHTML = "<div></div>";
     expect(anchor.reveal(fakeWindow("#file-7", null))).toBe(false);
 });
+
+test("tells the reappearing top bar (topbar.js) when it scrolled, and only then", () => {
+    const seen = jest.fn();
+    document.addEventListener("wlx:file-anchor", seen);
+    let win = fakeWindow("#file-7", { top: 120, bottom: 300, left: 10, right: 200 });
+    win.CustomEvent = CustomEvent;
+    expect(anchor.reveal(win)).toBe(false);
+    expect(seen).not.toHaveBeenCalled();
+    win = fakeWindow("#file-7", { top: 1500, bottom: 1700, left: 10, right: 200 });
+    win.CustomEvent = CustomEvent;
+    expect(anchor.reveal(win)).toBe(true);
+    expect(seen).toHaveBeenCalledTimes(1);
+    document.removeEventListener("wlx:file-anchor", seen);
+});
