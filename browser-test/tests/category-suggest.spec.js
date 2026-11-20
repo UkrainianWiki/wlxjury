@@ -154,6 +154,12 @@ test('Enter in the import source keeps it; a second Enter sends it', { tag: '@A-
     const control = page.locator('#source-ts-control');
     await page.locator('#import-images .ts-control').click();
     await expect(control).toBeFocused();
+    // Tom Select's own focus handling done (the wrapper's 'focus' class): a click focuses the box
+    // at once but handles the focus after a timer, which opens the list with the value as the row
+    // Enter chooses. On a busy runner Chromium may handle Playwright's key before that timer
+    // (input goes before timers): the first Enter then sent the form, or the timer's handling came
+    // after it and left the list open, so that the second Enter only chose the value again.
+    await expect(page.locator('#import-images .ts-wrapper')).toHaveClass(/(^|\s)focus(\s|$)/);
     await page.keyboard.press('Enter');
     await page.waitForTimeout(500);
     expect(sent, 'the first Enter keeps the value, sends nothing').toEqual([]);
