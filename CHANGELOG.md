@@ -16,7 +16,7 @@ developed (its first to last commit), or "released around" a git tag, with the r
 where a tag or `version :=` in `build.sbt` gives one. Earlier deploy dates may be added later.
 Plans that aren't built
 yet are in the [roadmap](docs/plans/2026-11-02-roadmap.md). PR numbers are the stacked series,
-from #184 on (01–59 in `docs/plans/2026-11-03-pr-series.md` on `origin/stack/series-doc`, the
+from #184 on (01–59 in [`docs/plans/2026-11-03-pr-series.md`](docs/plans/2026-11-03-pr-series.md), the
 later ones in the roadmap and its deploy records).
 
 **Versioning:** from the next release on, versions are calendar-based, `YY.MM` (e.g. `26.11`),

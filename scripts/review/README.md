@@ -3,7 +3,7 @@
 Tools for reviewing the stacked PRs: requesting CodeRabbit reviews one PR at a time and posting
 the triage replies. The process (who runs them, the triage classes, the triage document) is in
 [workflow practices](../../docs/workflow/practices.md) §3 and §6.3; the triage document itself is
-`docs/plans/2026-11-03-pr-review-triage.md` on `origin/stack/series-doc`.
+[`docs/plans/2026-11-03-pr-review-triage.md`](../../docs/plans/2026-11-03-pr-review-triage.md).
 
 Python 3.8+, stdlib only; run from Git Bash with `python -I scripts/review/<tool>.py`. Every
 tool takes `--gh PATH` (default: `$GH`, else `gh` on `PATH`; on the orchestrator's machine

@@ -15,8 +15,7 @@ the code doesn't follow a rule yet. **Sources:** the
 write-path document (`docs/plans/2026-11-03-write-path-simplification.md`, matrix §2,
 decisions W1–W10 §9, results §11), the round-images plan §5 and §12–§13, the criteria plan
 (C1/C2), the follow-ups plan B9–B12, `docs/history/db-performance-analysis.md` (2026-03), the PR
-review triage (`docs/plans/2026-11-03-pr-review-triage.md`, only on the branch
-`origin/stack/series-doc`: `git show origin/stack/series-doc:docs/plans/2026-11-03-pr-review-triage.md`).
+review triage ([`docs/plans/2026-11-03-pr-review-triage.md`](../plans/2026-11-03-pr-review-triage.md)).
 
 ## Contents
 

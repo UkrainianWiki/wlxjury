@@ -6,8 +6,8 @@ Each rule has a short why and an example in this repository. Agent rules (models
 `agent-check.py`, bounded waits) stay in CLAUDE.md "Agent efficiency"; what to test and when is
 [testing/practices.md](../testing/practices.md) §8. **Sources:** the roadmap's "Running agents
 (how)" ([`2026-11-02-roadmap.md`](../plans/2026-11-02-roadmap.md#running-agents-how)); the PR series
-and the review triage (`origin/stack/series-doc`: `docs/plans/2026-11-03-pr-series.md`,
-`docs/plans/2026-11-03-pr-review-triage.md`); the hotfix record in
+and the review triage ([`2026-11-03-pr-series.md`](../plans/2026-11-03-pr-series.md),
+[`2026-11-03-pr-review-triage.md`](../plans/2026-11-03-pr-review-triage.md)); the hotfix record in
 [`docs/history/security/`](../history/security/2026-11-02-role-allowlist-hotfix.md);
 [`CHANGELOG.md`](../../CHANGELOG.md).
 
