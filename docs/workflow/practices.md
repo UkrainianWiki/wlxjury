@@ -1,6 +1,6 @@
 # Development workflow
 
-How work moves from a plan to production: branches and stacked PRs, the batch cycle, review
+How work moves from a plan to production: branches and PRs to master, the batch cycle, review
 triage, worktrees and the shared sbt lock, commits, integration, releases and the changelog.
 Each rule has a short why and an example in this repository. Agent rules (models, effort,
 `agent-check.py`, bounded waits) stay in CLAUDE.md "Agent efficiency"; what to test and when is
@@ -18,7 +18,7 @@ and the review triage ([`2026-11-03-pr-series.md`](../plans/2026-11-03-pr-series
 3. [Review triage](#3-review-triage)
 4. [Worktrees, the sbt lock and the environment](#4-worktrees-the-sbt-lock-and-the-environment)
 5. [Commits](#5-commits)
-6. [Integration: followups and the stack](#6-integration-followups-and-the-stack)
+6. [Branches, PRs and merging](#6-branches-prs-and-merging)
 7. [Releases, hotfixes and the changelog](#7-releases-hotfixes-and-the-changelog)
 8. [Keeping the practices docs current](#8-keeping-the-practices-docs-current)
 9. [Guards](#9-guards)
@@ -169,57 +169,83 @@ work and when, not when it was rearranged.
 **5.4 Never amend or force.** New commits for fixes; no `--amend`, rebase or force push on a
 pushed branch; no `--no-verify`.
 
-## 6. Integration: followups and the stack
+## 6. Branches, PRs and merging
 
-**6.1 `ukwikidev/followups` collects finished work.** Each batch merges there (`--no-ff`, by the
-orchestrator) after its review. It is local; nothing is pushed from it directly.
+Since 2026-11-20 every change is a PR to `master`, merged as one squash commit. The short version
+for people is [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
-**6.2 GitHub sees it as stacked PRs.** Each batch becomes one PR, `[NN] <title>` on branch
-`stack/NN-<theme>`, based on the previous `stack/NN-1-…` (the first on `master`). Its commits are
-curated: one or a few per sub-theme, docs in a trailing commit when they exceed about 150 lines,
-original authors and dates (§5.3). The tip's tree equals the followups commit it reproduces
-(`git diff --stat` empty), and the body says which (`Original history`). *Why:* 844 commits
-reviewed as 54 single-theme PRs (PR series).
+**6.1 Branch from master, one PR per change.** `git switch -c <topic>/<short-name> origin/master`
+(`fix/`, `feature/`, `docs/`), in its own worktree when several changes are in flight (§4.1); the
+PR targets `master` and keeps to one theme (§2.2). *Why:* a squash makes one commit per PR, which
+is reviewed, bisected and reverted as one change.
 
-**6.3 Who pushes, and without force.** The orchestrator pushes stack branches and opens the PRs;
-an agent does so only when the user asks for it in that task. Check that the branch doesn't
-exist (`git ls-remote origin
-refs/heads/stack/NN-…`), then `git push origin <sha>:refs/heads/stack/NN-<theme>`. The PR body
-ends its "Stacked PR" section with "Based on #<prev>; last in the series."; when the next one
-opens, that line of the previous PR becomes "next: #<new>" and nothing else in its body changes.
-Only the orchestrator (or the user) edits a PR body, including another agent's PR: an agent
-that needs a change there asks for it. *Why:* two writers of one body overwrite each other, and
-the stack's links must stay consistent.
+**6.2 Squash with GitHub's button.** `master` requires a PR, linear history, no force push and no
+deletion (enforced). Planned, once the maintainer sets them: "Squash and merge" as the only merge
+method and head branches deleted after the merge; until then, use "Squash and merge". The PR
+title and description become the commit's message, so the title says what changed and the
+description is a short summary of why (the PR template); long notes, screenshots and logs go in
+comments. The PR's own commits stay on the PR, not on master. *Why:* master reads as one line of
+reviewed changes; the work history stays one click away.
 
-**6.4 A later commit goes to both, and the trees stay equal.** When the stack tip and a
-followups branch have the same tree, a new commit on the stack is mirrored on a followups branch
-with the same tree: `git commit-tree <stack tip>^{tree} -p <followups tip>` (or a cherry-pick
-with `-x`), then `git diff --stat <stack tip> <mirror>` must be empty. *Example:*
-`ukwikidev/followups-ci` for PR 55, `ukwikidev/followups-refresh` for PR 67 (#250).
+**6.3 Who pushes and edits PRs, and without force.** Contributors push their own branches and
+open their PRs. Nobody force-pushes a branch under review. Only the PR's author or a maintainer
+edits a PR body; anyone else who needs a change there asks for it. A PR is merged by a maintainer.
+*Why:* two writers of one body overwrite each other.
 
-**6.5 Restack by merge, never by force.** When a lower stack PR changes (a review fix), the
-branches above it take the change by a merge commit (or a new commit), never a rebase or a force
-push of a pushed branch: reviewers' threads and the PR series' recorded tips stay valid.
+**6.4 Review fixes are new commits; master comes in by a merge.** Fix on the branch with new
+commits (§5.4); take newer master with `git merge origin/master`, never a rebase. The squash
+flattens it all anyway. *Why:* reviewers' threads stay attached to the commits they commented on.
 
-**6.6 CI must be green** on the stack PR before the next batch builds on it (testing §8.3).
+**6.5 Stack only when a change needs an unmerged one.** The child PR targets the parent's
+branch; merge bottom-up. After the parent PR is squash-merged, find its squash commit
+(`Sp=$(git log origin/master --grep '(#NNN)' --format=%H -1)`, with the parent's PR number), and
+in the child branch run `git merge "$Sp^"` (a normal merge of master just before the squash; on
+a conflict keep the child's side), then `git merge -s ours "$Sp"`, then check that
+`git diff origin/master...HEAD --stat` shows only the child's changes, and push. If the parent's
+branch was deleted, GitHub retargets the child PR to master; otherwise change its base to
+`master` by hand. Merges only. *Why:* the squash shares no history with the parent's commits, so
+a plain merge of master would conflict on the parent's own lines.
+
+**6.6 CI must be green** before merging (testing §8.3). Planned (pending the maintainer's
+settings): `sbt test (mariadb:10.6.22)` as a required check. Until then a maintainer checks it
+before merging. The browser tests and coverage run on every PR but are not to be required until
+reruns on one master SHA separate flakes from failures; a red one is still looked at (testing §7).
+
+**6.7 Branches from before 2026-11-20.** Until then finished work collected on
+`ukwikidev/followups` and reached GitHub as stacked PRs (`[NN] <title>` on `stack/NN-<theme>`,
+each based on the previous one; the series and its rules are described in
+`docs/plans/2026-11-03-pr-series.md`). Master then got that work as squash commits, one per
+stacked PR, #184–#390, with the top `1a651735` (its tree is `stack/207-guide-shots`'s). A branch
+made on the old history bridges once: if it contains `origin/stack/207-guide-shots`,
+`git merge -s ours -m "Bridge: master's squash of #184-#390 has this content" 1a651735`; if not,
+first `git merge origin/stack/207-guide-shots`, then the same. `git diff 1a651735...HEAD --stat`
+must show only the branch's own changes. The rest of the stack (#391–#395) goes to master
+bottom-up by §6.5. `stack/207-guide-shots` stays until every bridged branch is merged.
 
 ## 7. Releases, hotfixes and the changelog
 
 **7.1 A release is a tree that was tested.** Its commit had the full suite run (or the same tree
-did); the roadmap's "Before any production deploy" lists the user's manual checks per release
+did); the roadmap's "Before any production deploy" lists the maintainer's manual checks per release
 (every release, then per migration range); the ZIP is built only after them. At the local release
 build `test_database_restore` always runs and `test_release_script` only if `scripts/deployment/`
 changed since the last released version; the release record lists which ran and why (operations
 §3.3). The deploy itself is
 [deployment.md](../deployment.md) and [operations](../operations/practices.md) §4.
 
-**7.2 Hotfixes branch from what production runs.** `ukwikidev/hotfix-<what>-<deployed sha>` from
-the deployed commit, the smallest fix, its own runbook and data script, deployed as a named build
-(`0.13-round-filters-rolefix-f3f2c73617de` on `f9c31ce5`). The same fix is already in followups or
-goes there; the hotfix record moves to `docs/history/` and is deleted when a release replaces it.
-*Why:* production can't take the untested distance between its commit and followups for one fix.
+**7.2 Releases are cut from master; hotfixes go to master first.** From 26.11.15 on, a release
+is a release-commit PR on master (§7.4), squash-merged, and its tag goes on that master commit.
+Earlier releases are recorded by their `release/<version>` branches (26.11.14 stays on
+`release/26.11.14`). A hotfix while master has unreleased work: the smallest fix as a PR to
+master first; then a `release/<version>` branch from the last release's tag (once release tags
+exist; until then from its `release/<version>` branch) gets the squash commit with
+`git cherry-pick -x`, and the hotfix release is built, deployed and tagged there. Planned
+(pending the maintainer's settings): a ruleset protecting `release/*`. A fix that needs its own
+runbook or data script gets them in the same PR; the hotfix record moves to `docs/history/` and
+is deleted when a release replaces it. *Why:* production can't take the untested distance
+between its release and master for one fix, and a fix made on master first can't be lost by the
+next release. *Example:* 26.11.13.1, on `release/26.11.13.1` from `release/26.11.13`.
 
-**7.3 The changelog** (`CHANGELOG.md`) is a **development changelog** (the user, 2026-11-03):
+**7.3 The changelog** (`CHANGELOG.md`) is a **development changelog** (decided 2026-11-03):
 each release has **Features** (what organizers and jurors notice) and **Development** (the
 important engineering changes: frameworks, database and migrations, tests and CI, deployment
 tooling). It leaves out unmerged work, hosting and server details (hosts, server paths,
@@ -229,19 +255,21 @@ comes first. Deployed releases are dated from their migrations (production's
 migration is "deployed by" the next deploy that contained it, or dated from a deploy record);
 earlier releases by their development period (first to last commit) or their git tag. A batch
 adds its line under Unreleased in the same PR; a deploy moves the block under its release heading
-(§7.4) with its date. PR numbers are the stack's. *Why:* the changelog shows how the project
+(§7.4) with its date. PR numbers are GitHub's (the stacked series #184–#395, then PRs to
+master). *Why:* the changelog shows how the project
 developed, without what changes with the hosting or what no reader needs.
 
-**7.4 Calendar versions** (the user, 2026-11-03). A release is named `YY.MM` for the month it
+**7.4 Calendar versions** (decided 2026-11-03). A release is named `YY.MM` for the month it
 ships (`26.11`), with `.N` for an extra deploy in the same month (`26.11.1`, `26.11.2`). Between
 releases `build.sbt` carries the next release as a snapshot (`version := "26.11-SNAPSHOT"`;
 rename it if the release slips to a later month). Releasing:
-1. the release commit sets `version := "26.11"` (on followups, or on a release branch from the
-   tested commit; `26.11` from the tip of `ukwikidev/release-2-prep`);
+1. the release commit sets `version := "26.11"`: a PR to master, squash-merged, then the tag on
+   that commit (a hotfix release: on its `release/<version>` branch, §7.2; up to 26.11.14 each
+   release commit was on its own `release/<version>` branch);
 2. build with `-Dwlxjury.buildId=26.11` (the ID becomes `26.11-<commit>`, the ZIP
    `wlxjury-26.11.zip`; [deployment.md](../deployment.md), "Build and rehearse");
 3. after the deploy, the changelog heading becomes `## 26.11 (YYYY-MM-DD)` with the deploy date
-   (§7.3), and the next commit, on followups and on master, sets the next snapshot:
+   (§7.3), and the next PR to master sets the next snapshot:
    `26.12-SNAPSHOT`, or `26.11.1-SNAPSHOT` if another deploy is planned in the same month. Never
    leave `26.11-SNAPSHOT` after `26.11` ships: a snapshot names the release still to come, and
    later builds would read as older than the deployed `26.11`.
@@ -270,9 +298,11 @@ these yet" list (db §11) or the triage, not silently into the rule's wording.
 | 4.6 cleanup after a failed agent | the orchestrator | manual |
 | 4.3 no credentials in CI | `TestConfigAnonymousSpec` (workflows) | enforced |
 | 5.3 trailers | review | planned: none |
-| 6.2, 6.4 stack tip equals its followups tree | `git diff --stat` by the orchestrator | manual check |
-| 6.5 restack by merge, no force | review; the series' recorded tips | by convention only |
-| 6.6 green CI on PRs | `ci.yml` on every PR | runs on every PR; branch protection requiring `CI / sbt test (mariadb:10.6.22)` on `master` is planned (CI plan, U8) |
+| 6.1, 6.2 PR required, linear history, no force push or deletion on master | the `master` ruleset | enforced |
+| 6.2 squash as the only merge method; head branches deleted after the merge | the repository's merge settings | planned (pending maintainer settings) |
+| 6.4, 6.5 merges, no rebase or force push on PR branches | review | by convention only |
+| 6.6 green CI on PRs | `ci.yml` on every PR; `sbt test (mariadb:10.6.22)` as a required check on `master` | runs on every PR; required check planned (pending maintainer settings); browser tests and coverage not required |
+| 7.2 `release/*` protected | a ruleset | planned (pending maintainer settings) |
 | 7.1 pre-deploy checks | roadmap list, done by the user | manual |
 | 7.3 changelog line per batch | review | planned |
 | 7.4 calendar version form | `deployment.BuildIdentitySpec` (the packaged manifest's version) | enforced |

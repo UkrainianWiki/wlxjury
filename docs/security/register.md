@@ -81,7 +81,7 @@ POST (`SignOutAndSwitchSpec`, `ThemeSwitchSpec`); mutation and view authorizatio
 - **New items:** a review or incident adds a row (next free N/P number, or the batch's own ID)
   with severity and owner; the dated review document keeps the details.
 - **When the checklist applies:** every change of the kinds listed in
-  [review-checklist.md](review-checklist.md) (the PR template's boxes).
+  [review-checklist.md](review-checklist.md) (the PR template's "Security" line).
 - **Re-review cadence (decision 2):** a full re-review before each contest season (WLE in
   spring, WLM in late summer) and after any change to authentication, roles or sessions; it
   re-checks every row and sets "last checked".

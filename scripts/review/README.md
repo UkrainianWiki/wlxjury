@@ -1,7 +1,8 @@
 # scripts/review/
 
-Tools for reviewing the stacked PRs: requesting CodeRabbit reviews one PR at a time and posting
-the triage replies. The process (who runs them, the triage classes, the triage document) is in
+Tools for reviewing PRs, built for the stacked PRs (`docs/plans/2026-11-03-pr-series.md`): requesting
+CodeRabbit reviews one PR at a time and posting the triage replies. The process (the triage
+classes and document; who pushes and edits PRs) is in
 [workflow practices](../../docs/workflow/practices.md) §3 and §6.3; the triage document itself is
 [`docs/plans/2026-11-03-pr-review-triage.md`](../../docs/plans/2026-11-03-pr-review-triage.md).
 

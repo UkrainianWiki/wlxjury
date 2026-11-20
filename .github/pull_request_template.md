@@ -1,28 +1,11 @@
-## What and why
+<!-- The PR title and this description become the squash commit's message on master: keep it a
+short summary of what changed and why. Long notes, screenshots and logs go in comments. Delete
+these comments before merging. -->
 
-<!-- What changes, and why. -->
+Security: none
+<!-- Or the areas touched (routes/controllers/Secured, roles or accounts, sessions, SQL, views or
+JavaScript, config or deployment, exports, logs, dependencies) and that CONTRIBUTING.md
+"Security" was followed: review checklist applied, negative authorization tests,
+`testOnly security.*` passes, register updated. -->
 
-## Security
-
-Touches (tick all that apply):
-
-- [ ] routes, controllers or `Secured`
-- [ ] roles or accounts
-- [ ] sessions
-- [ ] SQL
-- [ ] views or JavaScript
-- [ ] config or deployment
-- [ ] exports
-- [ ] logs
-- [ ] dependencies
-
-If any is ticked:
-
-- [ ] `docs/security/review-checklist.md` applied (the lines checked are quoted in the review)
-- [ ] negative authorization tests added for every changed permission (another contest's admin, organizer, juror, inactive member, signed out)
-- [ ] `testOnly security.*` passes; any new allowlist entry is one file (or action) with a reason
-- [ ] `docs/security/register.md` updated if an item's status changed
-
-## Checks
-
-<!-- The specs run and their results (scripts/agent-check.py log paths). -->
+Checks: <!-- what you ran locally, or "docs only"; CI runs the rest. New message keys: list them. -->

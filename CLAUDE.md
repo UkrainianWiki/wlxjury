@@ -16,7 +16,7 @@ Before a load test, benchmark, performance change or memory sizing, read `docs/p
 
 Before writing or running tests, read `docs/testing/practices.md`; review with `docs/testing/review-checklist.md`.
 
-Before branching, committing, opening a stack PR or releasing, read `docs/workflow/practices.md`.
+Before branching, committing, opening a PR or releasing, read `docs/workflow/practices.md` (people: [CONTRIBUTING.md](CONTRIBUTING.md) is the short version).
 
 Before changing log lines, readiness, backups or the deploy, read `docs/operations/practices.md`.
 

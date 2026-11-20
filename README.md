@@ -1,4 +1,10 @@
-https://commons.wikimedia.org/wiki/Commons:WLX_Jury_Tool 
+# WLX Jury Tool
+
+Image selection and rating for the Wiki Loves Monuments and Wiki Loves Earth photo contests:
+https://commons.wikimedia.org/wiki/Commons:WLX_Jury_Tool
+
+Run it locally: [DEV.md](DEV.md). Make a change: [CONTRIBUTING.md](CONTRIBUTING.md) (branches, PRs,
+squash merging, tests, UI, translations and security basics).
 
 Deployment: [single-service procedure and recovery](docs/deployment.md).
 

@@ -2,7 +2,7 @@
 
 For every change that touches routes or controllers, `Secured`, roles or accounts, sessions,
 SQL, views or JavaScript, config or deployment, exports, logging or dependencies (the PR
-template's boxes). The reviewer quotes the lines they checked; each points to its section of
+template's "Security" line; [CONTRIBUTING.md](../../CONTRIBUTING.md#security)). The reviewer quotes the lines they checked; each points to its section of
 [secure-coding.md](secure-coding.md). Status changes go into [register.md](register.md) in the
 same commit as the fix.
 
