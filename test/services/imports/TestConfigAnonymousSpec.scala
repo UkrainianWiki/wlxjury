@@ -41,6 +41,19 @@ class TestConfigAnonymousSpec extends Specification {
       code.contains("allowTestLogin")
   }
 
+  /** The one secret a workflow may pass besides GITHUB_TOKEN: the private-strings list for the
+    * private-strings job (CONTRIBUTING.md, "Private strings"). It holds no credential. Allowed only
+    * as exactly this line, indentation included (a step's `env:`, not the job's or the
+    * workflow's), of exactly this workflow.
+    */
+  private val Allowed: Set[(String, String)] = Set(
+    ".github/workflows/private-strings.yml" -> "          WLXJURY_PRIVATE_STRINGS: ${{ secrets.PRIVATE_STRINGS }}")
+
+  private val PrivateStringsWorkflow = new File(".github/workflows/private-strings.yml")
+
+  private def allowed(path: String, code: String): Boolean =
+    Allowed.contains(path.replace('\\', '/') -> code.replaceFirst("\\s+$", ""))
+
   private def yamlFiles(dir: File): Seq[File] =
     Option(dir.listFiles()).toSeq.flatten.flatMap { f =>
       if (f.isDirectory) yamlFiles(f)
@@ -77,7 +90,7 @@ class TestConfigAnonymousSpec extends Specification {
         file <- files
         (line, number) <- scala.io.Source.fromFile(file, "UTF-8").getLines().toSeq.zipWithIndex
         code = line.replaceFirst("\\s#.*$", "").replaceFirst("^\\s*#.*$", "")
-        if passesCredentials(code)
+        if passesCredentials(code) && !allowed(file.getPath, code)
       } yield s"${file.getPath}:${number + 1}: $line"
       (files.exists(_.getPath.contains("workflows")) must beTrue) and
         (files.exists(_.getPath.contains("actions")) must beTrue) and
@@ -90,6 +103,30 @@ class TestConfigAnonymousSpec extends Specification {
         "env -u COMMONS_USER COMMONS_PASSWORD=x sbt test", "env -u COMMONS_USER=x sbt test",
         "env -u COMMONS_USER -u SCALAWIKI_PASSWORD SCALAWIKI_LOGIN=x sbt test")
         .filterNot(passesCredentials) must beEmpty
+    }
+
+    "allow the private-strings list only on its own line of the private-strings workflow" in {
+      val line = "          WLXJURY_PRIVATE_STRINGS: ${{ secrets.PRIVATE_STRINGS }}"
+      val path = ".github/workflows/private-strings.yml"
+      (passesCredentials(line) must beTrue) and
+        (allowed(path, line) must beTrue) and
+        (allowed(path, line + "  ") must beTrue) and
+        (allowed(".github/workflows/ci.yml", line) must beFalse) and
+        (allowed(path, "      WLXJURY_PRIVATE_STRINGS: ${{ secrets.PRIVATE_STRINGS }}") must beFalse) and
+        (allowed(path, "  WLXJURY_PRIVATE_STRINGS: ${{ secrets.PRIVATE_STRINGS }}") must beFalse) and
+        (allowed(path, line + " extra") must beFalse) and
+        (allowed(path, "          TOKEN: ${{ secrets.OTHER }}") must beFalse) and
+        (allowed(path, "          X: ${{ secrets.PRIVATE_STRINGS }}") must beFalse) and
+        (allowed(path, "        run: echo ${{ secrets.PRIVATE_STRINGS }}") must beFalse)
+    }
+
+    "give the private-strings list only to the steps that run the checker with a list" in {
+      val lines = scala.io.Source.fromFile(PrivateStringsWorkflow, "UTF-8").getLines().toSeq
+      val withSecret = lines.filter(_.contains("secrets."))
+      val checkerSteps = lines.filter(l => l.contains("check-private-strings.py") && l.contains("--require-patterns"))
+      (checkerSteps must haveSize(3)) and
+        (withSecret must haveSize(checkerSteps.size)) and
+        (withSecret.filterNot(allowed(PrivateStringsWorkflow.getPath, _)) must beEmpty)
     }
 
     "not flag the token they use, the scalawiki commit, or credentials removed with env -u" in {

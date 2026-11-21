@@ -1,6 +1,9 @@
-# Refuses personal data and local paths: the PR's added lines, its commits' identities and
-# messages, and the whole tree (scripts/check-private-strings.py; CONTRIBUTING.md, "Private
-# strings"). The job name is stable, so the master ruleset can require it.
+# Refuses private strings: the PR's (or push's) added lines, its commits' identities and messages,
+# and the whole tree (scripts/check-private-strings.py; CONTRIBUTING.md, "Private strings"). The
+# list comes from the repository secret PRIVATE_STRINGS, given only to the steps that read it, and
+# is never printed; without it the job fails. A PR from a fork gets no secrets: its list checks are
+# skipped with a notice, and a maintainer runs them locally before merging. The job name is
+# stable, so the master ruleset can require it.
 name: Private strings
 
 on:
@@ -17,7 +20,15 @@ jobs:
     name: private-strings
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
     steps:
+      - name: A PR from a fork
+        if: env.FORK_PR == 'true'
+        run: >-
+          echo "::notice::A PR from a fork gets no secrets, so the private-strings list checks are
+          skipped. Before merging, a maintainer runs scripts/check-private-strings.py
+          --range origin/master..HEAD on the PR's branch (CONTRIBUTING.md, Private strings)."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -25,16 +36,21 @@ jobs:
       - name: Self-test
         run: python3 scripts/check-private-strings.py --self-test
       - name: The tree
-        run: python3 scripts/check-private-strings.py --all
+        if: env.FORK_PR != 'true'
+        env:
+          WLXJURY_PRIVATE_STRINGS: ${{ secrets.PRIVATE_STRINGS }}
+        run: python3 scripts/check-private-strings.py --all --require-patterns
       - name: The pushed commits (GitHub's squash and merge commits included)
         if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
         env:
+          WLXJURY_PRIVATE_STRINGS: ${{ secrets.PRIVATE_STRINGS }}
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.sha }}
-        run: python3 scripts/check-private-strings.py --range "$BEFORE..$AFTER"
+        run: python3 scripts/check-private-strings.py --range "$BEFORE..$AFTER" --require-patterns
       - name: The PR's commits
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && env.FORK_PR != 'true'
         env:
+          WLXJURY_PRIVATE_STRINGS: ${{ secrets.PRIVATE_STRINGS }}
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
-        run: python3 scripts/check-private-strings.py --range "$BASE..$HEAD"
+        run: python3 scripts/check-private-strings.py --range "$BASE..$HEAD" --require-patterns
