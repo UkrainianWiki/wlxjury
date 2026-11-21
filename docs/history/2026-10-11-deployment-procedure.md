@@ -13,7 +13,7 @@ The current blue/green scripts need substantial corrections before operational u
 
 ## Verified production state
 
-Inspected over `ssh wlm.org.ua`, using selected service properties, configuration reads with credential values withheld, database metadata SELECTs, and localhost HTTP requests. No service, config, data, or routing was changed.
+Inspected over ssh as an unprivileged account, using selected service properties, configuration reads with credential values withheld, database metadata SELECTs, and localhost HTTP requests. No service, config, data, or routing was changed.
 
 | Item | Observed state |
 |---|---|

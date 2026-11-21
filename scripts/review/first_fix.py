@@ -8,7 +8,7 @@ it, which the reply cites ("Fixed later in the stack: #N (`sha`)").
 The stack order is read from GitHub (open PRs, following each base branch from master) and the
 tips from `origin/<head branch>` in --git (fetch first). Regexes are Python, multiline and dotall.
 
-Usage: python -I first_fix.py --from 185 PATH BUG_REGEX [--fixed-regex R] [--git ../{worktree}]
+Usage: python -I first_fix.py --from 185 PATH BUG_REGEX [--fixed-regex R] [--git ../wlxjury-refresh]
 """
 import argparse
 import re

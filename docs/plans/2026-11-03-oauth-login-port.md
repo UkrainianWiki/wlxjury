@@ -3,7 +3,7 @@
 The WIP branch `ukwikidev/oauth-login` (2 commits on a base 469+ commits behind: `97cf9d07` "Add
 login with Google and Wikimedia accounts", `405f6a7e` "Fix OAuth login review findings") ported
 onto `ukwikidev/followups` at `7a79a4bd`, as branch `ukwikidev/oauth-login-rebased` (worktree
-`../{worktree}`). The original branch and its worktree are untouched. How it
+its own worktree). The original branch and its worktree are untouched. How it
 works now: [docs/oauth.md](../oauth.md).
 
 ## How

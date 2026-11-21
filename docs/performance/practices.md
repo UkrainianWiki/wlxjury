@@ -137,7 +137,7 @@ agreement (register P10). The runbook is `bench/README.md`. Not modelled: Apache
 the nightly stats job, the VPS's vCPU and disk, real network latency.
 
 **2.7 Production data stays out of repositories.** A production dump holds emails, names and
-password hashes: it lives outside every repository (`../{worktree}\`), is restored
+password hashes: it lives outside every repository (the benchmark work folder), is restored
 straight into the benchmark's database and anonymised there at once (`bench/scripts/anonymise.sql`).
 Never commit a dump, a restored or derived copy, or query output with personal data, and never
 put one under `data/cache`: commit scripts, never data. *Why:* a committed copy can't be

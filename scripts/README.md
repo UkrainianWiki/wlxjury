@@ -3,7 +3,7 @@
 Other folders: [`deployment/`](deployment/) (the release tools and their tests,
 [deployment.md](../docs/deployment.md)), [`review/`](review/README.md) (CodeRabbit requests and
 review triage) and [`backfill/`](backfill/) (the one-off `vote.voted_at` backfill from the access
-logs, [deployment.md](../docs/deployment.md#one-off-vote-times-from-the-access-logs-after-v97)).
+logs, run on 2026-11-13; its docstring describes it).
 
 ## run-with-prod-dump.sh
 

@@ -139,7 +139,7 @@ is paused during an operation (deployment.json).
 
 **3.2 A restore is checked before it deletes anything:** checksum and gzip integrity, the
 database's identity, free space, and after writes resumed a fresh `before-restore-*` rescue dump
-(deployment.md, "Routine deployment").
+(deployment.md, "Deploying a release").
 
 **3.3 Rehearse restores.** Each deploy and each section of the recovery runbook is rehearsed on an
 isolated production copy before relying on it (deployment.md, "Build and rehearse"); CI's

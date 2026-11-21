@@ -60,7 +60,7 @@ every option is judged by how fast it would have answered it.
    - what state the contest is in now.
 2. The answers are reachable the ways the maintainer and Claude actually reach production:
    - as root in a browser;
-   - as `{user}` over ssh, with no sudo and no database login (§6).
+   - as the support account over ssh, with no sudo and no database login (§6).
 3. Admins can check their own contest themselves, and see nothing of other contests.
 4. Every finding carries a short hint, in the user's language, that names the likely fix.
 5. Contests are named in every report ("Wiki Loves Monuments 2026 in Nepal"), not only by id.
@@ -103,8 +103,8 @@ every option is judged by how fast it would have answered it.
    - No line ties a request to an account.
    - `server_error` and `csrf_failure` lines carry neither an account nor a contest.
    - Apache's `other_vhosts_access.log*` (readable through group `adm`, kept 14 days,
-     `docs/deployment.md` "One-off: vote times") has IPs, URIs and statuses, but no account.
-3. **Ids only.** Log lines never name a contest or round, and `{user}` can't query the database to
+     `scripts/backfill/voted_at_from_logs.py`) has IPs, URIs and statuses, but no account.
+3. **Ids only.** Log lines never name a contest or round, and the support account can't query the database to
    resolve an id.
 4. **Job details live only in the database.**
    - Import source, inserted, linked, missing and `notInCountries` are in `job.params` /
@@ -260,7 +260,7 @@ JSON for the CLI.
 
 ### 3.4 (d) A CLI for the maintainer over ssh
 
-**What it is.** `wlxjury-diag`, run as `{user}`, no sudo. It installs to `/usr/local/bin` through
+**What it is.** `wlxjury-diag`, run as the support account, no sudo. It installs to `/usr/local/bin` through
 `wlxjury-infra`, or is shipped in the ZIP with a `scripts/diagnostics` mapping in `build.sbt` and
 a packaging test (the ZIP has no `scripts/` today). It has three commands.
 
@@ -296,7 +296,7 @@ command as the last line, filled with the real ids it found, never a placeholder
 
 - **Chosen (DG3): a read-only, server-only API token.** The CLI uses loopback HTTP to the
   existing `/api`, with a new personal API token of the maintainer's account kept in
-  `~/.config/wlxjury-diag/token` (mode 600).
+  `~/.config/wlxjury-diag/token` of the support account (mode 600).
   - **The restriction is on the token, not on the account.** D-1b adds a token scope chosen when
     the token is created: "full" (today's behaviour, the default for every existing token) or
     "read-only, from the server only".
@@ -449,9 +449,9 @@ D-1a's review on a production copy, and are not decisions for the maintainer.
 | H21 | **Contest reused across years:** import jobs more than a year apart | info, folds into H1's hint | `job.created_at` | D-1c |
 | H22 | **Who changed the source** | info | not stored: f3 or P19 | later |
 
-## 6. Production constraints: Claude as `{user}`, no sudo, no database login
+## 6. Production constraints: Claude as the support account, no sudo, no database login
 
-**What `{user}` can read today:**
+**What the support account can read today:**
 
 - the app log;
 - Apache and mail logs (group `adm`);
@@ -559,10 +559,10 @@ option 4). It would bypass the app's scoping and duplicate the checks in SQL.
 - Whether the B2 playbook (infra cbdf8cc, `coi`) has run on production, and the server's actual
   logback file. Read the template here, not the server's file. The investigation's finding (root
   WARN, no job summaries) agrees with it.
-- The owner, group and mode of `/var/log/wlxjury/*.log` beyond "readable by `{user}`".
+- The owner, group and mode of `/var/log/wlxjury/*.log` beyond "readable by the support account".
 - Requests per day on the jury vhosts, to size `requests.log`.
 - What source the Nepal admin typed, and exactly why round 1975 came out empty. Neither is
-  recorded where `{user}` can read it. D-0b's import line and H4, H5 and H7 make both visible next
+  recorded where the support account can read it. D-0b's import line and H4, H5 and H7 make both visible next
   time.
 
 ## Decisions for the maintainer
@@ -591,7 +591,7 @@ option 4). It would bypass the app's scoping and duplicate the checks in SQL.
       header).
 
     The maintainer creates one such token on his account for the CLI, kept in
-    `~/.config/wlxjury-diag/token` (mode 600). Existing tokens and the remote API use in
+    `~/.config/wlxjury-diag/token` of the support account (mode 600). Existing tokens and the remote API use in
     `docs/api.md` are unchanged. No sudo, no new secret type, and the scoping is the account's
     real permissions.
   - **Retire remote root writes.** Every root account's token becomes GET-only and server-only,

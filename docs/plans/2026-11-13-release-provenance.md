@@ -75,7 +75,7 @@ again on the tagged commit (D14). Order: A0, A1–A4, then B (§7, D21).
 2. It runs the full suite locally, under the shared sbt lock. As this was written, the 26.11.5
    suite had held the lock for up to an hour.
 3. It builds on Windows: `sbt -Dwlxjury.buildId=26.11.N dist`.
-4. The ZIP is rehearsed on a local production copy and `scp`'d to `~/`.
+4. The ZIP is rehearsed on a local production copy and `scp`'d to the support account's home folder.
 5. `sudo wlxjury-release deploy <≥16 hex of its SHA-256>` deploys it (`deploy()`, `find_zip`;
    docs/deployment.md, "The hash").
 
@@ -87,8 +87,8 @@ ZIP was built from, or by what: it is the hash of a build on one PC.
 | # | Finding | Evidence |
 |---|---|---|
 | F1 | **The repository is public.** Release assets and the Actions API (runs, jobs, compare) can be read without a token. Artifact attestations are available; private repositories need Enterprise Cloud for them. | `gh repo view --json visibility` |
-| F2 | **The ZIP holds nothing private.** `wlxjury-26.11.4.zip` is 109 MB with 304 entries: `bin/`, `conf/` (application.conf, routes, messages.\*, logback.xml, KOATUU, monit, 100 migrations), `lib/` (185 jars), `README.md` and `wlxjury-build.json`. Every secret comes from the environment (`${?PLAY_HTTP_SECRET_KEY}`, `${WLXJURY_DB_PASSWORD}`, `${?WLXJURY_GOOGLE_CLIENT_SECRET}`, `${?WLXJURY_SETUP_TOKEN}`, `${?COMMONS_*}`). The default `"changeme"` key and the host names are public anyway. There are no keys and no test data. | listing of `../{worktree}/target/universal/wlxjury-26.11.4.zip` |
-| F3 | **The server can reach GitHub and Sigstore.** Production runs Ubuntu 22.04.5 with Python 3.10, curl, unzip and openssl. `api.github.com` and `github.com` answer 200, the asset hosts answer, and `tuf-repo-cdn.sigstore.dev` answers 200. **Neither `gh` nor `cosign` is installed.** | unprivileged `ssh wlm.org.ua` |
+| F2 | **The ZIP holds nothing private.** `wlxjury-26.11.4.zip` is 109 MB with 304 entries: `bin/`, `conf/` (application.conf, routes, messages.\*, logback.xml, KOATUU, monit, 100 migrations), `lib/` (185 jars), `README.md` and `wlxjury-build.json`. Every secret comes from the environment (`${?PLAY_HTTP_SECRET_KEY}`, `${WLXJURY_DB_PASSWORD}`, `${?WLXJURY_GOOGLE_CLIENT_SECRET}`, `${?WLXJURY_SETUP_TOKEN}`, `${?COMMONS_*}`). The default `"changeme"` key and the host names are public anyway. There are no keys and no test data. | listing of the release build's `target/universal/wlxjury-26.11.4.zip` |
+| F3 | **The server can reach GitHub and Sigstore.** Production runs Ubuntu 22.04.5 with Python 3.10, curl, unzip and openssl. `api.github.com` and `github.com` answer 200, the asset hosts answer, and `tuf-repo-cdn.sigstore.dev` answers 200. **Neither `gh` nor `cosign` is installed.** | unprivileged ssh to `wlm.org.ua` |
 | F4 | **Releases are not built from master, and CI never tests the release commit.** `release/26.11.4` is not an ancestor of master. Master's ruleset covers deletion, force pushes, linear history and "PR required" with 0 approvals, but has **no required checks**. There is **no tag ruleset** and no GitHub Release; the only tags are `0.8`–`0.10`. CI doesn't run on `release/*` pushes. | rulesets API, git |
 | F5 | **Admin rights end every protection.** Any account with admin rights on the repository, directly or through the organization, can edit rulesets and environments. So no protection holds against such an account's web session. On the PC, `gh` uses an OAuth token with scopes `repo`, `read:org`, `gist`. Git uses Git Credential Manager. | `gh auth status`, 2026-11-14 |
 | F6 | **Local ZIPs may not contain the pinned scalawiki.** The jar in `~/.ivy2/local` dates from 2026-10-28; CI builds the pin `25951dbe` (pinned 2026-11-04). That commit is reachable only from scalawiki's unprotected `page-categories` branch. `.github/actions/scalawiki` always restores `actions/cache`. | file dates, action source |

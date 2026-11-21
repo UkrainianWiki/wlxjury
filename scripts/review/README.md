@@ -7,8 +7,7 @@ classes and document; who pushes and edits PRs) is in
 [`docs/plans/2026-11-03-pr-review-triage.md`](../../docs/plans/2026-11-03-pr-review-triage.md).
 
 Python 3.8+, stdlib only; run from Git Bash with `python -I scripts/review/<tool>.py`. Every
-tool takes `--gh PATH` (default: `$GH`, else `gh` on `PATH`; on the orchestrator's machine
-`GH=~/tools/gh/bin/gh.exe`) and `--repo` (default `UkrainianWiki/wlxjury`). Inputs and
+tool takes `--gh PATH` (default: `$GH`, else `gh` on `PATH`) and `--repo` (default `UkrainianWiki/wlxjury`). Inputs and
 outputs default to `target/review/` (ignored by git), except the CodeRabbit loop's, which live in
 `%LOCALAPPDATA%/wlxjury-review` (below). **Only the orchestrator runs the tools that
 write to GitHub** (`coderabbit_loop.py`, `post_replies.py`, `edit_replies.py`), and they write
@@ -135,10 +134,10 @@ checkout, so removing a worktree or `sbt clean` loses nothing; the scheduled tas
 the scripts installed there (`bin/`, with a `VERSION` file naming the commit).
 
 ```bash
-export GH=~/tools/gh/bin/gh.exe
+export GH="$(command -v gh)"            # or the path to gh.exe where it isn't on PATH
 D="$LOCALAPPDATA/wlxjury-review"
 python -I scripts/review/coderabbit_loop.py --self-test
-python -I scripts/review/coderabbit_loop.py --migrate-from ../{worktree}/target/review  # once
+python -I scripts/review/coderabbit_loop.py --migrate-from ../{old-worktree}/target/review  # once
 python -I scripts/review/coderabbit_loop.py --first 218        # dry run: what it would do next
 python -I scripts/review/loop_task.py register                  # install into $D/bin + scheduled task
 python -I "$D/bin/loop_task.py" launch                          # start it now, detached, no window

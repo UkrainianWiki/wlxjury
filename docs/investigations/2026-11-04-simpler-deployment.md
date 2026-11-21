@@ -148,7 +148,7 @@ informational only; Podman's `Notify=healthy` can make systemd wait for it (chec
   `LocalImageCacheService`). Under JDK 17 with no `LANG` (the POSIX locale), `sun.jnu.encoding` is
   ASCII and those paths throw `InvalidPathException: Malformed input`; `-Dfile.encoding=UTF-8`
   doesn't fix file *names*. Set `ENV LANG=C.UTF-8` in the image, and test a Cyrillic file name at
-  start-up ([deployment.md](../deployment.md), "One-time setup").
+  start-up ([deployment.md](../deployment.md), "The server").
 - **Time zone:** mount `/etc/localtime:ro`, set `Timezone=local` (Quadlet) or `TZ`, so log times
   line up with the proxy's and the journal.
 - **Ownership:** run as the service account's user and group. Bind-mount the cache directory at the

@@ -81,7 +81,8 @@ class LocalImageCacheService(
   private val ratePerSec  = config.getOptional[Int]("wlxjury.thumbs.rate-per-second").getOrElse(10)
   private val maxAttempts = config.getOptional[Int]("wlxjury.thumbs.max-attempts").getOrElse(3)
 
-  private val userAgent = headers.RawHeader("User-Agent", "WLXJury/1.0 (https://commons.wikimedia.org/wiki/Commons:WLX_Jury_Tool; maintainer@example.org)")
+  private val userAgent =
+    headers.RawHeader("User-Agent", userAgentValue(config.getOptional[String]("wlxjury.userAgent.contact")))
 
   private[services] val wikiBaseUrl =
     config.getOptional[String]("wlxjury.thumbs.wiki-base-url")
@@ -732,6 +733,22 @@ class LocalImageCacheService(
 }
 
 object LocalImageCacheService {
+
+  /** The tool's page on Commons: the User-Agent's contact when no other is set. */
+  val ToolPage = "https://commons.wikimedia.org/wiki/Commons:WLX_Jury_Tool"
+
+  /** The User-Agent towards Wikimedia (its policy asks for a way to reach the operator): the
+    * tool's page, then the operator's contact (`wlxjury.userAgent.contact`, env
+    * `WLXJURY_USER_AGENT_CONTACT`: an address or a URL) if set. A contact with a control
+    * character (a line break would add a header) is refused at startup.
+    */
+  def userAgentValue(contact: Option[String]): String =
+    contact.map(_.trim).filter(_.nonEmpty) match {
+      case None => s"WLXJury/1.0 ($ToolPage)"
+      case Some(c) =>
+        require(!c.exists(Character.isISOControl), "wlxjury.userAgent.contact must not contain control characters")
+        s"WLXJury/1.0 ($ToolPage; $c)"
+    }
 
   /** What Wikimedia serves for the image: `px` wide, at `url`, the file itself or not. */
   private final case class WikimediaSource(px: Int, url: Option[String], original: Boolean)

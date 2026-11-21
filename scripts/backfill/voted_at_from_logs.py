@@ -29,7 +29,19 @@ query (the closed-round redirect; the vote's own redirect carries `sort=` since 
 release before sent a vote on the last unrated file to the gallery without it).
 
 Input: one or more extract files (gzip or plain), each line "<log basename> <Apache
-other_vhosts_access line>" as made by the command in docs/deployment.md, GIVEN OLDEST FIRST.
+other_vhosts_access line>", GIVEN OLDEST FIRST. Made on the server as root, after the release
+with V97 is live (the jury vhosts' vote, list, large-view and sign-in requests):
+
+    for f in /var/log/apache2/other_vhosts_access.log*; do
+      zcat -f "$f" |
+        grep -E '^jury[.](wlm[.]org[.]ua|wikilovesmonuments[.]org[.]ua|wikilovesearth[.]org[.]ua|wikilovesearth[.]org|wle[.]org[.]ua):' |
+        grep -E '"(GET|POST) /(rate/|large/|gallery/|byrate/|auth|logout)' |
+        sed "s|^|$(basename "$f") |"
+    done | gzip > jury-votelog.gz
+
+The extracts hold IP addresses and user agents: never copy them, or anything derived from them,
+into the repository, an issue or a chat.
+
 Extracts may overlap (the same log lines read twice, under another rotation name): identical
 Apache lines are counted once across files (within one file, repeated identical lines are
 separate requests). Extracts that leave a gap in time stop the run unless --allow-gap.

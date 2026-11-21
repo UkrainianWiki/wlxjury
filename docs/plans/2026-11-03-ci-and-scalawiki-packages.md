@@ -224,10 +224,10 @@ Drafts:
 
 ## Anonymous Wikimedia access (added 2026-11-03)
 
-**Incident.** The owner of ExampleBot got many "multiple failed attempts to log in to Wikimedia Commons" notices after the bot password changed.
+**Incident.** The owner of the Commons bot account got many "multiple failed attempts to log in to Wikimedia Commons" notices after the bot password changed.
 
 - This machine has `COMMONS_USER` / `COMMONS_PASSWORD` in its environment.
-- `test/resources/application.conf` read them (`${?COMMONS_USER}`), so every test JVM's app logged in as ExampleBot, with the stale password.
+- `test/resources/application.conf` read them (`${?COMMONS_USER}`), so every test JVM's app logged in as that bot, with the stale password.
 - scalawiki logs a new `MwBot` in from `SCALAWIKI_LOGIN` / `SCALAWIKI_PASSWORD` too, through the default `LoginInfo.fromEnv()` of `MwBot.fromHost` / `fromSite`. Those two aren't set here.
 
 **Rule, for both repositories:** tests and CI use Wikimedia anonymously. A test that reads live wikis at volume goes behind a flag that is off by default.

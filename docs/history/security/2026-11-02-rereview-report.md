@@ -91,7 +91,7 @@ workstation). Batch: the resolution plan's batch.
 | P7 | Root "reset password" sends nothing but says it did | Low | Open | `UserController.scala:532-559` | Fixed in S2 (user decision (a): a mailed link) | app | S2 (moved from S6) |
 | P8 | Dormant legacy SHA-1 hashes | Low | Open / count needs production | `User.login` | Open | app + ops | S6, S9 |
 | P9 | Original-file fetch has no host allowlist | Low | Partially fixed | `LocalImageCacheService:477,561` | Partial | app | S6 |
-| P10 | Production dump with personal data and bench volumes on the workstation | Low | Open | `../{worktree}\proddata\`, `wlxjury-bench-*` volumes | Open | ops | S9 |
+| P10 | Production dump with personal data and bench volumes on the workstation | Low | Open | the benchmark work folder's `proddata/`, `wlxjury-bench-*` volumes | Open | ops | S9 |
 | N6 | Login CSRF from a browser with no cookie for the site | Info | CONFIRMED | Play `csrf.header.protectHeaders` default; `POST /auth`, `/signup` | Open | app | S4 |
 | N7 | Sign-up tells whether an email has an account | Info | CONFIRMED | `LoginController.scala:216-218` | Fixed in S2 (sign-up gone) | app | S2 |
 | N8 | Tile caption is HTML inserted with `.html()`, the title escaped once | Info | CONFIRMED (not exploitable with Commons titles) | `gallery.scala.html:35`; `unitegallery.js` | Fixed (S5): caption escaped once more, `GalleryDescriptionViewSpec`, G5 | app | S5 |

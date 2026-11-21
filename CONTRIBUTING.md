@@ -11,6 +11,8 @@ linked below; this page is the short version.
   rules: [CLAUDE.md](CLAUDE.md) (notes for AI coding assistants, useful to people too).
 - Never link or copy `node_modules` between checkouts or worktrees: `sbt test` runs `npm ci`
   and empties the target of a link.
+- Enable the repository's git hooks once per clone: `git config core.hooksPath .githooks`
+  (see [Private strings](#private-strings); worktrees share the setting).
 
 ## Branches, PRs and merging
 
@@ -57,6 +59,39 @@ contains `origin/stack/207-guide-shots`, run `git merge -s ours 1a651735`; if no
 `git merge origin/stack/207-guide-shots`, then the same. Check with
 `git diff 1a651735...HEAD --stat`. Details: [workflow practices](docs/workflow/practices.md)
 §6.7.
+
+## Private strings
+
+Commits must not carry personal data or local paths: names, account names, personal email
+addresses, home folders, local paths of a checkout or a worktree, worktree names.
+`scripts/check-private-strings.py` refuses the strings on a list kept outside the repository:
+
+- the `pre-commit` hook checks the staged files (`--staged`), the `commit-msg` hook the message and
+  the author and committer identity (`--message`); enable them as in [Setup](#setup);
+- CI's `private-strings` job checks a PR's added lines, its commits' identities and messages
+  (`--range`) and the whole tree (`--all`), with the list from the repository secret
+  `PRIVATE_STRINGS`; without the secret the job fails;
+- a PR from a fork gets no secrets, so for it the job skips the list checks with a notice. Before
+  merging a fork's PR, a maintainer checks out its branch and runs
+  `python3 scripts/check-private-strings.py --range origin/master..HEAD` with the list.
+
+The list has one rule per line, `CATEGORY<TAB>REGEX`: a category of lowercase letters, digits and
+`-` (`^[a-z][a-z0-9-]{0,30}$`), a tab, and a Python regex; `#` starts a comment line. A line that
+isn't a valid rule is refused by its line number, never its text. The script reads it, in order,
+from `--patterns FILE`, the file named by `WLXJURY_PRIVATE_STRINGS_FILE` (a missing file is an
+error, not "no list"), the content of `WLXJURY_PRIVATE_STRINGS` (CI's secret), or the default file
+`%APPDATA%\wlxjury\private-strings` (Windows), `$XDG_CONFIG_HOME/wlxjury/private-strings` or
+`~/.config/wlxjury/private-strings`; files are UTF-8, a byte order mark is fine. Samples for
+`--self-test` sit next to it in `private-strings.samples`, one `hit<TAB>TEXT` or `pass<TAB>TEXT`
+per line. Maintainers have the list; without it, or with one that has no rule but `allow` and
+`skip-path`, the hooks warn and let the commit through, and CI fails; CI also fails on a refused
+line. The file may have comments, but keep them out of the `PRIVATE_STRINGS` secret: GitHub masks
+each line of a secret in all logs, and a short comment line would mask ordinary words. A hit names
+the file and line and the rule's category, never the matched text. The list doesn't cover every
+name or home folder, so review for those too. Write repository-relative paths, `{user}`-style
+placeholders and neutral sample names (`Example`, `ExampleBot`, `example.org`). Server commands
+name no account: `ssh wlm.org.ua` takes it from your `~/.ssh/config`. A real hit is fixed, not
+bypassed.
 
 ## Running tests locally
 

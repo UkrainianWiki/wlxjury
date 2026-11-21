@@ -2,9 +2,9 @@
 
 Status: goal after the two-step rounds (`2026-11-02-round-images-two-step.md`); the
 order in §4 is a recommendation. Written 2026-11-02 from a review of Montage
-(https://github.com/hatnote/montage) at d879cb8 (2026-10-31) and wlxjury at b641c78d.
+(https://github.com/hatnote/montage) at d879cb8 (2026-10-31) and wlxjury at b641c78d (a stack commit, kept in the archived repository UkrainianWiki/wlxjury-archive).
 **Refreshed 2026-11-20:** §3 and §4 checked against wlxjury `master` at 2bea73cb (squash commits
-up to #399) and the open PRs #391–#395; Montage checked at 871a67a (2026-11-19), where only
+up to UkrainianWiki/wlxjury-archive#399) and the then open PRs UkrainianWiki/wlxjury-archive#391–#395; Montage checked at 871a67a (2026-11-19), where only
 translations changed since d879cb8, so the line numbers below still hold; §5 added (Montage's
 flagging and what it means for questions on yes/no rounds, compared 2026-11-19). File paths in
 §1, §3 and §5 are inside the Montage repository.

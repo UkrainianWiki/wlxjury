@@ -53,7 +53,7 @@ Do it only after the user confirms that the cutover is accepted and that every r
 record targeting the adopted legacy release is retired. Keep `wait_ready`'s legacy `/auth`
 check until then.
 
-4.7 **Benchmark leftovers** (bench/README §9): `../{worktree}\proddata\` still
+4.7 **Benchmark leftovers** (bench/README §9): the benchmark work folder's `proddata/` still
 holds a production dump copy with personal data, plus the `wlxjury-bench-*` volumes and
 image. Remove them with the user's agreement once the results are accepted.
 

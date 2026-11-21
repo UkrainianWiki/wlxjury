@@ -26,7 +26,8 @@ class UserController @Inject()(cc: ControllerComponents,
                                userService: UserService,
                                blocking: BlockingExecutionContext,
                                themeCookies: ThemeCookies = ThemeCookies.default,
-                               oauthSettings: OAuthSettings = OAuthSettings.disabled)
+                               oauthSettings: OAuthSettings = OAuthSettings.disabled,
+                               commonsLinks: services.CommonsLinks = services.CommonsLinks.default)
     extends Secured(cc)
     with I18nSupport {
 
@@ -69,7 +70,8 @@ class UserController @Inject()(cc: ControllerComponents,
                              pending = invitations,
                              accounts = accounts,
                              shareable = shareable,
-                             wikimediaSignIn = oauthSettings.wikimediaConfigured))
+                             wikimediaSignIn = oauthSettings.wikimediaConfigured,
+                             commonsLinks = commonsLinks))
         }).getOrElse(Redirect(routes.LoginController.index)) // TODO message
     }
 

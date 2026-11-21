@@ -79,7 +79,7 @@ is not deployed before O1 is in place.
 
 **Items:** P10, P8 (count), key rotation, the S1 data check.
 
-- P10: delete `../{worktree}\proddata\*.sql.gz` and the seven `wlxjury-bench-*`
+- P10: delete the benchmark work folder's `proddata/*.sql.gz` and the seven `wlxjury-bench-*`
   volumes once B10 no longer needs them (decision: keep an anonymised fixture instead).
 - P8: `SELECT COUNT(*) FROM users WHERE password REGEXP '^[0-9a-f]{40}$';` (read-only) before S6
   decides the grace period.

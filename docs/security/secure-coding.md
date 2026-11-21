@@ -843,6 +843,6 @@ review only.
 **Exceptions.** `scripts/run-with-prod-dump.sh` restores a production dump into a local
 container without anonymising it (the dump stays in `/tmp/wlxjury-prod.sql.gz`), for a
 developer's own check against real data: a triage item (anonymise after the restore, or retire
-the script). The production dump in `../{worktree}\` (register P10) waits for the
+the script). The production dump in the benchmark work folder (register P10) waits for the
 user's agreement to delete. *Source:* user, 2026-11-03 (docs phase); `bench/README.md` §1
 "Personal data".

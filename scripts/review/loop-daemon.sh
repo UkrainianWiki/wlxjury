@@ -13,7 +13,7 @@ default_dir=${WLX_REVIEW_DIR:-${LOCALAPPDATA:-$HOME/.local/state}/wlxjury-review
 if command -v cygpath > /dev/null; then default_dir=$(cygpath -u "$default_dir"); fi
 dir=${REVIEW_DIR:-$default_dir}
 version=$(head -n 1 "$here/VERSION" 2> /dev/null || echo "a checkout")
-export GH=${GH:-~/tools/gh/bin/gh.exe}
+export GH=${GH:-gh}
 export PYTHONIOENCODING=utf-8
 py=${PYTHON:-python}
 mkdir -p "$dir"

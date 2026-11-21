@@ -35,3 +35,5 @@ null
 data/cache/
 
 .claude/settings.local.json
+# Crash dumps of Git for Windows tools
+*.stackdump

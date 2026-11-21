@@ -6,12 +6,12 @@ contest". It was written against v1 of the multi-role plan (superseded, not kept
 note's own section. The decisions taken since are in `docs/plans/2026-11-10-multi-role-plan.md`
 (Design S, "Juror stays alone", pre-screening rounds).
 
-- **WLX Jury** at `c9805b31` (worktree `../{worktree}`, branch `ukwikidev/followups`,
+- **WLX Jury** at `c9805b31` (the followups worktree, branch `ukwikidev/followups`,
   "Mirror of stack/96-organizer-docs d3aefd50 (PR #279)", 2026-11-10). Paths below that start with `W:` are
   relative to this tree.
 - **Montage** (hatnote/montage) at `bfb550b6ba38` on the default branch `master`, committed
   2026-11-02 13:05:47 +0100 ("Localisation updates from translatewiki.net"). It was fetched today. The clone's
-  working tree (`{python}/montage`, after the maintainer's `git pull`) is at the same commit. Paths that start with
+  working tree (after the maintainer's `git pull`) is at the same commit. Paths that start with
   `M:` are at this commit. The most recently active branches (`beta/2026-11-integration`, `fix/*`, 2026-10-31 to
   11-02) change nothing about roles.
 - The web pages were read today: Commons:Montage revision 1183665424 (2026-03-19,
@@ -321,7 +321,7 @@ with full coordinator visibility (§2.2).
   - Pre-ticking the previous round's jurors instead does **not** work for prejury. Round 2's previous round is the
     prejury, so it would pre-tick only the prejurors and none of the real jury. Avoiding that needs a "prejury"
     marker on the round, which is R's round kind.
-- In every design, add the role labels ("Example — Organizer, Juror", plan U19). Any design that lets organizers vote
+- In every design, add the role labels ("Olena — Organizer, Juror", plan U19). Any design that lets organizers vote
   needs them.
 
 ### 4.6 Conflicts of interest for a broad prejury

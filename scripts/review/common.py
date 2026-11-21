@@ -43,7 +43,7 @@ def add_common_args(ap):
 def gh_path(flag=None):
     path = flag or os.environ.get("GH") or shutil.which("gh")
     if not path:
-        raise SystemExit("gh not found: pass --gh or set GH (e.g. ~/tools/gh/bin/gh.exe)")
+        raise SystemExit("gh not found: pass --gh or set GH (the path to gh, or gh.exe on Windows)")
     return path
 
 

@@ -265,6 +265,24 @@ class OwnAccountSpec extends PlaySpecification with PlayTestDb with AccountTestS
         html must contain(routes.UserController.reinvite(juror.getId, 10).url)
       }
     }
+
+    "ask a juror without wiki email to enable it, with the configured preload page" in {
+      testDbApp { implicit app =>
+        val Seq(contest) = createContests(10)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        val juror = account("juror@example.com", Some(10), "jury", wikiAccount = Some("Juror A"))
+        implicit val request: play.api.mvc.RequestHeader = FakeRequest(GET, "/admin/users").withCSRFToken
+        implicit val flash: Flash = Flash()
+        implicit val messages: play.api.i18n.Messages = messagesOf
+        val links = new services.CommonsLinks(
+          play.api.Configuration("wlxjury.commons.enableEmailPreload" -> "Commons:Other page/Text"))
+        val html = views.html.users(admin, Seq(juror.copy(hasWikiEmail = false, accountValid = true)),
+          userController(new RecordingMail).editUserForm, Some(contest), commonsLinks = links).body
+
+        html must contain("User_talk:Juror_A&amp;action=edit&amp;section=new&amp;preload=Commons%3AOther_page%2FText&amp;")
+        html must not(contain("Special:EmailUser/Juror_A"))
+      }
+    }
   }
 
   "an unverified email's hint" should {

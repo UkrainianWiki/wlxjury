@@ -91,24 +91,25 @@ and its request state is rebuilt from GitHub, so nothing is lost with a session.
 
 ## 4. Worktrees, the sbt lock and the environment
 
-**4.1 One worktree per batch.** `git worktree add {repo}-<name> -b ukwikidev/<name> <base>`.
-`{repo}` (the repository, with the user's untracked files) and `../{worktree}`
-(the user's uncommitted work and secrets) are never modified by agents. Never link or copy
+**4.1 One worktree per batch.** `git worktree add ../wlxjury-<name> -b ukwikidev/<name> <base>`.
+The user's own checkout of this repository (with untracked files) and of wlxjury-infra (uncommitted
+work and secrets) are never modified by agents. Never link or copy
 `node_modules` or `data/cache` between worktrees: `sbt test`'s `jsTest` runs `npm ci`, which wiped
-the main tree's packages through a junction; a copied fixture dump measures another schema.
+the original checkout's packages through a junction; a copied fixture dump measures another schema.
 
 **4.2 One sbt or test JVM at a time, across all worktrees.** The lock is the directory
-`{projects}/.sbt-jvm.lock` with an `owner` file inside: `owner=` (the agent or person), `pid=`,
+`.sbt-jvm.lock` in the folder that holds the repository and its worktrees, the same for every
+worktree: `LOCK="$(cd "$(git rev-parse --git-common-dir)/../.." && pwd)/.sbt-jvm.lock"`
+(`AGENT_CHECK_LOCK` overrides it for `agent-check.py`), with an `owner` file inside: `owner=` (the agent or person), `pid=`,
 `host=`, `started=` (ISO time with offset), `timeout=` (seconds, 0 for none), `cwd=` and
 `command=`, one per line. Prefer `python scripts/agent-check.py --lock --owner <name> -- <sbt
 command>`: it takes the lock, writes `owner` (its own PID: the process that holds the lock for
 the whole run), and removes both when the run ends, a timeout (exit 124) included; if writing
 `owner` fails it removes the lock again. By hand: take it with its own command, `mkdir
-{projects}/.sbt-jvm.lock`, check that it succeeded, then write `owner` without `pid=` (a Bash tool
+"$LOCK"`, check that it succeeded, then write `owner` without `pid=` (a Bash tool
 shell's `$$` exits with the command, so the lock would read as abandoned): `printf
 'owner=%s\nstarted=%s\ncommand=%s\n' <name> "$(date -Iseconds)" '<command>' >
-{projects}/.sbt-jvm.lock/owner`; release with `rm {projects}/.sbt-jvm.lock/owner` and `rmdir
-{projects}/.sbt-jvm.lock`, only if you took it. If the directory exists, another run holds it: wait
+"$LOCK/owner"`; release with `rm "$LOCK/owner"` and `rmdir "$LOCK"`, only if you took it. If the directory exists, another run holds it: wait
 and retry, never delete it. Not waited on, but reported with the `owner` file to the orchestrator
 or the user, who releases it only under §4.6 (no script or agent removes it on its own): a lock
 whose `pid=` on this `host=` no longer runs (`agent-check` prints `LOCK OWNER GONE`: a run killed
@@ -127,8 +128,8 @@ its host slept, had others waiting all night with nobody to ask.
 **4.4 Windows.** sbt runs from Git Bash with the direct launcher and UTF-8 (CLAUDE.md "Agent
 efficiency"); PowerShell 5.1 splits `-Dfile.encoding=UTF-8` and drops quotes of `set` arguments.
 
-**4.5 gh.** The GitHub CLI is `~/tools/gh/bin/gh.exe` on the orchestrator's machine
-(not on `PATH`); scripts take it from `GH` or `--gh`. Agents use it to read (PR lists, checks,
+**4.5 gh.** Scripts take the GitHub CLI from `GH` or `--gh`, else `gh` on `PATH` (set `GH` where
+it isn't on `PATH`). Agents use it to read (PR lists, checks,
 logs) unless the task says to write.
 
 **4.6 After an agent fails, stalls or is stopped, the orchestrator cleans up what it left.** Right

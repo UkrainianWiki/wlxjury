@@ -1,0 +1,9 @@
+#!/bin/sh
+# Refuse a commit message or an author/committer identity with this project's private strings
+# (CONTRIBUTING.md, "Private strings").
+py=
+for c in python3 python; do
+  if command -v "$c" >/dev/null 2>&1 && "$c" -c '' >/dev/null 2>&1; then py=$c; break; fi
+done
+[ -n "$py" ] || { echo "commit-msg: no working python3 or python found" >&2; exit 1; }
+exec "$py" "$(git rev-parse --show-toplevel)/scripts/check-private-strings.py" --message "$1"

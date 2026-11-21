@@ -2,7 +2,9 @@
 """Single-service maintenance deployments. Python 3.8+, Linux, root, stdlib only.
 
 No shell evaluation, passwords in argv, automatic schema repair, or implicit
-post-cutover database rollback. See docs/deployment.md for initial setup.
+post-cutover database rollback. It moved production off the old Debian package in October
+2026 and stays only for its last open record (docs/deployment.md, "The server"); routine
+releases use wlxjury-release.
 """
 import argparse
 import contextlib

@@ -649,7 +649,7 @@ from the locked image row, if (c) is not taken.
 
 ## 5. Montage
 
-Read from `git show origin/master:montage/rdb.py` in `{python}/montage` at `d879cb8`
+Read from `git show origin/master:montage/rdb.py` in a Montage clone at `d879cb8`
 (2026-10-31); `DBSessionMiddleware` is `montage/mw/__init__.py:243`.
 
 | Montage | Where (`rdb.py` at `d879cb8`) | Here |
@@ -829,7 +829,7 @@ covers these.
 
 ## 11. Robustness batch results (W1, W2, W3, W8, W9)
 
-Branch `ukwikidev/write-path-robustness` (worktree `../{worktree}`) from
+Branch `ukwikidev/write-path-robustness` (its own worktree) from
 `ukwikidev/followups` `7a79a4bd`, 2026-11-03. Real code, no flags.
 
 ### What changed

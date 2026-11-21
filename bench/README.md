@@ -15,7 +15,7 @@ Everything here runs on a Windows laptop with Git Bash and Docker Desktop. Comma
 
 ## 1. Rules that always apply
 
-- **Personal data.** The production dump contains user emails, names and password hashes. It lives only in `../{worktree}\proddata\`, outside every repository.
+- **Personal data.** The production dump contains user emails, names and password hashes. It lives only in `$BENCH_WORK/proddata/`, outside every repository.
   - It goes straight into the benchmark container's database (a Docker volume) and is anonymised there at once (`scripts/anonymise.sql`).
   - Never commit the dump, a restored copy, a derived dump or query output containing personal data. Never put them in `data/cache` or anywhere in a repository. **Commit scripts; never data.**
   - If a step would copy personal data elsewhere, stop and ask.
@@ -30,12 +30,12 @@ Everything here runs on a Windows laptop with Git Bash and Docker Desktop. Comma
 
   If conditions changed between two runs you want to compare, re-run the older one back to back.
 - **Don't touch:**
-  - other git worktrees and branches (`{repo}` = `ukwikidev/performance-memory` (PR #183), `../{worktree}` = `ukwikidev/background-distribution`);
+  - other git worktrees and branches (the repository's own checkout on `ukwikidev/performance-memory` (PR #183), the `ukwikidev/background-distribution` worktree);
   - other Docker containers;
   - other people's processes (the user's IntelliJ and sbt shell);
   - any server.
 
-  Don't push. Work in `../{worktree}` (branch `ukwikidev/prod-like-benchmark`).
+  Don't push. Work in the benchmark's own worktree (branch `ukwikidev/prod-like-benchmark`).
 
 ## 2. Before every session: checklist
 
@@ -58,8 +58,9 @@ Everything here runs on a Windows laptop with Git Bash and Docker Desktop. Comma
 4. **Docker Desktop is running**, and no `wlxjury-bench` container is left over (`bench.sh stop` is safe).
 5. **Environment** for every command below:
    ```
-   export BENCH_SCRATCH=../{worktree}/bench   # builds and results, outside the repo
-   cd ../{worktree}
+   export BENCH_WORK=../bench-work                    # a folder outside every repository
+   export BENCH_SCRATCH=$BENCH_WORK/bench             # builds and results
+   cd ../{benchmark-worktree}                         # the benchmark's own worktree
    B=bench/scripts/bench.sh; R=bench/scripts/run.sh
    source bench/scripts/suite.sh                            # defines SUITE=(...)
    ```
@@ -120,7 +121,7 @@ $B dist bgdistv551 2a22eba     # background-distribution head
 **Snapshots:**
 ```
 # 1. restore + anonymise (about 2 min), then save
-$B restore-dump ../{worktree}/proddata/wlxjury31012026.sql.gz
+$B restore-dump $BENCH_WORK/proddata/wlxjury31012026.sql.gz
 $B stop && $B save v43-myisam-anon
 
 # 2. production's state: migrate to V53 with production's code on MyISAM (about 7 min)
@@ -147,7 +148,7 @@ $R <label> <dist> <snapshot> <cnf|-> "${SUITE[@]}" [-- <extra -D options for eve
 ```
 pwsh -NoProfile -File bench/scripts/run-monitored.ps1 -Label <label> -Dist <dist> -Snapshot <snapshot> -Cnf <cnf|->
 ```
-Set `$env:BENCH_SCRATCH = '../{worktree}/bench'` in the PowerShell session before invoking it. The wrapper sources the same `suite.sh`, writes `conditions.json` and UTC host samples every 10 seconds, checks power throughout preparation and simulations, and aborts for a power change, three samples below 768 MiB free host RAM, less than 2 GiB free disk, or a host-monitor sample gap over 30 seconds. It validates seven reports, zero failed HTTP requests, the distribution row-count checks and completed jobs, intended buffer sizes, container limits, and the full successful Flyway history. Failures are stopped and renamed `...-DISCARDED-<reason>-<timestamp>`; existing result labels are refused. For a new dist name pass `-ExpectedFlywayVersion <version>`. Use `-AllowLowMemory` only after an explicit exception has been approved, and record the actual starting and minimum measured free RAM. This session's user approved proceeding at 6.9 GiB rather than the 8 GiB prerequisite.
+Set `$env:BENCH_SCRATCH` to the same folder in the PowerShell session before invoking it. The wrapper sources the same `suite.sh`, writes `conditions.json` and UTC host samples every 10 seconds, checks power throughout preparation and simulations, and aborts for a power change, three samples below 768 MiB free host RAM, less than 2 GiB free disk, or a host-monitor sample gap over 30 seconds. It validates seven reports, zero failed HTTP requests, the distribution row-count checks and completed jobs, intended buffer sizes, container limits, and the full successful Flyway history. Failures are stopped and renamed `...-DISCARDED-<reason>-<timestamp>`; existing result labels are refused. For a new dist name pass `-ExpectedFlywayVersion <version>`. Use `-AllowLowMemory` only after an explicit exception has been approved, and record the actual starting and minimum measured free RAM. This session's user approved proceeding at 6.9 GiB rather than the 8 GiB prerequisite.
 
 **What it does:**
 - checks mains power;
@@ -278,6 +279,6 @@ Export BENCH_SCRATCH as in section 5 and satisfy prerequisites; add -AllowLowMem
 ## 9. Cleanup when the work is accepted
 
 - `$B stop`, and restore the power settings.
-- Keep the volumes and `../{worktree}` until the user accepts the results. Then, with the user's agreement:
-  - remove the `wlxjury-bench-*` volumes, the `wlxjury-bench-server` image and `../{worktree}\bench\build`;
-  - delete the dump copy in `../{worktree}\proddata\`. It holds personal data.
+- Keep the volumes and `$BENCH_WORK` until the user accepts the results. Then, with the user's agreement:
+  - remove the `wlxjury-bench-*` volumes, the `wlxjury-bench-server` image and `$BENCH_WORK/bench/build`;
+  - delete the dump copy in `$BENCH_WORK/proddata/`. It holds personal data.

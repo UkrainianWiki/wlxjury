@@ -1,0 +1,9 @@
+#!/bin/sh
+# Refuse staged files with this project's private strings (CONTRIBUTING.md, "Private strings").
+# Enable once per clone: git config core.hooksPath .githooks
+py=
+for c in python3 python; do
+  if command -v "$c" >/dev/null 2>&1 && "$c" -c '' >/dev/null 2>&1; then py=$c; break; fi
+done
+[ -n "$py" ] || { echo "pre-commit: no working python3 or python found" >&2; exit 1; }
+exec "$py" "$(git rev-parse --show-toplevel)/scripts/check-private-strings.py" --staged

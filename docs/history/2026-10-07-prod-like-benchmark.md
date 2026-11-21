@@ -6,7 +6,7 @@
 > [`bench/README.md`](../../bench/README.md). Kept for the cited baselines and the MariaDB
 > configuration and archiving decisions.
 
-> **To run or resume the benchmark, follow the runbook [`bench/README.md`](../../bench/README.md).** It has the prerequisites, the existing images, snapshots and results, the rebuild steps, the exact commands for the remaining phases, the validity rules and troubleshooting. Raw results and the dump live outside the repository in `../{worktree}\`.
+> **To run or resume the benchmark, follow the runbook [`bench/README.md`](../../bench/README.md).** It has the prerequisites, the existing images, snapshots and results, the rebuild steps, the exact commands for the remaining phases, the validity rules and troubleshooting. Raw results and the dump live outside the repository, in the benchmark work folder.
 
 **Goal:** Measure the jury tool the way it runs in production, and use those measurements to decide:
 1. converting MyISAM to InnoDB (and how to deploy it);
@@ -139,7 +139,7 @@ Expose 9000 (the app) and 3306 (data loading and checks from the host). Note wha
 
 ## Rules
 
-- **Branch:** `ukwikidev/prod-like-benchmark` (worktree `../{worktree}`), created from `ukwikidev/background-distribution` at `c3f8e68`. One commit per logical step. Never commit dumps or personal data. No push; nothing on servers.
+- **Branch:** `ukwikidev/prod-like-benchmark` (its own worktree), created from `ukwikidev/background-distribution` at `c3f8e68`. One commit per logical step. Never commit dumps or personal data. No push; nothing on servers.
 - **Exception:** the conversion migration is a cherry-pickable commit, per Phase 3.
 - **Laptop:** on mains power for every measurement.
 - **Builds:** sbt with `-Dsbt.server.forcestart=true`. Docker Desktop is available.
@@ -236,7 +236,7 @@ Latency is mean / p95 in milliseconds. Locks are the concurrent-creation simulat
 
 > Historical recommendation: the latest-bgdist 128/256 MiB follow-up below supersedes the 512 MiB configuration recommendation. The PR #183 / 512 MiB archiving result retains its original measured scope.
 
-Phases 3–5 are complete: 11 validated full-suite runs, 77 measured simulations, 163,865 HTTP requests and zero failed HTTP requests. Each sequential distribution passed all four image/selection-count checks, and all ten concurrent creation operations completed in each run. Background jobs reached done; their completion times are reported separately from form response times. Raw files, including conditions, host samples, status deltas, GC/NMT and Gatling reports, remain in `../{worktree}\bench\results` and are not committed.
+Phases 3–5 are complete: 11 validated full-suite runs, 77 measured simulations, 163,865 HTTP requests and zero failed HTTP requests. Each sequential distribution passed all four image/selection-count checks, and all ten concurrent creation operations completed in each run. Background jobs reached done; their completion times are reported separately from form response times. Raw files, including conditions, host samples, status deltas, GC/NMT and Gatling reports, remain in the benchmark work folder (`bench/results`) and are not committed.
 
 #### Conversion and deployable application packages
 
@@ -385,7 +385,7 @@ The seven simulations, three warm-ups, CPU/memory/swap caps, production JVM flag
 | p6-bgdist-bp128 | 15367 / 0 | 4.438 | 838 / 5559 | 10.64 | 121 |
 | p6-bgdist-bp256 | 15334 / 0 | 7.319 | 4032 / 4032 | 11.381 | 96 |
 
-All **14 simulations and 30,701 HTTP requests passed**. Both pools were verified from effective variables (134,217,728 / 268,435,456 bytes), successful Flyway histories through V60 and unchanged container limits. The synthetic-email/re-opening gates passed before warm-up. All four sequential distribution steps checked expected image/selection counts; all ten concurrent operations finished in each run. Raw results, full application/stdout logs, server GC/NMT/RSS and host samples stay outside Git under `../{worktree}\bench\results\<label>`.
+All **14 simulations and 30,701 HTTP requests passed**. Both pools were verified from effective variables (134,217,728 / 268,435,456 bytes), successful Flyway histories through V60 and unchanged container limits. The synthetic-email/re-opening gates passed before warm-up. All four sequential distribution steps checked expected image/selection counts; all ten concurrent operations finished in each run. Raw results, full application/stdout logs, server GC/NMT/RSS and host samples stay outside Git in the benchmark work folder (`bench/results/{label}`).
 
 #### Latencies and completed work
 

@@ -21,7 +21,8 @@ an interrupt included), so idle sleep (e.g. on battery after a power cut) doesn'
 The display may sleep; lid and power-button actions and critical-battery hibernation still
 apply. --allow-sleep opts out.
 
---lock takes the shared sbt lock directory (default {projects}/.sbt-jvm.lock), writes an `owner`
+--lock takes the shared sbt lock directory (default: $AGENT_CHECK_LOCK, else .sbt-jvm.lock in the
+folder that holds the repository and its worktrees), writes an `owner`
 file inside it (who, PID, host, start time, timeout, working directory, command) and removes both
 at exit, a timeout included. A lock held by someone else is waited for (--lock-wait). Not waited
 for, but reported (exit 75), and never removed: a lock whose owner file names a PID on this host
@@ -53,7 +54,24 @@ FAILURE = re.compile(
 TIMEOUT_EXIT = 124
 LOCK_EXIT = 75
 DEFAULT_TIMEOUT = 1200
-DEFAULT_LOCK = "{projects}/.sbt-jvm.lock" if os.name == "nt" else "{projects}/.sbt-jvm.lock"
+
+
+def default_lock():
+    """$AGENT_CHECK_LOCK, else .sbt-jvm.lock beside the repository's own checkout: every worktree
+    resolves to the same directory (git's common dir is that checkout's .git)."""
+    if os.environ.get("AGENT_CHECK_LOCK"):
+        return os.environ["AGENT_CHECK_LOCK"]
+    here = Path(__file__).resolve().parent
+    try:
+        common = subprocess.run(["git", "-C", str(here), "rev-parse", "--git-common-dir"],
+                                capture_output=True, text=True, check=True).stdout.strip()
+        main = (here / common).resolve().parent
+    except (OSError, subprocess.CalledProcessError):
+        main = here.parent
+    return str(main.parent / ".sbt-jvm.lock").replace("\\", "/")
+
+
+DEFAULT_LOCK = default_lock()
 STALE_LOCK_SECONDS = 3600
 POLL_SECONDS = 2.0
 

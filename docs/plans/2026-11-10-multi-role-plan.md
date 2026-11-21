@@ -7,7 +7,7 @@ Date: 2026-11-10. This is a read-only design. Nothing was changed.
 - **Every open decision is now answered** (O1-O14, §12). The biggest change is the new rule **"Juror stays alone"**
   (O14, §2). It removes the privacy machinery that was needed only for organizers or admins who vote in jury rounds.
 
-- **Code read:** `../{worktree}` at `c9805b31` ("Mirror of stack/96-organizer-docs d3aefd50", PR #279).
+- **Code read:** the followups worktree at `c9805b31` ("Mirror of stack/96-organizer-docs d3aefd50", PR #279).
   File:line references are at that commit.
 - **Assumed landed first:**
   - `stack/97-root-account-scope` at `31ce8610` (PR #280; its followups mirror is `1350f0d8`). Root becomes a
@@ -305,7 +305,7 @@ lists those sites. The entries below are the ones that change more than that, or
 | # | Site | Change |
 |---|---|---|
 | U17 | `RoundService.scala:125`, `Round.scala:639` | `round_user.role` = `round.voterRole` (B1) |
-| U18 | `RoundService.scala:68` | `loadVoters(contestId, round.voterRole, jurorIds)`. **Any id that isn't a candidate is refused, and nothing is created.** The message names each person and why: `error.round.voter.not.candidate`, for example "Example can't vote in a pre-screening round: not a pre-screener of this contest". This covers a stale page or a crafted request (O11). |
+| U18 | `RoundService.scala:68` | `loadVoters(contestId, round.voterRole, jurorIds)`. **Any id that isn't a candidate is refused, and nothing is created.** The message names each person and why: `error.round.voter.not.candidate`, for example "Olena can't vote in a pre-screening round: not a pre-screener of this contest". This covers a stale page or a crafted request (O11). |
 | U19 | `RoundController.scala:100-101, 132, 286` | **The list shows only those who can vote in the round's type** (O11): jurors for a jury round, pre-screeners for a pre-screening round. Pre-ticked: candidates who are neither organizer nor admin (`isAdmin(Some(contestId))`, `User.scala:112-114`, so root isn't either). For a jury round that is everyone, since jurors are alone. An existing round keeps `findRoundJurors`. |
 | U20 | `EditRound.scala:198, 231, 256, 316`; `editRound.scala.html:65` | B4: the hidden `roles` becomes `roundType` (allowlist; a legacy `roles=jury` maps to `jury`; `prejury` refused). B1 interim: `roles=jury` maps to Jury, and nothing else is accepted. |
 | U21 | `editRound.scala.html:93-97` | Labels "Name (Organizer, Pre-screener)"; a legend per type; the not-ticked help in pre-screening rounds |

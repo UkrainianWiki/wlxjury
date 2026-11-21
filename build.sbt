@@ -153,7 +153,8 @@ Universal / mappings ++= Seq(
   baseDirectory.value / "LICENSE" -> "LICENSE",
   baseDirectory.value / "NOTICE" -> "NOTICE"
 ) ++ (baseDirectory.value / "licenses").listFiles().toSeq.map(f => f -> s"licenses/${f.getName}")
-// Server setup files are installed once from a reviewed checkout (docs/deployment.md);
+// Server setup files come from wlxjury-infra, or are installed by hand from a reviewed checkout
+// (docs/deployment.md, "The server");
 // keep them out of releases, whose conf/ directory is also on the app's classpath.
 Universal / mappings ~= (_.filterNot { case (_, path) =>
   // Mapping paths use the build machine's separator.

@@ -10,7 +10,8 @@
         accounts: Map[Long, db.scalikejdbc.User] = Map.empty,
         shareable: Set[Long] = Set.empty,
         wikimediaSignIn: Boolean = false,
-        usersBar: Option[controllers.UsersFilterBar] = None
+        usersBar: Option[controllers.UsersFilterBar] = None,
+        commonsLinks: services.CommonsLinks = services.CommonsLinks.default
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
     @import helper._
     @import controllers.UsersFilter
@@ -117,7 +118,7 @@
                                     <a href= @if(user.hasWikiEmail) {
                                             "https://commons.wikimedia.org/wiki/Special:EmailUser/@name?wpSubject=@{java.net.URLEncoder.encode(contest.name + " Jury", "UTF-8")}&wpText=@{java.net.URLEncoder.encode("Hi " + user.wikiAccount.getOrElse("") + ",\nRegards, " + adminUser.fullname, "UTF-8")}"
                                         } else {
-                                            "https://commons.wikimedia.org/w/index.php?title=User_talk:@name&action=edit&section=new&preload=User:Example/enableEmailText&preloadtitle=Please%20enable%20wiki%20email"
+                                            "@commonsLinks.enableEmailUrl(name)"
                                         } target="_blank" rel="noopener">
 
                                         <button type="button" class="btn btn-outline-secondary btn-sm">

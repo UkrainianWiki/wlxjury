@@ -31,3 +31,4 @@ app/views/** text eol=lf
 # The vendored Codex token files are kept byte for byte as published (their sha256 is in
 # docs/vendor/codex.md): no line-ending conversion on any checkout.
 public/stylesheets/vendor/codex/** -text
+.githooks/** text eol=lf

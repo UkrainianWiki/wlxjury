@@ -1,115 +1,107 @@
 # Deployment and recovery
 
-Use `scripts/deployment/wlxjury-deploy.py` on Linux as root, with Python 3.8+, systemd, Apache and MariaDB client tools, for the one-time setup and the cutover release. After the cutover, routine releases use the smaller [`wlxjury-release`](#routine-deployment-after-the-cutover) script, with a `restore` command and a recovery runbook ([why](#why-it-works-this-way)). The old blue/green scripts are disabled and their slot files removed.
+Production runs one `wlxjury.service` from immutable, versioned ZIP releases under
+`/opt/wlxjury/releases`, with `/opt/wlxjury/current` pointing at the running one. A release is
+deployed with `wlxjury-release` (`scripts/deployment/wlxjury-release.sh`) in a maintenance window:
+it backs up the database when the release has migrations, switches the release, and can restore
+the previous one. The server itself is set up by the separate `wlxjury-infra` repository (Ansible).
 
-Run every `deploy`, `restore` and `reopen` inside `tmux` (or `screen`). `wlxjury-release` logs each step to the operation's folder (`/var/backups/wlxjury/UTC_TIMESTAMP-BUILD/operation.log`), and `tmux` keeps it running when the connection drops. The cutover tool `wlxjury-deploy.py` also ignores SSH hangups itself and logs each step to `/var/backups/wlxjury/operations.log`. Either way a dropped connection does not interrupt a backup, migration or restore. You still need the terminal to follow it and to act on the result.
-
-The selected baseline is the latest benchmarked background-distribution release, including **V55.1 and V60**. The changes from `bcdf9847` are present as `32a1253`; its migration, test and fixture are identical. The measured MariaDB recommendation remains `bench/cnf/recommended-60-wlxjury.cnf`, with a **256 MiB** buffer pool. These changes have been implemented locally; production setup and real-data rehearsal are separate rollout steps.
+Run every `deploy`, `restore` and `reopen` inside `tmux` (or `screen`). Each operation logs its
+steps to its folder (`/var/backups/wlxjury/UTC_TIMESTAMP-BUILD/operation.log`), and `tmux` keeps it
+running when the connection drops, so a dropped connection doesn't interrupt a backup, migration
+or restore. You still need the terminal to follow it and act on the result.
 
 ## Why it works this way
 
-One `wlxjury.service`, immutable versioned ZIP releases, a maintenance window and a rehearsal
-against an isolated database (2026-10-11 investigation; implemented in `dbedca56`, review fixes
-`ebb6fd04`). Blue/green was dropped: it gave neither zero downtime nor a safe rollback after a
-migration, and two app processes and two databases don't fit the server's disk. No standard
-tool (Ansible, pyinfra, Capistrano-style release folders) covers the recovery part (phase
-records, `restore` with its dump, refusing a restore after reopening), so the one-time cutover
-keeps the tested `wlxjury-deploy.py`; routine releases use the small `wlxjury-release`
-(`b5a1f9ec`, `restore` in `cc15dfd7`) with a rehearsed runbook instead of guided recovery
-commands (tooling comparisons `24d0c62a`, `6d96d264`). The cutover code (`adopt-legacy`,
-`scrub-legacy`, about 350 lines) is retired once the cutover is accepted and its recovery
-records are gone (roadmap). The release artifact is the ZIP from `sbt dist`; the Debian and RPM
-packages were dropped (2026-11-04, unused for years). The server's original `wlxjury.service` unit
-and `wlxjury` user came from the old Debian package; `wlxjury-infra` now manages both (its
-`wlxjury_app` role). No containers on production for now (the user, 2026-11-04): the reasons,
-and the path if that changes, are in [operations](operations/practices.md) §4.5.
+One service, immutable releases, a maintenance window and a rehearsal on an isolated copy of the
+database. Blue/green gave neither zero downtime nor a safe rollback after a migration, and two app
+processes and two databases don't fit the server's disk. No standard tool covers the recovery part
+(operation records, `restore` with its dump, refusing a restore after reopening), so the release
+tool is a small script with a rehearsed runbook. The release artifact is the ZIP from `sbt dist`.
+No containers on production for now: the reasons, and the path if that changes, are in
+[operations](operations/practices.md) §4.5. The history is in `docs/history/` and the CHANGELOG.
 
-## One-time setup on the server
+## The server
 
-**The server setup is now automated** by the separate `wlxjury-infra` repository (Ansible). It manages:
-- the Apache vhosts with the maintenance include, and the maintenance snippet;
-- the certificates;
-- `/etc/wlxjury-runtime` and its files, with secrets from an encrypted vault;
-- the systemd unit and the app's MariaDB settings;
-- the installation of `wlxjury-deploy` and `wlxjury-release`.
-
-**Java 17 is required.** Releases are compiled for Java 17 (class file version 61; `-release:17`
-in `build.sbt`); on Java 11 the app fails at start with `UnsupportedClassVersionError`.
-Production runs OpenJDK 17 (17.0.20.1 when checked on 2026-11-04), the default `java` on Ubuntu
-22.04; `wlxjury-infra` installs `openjdk-17-jre-headless`. The launcher (`bin/wlxjury`) runs
-`$JAVA_HOME/bin/java` if `JAVA_HOME` is set (and that file is executable), else the `java` on
-`PATH`, so keep 17 the default and don't point `JAVA_HOME` at another JDK. The server also has an old Java 11, not the default and no longer needed:
-the user may remove it later (for example `apt remove openjdk-11-jre-headless`, after checking
-with `update-alternatives --list java` that nothing else selects it). Production's
-`-XX:G1PeriodicGCInterval` already needed Java 12 or later. When several JDKs are installed,
-`update-alternatives` in auto mode makes the highest-priority one (usually the newest) the
-`java` on `PATH`, so a package that pulls in a newer JDK silently switches the app (and anything
-else run with `java`) to it. Set the alternative to 17 explicitly
-(`update-alternatives --set java <the 17 JVM's bin/java>`) and check `java -version` after
-package changes. Running on a newer Java is its own tested change (roadmap, "Java 21 runtime").
-
-**A UTF-8 locale is required.** The image cache stores Commons file names URL-decoded
-(`LocalImageCacheService`), so Cyrillic and other non-ASCII names become file names. Under the
-POSIX locale (no `LANG`), JDK 17's `sun.jnu.encoding` is ASCII and those paths throw
-`InvalidPathException: Malformed input`; `-Dfile.encoding=UTF-8` doesn't cover file names. Run
-the service with `LANG=C.UTF-8` (or another UTF-8 locale), in a container image too, and check
-after a change that a gallery with Cyrillic file names gets its thumbnails from the cache.
-
-It can also recreate a new server. For this server, follow its `docs/adopting-the-existing-server.md`. It replaces the manual steps below, apart from `adopt-legacy` and `scrub-legacy`. Those steps, and the files under `conf/apache`, `conf/systemd` and `conf/wlxjury`, stay here until production is configured from that repository.
-
-Each playbook run takes the deployment tools from a worktree (`-e wlxjury_tools_source=…`) at the running release's commit, or at a later pushed commit for a tools fix the next deploy needs, and refuses an older or unrelated commit before any change. Its README, Running, has the three steps: the worktree and the preview, the apply, removing the worktree. The playbook never restarts the app; after a run that changed the unit (`wlxjury.service`), restart it at a quiet time, as the last step:
+**`wlxjury-infra`** manages the Apache vhosts with the maintenance include and its snippet, the
+certificates, `/etc/wlxjury-runtime` and its files (secrets from an encrypted vault), the systemd
+unit and the app's MariaDB settings, and installs the release tools. Each playbook run takes the
+deployment tools from a worktree (`-e wlxjury_tools_source=…`) at the running release's commit, or
+a later pushed commit for a tools fix the next deploy needs, and refuses an older or unrelated
+commit before any change; its README ("Running") has the steps. The playbook never restarts the
+app. After a run that changed the unit, restart it at a quiet time, as the last step:
 
 ```bash
 ssh -t wlm.org.ua 'sudo systemctl restart wlxjury'
 ```
 
-Run from a reviewed checkout. `/etc/wlxjury` points into the old Debian installation (`/usr/share/wlxjury`), so runtime settings go in a new real directory. No credentials belong in the checkout, ZIP, command-line arguments or console output.
+**Java 17 is required.** Releases are compiled for Java 17 (`-release:17` in `build.sbt`); on Java
+11 the app fails at start with `UnsupportedClassVersionError`. The launcher (`bin/wlxjury`) runs
+`$JAVA_HOME/bin/java` if `JAVA_HOME` is set, else the `java` on `PATH`, so keep 17 the default and
+don't point `JAVA_HOME` at another JDK. With several JDKs installed, `update-alternatives` in auto
+mode makes the newest one the `java` on `PATH`, so a package that pulls in a newer JDK silently
+switches the app to it. Set the alternative to 17 explicitly
+(`update-alternatives --set java <the 17 JVM's bin/java>`) and check `java -version` after package
+changes. Running on a newer Java is its own tested change (roadmap, "Java 21 runtime").
 
-```bash
-sudo install -D -o root -g root -m 0755 scripts/deployment/wlxjury-deploy.py /usr/local/sbin/wlxjury-deploy
-sudo install -d -o root -g root -m 0755 /etc/wlxjury-runtime
-sudo wlxjury-deploy init-runtime --legacy-config /etc/wlxjury/application.conf
-sudo install -o root -g wlxjury -m 0640 conf/wlxjury/production.conf /etc/wlxjury-runtime/production.conf
-sudo install -o root -g root -m 0600 conf/wlxjury/deployment.json.example /etc/wlxjury-runtime/deployment.json
-sudo install -o root -g root -m 0600 conf/wlxjury/db-admin.cnf.example /etc/wlxjury-runtime/db-admin.cnf
-```
+**A UTF-8 locale is required.** The image cache stores Commons file names URL-decoded, so Cyrillic
+and other non-ASCII names become file names. Under the POSIX locale JDK 17's `sun.jnu.encoding` is
+ASCII and those paths throw `InvalidPathException: Malformed input`; `-Dfile.encoding=UTF-8`
+doesn't cover file names. Run the service with `LANG=C.UTF-8` (in a container image too).
 
-`init-runtime` copies supported literal credentials directly on the server, retaining the signing key without printing it. It leaves old config and services unchanged and refuses to replace an existing `runtime.env`. It rejects complex HOCON, duplicate keys, multiline strings and unsupported URLs instead of guessing. If rejected, populate `runtime.env` directly on the server using the example's key list. Use one fully double-quoted value per line; escape backslashes and double quotes. Spaces, `$`, `#` and backticks are literal. Omit unused Commons variables. Never source this file as shell.
+### Runtime files
 
-The runtime directory is `0755` so Apache can stat its nonsecret maintenance flag. Secrets are root-only `0600`; app-readable nonsecret config is `0640 root:wlxjury`. Preserve `/etc/default/wlxjury` JVM tuning. The logging config is not installed here: each release ships `conf/logback-production.xml` and the unit starts the selected release with it (`-Dlogger.file=/opt/wlxjury/current/conf/logback-production.xml`), so a release brings its loggers and a backout's next start reads the old release's file. The `wlxjury-infra` unit falls back to `/etc/wlxjury-runtime/logback.xml` for a release that predates the file, for one release cycle; the manual drop-in in `conf/systemd` has none, so it starts only releases that ship the file. The production overlay explicitly includes the release's classpath defaults, requires the signing key, maps DB/Commons credentials to the environment and enables Flyway migration/validation while prohibiting automatic baseline/clean behavior. Review intentional production URL, greeting and mail overrides once; leave application tuning with the release.
+`/etc/wlxjury-runtime` holds the server's settings; nothing secret belongs in the checkout, the
+ZIP, command-line arguments or console output.
 
-Sign-in with Google and Wikimedia accounts is off until `production.conf` lists hosts and credentials for it; [oauth.md](oauth.md) covers registering the clients, the `runtime.env` variables and the hosts (each also in `WLXJURY_ALLOWED_HOSTS`).
+| File | Mode | What |
+|---|---|---|
+| `runtime.env` | `0600 root` | Credentials and host settings: one fully double-quoted value per line (escape backslashes and double quotes; spaces, `$`, `#` and backticks are literal); keys as in `conf/wlxjury/runtime.env.example`. Never source it as shell. |
+| `production.conf` | `0640 root:wlxjury` | The production overlay: includes the release's defaults, requires the signing key, maps DB and Commons credentials to the environment, and runs Flyway migration and validation with baseline and clean prohibited. |
+| `deployment.json` | `0600 root` | The datadir, every jury HTTP and HTTPS URL (`maintenance_urls`), the writer services and timers to stop (the example pauses the database-backup timer), free-space gates, retention, the image cache folder. Paths must be real, root-owned directories. |
+| `db-admin.cnf` | `0600 root` | The administrative database login; the example uses root's Unix-socket authentication. Application passwords are never passed to DB client commands. |
 
-Review `db-admin.cnf`: its example uses local root Unix-socket authentication. Otherwise configure a separate administrative account in that protected file. Verify access to the intended DB, table locking, routine/event/trigger dumps and database recreation/restore. Application passwords are never passed to DB client commands. The tool uses the same host/port/name as `runtime.env`.
+The directory itself is `0755`, so Apache can stat the nonsecret maintenance flag in it. JVM tuning
+stays in `/etc/default/wlxjury`. The logging config ships with each release
+(`conf/logback-production.xml`); the unit starts the release with it, so a backout's next start
+reads the old release's file.
 
-Edit `deployment.json` for the actual datadir, all jury HTTP/HTTPS URLs and coordinated writer services/timers. The example pauses the database-backup timer and any running backup service. Enabled DB events block deployment until coordinated. The 4 GiB migration / 2 GiB recovery free-space gates are starting values to replace with measured budgets, including backups, indexes, conversion, binlogs and other hosted services. They are not a capacity certification. Paths must be real, root-owned directories.
+Sign-in with Google and Wikimedia accounts is off until `production.conf` lists hosts and
+credentials for it: [oauth.md](oauth.md).
 
-Install `conf/apache/wlxjury-maintenance.conf` as `/etc/apache2/wlxjury-maintenance.conf`, readable and root-owned. Include it **inside every jury HTTP and HTTPS VirtualHost, before redirect rules**; `conf/apache/0002-wlxjury.conf` shows the HTTP vhosts. Preserve certificates and unrelated websites. Fix the stale jury proxy to 9001 so it uses 9000. Verify all aliases, run `sudo apachectl configtest` and reload Apache once. The flag is evaluated on every request; later deployments need no Apache edits or reload.
+Two settings name a contact and a page on Wikimedia (`application.conf`):
 
-Every URL in `maintenance_urls` must resolve to this server **from the server itself**, with a valid certificate: the tool fetches each one, expects 503 **with the snippet's maintenance page** before it stops anything (a vhost without the snippet also answers 503 while the app is stopped, but with Apache's own page), and expects the app (2xx/3xx) after `reopen`. A failure names the URL and the cause (HTTP status, TLS certificate, DNS, connection). `/health/ready` answers only requests from the server itself; through Apache it is a 404.
+- `WLXJURY_USER_AGENT_CONTACT` (`wlxjury.userAgent.contact`, no default): the operator's contact,
+  an address or a URL, added to the User-Agent of the thumbnail cache's downloads from Wikimedia.
+  Unset, that User-Agent names only the tool's Commons page. Commons API calls use scalawiki's own
+  User-Agent (`SCALAWIKI_USER_AGENT`, [integrations](integrations/practices.md) §1.4).
+  **Production sets it through wlxjury-infra** (`vault_wlxjury_user_agent_contact` in the
+  encrypted vault, written to `runtime.env`); the value stays out of both repositories.
+- `WLXJURY_COMMONS_ENABLE_EMAIL_PRELOAD` (`wlxjury.commons.enableEmailPreload`): the page whose
+  text pre-fills the users page's "please enable wiki email" message on a juror's talk page;
+  default `Commons:WLX Jury Tool/enableEmailText`. **Before the first release with it**, copy the
+  text of the page used until now to that subpage on Commons.
 
-Adopt a sanitized recovery snapshot without restarting the running original:
+**Maintenance.** `conf/apache/wlxjury-maintenance.conf` is included inside every jury HTTP and
+HTTPS VirtualHost, before redirect rules. The flag is read on every request, so deployments need no
+Apache edits or reload. Every URL in `maintenance_urls` must resolve to this server from the server
+itself, with a valid certificate: the tool expects 503 with the snippet's maintenance page before it
+stops anything (a vhost without the snippet also answers 503 while the app is stopped, but with
+Apache's own page), and the app (2xx/3xx) after `reopen`. A failure names the URL and the cause.
+`/health/ready` answers only requests from the server itself; through Apache it is a 404.
 
-```bash
-sudo wlxjury-deploy adopt-legacy /usr/share/wlxjury --build legacy-0.12-v53
-sudo install -D -o root -g root -m 0644 conf/systemd/wlxjury.service.d/deployment.conf /etc/systemd/system/wlxjury.service.d/deployment.conf
-sudo systemctl daemon-reload
-```
+**The database host.** The release tool's database commands always use the app's host from
+`runtime.env`, whatever `db-admin.cnf` says. For `WLXJURY_DB_HOST=localhost` they connect through
+the socket in `db-admin.cnf` with root socket authentication, and check that this server listens on
+port 3306. For any other host, or an explicit port, they connect by TCP, so `db-admin.cnf` then
+needs an administrative account that can log in over TCP. Each operation records the database name
+and endpoint, and `restore` refuses a backup whose database differs from what `runtime.env` names.
 
-Adoption checks external and JAR migration catalogs and refuses installed files with migrations beyond the live DB version: retrieve the actual old release if package files were updated without restarting. It then copies the launcher/libraries/config, removes literal credentials from the copy, excludes package-conflict/backup config copies, records its schema/hashes and selects it via `/opt/wlxjury/current`. It leaves the original installation untouched.
-
-Before the copy becomes readable, adoption scans its `*.conf`, `*.ini`, `*.properties`, `*.cnf` and `*.env` files for any setting named like a password or secret that still has a literal value. HOCON files are read by full key path, so nested blocks (`play.http.secret { key = ... }`), quoted or joined key parts and `+=` all count, while text inside strings, such as the jury greeting's `password: {{Password}}`, does not. Other formats, and `.conf` files that are not HOCON (Apache, systemd), are read line by line (`key = value`, `-Dkey=value`, properties `key value`). URL parameters such as `&password=` count everywhere. Commented-out credentials are dropped from the copy. A live one, such as a mail password, stops the adoption, removes the copy and names the file, line and key, never the value. In that case, copy the installation (`cp -a /usr/share/wlxjury /root/wlxjury-legacy-reviewed`), change those settings to `${?VARIABLE}` references, add the variables to `runtime.env`, and adopt from the reviewed copy. Logs live at `/var/log/wlxjury`, PID at `/run/wlxjury`, and the launcher binds to loopback. The drop-in preserves the installed service/user and allows six minutes for graceful stop. Stopping the service also stops V60 job workers; committed job state remains in the DB for recovery.
-
-First validate external configuration with the adopted release itself, without a schema upgrade:
-
-```bash
-sudo wlxjury-deploy deploy /opt/wlxjury/releases/legacy-0.12-v53 --writers-reviewed
-# Check login/normal pages locally at port 9000 while maintenance stays enabled.
-sudo wlxjury-deploy reopen RECORD_ID
-sudo wlxjury-deploy scrub-legacy RECORD_ID --legacy-config /etc/wlxjury/application.conf
-```
-
-Use the printed record ID. `scrub-legacy` requires an accepted rollout and verifies that the live JVM uses external config: its last `-Dconfig.file` must be `production.conf`, with no `-Dconfig.resource`/`-Dconfig.url` and no `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS` or `_JAVA_OPTIONS` naming another config. It retains the original only in the protected recovery record and replaces old literal credentials with environment references. Review other historical copies/backups for exposed credentials under your retention policy. Keep the signing key during the move; rotation is separate. Keep the installed package for initial recovery, but do not run package upgrades that bypass the new procedure.
+**The cutover tool.** `wlxjury-deploy` (`scripts/deployment/wlxjury-deploy.py`) moved production
+from the old Debian package to these releases in October 2026. It stays installed only for its last
+open record, `20261016T092501Z-45c7ed3a`, which keeps `legacy-0.12-v53` from being pruned; closing
+it is a roadmap follow-up. Never use `wlxjury-deploy deploy`: it can't verify releases it didn't
+prepare. Both tools take the same lock (`/opt/wlxjury/deployment.lock`).
 
 ## Build and rehearse
 
@@ -119,96 +111,45 @@ sbt -Dwlxjury.buildId=26.11 dist
 sha256sum target/universal/wlxjury-26.11.zip
 ```
 
-Versions are calendar-based, `YY.MM` with `.N` for an extra deploy in the same month; the release commit sets `version := "26.11"` in `build.sbt` (between releases it is the next one's snapshot, `26.11-SNAPSHOT`, whose ZIP is `wlxjury-26.11-SNAPSHOT.zip`). The steps are in [workflow practices](workflow/practices.md) §7.4. Builds before this scheme are named `0.13-…`. Use a reviewed build name and the final ZIP hash. A requested build ID is refused if `app`, `conf`, `public`, `project` or `build.sbt` has uncommitted **or untracked** changes (untracked Twirl templates are compiled too), and the short commit is appended unless the name already contains it, e.g. `26.11-dbedca565807`; the release directory on the server is that ID plus the ZIP hash's first 12 characters. Without `-Dwlxjury.buildId` the ID is version and commit, with `-dirty` for any such change. The rules are in `project/BuildIdentity.scala`, tested by `deployment.BuildIdentitySpec`. Server setup files (`conf/wlxjury`, `conf/apache`, `conf/systemd`) are installed from the checkout and are not in the ZIP. `wlxjury-build.json` is both at the release root and embedded in the app; it contains build, version and the latest numerically ordered migration, including 55.1. Artifact hashes distinguish packages even when version/build names repeat.
+Versions are calendar-based, `YY.MM`, with `.N` for another deploy in the same month; the release
+commit sets `version` in `build.sbt` (between releases it is the next one's snapshot). The steps
+are in [workflow practices](workflow/practices.md) §7.4. A requested build ID is refused if `app`,
+`conf`, `public`, `project` or `build.sbt` has uncommitted **or untracked** changes, and the short
+commit is appended unless the name already contains it, e.g. `26.11-dbedca565807`; without
+`-Dwlxjury.buildId` the ID is version and commit, with `-dirty` for any such change (rules in
+`project/BuildIdentity.scala`, tested by `deployment.BuildIdentitySpec`). The release folder on the
+server is that ID plus the ZIP hash's first 12 characters. `wlxjury-build.json`, at the ZIP's root
+and embedded in the app, names the build, the version and the latest migration. Server setup files
+(`conf/wlxjury`, `conf/apache`, `conf/systemd`) are not in the ZIP.
 
-Rehearse the **exact ZIP** against a consistent isolated production copy on production's MariaDB (10.6 until the move to Ubuntu 24.04's 10.11, `docs/plans/2026-10-19-mariadb-10.11.md`), including Flyway history. Production MyISAM needs locking or stopped writers; `--single-transaction` alone is insufficient. Disable real email, isolate access and staging cache, and prevent copied jobs from contacting production services. Measure migration, startup, backup, restore and peak space; review V58 orphans, V65 orphans (the count of `category_members` rows whose image or category is gone, which V65 archives into `category_members_orphans` and deletes; the check query is in its header) and V60 job recovery. Test restoring the backup and old release too.
+Rehearse the **exact ZIP** against an isolated, consistent copy of production on production's
+MariaDB version, Flyway history included: production's MyISAM tables need locking or stopped
+writers (`--single-transaction` alone is not enough). Disable real email, isolate access and the
+image cache, and keep copied jobs from contacting production services. Measure migration, startup,
+backup, restore and peak disk space, and test restoring the backup and the old release.
 
-For the cutover release, as planned, from V53: V54, V55, V55.1 and V56–V60. What ran: release 0.13 applied V54–V62 on 2026-10-22, the first release after the legacy installation (CHANGELOG, "Deployed"). V55.1 rebuilds tables and changes collation; earlier production-copy measurements were about 2.5 minutes with considerable disk growth before other migration work. Set an outage/timeout budget from rehearsal. Read `docs/history/2026-10-07-prod-like-benchmark.md` for measured results and limits. Apply the reviewed 256 MiB MariaDB config in maintenance after conversion, restart/recheck MariaDB and the app before reopening. The tool does not change DB server settings used by other hosted applications.
+## Deploying a release
 
-## Cutover deployment with wlxjury-deploy
-
-**The cutover is behind us, with one record still open:** production left the legacy installation (`legacy-0.12-v53`) in October 2026, and `26.11` (V71–V95, from V70, 2026-11-11) and its follow-ups went out with [`wlxjury-release`](#routine-deployment-after-the-cutover), each built from its release commit ([workflow practices](workflow/practices.md) §7.4; deploy records in the roadmap). The cutover operation `20261016T092501Z-45c7ed3a` is still open and keeps `legacy-0.12-v53` from being pruned (roadmap, 26.11.1 deploy record): closing it is the remaining follow-up. This section stays as the record until the cutover code is retired; its commands keep the `26.11` names from the plan, which shipped differently. Upload the reviewed ZIP:
-
-```bash
-sudo wlxjury-deploy prepare /srv/releases/wlxjury-26.11.zip --sha256 FULL_LOWERCASE_SHA256
-sudo wlxjury-deploy deploy /opt/wlxjury/releases/PRINTED_RELEASE_NAME --writers-reviewed
-```
-
-`prepare` verifies the ZIP hash, rejects traversal/symlinks, strips its single archive root and creates a service-readable immutable release with file hashes. It never overwrites the active release. `--writers-reviewed` acknowledges that external writers/DDL jobs were identified and coordinated. Stay outside the Kyiv midnight statistics job or explicitly pause that writer too; a proxy flag alone does not drain in-flight work. Review import interruption/retry behavior.
-
-Deployment refuses, before changing anything, a release whose expected schema is older than the database (Flyway would only reject it after the outage began). It then locks operations; checks current schema and capacity; creates a private recovery/config record; enables and verifies HTTP **503 at every configured HTTP/HTTPS URL**; turns off automatic restarts (`zz-deployment-hold.conf` with `Restart=no` beside the drop-in, so a failed or killed start never re-runs migrations on its own); stops relevant units and the app; takes a locking mixed-engine backup with history; fsyncs/checksums it; rechecks space; atomically switches release; starts/migrates; and waits for strict HTTP 200 with expected build/schema. `/health/ready` uses the actual app pool and returns 503 for connection failure, failed history or old/missing schema, without exposing credentials or driver details.
-
-**Traffic remains blocked when deployment returns.** Smoke-test localhost port 9000: login, gallery/images, results, agreed reversible votes/comments/management, and job resumption. Inspect logs, table engines/collations/constraints and latest successful Flyway installed rank. Then:
-
-```bash
-sudo wlxjury-deploy reopen RECORD_ID
-```
-
-`reopen` checks readiness/maintenance again, restores automatic restarts, durably records that writes may resume, removes maintenance, checks that every jury URL reaches the app and resumes paused units. If a URL or a paused unit fails, the record stays `opening`: fix it and run `reopen` again. Verify public HTTPS and monitor errors/memory/jobs. Keep backups/old release. Routine deployments modify **no credential or site-config files** and need no application-config merge. Recovery records/config snapshots live in root-only `/var/backups/wlxjury/UTC_TIMESTAMP-ID/`.
-
-## Recovery
-
-Errors/interrupts never remove maintenance automatically. Inspect the printed record and phase.
-
-Before the backup (phase `created` or `maintenance`), for example when a URL did not answer 503:
-
-```bash
-sudo wlxjury-deploy abort RECORD_ID
-```
-
-`abort` leaves the original release running (or starts it if the service was already stopped), restores automatic restarts and paused units, removes the flag and checks every URL. A routing gap does not block it. Fix the gap before the next `deploy`.
-
-After the service stopped and before migration starts, including a failed backup:
-
-```bash
-sudo wlxjury-deploy resume-original RECORD_ID
-# Verify locally, then:
-sudo wlxjury-deploy reopen RECORD_ID
-```
-
-Once candidate startup/migration may have begun, while traffic remains blocked:
-
-```bash
-sudo wlxjury-deploy restore RECORD_ID
-# Verify old app and data locally, then:
-sudo wlxjury-deploy reopen RECORD_ID
-```
-
-Restore verifies checksum and gzip integrity **before DB deletion**, checks DB identity, stops writers, ends the app account's leftover sessions (such as an `ALTER` that outlived the stopped JVM; a killed `ALTER` is waited for up to `session_end_timeout_seconds`), refuses while any other session uses the database (all before the post-cutover rescue dump, whose table locks would otherwise wait on a leftover session; after a refusal maintenance stays on, so end those sessions and rerun `restore`), recreates the target with its recorded character set and collation, restores the entire dump/history/config and old release, then verifies readiness. The migration-started phase is saved **before** candidate startup: a failed start may already have committed DDL. The adopted old binary uses a clearly marked `/auth` + schema check until replaced by releases with readiness.
-
-After traffic resumes, prefer a forward fix or a separately rehearsed compatible-code deployment preserving current data. If snapshot restoration is the agreed decision:
-
-```bash
-sudo wlxjury-deploy restore RECORD_ID --accept-data-loss
-```
-
-This explicitly accepts losing later writes and first saves a fresh `before-restore-*` rescue dump; the free-space check counts the current database size for it before anything stops. Maintenance stays enabled for verification. Plan reconciliation of later votes/comments/jobs; the tool does not replay them across incompatible schemas. It never automatically repairs/cleans/baselines Flyway or deletes snapshots.
-
-An interrupted reopening conservatively marks possible writes even if maintenance still exists; restoration then requires the explicit decision. `reopen` can complete an interrupted opening after rechecking the selected release. Unexpected `current.next` or `*.tmp` leftovers require inspection of the durable record/contents before removing only that specific leftover and retrying. Resolve space, routing, credential or host failures before retrying.
-
-## Routine deployment after the cutover
-
-Once the cutover is complete, deploy releases with `wlxjury-release`. It reads the same `deployment.json`, `runtime.env` and `db-admin.cnf` as `wlxjury-deploy` and takes the same lock (`/opt/wlxjury/deployment.lock`), so no two operations of either tool overlap. Do not use `wlxjury-deploy deploy` after switching: it cannot verify releases it did not prepare. Keep `wlxjury-deploy` only to recover from its own earlier records until they are retired.
-
-Its database commands always use the app's host from `runtime.env`, whatever `db-admin.cnf` says. For `WLXJURY_DB_HOST=localhost` they connect through the socket in `db-admin.cnf`, with root socket authentication, and check that this server listens on port 3306. For any other host, or an explicit port, they connect by TCP to that host and port, so `db-admin.cnf` then needs an administrative account that can log in over TCP. Each operation records the database name and endpoint, and `restore` refuses a backup whose database differs from what `runtime.env` now names.
-
-Install it once, with `curl` and `unzip`:
+Install the tool once (it needs `curl` and `unzip`):
 
 ```bash
 sudo install -o root -g root -m 0755 scripts/deployment/wlxjury-release.sh /usr/local/sbin/wlxjury-release
 ```
 
-Run it inside `tmux`, with the reviewed ZIP from `sbt dist` and its SHA-256, from the directory the ZIP was uploaded to:
+Run it inside `tmux`, with the reviewed ZIP and its SHA-256, from the directory the ZIP was
+uploaded to:
 
 ```bash
 cd ~                                          # where the ZIP was uploaded
 sudo wlxjury-release deploy SHA256            # the first 16 (or more) hex characters sent with the build
-# Smoke-test http://127.0.0.1:9000/ locally with a jury name (curl -H 'Host: jury.example.org'), as for the cutover. Then:
+# Smoke-test http://127.0.0.1:9000/ with a jury host name (curl -H 'Host: jury.wle.org.ua'). Then:
 sudo wlxjury-release reopen                   # the current operation
 sudo wlxjury-release status                   # at any moment: what is open, and the next command
 ```
 
-**The last line is the command to run.** `deploy`, `restore` and `status` end with the one command to run next (where there is one), alone and indented on the last line, with a line of prose before it; nothing follows it, so copying "the last command" is always right. They print no back-out command after a success: on 2026-11-13 (26.11.6) the line `deploy` printed after `reopen`, `To back out instead: sudo wlxjury-release restore`, was copied as "the last command" and restored a good deployment. A deployment that became ready now ends with:
+**The last line is the command to run.** `deploy`, `restore` and `status` end with the one command
+to run next (where there is one), alone and indented on the last line. Nothing follows it, and no
+back-out command is printed after a success, so copying "the last command" is always right:
 
 ```text
 26.11.6 is ready under maintenance (schema 101, backup skipped).
@@ -216,7 +157,7 @@ Smoke-test http://127.0.0.1:9000/ locally, then reopen:
   sudo wlxjury-release reopen
 ```
 
-The usage, which `wlxjury-release` prints for a wrong command:
+The usage, which it prints for a wrong command:
 
 ```text
 usage: wlxjury-release [--config FILE] COMMAND
@@ -232,15 +173,41 @@ usage: wlxjury-release [--config FILE] COMMAND
   prune [--dry-run]
 ```
 
-**The hash.** It proves that the ZIP on the server is exactly the one that was built and reviewed, so it must come by another channel than the upload (the build's message), never from a file next to the ZIP. `deploy` takes all 64 hex characters, or a prefix of at least 16 (upper or lower case), and compares it with the ZIP's whole SHA-256, which it then records and uses as before (`zip_sha256` in `record`, the release folder's suffix). 16 hex characters are 64 bits: a wrong, truncated or stale ZIP never matches, and making another ZIP match a given prefix would take about 2^64 hashes. 12 characters (48 bits, about 2^48 hashes, hours on a few GPUs) would be enough against accidents but not against someone who can replace the upload. Without `RELEASE.zip`, `deploy` hashes every `wlxjury-*.zip` in the current directory and takes the one whose hash starts with the given prefix; with none it refuses and lists each ZIP with the start of its hash. `sudo` keeps the current directory, so run it where the ZIP was uploaded, or name the ZIP: `sudo wlxjury-release deploy ~/wlxjury-26.11.zip SHA256`.
+**The hash** proves that the ZIP on the server is the one that was built and reviewed, so it comes
+by another channel than the upload (the build's message), never from a file next to the ZIP.
+`deploy` takes all 64 hex characters or a prefix of at least 16 (64 bits: a wrong or stale ZIP never
+matches, and forging a match would take about 2^64 hashes), compares it with the ZIP's whole
+SHA-256 and records that. Without `RELEASE.zip` it hashes every `wlxjury-*.zip` in the current
+directory and takes the one that matches; with none it refuses and lists each ZIP with the start of
+its hash. `sudo` keeps the current directory, so run it where the ZIP was uploaded, or name the ZIP.
 
-**The operation.** Each deployment is an operation, a folder `/var/backups/wlxjury/UTC_TIMESTAMP-BUILD`. Without a name, `reopen` and `restore` act on the **current** operation: the newest operation folder of either tool (`wlxjury-deploy`'s cutover folders count), if it is `wlxjury-release`'s, not `complete` (a damaged one included), and `/opt/wlxjury/current` is its previous or candidate release. They print `Operation NAME: picked as the current operation`, also into its log, and pick it under the lock, so no other operation can start in between. Any other open operation is **stale**: left open (for example after maintenance was removed by hand) and followed by a later operation, or with `current` pointing elsewhere. A stale operation is never picked: with no current operation they refuse, change nothing, and list the open ones with their state and why each is stale. Investigate before naming one. `restore` picks the current operation only while maintenance is on: with traffic open, a restore decides about live data, so name the operation. `restore OPERATION --accept-data-loss` (a restore after `traffic-may-resume`) always needs the name: it is a decision about one deployment's later writes, taken from the runbook, not from the last command typed. The name is printed by `deploy` (`Operation PATH: PREVIOUS -> RELEASE`) and by `status`; there is no `latest` and no prefix form, which could name a finished operation by mistake.
+**The operation.** Each deployment is an operation, a folder `/var/backups/wlxjury/UTC_TIMESTAMP-BUILD`
+with `record`, `milestones` and `operation.log`. Without a name, `reopen` and `restore` act on the
+**current** operation: the newest operation folder of either tool, if it is `wlxjury-release`'s,
+not `complete`, and `/opt/wlxjury/current` is its previous or candidate release. They print
+`Operation NAME: picked as the current operation` and pick it under the lock. Any other open
+operation is **stale** (left open, then followed by a later one, or with `current` pointing
+elsewhere) and is never picked: with no current operation they refuse, change nothing, and list the
+open ones with why each is stale. `restore` picks the current operation only while maintenance is
+on; with traffic open, name it. `restore OPERATION --accept-data-loss` always needs the name. The
+name is printed by `deploy` (`Operation PATH: PREVIOUS -> RELEASE`) and by `status`.
 
-**Confirming a restore.** A `restore` of an operation that reached `ready`, named or not, undoes a deployment that worked, which is never the next step the tool prints: it asks `Type RESTORE to switch back to PREVIOUS (what happens to the database):` and changes nothing unless the answer is exactly `RESTORE`. Without a terminal on stdin (a script, a pipe) it refuses unless `--yes` is given. It asks after its own checks (the backup, the schema, free space, `--accept-data-loss`), just before maintenance goes on, so the tool's own refusals come first; later steps (ending sessions, the dump, the import, readiness) can still fail after a confirmation. The recovery restores stay one command, as the runbook gives them: after `migration-may-start` without `ready` (the release never became ready) and the rerun of a restore that did not finish (`restoring` or a `rescue` milestone, with no `traffic-may-resume` after it), which was confirmed when it started. Once a `reopen` followed an unfinished restore, the next restore asks again. Naming the operation is no confirmation: `status --verbose` prints the named back-out command, so a pasted named command is as likely an accident as an unnamed one.
+**Confirming a restore.** A `restore` of an operation that reached `ready` undoes a deployment that
+worked, so it asks `Type RESTORE to switch back to PREVIOUS (what happens to the database):` and
+changes nothing unless the answer is exactly `RESTORE`; without a terminal it refuses unless `--yes`
+is given. It asks after its own checks, just before maintenance goes on. The recovery restores stay
+one command: after `migration-may-start` without `ready`, and the rerun of a restore that didn't
+finish (confirmed when it started; after a `reopen` in between it asks again).
 
-A named `restore` also refuses, before anything changes, when `current` is neither the operation's previous nor its candidate release, as `reopen` does: a later deployment or a change by hand followed it, and its dump (or its previous release) would replace newer data and releases. Since a restored release can be [deployed again](#routine-deployment-after-the-cutover), it also refuses when a later operation names the current release as its candidate: that operation deployed it, and only that one is backed out. No recovery needs that: an interrupted restore or a migration interrupted before `ready` leaves `current` at one of the two. If such a backup is really wanted, import it by hand.
+A named `restore` also refuses, before anything changes, when `current` is neither the operation's
+previous nor its candidate release, or when a later operation deployed the current release again:
+its dump would replace newer data. If such a backup is really wanted, import it by hand.
 
-`status` changes nothing and never takes the lock: it reads `/proc/locks` (device and inode of `deployment.lock`) to see whether the lock is held, so it can't make a concurrent `deploy`, `reopen` or `restore` fail. It prints a few lines: maintenance on or off with the current release's build and schema (and the database's schema only when it differs or can't be read), the current operation with its releases and state (or the last finished one), one line per stale open operation with why it is stale, and then the next step for that state, as the [recovery runbook](#recovery-runbook) gives it, ending with its one command. For example, with nothing open:
+**`status`** changes nothing and never takes the lock (it reads `/proc/locks`, so it can't make a
+running operation fail; run it on the host, not in a container). It prints maintenance on or off with
+the current release's build and schema, the current operation with its releases and state (or the
+last finished one), one line per stale operation, and then the next step for that state, as the
+[recovery runbook](#recovery-runbook) gives it, ending with its one command:
 
 ```text
 Maintenance off. Current release: 26.11.6 (schema 101).
@@ -249,130 +216,141 @@ To deploy:
   sudo wlxjury-release deploy [RELEASE.zip] SHA256
 ```
 
-It works in a second `tmux` pane while an operation runs; it then says the lock is held, and its next command is `status` again, once the operation finishes. A stale operation gets no command. With no current operation and maintenance on, it offers no `deploy` (which would refuse) and no back-out: it says to find out what turned maintenance on (`wlxjury-deploy`, a stale operation, someone by hand), finish that first, and remove the flag only knowingly, and its command is `status --verbose`.
+While an operation runs it says the lock is held and its next command is `status` again. With no
+current operation and maintenance on, it offers no `deploy` and no back-out: find out what turned
+maintenance on and finish that first. `status --verbose` adds the paths, the database's schema,
+each operation's milestones, and under `Other commands` the named form of the next command and how
+to back out (a ready deployment's `restore`, marked as asking to type `RESTORE`).
 
-`status --verbose` adds, before the same next step: the maintenance flag's path, the current release's path, the database's schema, each operation's releases and milestones, and under `Other commands` the named form of the next command and how to back out. A deployment that became ready (and one whose `reopen` did not finish) gets its `restore` command there, marked as asking to type `RESTORE`; with no current operation and maintenance off, the last finished operation gets it while it is the newest of all and its candidate is still the current release, with `--accept-data-loss` and the warning if it took a dump. Run on the host, as the tool always is: in a container's PID namespace `/proc/locks` hides locks whose owner isn't visible there.
+**Deploying a release folder again.** `deploy` unpacks each release into `releases/BUILD-HASH12`
+and writes the ZIP's whole SHA-256 into it as `.wlxjury-zip-sha256`. If that folder exists:
+- it is the current release: `deploy` refuses and never overwrites it;
+- it is not current and came from this same ZIP (its marker, or an operation's `record` naming it
+  with this `zip_sha256`), as after a restored deployment: `deploy` replaces it with the fresh,
+  verified unpack and prints `Prepared … again from this ZIP` (if that fails, the old folder is put
+  back, or `deploy` names where it is and the `mv` that moves it back);
+- anything else: `deploy` refuses before anything changes. Remove the folder by hand only once no
+  operation needs it (`prune --dry-run --verbose` lists what it keeps).
 
-**Deploying a release folder again.** `deploy` unpacks each release into `releases/BUILD-HASH12` (the first 12 hex characters of the ZIP's SHA-256) and writes the ZIP's whole SHA-256 into it as `.wlxjury-zip-sha256`. If that folder exists already:
-- it is the current release: `deploy` refuses (`BUILD from this ZIP is already deployed`), and never overwrites it;
-- it is not current and was unpacked from this same ZIP (its `.wlxjury-zip-sha256`, or for a folder from before the marker an operation's `record` naming it as `candidate` with this `zip_sha256`), as after a deployment that was restored: `deploy` replaces it with the fresh unpack it has just verified, so what runs is exactly the ZIP even if a file there was changed, and prints `Prepared … again from this ZIP`. If that replacement fails, the old folder is put back; if putting it back fails too, `deploy` stops and names where the old folder is (in a `.staging.*` folder) and the `mv` that moves it back;
-- anything else (another ZIP's marker, or nothing that ties it to this ZIP): `deploy` refuses before anything changes. Remove the folder by hand only once no operation needs it (`prune --dry-run --verbose` lists what it keeps).
+**Backups.** A release with new migrations always gets a database backup. A release without them
+(its `schemaVersion` equals the database's) skips the dump, which shortens the outage, and records
+`backup-skipped`; `--backup` takes one anyway. Backing out such a deployment only switches the
+release back, keeping every write made since.
 
-A release with new migrations always gets a database backup. A release without them (its `schemaVersion` equals the database's) skips the dump, which shortens the outage, and records `backup-skipped`; add `--backup` to take one anyway. Backing out such a deployment only switches the release back, keeping the database and every write made since.
+**Before changing anything**, `deploy` takes the lock and checks: the ZIP hash, with no symlinks and
+one top-level folder, on a copy in a root-only staging folder (so a ZIP in a folder others can write
+to can't be swapped between the check and the unpacking); the manifest; that `db-admin.cnf` reaches
+the app's database; that the release is not older than the database and there is no failed
+migration; that no database event is enabled; that no background job is queued or running; free
+space; and that [the image cache folder](#the-image-cache-folder) is owned by the service user and
+not group- or world-writable.
 
-Before changing anything, `deploy` takes the lock and checks:
-- the ZIP hash, with no symlinks and one top-level folder, on a copy in a root-only staging folder (after checking room for it beside `minimum_free_bytes`; the copy is deleted once unpacked): only that copy is hashed and unpacked, so a ZIP in a folder others can write to (such as a home folder) can't be swapped between the check and the unpacking;
-- the manifest;
-- that `db-admin.cnf` reaches the app's database endpoint;
-- that the release is not older than the database and the database has no failed migration;
-- that no database event is enabled;
-- that no background job is queued or running (below);
-- free space.
+A queued or running background job (a round distribution, an image check) stops `deploy`, which
+lists each with its id, kind, contest and status. Wait for them, or cancel them in the app (the
+Rounds or Edit round page, or `/admin/jobs/ID`). `--allow-running-jobs` deploys anyway with a
+warning: stopping the app puts running jobs back in the queue, and the new release continues each
+from its last committed step (a job of a killed app waits until its lease expires).
 
-`deploy` refuses while a background job (a round distribution, an image check) is queued or running, lists each one with its id, kind, contest (`none` for a job without one) and status, and changes nothing. Wait for them to finish, or cancel them in the app (the Rounds or Edit round page, or `/admin/jobs/ID`), and run `deploy` again. To deploy anyway, add `--allow-running-jobs` (in either order with `--backup`): `deploy` prints a warning listing the jobs, also into `operation.log`, and continues. Stopping the app puts its running jobs back in the queue, and the new release continues every queued job from its last committed step once it is up (a job of an app that was killed waits until its lease expires). Finished, failed and cancelled jobs never stop a deployment, and a query that fails (no `job` table, no access) stops it rather than counting as "no jobs".
-
-It unpacks the release into a new root-owned folder under `/opt/wlxjury/releases`. Then it:
-1. creates the operation folder `/var/backups/wlxjury/UTC_TIMESTAMP-BUILD`, with `record`, `milestones` and `operation.log`;
+**Then it:**
+1. creates the operation folder;
 2. enables maintenance and requires HTTP 503 with the maintenance page at every configured URL;
-3. turns off automatic restarts, and stops **every** configured writer unit and the app, checking each has stopped (a timer can start its service at any moment, so the recorded state only decides what `reopen` restarts);
+3. turns off automatic restarts (so a failed start never reruns migrations on its own) and stops
+   **every** configured writer unit and the app, checking each has stopped;
 4. rechecks database events;
-5. dumps the database with `--databases --add-drop-database --lock-tables`, unless the backup is skipped, then checks the dump and saves its checksum and a config snapshot;
+5. dumps the database with `--databases --add-drop-database --lock-tables` unless the backup is
+   skipped, checks the dump and saves its checksum and a config snapshot;
 6. flushes them and rechecks free space;
-7. switches `/opt/wlxjury/current`, starts the app, and waits until `/health/ready` reports the new build;
-8. prints the release, its schema and whether the backup was taken or skipped, and, last, the next command, `sudo wlxjury-release reopen`. `status` prints it again; `status --verbose` also has the named form and how to back out.
+7. switches `/opt/wlxjury/current`, starts the app, and waits until `/health/ready` reports the new
+   build;
+8. prints the release, its schema and whether the backup was taken, and, last, `sudo wlxjury-release reopen`.
 
-`reopen` requires:
-- intact milestones and no unfinished restore;
-- that `current` is the operation's candidate release, or its previous release after a finished restore (`database-restored` or `release-restored`);
-- the release to be ready.
+**`reopen`** requires intact milestones, no unfinished restore, `current` at the candidate release
+(or the previous one after a finished restore), and the release to be ready. It records
+`traffic-may-resume`, restores automatic restarts, removes maintenance, checks every URL reaches the
+app, and restarts the writer units that ran before. If a URL fails, fix routing and run `reopen`
+again. Once `complete`, it [prunes](#retention-old-releases-and-dumps) and ends with
+`Traffic resumed with RELEASE; OPERATION is complete.`
 
-It then records `traffic-may-resume`, restores automatic restarts, removes maintenance, checks every URL reaches the app, and restarts the writer units that were running before the deployment. If a URL fails, fix routing and run `reopen` again. Once it records `complete`, it [prunes](#retention-old-releases-and-dumps) old releases and dumps and ends with `Traffic resumed with RELEASE; OPERATION is complete.`; if only that prune fails, `reopen` prints `PRUNE FAILED after a successful reopen` and exits 3, with the operation `complete`.
+**`restore`** backs out a deployment, holding the lock and stopping at the first failure:
+1. It refuses an operation without a complete backup, one whose releases are both other than
+   `current`, one after `traffic-may-resume` without `--accept-data-loss`, a backup of another
+   database, and a pruned dump.
+2. It verifies the backup's checksum and gzip integrity and checks free space (plus the database's
+   size when a rescue dump is needed); for an operation that reached `ready` it asks to confirm.
+3. It enables maintenance, turns off automatic restarts, and stops every writer and the app.
+4. It ends the app account's leftover sessions (waiting up to `session_end_timeout_seconds` for a
+   killed `ALTER`) and refuses while any other session uses the database.
+5. If writes may have happened since the last import attempt, it saves the current database as a
+   new `before-restore-UTC_TIMESTAMP.sql.gz` (checked, flushed, recorded as a `rescue` milestone).
+   Rescue dumps are never replaced; a retry after an unfinished import takes none.
+6. It records `restoring` and imports the backup.
+7. It checks the previous release's schema and no failed migration, switches `current` back,
+   records `database-restored`, starts the previous release and waits until it is ready.
 
-`deploy` also refuses, before anything changes, while [the image cache folder](#the-image-cache-folder) is not owned by the service user or is group- or world-writable.
-
-`restore OPERATION` (or `restore` under maintenance, for the current operation) backs out a deployment, holding the lock throughout and stopping at the first failure:
-1. It refuses an operation without a complete backup, refuses one whose previous and candidate releases are both other than `current`, refuses after `traffic-may-resume` without `--accept-data-loss`, refuses a backup of a database other than the one `runtime.env` now names, and refuses when the dump was pruned.
-2. It verifies the backup's checksum and gzip integrity before changing anything, and checks free space: `restore_minimum_free_bytes` (or `minimum_free_bytes`), plus the database's size when a rescue dump is needed. For an operation that reached `ready`, it then asks to [confirm](#routine-deployment-after-the-cutover) (`RESTORE`, or `--yes`).
-3. It enables and checks maintenance, turns off automatic restarts, and stops every writer unit and the app.
-4. It ends the app account's leftover sessions, waiting up to `session_end_timeout_seconds` for a killed `ALTER` to roll back, and refuses while any other session uses the database.
-5. If writes may have happened since the last import attempt (`traffic-may-resume` after any earlier `restoring`), it saves the current database as a new `before-restore-UTC_TIMESTAMP.sql.gz`, checked, with its checksum, and flushed, and records its name as a `rescue` milestone. Earlier rescue dumps are never replaced. A retry after an unfinished import takes no new rescue dump: the database is partly restored or even dropped, and the earlier rescue dump already holds those writes.
-6. It rechecks the free-space reserve, records `restoring` and imports the backup; a failure on either side of the import stops it.
-7. It checks that the database has the previous release's schema and no failed migration, switches `current` back, records `database-restored`, starts the previous release and waits until it is ready.
-
-After `backup-skipped`, `restore OPERATION` imports nothing and needs no `--accept-data-loss`: it checks that the database still has the previous release's schema with no failed migration (refusing if a later deployment migrated it), asks to confirm as above, enables and checks maintenance, turns off automatic restarts, stops the writers and the app, switches `current` back, records `release-restored`, starts the previous release and waits until it is ready.
-
-It never restores config: if the release changed config, restore `config.tgz` by hand before reopening.
+After `backup-skipped`, `restore` imports nothing and needs no `--accept-data-loss`: it checks the
+database still has the previous release's schema, asks to confirm as above, switches `current`
+back, records `release-restored` and starts the previous release. It never restores config: if the
+release changed config, restore `config.tgz` by hand before reopening.
 
 ### Retention: old releases and dumps
 
-Release folders and pre-deployment dumps (`database.sql.gz`) stay on the server only as long as a `restore` can need them; the server's long-term backup is separate. `wlxjury-release prune` deletes the rest. It runs by itself at the end of every successful `reopen`, never after a failed one, so a rollback stays possible throughout a deployment; there it prints only what it deletes (and anything it cannot read). `--verbose` also lists what it keeps and why, what it skips (symlinks, folders that are not releases) and dumps whose previous release is gone. By hand:
+Release folders and pre-deployment dumps stay only as long as a `restore` can need them; the
+server's long-term backup is separate. `wlxjury-release prune` deletes the rest. It runs at the end
+of every successful `reopen` (never after a failed one) and prints only what it deletes. By hand:
 
 ```bash
 sudo wlxjury-release prune --dry-run --verbose   # what it keeps and why, and what it would delete
 sudo wlxjury-release prune
 ```
 
-It takes the deployment lock and refuses while maintenance is on. If only the prune at the end of a `reopen` fails, `reopen` prints `PRUNE FAILED after a successful reopen` and exits 3: traffic is open and the operation is `complete`, so don't rerun `reopen`; fix the cause and run `prune`. The settings are in `deployment.json`, with these defaults (the user, 2026-11-04; the numbers may change):
+It takes the lock and refuses while maintenance is on. If only the prune at the end of a `reopen`
+fails, `reopen` prints `PRUNE FAILED after a successful reopen` and exits 3: traffic is open and the
+operation is `complete`, so don't rerun `reopen`; fix the cause and run `prune`. Settings in
+`deployment.json`:
 
 | Setting | Default | Keeps |
 |---|---|---|
-| `keep_previous_releases` | 4 | the current release, plus the 4 releases besides it that an operation named most recently (as `previous` or `candidate`), whatever else keeps them; folders no operation names come last. At least 1 |
-| `keep_backup_dumps` | 5 | the dumps of the 5 newest operations that took one (every release with migrations, and `--backup`). At least 1 |
-| `keep_backup_days` | 0 (off) | when above 0, also every dump younger than that many days, whatever the count |
+| `keep_previous_releases` | 4 | the current release, plus the 4 releases an operation named most recently. At least 1 |
+| `keep_backup_dumps` | 5 | the dumps of the 5 newest operations that took one. At least 1 |
+| `keep_backup_days` | 0 (off) | when above 0, also every dump younger than that many days |
 
-Releases are infrequent, so retention is by count; the age rule is off unless `keep_backup_days` is set.
-
-Whatever the numbers, it never deletes:
-- the release `current` points at, or a release named by an operation that is not `complete` (of either tool; a missing or damaged milestones file counts as open);
-- the dump of an open operation, or of the operation that deployed the current release;
-- **the previous release of every dump it keeps**, so every dump left can be restored with `wlxjury-release restore`;
-- rescue dumps (`before-restore-*`), operation folders (`record`, `milestones`, `config.tgz`, the log), or anything of `wlxjury-deploy`'s cutover records, apart from their releases once those records are `complete`;
-- symlinks, and folders without a `wlxjury-build.json` (such as `lost+found`).
-
-So one more release than the count can stay: the previous release of the oldest kept dump. With the defaults, a normal history keeps about 5–6 releases. Setting `keep_backup_days` keeps more: one release per dump in that window.
-
-It decides everything before deleting anything, and stops, deleting nothing, when it can't tell what is safe:
-- an open operation whose releases it can't read, or that names a path outside `releases`;
-- an operation with a dump whose record lacks `previous` or `candidate`, or names a path outside `releases`;
-- a symlink among the operation folders;
-- a release or operation name with a line break or a tab.
-
-A dump whose age can't be read is kept. Paths are compared resolved (`realpath -m`), and the settings are read as decimal whole numbers.
-
-It also removes `.staging.*` folders that a killed `deploy` left. Each deletion is logged with its size to `prune.log` in the backup folder, and, after a `reopen`, to that operation's `operation.log`; a pruned dump also gets a line in its own operation's log, and `restore` of that operation then refuses before anything changes.
-
-Example, with the defaults: releases r1 to r8 deployed in order, r8 current. Prune keeps:
-- r8, the current release;
-- r7, r6, r5 and r4, the four used most recently besides it;
-- r3, the previous release of r4's dump, which is one of the newest five (r4's to r8's).
-
-It deletes r2, r1 and the legacy release, and the dumps of r1's, r2's and r3's operations, even when they are only days old.
+Whatever the numbers, it never deletes: the current release or one named by an operation that isn't
+`complete` (of either tool; damaged milestones count as open); the dump of an open operation or of
+the one that deployed the current release; **the previous release of every dump it keeps**, so
+every kept dump can be restored; rescue dumps, operation folders, `wlxjury-deploy`'s records; symlinks
+and folders without a `wlxjury-build.json`. With the defaults about 5–6 releases stay. It decides
+everything before deleting anything, and deletes nothing when it can't tell what is safe (an open
+operation it can't read, a path outside `releases`, a symlinked operation folder, a name with a line
+break or tab). It also removes `.staging.*` folders a killed `deploy` left. Each deletion is logged
+with its size to `prune.log`, and after a `reopen` to that operation's log.
 
 ### The image cache folder
 
-The image cache (`wlxjury.thumbs.local-path`, default `/var/www/jury-images`) holds the thumbnails the app downloads from Commons. Only the app reads and writes it: `ImageProxyController` serves it to signed-in users (no Apache vhost serves it). The app writes each file as a temporary `.tmp-*` file in the target folder and moves it into place, creating folders as it goes; it needs to own the folders, nothing more. So the folder is owned by the service user (`wlxjury`), mode `0755`: folders `0755` and files `0644`, as the app creates them (with the unit's default umask).
-
-`deploy` refuses, before anything changes, while the folder named by `image_cache_dir` in `deployment.json` is not owned by `service_user` (default `wlxjury`) or is group- or world-writable. It is checked only if it exists (on a new server the app creates it), and at its target if it is a symlink. If the folder is group- or world-writable, or owned by another account, fix it with:
+The image cache (`wlxjury.thumbs.local-path`, default `/var/www/jury-images`) holds the thumbnails
+the app downloads from Commons. Only the app reads and writes it (`ImageProxyController` serves it
+to signed-in users), so it is owned by the service user (`wlxjury`), mode `0755`, files `0644`.
+`deploy` refuses while the folder named by `image_cache_dir` is not owned by `service_user` or is
+group- or world-writable (checked if it exists, at its target if it is a symlink). To fix it:
 
 ```bash
 sudo chown wlxjury:wlxjury /var/www/jury-images
 sudo chmod 0755 /var/www/jury-images
-# Then anything below that others could write to. find passes names as arguments, never through
-# a shell or xargs, so Cyrillic and other names are safe; -xdev stays on this filesystem. Only
-# entries that need it are changed, so a large cache isn't rewritten.
+# Then anything below that others could write to; only entries that need it change.
 sudo find /var/www/jury-images -xdev \! -user wlxjury -print            # expect nothing
 sudo find /var/www/jury-images -xdev -type d -perm /022 -exec chmod go-w {} +
 sudo find /var/www/jury-images -xdev -type f -perm /022 -exec chmod go-w {} +
 stat -c '%a %U:%G' /var/www/jury-images                                 # 755 wlxjury:wlxjury
 ```
 
-`wlxjury-infra` should own this.
-
 ### Monitoring with monit
 
-Where monit is installed, [`conf/monit/wlxjury`](../conf/monit/wlxjury) adds the app. It is **alert only**: no start, stop or restart. systemd already restarts the app after a crash (`Restart=on-failure`), and a restart by monit during a deployment would bypass the deployment's hold (`Restart=no`) and could rerun a migration. For the same reason, other monit checks on a shared host should not restart MariaDB during a deployment.
-
-It runs [`conf/monit/wlxjury-check`](../conf/monit/wlxjury-check) with `deployment.json`, from which it reads the service, the port and the runtime folder. It fails when the service is not active or `http://127.0.0.1:PORT/health/ready` doesn't answer 200 (the release's schema and READ COMMITTED; loopback only, any `Host` header, [operations](operations/practices.md) §2.1), or when it can't read `deployment.json`. While the maintenance flag is on it is quiet, so a deployment raises no alert, unless the flag is more than two hours old (an operation that stopped). An alert comes after three failed cycles in a row, so a crash that systemd restarts in seconds raises none. Install it once:
+[`conf/monit/wlxjury`](../conf/monit/wlxjury) adds the app to monit, **alert only**: systemd already
+restarts it after a crash, and a restart by monit during a deployment would bypass the deployment's
+hold and could rerun a migration (for the same reason, other monit checks on the host should not
+restart MariaDB). It runs [`conf/monit/wlxjury-check`](../conf/monit/wlxjury-check) with
+`deployment.json`, and fails when the service is not active, `http://127.0.0.1:PORT/health/ready`
+doesn't answer 200, or `deployment.json` can't be read. It is quiet while the maintenance flag is on,
+unless the flag is more than two hours old, and alerts after three failed cycles in a row. Install:
 
 ```bash
 sudo install -D -o root -g root -m 0755 conf/monit/wlxjury-check /usr/local/lib/wlxjury/monit-check
@@ -382,11 +360,15 @@ sudo monit -t && sudo monit reload    # if monit -t fails: sudo rm /etc/monit/co
 sudo tail -n 5 /var/log/monit.log     # a reload line, no 'wlxjury' error
 ```
 
-Undo: remove both files and `sudo monit reload`. Whom monit alerts, and how, is the server's monit configuration (`set alert`, `set mailserver`); check that it alerts someone. A filesystem space alert (`check filesystem` on the disk that holds the releases, dumps and image cache) is worth adding there too. `wlxjury-infra` should install these files.
+Undo: remove both files and `sudo monit reload`. Check that the server's monit config alerts
+someone (`set alert`, `set mailserver`); a filesystem space check on the releases' disk is worth
+adding there.
 
 ### Static assets
 
-`sbt dist` fingerprints `/public` (sbt-digest): pages link `/assets/<md5>-<name>`, which the app serves with `Cache-Control: public, max-age=31536000, immutable`, so a release that changes a file changes its URL and browsers cannot run new pages with old scripts or styles. Plain names (raty's star images, which it finds by their directory, and old links) are still served, cached for an hour. Apache passes `/assets` through unchanged. To check a release:
+`sbt dist` fingerprints `/public` (sbt-digest): pages link `/assets/<md5>-<name>`, served with
+`Cache-Control: public, max-age=31536000, immutable`, so a changed file gets a new URL. Plain names
+(raty's star images, old links) are still served, cached for an hour. To check a release:
 
 ```bash
 curl -s -H 'Host: jury.wle.org.ua' http://127.0.0.1:9000/auth | grep -o '/assets/[^"]*main.css'   # /assets/<32 hex digits>-main.css
@@ -397,134 +379,97 @@ curl -sI -H 'Host: jury.wle.org.ua' http://127.0.0.1:9000/assets/stylesheets/THA
 
 ### Host names and secure cookies
 
-The app answers only requests whose `Host` names it (Play's `AllowedHostsFilter`); any other gets a 400 page. The names come from `WLXJURY_ALLOWED_HOSTS` in `runtime.env`: every `ServerName` of the jury vhosts, comma-separated, for example `"jury.wle.org.ua,jury.wlm.org.ua"`. Leave out the default ports (`:80`, `:443`), which browsers don't send; a suffix such as `.wle.org.ua` allows its subdomains, and needs at least two labels. The vhosts keep the client's `Host` (`ProxyPreserveHost On`). Loopback names aren't allowed: Apache's default vhost would pass a client's `Host: localhost` through. The readiness check (`http://127.0.0.1:9000/health/ready`) is routed for any host (`+ anyhost` in `conf/routes`) and answers only clients on the server itself. A local smoke test sends a jury name:
+The app answers only requests whose `Host` it names (Play's `AllowedHostsFilter`); any other gets a
+400 page. The names come from `WLXJURY_ALLOWED_HOSTS` in `runtime.env`: every `ServerName` of the
+jury vhosts, comma-separated, e.g. `"jury.wle.org.ua,jury.wlm.org.ua"`, without default ports; a
+suffix such as `.wle.org.ua` allows its subdomains (at least two labels). The vhosts keep the
+client's `Host` (`ProxyPreserveHost On`). Loopback names aren't allowed, since Apache's default
+vhost would pass a client's `Host: localhost` through. `/health/ready` is routed for any host and
+answers only clients on the server itself. A production start without a usable name fails, so a
+missing variable stops a deployment at the readiness check with maintenance still on; a name missing
+from the list answers 400, and `reopen`'s URL check names it.
 
-```bash
-curl -s -H 'Host: jury.wle.org.ua' http://127.0.0.1:9000/auth | head
-```
-
-`production.conf` requires the variable, and a production start (Mode.Prod) without a name, or with a name it can't use, fails, so a missing variable stops the deployment at the readiness check, with maintenance still on. A host name missing from the list answers 400 at that URL, and `reopen`'s URL check names it: add it to `runtime.env`, restart the app, and run `reopen` again. Add the variable to `runtime.env` before installing a `production.conf` that refers to it; older releases ignore it, so a restore to one keeps working with the new file.
-
-`production.conf` also marks the session, flash, language, theme and gallery-order cookies `Secure`, so browsers send them over HTTPS only, and signing in over plain HTTP no longer works. Every jury HTTP vhost must therefore redirect to HTTPS before this release is deployed. `conf/apache/0002-wlxjury.conf` now redirects `jury.wikilovesearth.org` too (it was the one HTTP vhost that proxied to the app); the production vhosts are generated by `wlxjury-infra`'s templates, which need the same redirect for every name, with or before this release. HSTS (`Strict-Transport-Security`) on the HTTPS vhosts is recommended, also in `wlxjury-infra`. Play needn't see the request as HTTPS for the cookies, and nothing in the app reads `request.secure`, so no `X-Forwarded-Proto` header is needed. If one is ever added, set it on every vhost (`https` on 443, `http` on 80), since Play trusts it from Apache on loopback and a client could otherwise send its own.
-
-`sbt run` and the tests allow Play's default names (`localhost`, `127.0.0.1`, `*.local`) and send cookies without `Secure`.
+`production.conf` marks the session, flash, language, theme and gallery-order cookies `Secure`, so
+every jury HTTP vhost must redirect to HTTPS (the production vhosts come from `wlxjury-infra`'s
+templates). HSTS on the HTTPS vhosts is recommended. Nothing in the app reads `request.secure`, so
+no `X-Forwarded-Proto` header is needed; if one is ever added, set it on every vhost, since Play
+trusts it from Apache on loopback. `sbt run` and the tests allow Play's default names and send
+cookies without `Secure`.
 
 ### Accounts, invitations and the first account
 
-There is no sign-up. An organizer's add (the users page, "Import users") creates an account
-without a password and mails an invitation link; following it sets the password and proves the
-email. Root's "reset password" mails a link the same way. These mails go through `play.mailer`:
-the server's SMTP settings must work, or nobody new can sign in (a failed mail is counted on the
-users page and logged on `security.account` with account ids; the invitation can be sent again).
-A link points at the host the request that sent it came to (so a WLM juror gets a
-`jury.wlm.org.ua` link) only if that host is named exactly in `WLXJURY_ALLOWED_HOSTS` (a suffix
-pattern such as `.wle.org.ua` never counts); otherwise, and for mail sent without a request, at
-`wlxjury.host`, whose scheme every link uses. A forged `Host` header can therefore never choose
-where a password link points. The old address of a changed email gets a short notice (no link),
-sent from `wlxjury.mail.from` (`WLXJURY_MAIL_FROM`; unset: the SMTP user if it is an address, else
-`no-reply@` the host of `wlxjury.host`), never from the account, whose address is the new one.
-Set it to an address the mail server may send from.
+There is no sign-up. An organizer's add (the users page, "Import users") creates an account without
+a password and mails an invitation link; following it sets the password and proves the email. Root's
+"reset password" mails a link the same way. These mails go through `play.mailer`, so the server's
+SMTP settings must work, or nobody new can sign in (a failed mail is counted on the users page and
+logged on `security.account`; the invitation can be sent again). A link points at the host the
+request came to only if that host is named exactly in `WLXJURY_ALLOWED_HOSTS` (a suffix pattern
+never counts); otherwise, and for mail sent without a request, at `wlxjury.host`. A forged `Host`
+header therefore never chooses where a password link points. The old address of a changed email
+gets a short notice from `wlxjury.mail.from` (`WLXJURY_MAIL_FROM`; unset: the SMTP user if it is an
+address, else `no-reply@` the host of `wlxjury.host`): set it to an address the mail server may send
+from.
 
-The link's token is in the URL path (`/invitation/<token>`, `/email/confirm/<token>`), so the
-Apache access log records it. A link is single use and expires (7 days, 24 hours for an email
-change), and the app's own log lines mask it (`/invitation/***`), but treat the access logs
-as sensitive while links are live, or exclude those paths from them.
+The link's token is in the URL path (`/invitation/<token>`, `/email/confirm/<token>`), so the Apache
+access log records it. A link is single use and expires (7 days, 24 hours for an email change), and
+the app's own logs mask it, but treat the access logs as sensitive while links are live, or exclude
+those paths from them.
 
-A new, empty database has no account. To create the first one (root), set a setup token of at
-least 32 characters for the install only, e.g. `WLXJURY_SETUP_TOKEN=$(openssl rand -hex 32)` in
-`runtime.env` (read as `wlxjury.setup.token`), restart, open `/setup`, enter the token, an email
-and a password, then remove the variable and restart. `/setup` is a 404 whenever an account
-exists or no token is set; the token is never logged.
-
-Before deploying the release that carries V77 (S2), run the read-only count of duplicate wiki
-accounts in the S2 section of `docs/plans/2026-11-02-security-resolution.md`: a wiki account
-that several accounts share no longer signs anyone in (they sign in by email).
+A new, empty database has no account. To create the first one (root), set a setup token of at least
+32 characters for the install only, e.g. `WLXJURY_SETUP_TOKEN=$(openssl rand -hex 32)` in
+`runtime.env`, restart, open `/setup`, enter the token, an email and a password, then remove the
+variable and restart. `/setup` is a 404 whenever an account exists or no token is set.
 
 ### Sessions and the signing key
 
-A signed-in session lasts at most a year from sign-in and a month without a request
-(`wlxjury.session.absoluteDays`, `idleDays`; security batch S3). "Keep me signed in" (checked by
-default) keeps the cookie across browser restarts; unchecked, it ends with the browser. Every
-account has a session version (`users.auth_version`) that each request checks: "Sign out
-everywhere" on the profile, a password change or a password link, a confirmed email change and
-root's "End sessions" on an account's edit page end every session of that account (the password
-change keeps the browser that made it). API tokens are not sessions: a user's own password change
-leaves them (the profile's "Revoke all tokens" ends them); an accepted password link or
-invitation revokes them. Root's "Reset password" only mails a link: the account's sessions and
-tokens end when the link is used. For an account that may be compromised, root also uses "End
-sessions" on its edit page and revokes its API tokens (the "API tokens" link there) at once.
-Ordinary releases keep everyone signed in: the cookies are signed with `PLAY_HTTP_SECRET_KEY`,
-which a release does not change.
+A session lasts at most a year from sign-in and a month without a request
+(`wlxjury.session.absoluteDays`, `idleDays`). "Keep me signed in" keeps the cookie across browser
+restarts. Each request checks the account's session version (`users.auth_version`): "Sign out
+everywhere", a password change or password link, a confirmed email change and root's "End sessions"
+end every session of that account (a password change keeps the browser that made it). API tokens
+are not sessions: an accepted password link or invitation revokes them, a user's own password change
+doesn't (the profile's "Revoke all tokens" does). For an account that may be compromised, root uses
+"End sessions" and revokes its API tokens at once. Releases keep everyone signed in: cookies are
+signed with `PLAY_HTTP_SECRET_KEY`, which a release doesn't change.
 
-Cookies from before S3 (without the sign-in times) are upgraded in place on their first request
-for 30 days after the S3 deploy (V80 records the end, `session_upgrade_window`; a restart or a
-later deploy does not move it), so nobody is signed out by the release. After that window such a
-cookie is signed out (`old_cookie_expired` on `security.auth`): a copy of an old cookie that never
-took the upgraded value (a replay) ends with it. To close the window early, `DELETE FROM
-session_upgrade_window` (or drop the table) and restart the app: a running app keeps the window it
-has read.
+Cookies from before the session-time change (security batch S3) are upgraded on their first request
+until `session_upgrade_window` ends (30 days after that deploy; V80 records the end). To close the
+window early, `DELETE FROM session_upgrade_window` and restart the app.
 
-**Rotating the signing key** (`PLAY_HTTP_SECRET_KEY` in `runtime.env`) ends every session at once,
-for every account: everyone signs in again. It also invalidates the flash and the CSRF tokens of
-open pages (a form sent from a page loaded before the restart shows the "reload the page" page
-once). API tokens and mailed links are not affected (they are checked against the database). Do
-it when the key may have leaked (a copy of `runtime.env`, a backup or a log that held it), when
-someone who could read it leaves, or to end every session without touching accounts (cookies from
-before S3 included, which until the upgrade window ends are otherwise upgraded to a new session).
-For one account, use "End sessions" instead. To rotate:
+**Rotating the signing key** ends every session at once, and invalidates the flash and the CSRF
+tokens of open pages (a form from a page loaded before the restart shows the "reload the page"
+page once). API tokens and mailed links are not affected. Do it when the key may have leaked, when
+someone who could read it leaves, or to end every session without touching accounts:
 
-1. Generate a new random key of at least 32 bytes on the server, e.g. `openssl rand -base64 48`,
-   and write it as the `PLAY_HTTP_SECRET_KEY` value in `runtime.env` (one double-quoted value,
-   the file stays root-only `0600`). Don't print it into a shared terminal log, a ticket or a
-   document, and don't keep the old value.
-2. Restart the app so it reads the new key: either with the next release
-   (`sudo wlxjury-release deploy ...`, which stops and starts it) or at once with
-   `sudo systemctl restart wlxjury`, at a quiet time (votes in flight are retried by the user).
+1. Generate a new key on the server (`openssl rand -base64 48`) and write it as the
+   `PLAY_HTTP_SECRET_KEY` value in `runtime.env` (one double-quoted value; the file stays `0600`).
+   Don't print it into a shared terminal, a ticket or a document, and don't keep the old value.
+2. Restart the app: with the next release, or at once with `sudo systemctl restart wlxjury` at a
+   quiet time.
 3. Check `/health/ready` and sign in once.
-4. Old copies of the key: every `wlxjury-deploy` backup keeps the `runtime.env` of its time
-   (`<backup_root>/<id>/config/runtime.env`, root-only), and its `restore` writes that file back,
-   old key included. After a rotation, replace the `PLAY_HTTP_SECRET_KEY` line in those copies with
-   the new value (or delete backups that are no longer needed), so that a later restore cannot
-   bring back the rotated key. After any restore, check that `runtime.env` holds the current key
-   (compare it on the server, e.g. with `sha256sum` of the line, without printing it).
+4. Old copies: operation folders keep a config snapshot of their time, and a restore of a
+   `wlxjury-deploy` record writes its `runtime.env` back. Replace the old key in those copies (or
+   delete copies no longer needed), and after any restore check that `runtime.env` holds the current
+   key (compare a `sha256sum` of the line, without printing it).
 
 ### MariaDB 10.11: the vote gallery index (V85, V99)
 
-V85 (`V85__Vote_gallery_index_rate_desc.sql`) stores `vote.rate` descending in the juror
-gallery's index. Only MariaDB 10.8 and later can do that. V99
-(`V99__Vote_gallery_index_voted_at.sql`) adds `vote.voted_at` as the index's last column, for
-the vote-time orders, and on 10.8+ also does V85's change. The plan is
-`docs/plans/2026-10-19-mariadb-10.11.md`.
+V85 stores `vote.rate` descending in the juror gallery's index, which needs MariaDB 10.8 or later;
+V99 adds `vote.voted_at` as the index's last column and, on 10.8+, also does V85's change. On
+production's 10.6 both log a warning that the index stayed ascending and are recorded as applied.
+The server move is planned in `docs/plans/2026-10-19-mariadb-10.11.md`.
 
-**On production's 10.6**, the deploys that apply V85 and V99 log these warnings:
-`WARN … DB: V85: vote gallery index left ascending (needs MariaDB 10.8+); run its ALTER again after the server move`
-and `WARN … DB: V99: vote gallery index has voted_at, rate left ascending (needs MariaDB 10.8+); run V99 again after the server move`.
-This is expected. V85 changes nothing on 10.6; V99 adds `voted_at` to the ascending index,
-keeping its name `vote_jury_round_rate_mon_page_idx`. Both are recorded as applied.
+**After the move to 10.11**, check the index. **Run V99 again, not V85**: V85's script builds the
+index without `voted_at`.
 
-**After the move to 10.11 (Ubuntu 24.04)**, by dump and restore or by in-place upgrade, check the
-index in the app's database. **Run V99 again, not V85**: V85's script builds the index without
-`voted_at` (it can't be changed: Flyway checks its checksum), while V99's script does V85's
-change and keeps `voted_at`.
-
-1. Connect as the release tool does. The database is `WLXJURY_DB` in
-   `/etc/wlxjury-runtime/runtime.env` (`wlxjury` in the example), and the host is its
-   `WLXJURY_DB_HOST`. For `localhost` (production: the local server, through the socket):
+1. Connect as the release tool does (database and host from `runtime.env`; production: `localhost`
+   through the socket; for another host add `--host`, `--port` and `--protocol=TCP`):
 
    ```bash
    sudo mariadb --defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf --host=localhost --protocol=SOCKET wlxjury
    ```
 
-   For any other value, `host` or `host:port`, give the host and the port (3306 if none) by TCP:
-
-   ```bash
-   sudo mariadb --defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf --host=db.example.org --port=3307 --protocol=TCP wlxjury
-   ```
-
-   Then check that this is the app's server, as the release tool does: `SELECT @@port;` gives
-   the app's port (3306 for `localhost`).
-
-2. Run the check (each gallery index, its `rate` direction and its columns):
+2. Check each gallery index, its `rate` direction and its columns:
 
    ```sql
    SELECT INDEX_NAME,
@@ -536,191 +481,106 @@ change and keeps `voted_at`.
    GROUP BY INDEX_NAME;
    ```
 
-3. Read the result (`…,voted_at` is `jury_id,round_id,rate,monument_id,page_id,voted_at`):
+3. Done is one row, `vote_jury_round_ratedesc_mon_page_idx`, `D`,
+   `jury_id,round_id,rate,monument_id,page_id,voted_at`. No row at all: stop and investigate. Any
+   other result: run V99 again, with the app stopped (maintenance on), as part of the move:
 
-| Result | Meaning | Action |
-|---|---|---|
-| one row: `vote_jury_round_ratedesc_mon_page_idx`, `D`, `…,voted_at` | done | none |
-| one row: `vote_jury_round_rate_mon_page_idx`, `A`, `…,voted_at` | V85 and V99 ran on 10.6 | run V99 again (below) |
-| `…ratedesc…` `D` `…,voted_at` and a `…rate_mon…` row | part-way: the old index is still there | run V99 again; it drops the old index |
-| `…ratedesc…` with `A` (with or without a `…rate_mon…` row) | the descending-named index was built before 10.8, e.g. from a dump of a 10.11 database restored on 10.6 | run V99 again; it rebuilds the index descending |
-| any row whose `cols` doesn't end in `voted_at` | V99's index undone (e.g. V85 run again by hand after V99) | run V99 again; it rebuilds the index with `voted_at` |
-| no row | neither gallery index exists | stop and investigate; V99 doesn't create one from nothing |
+   ```bash
+   sudo mariadb --defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf --host=localhost --protocol=SOCKET wlxjury \
+     < /opt/wlxjury/current/conf/db/migration/default/V99__Vote_gallery_index_voted_at.sql
+   ```
 
-**To run V99 again**, run the script itself in that session. It ships in the release at
-`/opt/wlxjury/current/conf/db/migration/default/V99__Vote_gallery_index_voted_at.sql`
-(`release_root` in `deployment.json`, then the release's `conf/`), with the connection options of
-step 1 (here production's `localhost`; for another host, its `--host`, `--port` and
-`--protocol=TCP`):
+   The script reads the state and runs only the `ALTER` it needs (online, about 13 s on 3.35M rows),
+   then `ANALYZE TABLE vote`. It waits up to 60 s for `vote`'s metadata lock, and while it waits every
+   vote queues behind it, hence the stopped app. Don't add a row to `flyway_schema_history`. Then
+   repeat the check.
 
-```bash
-sudo mariadb --defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf --host=localhost --protocol=SOCKET wlxjury \
-  < /opt/wlxjury/current/conf/db/migration/default/V99__Vote_gallery_index_voted_at.sql
-```
-
-The script reads the state above and runs only the `ALTER` that state needs, then
-`ANALYZE TABLE vote`. Where the index is already done it runs nothing. Running it is therefore
-the same as running that `ALTER` by hand. For the common case, the ascending index with
-`voted_at`, the `ALTER` is:
-
-```sql
-ALTER TABLE vote
-  DROP INDEX vote_jury_round_rate_mon_page_idx,
-  ADD INDEX vote_jury_round_ratedesc_mon_page_idx (jury_id, round_id, rate DESC, monument_id, page_id, voted_at),
-  ALGORITHM = INPLACE, LOCK = NONE;
-ANALYZE TABLE vote;
-```
-
-It runs online; V85's swap took about 11 s on 3M rows, V99's on 10.6 about 12.6 s on 3.35M rows;
-measure it on the rehearsal copy.
-
-**Run it with the app stopped** (maintenance on, or `sudo systemctl stop wlxjury`), as part of the
-move. The `ALTER` needs `vote`'s metadata lock briefly at its start and end; the script waits up to
-60 s for it, and while it waits behind a long transaction (a backup, a slow query) every new vote
-and gallery query on `vote` queues behind it. If the app must stay up, don't run the script: run
-the state's `ALTER` by hand with a short wait, e.g. for the common case
-
-```sql
-SET STATEMENT lock_wait_timeout = 5 FOR
-ALTER TABLE vote
-  DROP INDEX vote_jury_round_rate_mon_page_idx,
-  ADD INDEX vote_jury_round_ratedesc_mon_page_idx (jury_id, round_id, rate DESC, monument_id, page_id, voted_at),
-  ALGORITHM = INPLACE, LOCK = NONE;
-SET STATEMENT lock_wait_timeout = 5 FOR ANALYZE TABLE vote;
-```
-
-and if either fails with `Lock wait timeout exceeded` (nothing changed), retry it a little later. Then repeat the check. Don't add a row to
-`flyway_schema_history`. (Running V85's script after V99 is harmless where the index is done, but
-from the ascending index it builds the descending one without `voted_at`; run V99 again then.)
-
-**The app reminds you.** Every start logs a warning while a gallery index has `rate` ascending on
-a 10.8+ server, or lacks `voted_at` as its last column:
-`vote's gallery index has rate ascending on a server with descending index keys: run V99 again`
-(or `… lacks voted_at as its last column: run V99 again`).
-
-**After every restore on 10.11, check again.** A backup taken before the re-run (on 10.6, or on
-10.11 before V99 ran again) brings back the ascending index when restored, whether with
-`wlxjury-release restore` or a manual import. Repeat the check, and run V99 again if needed.
+Every start logs a warning while the index has `rate` ascending on a 10.8+ server or lacks
+`voted_at`. A backup taken before the re-run brings the ascending index back when restored: after
+every restore on 10.11, check again.
 
 ### One app instance
 
-The app assumes that one instance serves a database at a time. Some state lives in the JVM:
-`RoundImageCounts` caches each round's image count and is invalidated only in the process that
-wrote (another instance's counts stay stale for up to the cache's TTL, 10 minutes); the job
-scheduler's per-kind limits and turn-taking, the bcrypt sign-in limits (`bcrypt.*`), local image
-download progress and the distribution's cached chunks are per process too, and so is an Import
-users result between its redirect and the import page (`ImportResults`, kept 10 minutes: on
-another instance, or after a restart, the page says only how many lines were not added). Rounds are locked
-in the database (`SELECT … FOR UPDATE`) and jobs hold a lease in the `job` table, but running two
-instances against one database was never designed for or tested. The release tools stop the old
-service before starting the new one; keep it that way (the blue/green slots, which could run two
-at once, are disabled).
+The app assumes one instance per database. Some state lives in the JVM: `RoundImageCounts` (10
+minutes), the job scheduler's per-kind limits and turn-taking, the bcrypt sign-in limits, image
+download progress, the distribution's cached chunks and Import users results between the redirect
+and the page. Rounds are locked in the database and jobs hold a lease, but two instances on one
+database were never designed for or tested. The release tool stops the old service before starting
+the new one.
 
-### Before rolling back past "add a juror" (round_rebalance jobs)
+### Before rolling back past "Add juror…"
 
-A release from before "Add juror…" has no handler for `round_rebalance` jobs. On such a release
-a queued or running one never runs, keeps its round's job key (the round's distributions are
-refused as already running) and keeps the round frozen (hidden from its jurors), and Cancel there
-doesn't release it. So, **on the new release, before restoring an older one**: in every contest's
-rounds list, let each "Adding juror …" job finish or cancel it (its job column), and check that
-no round is flagged as held with no job (root's **Release** ends one). A failed one needs nothing:
-its failure already released the round. Then roll back as below.
-
-The same holds for "Reassigning juror …'s unrated files" jobs (`round_rebalance` with a `from`
-juror, step 3 of the round-editing plan) before rolling back past "Reassign files…": a release that
-has "Add juror…" but not the reassign takes such a job for an add without a juror, so its step
-fails (the failure releases the round) and its Retry fails again. Let each finish, or cancel it, on
-the new release first.
-
-The same release added two phases an older one doesn't know; its step fails on them with "unknown
-phase" (the failure releases what the job froze) and so does its Retry:
-- a distribution job of the round form's **Also give out the N files waiting for a juror**, in its
-  `topup` phase (the jobs page's "Distributing images of round … and its files waiting for a
-  juror"). Let it finish on the new release before rolling back. One found failed in that phase
-  after a rollback can't be retried there: cancel it (Cancel reads no phase);
-- an "Adding juror …" job in a round with files waiting for a juror, in its `waiting` phase: let it
-  finish too, or cancel it, on the new release.
+A release from before "Add juror…" has no handler for `round_rebalance` jobs: a queued or running
+one never runs there, keeps its round frozen (hidden from its jurors) and can't be cancelled. So,
+**on the new release, before restoring an older one**: let every "Adding juror …" and "Reassigning
+juror …'s unrated files" job finish or cancel it, likewise a distribution in its `topup` phase ("…
+and its files waiting for a juror"), and check that no round is held with no job (root's
+**Release** ends one). A failed job needs nothing: its failure released the round.
 
 ### Recovery runbook
 
-Maintenance is never cleared automatically. A command that stops ends with `sudo wlxjury-release status`; start there: it names the current operation and its state, lists stale open operations, and ends with the next command of the section below that fits it (`status --verbose` adds the milestones, the named forms and how to back out). For detail, read `OPERATION/milestones`, `record` and `operation.log` (`OPERATION` is `/var/backups/wlxjury/NAME`), then use the section for the last milestone. `previous` and `candidate` in `record` name the releases. For the current operation, the commands below work without `OPERATION`; `restore` only while maintenance is on, and `--accept-data-loss` always needs it. A stale operation always needs its name, and `restore` refuses it once `current` is neither of its releases.
+Maintenance is never cleared automatically. A command that stops ends with
+`sudo wlxjury-release status`: start there. It names the current operation and its state, lists
+stale operations, and ends with the next command of the section below (`status --verbose` adds the
+milestones, the named forms and how to back out). For detail, read `OPERATION/milestones`, `record`
+and `operation.log` (`OPERATION` is `/var/backups/wlxjury/NAME`); `previous` and `candidate` in
+`record` name the releases. For the current operation the commands work without `OPERATION`;
+`restore` only while maintenance is on, `--accept-data-loss` always needs it, and a stale operation
+always needs its name.
 
 | Milestones | Meaning |
 |---|---|
 | No operation folder | `deploy` stopped during its checks. Nothing changed, apart from a new folder under `releases`. |
-| Missing file, or the first line is not `started` | Unknown. Keep maintenance on, and inspect `current`, the Flyway history and the log before doing anything. Every command refuses this operation. |
+| Missing file, or the first line is not `started` | Unknown. Keep maintenance on, and inspect `current`, the Flyway history and the log. Every command refuses this operation. |
 | `started`, without `migration-may-start` | The database was never migrated and `current` was never switched. |
-| `backup-skipped` | The release had no new migrations, so there is no dump; `restore` only switches the release back. |
+| `backup-skipped` | No new migrations, so no dump; `restore` only switches the release back. |
 | `migration-may-start` | A migration may have run, even if the app never became ready. |
 | `ready` | The migration completed; the smoke test decides. |
 | `traffic-may-resume` | Writes may have resumed. |
 | `restoring` as the last restore milestone | A restore did not finish: the database may be partly imported. |
 
-**Before `migration-may-start`:** if the app was stopped, start it with `sudo systemctl start wlxjury`. Then run `sudo wlxjury-release reopen` (or `reopen OPERATION`). It checks readiness, restores automatic restarts and restarts the writers that were running.
+**Before `migration-may-start`:** if the app was stopped, `sudo systemctl start wlxjury`, then
+`sudo wlxjury-release reopen`.
 
-**From `migration-may-start` until reopening**, including a failed smoke test after `ready`: never just restart the previous release, since its readiness cannot show a half-applied migration. Prefer a forward fix if one is ready; otherwise:
+**From `migration-may-start` until reopening**, including a failed smoke test after `ready`: never
+just restart the previous release, since its readiness can't show a half-applied migration. Prefer a
+forward fix if one is ready; otherwise:
 
 ```bash
 sudo wlxjury-release restore          # or: restore OPERATION; after ready it asks to type RESTORE
-# Check the previous release locally (a legacy release answers /auth, not /health/ready). Then:
+# Check the previous release locally. Then:
 sudo wlxjury-release reopen           # or: reopen OPERATION
 ```
 
-`status` names `restore` as the next command only where it is the recovery (`migration-may-start` without `ready`, an unfinished restore). After a failed smoke test the next command it shows stays `reopen`: backing out is a decision, so take the command from `status --verbose` or this runbook, and confirm it.
+After a failed smoke test, `status` still shows `reopen` as the next command: backing out is a
+decision, so take the command from `status --verbose` or this runbook, and confirm it.
 
-**After `restoring` without `database-restored`:** fix what stopped the restore (for example a leftover session, or space), then rerun `restore` (with `--accept-data-loss` if it was a restore after reopening); it asks no confirmation again. `reopen` refuses until a restore finishes.
+**After `restoring` without `database-restored`:** fix what stopped it (a leftover session, space),
+then rerun `restore` (with `--accept-data-loss` if it was a restore after reopening). `reopen`
+refuses until a restore finishes.
 
-**After `backup-skipped`**, at any later milestone: `sudo wlxjury-release restore OPERATION`, then `reopen`. No data is lost, so this needs no data-loss decision; once the operation reached `ready` it asks to type `RESTORE` (or `--yes`), and stopped at `migration-may-start` without `ready` it does not. Once traffic is open, name the operation (`status --verbose` prints the command while its release is current). To deploy the same ZIP again afterwards, run `deploy` as usual: the restored release folder is replaced by a fresh unpack.
+**After `backup-skipped`**, at any later milestone: `sudo wlxjury-release restore OPERATION`, then
+`reopen`. No data is lost. To deploy the same ZIP again afterwards, run `deploy` as usual.
 
-**`reopen` exited 3 with `PRUNE FAILED after a successful reopen`:** the deployment is `complete` and traffic is open; nothing was pruned. Don't rerun `reopen`: fix the cause it printed, then run `sudo wlxjury-release prune --dry-run` and `sudo wlxjury-release prune`.
+**`reopen` exited 3 with `PRUNE FAILED after a successful reopen`:** traffic is open and the
+deployment `complete`. Don't rerun `reopen`: fix the cause, then `prune --dry-run` and `prune`.
 
-**After `traffic-may-resume`:** if only `reopen` failed, fix the reported URL and rerun it. Otherwise, prefer a forward fix. Restoring now loses later votes, comments and jobs, and needs an explicit decision and a plan for reconciling them from the rescue dump. If that is the decision, name the operation (`status --verbose` prints the command while its release is the current one; `restore --accept-data-loss` alone is refused); it asks to type `RESTORE` too:
+**After `traffic-may-resume`:** if only `reopen` failed, fix the reported URL and rerun it.
+Otherwise prefer a forward fix: restoring now loses later votes, comments and jobs, and needs an
+explicit decision and a plan for reconciling them from the rescue dump. Then, naming the operation:
 
 ```bash
 sudo wlxjury-release restore OPERATION --accept-data-loss
 ```
 
-Rehearse the deployment and each section of this runbook on a production copy before relying on them.
-
-### One-off: vote times from the access logs (after V97)
-
-V97 adds `vote.voted_at`, set by the app whenever a vote's rate changes. Votes cast before the release with V97 have no time; the only record of them is the Apache access log, which rotates after 14 days. `scripts/backfill/voted_at_from_logs.py` (Python 3.8+, stdlib only) recovers them: for each round, file and juror it takes the latest vote request it can attribute with certainty (the file has a single vote row in the round, or the request came from a page of that juror's own list), and only if the value that request set is the vote's current rate, not 0, and no unattributed vote request on the file came later. Its SQL changes only a vote with that rate and no time yet (`... WHERE id = ? AND rate = ? AND voted_at IS NULL`), so it is safe to rerun and never overwrites a time the app set. `--session-attribution` also attributes by IP address + user agent (a dozen votes; off by default). A row gets the time its current value was first chosen in its last run of requests of that value, the first of them, as the app does (a vote of the same value again keeps the time); `--latest` gives the latest request's time instead. On the saved extract the two differ for only 271 rows, 239 of them by under 10 seconds, mostly a key pressed twice in the large view.
-
-A successful status does not prove a vote (a signed-out large-view vote, one in a closed round and, before 26.11, one matching no vote row all answered 303 or 200), so a vote request followed within 5 seconds, from the same IP address and user agent, by the login page (not one that a sign-in or sign-out of that browser just led to) counts as failed, and so does a large-view vote from 2026-11-02 14:01 UTC on followed by the gallery without the list's query (the closed-round redirect). Before that time the release in production sent a vote on the last unrated file to the gallery without the query too, so the second rule is not applied there.
-
-A saved extract covers 2026-10-28 23:13 to 2026-11-12 10:10 UTC (kept by the maintainer in `{projects}/rehearsal-2611/votelog/`, outside the repository). With a fresh extract taken by 2026-11-25 the two overlap, so together they cover every vote from 2026-10-29; overlapping lines are counted once. Give the extracts **oldest first**: the script prints each one's first and last time, and stops if they are out of order or leave a gap (`--allow-gap` for a deliberate run). Inside one extract it warns, without stopping, about a rotation file missing from the numbering or more than 12 hours without lines between consecutive files (a missing day).
-
-The extracts hold IP addresses and user agents: never copy them, or anything derived from them, into the repository, an issue or a chat. The script writes neither: its report has counts only, its SQL vote ids, rates and times.
-
-1. After the release with V97 is live (so every later vote gets its time from the app), extract the jury vhosts' vote requests, list and large-view pages and sign-in requests as root:
-   ```bash
-   for f in /var/log/apache2/other_vhosts_access.log*; do zcat -f "$f" | grep -E '^jury\.(wlm\.org\.ua|wikilovesmonuments\.org\.ua|wikilovesearth\.org\.ua|wikilovesearth\.org|wle\.org\.ua):' | grep -E '"(GET|POST) /(rate/|large/|gallery/|byrate/|auth|logout)' | sed "s|^|$(basename "$f") |"; done | gzip > ~/jury-votelog.gz; chown "$USER": ~/jury-votelog.gz
-   ```
-   The script reads only these vhosts (`--vhosts` to change the list); the report's "other vhosts" count must be 0 (it was on the saved extract), or add the missing name with `--vhosts`.
-2. Copy the script and the saved extract to `~/` (scp), then generate the SQL and its undo. It reads the votes of the logged rounds with the `mariadb` client and the admin login; give the files back to `{user}` so they can be deleted without `sudo`:
-   ```bash
-   sudo python3 ~/voted_at_from_logs.py --defaults-extra-file /etc/wlxjury-runtime/db-admin.cnf --db wlxjury \
-     --out ~/voted_at.sql ~/jury-votelog-2026-10-29_2026-11-12.gz ~/jury-votelog.gz
-   sudo chown "$USER": ~/voted_at.sql ~/voted_at.revert.sql
-   ```
-   (`--dry-run` instead of `--out` reports without writing.) Review the report: each extract's span and any coverage warning, "other vhosts" 0, requests attributed or skipped (failed status, failed by the next page, criteria round, vote row missing, ambiguous juror), vote rows matched or skipped (value mismatch, later unattributed request, unrated now, already timed), and the times to set per UTC day. On the local production copy (taken on 2026-11-11) the saved extract gave 36,548 times (36,562 with `--session-attribution`) from 40,332 vote requests.
-3. Apply it, then check how many of those rows now have their time from the logs (a row voted again in the app since shows as "another time"):
-   ```bash
-   sudo mariadb --defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf wlxjury < ~/voted_at.sql
-   sudo python3 ~/voted_at_from_logs.py --defaults-extra-file /etc/wlxjury-runtime/db-admin.cnf --db wlxjury --check \
-     ~/jury-votelog-2026-10-29_2026-11-12.gz ~/jury-votelog.gz
-   ```
-   The SQL sets `time_zone = '+00:00'` first and commits every 1,000 updates (`--batch`); each update finds its vote by id. The undo, `voted_at.revert.sql`, clears a time only where it is still the one the backfill set (`SET voted_at = NULL WHERE id = ? AND voted_at = '<t>'`): apply it the same way if the result looks wrong. Keep it until the maintainer has checked the result in the app. A second run with the same `--out` refuses to replace an existing undo (its rows already applied would be lost from it) unless given `--force`; write a second run elsewhere and keep both undo files.
-4. Then delete the extracts, the SQL and its undo on the server (`rm ~/jury-votelog*.gz ~/voted_at.sql ~/voted_at.revert.sql`), and the local folder `{projects}/rehearsal-2611/votelog/` with the saved extract and its exploration `scripts/`.
-
-Votes that get no time stay untimed: they count as older than every timed vote in the juror's newest/oldest orders.
+Rehearse the deployment and each section of this runbook on a production copy before relying on
+them.
 
 ## Release checklist
 
-The one list of the checks made by hand before or after a release (the user, 2026-11-04). The
-deploy itself is [Routine deployment after the cutover](#routine-deployment-after-the-cutover)
-and the way back the [Recovery runbook](#recovery-runbook); a release's own items (config keys,
-migrations, queries for that release) are in the roadmap's
+The checks made by hand before or after a release. The deploy itself is
+[Deploying a release](#deploying-a-release), the way back the [Recovery runbook](#recovery-runbook);
+a release's own items (config keys, migrations, queries) are in the roadmap's
 ["Before any production deploy"](plans/2026-11-02-roadmap.md#before-any-production-deploy-of-followups).
 A change that adds, removes or automates a manual check updates this section
 ([docs/README.md](README.md) §3).
@@ -729,114 +589,85 @@ A change that adds, removes or automates a manual check updates this section
 
 | Check | What to do | Why by hand | When |
 |---|---|---|---|
-| The release's own items | The roadmap's [combined pre-deploy list](plans/2026-11-02-roadmap.md#before-any-production-deploy-of-followups) for this release (`26.11`): the read-only queries on production's V70 schema, config keys, HTTPS, loggers, the rehearsal and the `roundImage.read` pilot on a restored backup, each with its detail there; [operations](operations/practices.md) §4.2 | They read production's config and data, which no test has | Every release, as the list for it says |
-| Schema parity with production | On the rehearsal's production copy (after the release's migrations) and on a database migrated from empty by the same ZIP (an empty MariaDB of production's version, the app started against it once): `python scripts/schema_parity.py --print-query > columns.sql`, then `mariadb -N -B <db> < columns.sql > <side>.tsv` for each, then `python scripts/schema_parity.py fresh.tsv copy.tsv --ignore monument.id`. A `PROBLEM` line is a column `NOT NULL` on production but nullable where the tests run: a NULL the code writes fails on production only (users.password until V98). Fix it with an idempotent migration before the deploy; `--all` lists the other differences as notes. `monument.id` is `NOT NULL` on production only and always written (`MonumentJdbc`) | Production's tables are older than Flyway in places (Play evolutions); the tests only see the migrated schema | Every release with a migration, and once after any hand change to production's schema |
-| Adding people on the production copy | On the rehearsal app (mail mocked), as a non-root admin of a contest: add a new juror on the users page (an email no account has, with "Send an invitation email" off and once on), and import one new person on **Import users**; both land on the users page with no error, and the new accounts have no password (`SELECT password IS NULL FROM users WHERE id = …`). Delete the rows afterwards, or say which ids were made | It writes into production's schema, which the tests don't have (26.11 failed here: a NOT NULL users.password) | Every release |
-| The `auto` colour mode, looked at | `target/ui-venv/Scripts/python scripts/ui-shots.py shoot --label <release> --mode auto --scheme light --start-server`, the same with `--scheme dark`; look through the shots, or `diff` them against the last release's ([UI](ui/practices.md) §5.1) | Looked at by a person: the browser tests check the mode of every frame, not how a page looks in it | Every release; necessarily when a template, `theme.css` or `main.css` changed |
-| Back after a vote in Safari | In Safari (macOS), as a juror: open a binary round's large view, vote with Space, press Back: the file shows the new vote, not the one before; the same with a digit in a rated round | Playwright's WebKit (Windows and Linux builds) brings the page back fresh even without `no-store`, so the browser tests can't show the regression there ([testing](testing/practices.md) §10.3) | Every release; necessarily when the large view, its keys or `Secured.noStore` changed |
-| Category suggestions against live Commons | As an organizer, in a category field (the contest images page, the round form's image filtering): type a few letters of a real category; Commons' categories are suggested and one can be picked | Needs live Commons: the tests stub every Commons call and refuse its hosts | Every release; necessarily when `category-suggest.js`, Tom Select or the suggestions' endpoint changed |
-| Signing in with Google or Wikimedia | On a staging host first: sign in with each provider and link an account ([integrations](integrations/practices.md) §3.3) | Real providers, which the tests fake | Before a production host is listed for OAuth, and when the providers' config or the sign-in code changed |
+| The release's own items | The roadmap's [pre-deploy list](plans/2026-11-02-roadmap.md#before-any-production-deploy-of-followups) for this release; [operations](operations/practices.md) §4.2 | They read production's config and data, which no test has | Every release |
+| Schema parity with production | On the rehearsal's production copy (after the release's migrations) and on a database migrated from empty by the same ZIP: `python scripts/schema_parity.py --print-query > columns.sql`, then `mariadb -N -B <db> < columns.sql > <side>.tsv` for each, then `python scripts/schema_parity.py fresh.tsv copy.tsv --ignore monument.id`. A `PROBLEM` line is a column `NOT NULL` on production but nullable in the tests: fix it with an idempotent migration before the deploy | Production's tables are older than Flyway in places; the tests only see the migrated schema | Every release with a migration, and after any hand change to production's schema |
+| Adding people on the production copy | On the rehearsal app (mail mocked), as a non-root admin: add a new juror on the users page (invitation off and once on), and import one new person on **Import users**; both land with no error and no password (`SELECT password IS NULL FROM users WHERE id = …`). Delete the rows afterwards | It writes into production's schema, which the tests don't have | Every release |
+| The `auto` colour mode, looked at | `target/ui-venv/Scripts/python scripts/ui-shots.py shoot --label <release> --mode auto --scheme light --start-server`, the same with `--scheme dark`; look through the shots or `diff` them against the last release's ([UI](ui/practices.md) §5.1) | The browser tests check each frame's mode, not how a page looks | Every release; necessarily when a template, `theme.css` or `main.css` changed |
+| Back after a vote in Safari | In Safari (macOS), as a juror: vote with Space in a binary round's large view, press Back: the file shows the new vote; the same with a digit in a rated round | Playwright's WebKit brings the page back fresh even without `no-store` ([testing](testing/practices.md) §10.3) | Every release; necessarily when the large view, its keys or `Secured.noStore` changed |
+| Category suggestions against live Commons | As an organizer, in a category field: type a few letters of a real category; Commons' categories are suggested and one can be picked | The tests stub every Commons call | Every release; necessarily when `category-suggest.js`, Tom Select or the endpoint changed |
+| Signing in with Google or Wikimedia | On a staging host first: sign in with each provider and link an account ([integrations](integrations/practices.md) §3.3) | Real providers, which the tests fake | Before a production host is listed for OAuth, and when its config or the sign-in code changed |
 
 ### After the deploy
 
 | Check | What to do | Why by hand | When |
 |---|---|---|---|
-| Smoke test before reopening | The release's pages on `127.0.0.1:9000` with a jury host name, as [Routine deployment after the cutover](#routine-deployment-after-the-cutover) says, then `reopen` | The production server, its config and data | Every deploy |
+| Smoke test before reopening | The release's pages on `127.0.0.1:9000` with a jury host name, then `reopen` | The production server, its config and data | Every deploy |
 | Back out if needed | The [Recovery runbook](#recovery-runbook), by the last milestone | A decision | When the smoke test fails |
-| What was pruned, and monit | Read `reopen`'s `Keep` and `Deleted` lines ([Retention](#retention-old-releases-and-dumps)); `df -h /`; `stat -c '%a %U:%G' /var/www/jury-images` shows `755 wlxjury:wlxjury` ([the image cache folder](#the-image-cache-folder)); `/var/log/monit.log` has no `wlxjury` error since the reopen ([Monitoring with monit](#monitoring-with-monit)) | The server's disk and monit, which no test sees | Every deploy |
+| What was pruned, and monit | Read `reopen`'s `Keep` and `Deleted` lines; `df -h /`; `stat -c '%a %U:%G' /var/www/jury-images` shows `755 wlxjury:wlxjury`; `/var/log/monit.log` has no `wlxjury` error since the reopen | The server's disk and monit, which no test sees | Every deploy |
 
 ### Covered by the browser tests: not repeated by hand
 
-On every PR, in one current build of each engine (Chromium 156, Firefox 157, WebKit 27.2;
-[testing](testing/practices.md) §10), `browser.yml`:
-
-- the theme flash: `auto` in both schemes, every frame from the first in the right mode
-  (`theme.spec.js`), in all three engines, Firefox included; and the two theme switches;
-- Back after a vote shows the stored vote, in Firefox (`voting.spec.js`); voting by key, button,
-  thumb and star in both rounds (`voting.spec.js`);
-- zero CSP violations, console errors and failed requests on every page visited, and the
-  production CSP sent (`guards.spec.js`, every spec);
-- signing in and out with the CSRF token (`sign-in.spec.js`); a juror's and an organizer's 403
-  pages (`access.spec.js`); the organizer and admin pages, and the round form's edit-then-cancel
-  (`organizer.spec.js`);
-- the large view's side sections restored before its scripts run (`sections.spec.js`);
-- one `h1` per page, and an accessibility scan in Chromium (`pages.spec.js`).
+On every PR, in a current build of each engine ([testing](testing/practices.md) §10), `browser.yml`
+checks: the theme flash in both schemes and the theme switches (`theme.spec.js`); Back after a vote
+in Firefox and voting by key, button, thumb and star (`voting.spec.js`); zero CSP violations,
+console errors and failed requests on every page, and the production CSP (`guards.spec.js`);
+signing in and out with the CSRF token (`sign-in.spec.js`); 403 pages (`access.spec.js`); the
+organizer and admin pages (`organizer.spec.js`); the large view's side sections
+(`sections.spec.js`); one `h1` per page and an accessibility scan (`pages.spec.js`).
 
 ### Known gaps
 
-- **Back after a vote in Chrome shows the old vote** (U23, [UI](ui/practices.md) §9): Chromium
-  brings the `no-store` large view back from its back/forward cache; the browser tests assert
-  that stale page there, and fail once it stops. Nothing to check by hand until it is fixed, but once, in a real Chrome, whether
-  Chrome does it too (U23 says so).
+- **Back after a vote in Chrome shows the old vote** (U23, [UI](ui/practices.md) §9): the browser
+  tests assert that stale page, and fail once it is fixed.
 - **The previous majors and the floor (Chrome 109, Firefox 115) are linted, not run**
-  ([UI](ui/practices.md) §6.1, §6.1a): the compatibility lint (`.browserslistrc`, `ci.yml`) sees
-  our scripts' APIs and syntax and the CSS features caniuse lists, not rendering or behaviour. A
-  release that changes how the core pages work (sign-in, voting) can be tried by hand in
-  Firefox 115 ESR or Chrome 109 where one is at hand; it is not required.
+  ([UI](ui/practices.md) §6.1): a release that changes sign-in or voting can be tried by hand there.
 - **The side sections' first frame** (U18) and **Firefox's page error when leaving a gallery**
-  (U22) are open triage items, not checks.
+  (U22) are open triage items.
 - **Phones:** not supported yet ([UI](ui/practices.md) §6.2).
 
 ## Run with docker-compose
 
-`docker-compose.yml` runs the app and MariaDB in containers: for development, and as a simple
-deployment for others. It has no TLS, no proxy, no mail server, no backups and no maintenance
-mode; production runs the ZIP with `wlxjury-release` (above). Steps, from a checkout:
+`docker-compose.yml` runs the app and MariaDB in containers, for development and as a simple
+deployment for others. It has no TLS, no proxy, no mail server, no backups and no maintenance mode.
+From a checkout:
 
 1. Install JDK 17, sbt and Docker (with Compose v2).
 2. Publish scalawiki locally at the commit in `project/scalawiki.sha` ([DEV.md](../DEV.md)).
 3. `sbt Docker/publishLocal`: builds the image `wlxjury:local` (and `wlxjury:<version>`).
-4. `scripts/docker/generate-env.sh`: writes random secrets to `.env` (git-ignored; the names are
-   in `.env.example`). It keeps values already there; the setup token is in the file.
+4. `scripts/docker/generate-env.sh`: writes random secrets to `.env` (git-ignored; the names are in
+   `.env.example`), keeping values already there.
 5. `docker compose up -d --wait`, then open <http://localhost:9000/setup> and create the first
-   account (root) with the setup token. Stop with `docker compose down`; `down -v` also deletes
-   the database and the thumbnail cache.
+   account (root) with the setup token. Stop with `docker compose down`; `down -v` also deletes the
+   database and the thumbnail cache.
 
-A published image (GHCR, queued on the roadmap) will remove steps 1-3 for people who only run the
-app. The image is the ZIP's files (the same list) under `/opt/docker`, on Temurin's Java 17 JRE
-(pinned by digest), run as the user and group `wlxjury` (uid and gid 10001), with
-`-Dpidfile.path=/dev/null`. Its jars are in three layers, bottom to top: third-party jars
-(102 MB), scalawiki's (3.7 MB), then wlxjury's own jars with `bin/` and `conf/` (about 23 MB), so
-a code change rebuilds and moves only the top one (`dockerGroupLayers` in `build.sbt`).
+The image is the ZIP's files under `/opt/docker`, on Temurin's Java 17 JRE (pinned by digest), run
+as `wlxjury` (uid and gid 10001). Its jars are in three layers (third-party, scalawiki, wlxjury's own
+with `bin/` and `conf/`), so a code change rebuilds only the top one (`dockerGroupLayers` in
+`build.sbt`).
 
-**What the compose file sets.** MariaDB 10.6.22 (production's and the tests'), pinned by digest,
-with production's server setting (the 256 MiB buffer pool of
-`bench/cnf/recommended-60-wlxjury.cnf`, as a command-line option: on Windows a bind-mounted
-option file is world-writable in the container, and mysqld ignores such a file) and its data in
-the named volume `db`; its port is not published. The app takes the secrets from `.env`
-(`WLXJURY_COMPOSE_DB_PASSWORD`, `PLAY_HTTP_SECRET_KEY`, `WLXJURY_SETUP_TOKEN`; compose refuses to
-start without the first two); MariaDB's root password is `WLXJURY_COMPOSE_DB_ROOT_PASSWORD`, also
-required, given rather than generated because the image prints a generated one in its log (the
-smoke test also drops password lines from the logs it saves), migrates at start (`db.default.migration.auto`, the other
-`db.Migrations` settings at their safe defaults), accesses Commons anonymously (empty
-`commons.user`), and answers to `WLXJURY_ALLOWED_HOSTS` (default `localhost`). Its container may
-use 1.5 GB (`mem_limit`), and the JVM's heap 75% of that (`-XX:MaxRAMPercentage=75`, about
-1.1 GB). Its health check is `/health/ready` from inside the container, so `up --wait` returns
-once the schema is the build's.
+**What the compose file sets.** MariaDB 10.6.22, pinned by digest, with production's 256 MiB buffer
+pool as a command-line option and its data in the volume `db`; its port is not published. The app
+takes `WLXJURY_COMPOSE_DB_PASSWORD`, `PLAY_HTTP_SECRET_KEY` and `WLXJURY_SETUP_TOKEN` from `.env`
+(compose refuses to start without the first two; MariaDB's root password
+`WLXJURY_COMPOSE_DB_ROOT_PASSWORD` is required too), migrates at start, uses Commons anonymously,
+and answers to `WLXJURY_ALLOWED_HOSTS` (default `localhost`). The container may use 1.5 GB, the heap
+75% of it. Its health check is `/health/ready`, so `up --wait` returns once the schema is the build's.
 
 **Settings and their limits.**
-- The port is published on `127.0.0.1:9000` only; `WLXJURY_HTTP_BIND` and `WLXJURY_HTTP_PORT`
-  change that. Another port needs `WLXJURY_HOST` to match (the links use it).
-- A published port skips the host firewall's input rules (ufw): Docker's own rules come first.
-  Never bind `0.0.0.0` counting on the firewall; put a TLS proxy on the host in front of
-  `127.0.0.1` instead
+- The port is published on `127.0.0.1:9000` only; `WLXJURY_HTTP_BIND` and `WLXJURY_HTTP_PORT` change
+  that. Another port needs `WLXJURY_HOST` to match (the links use it).
+- A published port skips the host firewall's input rules (ufw). Never bind `0.0.0.0` counting on the
+  firewall; put a TLS proxy on the host in front of `127.0.0.1`
   (`docs/investigations/2026-11-04-simpler-deployment.md`, §3.1).
-- `JAVA_OPTS` (the heap, migrations, hosts, Commons) is set in `docker-compose.yml`, so `.env`
-  can't add to it. To change it, set it in a `docker-compose.override.yml`, which replaces the
-  whole value: copy it and edit.
-- Serving others needs that proxy, its host name in `WLXJURY_ALLOWED_HOSTS` and `WLXJURY_HOST`,
-  and secure cookies (`play.http.session.secure` and the rest, as `production.conf` sets them,
-  through `JAVA_OPTS`). The proxy reaches the container from the Docker bridge's gateway, not
-  from loopback, so Play doesn't trust its `X-Forwarded-For`: the app sees the gateway's address
-  as every client's (a roadmap follow-up).
+- `JAVA_OPTS` is set in `docker-compose.yml`, so `.env` can't add to it; override the whole value in
+  a `docker-compose.override.yml`.
+- Serving others needs that proxy, its host name in `WLXJURY_ALLOWED_HOSTS` and `WLXJURY_HOST`, and
+  secure cookies (as `production.conf` sets them, through `JAVA_OPTS`). The proxy reaches the
+  container from the Docker bridge's gateway, so the app sees the gateway as every client's address.
 
-**Tested.** `scripts/docker/smoke-test.sh` runs the file as its own project (`wlxjury-smoke`) with
-throwaway secrets: readiness and its schema version, the sign-in and setup pages, creating the
-first account, a thumbnail written to the cache volume by the app's user, then a restart on the
-same volumes that keeps both; it removes everything at the end. CI runs it on every PR
-(`.github/workflows/compose.yml`; about 6-8 minutes, an estimate until the first runs). Locally
-(2026-11-04) the cold `up --wait` took 28-34 s (a new database and every migration), a restart
-18 s, `sbt Docker/publishLocal` 75 s with compiled sources; the image is 395 MB.
+**Tested.** `scripts/docker/smoke-test.sh` runs the file as its own project with throwaway secrets:
+readiness and its schema, the sign-in and setup pages, the first account, a thumbnail written to the
+cache volume, and a restart that keeps both. CI runs it on every PR (`.github/workflows/compose.yml`).
 
 ## Local verification
 
@@ -850,33 +681,22 @@ docker run --rm --network none --mount type=bind,source="$PWD",target=/workspace
 docker run --rm --mount type=bind,source="$PWD",target=/s,readonly koalaman/shellcheck:stable -S style /s/scripts/deployment/wlxjury-release.sh /s/conf/monit/wlxjury-check
 ```
 
-From Git Bash on Windows prefix the `docker run` lines with `MSYS_NO_PATHCONV=1`, or `/workspace` is rewritten to a Windows path. At a local release build run only the 6 restore tests, which start and restore the build's real ZIP from `target/universal` (add `test_release_script`, 57 tests on synthetic ZIPs, only when `scripts/deployment/` changed since the last released version; `-e CI` makes a missing ZIP fail instead of skipping the packaged-release test):
+From Git Bash on Windows prefix the `docker run` lines with `MSYS_NO_PATHCONV=1`, or `/workspace` is
+rewritten to a Windows path. At a release build run only the 6 restore tests, which start and
+restore the build's real ZIP from `target/universal` (add `test_release_script`, 57 tests on
+synthetic ZIPs, only when `scripts/deployment/` changed since the last release; `-e CI` makes a
+missing ZIP fail instead of skipping):
 
 ```bash
 MSYS_NO_PATHCONV=1 docker run --rm -e CI --network none --mount type=bind,source="$PWD",target=/workspace,readonly --workdir /workspace/scripts/deployment wlxjury-deployment-test:local -B -m unittest -v test_database_restore
 ```
 
-Python 3.8 is the oldest supported version. The restore image is self-contained: Ubuntu 22.04's MariaDB 10.6 (`--build-arg UBUNTU=24.04` for a newer distribution's 10.11), OpenJDK 17, Python 3, `curl`, `unzip` and `monit`. Its packaged-release test runs the ZIP from `sbt dist`, checks that it carries no server setup files and that readiness refuses a forwarded request. `test_release_script` runs `wlxjury-release.sh` unmodified against a real MariaDB, with stand-ins only for systemd (a `systemctl` stub that starts and stops the selected release's launcher) and Apache (a fake proxy that honors the maintenance flag). It covers:
-- deploying and reopening, including a timer that starts its job during the maintenance checks;
-- a release without migrations: no dump by default (or one with `--backup`), and a `restore` that only switches the release back, keeping later writes, but refuses once a later migration ran;
-- the final lines of `deploy`, `restore`, `reopen` and `status` in each state: the next command last and alone, no back-out command in the short `status` or after `deploy`, back-out commands only in `status --verbose` and before the next command;
-- confirming a restore of an operation that reached `ready`, named or not: refused without a terminal and without `--yes`, refused for any answer but `RESTORE`, done once typed; the recoveries (after `migration-may-start`, the rerun of an unfinished restore) without confirmation; a `reopen` after an unfinished restore making the next restore ask again;
-- deploying the ZIP of a restored release again (the production case of 26.11.6): the folder replaced by a fresh unpack, also for a folder from before the marker that an operation's record vouches for; refused for the current release, for another ZIP's marker and for a folder nothing ties to the ZIP; a named restore of the older operation refused once a later one deployed its release again; a failed replacement putting the old folder back, and a failed put-back naming where it is;
-- refusals that leave everything unchanged, including an unreachable database endpoint;
-- queued or running background jobs refusing the deployment before anything changes, `--allow-running-jobs` deploying with a warning (and either option order), finished, failed and cancelled jobs ignored, and an unreadable `job` table refusing it;
-- a vhost without the maintenance page, and a lost milestones file;
-- rerunning `reopen` after a routing failure, without the name, while `restore` without one refuses with traffic open;
-- `reopen` and `restore` without a name: picking the current operation and logging it; refusing, changing nothing, with none open, with only a stale one (followed by later finished deployments, with maintenance on), with the newest open but `current` elsewhere, and with a newer `wlxjury-deploy` folder; the current operation picked beside an older stale one; an unnamed `--accept-data-loss`; a damaged current operation picked and then refused as unknown;
-- a named `restore` of a stale operation, with or without a dump, refused while `current` is neither of its releases;
-- `status`: the short form and `--verbose` (maintenance, the current release, the schema, the current operation's releases, milestones, state, named forms and back-out), stale operations without commands, a held lock (and `status` again as the next command), the last operation and, verbose only, its back-out command, none after it was backed out; changing nothing;
-- the hash: a prefix of 16 or more hex characters (either case) accepted and the whole hash recorded; shorter, longer, non-hex and mismatching ones refused before anything changes; the ZIP found by its hash in the current directory, refused when none matches (listing the ZIPs there) and when several do (listing those); a ZIP swapped after its check still deploys the checked one;
-- `restore` after an interrupted migration, refusing the previous release until the restore finishes;
-- a damaged backup, an import that fails part-way, and its rerun; an import that fails just after dropping the database, and its retry without a new rescue dump;
-- refusing a backup of another database, too little free space for the reserve and the rescue dump, and a `db-admin.cnf` that names a remote host while the app uses the local server;
-- `restore` after reopening: the data-loss decision, refusing while another session uses the database, ending a leftover app session that holds a table lock before the rescue dump, and keeping every rescue dump across retries;
-- the image cache folder refused before anything changes when group- or world-writable, owned by another account, not a folder, or a symlink to such a folder; a missing one accepted;
-- pruning: nothing deleted by a failed `reopen` and the prune after its rerun, which prints only deletions (`--verbose` adds what stays and why); exit 3 when only that prune fails; fewer releases than the keep count; the current release kept however old; the dumps of the newest operations, of young ones and of the operation that deployed the current release, each with its previous release, including two restored deployments after a completed one; releases and dumps of an open operation and of an open cutover record; missing or damaged milestones counted as open; stopping, deleting nothing, on an open operation it can't read, one naming a path outside `releases`, a corrupt cutover record or a symlinked operation folder; paths compared resolved; decimal settings with leading zeros; a dump whose age can't be read kept; symlinks and non-release folders skipped; an operation with a dump whose record can't be read, and a name with a line break, stopping it; a prune killed mid-run deleting no unfinished unpack; a prune stopping after `reopen` (exit 3); the defaults (by count, the age rule off) and `keep_backup_days` 0; `--dry-run` listing exactly what the real run deletes, unfinished unpacks included; refusing during maintenance, under a held lock and with bad settings; unfinished unpacks removed; `restore` refusing a pruned dump before the data-loss decision.
-
-`MonitCheckTest` (in the same file) runs `conf/monit/wlxjury-check` with a test `deployment.json`, a stub `systemctl` and a fake readiness endpoint (ready, 503, not active, quiet in maintenance, a stale flag, nothing listening, an unreadable config), checks that `conf/monit/wlxjury` only alerts, and runs `monit -t` on it in the image.
-
-Tests own a MariaDB 10.6 process and synthetic mixed-engine data. They do not certify real production backups, disk capacity, Apache coverage or outage time; those remain rollout/rehearsal gates.
+The restore image is self-contained: Ubuntu 22.04's MariaDB 10.6 (`--build-arg UBUNTU=24.04` for
+10.11), OpenJDK 17, Python 3 (3.8 is the oldest supported), `curl`, `unzip` and `monit`.
+`test_release_script` runs `wlxjury-release.sh` unmodified against a real MariaDB, with stand-ins
+only for systemd and Apache; its test names list what it covers (deploy and reopen, skipped backups,
+the last-line rule, restore confirmation, deploying a restored release again, refusals, background
+jobs, stale operations, `status`, the hash, interrupted migrations and imports, rescue dumps, the
+image cache folder, pruning). `MonitCheckTest` covers `conf/monit/wlxjury-check`. The tests use
+synthetic data: they don't certify real backups, disk capacity, Apache coverage or outage time,
+which stay rehearsal gates.

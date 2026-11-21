@@ -17,7 +17,7 @@ tasks; see the roadmap.
 Scripts and raw outputs are in the scratchpad: `deps-attr.txt`, `reach.txt`, `pjrefs.json`, `pkgmod.txt`, `prod-lib.txt`, and `deps/appendix.md`, which is the full per-jar table.
 
 **Two corrections to the brief:**
-- On this tree **the Tapir API is served**: `-> /api api.ApiRouter` in `conf/routes`, using tapir-play-server, with Swagger UI at `/api/docs`. The tree's CLAUDE.md says so too. The note in the repository's CLAUDE.md, "not served", is stale for this branch. So the Tapir, circe and cats stack is needed at run time as things stand.
+- On this tree **the Tapir API is served**: `-> /api api.ApiRouter` in `conf/routes`, using tapir-play-server, with Swagger UI at `/api/docs`. The tree's CLAUDE.md says so too. The note in master's CLAUDE.md, "not served", is stale for this branch. So the Tapir, circe and cats stack is needed at run time as things stand.
 - **Lombok and the Bootstrap 3 webjar are not on this tree.** Both are in production's 0.13 `lib/` only, and this branch already removed what brought them (see "User decisions").
 
 ---

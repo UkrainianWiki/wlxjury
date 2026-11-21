@@ -2118,7 +2118,7 @@ launcher, one JVM at a time under the shared lock, Commons variables unset).
 No second full suite: the two fixes are a spec's expectation and the guard's allowlist.
 
 **The score rule's warning** (`ukwikidev/p2b-rule-warning`, on `origin/stack/84-p2b-reads`
-`7f64460b`, worktree `../{worktree}`):
+`7f64460b`, its own worktree):
 
 | Step | Specs | Result | Log |
 |---|---|---|---|

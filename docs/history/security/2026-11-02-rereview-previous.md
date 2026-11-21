@@ -12,7 +12,7 @@ documents, checked again against the current code:
   `98a8a79e:docs/plans/2026-10-27-error-handling.md`, `98a8a79e:docs/superpowers/plans/2026-04-20-sql-injection-fix.md`
   and the COI plan's authorization section;
 - the security rows of the Montage comparison (`docs/comparison/01-wlxjury.md` WJ-F1, WJ-F2, WJ-Q4;
-  `03-comparison.md` Q4), which exists only untracked in the repository (read only).
+  `03-comparison.md` Q4), which exists only untracked in the user's checkout (read only).
 
 **Commit.** `ukwikidev/security-rereview` at `9e3bc9ec` (the integrated `ukwikidev/followups`:
 batches B1–B6 and B8, api-auth, bcrypt, allowed hosts, CSP with hashes). Deployment config was read
@@ -125,7 +125,7 @@ The document's own status table still shows #3, #4, #7, #8, #9, P2 and P3 as ope
 | Open follow-ups 2.1–2.6, 2.8 | Done in B4–B6 | **Fixed** (2.2, 2.3 repo only; 2.4 scripts only) | sections 1–3 | |
 | 2.7, docs of what is open | Done | **Fixed** | guidelines "Still open", README | The local-images doc's table and the api-auth plan's "denial line keeps the email" are stale (Info) |
 | 4.5, logging config ships with releases | Open | **Open** | infra `logback.xml.j2:16-17` has only `application` at INFO, root WARN | Security lines at WARN (`security.authz`, revoked/expired tokens) are written; unknown-token INFO lines and `coi` are not (Info) |
-| 4.7, production dump with personal data in the benchmark workspace | Open | **Open** | `../{worktree}\proddata\` still holds an 85 MB `.sql.gz` from 2026-10-07; seven `wlxjury-bench-*` Docker volumes exist | Contents not opened |
+| 4.7, production dump with personal data in the benchmark workspace | Open | **Open** | the benchmark work folder's `proddata/` still holds an 85 MB `.sql.gz` from 2026-10-07; seven `wlxjury-bench-*` Docker volumes exist | Contents not opened |
 | 6.1, exception text on the round form | Open | **Fixed** (security part) | `RoundController.refusal:540-545` | English-only messages remain (not security) |
 | 6.4, Tapir API served and secured | Done | **Fixed** | `ApiAuth`, `Api.scala`, `ApiSpec`, `ApiTokenJdbcSpec` (hash-only storage) | |
 | B5 review fixes (HTTP vhost redirect, sort cookies, loopback hosts, port/suffix parsing, log level) | Done | **Fixed** | `0002-wlxjury.conf:25-26`; `RoundList.scala:518-525`; `production.conf:31-32`, `conf/routes` `+ anyhost` on `/health/ready` only; `AllowedHosts.parse`; logback `AllowedHostsFilter` at ERROR | |
