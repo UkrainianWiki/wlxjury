@@ -7,7 +7,7 @@ of pages (CSP, raw HTML sinks, cookies) is [secure-coding.md](../security/secure
 §6, §8; how UI tests assert is [testing/practices.md](../testing/practices.md) §6. **Sources:**
 the theme-modes plan (`98a8a79e:docs/plans/2026-10-31-theme-modes-and-design-system.md`: design
 system, phases, invariants); secure-coding §5, §8; performance §1.7; `scripts/ui-shots.py`,
-`scripts/ui_checks.py`; CLAUDE.md "Keyboard voting"; `views.MessagesCompletenessSpec`.
+`scripts/ui_checks.py`; `views.MessagesCompletenessSpec`.
 
 ## Contents
 
@@ -117,8 +117,7 @@ page shows none (a gallery, the large view) (`HeadingsViewSpec`).
 reads its paths from `#large-keys`' `data-vote-key-*` and `data-key-*`: Space/Del to select or
 reject, digits to rate; Up/Down, Page Up/Down, Home/End and Esc to move); each vote posts to a
 path on this host, never an `http://` URL. *Why:* `Call.absoluteURL` behind the HTTPS proxy
-redirected the POST to a GET and lost the vote (`LargeViewControllerSpec`; CLAUDE.md "Keyboard
-voting"). Back after a vote shows the stored vote (pages are `no-store`; `ui_checks.py`).
+redirected the POST to a GET and lost the vote (`views.LargeViewControllerSpec` guards it). Back after a vote shows the stored vote (pages are `no-store`; `ui_checks.py`).
 
 ## 5. The screenshot harness
 

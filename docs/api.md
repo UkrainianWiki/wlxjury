@@ -70,3 +70,29 @@ Errors are JSON, with a fixed code and never the request's text:
   reference and `auth=session` or `auth=token tokenId=…`.
 - Revoking a token for a user (root) is not in the UI yet: set `revoked_at` on their row,
   e.g. `UPDATE api_token SET revoked_at = NOW(3) WHERE user_id = … AND revoked_at IS NULL`.
+
+## For developers
+
+- **Serving.** Tapir's Play interpreter (`tapir-play-server`) serves `app/api/Api.scala` under
+  `/api` (`-> /api api.ApiRouter` in `conf/routes`), so requests pass Play's filters and run on
+  the blocking dispatcher for JDBC.
+- **Who calls** (`api.ApiAuth.caller`): an `Authorization` header must be `Bearer <personal
+  token>` and the token usable, else 401 (the session is then ignored, never mixed in); without
+  the header, the session user as `Secured.userFromRequest` gives it. Permissions are the
+  `Secured` ones (`Secured.checked`).
+- **Errors** are built by `api.ApiFailure`, also by `ErrorHandler` and `CsrfErrorHandler` for any
+  path under `/api/`. A 401 is the same as `withAuthJson`'s; a 403 carries the reference of
+  `Secured.logDenial`'s line; a 400 never repeats the input.
+- **Tokens** (`services.ApiTokenService`, `ApiTokenJdbc`): `wlxj_` + 32 random bytes base64url.
+  Shown once, in the response that creates it (`no-store`), never flashed, logged or put in a
+  URL. `last_used_at` is written at most once a minute. Created by root only, on root's own
+  profile (`UserController.createApiToken`, `rolePermission(ROOT_ROLE)`; `revokeApiToken`; CSRF
+  POST forms, session only); the create form carries a one-time nonce from the session
+  (`ApiTokensCard.NonceKey`), so reloading the creating response makes no second token; a user
+  revokes only their own. Tokens are accepted only under `/api/`: the page routes read the
+  session alone.
+- **CSRF.** `modules.CsrfModule` replaces Play's CSRF module (same filter class) so that only a
+  request under `/api/` with a Bearer header and without the session cookie skips the check
+  (`ApiAuth.bearerWithoutSession`).
+- **Tests.** A FakeRequest's cookies are an attribute (`withCookies`); a `Cookie` header alone is
+  not read as cookies. `api.ApiSpec` covers the API's own authentication.

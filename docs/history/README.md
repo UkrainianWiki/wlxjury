@@ -2,9 +2,11 @@
 
 Records still useful after their work is done: the reasons for decisions in force, runbooks
 for what isn't on production yet, and baselines that are still cited. Everything else was
-deleted on 2026-11-03 (`docs/plans/2026-11-03-docs-consolidation.md`); git keeps it. Read any
-deleted or moved file at its old path with `git show 98a8a79e:<old path>` (98a8a79e is
-`ukwikidev/followups` before the consolidation). The lasting rules are in the practices:
+deleted on 2026-11-03 (`docs/plans/2026-11-03-docs-consolidation.md`). The commits named below
+are on the old integration branch and older side branches, never on master; where they are not
+in this repository, the maintainers' private archive repository keeps them. There
+`git show 98a8a79e:<old path>` reads any deleted or moved file (98a8a79e is the integration
+branch before the consolidation). The lasting rules are in the practices:
 [security](../security/secure-coding.md), [database](../db/practices.md),
 [performance](../performance/practices.md), and the others indexed in
 [docs/README.md](../README.md).
@@ -29,7 +31,8 @@ One citation keeps an old path: the comment in
 
 ## Deleted
 
-Every file below is present at `98a8a79e`.
+Every file below is present at `98a8a79e`, kept in the maintainers' private archive repository;
+"Last changed" names commits there too.
 
 | Deleted file | Last changed | Content went to |
 |---|---|---|

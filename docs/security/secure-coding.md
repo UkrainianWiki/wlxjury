@@ -94,7 +94,13 @@ the current password of one's own change); "has a password" for invitations mean
 `User.hasUsablePassword` (a retired hash is none).
 
 **Example.** `PasswordHasher.hash` / `PasswordHasher.check` (constant time, a dummy hash for
-unknown accounts, `bcrypt.maxConcurrent` turns).
+unknown accounts, `bcrypt.maxConcurrent` turns). The cost is 12 (`bcrypt.*` in
+`application.conf`), never below 10 outside the tests' cost 4. A password is set only with
+`User.setPassword`, or `PasswordHasher.default.hash` then `User.setPasswordHash` when a form must
+hash before writing anything (trimmed, at most 72 bytes: `PasswordHasher.newPassword` on forms);
+`User.login` accepts a legacy SHA-1 hash once and replaces it. Sign-in and sign-up run on
+`SignInExecutionContext`. A statement that binds a password or hash runs through `User.quietly`
+(ScalikeJDBC's statement and error logging off).
 
 **Guards.** `PasswordHasherSpec`, `PasswordStorageSpec` (never SHA-1; P8 grace period and
 retirement), `db.LegacyPasswordRetirementMigrationSpec`;
@@ -178,7 +184,9 @@ else is the default, and the raw value is never written into a page or used for 
 
 **Example.** `ThemeCookies` (`controllers/Theme.scala`) and `RoundList.remembered` take
 `secure` from the session's setting; `production.conf` sets `play.http.session.secure`,
-`play.http.flash.secure`, `play.i18n.langCookieSecure`.
+`play.http.flash.secure`, `play.i18n.langCookieSecure`. The tests' config has no `CSPFilter`;
+`security.ProductionFilters` builds an app with the release's filters and policy
+(`SecurityHeadersSpec`, `LoginCsrfSpec`).
 
 **Guards.** `ProductionConfigSpec` ("the cookies in production", "the security headers and
 CSRF in production"), `GalleryOrderSpec`, G6 `security.SecurityHeadersSpec` (S7, P4: a page, a
@@ -250,21 +258,28 @@ or is on the public list. `withAuthForm` is for a form that a script may also po
 404 such as `round_not_found`), the form posted without script with the 303 redirect, the login
 redirect or the HTML denial page, as `withAuth`; the CSRF token is checked either way (the script
 sends it in the `Csrf-Token` header). A resource (round, job, comment, file) is checked in its own contest as the
-user's membership there (`Secured.inContest`), never by switching the session's contest on a
-POST or poll. Only a page GET switches the session's contest (`Secured.isPageRequest`: not a
+user's membership there (`Secured.inContest`, active memberships only; root needs no
+membership), never by switching the session's contest on a POST or poll. Only a page GET switches the session's contest (`Secured.isPageRequest`: not a
 script request, `Sec-Fetch-Mode` included, nor a prefetch); a background poll or fragment must
 not move the user to another contest. A request-supplied id is looked up with `fold`/`getOrElse` to a 404, never `.get`.
 Editing another account checks the editor's admin or root role in that account's contest
 (`UserController.saveUser` through `editableUser`: an admin only for members of their
 current contest; root any account).
-A juror sees only their own votes (`GalleryService.viewerRounds`, `mayViewRound`, `viewAs`).
+A juror sees only their own votes (`GalleryService.viewerRounds`, `mayViewRound`, `viewAs`);
+others' votes (or `asUserId == 0`, all jurors) only for `User.canViewOrgInfo`, and only of a
+juror of the round (`User.isRoundJuror`; otherwise 404). The galleries' juror menu lists the same
+set (`User.findRoundJurorsToView`).
 Only a juror of the round's contest votes, by any path (`Secured.VotePermission`, `User.mayVoteIn`:
 organizers are read-only apart from comments; admins and root without the jury role never vote),
 and only their own vote rows, which only the round's jurors have, change.
 A vote needs the round open to its jurors and the juror not stopped on it (`RoundUser.isStopped`:
 an inactive `round_user` row, P6); otherwise the answer of a stopped round, nothing written. The
 vote's update statements check the same, so a stop racing a vote wins.
-Denials go through `onUnAuthorized`/`onUnAuthorizedJson` with a `Secured.Denial`.
+Denials go through `onUnAuthorized` (403 page) or `onUnAuthorizedJson`
+(`{error: "forbidden", reference}`) with a `Secured.Denial` (contest, resource, required roles,
+reason). Each is logged at WARN on `security.authz` (`Secured.denialLogLine`, key-value,
+untrusted text quoted) with the reference the user sees, the account by `accountId` only
+(support looks the account up by id).
 The REST API has no role model of its own: `api.ApiAuth` authorizes through the same `Secured`
 permissions and `User` role checks. An API token is accepted only under `/api/`, and its value is
 never logged, flashed, put in a URL or stored in plain text (SHA-256 only, §3). *Why:* a second
@@ -273,7 +288,10 @@ plan (`98a8a79e:docs/plans/2026-11-01-api-auth.md`), "Invariants".
 
 **Example.** `GalleryController.selectWS`: `withAuthJson(Secured.VotePermission(roundId))`,
 then the round open to jurors, then only the juror's own selection; `ImageDiscussionController
-.addComment` checks the round's contest via `Secured.inContest` and `mayComment`.
+.addComment` checks the round's contest via `Secured.inContest` and `mayComment`. `withAuth` is
+for pages, `withAuthOn(ec)` runs slow blocking JDBC work on that pool, `withAuthJson` is for
+endpoints called by script. Role checks use `User.hasAnyRole` / `hasContestRole`, contest
+membership `User.isInContest`.
 
 **Guards.** `security.RouteAuthSpec` (G2: every routed action uses a builder or is listed),
 `security.SignedOutSpec` (G2b: every non-public route refuses a request without a session),
@@ -310,6 +328,7 @@ field split on commas made any contest admin root.)
 is not one); `saveUser` refuses what `mayAssignRoles` rejects, `root` for a new account (400),
 a `root` change from anyone but root (a 403 denial, `root_change`) or for oneself (400), before
 any write;
+`UserService.addToContest` checks it too;
 `UserContestJdbc.createMembership`/`updateRole` and `User.create` `require` a contest role;
 `UserContest.roles` ignores any other stored value (the membership is inactive).
 
@@ -325,10 +344,11 @@ read only by the navbar) verifies `User.isContestRole` too.
 ## 11. CSRF and mutating GETs
 
 **Rule.** Every state change is a POST with the CSRF token; no `+ nocsrf` route; a GET handler
-changes nothing. Forms render `@csrfField()`; script calls send the `Csrf-Token` header from
+changes nothing. Forms render `@csrfField()` (it renders the field only if the request has a
+token); script calls send the `Csrf-Token` header from
 `data-csrf-token`. A refused token goes to `CsrfErrorHandler`.
 
-**Example.** Sign-out (`POST /logout`), contest switching (`POST /switch-contest/:id`; the GET
+**Example.** Sign-out (`POST /logout`, `POST /logout/everywhere`), contest switching (`POST /switch-contest/:id`; the GET
 only redirects), the theme switch, votes, API token management.
 
 **Guards.** `SignOutAndSwitchSpec`, `ThemeSwitchSpec`, router tests under
@@ -352,7 +372,8 @@ leaving for the provider would need the providers in the CSP's `form-action`), a
 **Rule.** Users see message keys and a logged reference, never request text or an exception's
 message: pages, JSON, job status and persisted user-facing fields. A missing resource is a 404
 with `views.html.errorPage`. A JSON endpoint answers its errors in JSON (`{error, reference}`,
-`onUnAuthorizedJson`, `withAuthJson`), never an HTML page; signed out, a script request gets a JSON 401 and a
+`onUnAuthorizedJson`, `withAuthJson`), never an HTML page; signed out, a script request
+(`X-Requested-With` or a non-`navigate` `Sec-Fetch-Mode`) gets a JSON 401 and a
 page GET goes to the sign-in page keeping `returnTo` (§7). *Why:* a script can't show a page,
 and a lost destination makes the user start over. *Source:* error-handling
 plan (`98a8a79e:docs/plans/2026-10-27-error-handling.md`) §3–§4.
@@ -387,279 +408,184 @@ production with the code that logs.
 
 ## 14. Accounts: linking and verification
 
-**Rule.** An access role (jury, organizer, admin) reaches an existing account only if nobody
-but the email's owner can sign in to it (`User.mayTakeAccessRole`: root, verified email, or no
-password); otherwise an add becomes an invitation. An add by wiki account alone gives an access
-role to an account whose wiki account is unverified only after the admin picked the account and
-confirmed that it is the person they mean (**since A-3**, below), and then by the email path's rule
-(an invitation where the account can't take the role directly). A role without access joins on
-such a match directly, and a later role change on Edit user follows the email's rule only, with no
-confirmation (the residual risk under A-3, below). Emails are trimmed (`LoginText.clean`: also tabs and
-non-breaking spaces, never a password's ASCII trim) and lowercased; wiki names normalised and unique. Links are 32 random bytes, stored as SHA-256, single use, expiring,
-bound to account and address. Every refused link gives the same page (no account
-enumeration). One's own password or email change needs the current password. Another account's
-password is set through a single-use link, mailed (an invitation, root's reset) or shared (below),
-or typed in by root or an admin on the account's edit page (**Set password**,
-`AccountTokenService.setPasswordByAdmin`): S2 removed this, and it is back since stack/94 at the
-maintainer's request (2026-11-10: "while we test and learn new ways of login and reset password,
-let's keep good old user password edited by an admin/root"; admins onboard people personally
-because mail is unreliable). Its safeguards: exactly the shared reset link's rule below
-(`ShareLinkService.mayCreate` for `password_reset`, root included for its checks not about who
-asks). Who may not gets: an organizer, a juror, or an admin posting for someone who isn't a
-member of their current contest, the edit form's usual redirect to the start page (303, no log
-line, nothing written: `editableUser` finds no account to edit); an admin refused by the rule
-(another admin, root, themselves through another id, an account with ties outside their contests,
-an inactive member), the 403 denial page with a WARN line on `security.authz`; for an account the
-rule refuses for a reason not about who asks (deleted; or, for root or an admin the rule otherwise
-allows, without an email while Wikimedia sign-in is offered, or no name to sign in with), the form
-again with a message (400). The rule is checked again in one quiet transaction (the hash stays out
-of the SQL log) under the account's row lock, with the same responses (the rest of the form is
-saved by then, and if it changed anything they say so: `password.set.others.saved`); it does exactly what accepting a shared link does (the shared
-`AccountTokenService.applyProof`: `email_verified_at` and `wiki_account_verified_at` cleared,
-`auth_version` bumped, API tokens revoked, identities unlinked, every unused link revoked, pending
-roles only those the setter may give); never with an email or role change in the same save (a role
-is decided on the account as it was before the save, verified); the password is set last, after
-the rest of the form is saved, so a failure there leaves it unchanged; a bcrypt hash of at most 72
-bytes (`PasswordHasher.newPassword`), `Busy` a 503; and a `security.account` line by id only
-after the commit (`password_set_by_admin accountId= byAccountId= contestId= emailProven=false
-sessionsEnded=true apiTokensRevoked= identitiesUnlinked= linksRevoked= memberships=`;
-`password_set_by_admin_refused reason= accountId= byAccountId=` when refused under the lock). A shared
-link: "Create a link to share" (`ShareLinkService`, V94's
-`account_token.shared`) shows the same kind of link once, in the POST's response (`no-store`,
-no referrer; never stored, logged, flashed or put in the session), for the admin to pass on
-personally. A new link of the purpose, mailed or shared, revokes the account's unused ones. Root
-may create one for any account; a contest admin only, in the request's contest, for a member or
-pending invitee of it (a reset: an active member only) that is not root, not themselves, has
-active roles (and live invitations' roles) jury or organizer only, and whose every membership
-(inactive ones too), contest worked in and live invitation is in a contest they administer;
-checked again when the link is opened and used, under the account's row lock, which
-`UserService.addToContest` takes too. **Lock order:** every transaction that locks an account
-and its links takes the account's row first, then the links' rows and memberships
-(`AccountTokenService.acceptPasswordLink`, `acceptByProvider`, `confirmEmailChange`,
-`ShareLinkService.create`, `UserService.sendChooseLink`; `addToContest` the account's row, then
-the membership), so none deadlocks with another on the same account. Not for an account without
-an email while Wikimedia sign-in is offered (it signs in there), at creation and again when the
-link is opened and used. A shared link proves nothing: accepting it ends sessions, API tokens and
-identities as a mailed one does (identities only then, never when the link is created), **clears
-`email_verified_at` and `wiki_account_verified_at`** (so another contest's add becomes a mailed
-invitation and a wiki-account add needs the admin's confirmation and becomes one too, and a Google sign-in by the address no longer
-links; a mailed link's acceptance verifies the email again), and gives only pending roles its
-creator may still give. Mail that is not the person's goes from `UserService.systemSender`.
+**Rule.**
+- **Adding a person by email.** An access role (jury, organizer, admin) reaches an existing account
+  only if nobody but the email's owner can sign in to it (`User.mayTakeAccessRole`: root, a verified
+  email, or no password); otherwise the add becomes an invitation to that address.
+- **Adding by wiki account alone.** For an access role, an account whose wiki account is unverified
+  gets the role only after the admin picks it and ticks **This is the person I mean**
+  (`UserController.confirmWikiAccount`); then the email rule above decides between joining and an
+  invitation. The page lists the matches by name only (addresses masked outside the admin's
+  contests, root accounts to root only), none preselected; the POST reads the matches again and a
+  stale or forged pick is a 404. Import users never confirms: such rows go to the users page.
+- **Finding accounts.** An admin's search matches a part (3 characters or more) of a name or wiki
+  account; addresses are masked outside the admin's contests, an address outside them is found only
+  whole, a name containing `@` is matched by a part only inside them, and only root finds root
+  accounts. `LIKE` patterns are escaped (`ESCAPE '!'`).
+- **The "wiki account taken" panel** (`services.WikiTakenPanel`, Edit user): only for who may edit
+  the account (root, or an admin of the page's contest); the other accounts by the search's rules
+  (masked outside the editor's contests, root accounts to root only); their votes, comments and
+  rounds counted only within the contests the editor administers (root: all).
+- **The duplicates report** (`services.DuplicateAccounts`): a contest's admins see the groups with
+  an account in or worked in their contest, the accounts by the search's rules; groups by a
+  verified address on another account's sign-in are root's only. **Keep separate** is offered only
+  to the performer (root, or an admin of every contest of the group's accounts), checked again
+  under the accounts' rows; it only hides the pair.
+- **Normalised identifiers.** Emails are trimmed (`LoginText.clean`) and lowercased; wiki names are
+  normalised and unique.
+- **Links.** 32 random bytes, stored as SHA-256, single use, expiring, bound to the account and the
+  address. A refused link always gives the same page (no account enumeration). A new link of a
+  purpose revokes the account's unused ones.
+- **Passwords.** One's own password or email change needs the current password. Another account's
+  password changes only through a single-use link, mailed (an invitation, root's reset) or shared
+  ("Create a link to share": shown once in the POST's response, `no-store`, never stored, logged or
+  flashed), or typed by root or an admin (**Set password**). Who may (`ShareLinkService.refusal`):
+  root for any account; a contest admin only in the request's contest, for a member or pending
+  invitee (for a reset, an active member) that is neither root nor themselves, holds only jury or
+  organizer roles, and has every membership, past work and invitation in contests that admin
+  administers. Checked again under the account's row lock when the link is used or the password
+  set. Either way (`AccountTokenService.applyProof`) the email and wiki verifications are cleared,
+  sessions end, API tokens are revoked, identities are unlinked, unused links are revoked and only
+  roles the setter may give stay pending; never together with an email or role change in the same
+  save.
+  - Neither a shared link nor Set password for an account without an email while Wikimedia sign-in
+    is offered (it signs in there): refused at creation and again when the link is used.
+  - Set password is written last, after the rest of the form, in its own transaction: a failure
+    leaves the password unchanged.
+- **Lock order.** A transaction that locks an account and its links takes the account's row first,
+  then the links' rows and memberships: `AccountTokenService.acceptPasswordLink`,
+  `acceptByProvider`, `confirmEmailChange`, `ShareLinkService.create`, `UserService.sendChooseLink`;
+  `UserService.addToContest` takes the account's row, then the membership.
+- **Mail and notices.** No mail without the admin's choice: invitations, greetings and owner notices
+  are unticked boxes, sent from `UserService.systemSender`, never from the admin's address. Every add
+  that gives a membership or an invitation is a notice in the tool for the owner
+  (`services.AccountNotices`). The search's add form offers both mail choices for every account, so
+  it tells the admin nothing about the account's other contests.
+- **Retiring an empty account.** `services.AccountRetirement` is the only writer of
+  `users.deleted_at`. Root, or an admin of every contest the account is in or worked in, retires an
+  account without votes, comments, assignments, linked identities or usable API tokens, never
+  themselves, root, or (for an admin) an account with another role than jury or organizer; not while
+  a distribution or rebalance job runs in its contests. One transaction under the accounts' row
+  locks; every `round_user` insert and new comment re-checks the account under a shared lock
+  (`User.lockLive`, `CommentJdbc.createLive`). Retired accounts are left out of sign-in, sessions,
+  searches, member and juror lists.
+  - An admin acts only from a contest the account is a member (any role) or a live invitee of
+    (`AccountRetirement.tiedTo`): an account with no ties anywhere is retired by root only.
+  - The checkbox's account id is a form field: the POST decides everything again, so a forged id
+    is refused by the same rules.
+- **Joining two accounts** (`services.AccountJoin`, the `account_join` job). Root, or an active
+  admin of every contest each account is in or worked in; never a root account. The performer
+  chooses the account kept; the preview is recomputed under both accounts' row locks and runs only
+  if unchanged; a vote collision refuses the join, so no vote is dropped; identities are unlinked,
+  never moved. While a join holds the accounts, the retiring one can't sign in, both lose their
+  sessions and API tokens, and neither gets memberships, links, role or password changes or
+  assignments. Cancel only before the first round step. No mail unless the performer ticks it.
+  - Each account must be in one of the admin's contests (`AccountJoin.mayPerform`), and the retired
+    one tied to the contest the join is done from: an account with no ties, root only.
+  - The kept account is one with an owner-proven email where some have one (`AccountJoin.keepable`).
+  - One active join per account: the kept account's dedupe key, and a queued, running or failed
+    join holding either account refuses another.
+  - The join's page, Cancel and Retry check the same rule (`JobHandler.mayManage`): who may not gets
+    a 404, logged on `security.authz`; the join's POST refuses them with a 403; a missing or
+    retired account is a 404.
+- **Sign-in with Google or Wikimedia** (`services.oauth.IdentityLinker`) links an identity's first
+  sign-in to an account by an email the provider is authoritative for, only if the account's email
+  is verified (or it has no password and a live link to that address); by wiki account only for a
+  never-linked placeholder; it never creates an account. Unlinking ends the account's other
+  sessions.
+- Each of these actions is logged on `security.account` by ids only (§13); the event names are in
+  [operations](../operations/practices.md) §1.3.
 
-**Residual risk (accepted for now, 2026-11-05, for the user to decide):** a contest admin can add
-the email of a verified account with no ties (no membership, past work or invitation anywhere),
-which joins their contest directly (`User.mayTakeAccessRole`), and then share a reset for it, or
-set its password (**Set password**, the same rule). The link's holder (or the admin) gains the account's name and email and the owner is locked out; the account becomes
-unverified, so it can't be pulled into other contests (another contest's add mails an invitation,
-a wiki-account add needs the admin's confirmation and then invites too). Root's mailed reset, or a later mailed invitation, gives the
-address's owner the account back (its acceptance sets the password and ends the holder's sessions).
-**Since A-1** (the users page's search, [accounts plan](../plans/2026-11-16-existing-accounts.md)
-§a, A1 accepted by the maintainer 2026-11-16) **the admin no longer needs the address**: the
-search finds every non-deleted account by any part (3 characters or more) of its name or wiki
-account, and "Add to this contest" adds it by id with the email path's rule
-(`UserService.addAccountToContest`). `ShareLinkService`'s rule is unchanged, so an account with
-ties outside the admin's contests still can't be handed a link or a password by that admin. An
-admin also learns which names have accounts, with masked addresses (`UserService.maskEmail`; the
-full address only for members and live invitees of a contest they administer, and to root), and
-an address outside their contests is found only by the whole of it, never by a part. A name or
-wiki account with an `@` in it is matched by a part only within their contests (outside, the
-address it may hold could be rebuilt a character at a time), and shown masked like the email; only
-root finds root accounts. Each search is logged at INFO on `security.account` by ids only
-(`account_search byAccountId= contestId= results= length=`, never the text), so that probing shows
-up; `LIKE` patterns escape `!`, `%` and `_` with `ESCAPE '!'`, so they mean the same under
-`NO_BACKSLASH_ESCAPES`. **No mail without the admin's choice** (the maintainer, 2026-11-16:
-"please do not send emails without approval"): the invitation only with "Send an invitation
-email", the contest's greeting on a direct join only with it too, and a mail telling the owner only
-with "Tell its owner by email" (both unticked by default), each from `UserService.systemSender`,
-never the admin's address. **The add is never silent:** every add that gives a membership or an
-invitation is a notice in the tool for the owner (`services.AccountNotices`, read from the change
-log row marked `from search`): a bar after their next sign-in and a list on their own profile,
-dismissed per browser (a cookie, no migration). Logged as `account_added_notice accountId=
-byAccountId= contestId= outcome=sent|failed|not_sent|no_email inApp=true`; the page says which.
-The add form offers both choices for every account, so it tells the admin nothing about the
-account's other contests. **What remains:** once the account is a member or a live invitee of
-their contest, the admin sees its full address on the users page and in the search, as for anyone
-they add by email; they learn which names have accounts; and an owner who doesn't sign in learns of
-the add only if the admin ticked the mail. **Since A-2** (Edit user's "wiki account taken"
-panel, §c): a save refused as `wiki.account.taken` shows the other accounts with that wiki account
-by the same rule (`AccountSearch.describe`: masked outside the editor's contests, root accounts
-to root only), with their votes, comments and rounds counted within the editor's contests only
-(root: all), to whoever passed `editableUser` (root, or an admin of the page's contest); "Add that
-account instead" is the search's add by id (`addExistingAccount`, CSRF, both mails unticked).
-Logged as `wiki_taken_panel byAccountId= accountId= contestId= shown= notShown=`.
-**Since A-4** (retiring an empty account, decision A3: an unticked checkbox with the panel's add,
-[existing accounts plan](../plans/2026-11-16-existing-accounts.md), "Retiring an account"):
-`services.AccountRetirement` is the only writer of `users.deleted_at`. Who: the actor may change
-the account (`UserController.mayEditAccountNow`: root, or an admin of every contest it is in or
-worked in), it is not the actor, not root, and (for an admin) holds no active membership or live
-invitation with a role other than `jury` or `organizer` (`ShareLinkService.handOverRefusal`'s
-rule): an admin account is retired by root only; and, for an admin, the account is a member of
-(any role) or has a live invitation into the contest the retirement is done from (an account with
-no ties anywhere would pass "every contest it is in" on an empty set). Empty: no `vote`, `vote_aside`, `vote_orphan`,
-comment, `round_user`, linked identity or usable API token. Refused while a `round_distribution` or
-`round_rebalance` job is queued or running in the account's contests (a round held in review
-does not refuse: its Distribute re-checks the account like every `round_user` insert).
-One transaction, under the users row locks of the account and of the one added instead, in id order
-(of two crossed retirements the second finds its kept account retired), then `user_contest` /
-`account_token`, no round lock: the rules read again, the memberships deleted and unused links revoked, emptiness
-read once more, then `deleted_at` set, the email and password cleared (the old address only in the
-`account_retired` change log row; `users.email`'s unique key frees it), API tokens revoked, sessions
-ended (`auth_version` bumped). Every `round_user` insert takes a shared lock on the account's users
-row and re-checks `deleted_at` (`User.lockLive`: round creation leaves the account out; a review's
-jury, adding a juror and the rebalance job's "stop" phase refuse), so an assignment either commits
-first (the retirement is refused) or skips the retired account; a new comment does the same
-(`CommentJdbc.createLive`). An invitation that finds the account retired after an add or a save
-committed is reported on the page (`Mail.Retired`), not as a 404 or a 500. Deleted rows are none for the email
-match of an add (`matchAccount`, `addExisting` under its row lock), for `invite` (refused under its
-row lock), for sign-in (`User.byUserName`), sessions, the search, the members, jurors and
-conflict-of-interest lists, and root's all users page; a save of a retired account is refused under
-its row lock. The checkbox's account id is a form field: the POST decides everything again (a forged
-id is refused by the same rules and named by its id only). No mail. Logged by ids only:
-`account_retired accountId= byAccountId= contestId= keptAccountId= memberships= links=`, and
-`account_retire_refused accountId= byAccountId= contestId= reason=`.
-**Since J-1** (the duplicates report, [account join plan](../plans/2026-11-03-account-join.md)):
-a contest's admins see the groups of accounts that share a normalised wiki account (the groups by
-a verified address on another account's sign-in are root's only for now), where one account of
-the group is in their contest; the
-others by A-1's rules (masked addresses, their contests only, no root account). What it adds to the
-search: which accounts share a name (the search by that name shows the same), and one bit about an
-account's other contests: **Keep separate** is offered only to root or an admin of every contest
-of the group's accounts (the performer's rule of a join), so its absence says an account is also
-elsewhere, as the edit form's Join link will. Keep separate only hides a pair from the report; it
-changes no account and mails no one, is checked again under the accounts' users rows, and is
-logged at INFO on `security.account` by ids only (`accounts_kept_apart byAccountId= contestId=
-pairs=`), as is each report (`duplicates_report byAccountId= contestId= groups= accounts=`).
-**Since J-2** (joining two accounts, decisions J1–J3,
-[account join plan](../plans/2026-11-03-account-join.md)): `services.AccountJoin` (the preview, the
-start) and `services.AccountJoinHandler` (the `account_join` job) move one account's memberships,
-round assignments, votes, votes set aside (criteria rates follow their vote ids) and comments to
-the account kept, then retire it with A-4's `AccountRetirement.retireIn` (its rules apply: an admin
-account is joined into another by root only; an admin joins only an account tied to the contest
-the join is done from). Who: root, or an active admin of every contest each account is in or
-worked in, each account in one of them at least (an account with no ties would pass on an empty
-set: root only), never a root account (`AccountJoin.mayPerform`, read from the database on the page, on
-the POST under both users rows, and for the job's page, Cancel and Retry: `JobHandler.mayManage`);
-everyone else a 403 logged on `security.authz`, a missing or retired id a 404. The kept account is
-the performer's choice (J2, nothing preselected), limited to the accounts with an owner-proven
-email where some have one. The preview is recomputed under both users rows (ascending id) and runs
-only if it is the one the performer saw (a signature); a vote collision (J1: both accounts' rows
-for one file and round, one rated or across `vote` and `vote_aside`) refuses it, so no vote is
-dropped; a pair with an unrated row (an assignment) merges, keeping the vote. Identities are
-unlinked, never moved (J3: no proof from the user). One active join per
-account (the dedupe key on the kept account, and a queued, running or failed join holding either
-account refuses another). While a join holds the accounts, the account retired can't sign in
-(`LoginResults.signedIn`), and the job's first step ends both accounts' sessions and revokes their
-API tokens, and `Secured.sessionUser` treats the retiring account as signed out from the start,
-so it can't vote, make tokens or write its auth version back; under the account's users row lock
-no membership is added for either (`UserService.InJoin`), no link of either accepted, no role or
-password changed by an admin, no API token made; no `round_user` row is inserted for either (round creation leaves the
-retiring account out; adding a juror, its "stop" phase and a review's jury refuse, read before and
-after the users row's shared lock). Its last step, under the users rows, sweeps any row left (a
-vote that committed late), unlinks the identities, revokes both accounts' unused links, writes
-`account_joined` on both accounts and a `done` row in `account_join_request`, then retires the
-account. Cancel only before the first round step commits (`JobScheduler.CancelRefusal`), Retry
-after; a Retry finishes the join for the retrying user if the performer no longer may (checked
-under the users rows), and root may abandon a failed join after a round step (both accounts
-released, moved rows kept, logged `account_join_abandoned`). No mail unless the performer ticks **Tell both owners by email** (unticked; masked
-addresses, no link). Logged by ids only: `account_join_queued`, `account_join_refused ... reason=`,
-`account_joined keptAccountId= joinedAccountId= byAccountId= contestId= requestId= ...` with counts,
-`sign_in_refused accountId= reason=account_join`. **Residual risk:** a join can't be undone in the
-tool (votes are not moved back); the preview, the CSRF POST and the performer's rule are what
-stand before it.
-**Since A-3** (adding by an unverified wiki account, decision A2: confirm any account, wherever it
-is, [existing accounts plan](../plans/2026-11-16-existing-accounts.md) §b; **this supersedes S2's
-refusal for this path**): the add row given a wiki account and no email, for an access role, that
-names accounts whose wiki account is unverified adds nothing (`WikiAccountUnverified`, still logged
-`add_refused reason=wiki_account_unverified`); it shows every non-deleted account with that wiki
-account (`UserService.wikiMatches`; root accounts to root only) **by name only**
-(`AccountSearch.describe`'s name: an address typed into it masked outside the admin's contests),
-none preselected, with the name the admin typed in the add row shown beside them, and both mails
-unticked (the add row's "Send an invitation email" was chosen for another recipient). Each showing
-of the page is logged at INFO on `security.account` by ids and counts (`wiki_confirm_page
-byAccountId= contestId= matches=`). The admin picks one and ticks **This is the person I mean**; the POST
-(`UserController.confirmWikiAccount`, CSRF, root or an admin of the contest) requires both, else
-the page again (400) and nothing written, and reads the matches again: an id the wiki account
-doesn't name now (forged, renamed meanwhile, deleted, root for an admin) is a 404. Then
-`UserService.addConfirmedWikiAccount`, which is A-1's add by id (`addAccountToContest`, the email
-path's rule under the row lock: it joins if `mayTakeAccessRole`, otherwise the role waits for an
-invitation; no mail unless ticked), recorded in the change log with the comment `wiki account
-unverified, confirmed by the admin`, which, like `from search`, makes the owner's notice in the
-tool and which the edit form refuses as a typed comment (`UserService.NoticeComments`). The result
-names the account and shows its address as the search shows it, read before the add. A
-**placeholder** (no password, no email, no Wikimedia identity now or before) found by the add row
-takes the same confirmation and never joins unconfirmed (`matchAccount`'s wiki path still refuses
-it until the confirmation); after it, where this admin may not create its link
-(`ShareLinkService.refusal`) and Wikimedia sign-in is off, the page says the person signs in with
-a link from root. A role without access (`board`, `auditor`, `staff`, `no`) joins directly, as
-before. **Import users** never confirms row by row: such rows are counted ("Not added yet") with a
-link to the users page, where each is confirmed in the add row. Logged at INFO on
-`security.account` by ids only: `add_confirmed_unverified_wiki accountId= byAccountId= contestId=
-role= matches= placeholder= outcome=added|invited|already_member|in_join|no_email|not_possible|retired
-verified=`, where `added` means the account is a member after the add (an account with an email but
-no usable password joins, and its invitation only sets the password). A match that is only a root account, for an admin, keeps the earlier message ("add them
-by email"): it tells the admin that some account they can't see has that wiki account, a small
-oracle accepted with the A-3 review (2026-11-18), since the search already says which names have
-accounts and root accounts are few. **The risk, stated:** a stored wiki name and a full name are
-self-set or typed by an admin, so they don't prove who holds the account; after the confirmation
-the role goes to whoever controls the matched account (its password, its email), who may not be
-the person the admin meant (someone who once typed that wiki name into their own account, or an
-account another contest's admin mistyped), and with an access role that person votes in, or sees,
-the admin's contest. What stands between them: the confirmation (by name, with the risk said on
-the page), the email path's rule (an account that can't take the role directly gets only an
-invitation to its own address), the owner's notice, the change log row and the log line. Accepted
-by the maintainer (A2, 2026-11-16). **Residual risk, a role without access:** the add row given a
-wiki account alone with `board`, `auditor`, `staff` or `no` still joins the matched account
-directly, unverified, with no confirmation (as before A-3), placeholders included. A later Edit user
-change of that membership to an access role then follows only the email's rule
-(`mayTakeAccessRole`: a placeholder, an account without a password or with a verified email gets
-the access directly; another an invitation), with no confirmation, no owner notice and no
-`add_confirmed_unverified_wiki` line (the change log records the role change, by the admin). So an
-access role can reach an account by its unverified wiki account in two steps. Accepted by the
-maintainer (2026-11-18): the behaviour is kept and documented, not changed.
+**Residual risks** (accepted by the maintainer; details in the
+[existing accounts plan](../plans/2026-11-16-existing-accounts.md) and the
+[account join plan](../plans/2026-11-03-account-join.md)):
+- A contest admin can bring a verified account with no ties into their contest (by search or by
+  email) and then share a reset link for it or set its password. The account becomes unverified, so
+  it can't be pulled into other contests; the owner gets it back through root's reset or a mailed
+  invitation, and sees the add as a notice.
+- After a wiki-account confirmation the role goes to whoever controls the matched account, who may
+  not be the person the admin meant. The confirmation, the email rule, the owner's notice and the log
+  are what stand between them.
+- A role without access (`board`, `auditor`, `staff`, `no`) given by wiki account alone joins the
+  matched account directly; a later Edit user change to an access role follows only the email rule,
+  so an access role can reach an unverified wiki account in two steps.
+- For an admin, a match that is only a root account keeps the "add them by email" message, which
+  tells them that some account has that wiki account.
+- A join can't be undone in the tool.
 
-**Example.** `UserService.addToContest` (results `NewAccount`, `JoinedContest`, `Invited`,
-`WikiAccountUnverified`); `UserService.addConfirmedWikiAccount` (an unverified wiki account, confirmed by
-the admin); `UserService.addAccountToContest` (the search's add by id: the account
-looked up once before its row lock and checked again under it, a deleted or unknown id a 404);
-`services.AccountSearch`; `services.WikiTakenPanel`; `services.AccountRetirement`; `services.AccountJoin`; `services.AccountTokenService.check`; acceptance in one transaction
-with the token row locked; `ShareLinkService.refusal` (who may share a link, or set a password).
+**Example.** `UserService.addToContest`, `addConfirmedWikiAccount`, `addAccountToContest` (looked up
+before its row lock and checked again under it); `services.AccountSearch`; `services.WikiTakenPanel`;
+`services.AccountRetirement`; `services.AccountJoin`; `AccountTokenService.check` (acceptance in one
+transaction with the token row locked); `ShareLinkService.refusal`.
 
-**Guards.** `AccountInvitationSpec`, `ShareLinkSpec`, `AdminSetPasswordSpec`, `OwnAccountSpec`, `AccountReviewFixesSpec`, `SetupSpec`,
-`db.AccountVerificationMigrationSpec`, `MultiContestUserSpec`, `UserControllerSpec`, `AccountSearchSpec`, `WikiTakenPanelSpec`, `RetireAccountSpec`,
-`DuplicateAccountsSpec`, `AccountJoinSpec`, `WikiConfirmSpec` (the confirmation required on the server, a
-forged or stale pick a 404, placeholders confirmed only, organizers, jurors, other contests' admins,
-signed out and a missing CSRF token refused).
+**How it works.** There is no sign-up. An add of a new person creates an account without a
+password and an invitation (`services.AccountTokenService`, table `account_token`, V77).
+Accepting it (`/invitation/:token`, POST with CSRF) sets the password, sets
+`users.email_verified_at`, bumps `users.auth_version` (§15), revokes the account's API tokens and
+applies pending invitations. An edit-form role change that the email rule doesn't allow becomes
+an invitation (O2). One's own new email takes effect via a link mailed to it. An admin who may
+edit the account (`UserController.canEditAccount`), or root, changes another account's email at
+once, password or not (`UserService.changeEmailByAdmin`: unverified, password kept, sessions
+ended, identities unlinked, a notice to a verified former address). Invitations on an add, an
+import or an edit are mailed only if "Send an invitation email" is ticked (unticked by default;
+an O2 invitation is then kept `account_token.unsent`). An account that can sign in (a password,
+or a Google/Wikimedia identity, tombstones included) whose address a non-root admin set
+(`users.email_set_by_admin_at`, V96; cleared when the owner proves it) gets an invitation only
+from who may hand it a set-password link (`UserService.invitationRefused`,
+`ShareLinkService.handOverRefusal`). Every change an admin or root makes to another person's
+account is in the account change log (`account_change`, V96; `services.AccountChangeLog`, in the
+change's transaction where there is one), read only by the contest's admins and root
+(`AccountChangeController`, the edit page); the change log is history, never a control. Root's
+"reset password" mails a link. Every refused link shows the same 404 page (N7). The first root of
+an empty database comes from `/setup` with `wlxjury.setup.token` (P20).
 
-A Google or Wikimedia identity's first sign-in links to an account by the same rule
-(`services.oauth.IdentityLinker`): by an email the provider is authoritative for (Google: Gmail or
-an `hd` claim), only if the account's email is verified, or it has no password and a live link to
-that address, which the sign-in accepts (`AccountTokenService.acceptByProvider`, sharing
-`proveEmail` with `acceptPasswordLink`); by wiki account only for a never-linked placeholder (no
-password, no email, no Wikimedia identity now or before); never creating an account. Accepting a
-link, root's password reset, an admin's or root's change of another account's email or wiki
-account unlink identities; unlinking ends the account's other sessions.
+**Guards.** `AccountInvitationSpec`, `ShareLinkSpec`, `AdminSetPasswordSpec`, `OwnAccountSpec`,
+`AccountReviewFixesSpec`, `SetupSpec`, `db.AccountVerificationMigrationSpec`, `MultiContestUserSpec`,
+`UserControllerSpec`, `AccountSearchSpec`, `WikiTakenPanelSpec`, `RetireAccountSpec`,
+`DuplicateAccountsSpec`, `AccountJoinSpec`, `WikiConfirmSpec`.
 
-**Exceptions.** N5 (postponed): the greeting/invitation is sent "From" the inviter.
-Duplicate wiki accounts are refused at sign-in, not merged; an admin or root joins them (J-2) after
-the preview.
+**Exceptions.** N5 (postponed): the greeting and invitation are sent "From" the inviter. Duplicate
+wiki accounts are refused at sign-in, not merged; root or an admin joins them after the preview.
 
 ## 15. Sessions
 
 **Rule.** A session carries the account id (`Secured.AccountId`) and the account's session
 version (`Secured.AuthVersion`); `Secured.sessionUser` refuses another id or version. A
 password or email change, invitation acceptance, "sign out everywhere" and an admin reset bump
-`users.auth_version` (`User.BumpAuthVersion`). S3 adds the sign-in time, an absolute lifetime
-(1 year) and an idle timeout (1 month), and bumps on every credential change.
+`users.auth_version` (`User.BumpAuthVersion`), as does every other credential change. A session
+also carries its sign-in time, with an absolute lifetime (1 year) and an idle timeout (1 month).
 
 **Example.** `Secured.sessionUserOf` (used by `ErrorHandler` and `CsrfErrorHandler` too);
 `ImageProxyController.viewerKey` keys its cache by name, version and id.
+
+**How it works.** The Play session cookie holds the user name (`"username"`), the account's id
+(`"account_id"`) and its `auth_version` (`"auth_version"`). A sign-in stores `issued_at` and
+`last_seen` (epoch seconds) and, if "Keep me signed in" (the form's `remember`, checked by
+default) was checked, `keep` = 1. `controllers.SessionLifetime` (`wlxjury.session.absoluteDays`
+365, `idleDays` 30, `touchMinutes` 5) refuses a session past either limit in
+`Secured.sessionUserOf`. `modules.SessionLifetimeFilter` (in `play.filters.enabled` after the
+header filters and the allowed hosts, before CSRF) takes an expired session's sign-in keys out of
+the request and the browser; upgrades an older cookie without the two times in place (stamps
+the account id, version and both times as now if it still resolves: by name at version 0, or by
+the account and version it carries; else signs it out) only until the end V80 stored
+(`session_upgrade_window.until_at`, 30 days after the migration ran; after it such a cookie is
+signed out); refreshes `last_seen` at most every `touchMinutes` (an upgrade or refresh is written only
+by a page request or a POST); and writes a kept session's cookie with Max-Age (Play's
+`session.maxAge` stays unset: otherwise a browser-session cookie); never on a response a shared
+cache may keep. Through the router a kept session is in `cookies(result)`, not
+`session(result)`. `users.auth_version` ends every session of an account: `User.endSessions`
+("Sign out everywhere", `POST /logout/everywhere`; root's "End sessions",
+`POST /users/:id/sessions/end`), `User.setPasswordHash` (one's own change keeps that browser with
+the new version), accepted links and email changes. API tokens survive one's own password
+change; `POST /users/tokens/revoke-all` revokes them. Rotating `PLAY_HTTP_SECRET_KEY` ends every
+session ([deployment.md](../deployment.md)).
 
 **Guards.** `SecuredSpec`, `AccountReviewFixesSpec` (H2: old cookies, re-addressed accounts),
 `PasswordStorageSpec`, `ApiTokenPageSpec`. Planned: G7 `SessionConfigSpec` (S3: `maxAge` set,
 `httpOnly`, production `secure`).
 
-**Exceptions.** Pre-S2 cookies without an id resolve by name to version-0 accounts only (S3
-upgrades them in place); key rotation (P16) ends every session.
+**Exceptions.** Old cookies without an id resolve by name to version-0 accounts only (upgraded
+in place within V80's window); key rotation (P16) ends every session.
 
 ## 16. Exports
 
@@ -703,8 +629,9 @@ account or globally; a new unauthenticated or expensive endpoint gets a limit. T
 serves a stored file only at the widths the pages ask for (`LocalImageCacheService.servedWidths`);
 another is a 302 to the nearest (P5).
 
-**Example.** `PasswordHasher` (`bcrypt.maxConcurrent`, `maxWait`, `maxQueued`; 503
-`signin.busy` when full); `ApiTokenService.MaxActive` (20 tokens per account, checked under the
+**Example.** `PasswordHasher` (at most `bcrypt.maxConcurrent` hash computations at once; a
+sign-in waits up to `maxWait`, then 503 `signin.busy`; more than `maxQueued` sign-ins and
+sign-ups in flight get 503 at once); `ApiTokenService.MaxActive` (20 tokens per account, checked under the
 account's row lock); `ImageProxyController` (`MaxAllowedPx`, `MaxViewers`); the email-change
 request (one live link, one per 60 s).
 
@@ -789,10 +716,16 @@ round's jurors (the galleries' juror menu, `User.findRoundJurorsToView` in `navb
 exports, §16) go to those who may see the round's organizer views, `User.canViewOrgInfo`: root
 and the contest's admins and organizers, never a juror.
 
+**Rule: no personal data in the repository.** Files, commit messages and identities carry no
+names, account names, personal addresses, home folders or local paths of a checkout or a
+worktree; tests use neutral samples. `scripts/check-private-strings.py` refuses the strings on a
+list kept outside the repository (the hooks, and CI's `private-strings` job with the
+`PRIVATE_STRINGS` secret; CONTRIBUTING.md, "Private strings"). The list doesn't cover every name,
+so reviews look for others too.
+
 **Rule: juror confidentiality.** A juror sees only their own votes. Other jurors' votes, the
 all-jurors views and the juror list are for `canViewOrgInfo`, and only of jurors of that round
-(`GalleryService.viewerRounds` / `mayViewRound` / `viewAs`, otherwise 404; CLAUDE.md "Own
-votes"). File authors are shown under the same condition (`GalleryController`'s `showAuthor`,
+(`GalleryService.viewerRounds` / `mayViewRound` / `viewAs`, otherwise 404; §9). File authors are shown under the same condition (`GalleryController`'s `showAuthor`,
 `large.scala.html`; the large view's JSON leaves out the author and the description, which may
 name them, `LargeViewController.showFile`). The legacy `jury_org_view` column, which once let a
 round's jurors see these, is ignored (no form ever set it; dropped by the multi-role contract

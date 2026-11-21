@@ -93,13 +93,16 @@ from them. *Today:* `CategoryJdbc.scala:65-66` (§11, V7).
 
 ## 2. Schema and keys
 
-**2.1 Naming** (P0, V82; CLAUDE.md "Table names"). New tables singular snake_case (`job`,
-`round_image`, `criterion`), link tables `<owner>_<thing>` (`round_criterion`), foreign key
+**2.1 Naming** (P0, V82). New tables singular snake_case (`job`,
+`round_image`, `criterion`), link tables `<owner>_<thing>` (`round_criterion`, `round_user`,
+`user_contest`), foreign key
 columns `<table>_id`. Index and constraint names start with the table name:
 `<table>_<cols>_idx`, unique `<table>_<cols>_uidx`, foreign key `<table>_<col>_fk`, check
 `<table>_<col>_chk`. *Example:* V83's `round_criterion_round_criterion_uidx`,
-`round_criterion_round_id_fk`; V84's `round_image_status_chk`. Old plural tables keep their
-names. Guard: `db.MigrationSchemaSpec` (from V83; it checks the table prefix, the suffix and
+`round_criterion_round_id_fk`; V84's `round_image_status_chk`. Old plural tables (`images`,
+`users`, `category_members`, …) keep their names; V82 renamed `rounds` to `round` and
+`selection` and its copies to `vote`, `vote_aside`, `vote_orphan` (`criteria_rate.selection` to
+`vote_id`). Scala names (`Round`, …) and URLs/routes are not affected. Guard: `db.MigrationSchemaSpec` (from V83; it checks the table prefix, the suffix and
 that keys are named, not the `<cols>` part or singular names).
 
 **2.2 Every table has a primary key**, a surrogate `BIGINT UNSIGNED AUTO_INCREMENT` or the
@@ -207,12 +210,21 @@ fails there first (`DistributeImagesBatchSpec`); production's default is 16 MB.
 
 **3.6 No N+1.** No query per row of a list: read the page's ids, then one `IN` query per
 related table (chunked, §1.4), or a join. `hasManyThrough` loads lazily per entity: use it
-for one entity, not in a loop. Commons-sized loops (titles, categories) are chunked reads.
+for one entity, not in a loop (its lazy val on the companion, `Round.usersRef`, must be accessed
+once before `round.users` is populated; testing §2.1). Commons-sized loops (titles, categories) are chunked reads.
 
 **3.7 `round_image` for "which files are in the round".** Since V84 the round's files, their
 status, region and monument copy are one row per (round, file): use it for membership,
 counts by region and the all-jurors orders (W10, −497 ms measured) instead of `DISTINCT`
 over `vote`. Use `vote` for per-juror rates and sums. Rewrites go behind a parity spec (§9.3).
+A row's status is `in` (it has `vote` rows), `deleted` (votes only in `vote_aside`) or `dq`.
+Every writer of `vote`/`vote_aside` keeps it in the same transaction, last in the lock order
+(§7.1): a vote insert adds the file (`RoundImageJdbc.addVoted`), a bulk write re-syncs the pairs
+it touched (`sync`). "Which images" reads (counts, the count check, regions of the whole round,
+CoI files, deleted-file counts, open rounds of a file, previous-round windows without vote
+filters) read it; `RoundImageInvariants.violations(roundId)` checks it (§9.4). A spec's raw
+`INSERT INTO vote` must add the row too (or call `RoundImageJdbc.sync`). Plan:
+[`2026-11-02-round-images-two-step.md`](../plans/2026-11-02-round-images-two-step.md).
 
 **3.7a Derived counts read exactly, or from the source.** `round_image`'s vote counts (P2a,
 V89) are kept by marks and a background recompute, so the stored numbers alone may be seconds
@@ -303,6 +315,22 @@ distribution's `imagesBefore` follows the round's other files, `othersBefore`, w
 files are checked exactly, `ownBefore`). *Why:* a request that held a thread and a
 transaction for minutes hit Play's and Apache's timeouts and blocked other admins (background
 distribution and import, `c3f8e68b`, `7e20a35d`).
+
+**5.5b Writing a job.** The generic `job` table (V60): `services.jobs.JobScheduler` runs one
+short step (one transaction) of a job at a time on its own pool (`jobs.*` in
+`application.conf`), taking turns between contests and jobs, with per-kind concurrency limits
+and a lease (`owner`, `heartbeat_at`). A `JobHandler` per kind does the steps:
+`round_distribution` (`services.distribution.RoundDistributionHandler`, the single fill path for
+a new round, a resubmit and "Distribute new files"), `round_image_check`
+(`RoundImageCheckHandler`: repairs `round_image` against the votes, a round's by its admins or
+every round's and the criteria rates of no vote by root), and the import jobs. A round being
+created stays hidden from jurors (`round.distributing`) until its count check passes. A handler
+has a `kind` and a `step(job, ctx)` doing one bounded chunk in the transaction of its
+`StepContext` (the job's row locked), returning `Continue`/`Done`/`Failed(JobError, …)` with the
+state to resume from; `prepare` (outside any transaction) or a `FetchingJobHandler` for external
+calls; `onFailed`/`onCancelled`/`onRetry` undo and redo in the same transaction as the status
+change; cache invalidation via `ctx.afterCommit`. Register it in `modules.JobSchedulerProvider`.
+Tests run jobs inline (testing §1.3).
 
 **5.6 Blocking JDBC and the pool budget.** JDBC blocks its thread: actions with database work
 run on the blocking dispatcher (`Secured.withAuthOn(blocking)`, `blocking-dispatcher` 8
@@ -485,7 +513,7 @@ too), since an applied script can't change and its re-run would undo the later c
 
 **9.1 Isolation of specs.** Pure DAO specs with the session threaded: `AutoRollbackDb` /
 `dbTest`. Anything through a service or `AutoSession`: `BeforeAll` +
-`BeforeEach(SharedTestDb.truncateAll())` (CLAUDE.md's table). A spec using `running(app)`
+`BeforeEach(SharedTestDb.truncateAll())` (the table in testing §2.1). A spec using `running(app)`
 calls `SharedTestDb.reregisterDefault()` after.
 
 **9.2 One shared server.** `SharedTestDb` (tmpfs, 128M buffer pool, 1M `max_allowed_packet`,
@@ -507,7 +535,7 @@ checks them after stress.
 **9.5 Anonymous Commons only.** Tests never use Commons credentials: the test config sets
 `commons.user`/`commons.password` to `""` (no `${?COMMONS_USER}`), `CommonsLogin` refuses a
 login in Mode.Test unless `commons.allowTestLogin`, and bots come from `AnonymousBots`
-(`TestConfigAnonymousSpec`, `AnonymousBotsSpec`; details in CLAUDE.md "Testing"). Still run
+(`TestConfigAnonymousSpec`, `AnonymousBotsSpec`; details in testing §5.1). Still run
 sbt by hand with `env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u
 SCALAWIKI_PASSWORD`; live-Commons specs only with `-Dintegration=true`.
 
@@ -544,17 +572,18 @@ SCALAWIKI_PASSWORD`; live-Commons specs only with `-Dintegration=true`.
 
 ## 11. Where the code doesn't follow these yet (for triage)
 
-- **V1 (1.3), Low, correctness only:** `ImageDbNew.scala:466` binds `region + "%"` from the URL
+- **V1 (1.3), Low, correctness only:** `ImageDbNew.SelectionQuery.where` binds `region + "%"` from the URL
   without escaping `%`/`_`. Reached only with `subRegions` on (Віа Регіа) and a region of at
   most 2 characters; it stays within the juror's own files (a wider match, a range scan).
 - **V2 (1.6, R227-1):** whole exceptions logged, and a driver message quotes values:
-  `ErrorHandler.scala:63`; `JobScheduler.scala:134,179,230,245,377,444,466,472`;
-  `RoundController.scala:314`; `ImageProxyController.scala:108` (also the message and the
-  filename). `JobScheduler.scala:159,440` log a message (a poll failure's may carry values;
-  deadlock/timeout text has none).
+  `ErrorHandler.onServerError`; `JobScheduler`'s `stop`, `poll`, `heartbeat`, `fetch`, `work`,
+  `prepareStep`, `runStep`, `fail`, `record` and `runAfterCommit`; `RoundController.saveRound`
+  (its `failedOtherwise`); `ImageProxyController.serveThumbnail` (also the message and the
+  filename) and `serveImage` (the message).
 - **V3 (2.5, R225-1):** no `maxLength` on `UserController`'s `email`/`fullname`,
   `LoginController`'s `login`, `ContestController`'s fields, `CriteriaController`'s `name`,
-  `ImageDiscussionController`'s `text`, `EditRound`'s text fields (only `ApiTokensCard` has one).
+  `ImageDiscussionController`'s `text`, `EditRound`'s text fields (`ApiTokensCard` and the users
+  page's comment, wiki account and typed name have one).
 - **V4 (9.5): fixed** (`9cc2fd85`, `0880122b`): the test config no longer reads
   `COMMONS_USER`/`COMMONS_PASSWORD`, and scalawiki's environment login is closed for its bots.
 - **V5 (2.1):** pre-P0 names remain (`FK_round_user_round_id`, `fk_api_token_user`,
@@ -563,16 +592,20 @@ SCALAWIKI_PASSWORD`; live-Commons specs only with `-Dintegration=true`.
 - **V6 (2.2):** no declared primary key: production's `vote`, `vote_aside`, `vote_orphan` and
   legacy `criteria` (only `UNIQUE KEY id`, which InnoDB clusters on; the V53 dump), and
   `monument` on fresh databases (flyway plan §1).
-- **V7 (1.8, 1.5), Low:** `CategoryJdbc.scala:65-66` `INSERT IGNORE`s a Commons category title
+- **V7 (1.8, 1.5), Low:** `CategoryJdbc.addCountries` `INSERT IGNORE`s a Commons category title
   into `category.title` (`VARCHAR(190)`, `_ci`, unique): case variants collapse into one row,
   a longer title is truncated with a warning, and the following `SELECT … WHERE title = ?`
   then finds another row or none (`.get` throws).
-- **V8 (5.1):** plain `DB.localTx` (no retry), outside the vote tables: `Round.scala:193`
-  (`addUsers`, writes `round_user`), `CriterionJdbc.scala:40`, `User.scala:765,798,855`,
-  `ApiTokenService.scala:160`, `AccountTokenService.scala:227,257`, `UserService.scala:213`, `ImageService.scala:68,87`.
-  `RoundWrites.inRounds` (`RoundWrites.scala:106`) is unused.
-- **V9 (5.6):** `ImageProxyController.scala:104` blocks Play's default pool on JDBC.
-- **V10 (6.2), Low:** `CriteriaRate.scala:55-58` checks `round_user` in an unlocked
+- **V8 (5.1):** plain `DB.localTx` (no retry), outside the vote tables: `Round.addUsers`
+  (writes `round_user`), `CriterionJdbc.add`, `User.endSessions`, `User.setVerifiedWikiAccount`,
+  `User.quietTx`, `ApiTokenService.revokeLocked`, `AccountTokenService.useChooseLink` and
+  `confirmEmailChange`, `UserService.addExisting`, `createAccount`, `invite` and `sendChooseLink`,
+  `ShareLinkService.create`, `DuplicateAccounts.keepSeparate`, `CommentJdbc.createLive`,
+  `OAuthController.unlink`, `UserController.unlinkIdentities`, `updateAccount` and
+  `cancelInvitation`, `ImageService.updateMonuments` and `start`. `RoundWrites.inRounds` is unused.
+- **V9 (5.6):** `ImageProxyController.serveThumbnail` runs its JDBC lookup on Play's default pool
+  (marked `blocking`, not on a database pool).
+- **V10 (6.2), Low:** `CriteriaRate.rateCriterionIn` checks `round_user` in an unlocked
   `NOT EXISTS` inside the vote's locking read: under READ COMMITTED the subquery is a
   consistent read, so a stop committed meanwhile isn't waited for. `VoteJdbc.rateIn` reads it
   `LOCK IN SHARE MODE` as a separate statement.

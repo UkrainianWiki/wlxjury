@@ -3,7 +3,7 @@
 How work moves from a plan to production: branches and PRs to master, the batch cycle, review
 triage, worktrees and the shared sbt lock, commits, integration, releases and the changelog.
 Each rule has a short why and an example in this repository. Agent rules (models, effort,
-`agent-check.py`, bounded waits) stay in CLAUDE.md "Agent efficiency"; what to test and when is
+`agent-check.py`, bounded waits) are §9; what to test and when is
 [testing/practices.md](../testing/practices.md) §8. **Sources:** the roadmap's "Running agents
 (how)" ([`2026-11-02-roadmap.md`](../plans/2026-11-02-roadmap.md#running-agents-how)); the PR series
 and the review triage ([`2026-11-03-pr-series.md`](../plans/2026-11-03-pr-series.md),
@@ -21,7 +21,8 @@ and the review triage ([`2026-11-03-pr-series.md`](../plans/2026-11-03-pr-series
 6. [Branches, PRs and merging](#6-branches-prs-and-merging)
 7. [Releases, hotfixes and the changelog](#7-releases-hotfixes-and-the-changelog)
 8. [Keeping the practices docs current](#8-keeping-the-practices-docs-current)
-9. [Guards](#9-guards)
+9. [Agent efficiency](#9-agent-efficiency)
+10. [Guards](#10-guards)
 
 ## 1. Plans and the roadmap
 
@@ -45,7 +46,7 @@ orchestrator checks the diff and the results before asking for review; an indepe
 gets the final diff, the invariants and the validation results; the implementer fixes; a second
 review only if the fixes are material. *Why:* an author doesn't see their own gaps (the docs
 consolidation's review found a lost escape in a copied query), and one review plus one follow-up
-is normally enough (CLAUDE.md "Agent efficiency").
+is normally enough (§9.6).
 
 **2.2 One batch, one theme.** A batch does what its plan section says; a finding outside it goes
 to a plan or the triage (§3), not into the diff. At most 2–3 batches are open at once (PR series,
@@ -91,7 +92,8 @@ and its request state is rebuilt from GitHub, so nothing is lost with a session.
 
 ## 4. Worktrees, the sbt lock and the environment
 
-**4.1 One worktree per batch.** `git worktree add ../wlxjury-<name> -b ukwikidev/<name> <base>`.
+**4.1 One worktree per batch.** `git worktree add ../wlxjury-<name> -b <topic>/<name> origin/master`,
+with the topic prefixes of CONTRIBUTING.md (`fix/`, `feature/`, `docs/`, ...).
 The user's own checkout of this repository (with untracked files) and of wlxjury-infra (uncommitted
 work and secrets) are never modified by agents. Never link or copy
 `node_modules` or `data/cache` between worktrees: `sbt test`'s `jsTest` runs `npm ci`, which wiped
@@ -105,12 +107,14 @@ worktree: `LOCK="$(cd "$(git rev-parse --git-common-dir)/../.." && pwd)/.sbt-jvm
 `command=`, one per line. Prefer `python scripts/agent-check.py --lock --owner <name> -- <sbt
 command>`: it takes the lock, writes `owner` (its own PID: the process that holds the lock for
 the whole run), and removes both when the run ends, a timeout (exit 124) included; if writing
-`owner` fails it removes the lock again. By hand: take it with its own command, `mkdir
+`owner` fails it removes the lock again. A held lock is waited for (`--lock-wait`, default
+3600 s). Name yourself with `--owner` or
+`AGENT_CHECK_OWNER`. By hand: take it with its own command, `mkdir
 "$LOCK"`, check that it succeeded, then write `owner` without `pid=` (a Bash tool
 shell's `$$` exits with the command, so the lock would read as abandoned): `printf
 'owner=%s\nstarted=%s\ncommand=%s\n' <name> "$(date -Iseconds)" '<command>' >
 "$LOCK/owner"`; release with `rm "$LOCK/owner"` and `rmdir "$LOCK"`, only if you took it. If the directory exists, another run holds it: wait
-and retry, never delete it. Not waited on, but reported with the `owner` file to the orchestrator
+and retry, never delete it. Not waited on, but reported (`agent-check.py` exits 75) with the `owner` file to the orchestrator
 or the user, who releases it only under §4.6 (no script or agent removes it on its own): a lock
 whose `pid=` on this `host=` no longer runs (`agent-check` prints `LOCK OWNER GONE`: a run killed
 hard, e.g. by a tool's time limit), and one older than max(1 h, `timeout=` + 5 min) by `started=`,
@@ -125,8 +129,10 @@ its host slept, had others waiting all night with nobody to ask.
 `env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u SCALAWIKI_PASSWORD <command>`
 (testing §5.2).
 
-**4.4 Windows.** sbt runs from Git Bash with the direct launcher and UTF-8 (CLAUDE.md "Agent
-efficiency"); PowerShell 5.1 splits `-Dfile.encoding=UTF-8` and drops quotes of `set` arguments.
+**4.4 Windows.** sbt runs from Git Bash with the direct launcher and UTF-8, since `sbt.bat` can
+strip quotes from `set ... Seq(...)` commands; Windows PowerShell 5.1 splits
+`-Dfile.encoding=UTF-8` at the dot and drops the inner double quotes of the `set` argument when
+passing them to a native program. The command lines are in CLAUDE.md, "Build, run and test".
 
 **4.5 gh.** Scripts take the GitHub CLI from `GH` or `--gh`, else `gh` on `PATH` (set `GH` where
 it isn't on `PATH`). Agents use it to read (PR lists, checks,
@@ -290,7 +296,71 @@ Which doc is which: [docs/README.md](../README.md) §3. *Why:* the docs are read
 **8.2 Code that contradicts a rule** goes to the practices doc's "where the code doesn't follow
 these yet" list (db §11) or the triage, not silently into the rule's wording.
 
-## 9. Guards
+**8.3 Lists that follow the code.** A PR that fixes an entry of a "where the code doesn't follow
+these yet" list, or a security register item, updates that entry in the same PR; a release
+that deploys a register item's fix updates its status. *Why:* stale lists send triage after
+fixed code and hide what is really open.
+
+## 9. Agent efficiency
+
+These rules apply to every coding agent (Codex and Claude). What to test and when is
+[testing](../testing/practices.md) §8; how to benchmark is
+[performance](../performance/practices.md) §2.
+
+**9.1 Choose the model and effort for the task**, not by defaulting to the most capable option.
+Use a lower-cost near-peer for routine implementation and independent reviews when it meets the
+need: GPT-6.1 Sol is described as near GPT-6 Astra on coding, computer use and professional work
+at one-fifth of Astra's standard input/output token prices; Claude Opus 5.5 is described as
+performing at Claude Fable 5.1 level on most work, with 60% lower standard input/output token
+prices ($4/$20 vs. $10/$50 per million tokens). Check current prices and task-specific benchmark
+gaps before extended or high-volume use; token prices do not necessarily map directly to a
+product's subscription quota. Escalate to the more expensive model when a relevant capability
+gap, task difficulty or a failed first attempt justifies it. Use medium effort for ordinary
+implementation and low effort/a smaller available model for mechanical extraction, log summaries
+and simple edits when the host allows selection. Reserve high effort for unresolved
+authorization, migrations, concurrency or architecture decisions; high effort does not by itself
+require the most expensive model. Instructions cannot change a running model: report the actual
+setting rather than claiming a switch. Codex defaults are in `.codex/config.toml`; explicit
+app/session choices may override them. Sources:
+[GPT-6.1 Sol](https://openai.com/index/introducing-gpt-6-1-sol/) and
+[Claude Opus 5.5](https://www.anthropic.com/claude-opus-5-5).
+
+**9.2 Keep the task bounded.** Confirm the signed-in account and target contest before
+investigating a reported permission failure. Do not weaken authorization because another account
+has the expected role.
+
+**9.3 Keep the context small, not the evidence.** Search with `rg -n` first, then read the
+relevant range. Do not repeatedly dump whole controllers, plans, dependency catalogs or tool
+inventories. Parse structured results with scripts; give the model the derived table and
+anomalies, not raw samples. Preserve full logs and machine-readable benchmark results. Reduce
+what enters model context, not evidence or required safety/release checks. Do not change
+sandbox, approval or deployment safeguards to save usage.
+
+**9.4 Run checks through `scripts/agent-check.py`.** `python scripts/agent-check.py -- COMMAND`
+saves full output under `target/checks/`, prints a bounded summary, and preserves the exit code.
+To inspect an existing log: `python scripts/agent-check.py --summarize PATH --exit-code 1`.
+Inspect a named failing block only if the summary is insufficient. A successful failure-path test
+may log `[error]`; use test totals and the process exit code, not that prefix alone. `--lock`
+takes the shared sbt lock (§4.2); `--timeout` stops a stalled run (testing §8.1a). Compile
+changed Scala/tests before a costly run; on Windows use the direct sbt launcher from Git Bash
+(§4.4).
+
+**9.5 Long runs and waits.** The Bash tool's foreground limit is 600 s (10 min): run a check
+expected to take longer (a cold compile, the full suite, a Gatling or stress run) with
+`run_in_background`, inside `agent-check.py --timeout …`, and wait for its completion notice
+instead of a foreground call that the tool would cut off. While a process runs, use the tool's
+bounded wait (up to 60 seconds) rather than alternating sleep, clock, tail and status calls. Keep
+required user updates short. Do not reopen unchanged source, reanalyse the plan, or print raw
+logs on each wait. Resume investigation only on completion, failure, or a meaningful progress
+change.
+
+**9.6 The independent reviewer.** Use an independent reviewer only when requested or required.
+Give it the final diff, relevant invariants and concise validation results. One review plus one
+follow-up for material fixes is normally enough; do not re-review each assertion, import or
+helper qualification. Do not rerun tests in the reviewer unless a specific uncertainty requires
+it.
+
+## 10. Guards
 
 | Rule | Enforced by | State |
 |---|---|---|

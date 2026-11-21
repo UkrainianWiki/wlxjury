@@ -7,8 +7,8 @@ linked below; this page is the short version.
 
 - Run the app locally: [DEV.md](DEV.md) (JDK 17, sbt, MariaDB, scalawiki's `publishLocal`, the
   first root account; or docker-compose).
-- What is documented where: [docs/README.md](docs/README.md). Architecture, roles and the auth
-  rules: [CLAUDE.md](CLAUDE.md) (notes for AI coding assistants, useful to people too).
+- What is documented where: [docs/README.md](docs/README.md). The rules never broken, architecture
+  and roles: [CLAUDE.md](CLAUDE.md) (notes for AI coding assistants, useful to people too).
 - Never link or copy `node_modules` between checkouts or worktrees: `sbt test` runs `npm ci`
   and empties the target of a link.
 - Enable the repository's git hooks once per clone: `git config core.hooksPath .githooks`

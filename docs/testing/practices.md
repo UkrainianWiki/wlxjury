@@ -6,8 +6,8 @@ repository. Reviewers tick [review-checklist.md](review-checklist.md). Rules own
 practices doc are pointed to, not repeated: DB isolation and lock specs in
 [db/practices.md](../db/practices.md) §7.6, §9; load tests and benchmarks in
 [performance/practices.md](../performance/practices.md); negative authorization cases and the
-security guards in [secure-coding.md](../security/secure-coding.md) §9 and §21. **Sources:**
-CLAUDE.md ("Testing", "Database Tests", "Agent efficiency"), the CI plan
+security guards in [secure-coding.md](../security/secure-coding.md) §9 and §21; how agents run
+checks in [workflow](../workflow/practices.md) §9. **Sources:** the CI plan
 ([`2026-11-03-ci-and-scalawiki-packages.md`](../plans/2026-11-03-ci-and-scalawiki-packages.md)),
 the test-speed results in `98a8a79e:docs/plans/2026-11-01-open-followups.md`, and the
 theme-modes invariants in `98a8a79e:docs/plans/2026-10-31-theme-modes-and-design-system.md`.
@@ -58,14 +58,30 @@ each app start costs seconds and closes the pool (§2.3).
 **2.1 Choose isolation by session.** Pure DAO specs with the session threaded:
 `new AutoRollbackDb { }` (specs2) or `dbTest { session => }` (`AutoRollbackMunitDb`). Anything that
 goes through a service, `autoSession` or a Play app: `BeforeAll` +
-`BeforeEach(SharedTestDb.truncateAll())`. The table is in CLAUDE.md "Database Tests". *Why:*
+`BeforeEach(SharedTestDb.truncateAll())`. *Why:*
 `autoSession` opens its own connection and sees only committed data, so an outer rollback
 transaction is invisible to it (`Secured.userFromRequest`, `GalleryService`, `Round.addUsers`).
 
+| Scenario | Approach |
+|---|---|
+| Pure DAO tests (session explicitly threaded) | `new AutoRollbackDb { }` (specs2) or `dbTest { session => }` (`AutoRollbackMunitDb`) |
+| Service/controller tests (`autoSession` internally) | `BeforeAll` + `BeforeEach(SharedTestDb.truncateAll())` |
+| Tests needing a running Play app | extend `PlayTestDb`, call `testDbApp { implicit app => }` |
+| Tests needing custom Play config | add `implicit val cfg: Map[String, String] = Map(...)` before `testDbApp` call — starts a fresh per-test app |
+| Tests through the release's filters (CSP, allowed hosts, CSRF on) | `ProductionFilters.withSharedApp { app => }` (or `CsrfTestApp.withCsrfApp`): one JVM-wide app, truncated per call, never stopped by a spec (no `running`, no `TestServer`); an example that moves app-level state (the pre-S3 upgrade window), binds modules or serves the app uses `ProductionFilters.withApp` / `withAppWith`; one config shared by a spec's examples: `ProductionFilters.OwnApp`, stopped in `afterAll` |
+
+The DAOs are available in specs as `contestDao`, `imageDao`, `roundDao`, `selectionDao`
+(`VoteJdbc`) and `userDao` (`TestDb`). A `hasManyThrough` lazy val on a companion object
+(`Round.usersRef`) must be accessed once before `round.users` is populated;
+`SharedTestDb.initialized` does this.
+
 **2.2 One MariaDB per JVM, on tmpfs.** `SharedTestDb.forTests`: MariaDB 10.6 (`SharedTestDb.Image`;
-10.11 by `-Dwlxjury.test.mariadb-image=mariadb:10.11.14`), data directory on tmpfs (`size=1g`,
-so a runaway spec fails with "table is full"), 128M buffer pool, 48M redo log, flushing off,
-1M `max_allowed_packet`. *Why:* `TRUNCATE` re-creates table files:
+10.11 by `-Dwlxjury.test.mariadb-image=mariadb:10.11.14`, which moves the Gatling fixture to that
+version too), data directory on tmpfs (`size=1g`, so a runaway spec fails with "table is full"),
+128M buffer pool, 48M redo log, flushing off, 1M `max_allowed_packet`, 2000 open tables. The
+same setup serves `ConvertToInnoDbMigrationSpec`'s databases (on this server) and
+`SchemaBaselineSpec`'s container; not the Gatling fixture's, which stays production-like. The
+data lives in the Docker VM's memory (about 350 MB). *Why:* `TRUNCATE` re-creates table files:
 0.5–1 s per `truncateAll` on disk, 30–40 ms on tmpfs; the suite went from 21:25 to 6:57
 (`2d5d0ef4`). It is fast, not durable: never a benchmark (performance §4.6).
 
@@ -83,26 +99,19 @@ production keeps 10 and 30. HikariCP sets that level on a new connection only if
 the default it read from the pool's first connection, in production as here, so a global level
 changed during a pool's life is not picked up; only `WritePathStress` changes it, and it builds
 new pools afterwards (and checks each path's level). The Gatling fixture (`gatling.pool=small`),
-its external target and `WritePathStress` use the same class. `small` differs from the old
-`dbcp` option in more than size: READ COMMITTED where `dbcp` ran at the server's default,
-REPEATABLE READ, and a borrow waits 30 s instead of 5 s, so earlier `dbcp` Gatling results are
-not like-for-like. `WritePathStress` takes only `maxSize` from its `ConnectionPoolSettings`, not
-`connectionTimeoutMillis`. A Play app's start makes its own HikariCP pool ScalikeJDBC's default
+its external target and `WritePathStress` use the same class (`WritePathStress` takes only
+`maxSize` from its `ConnectionPoolSettings`). A Play app's start makes its own HikariCP pool ScalikeJDBC's default
 (`PlayDBApiAdapterModule`; `ConnectionPoolConfigSpec`); `running(app)` or `app.stop()` closes it.
 A spec that uses `running(app)` calls `SharedTestDb.reregisterDefault()` in a `finally`.
 Registering again closes a replaced `HikariTestPool`; a replaced Play pool (a plain
 `DataSourceConnectionPool`) is not closed that way, Play closes it when the app stops. *Why:* otherwise every later spec
-in the JVM fails on a closed pool; and a spec on another pool than production's (ScalikeJDBC's
-commons-dbcp2 default until 2026-11-04) tests a pool that never runs. The switch did not change
-the tests' speed: `db.*` and `services.distribution.*` (446 tests, ABBA pilot after a warm-up,
-2026-11-04) took 174 and 174 s on dbcp2, 171 and 170 s on HikariCP, no spec more than 1 s
-apart. dbcp2 validated no borrow (no validation query); HikariCP pinged about 100 of 18,476
-borrows, those idle over 500 ms (`aliveBypassWindowMs`), so there is nothing to turn off.
+in the JVM fails on a closed pool; and a spec on another pool than production's tests a pool that
+never runs.
 
 **2.5 Order independence.** A spec seeds what it reads and never relies on ids from 1 or on rows
 another spec left; `AutoRollbackDb` empties the database before each example (`a65e165c`). A
 spec's raw `INSERT INTO vote` adds its `round_image` row too, or calls `RoundImageJdbc.sync`
-(CLAUDE.md "Round images").
+([db](../db/practices.md) §3.7).
 
 ## 3. Concurrency: lock, invariant and stress tests
 
@@ -150,17 +159,29 @@ V53 MyISAM schema), `UserContestRoleMigrationSpec`. Each uses its own database o
 server, dropped after (db §8.4, §9.2). *Why:* B44 passed on fresh databases and could not have
 migrated production's history (`docs/plans/2026-11-03-flyway.md` §1).
 
+**4.5 Query plan checks.** `QueryPlanSpec` (`test/plans/`,
+[`2026-11-13-query-plan-checks.md`](../plans/2026-11-13-query-plan-checks.md)) checks the juror
+statements' query plans on a seeded corner with production-scaled statistics:
+`sbt "testOnly plans.QueryPlanSpec"`, about 1 min, in a forked JVM and MariaDB container of its
+own (`Test / testGrouping`). Outside that group, or on 10.11, it skips and says why;
+`testOnly db.*` doesn't include it. Its report: `target/query-plans/summary.md`.
+
 ## 5. Wikimedia, live and high-load tests
 
 **5.1 Tests are anonymous to Wikimedia.** The test config sets `commons.user`/`commons.password`
 to `""` with no `${?COMMONS_USER}`; `CommonsLogin.credentials` gives no account in Mode.Test
 unless `commons.allowTestLogin`; wlxjury's bots come from `services.imports.AnonymousBots`, and
 `AppModule` seeds scalawiki's bot cache with them. The only opt-in is a deliberate manual one with
-all three `-D` values in the forked JVM (`set Test / javaOptions ++= Seq(...)`): no spec, CI job
-or `build.sbt` forwarding sets it. Guards: `TestConfigAnonymousSpec`, `AnonymousBotsSpec`.
-*Why:* a machine with the bot's credentials logged the bot in from every test JVM, and a changed
-bot password became a stream of failed logins on its account (CI plan, "Anonymous Wikimedia
-access"). Details in CLAUDE.md "Testing".
+all three in the forked JVM:
+`set Test / javaOptions ++= Seq("-Dcommons.allowTestLogin=true", "-Dcommons.user=…", "-Dcommons.password=…")`.
+No spec or CI job sets it, and `build.sbt` doesn't forward it from sbt's command line. How the
+bots stay anonymous inside scalawiki, and the one case not covered, is
+[integrations](../integrations/practices.md) §1.1. Guards: `TestConfigAnonymousSpec` (the test
+config and the workflows/actions pass no `COMMONS_*` / `SCALAWIKI_*` credentials and no secrets
+but `GITHUB_TOKEN`), `AnonymousBotsSpec` (the app seeds the bots, and `app/` creates no bot or
+`MonumentQuery` with scalawiki's default login). *Why:* a machine with the bot's credentials
+logged the bot in from every test JVM, and a changed bot password became a stream of failed
+logins on its account (CI plan, "Anonymous Wikimedia access").
 
 **5.2 The `env -u` prefix.** On a machine that has bot credentials, run sbt and Docker by hand as
 `env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u SCALAWIKI_PASSWORD <command>`;
@@ -175,7 +196,9 @@ access"). Details in CLAUDE.md "Testing".
 Gatling flags (`gatling.*`, the stress flags of performance §1.3) go through
 `Gatling / javaOptions`. Everything else uses fakes: `FakeCommonsSource`, `FakeWikimedia`,
 `FakeMonumentListSource`, mock servers. *Why:* no network flakiness by default, and no load on
-Wikimedia from every run.
+Wikimedia from every run. The live group by hand:
+`sbt -Dintegration=true "testOnly controllers.AppendImagesSpec controllers.ImagesFromListSpec services.LocalImageCacheServiceIntegrationSpec"`
+(with the direct launcher on Windows the `-D` goes before `-jar`).
 
 **5.4 OAuth providers are faked.** `OAuthControllerSpec` and `OAuthRouterSpec` use fake providers;
 `ProvidersSpec` runs the real `GoogleProvider` and `WikimediaProvider` against a local fake
@@ -189,8 +212,8 @@ server. No spec calls Google or Wikimedia ([integrations](../integrations/practi
 **6.1 Ids, data attributes, roles and visible text; never CSS classes.** Find elements by `id`,
 `data-*`, ARIA role or accessible name, and assert text; a class only where the class is the
 behaviour (`is-invalid`, `active`). *Why:* the Bootstrap 3 → 5 move renamed most classes; tests
-on styling broke without any behaviour change (theme-modes invariants). CLAUDE.md: don't run tests
-that merely assert CSS class names.
+on styling broke without any behaviour change (theme-modes invariants). Don't run tests that
+merely assert CSS class names (§8.1).
 
 **6.2 No assertion passes when its element is missing.** Select first and assert that it exists
 (a count, `must beSome`, `toHaveLength(1)`), then assert on it. Never `forall` over an empty
@@ -234,24 +257,36 @@ container left by a killed run is removed by Ryuk.
 ## 8. Runtime budget and CI
 
 **8.1 Affected specs first.** Compile, then run the specs of the change (with its negative cases)
-through `python scripts/agent-check.py -- …` from Git Bash (CLAUDE.md "Agent efficiency").
-Locally, the full suite runs once at a release boundary; after a failure, fix and rerun the
-affected specs before another full run. CI runs the full suite on every PR (§8.3). No local tests
-for documentation-only changes.
+through `python scripts/agent-check.py -- …` from Git Bash ([workflow](../workflow/practices.md)
+§9.4). Locally, the full suite runs once at a release boundary when required; after a failure,
+fix and rerun the affected specs before another full run. Repeat broad tests only for a
+shared-code change, unresolved risk, or an explicit clean-release gate. CI runs the full suite on
+every PR (§8.3). No local tests for documentation-only changes or for tests that merely assert
+CSS class names.
 
 **8.1a Every local run has a time limit.** `agent-check.py` stops the run's whole process tree
 after `--timeout` seconds (default 1200 for targeted specs; `--timeout 1800` for the full suite,
 about 10.5 min plus 3–8 for a cold compile) and exits 124 with `TIMED OUT after N s`, keeping the
-log. A 124 is a stalled run, not a failing test: read the log's tail (the last spec started, a
-Hikari clock-leap warning) before rerunning, and never raise the limit to hide a hang (§7.1).
-The tree is a Windows Job Object (killed with the script, a hard kill included) or a POSIX
-process group (the script's SIGTERM/SIGHUP/SIGINT forwarded to it), so neither a timeout nor a
-stopped agent leaves a test JVM behind; a run longer than the Bash tool's 600 s foreground limit
-goes in the background (CLAUDE.md). `scripts/test_agent_check.py` runs in CI (`ci.yml`, its
-Windows parts mocked or skipped). On Windows it also holds a keep-awake request while the command runs (`ES_SYSTEM_REQUIRED`, not
-the display; `--allow-sleep` opts out), so idle sleep on battery doesn't stop a long run; lid and
-power-button actions and critical-battery hibernation still can, which is what the timeout and
-the stress harness's INVALID marking (§8.1b) are for.
+log. `--timeout 0` means none (the CI workflows pass it and rely on each job's
+`timeout-minutes`). A 124 is a stalled run, not a failing test: read the log's tail (the last
+spec started, a Hikari clock-leap warning) before rerunning, and never raise the limit to hide a
+hang (§7.1).
+The tree is a Windows Job Object (killed with the script, a hard kill included; `taskkill /T /F`
+only if the job can't be made, and the exit line says `tree=job-object` or `tree=taskkill`) or a
+POSIX process group (the script's SIGTERM/SIGHUP/SIGINT forwarded to it), so neither a timeout
+nor a stopped agent leaves a test JVM behind. On a normal exit, closing the job kills anything
+the command left running (an `sbt --client` server, daemons): don't use the script for commands
+that start daemons. A run longer than the Bash tool's 600 s foreground limit goes in the
+background (workflow §9.5). `scripts/test_agent_check.py` runs in CI (`ci.yml`, its Windows
+parts mocked or skipped). The script's `time.monotonic()` is `GetTickCount64()` on Windows
+(Python 3.8), which per Microsoft's docs keeps counting in sleep, so a run that slept past the limit is stopped once
+the host wakes; Linux's `CLOCK_MONOTONIC` doesn't count a suspend. On Windows it also holds a
+keep-awake request while the command runs (`SetThreadExecutionState(ES_CONTINUOUS |
+ES_SYSTEM_REQUIRED)` from the waiting thread, released at the end, a timeout or an interrupt;
+not the display, which may still sleep; `--allow-sleep` opts out), so idle sleep on battery
+doesn't stop a long run; lid and power-button actions and critical-battery hibernation still
+can, which is what the timeout and the stress harness's INVALID marking (§8.1b) are for. Agents
+never change the machine's power settings.
 *Why:* a run whose host went to sleep, or whose spec hung on a lock, held the shared sbt lock and
 the laptop's memory all night, with no output to say why; on 2026-11-05 the AC power dropped at
 01:15 and the laptop, its lid closed, slept 6 s later on battery.
@@ -399,119 +434,59 @@ story, and carries no tag.
 
 `browser-test/`: `@playwright/test` (JavaScript, its own `package.json` and lockfile, outside
 `javascript-test/` so that Jest doesn't collect its specs) against the `UiShotsServer` fixture,
-in **one build of each engine: the one Playwright 1.64.1 bundles** (Chromium 156, Firefox 157,
-WebKit 27.2), all current. *Why Playwright Test rather than the Python Playwright of
+in **one build of each engine: the one the pinned Playwright bundles** (1.64.1: Chromium 156,
+Firefox 157, WebKit 27.2). *Why Playwright Test rather than the Python Playwright of
 `ui-shots.py`:* projects per engine, sign-in projects as dependencies, traces and screenshots on
-failure, and an HTML report come with it; Node is already in CI for Jest.
+failure, and an HTML report come with it; Node is already in CI for Jest. What each spec covers:
+[browser-tests.md](browser-tests.md).
 
 **What is supported, tested and linted** are three different things. *Supported* is the policy
 ([UI](../ui/practices.md) §6.1, §6.1a): the current and previous majors of Chromium-based
 browsers, Firefox and Safari, and the floor Chrome 109 and Firefox 115. *Tested in a browser* is
-only the current Playwright build of each engine, above. *Linted* is the whole supported range
-(`.browserslistrc`): the compatibility lint checks our scripts' APIs and the CSS
-features caniuse lists against it (`npm --prefix javascript-test run lint`, a step of `ci.yml`'s job). Real runs
-on older versions (the previous Chrome major, Chrome 109, Firefox 115, an older Safari) are not
-done and not planned (the user, 2026-11-04): the previous majors and the floor are covered by
-the lint only, which can't see rendering or behaviour differences, or a feature a polyfill or a
-fallback covers.
+only the current Playwright build of each engine. *Linted* is the whole supported range
+(`.browserslistrc`; `npm --prefix javascript-test run lint`, a step of `ci.yml`'s job). Older
+versions are not run and not planned, so they have only the lint, which can't see rendering or
+behaviour differences, or a feature a polyfill or a fallback covers.
 
 **10.1 What runs.** `playwright.config.js` has a project per engine (`chromium`, `firefox`,
 `webkit`), each depending on its sign-in project (`setup-<engine>`, `tests/auth.setup.js`), which
 signs in through the login form once per role (juror, organizer, admin, root) and saves the
 session to `target/browser-test/auth/<engine>-<role>.json`. A test takes a role with
-`test.use({ role: 'juror' })`, or opens another session with `contextAs(role)`. 142 tests per
-engine (426 in all; `playwright test --list`, 2026-11-18: 150 per engine less the 7 docs
-screenshots and the rounds filter's opt-in screenshots; with the rounds filter's menus and look on the Rounds and statistics pages and the galleries' round menu in both modes, the add row's wiki account confirmation, the reassign page's story and tour page, the jurors form's review test and tour page, the "wiki account taken" panel's test and its retire test, the duplicates report's test, its join test and three tour pages (the join preview's among them), the vote buttons' centred glyphs and white-photo tests, the vote tabs' contrast in both modes, and the Codex look's tests: the selected and hover colours, links and controls, the pager's range box and Tom Select, each in both modes), 4 of them its sign-ins, besides the 7 opt-in docs screenshots and the rounds filter's opt-in screenshots:
+`test.use({ role: 'juror' })`, or opens another session with `contextAs(role)`. Screenshots run
+only when asked for. The specs, one by one: [browser-tests.md](browser-tests.md).
 
-| Spec | What it shows | Stories |
-|---|---|---|
-| `guards` | the fixture sends the production CSP; a CSP violation is reported; an image from another host, a lookalike of Commons' upload host and `commons.wikimedia.org`, and a request to Commons' API, are refused and reported; Commons' and the image proxy's images get the placeholder; the routeless browser refuses other hosts too (the guards' self-tests, §4.2) | S-03 |
-| `sign-in` | sign in through the form, sign out through the user menu's POST with its token; a sign-out without the token is refused and the session stays; a wrong password | J-02, J-03, J-06, J-07, J-34, S-02 |
-| `voting` | binary round: large view by key and by button, a gallery tile's ✓ button (its lower-left badge, no frame); rated round: large view by key and by star, gallery star (reading the tile's rate first); Back after a large-view vote shows the stored vote, as a fresh load does (from `ui_checks.py`; §10.3); a tile's ✓ and ✗ level under its zoom, all the large view's size, the large view's ✓ and ✗ with its navigation buttons' border width; each ✓, ✗ and zoom glyph centred in its button (its drawn pixels, within 1 px), and a tile's buttons 3:1 or more on a white photo; the comments link of the large view, the Next files strip, a gallery tile, the by-rate gallery and the comments list to the file's comments, and a by-rate vote chip's name with its time formatted | J-16, J-17, J-20, J-21, J-24, J-25, J-36, S-02 |
-| `sections` | the large view's and the contest file's side sections restored as stored by DOMContentLoaded; the first-frame check (from `ui_checks.py`) is `fixme`, triage U18 ([UI](../ui/practices.md) §9) | J-33 |
-| `theme` | the login page's switch (no request), the navbar's CSRF POST; `auto` in both schemes with every frame, from the first, in the scheme's mode: the `data-bs-theme` attribute, the root's computed `color-scheme` and the page's computed background (the "Firefox theme flash" check); the Votes toggle on the selected or the rejected in its vote colour at 4.5:1 at rest, pointed at and open, in both modes (#362); the Codex look's one selected highlight and one hover grey (distinct, both showing on the bar, text 4.5:1 on each, the pager range box's border 3:1), the bar and its menus on the page's background with the bar's border, an open menu's toggle the hover grey, links underlined only on hover (in a sentence at rest), controls' border 3:1, placeholder 4.5:1, exactly 32 px (44 large, 28 small) and 2 px corners; Tom Select's control 32 px, its list on the page's background, the pointed-at option the hover grey and a chosen one the selected highlight | J-30 |
-| `rounds-filter` | the Rounds page's and the round statistics' Status, Type and Order menus (their toggles' names, a choice opening the page with it, the statistics link and the Rounds link back keeping it, switching round keeping the order, the round menu reordered); the rounds' look on both pages and in the galleries' round menu: each round's type icons before its name (✓ ✗, a star, or an empty slot), coloured for an active round at 3:1 or more, grey for an inactive one, whose text is in the secondary grey at 4.5:1 on each background (the stripes, the menu, the hover grey), its links in the link colour, no strikethrough; the Type menu's legend; the icons and names lined up on all three (the round icons contest, 30 rounds); the galleries' round menu scrolling inside itself, the keyboard keeping the focused item in view; no filter menus in a gallery; in light and dark mode; in Chromium an axe-core scan of each page with a menu open; opt-in screenshots (ROUNDS_FILTER_SHOTS, ROUND_ICONS_SHOTS) | A-28, O-07 |
-| `large-side` | the large view for all the jurors' votes on the rated round (the by-rate gallery's top file): the vote list's rank numbers inside the window at 1280 and 1920 px; the score written once, the line under it its denominator alone (not starting with the bold number; a criteria round keeps its Σ, also for one juror, and a sum or half-star round its whole text: `AverageRuleSpec`); the full resolution link and the image's Commons link opening in a new tab (`target="_blank" rel="noopener"`); opt-in screenshots (LARGE_SIDE_SHOTS) | O-08 |
-| `access` | a juror refused another juror's votes (gallery, large view, all jurors) and the admin pages, an organizer the round form: the 403 page with its reference | J-27, J-35, S-01 |
-| `organizer` | the organizer role's round statistics and by-rate list; the admin's rounds list, round form with its jurors' table, edit-then-cancel (nothing saved, no job), new round form, the add juror and reassign pages opened from the statistics (read only); root's contests page, and a round of one juror (a contest of its own): no Reassign files…, its page refusing with nobody to reassign to | O-01, O-02, A-01, A-02, A-04, R-01 |
-| `review` | a round's review before distribution, as the admin: the new-round form without jurors or file distribution; "Review images first" holds it in review; the review page's Distribute opens the jurors form, the contest's jurors chosen, refused with none; Edit the round's "Re-apply filters" (a monument filter of ids separated by ", ") takes files out and the page shows how many; a comment in the review's large view; two jurors picked, one per file, Distribute opens the round. "Choose jurors next" lands on the jurors form, which waits for the selection, then shows the images and the form (nothing distributed). Writes two rounds per engine to the fixture: one distributed to jurors no other test signs in as, one left in review | A-21, A-01 |
-| `users` | the users page's search for existing accounts: a script's POST (the text in its body, never the URL), a part of an address outside the admin's contests finding nothing, the engine's own account found by its name with a masked address, added to the contest (an invitation, cancelled again so a rerun starts over); Edit user's "wiki account taken" panel: a save giving the engine's member another account's wiki account refused, that account shown masked, Keep them separate putting the wiki account back without a request, then Add that account instead (an invitation, cancelled again); as root, in the retire pairs' own contest (no rounds): the panel's unticked "Retire the account being edited" with its conflict-of-interest change, ticked with the add, the edited member retired and no longer listed (three pairs per engine: a rerun takes the next; none in the guides' screenshot mode); the add row given only a wiki account two accounts have, nobody verified: nothing added, the confirmation page listing both by name only (no address), none picked, the box unticked, axe-clean in Chromium, the browser keeping it without a pick, then the account picked and confirmed (an invitation, cancelled again) | A-22, A-23, A-25, A-27 |
-| `duplicates` | the duplicates report (the account join plan's J-1), as the admin: opened from the users page, the engine's first group still listed (a wiki account written three ways), the contest member's address in full with its edit link, the others masked; one account kept apart from the others, then the remaining pair, each a form POST with its token; the group gone, also after a reload. Uses one of the engine's four fixture groups per run; skipped in the guides' screenshot mode (no groups). As root, in the join pairs' own contest (no rounds): Join… on the engine's first pair still listed, nothing preselected, the kept account chosen, the preview (no votes, the Google sign-in unlinked, the account retired, the mail unticked), the join run in the background and its page's result, the group gone (three pairs per engine: a rerun takes the next; none in the guides' screenshot mode) | A-24, A-26 |
-| `health` | the contest health page (support diagnostics plan, D-1a) on the fixture's Nepal case (an old WLE 2020 contest of its own reused for WLM 2026 in Nepal), as root: opened from the Rounds page, its checks (H1 and H2 warn, H7 fails on the empty round, H8 warns on the round of every file) and facts in light and dark mode, an axe-core scan of each in Chromium, no page scroll at a phone's width; the files page's identity warning (DG10) for the contest's source, hidden for a matching typed source and back for the Nepal one, axe-clean in Chromium; an organizer refused the page (403). `HEALTH_SHOTS=<dir>` saves the screenshots (Chromium) | A-29 |
-| `pages` | a tour of 31 pages (each role's, a round's jurors form and reassign page, the duplicates report's two and the account join's preview among them): status 200, one `h1`; in Chromium an axe-core scan per page (§10.5) | S-04 |
+**10.2 Every page passes** (`lib/fixtures.js`, for every context of every test). Images and
+videos from `upload.wikimedia.org` and this host's `/wikipedia/commons/thumb/` get a placeholder
+PNG; a request to any other host, lookalikes included, is refused and fails the test. A CSP
+violation, a console error, an uncaught page error, a response of 400 or more or a failed request
+fails it, listed by page (a request the page cancelled by leaving, or the guard refused, is
+reported as such). A test that opens a 403 or 404 page on purpose says so with
+`diagnostics.expectStatus(403)`, for the page's own document only. The only other allowances:
+Firefox's console line for a font download a navigation cancelled, and U22's page error in the
+two tests that leave a gallery by a POST, in Firefox only. The route doesn't see WebSockets; the
+`websocket` event reports one to another host. In local WebKit runs on Windows an init script
+(`noMediaSources`) removes the pages' media sources (the original URL stays in `data-wlx-src`).
+*Why:* WebKit's media player there fetches from Commons past the routes, and a webm keeps the
+load event from firing. The fixture runs with the production CSP, CSRF checked on POSTs, and its
+image proxy fetching from a stub in its JVM, never from Commons (`-Dui.csp=production
+-Dui.csrf=on -Dui.images=stub`, `fixture-server.mjs`). The guides' screenshots use a docs image
+mode: [browser-tests.md](browser-tests.md#opt-in-screenshots).
 
-**10.2 Every page passes** (`lib/fixtures.js`, for every context of every test): images and
-videos from `upload.wikimedia.org` (requests of type image or media only) and this host's
-`/wikipedia/commons/thumb/` (on this host only) get a placeholder PNG; a request to any other
-host, other `wikimedia.org` hosts and lookalikes included, is refused and fails the test. A CSP
-violation (the `securitypolicyviolation` event, which all three engines fire), a console error,
-an uncaught page error (with its stack), a response of 400 or more or a failed request (but one
-the page cancelled by leaving, or the guard refused, which is reported as such) fails it, listed
-by page. A test that opens a 403 or 404 page on purpose says so with
-`diagnostics.expectStatus(403)`, which accepts that status for the page's own document only. The
-only other allowances: Firefox's console line for a font download a navigation cancelled
-(everywhere), and U22's page error in the two tests that leave a gallery by a POST, in Firefox
-only. The guard's route doesn't see WebSockets (that would take `routeWebSocket`); the app opens
-none, and a page's WebSocket to another host is reported by the `websocket` event.
-The guard's route doesn't see media in WebKit on Windows either: its media player (Media
-Foundation) fetches a video's or audio's source itself, past the routes and the routeless
-browser's proxy, from Commons' real host, and a webm it receives keeps the page's load event
-from firing (`goto` timed out after a gallery vote, 2026-11-14/15). So in local WebKit runs on
-Windows an init script (`noMediaSources`) removes the pages' media sources before they load, and
-their videos don't play, as elsewhere; each such element keeps its original URL in
-`data-wlx-src`, for a test that needs it. CI's Linux WebKit plays media with GStreamer, whose
-loads the route sees (not checked on CI).
-The fixture runs with the production CSP, CSRF checked on POSTs, and its image proxy
-fetching from a placeholder stub in its JVM, never from Commons (`-Dui.csp=production
--Dui.csrf=on -Dui.images=stub`, `fixture-server.mjs`).
+**10.3 Back after a vote, without routes.** The Back checks run in a second browser per worker
+(`routelessAs`): no routes, other hosts sent to a proxy that isn't there (`127.0.0.1:9`; this host
+bypasses it), and Chromium (its full build) with its back/forward cache. *Why:* any Playwright
+route turns the HTTP cache off, and Playwright starts Chromium with
+`--disable-back-forward-cache`, so a page Back brings back is always loaded again and the checks
+would pass without `no-store`. The guard's listeners still report every other host.
+`guards.spec.js` checks that the proxy refuses an image, an https `fetch` and a `wss://`
+WebSocket, with each engine's error (`lib/proxy-errors.js`). **The texts differ by platform**: a
+local Windows run doesn't prove CI's Linux ones; `npm run check:proxy-errors` checks the patterns
+against both, and a new text comes from a CI log. Which engine catches a dropped `no-store`:
+[browser-tests.md](browser-tests.md#back-after-a-vote-which-engine-catches-a-dropped-no-store).
 
-The user guides' screenshots (`docs-screenshots.spec.js`, `DOCS_SCREENSHOTS=1`; `0` or unset is
-off, any other value an error) use a docs image mode instead: `DOCS_SCREENSHOTS=1 node
-fixture-server.mjs start` (or `UI_IMAGES=docs`) passes `-Dui.images=docs`, `server.json` says
-`"images": "docs"`, and the spec fails unless it does (a running server of the other mode is never
-reused). The stub then serves the CC0 and public-domain photos that `browser-test/docs-photos.py`
-verified under `target/docs-photos/` (each list's `manifest.json`; that script checks every
-file's licence on Commons on every run, names files by a hash of their entry and deletes the
-rest). `DocsPhotos` maps a file by its ordinal in the fixture (by page id), so consecutive files
-get different photos; one in four gets a degraded one, never a file the shots show at the top of
-a page (`UiShotsServer.shownFiles`), and the stub answers 503 until it knows them. The image
-proxy's `target/ui-shots/thumbs-docs` is emptied on every docs-mode start. `DOCS_PHOTOS` names the
-lists (`wlm-ua`, `wlm-intl`, `wle-ua`, `wle-intl`; default `wlm-ua,wlm-intl`): one contest's
-photos per screenshot. The browser guard keeps the proxy's photos in that run and fetches the
-upload host's images from the proxy. Normal runs and CI keep the grey stub; the photos are never
-committed.
-
-**10.3 Back after a vote, without routes.** Any Playwright route turns the browser's HTTP cache
-off, in all three engines, and Playwright starts Chromium with `--disable-back-forward-cache`: a
-page Back brings back is then always loaded again, and the Back checks would pass without
-`no-store`. So they run in a second browser per worker (`routelessAs`): no routes, other hosts
-sent to a proxy that isn't there (`127.0.0.1:9`; this host bypasses it), and Chromium (its full
-build) with its back/forward cache. The large image from `upload.wikimedia.org` fails through the
-proxy and falls back to this host's image proxy, which answers from the fixture's stub; the
-guard's listeners still report every other host (requests and WebSockets), and accept the
-engine's console line for a refused file only when its location is that `upload.wikimedia.org`
-file, or, where the line carries no location (WebKit), when the same page had an
-`upload.wikimedia.org` load refused. `guards.spec.js` checks that the proxy refuses an image, an
-https `fetch` and a `wss://` WebSocket, with each engine's error (`lib/proxy-errors.js`).
-**The texts differ by platform**, and a local Windows run doesn't prove the Linux ones (CI's):
-Chromium `net::ERR_PROXY_CONNECTION_FAILED` and Firefox `NS_ERROR_PROXY_CONNECTION_REFUSED` on
-both, WebKit `Could not connect to server` on Windows but `Could not connect to proxy server
-127.0.0.1: Connection refused` on Linux; `npm run check:proxy-errors` checks the patterns against
-both, and a new text comes from a CI log. WebKit on Linux also types some image loads `other`,
-so the guard accepts `other` from the upload host only for a Commons file's path. Shown on 2026-11-04 with the large view's
-`no-store` dropped (locally, not committed):
-
-| Engine | With `no-store` | Without it | Shows the regression |
-|---|---|---|---|
-| Firefox 157 | pass | 4 of 4 fail | yes |
-| Chromium 156 | Back restores the page from the back/forward cache with the old vote (U23); with `WLX_CHROMIUM_BFCACHE=off` it shows the stored one | the same | no, while U23 stands: the tests assert U23 there (`pageshow` with `persisted`, the old vote shown, a fresh load showing the stored one, a `U23` annotation), so they fail once Chromium stops restoring the stale page |
-| WebKit 27.2 (Windows) | pass | pass (with `max-age=600` instead: 2 of 4 fail) | no: Back after a vote in Safari stays a manual check ([release checklist](../deployment.md#release-checklist)) |
-
-**10.4 Sharing a server.** `UiShotsServer` writes up to eight jurors with files in both rounds to
-`server.json`; each engine votes as its own juror (Chromium the first, Firefox the second, WebKit
-the third), signs in and out and switches the theme as another, and checks that a seventh's votes
-stay hidden, so the three engines can run at once against one server. Each voting test reads the
-file's vote first and casts one that changes it, so a rerun against the same server votes again.
+**10.4 Sharing a server.** Each engine votes as its own juror and each voting test changes the
+file's vote, so the three engines can run at once against one server and a rerun votes again.
+The jurors per engine: [browser-tests.md](browser-tests.md#jurors-and-fixture-data).
 
 **10.5 Accessibility.** In Chromium each page of the tour gets an axe-core scan (WCAG 2.1 A and
 AA rules; axe is injected from `node_modules` by `@axe-core/playwright`, never a CDN); its
@@ -526,7 +501,7 @@ held while the server runs):
 ```bash
 cd browser-test
 npm ci
-npx playwright install chromium firefox webkit   # once per Playwright version, ~1.2 GB
+npx playwright install chromium firefox webkit   # once per Playwright version
 env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u SCALAWIKI_PASSWORD node fixture-server.mjs start
 npx playwright test                          # the three engines; or --project=firefox
 npx playwright test tests/voting.spec.js --project=webkit --headed
@@ -535,36 +510,26 @@ NO_UPDATE_NOTIFIER=1 npm run report   # the Allure report, checked (§10.10)
 node fixture-server.mjs stop
 ```
 
-**With Linux's fonts** (CI's: Ubuntu draws the navbar's text wider than Windows, so its width
-tests can pass on Windows and fail on CI): `node linux-fonts.mjs <Playwright arguments>` runs the
-tests in the official Playwright image of the version in `package-lock.json`
-(`mcr.microsoft.com/playwright:v<version>-noble`, Ubuntu 24.04 as CI's runners), with DejaVu Sans
-installed, which CI's runner gives for `system-ui` (`LINUX_FONTS=image` keeps the image's own
-fonts), against the fixture server started above on the host (Docker Desktop; the container
-reaches it as `host.docker.internal` and forwards its `localhost` port, so cookies are as on the
-host). The image is pinned by digest for the Playwright version measured with it. It stops if
-DejaVu Sans can't be installed or isn't `system-ui`. Results go to `target/browser-test/` as
-usual, written as root in the container: on a Linux host they are root's (remove them with sudo or
-from a container); Docker Desktop on Windows and macOS maps them to the user:
+`start` compiles, starts `Test/runMain gatling.setup.UiShotsServer` in the background (log:
+`target/ui-shots/server-browser-test.log`), returns when `server.json` answers, and reuses a
+server that already answers. Stop a server started by `ui-shots.py` first: it lacks
+`-Dui.csrf=on` and `-Dui.images=stub`. Flags: `--project=<engine>`, `--headed`, `--debug`,
+`-g <title>`, `--trace on`; `WLX_CHROMIUM_BFCACHE=off` runs the routeless Chromium without its
+back/forward cache (U23). A failed test keeps its trace and screenshot under
+`target/browser-test/results/` (`npx playwright show-trace <zip>`); the routeless browser's pages
+have no trace. Delete `target/browser-test/` when done.
+
+**With Linux's fonts:** `node linux-fonts.mjs <Playwright arguments>` runs the tests in the
+official Playwright image of the version in `package-lock.json` (pinned by digest, Ubuntu 24.04 as
+CI's runners) with DejaVu Sans as `system-ui`, against the fixture server on the host
+(`host.docker.internal`); `LINUX_FONTS=image` keeps the image's own fonts. *Why:* Ubuntu draws
+text wider than Windows, so a width test can pass on Windows and fail on CI. On a Linux host the
+results in `target/browser-test/` are root's.
 
 ```bash
 node linux-fonts.mjs tests/navbar.spec.js -g "one line"                     # the three engines
 node linux-fonts.mjs tests/navbar.spec.js -g "one line" --project=chromium
 ```
-
-The navbar's width tests (`navbar.spec.js`, "stays on one line") log each bar's room as `[width]`
-lines: the px free after the pager, or by how much a wrapping bar is short. Keep 10 px free with
-Linux's fonts at the tightest case.
-
-`start` compiles, starts `Test/runMain gatling.setup.UiShotsServer` in the background (log:
-`target/ui-shots/server-browser-test.log`), and returns when `server.json` answers; it reuses a
-server that already answers. `stop` asks it to stop and waits. A server started by
-`ui-shots.py` lacks `-Dui.csrf=on` and `-Dui.images=stub`: the CSRF tests then fail and the Back
-tests' thumbnails come from Commons, so stop it first. Flags: `--project=<engine>`, `--headed`,
-`--debug`, `-g <title>`, `--trace on`; `WLX_CHROMIUM_BFCACHE=off` runs the routeless Chromium
-without its back/forward cache (U23). A failed test keeps its trace and screenshot under
-`target/browser-test/results/` (`npx playwright show-trace <zip>`); the routeless browser's
-pages have no trace. Delete `target/browser-test/` when done; traces are a few MB each.
 
 **10.7 Adding a test.** A spec under `browser-test/tests/` imports `test` and `expect` from
 `lib/fixtures.js` (never from `@playwright/test`, which has no guards), takes a role, finds
@@ -572,114 +537,60 @@ elements by role and accessible name, label or text (`getByRole`, `getByLabel`, 
 an id or `data-*` attribute where the page has no name, as raty's stars), and asserts that an
 element exists before asserting on it (`one()` in `lib/actions.js`, §6.2). Waits are Playwright's
 auto-waiting `expect`s, `waitForURL`, and `waitForRequest`/`waitForResponse` on a named request,
-never `waitForTimeout` or `networkidle`. A check of what the browser keeps between pages (Back,
-caches) uses `routelessAs` (§10.3). Keep it to what only a browser shows: a template's output
-belongs in a view spec, a script's logic in Jest (§1.1). A test of a flow in
-[stories.md](stories.md) carries its story tag (`{ tag: '@J-21' }`, §9.4); a new user-visible flow
-gets a story first. A test of the harness itself (the guards' self-tests) needs none.
+never `waitForTimeout` or `networkidle`. Never assert inside an `if` on whether an element is
+there (it passes when the element is missing, §6.2), never select by CSS class (§6.1), and take
+the base URL from `server.json`. A check of what the browser keeps between pages (Back, caches)
+uses `routelessAs` (§10.3). Keep it to what only a browser shows: a template's output belongs in
+a view spec, a script's logic in Jest (§1.1). A test of a flow in [stories.md](stories.md)
+carries its story tag (`{ tag: '@J-21' }`, §9.4); a new user-visible flow gets a story first. A
+test of the harness itself (the guards' self-tests) needs none. Add the spec's row to
+[browser-tests.md](browser-tests.md).
 
 **10.8 CI** (`.github/workflows/browser.yml`, its actions pinned by SHA): one job per engine in
 parallel on every PR and on pushes to the integration branches, `fail-fast: false`; not a
-required check yet. The fixture's dump (`data/cache`; key: what `GatlingDbCache.cacheKey` hashes,
-with the database image read from `SharedTestDb.Image`'s default) is saved right after the
-fixture starts, so a failed test run still keeps it; Playwright's browser is cached by the
-lockfile's hash. A run reads only its own branch's and its base branch's caches, so a stacked
-PR's first runs are cold (the dump built from the CSVs, the browser downloaded). The start step
-has its own 25-minute timeout; traces, screenshots, the HTML report and the server's log are
-uploaded on a failure or a cancellation, the accessibility report always, and each engine's
-Allure results always (`allure-results-<engine>-attempt-<n>`); the `report` job (after the three,
-unless the run was cancelled) merges each engine's latest into `allure-report-attempt-<n>` (§10.10), and its failure fails
-no engine's job. *Decision pending:* which engines stay per PR, from **GitHub's job duration** of
-each engine's job; the job's summary adds its steps' times (fixture start, tests).
+required check yet. The fixture's dump (`data/cache`, keyed as `GatlingDbCache.cacheKey`) is
+saved right after the fixture starts, so a failed test run still keeps it; Playwright's browser is
+cached by the lockfile's hash. A stacked PR's first runs are cold: a run reads only its own
+branch's and its base branch's caches. The start step has its own 25-minute timeout. Traces,
+screenshots, the HTML report and the server's log are uploaded on a failure or a cancellation;
+the accessibility report and each engine's Allure results always. The `report` job merges them
+(§10.10); its failure fails no engine's job.
 
-**10.9 Times** (2026-11-04; the user decides from CI's own numbers what stays per PR). Locally
-(Windows 11, the server on the same machine, 3 workers; 55 tests per engine, 4 of them the
-sign-ins, 2 `fixme`):
+**10.9 Times.** Which engines run per PR is decided from **GitHub's job duration** of each
+engine's job (its summary shows the fixture start and the tests), not from local times. The
+compile is most of each job: one compiling job sharing `target/` is the first saving, before
+dropping an engine from PRs.
 
-| | Chromium | Firefox | WebKit |
-|---|---|---|---|
-| tests, the engine alone (2026-11-04, after the review) | 120 s | 188 s | 176 s |
-| the same, before the routeless browser and the new guards' tests | 68 s | 91 s | 91 s |
-| CI job, estimated (to replace with GitHub's job duration) | ~11 min | ~13 min | ~13 min |
+**10.10 The Allure report.** `allure-playwright` writes each test's result to
+`target/browser-test/allure-results/`, labelled with its engine, tags and stories (§9.4).
+`npm run report` (from `browser-test/`; `NO_UPDATE_NOTIFIER=1` keeps npm's notice out) runs
+`allure generate` (Allure Report 3, `allurerc.mjs`) and then the check, and builds **one HTML
+file**, `target/browser-test/allure-report/index.html`, that opens without a server. Results
+accumulate until `target/browser-test/` is deleted.
 
-In Chromium the 4 Back tests assert U23's stale page instead of the stored vote. All three engines at once against one
-server: 314 s. The routeless browser (one more browser per worker, its pages loaded
-without the guard's stubs) and the new guards' tests roughly doubled the local times. The
-fixture's start: 170–260 s with a compiled checkout and the cached dump (sbt start and an
-incremental compile, then ~70 s for the fixture); the first start in a fresh checkout compiled
-the app and tests (~8 min here) and built the dump from the CSVs (~1.5 min). Setting the images'
-Commons urls in one transaction instead of a commit per row took ~2.5 minutes off every start.
-*The CI estimate:* setup and caches ~1.5 min, the browser and its system packages ~1 min, a cold
-`Test/compile` ~3.5–4 min (`ci.yml`'s job, compile and the whole suite, is ~5½ min), the fixture
-~1.5 min (+1.5 on a dump-cache miss), the tests ~1.5–2.5× the local times on a 4-CPU runner with
-2 workers. The compile is most of each job; if the three jobs are too slow, one compiling job
-sharing `target/` with the engines' jobs is the first saving, before dropping an engine from PRs.
-
-- **Mobile profiles later,** together with mobile support (UI §6.2; mobile is not supported yet).
-- **From Montage's Cypress tests** (`hatnote/montage` `d879cb8`, `frontend/cypress/`), taken:
-  waiting on a named request instead of a delay (`cy.intercept(...).as()` / `cy.wait('@alias')`:
-  here `waitForRequest` on the vote, theme and sign-out POSTs and the jurors' table), a session
-  set up before the visit (`cy.setCookie`: here the saved sessions), edit-then-cancel (the round
-  form), and "a double click must not save twice" as an idea for later (`data-submit-once`). Not
-  copied: assertions inside `if ($body.find(…).length > 0)` (they pass when the element is
-  missing, §6.2), CSS-class selectors (§6.1), and the hard-coded dev-server URL
-  (`http://localhost:5173`; here the base URL comes from `server.json`).
-
-**10.10 The Allure report.** `allure-playwright` (a reporter beside `list`, `html` and `json`)
-writes each test's result to `target/browser-test/allure-results/`, with its engine as the
-"Project" parameter, its tags as `tag` labels, and, from the `storyLabels` fixture (§9.4), its
-stories as labels: epic the role, feature the guide section (else the role), story the ID and
-the catalogue's sentence. `npm run report` (from `browser-test/`) runs `allure generate`
-(Allure Report 3, `allurerc.mjs`) and then `node allure-offline.mjs`, so no report is used or
-uploaded unchecked. It builds **one HTML file**, `target/browser-test/allure-report/index.html`,
-scripts, styles and data inlined: open it in a browser, no server needed. Its **Behaviors** tab
-groups the tests by epic, feature and story (a test with several stories under each, a test per
-engine); Suites by spec file.
-
-- **The allure2 plugin, not Awesome** (the user, 2026-11-04). Awesome, Allure 3's default report,
-  hard-codes Google Analytics (`gtag.js` from `www.googletagmanager.com`: `analyticsEnable: true`
-  in `@allurereport/plugin-awesome`'s `generators.js`, as in the classic and dashboard plugins),
-  with no opt-out; upstream, allure3#476 and PR #784 are open. The allure2 plugin honours
-  `ALLURE_NO_ANALYTICS` (`generators.js:129`), set to `true` in `allurerc.mjs` and again in the
-  report job's env. **Recheck on every Allure update:** the plugin's analytics switch, and that
-  the check below still passes.
-- **The check** (`allure-offline.mjs`): it fails if the report has a Google Analytics loader
-  (`googletagmanager`, `gtag`), or markup or CSS that loads a script, stylesheet, image, frame,
-  media or `url()` from another host, or is no report at all (no `<head>`), in every `*.html`
-file of `allure-report/` (no `index.html` fails too); else it puts a
-  Content-Security-Policy `<meta>` first in `<head>` (`default-src 'none'`; scripts and styles
-  inline, `data:` and `blob:` URLs), so the browser refuses any other host even if a later
-  Allure adds one. `npm run report:selftest` checks it on reports that must fail (a gtag block,
-  a CDN stylesheet, a protocol-relative script, a CSS `url()`, no `<head>`) and one that passes.
-  Shown on 2026-11-04 in Chromium with every non-file request refused: the allure2 report with
-  the CSP draws its tabs with no request leaving the file and no console error (`base-uri` is
-  left out of the CSP: the report sets its own `<base>`).
-- **Traces:** a failed test's trace is in the report as an attachment. The allure2 bundle's
-  trace viewer would load `trace.playwright.dev` (Playwright's hosted viewer) in an `<iframe>`
-  and post the trace to it; the report's CSP (`frame-src data: blob:`) blocks that frame, so a
-  trace is neither sent to that site nor viewable in the report. Download it from the report,
-  or take it from the `browser-failures-<engine>-attempt-<n>` artifact, and open it with
-  `npx playwright show-trace <zip>`.
-- **Size:** a Chromium run (55 tests, the a11y attachments): 3.8 MB, from 0.7 MB (72 files) of
-  results; a history entry about 70 KB, so 30 runs (`historyLimit`) about 2 MB.
-- **CI:** each engine's job uploads `allure-results-<engine>-attempt-<n>`; the `report` job
-  takes every attempt's artifact and merges each engine's latest (a re-run of the failed jobs
-  leaves the passed engines' results under the earlier attempt; result files have unique names,
-  and the "Project" parameter keeps an engine's run of a test apart), then uploads
-  `allure-report-attempt-<n>` (14 days), its size in the job's summary. **An artifact only:**
-  GitHub Pages would publish test names, steps and failure screenshots, and is not decided
+- **The allure2 plugin, not Awesome.** *Why:* Awesome, Allure 3's default report, hard-codes
+  Google Analytics with no opt-out (upstream: allure3#476, PR #784); the allure2 plugin honours
+  `ALLURE_NO_ANALYTICS`, set to `true` in `allurerc.mjs` and in the report job's env. **Recheck
+  on every Allure update:** the plugin's analytics switch, and that the check still passes.
+- **The check** (`allure-offline.mjs`) fails a report that loads anything from another host
+  (a Google Analytics loader, a script, stylesheet, image, frame, media or `url()`) or is no
+  report at all; else it puts a Content-Security-Policy `<meta>` first in `<head>`
+  (`default-src 'none'`, `base-uri` left out since the report sets its own `<base>`), so the
+  browser refuses any other host even if a later Allure adds one. `npm run report:selftest`
+  checks it. *Why:* no report is used or uploaded unchecked.
+- **Traces** are attachments; the report's CSP blocks the hosted trace viewer, so a trace is
+  neither sent to `trace.playwright.dev` nor viewable in the report. Download it (or the
+  `browser-failures-<engine>-attempt-<n>` artifact) and open it with `npx playwright show-trace`.
+- **CI:** the `report` job merges each engine's latest attempt and uploads
+  `allure-report-attempt-<n>` (14 days). **An artifact only:** GitHub Pages would publish test
+  names, steps and failure screenshots, and is not decided
   (plan [`2026-11-04-story-coverage.md`](../plans/2026-11-04-story-coverage.md) §4.5).
-- **History:** `historyPath` is a JSONL file (`target/browser-test/allure-history/`), kept in
-  the Actions cache under a run's key and restored by prefix; it is appended
-  (`ALLURE_APPEND_HISTORY=true`) only on pushes to `master` and `ukwikidev/followups`, so a
-  PR's report shows trends against its base without adding to them. A cache unused for seven
-  days is evicted: the trend restarts, no result is lost.
-- **Not in it yet:** the Scala specs (Allure 3 reads JUnit XML, but `ci.yml` is another
-  workflow; their IDs are in the matrix, §9.4).
-- **Locally:** after a run, from `browser-test/`, `NO_UPDATE_NOTIFIER=1 npm run report` (the
-  variable keeps npm's update notice out of the output). The paths are from that directory: the
-  reporter's `resultsDir` is resolved from the working directory. Results accumulate across runs
-  until `target/browser-test/` is deleted.
+- **History:** a JSONL file (`historyPath`, the last 30 runs by `historyLimit`) in the Actions
+  cache, appended only on pushes to the branches `browser.yml` runs on push, so a PR's report shows
+  trends against its base without adding to them. A cache unused for seven days is evicted: the
+  trend restarts, no result is lost.
+- **Not in it yet:** the Scala specs (`ci.yml` is another workflow; their IDs are in the matrix,
+  §9.4).
 
 ## 11. Guards
 

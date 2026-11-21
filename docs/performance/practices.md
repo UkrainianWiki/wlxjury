@@ -3,8 +3,7 @@
 The rules for measuring and changing the jury tool's speed and memory: the rule, why, and an
 example in this repository. Query-level rules (indexes, `EXPLAIN`, paging SQL, batches, locks)
 are in [db/practices.md](../db/practices.md) §3, §5 and §7, not repeated here. Reviewers tick
-[review-checklist.md](review-checklist.md). **Sources:** CLAUDE.md ("Agent efficiency",
-"Performance tests (Gatling)"), [`bench/README.md`](../../bench/README.md), the history records
+[review-checklist.md](review-checklist.md). **Sources:** [`bench/README.md`](../../bench/README.md), the history records
 in `docs/history/` (production-like benchmark, 2026-10-07), and the deleted plans named in
 `docs/history/README.md` (performance and memory, background distribution, gallery latency,
 region improvements).
@@ -33,15 +32,17 @@ fixture's.
 | `VotingSimulation`, `JurorGallerySimulation`, `JurorClickSimulation` | juror pages and votes: gallery, large view, vote → next file (per-click latency) |
 | `RegionFilterSimulation` | the region filter and its counts |
 | `RoundManagementSimulation`, `AggregatedRatingsSimulation` | organizer pages (round list, all-jurors views) |
-| `RoundDistributionSimulation` | creating rounds through the form: each step's submit-to-done time and heap after GC (`target/gatling/distribution-memory.txt`) |
-| `ConcurrentRoundCreationSimulation` | 10 admins creating rounds at once while jurors vote (`target/gatling/concurrent-distribution.txt`); `gatling.jobs.*` sets job workers and chunk size |
+| `RoundDistributionSimulation` | creating rounds through the form: each step's time (submit to the end of its background job), vote rows and heap after GC (`target/gatling/distribution-memory.txt`) |
+| `ConcurrentRoundCreationSimulation` | 10 admins creating rounds at once (large, small, top-N, "distribute new files") while jurors vote and browse: per-admin submit-to-done times, solo reference times and heap (`target/gatling/concurrent-distribution.txt`); `gatling.jobs.*` sets the app's job workers and chunk size for a run |
 
 *Why:* each covers one code path; a change to a juror query isn't measured by the organizer
 simulations.
 
-**1.2 The fixture.** As CLAUDE.md "Performance tests (Gatling)" describes: the ~38k-file CSV,
-20 jurors, a binary and a rated round, cached in `data/cache/` by `GatlingDbCache.cacheKey`;
-bump `GatlingDbCache.FixtureVersion` whenever `GatlingDbSetup.load` writes something different.
+**1.2 The fixture.** Each simulation restores the fixture DB: `data/wlm-UA-images-2025.csv`
+(~38k images, all in the contest's category), 20 jurors, a binary and a rated round. It is
+cached as a dump in `data/cache/`, keyed by `GatlingDbCache.cacheKey` (migrations, CSV sizes,
+fixture parameters, `FixtureVersion`); bump `GatlingDbCache.FixtureVersion` whenever
+`GatlingDbSetup.load` changes what it writes.
 Its container has a 512 MiB buffer pool (`GatlingTestFixture`, §4.6). *Why:* a stale dump
 measures yesterday's schema. Never copy `data/cache` between worktrees.
 
@@ -91,8 +92,9 @@ renamed on Commons since the CSV are checked by the proxy as in production.
 
 ## 2. Benchmarks
 
-The progressive method of CLAUDE.md ("Agent efficiency"). It applies to SQL, the app path and
-the production-like server alike.
+Benchmark progressively: reuse relevant measurements, run a small paired pilot on the actual
+application path, then expand only if the result could change the decision; stop when the
+decision is supported. It applies to SQL, the app path and the production-like server alike.
 
 **2.1 Reuse, then pilot, then expand.** Check the plans and `docs/history/` for a measurement of
 the same path first (B10–B12, write-path §4). Then a small paired pilot on the *app path*
@@ -110,8 +112,8 @@ that: a wrong count had been timed unnoticed). *Examples:* `RegionCountPairedBen
 (`-Dscalikejdbc.global.loggingSQLAndTime.enabled=false`), recorded for both variants; the same
 buffer pool, fixture and JVM flags; no other DB benchmark or test running against the server, and
 no tests while a benchmark runs (check free memory first: the laptop is short of it). Never
-benchmark in an sbt session with `coverage` on: scoverage-instrumented classes run slower
-(CLAUDE.md; start a new session or run `coverageOff`). A
+benchmark (Gatling, JMH or another) in an sbt session with `coverage` on: scoverage-instrumented
+classes run slower (start a new session, or run `coverageOff`, first). A
 production-like run models the server rather than throttling it: production's packages, MariaDB
 configuration and JVM flags; a CPU count by `--cpuset-cpus`, no CPU quota or I/O limit. Compare
 only runs made under the same conditions (suite, snapshot, machine state, on mains power); if

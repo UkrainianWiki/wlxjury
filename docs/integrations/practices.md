@@ -4,8 +4,7 @@ The services the jury tool talks to and how: the Wikimedia API and image hosts, 
 library that wraps them, and the OAuth sign-in providers. Each rule has a short why and an
 example. Which hosts may be called at all is [secure-coding.md](../security/secure-coding.md)
 §17; how tests avoid these services is [testing/practices.md](../testing/practices.md) §5;
-the OAuth setup steps are [oauth.md](../oauth.md). **Sources:** CLAUDE.md ("Testing",
-"Wikimedia Commons Integration"); secure-coding §17, §19; `docs/oauth.md` and the
+the OAuth setup steps are [oauth.md](../oauth.md). **Sources:** secure-coding §17, §19; `docs/oauth.md` and the
 [OAuth port notes](../plans/2026-11-03-oauth-login-port.md); the
 [CI and scalawiki packages plan](../plans/2026-11-03-ci-and-scalawiki-packages.md);
 `services.imports.{CommonsLogin, MwApi, AnonymousBots}`, `LocalImageCacheService`.
@@ -25,7 +24,8 @@ the OAuth setup steps are [oauth.md](../oauth.md). **Sources:** CLAUDE.md ("Test
 `MonumentListSource`, `SpecialNominationFilter`'s monument query. `AppModule` seeds scalawiki's
 bot cache (one bot per domain) with the anonymous commons and uk.wikipedia bots at start, so
 scalawiki's own default calls (`SpecialNomination.getNominationMonuments`, `CampaignList`) get
-them instead of logging in from `SCALAWIKI_LOGIN`. *Why:* scalawiki's `MwBot.fromHost`/`fromSite`
+them instead of logging in from `SCALAWIKI_LOGIN`; `SpecialNominationFilter` and
+`ContestController.fetchContests` seed before those calls too. *Why:* scalawiki's `MwBot.fromHost`/`fromSite`
 default to `LoginInfo.fromEnv()`; a machine with the bot's credentials logged it in from every JVM
 (CI plan, "Anonymous Wikimedia access"). Not covered: a scalawiki default call for another domain
 in a JVM where no bot of that domain was created first; wlxjury has none, and a new one must

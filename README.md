@@ -22,7 +22,7 @@ others in the [docs index](docs/README.md); open work: [roadmap](docs/plans/2026
 - Past reviews and their evidence: [docs/history/](docs/history/README.md) (the 2026-11-02
   re-review; the earlier reviews are in git, listed there).
 - Authentication, authorization, CSRF and error handling in the app: [CLAUDE.md](CLAUDE.md),
-  "Authentication & Authorization"; host names and secure cookies in production:
+  "Authentication and authorization", and [secure coding](docs/security/secure-coding.md); host names and secure cookies in production:
   [docs/deployment.md](docs/deployment.md).
 
 [![CI](https://github.com/UkrainianWiki/wlxjury/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/UkrainianWiki/wlxjury/actions/workflows/ci.yml)

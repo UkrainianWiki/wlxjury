@@ -42,7 +42,14 @@ server error show a short reference on the page or in the JSON (`{error, referen
 
 **1.3 Named loggers by concern.** `security.authz` (denials, WARN), `security.account`
 (invitations, links, OAuth: `oauth_*`; a user import line that failed,
-`user_import_line_failed byAccountId=… contestId=… error=<class name>`, WARN), `security.auth` (today one line:
+`user_import_line_failed byAccountId=… contestId=… error=<class name>`, WARN; the account actions
+of secure-coding §14, INFO, by ids only: `account_search`, `account_added_notice`,
+`wiki_confirm_page`, `add_confirmed_unverified_wiki`, `wiki_taken_panel`, `password_set_by_admin`,
+`password_set_by_admin_refused`, `account_retired`, `account_retire_refused`, `duplicates_report`,
+`accounts_kept_apart`, `account_join_queued`, `account_join_refused`, `account_joined`,
+`account_join_abandoned`, `sign_in_refused reason=account_join` (`LoginResults`); WARN:
+`account_added_notice_failed`),
+`security.auth` (today one line:
 `oauth_choose_proof_failed accountId=… proof=password ip=…`, a wrong password in the OAuth
 account chooser, `OAuthChooserController`; the password sign-in form, `LoginController`, logs no
 failure line: OP4), `security.roles`, `security.password`; `coi` (conflict-of-interest

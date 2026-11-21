@@ -13,8 +13,8 @@ follow these yet" list for triage where one exists):
 | [security/](security/) | [secure-coding.md](security/secure-coding.md) | [review-checklist.md](security/review-checklist.md); status: [register.md](security/register.md) | auth, sessions, roles, SQL, views and JS, config, exports, logs, personal data |
 | [db/](db/) | [practices.md](db/practices.md) | [review-checklist.md](db/review-checklist.md) | SQL, schema, migrations, transactions, locking |
 | [performance/](performance/) | [practices.md](performance/practices.md) | [review-checklist.md](performance/review-checklist.md) | load tests, benchmarks, speed or memory changes |
-| [testing/](testing/) | [practices.md](testing/practices.md); the user stories tests cite: [stories.md](testing/stories.md) | [review-checklist.md](testing/review-checklist.md) | writing or running tests, CI, coverage, story tags |
-| [workflow/](workflow/) | [practices.md](workflow/practices.md) | — | branches, PRs, reviews, commits, releases |
+| [testing/](testing/) | [practices.md](testing/practices.md); what each browser spec covers: [browser-tests.md](testing/browser-tests.md); the user stories tests cite: [stories.md](testing/stories.md) | [review-checklist.md](testing/review-checklist.md) | writing or running tests, CI, coverage, story tags |
+| [workflow/](workflow/) | [practices.md](workflow/practices.md) | — | branches, PRs, reviews, commits, releases, agent runs |
 | [operations/](operations/) | [practices.md](operations/practices.md) | — | logging, readiness, backups, deploys, monitoring |
 | [integrations/](integrations/) | [practices.md](integrations/practices.md) | — | Wikimedia API, scalawiki, OAuth providers |
 | [ui/](ui/) | [practices.md](ui/practices.md) | — | templates, scripts, messages, themes, accessibility |
@@ -54,7 +54,7 @@ roadmap. A plan that takes it up cites it; once nothing is open in it, it follow
 
 | A change that… | Updates |
 |---|---|
-| adds a security rule, guard or exception | secure-coding (section and §21), its checklist, the register if an item's status changed |
+| adds a security rule, guard or exception, or changes a security item's status (a fix merged or deployed) | secure-coding (section and §21), its checklist, the register (the row, and its state line) |
 | adds a query pattern, migration rule, lock or isolation rule | db practices (and §10 guards, §11 triage) |
 | adds a test layer, test flag, fixture, guard self-test or CI job | testing practices (§1, §5 or §8, §11) |
 | changes how batches, reviews, commits, stacks or releases work | workflow practices |
@@ -67,6 +67,8 @@ roadmap. A plan that takes it up cites it; once nothing is open in it, it follow
 | adds or changes a user-visible flow | the story catalogue (`docs/testing/stories.md`): a story ID, its guide section, a tagged test or its uncovered entry (testing §9.4) |
 | starts, lands or decides a batch | the roadmap |
 | adds, removes or automates a manual check | the release checklist in deployment.md ("Release checklist") |
+| fixes code listed in a "where the code doesn't follow these yet" list | that list (the entry removed or marked fixed) |
+| needs a new private string refused | the private list outside the repository (maintainers), never the repository |
 
 The rule is in workflow §8: the update is in the same PR, and the reviewer checks it.
 
@@ -75,8 +77,23 @@ The rule is in workflow §8: the update is in the same PR, and the reviewer chec
 - **Rules, not investigation detail.** A practices doc says what to do, why (one or two
   sentences), and an example; measurements, logs and alternatives stay in the plan or the
   commit.
-- **Measurements carry ids:** the commit, the CI run id or the log path, and the settings
-  (`4a861818`, run 41649422116).
+- **What is, not how it came to be.** Practices, reference and operational docs (deployment.md,
+  the security rules) state the current rule or procedure: no dates, "since" or "until", no
+  quotes of who decided what when, no superseded approaches, past run results or counts of
+  tests and runs. That history belongs in the plan, the CHANGELOG, `history/` or the commit. A
+  one-off procedure leaves the operational docs once it is done; its record stays in the roadmap.
+- **Sections stay short and focused.** A detailed overview (each spec, each check, each
+  setting) goes into its own reference document, linked from the section; for example the
+  testing practices' §10 and `testing/browser-tests.md`.
+- **Measurements carry ids** where a doc keeps one to justify a current setting: the commit,
+  the CI run id or the log path, and the settings (`4a861818`, run 41649422116).
+- **Point to code by name.** A rule or a triage entry names the class and method; a line
+  number is only a hint, refreshed whenever the entry is touched.
+- **No personal data or local paths.** No people's names (say the role: the maintainer, an
+  admin), account names, personal addresses, home folders or local paths of a checkout or a
+  worktree; repository-relative paths and `{placeholder}` names instead; server commands name
+  no account (`ssh wlm.org.ua`). The private-strings check refuses known ones
+  (CONTRIBUTING.md, "Private strings"); reviews look for the rest.
 - **Link to what lasts:** a section of a practices or reference doc, a `history/` file, or
   `<commit>:<path>` (`git show 98a8a79e:docs/plans/…`) for a deleted file. Never leave a stub file
   that only points elsewhere. Run a link check over every tracked `.md` before a docs PR.
@@ -90,7 +107,7 @@ The rule is in workflow §8: the update is in the same PR, and the reviewer chec
   too: written to a file, committed with `git commit -F`.
 - **Size:** a practices doc stays readable in one sitting (about 150–500 lines); a rule that
   belongs to another doc is pointed to, not copied.
-- **The changelog is a development changelog** (the user, 2026-11-03): each release has
+- **The changelog is a development changelog:** each release has
   "Features" (what organizers and jurors notice) and "Development" (the important engineering
   changes). It leaves out unmerged work, hosting and server details, and trivial refactors.
   Deployed releases are dated from their migrations (production's
