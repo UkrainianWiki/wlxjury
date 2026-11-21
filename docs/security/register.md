@@ -7,7 +7,7 @@ plan](../plans/2026-11-02-security-resolution.md)'s (S1–S10). Dated reviews an
 snapshots: their tables are not updated, this one is. Rules: [secure-coding.md](secure-coding.md);
 reviews: [review-checklist.md](review-checklist.md).
 
-State on `master` at `d2756b95` (2026-11-21): S1, S2, S3, S5, S6, S7, S10 and C1 are on master
+State on `master` at `0b318262` (2026-11-21): S1, S2, S3, S5, S6, S7, S10 and C1 are on master
 and deployed with the 26.11 releases; S4 and S8 moved to wlxjury-infra; S9 skipped. Rows not
 re-checked on 2026-11-21 keep their earlier date.
 

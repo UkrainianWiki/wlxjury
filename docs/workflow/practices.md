@@ -222,10 +222,10 @@ reruns on one master SHA separate flakes from failures; a red one is still looke
 `ukwikidev/followups` and reached GitHub as stacked PRs (`[NN] <title>` on `stack/NN-<theme>`,
 each based on the previous one; the series and its rules are described in
 `docs/plans/2026-11-03-pr-series.md`). Master then got that work as squash commits, one per
-stacked PR, #184–#390, with the top `1a651735` (its tree is `stack/207-guide-shots`'s). A branch
+stacked PR, #184–#390, with the top `88a0355e` (its tree is `stack/207-guide-shots`'s). A branch
 made on the old history bridges once: if it contains `origin/stack/207-guide-shots`,
-`git merge -s ours -m "Bridge: master's squash of #184-#390 has this content" 1a651735`; if not,
-first `git merge origin/stack/207-guide-shots`, then the same. `git diff 1a651735...HEAD --stat`
+`git merge -s ours -m "Bridge: master's squash of #184-#390 has this content" 88a0355e`; if not,
+first `git merge origin/stack/207-guide-shots`, then the same. `git diff 88a0355e...HEAD --stat`
 must show only the branch's own changes. The rest of the stack (#391–#395) goes to master
 bottom-up by §6.5. `stack/207-guide-shots` stays until every bridged branch is merged.
 

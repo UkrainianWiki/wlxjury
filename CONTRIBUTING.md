@@ -53,11 +53,11 @@ its base to `master`. Merges only; no rebase or force-push.
 ### Branches from before 2026-11-20
 
 Until then work reached GitHub as stacked PRs on `stack/*` branches. Master got that work as
-squash commits, one per stacked PR (#184–#390, top `1a651735`), so a branch made on the old
+squash commits, one per stacked PR (#184–#390, top `88a0355e`), so a branch made on the old
 `stack/*` or `ukwikidev/followups` history can't merge master plainly. Bridge it once: if it
-contains `origin/stack/207-guide-shots`, run `git merge -s ours 1a651735`; if not, first
+contains `origin/stack/207-guide-shots`, run `git merge -s ours 88a0355e`; if not, first
 `git merge origin/stack/207-guide-shots`, then the same. Check with
-`git diff 1a651735...HEAD --stat`. Details: [workflow practices](docs/workflow/practices.md)
+`git diff 88a0355e...HEAD --stat`. Details: [workflow practices](docs/workflow/practices.md)
 §6.7.
 
 ## Private strings
