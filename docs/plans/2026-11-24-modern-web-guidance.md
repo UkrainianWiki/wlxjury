@@ -52,8 +52,9 @@ What the repository already has, so adoption adds only what is missing:
 
 - Rules with guards: docs/ui/practices.md (CSP, accessibility, supported browsers, guards table),
   docs/testing/practices.md §10 (browser tests), and a review checklist per area
-  (docs/*/review-checklist.md, indexed in docs/README.md). There is no front-end performance or
-  web-platform checklist.
+  (docs/*/review-checklist.md, indexed in docs/README.md). docs/performance/review-checklist.md exists but covers
+  load tests, benchmarks and server and memory work, with no front-end or web-platform items;
+  docs/ui has no checklist file yet (the index shows none for ui).
 - Automated checks: the compatibility lint (`.browserslistrc`, `eslint-plugin-compat`,
   `stylelint-no-unsupported-browser-features`, a step of `ci.yml`); axe-core per page in
   Chromium; zero CSP violations and console errors as a guard; Playwright on Chromium, Firefox
@@ -81,7 +82,7 @@ tidy-up or a question. "Guide topic" is what to search; the exact guide ID is lo
 | F6 | `window.confirm()` for the conflict-of-interest confirmation; a modal `<dialog>` is the guidance's pattern, accessible and testable, and inside the 109/115 floor. | `public/javascripts/round-form.js:131` | dialog, confirm dialog | low |
 | F7 | `prefers-reduced-motion` is handled in one rule only (`main.css:670`). Our own CSS has about two transitions, so it is fine there; Unite Gallery's slide and zoom animations are unchecked. | `public/stylesheets/main.css`, vendored gallery | reduced motion | low |
 | F8 | jQuery is a blocking script in `<head>` (`layout.scala.html:49`); Bootstrap is already `defer`, with the reason documented. Moving jQuery changes every page script's order, so it needs a measurement first. | `app/views/layout.scala.html` | script loading | low |
-| F9 | Key handlers keep a `keyCode` fallback next to `key` (`large-sections.js:42`); the guidance prefers `key` / `code`. The Mac Delete bug (U7) is this class of problem. | `public/javascripts/large-keys.js`, `large-sections.js` | keyboard events | low (overlaps U7) |
+| F9 | The section toggle keeps a `keyCode` fallback next to `key` (`large-sections.js:42`); the guidance prefers `key` / `code`. The Mac Delete bug (U7) is this class of problem. | `public/javascripts/large-sections.js:42` (the vendored `unitegallery.js` has the same, not ours to change) | keyboard events | low (overlaps U7) |
 | F10 | Focus visibility of binary thumbs (WCAG 2.4.7), the missing on-page key list, and no file title in the large view are open already as U11, U8, U13. Listed here so they are not counted twice. | docs/ui/practices.md §9 | accessibility, focus | medium (existing) |
 | F11 | No lab or field measurement of INP, LCP or CLS. Gatling measures the server; the browser tests check behaviour, not timings. A performance guide cannot be shown to help without it. | none | CWV, INP diagnostics | medium (a gap, not a defect) |
 | F12 | Not findings: the CSP and security headers, the theme system, headings, `rel=noopener` on `target=_blank` (no missing case found by grep), the compatibility floor and its lint, and the `pageshow` handlers (`submit-once.js`, `preview-confirm.js`, `source-identity.js`) are in place. | | | none |
@@ -120,7 +121,7 @@ Steps and effort (hours of work for one person or agent, not elapsed time):
 | Step | What | Effort |
 |---|---|---|
 | 1 | Run `legacy-scan` over `public/`, `app/views` and the CSS with telemetry off, in a throw-away checkout; triage with its rubric; add real findings to section 3 or to docs/ui/practices.md §9 as U-numbers | 2 h |
-| 2 | `docs/ui/review-checklist.md` (new, short, in the format of the other review checklists): the guidance areas of section 2 that apply, the 109/115 floor, "retrieve the guide before changing a template, script or CSS", and a PR note "Modern Web Guidance: IDs applied or none"; link it from docs/README.md and CLAUDE.md's practices list | 2 h |
+| 2 | `docs/ui/review-checklist.md` (new, short, in the format of the other review checklists; front-end items only, so it does not duplicate docs/performance/review-checklist.md, which stays server-side and gets one pointer line to it): the guidance areas of section 2 that apply, the 109/115 floor, "retrieve the guide before changing a template, script or CSS", and a PR note "Modern Web Guidance: IDs applied or none"; link it from docs/README.md and CLAUDE.md's practices list | 2 h |
 | 3 | Add the skill to the agents' setup (a project-scoped plugin entry or an install note in CONTRIBUTING.md or DEV.md) with `DISABLE_TELEMETRY=1`; a committed `.mwgrc` that keeps origin trials and volatile features off | 1 h |
 | 4 | Fix F1 to F3 in one PR (`loading`, `decoding`, dimensions, `fetchpriority`) with a view spec for the attributes and a browser-test check that the first images load; verify the Unite Gallery path first | 4 h |
 | 5 | Optional B: `.github/workflows/web-guidance-scan.yml`, `workflow_dispatch` plus a monthly schedule, pinned Node 22 and a pinned CLI version (not `@latest`), `contents: read`, report as an artifact | 3 h |
@@ -134,7 +135,7 @@ process; C's budgets need an owner.
 
 Risks: the guides push modern APIs and this app's floor is Chrome 109 and Firefox 115, so an
 agent that follows a guide without its fallback can break old browsers that the lint does not
-catch (`text-wrap: balance` is already such a case). The checklist item "inside the floor, or
+catch (docs/ui/practices.md §6.1a says the lint does not flag every CSS property). The checklist item "inside the floor, or
 behind the fallback the guide gives" is the control. Second, `@latest` and plugin auto-update
 change what agents are told, so a PR cites the guide ID it relied on. Third, the telemetry
 above. Fourth, speculation-rule or prefetch guides must not be applied to pages with side
