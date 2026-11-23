@@ -11,6 +11,7 @@ import play.api.mvc.{PlayBodyParsers, RequestHeader}
 import play.api.routing.Router.Routes
 import services.ContestService
 import services.diagnostics.{ContestHealth, RecentActivity}
+import services.series.{ReuseReport, ReuseScanHandler}
 import sttp.apispec.SecurityScheme
 import sttp.apispec.openapi.{Components, OpenAPI}
 import sttp.model.HeaderNames
@@ -161,11 +162,35 @@ class Api @Inject() (
         }
     )
 
+  private val reuseSettings = ReuseReport.Settings(configuration)
+
+  private val reuseReport = secured("reuseReport", rootOnly).get
+    .in("diagnostics" / "reuse")
+    .out(jsonBody[DiagnosticsJson.Reuse])
+    .description("The reuse dry-run report (contest series plan, CY-0): the latest contest_reuse_scan job's " +
+      "progress, and the latest finished scan's totals and the contests it reports, as root's /admin/contests/reuse " +
+      "shows them: root only. Ids and counts; it only reads (root starts a scan on that page).")
+    .serverLogicSuccess(_ => _ => blocking(scalikejdbc.DB.readOnly { implicit s =>
+      DiagnosticsJson.reuse(ReuseScanHandler.latest(), ReuseScanHandler.latestDone())
+    }))
+
+  private val reuseContest = secured("reuseContest", rootOnly).get
+    .in("diagnostics" / "reuse" / path[Long]("id"))
+    .out(jsonBody[DiagnosticsJson.ReuseContest])
+    .description("One contest's reuse dry-run report, read now with the latest finished scan's eras: its clusters, their " +
+      "signals, proposed identity and target, buckets and the counts a split would touch: root only. No juror by name.")
+    .serverLogic(_ =>
+      id =>
+        blocking(contestService.getContest(id).toRight(ApiFailure.NotFound).map { contest =>
+          DiagnosticsJson.reuseContest(scalikejdbc.DB.readOnly(implicit s =>
+            ReuseReport.report(contest, ReuseScanHandler.latestEras(), reuseSettings)))
+        }))
+
   /** Every API endpoint; each is named and classified for read-only tokens in
     * [[ApiAuth.Endpoints]] (`api.ApiEndpointScopeSpec` fails on one that isn't).
     */
   private[api] val apiEndpoints: List[ServerEndpoint[Any, Future]] =
-    List(createContest, getContest, updateContest, listContests, contestHealth, recentActivity)
+    List(createContest, getContest, updateContest, listContests, contestHealth, recentActivity, reuseReport, reuseContest)
 
   /** Any other path under `/api`: a JSON 404, not the HTML page of the app's error handler. */
   private val notFound: ServerEndpoint[Any, Future] =

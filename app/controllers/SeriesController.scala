@@ -6,7 +6,7 @@ import org.scalawiki.wlx.dto.ContestType
 import play.api.Configuration
 import play.api.i18n.I18nSupport
 import play.api.mvc.{AnyContent, ControllerComponents, EssentialAction, Request, Result}
-import services.series.{ContestReuse, ContestSeries, SeriesIdentity, SeriesProposals}
+import services.series.{ContestReuse, ContestSeries, ReuseReport, ReuseScanHandler, SeriesIdentity, SeriesProposals}
 
 import javax.inject.Inject
 
@@ -112,7 +112,14 @@ class SeriesController @Inject() (cc: ControllerComponents, blocking: BlockingEx
         val (inTicked, others) = candidates.partition(c => SeriesProposals.keyOf(c).exists(keys))
         ContestReuse.checkAll(others, reuseSettings, files = false) ++ ContestReuse.checkAll(inTicked, reuseSettings)
     }
-    SeriesProposals.of(contests, SeriesJdbc.findAll(), flagged)
+    // and those the latest finished reuse scan reports (§3.5; CY-0), however stale: root assigns them
+    // one by one; a running, failed or cancelled scan's partial results are never read
+    val reported = ReuseScanHandler.latestDone().toSeq.flatMap { job =>
+      ReuseScanHandler.stateOf(job).contests.filter(c => ReuseReport.Verdict.KeptOut(c.verdict))
+        .map(c => c.contestId -> ContestReuse.Report(job.id, c.verdict))
+    }.toMap
+    val all = (flagged.keySet ++ reported.keySet).map(id => id -> (flagged.getOrElse(id, Nil) ++ reported.get(id))).toMap
+    SeriesProposals.of(contests, SeriesJdbc.findAll(), all)
   }
 
   def proposalsPage(): EssentialAction = withAuthOn(blocking)(root) { user => implicit request =>

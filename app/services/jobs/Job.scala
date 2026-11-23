@@ -170,6 +170,13 @@ object JobJdbc {
   def latestByDedupeKey(key: String)(implicit session: DBSession = AutoSession): Option[Job] =
     sql"SELECT $columns FROM job WHERE contest_id IS NULL AND dedupe_key = $key ORDER BY id DESC LIMIT 1".map(extract).single()
 
+  /** The latest finished (`done`) job with the dedupe key, of no contest (as [[latestByDedupeKey]]):
+    * results a running, failed or cancelled job hasn't completed are never read from it.
+    */
+  def latestDoneByDedupeKey(key: String)(implicit session: DBSession = AutoSession): Option[Job] =
+    sql"""SELECT $columns FROM job WHERE contest_id IS NULL AND dedupe_key = $key AND status = ${JobStatus.Done}
+          ORDER BY id DESC LIMIT 1""".map(extract).single()
+
   /** The contest's jobs of these kinds, the newest first, at most `limit` (the contest index). */
   def ofContest(contestId: Long, kinds: Seq[String], limit: Int)(implicit session: DBSession = AutoSession): Seq[Job] =
     if (kinds.isEmpty || limit <= 0) Nil

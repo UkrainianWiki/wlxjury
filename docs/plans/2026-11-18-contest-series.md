@@ -1,10 +1,13 @@
 # Contest series: adminship across years, and splitting contests reused across years (plan, 2026-11-18)
 
-**Status:** CY-1 built on `stack/209-series-cy1` (V109; 2026-11-20); the rest is plan. The first
+**Status:** CY-1 built on `stack/209-series-cy1` (V109; 2026-11-20); CY-0, the reuse dry-run
+report, built on `stack/212-series-cy0-report` (no migration; its production-copy numbers in §4.7);
+the rest is plan. The first
 batch, CA8 and the second batch are decided (2026-11-18). **Refined by the maintainer on
 2026-11-20:** a national contest may host rounds of several other countries (R4, §4.1); CY-1's
-inline reuse check reads every round's signals for it (§3.2), and CY-4 is now likely (§4.7, §7).
-Only the third batch (CA9–CA13, and CA23 from 2026-11-20) remains open; CA24 was decided on 2026-11-20, asked after Q0–Q4 and the CY-0 report. Revised
+inline reuse check reads every round's signals for it (§3.2). **Every decision is taken:** CA24 and,
+after the CY-0 report's numbers, the third batch (CA9–CA13 and CA23) were decided on 2026-11-20, each
+as recommended, so CY-4 will be built (§4.4, §7) with no open decision. Revised
 after the final review of 348407ca. **CA20 reworked by the maintainer later on 2026-11-18:** one
 start year per grant replaces the fixed window. **CA17 re-decided and CA18 dropped the same day:**
 the start year is the only rule; the grant date no longer matters.
@@ -16,8 +19,20 @@ adminship after each PR, then the Nepal admin (§7, Pilot).
 - **Reviewed:** an independent review, a follow-up review, then a review of the series rework
   (a6ab6f82). The security rules those reviews set are kept here, re-expressed for series admins.
 
-**Decided by the maintainer, 2026-11-20:**
+**Decided by the maintainer, 2026-11-20** (the third batch after the CY-0 report's numbers, §4.7,
+and CA24; each as recommended):
 
+- **CA9: the approach.** The report, then per contest root confirms: move the clean clusters into
+  new contests of the right series and year, leave R3, or start clean. CY-4 will be built.
+- **CA10: the source's file links are kept.**
+- **CA11: memberships on a move.** The Juror role in the target for the moved jurors only, skipping
+  deleted accounts, O14 conflicts and protected accounts, the rest listed; their memberships in the
+  source stay.
+- **CA12: the way back.** Undo (by `split_item`) plus a dump before the first production run.
+- **CA13: where the split runs.** Root's page and a job.
+- **CA23: the Admin role in a cluster's target.** The confirmation lists the cluster's known
+  runners with none pre-ticked; root ticks who gets Admin in the target (and may add others);
+  in-app notices, no mail.
 - **CA24: types scalawiki doesn't know.** When scalawiki doesn't know a contest's type, its type
   code is the word after "Wiki Loves" in the contest's name, in lower case (`folklore`, `fashion`,
   `science`); no migration (`series.contest_type` is VARCHAR(32)). The proposals then group such
@@ -101,8 +116,9 @@ adminship after each PR, then the Nepal admin (§7, Pilot).
 The first batch (CA1, CA2, CA4, CA6, CA14, CA15, CA16, CA19), CA8 and the second batch (CA3,
 CA17, CA18, CA20, CA21, CA22) are decided; CA20 was reworked the same day (one start year per
 grant), CA16 reconciled with it, CA17 re-decided (reach from the start year on) and CA18
-dropped. **Only the third batch (CA9–CA13, with CA23 added 2026-11-20) remains open,** (CA24 decided 2026-11-20) asked one by one after Q0–Q4 and the
-CY-0 report.
+dropped. The third batch (CA9–CA13, with CA23 added 2026-11-20) was asked one by one after Q0–Q4
+and the CY-0 report, and decided on 2026-11-20 as recommended, as was CA24. **No decision remains
+open.**
 
 The maintainer asked on 2026-11-18:
 
@@ -846,8 +862,9 @@ country. For an International target, any country of its type and year matches.
   - **memberships follow the cluster:** a move gives the cluster's jurors (its `round_user`
     accounts) the Juror role in the target contest, by `UserService.addToContest`, with in-app
     notices and no mail; the people who ran those rounds (the rounds' `status_changed_by`, the
-    jobs' `created_by`) are listed for root to give the Admin role there (**open, CA23:** the
-    recommendation is none pre-ticked, as multi-role decision 7 and CA6). Their memberships in
+    jobs' `created_by`) are listed for root to give the Admin role there (**CA23, decided
+    2026-11-20:** none pre-ticked, as multi-role decision 7 and CA6; root ticks who gets Admin and
+    may add others; in-app notices, no mail). Their memberships in
     the host contest stay as they are (no automatic removal) and are listed for the host's Admin
     to keep or remove;
   - **COI and regions follow the target:** the moved rounds' conflicts of interest are computed
@@ -873,7 +890,7 @@ can disqualify them.
 
 | Signal | Source | Use |
 |---|---|---|
-| S1 file era | `round_image.page_id` against Q1's per-year min/max (nearest band) | the likely year; never links |
+| S1 file era | the median page id of the cluster's largest round against each year's centre (Q1 tuned, below; the nearest) | the likely year; never links |
 | S2 country categories | the files' category titles | the buckets |
 | S3 round id era | round ids | report |
 | S4 `vote.voted_at` | `vote` | since V97 only |
@@ -883,6 +900,30 @@ can disqualify them.
 
 `round.created_at` is not used: it is unreliable (466's 1601 was created 2026-04-08 but chains
 from 2025's 1597; 1381 was created in 2025 from 2024's rounds).
+
+**Q1 tuned (CY-0, the production copy, 2026-11-20):** per-year minimum and maximum page ids are
+spoiled by a few files of other years and by test ids up to 9.2·10¹⁸ (2016's maximum), while each
+contest's median page id falls in a narrow band per year (2020 about 92 M, 2021 107 M, 2022 121 M,
+2023 134 M, 2024 150 M, 2025 171 M, 2026 195 M). So a year's centre is the median of its contests'
+medians (contests whose round ids span more than 150 left out, as Q1 says), and a value's year is
+the nearest centre, none when it lies farther than the widest gap between two years (a test id).
+S3 does the same with round ids.
+
+**How the report names a cluster's identity** (`ReuseReport`): the first round's category filter
+(S5r), then the identity most of its files' categories name (S2: of the "Wiki Loves <type> <year> in
+<country>" categories, the type and year whose categories hold the most files, each file counted
+once over them all, if more than half of the cluster's files, and its country if that country's
+categories hold more than half of them, again each file once, else of many countries); missing
+parts are the host's type and country and S1's year. **Root's choice** when S5r and S2 name a part differently, when another round's filter does,
+when S1 places the files in another year than the one named, or when S1 alone places a cluster no
+signal names in another year than the host's (S1 never links). In a contest not of one known
+country (international, or a region such as "Africa"), another year's or type's cluster whose
+signals name one country is root's choice too, proposed as of many countries (its national
+contest's, or an international contest's country round?): never sent to a national series
+automatically. A country written as the host's own ("Wales" in a Wales contest, which scalawiki
+doesn't resolve) is the host's; a cluster naming no country there keeps the host's place, its own
+series' next year. S5 (import sources naming it), S4 and S6 are shown, never
+decisive.
 
 **Defaults the report applies per cluster** (from 466, §4.7):
 
@@ -905,6 +946,24 @@ from 2025's 1597; 1381 was created in 2025 from 2024's rounds).
   the CLI's `COMMANDS` (`scripts/diagnostics/wlxjury-diag.py`), with its tests;
 - a cached `contest_reuse_scan` job, one contest per step. It reuses D-1a's H1/H2 and is H21's
   full form.
+
+**Built (CY-0, `stack/212-series-cy0-report`, 2026-11-20):** `services.series.ReuseReport` (one
+contest's clusters, signals, identity, buckets, proposal and people), `ReuseScanHandler` (the job:
+every contest's era sample, then every contest's report, its summaries kept in the job's state;
+no contest, root's; a step only reads and writes nothing but the job's own row; the pages, the API
+and the series proposals read only the latest finished scan's results, a running scan showing its
+progress; the pages and the API read in `DB.readOnly` sessions), `ReuseReportController` (the two pages and
+"Scan every contest", root only), `GET /api/diagnostics/reuse` and `GET /api/diagnostics/reuse/{id}`
+(both open to D-1b's read-only token, root's only), `wlxjury-diag reuse [id] [--verbose]`. The
+inline check is reused for the contest's signs (`ContestReuse.check`), and the series proposals now
+also leave out the contests the latest scan reports (§3.5). No migration.
+
+**What it lists for the third batch's decisions** (asked after these numbers and decided on
+2026-11-20, never by it): per
+cluster the rows a move would change (rounds, comments, jobs; votes untouched: CA12), its jurors
+with their host role, deleted or protected accounts and a conflicting role in an existing target
+(CA11), who ran its rounds (status changes, jobs; CA23), and per contest the files only moved
+rounds use (CA10); the totals give the scale for CA9 and CA13.
 
 **Per cluster it shows:**
 
@@ -983,7 +1042,8 @@ Root confirms one contest's plan, and a `contest_split` job runs it.
 
 ### 4.5 Safety and Undo
 
-**Before applying:** a plan hash, and a dump before each batch (its operation id is kept).
+**Before applying:** a plan hash, and a dump before each batch (its operation id is kept), the first
+before the first production run (CA12, decided 2026-11-20: Undo plus a dump).
 
 **Undo (CA12) reverses `split_item`:**
 
@@ -1043,10 +1103,44 @@ votes since.
   - So one contest needs about a dozen moves into six or more series, which "start clean" can't
     replace.
   - Q0–Q4 on the production copy give the count (Q5 serves the assignment proposals).
-  - **CY-4 is now likely,** not just conditional: R4 hosts can't be fixed by "start clean", since
-    their clusters are other countries' whole contests. It stays **gated on the CY-0 report's
-    numbers**: CY-0 counts the R4 hosts and their clusters, and CY-4 starts only if they warrant it.
-  - If there are few cases, "start clean" and leaving the history are enough (CA9).
+  - **CY-4 will be built** (CA9, decided 2026-11-20 on the CY-0 report's numbers below): R4 hosts
+    can't be fixed by "start clean", since their clusters are other countries' whole contests.
+- **The dry run on the production copy** (CY-0, the copy at V107, 2026-11-20, SELECTs only in a
+  session READ ONLY on the server; the report's code through a harness, `ReuseCopyHarness`, since
+  the copy predates V109; rerun after the review's fixes: distinct S2 counts, international hosts,
+  "the Philippines" read as national):
+  - **286 contests** (239 with rounds): **246 with nothing to report**, 18 with the inline check's
+    signs only (mostly international contests' country rounds and old sources), **22 reported**:
+    14 for root's choice, 7 with clusters to move, 1 to leave.
+  - **Their 275 clusters:** 65 their own, 59 with no signal (stay), 71 R1, 73 R2, 7 R4; proposed
+    67 move, 31 root's choice, 53 leave (99 empty, 17 with mixed files, R3), 124 stay.
+  - **46 moves** (one per target series and year) from **15 contests**; **2 R4 hosts** (466 and
+    489, WLE 2021 Moldova); **7 active rounds** in clusters to move (907, 1046, 1235, 1358, 1654,
+    1900, 1967), so a move there needs stopping first (§4.5). No international contest holds
+    another year's or type's country rounds (the rule that makes them root's choice found none).
+  - **What a move touches:** 62,930 files to link into targets, 172 jurors to add (89 of them judge
+    only moved rounds in their host), 52,567 files the sources would keep for moved rounds only
+    (CA10), 1,052 rows (rounds, comments, jobs; no vote). Only 1 of the 67 clusters to move has a
+    known runner (CA23). 466 alone: 13,431 files, 10 jurors, 67
+    rows.
+  - **466 as predicted:** 22 clusters (rounds without `previous` are clusters of their own, so a
+    year can be two: 2025 is 1592, 1593 and 1594); 2020's two stay; 8 moves (WLE Nepal 2021, 2023,
+    2024, 2025, 2026; WL Fashion 2022 Philippines; WL Folklore 2026 Nepal; WLE 2026 Bhutan, active
+    1900); 1250–1253 and 1592 empty, left; 1255 root's choice (S5r Philippines, S2 Nepal); 1258
+    stays (its filter "WLE PH 2023 Quality Photos" names no year, so no identity: shown, empty).
+  - **Against Q3 and Q4:** of Q3's 17 contests whose round ids span over 150, 12 are reported
+    (the other 5 are clean: national contests with a late round or old rounds of their own); Q4
+    (4.7 s) finds 22 contests with over 20 file links to another year's categories, 13 of them
+    reported, the others contests whose files carry old categories but whose rounds don't (a Ghana
+    contest's category is an old shared one).
+  - **Cost:** the eras pass 4–6 s over all contests, the reports 50–64 s (median 76–99 ms a
+    contest, the largest about 2 s, contests 603 with 118 k files and 116; runs on a laptop vary), each one job step; the file reads use keys
+    only on the copy (`round_image` PRIMARY, `category_members` by page).
+  - **A year can be split across actions:** 466's 2025 is three clusters (rounds without `previous`
+    are clusters of their own), 1592 empty and left, 1593 and 1594 moved; CY-4's confirmation shows
+    them side by side under the one target, and root may move an empty one with the others.
+  - So the numbers support **CY-4** (46 moves in 15 contests, 2 R4 hosts), and CA9 decided it
+    (2026-11-20).
 
 ## 5. UI
 
@@ -1204,12 +1298,12 @@ Everyone else with a contest in the series sees only their own contests' rows.
 | PR | Content | Depends on | Migration | Size |
 |---|---|---|---|---|
 | Now (decided) | Root creates WLM 2026 in Nepal and adds the admin | — | — | minutes |
-| **CY-0** | The reuse report; Q0–Q4 tuning | D-1a, D-1b | — | M (3–4 days) |
+| **CY-0** | The reuse report; Q0–Q4 tuning. Built on `stack/212-series-cy0-report` (§4.3, numbers in §4.7) | D-1a, D-1b | — | M (3–4 days) |
 | **CY-1** | Series table and key, derived previous, `contest_change` with batches, retired contests and series, `/admin/series`, proposals with bulk confirm, affected-grants list and batch undo, **the inline reuse check** (with every round's signals, R4), the menu grouped by series, the `/contests` filter, docs. Built on `stack/209-series-cy1` | D-1a | V109 | M–L (6–7 days) |
 | Ops after CY-1 | **Production assignment:** Q0 and Q5 on the copy, then root's bulk confirmation on production, in batches | CY-1 | — | 1 day |
 | **CY-2** | Series admins: `series_admin` with its live-grant key, CA19 adds with the grantee rules, root-only re-grant, **the chained revoke (required) with three-level specs**, root's 24-hour grants view, join and retirement hooks, `seriesAccountContests` in the account rules (CA17), `withSeries(user, currentContestId)`, `derivedRoles`, `contestPermission` real-only with the `derived = true` opt-in and `inContestReal`, CA20 derivation from `admin_from_year` with its computed default, bounds and root's later edit (logged), every action classified, `isProtectedTarget` replacing the 26 target checks, COI, the users-page line, the change-log view, the menu entry and landing, the grant UI with the start year and the contest list, guard specs, negatives; its own security review. Series admins' creation path and CA6's disabled grantees ship with whichever of CY-2 and CY-3 lands second | CY-1 | next free at merge (V111 now) | L (14–16 days) |
 | **CY-3** | Creating contests: the series page, the next-year path (CA4), settings, the people picker, root's notices, the H1/import links. Creation by series admins (CA16) and CA6's disabled grantees ship with whichever of CY-2 and CY-3 lands second | CY-1 | — | M (5–6 days) |
-| **CY-4** | Split, Undo, redirects, runbook; R4's per-cluster targets, memberships in the target, COI and regions from the target (§4.1). **Likely** since R4 (2026-11-20), still gated on CY-0's numbers | CY-0, CY-1 | next free at merge (V112 now) | L (9–11 days) |
+| **CY-4** | Split, Undo, redirects, runbook; R4's per-cluster targets, memberships in the target (CA11, CA23), COI and regions from the target (§4.1); root's page and a job (CA13), Undo plus a dump (CA12), source links kept (CA10). **Decided** (CA9, 2026-11-20) on CY-0's numbers | CY-0, CY-1 | next free at merge (V112 now) | L (9–11 days) |
 | **CY-5** | The production split run | CY-4 | — | ops, 1–2 days |
 
 **Order:**
@@ -1221,8 +1315,8 @@ Everyone else with a contest in the series sees only their own contests' rows.
 5. Series admins' creation path and CA6's disabled grantees: in whichever of CY-2 and CY-3 lands
    second.
 
-CY-0 runs in parallel once D-1a and D-1b are in. CY-4 and CY-5 run only if the report warrants
-them; with R4 (2026-11-20) that is now likely.
+CY-0 runs in parallel once D-1a and D-1b are in. CY-4 and CY-5 will run: the report's numbers
+(§4.7) warranted them and CA9 decided it (2026-11-20).
 
 **Effort:**
 
@@ -1315,12 +1409,12 @@ reuse report (CY-0) and a series created from scratch.
 
 ## 9. Not determined
 
-- The count of reused contests (Q0–Q4).
-- 466's row.
+(The count of reused contests, 466's row and Q1's bands were determined by the CY-0 report, §4.2 and
+§4.7.)
+
 - Production's country values (Q5).
 - How many contests the proposals can't group.
 - Whether multi-role lands before CY-2.
-- How far apart Q1's bands are.
 - How many files of national contests are unclassified.
 - The community terms (the decided "Series" stays).
 
@@ -1468,25 +1562,26 @@ reuse report (CY-0) and a series created from scratch.
     branch. It is required in CY-2, with specs for a three-level chain. Root sees each series'
     grants of the last 24 hours on `/admin/series`.
 
-### Third batch: after Q0–Q4 and the CY-0 report
+### Third batch: after Q0–Q4 and the CY-0 report — decided 2026-11-20 (each as recommended)
 
 - **CA9: The approach.**
-  - [recommended] The report, then per contest: move clean clusters into new contests of the
+  - [chosen] The report, then per contest: move clean clusters into new contests of the
     right series and year, leave R3, or start clean.
   - Leave all history (this drops CY-4).
   - Move automatically.
 - **CA10: The source's file links.**
-  - [recommended] Keep them.
+  - [chosen] Keep them.
   - Remove the unused ones.
 - **CA11: Memberships on a move.**
-  - [recommended] The Juror role for the moved jurors only, skipping deleted accounts, O14
-    conflicts and protected accounts, and listing the rest.
+  - [chosen] The Juror role for the moved jurors only, skipping deleted accounts, O14
+    conflicts and protected accounts, and listing the rest; their old memberships stay.
   - Copy all members.
 - **CA12: The way back.**
-  - [recommended] Undo plus a dump. This departs from O1 because the split runs online.
+  - [chosen] Undo plus a dump (before the first production run). This departs from O1 because the
+    split runs online.
   - A dump restore only.
 - **CA13: Where the split runs.**
-  - [recommended] Root's page and a job.
+  - [chosen] Root's page and a job.
   - A CLI step.
   - Series admins (later).
 - **CA24: decided 2026-11-20** (as recommended): the word after "Wiki Loves" as the type code
@@ -1494,8 +1589,9 @@ reuse report (CY-0) and a series created from scratch.
 - **CA23: The Admin role in an R4 cluster's target** (raised by the 2026-11-20 refinement, §4.1).
   CA11 covers the moved jurors; the people who ran the cluster's rounds in the host contest are
   usually that country's own team.
-  - [recommended] List them on the confirmation with none pre-ticked (multi-role decision 7,
-    CA6); root ticks who gets Admin in the target; in-app notices, no mail.
+  - [chosen] List the known ones on the confirmation with none pre-ticked (multi-role decision 7,
+    CA6); root ticks who gets Admin in the target, and may add others; in-app notices, no mail.
+    (On the production copy only 1 of the 67 clusters to move has a known runner, §4.7.)
   - Give each of them Admin in the target automatically.
   - No Admin rows: root or a series admin adds them afterwards.
 

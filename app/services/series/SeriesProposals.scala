@@ -13,7 +13,7 @@ import services.series.SeriesIdentity.{Place, SeriesType, Unusual}
   * Never proposed (root assigns them one by one, on the contest's series page), each with why:
   * a name of no type (`unparsed`), an unusual country (`country`), two live contests of one type,
   * country and year (`duplicate`), a year the matching series already has (`taken`), and a
-  * contest the inline reuse check flags (`reuse`, [[ContestReuse]]).
+  * contest the inline reuse check or the latest reuse scan flags (`reuse`, [[ContestReuse]]).
   */
 object SeriesProposals {
 

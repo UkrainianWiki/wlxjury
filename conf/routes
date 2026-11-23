@@ -178,6 +178,10 @@ POST        /admin/rounds/:id/reassign-juror                                    
 # root's Release of a round left frozen with no job holding it
 POST        /admin/rounds/:id/release-freeze                                        @controllers.RoundJurorsController.releaseFreeze(id: Long)
 GET         /admin/rounds/newfiles                                                  @controllers.RoundController.newFilesCount(id: Long)
+# the reuse dry-run report (root; contest series plan §4.3, CY-0): the latest scan, queuing one, a contest's report
+GET         /admin/contests/reuse                                                   @controllers.ReuseReportController.list()
+POST        /admin/contests/reuse/scan                                              @controllers.ReuseReportController.scan()
+GET         /admin/contests/:id/reuse                                               @controllers.ReuseReportController.contest(id: Long)
 # a contest's health report (support diagnostics plan, D-1a): its admins and root only
 GET         /admin/contests/:id/health                                              @controllers.ContestHealthController.page(id: Long)
 # Contest series (root; contest series plan, CY-1)

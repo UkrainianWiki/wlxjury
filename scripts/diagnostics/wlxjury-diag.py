@@ -5,6 +5,7 @@ account on the server, no sudo, no database login. Standard library only.
 
   wlxjury-diag recent [--since 24h]        contests with activity in the window, the worst first
   wlxjury-diag contest 466 [--verbose]     a contest's health report
+  wlxjury-diag reuse [466] [--verbose]     the reuse dry-run report: the latest scan, or a contest's clusters
 
 It reads the app's own API on loopback with a personal API token of the read-only, server-only
 scope (created on the profile page, kept in ~/.config/wlxjury-diag/token, mode 600), and the app
@@ -14,8 +15,8 @@ lines and ends with exactly one next command, filled with the ids it found.
 Settings: --url (default http://127.0.0.1:9000, loopback only: the token is never sent anywhere
 else), the jury host name the app answers to (--host, else $WLXJURY_DIAG_HOST, else
 ~/.config/wlxjury-diag/host), the token file (--token-file, else $WLXJURY_DIAG_TOKEN_FILE), the
-log directory (--log-dir). A command is a function in COMMANDS: a later one (the contest series
-plan's `reuse`) adds its parser and runner there and an endpoint under /api/diagnostics.
+log directory (--log-dir). A command is a function in COMMANDS, with its parser and runner, and
+reads an endpoint under /api (the contest series plan's `reuse`: /api/diagnostics/reuse).
 """
 import argparse
 import datetime
@@ -333,6 +334,114 @@ def run_contest(args, api):
     return contest_lines(api.get(f"contests/{args.id}/health"), args.verbose, args.names)
 
 
+# ── reuse ───────────────────────────────────────────────────────────────────
+
+VERDICTS = ["choose", "move", "leave", "signs", "clean"]
+ACTIONS = ["move", "choose", "leave", "stay"]
+REUSE_PAGE = "/admin/contests/reuse"
+
+
+def counts(mapping, order):
+    """`{"move": 2, "stay": 1}` as "move 2, stay 1", in the order given, then any others."""
+    keys = [k for k in order if mapping.get(k)] + sorted(k for k in mapping if k not in order and mapping[k])
+    return ", ".join(f"{clean(k)} {mapping[k]}" for k in keys)
+
+
+def reuse_lines(report, limit=15):
+    scan, totals = report.get("scan"), report.get("totals")
+    if not scan:
+        return ["No reuse scan yet: root starts one on the jury site's " + REUSE_PAGE + ".",
+                "wlxjury-diag reuse"]
+    finished = f", finished {clean(scan['finishedAt'])}" if scan.get("finishedAt") else ""
+    phase = "pass 1 of 2 (eras)" if scan.get("phase") == "eras" else "pass 2 of 2 (reports)"
+    out = [f"Reuse scan #{scan['jobId']}: {clean(scan['status'])}, {phase}, {scan['done']} of {scan['total']} contests"
+           f"{finished}"]
+    results = report.get("resultsOf")
+    if results is None:
+        out.append("No finished scan yet: the totals come with the first.")
+        out.append("wlxjury-diag reuse")
+        return out
+    if results != scan["jobId"]:
+        out.append(f"The results below are scan #{results}'s, the latest finished.")
+    t = totals or {}
+    out.append(f"{t.get('scanned', 0)} contests scanned, {t.get('clean', 0)} with nothing to report; "
+               f"{counts(t.get('verdicts', {}), VERDICTS) or 'none reported'}")
+    out.append(f"clusters: {counts(t.get('kinds', {}), ['own', 'r1', 'r2', 'r4', 'unknown']) or 'none'}; "
+               f"{counts(t.get('actions', {}), ACTIONS) or 'no proposals'}; R3 mixed {t.get('mixed', 0)}, "
+               f"empty {t.get('empty', 0)}")
+    out.append(f"{t.get('moves', 0)} moves, {t.get('r4Hosts', 0)} R4 hosts, {t.get('activeToMove', 0)} active rounds to "
+               f"move, {t.get('filesToLink', 0)} files to link, {t.get('jurorsToAdd', 0)} jurors to add, "
+               f"{t.get('unusedInSource', 0)} files left to moved rounds only")
+    rows = sorted(report.get("contests", []),
+                  key=lambda c: (VERDICTS.index(c["verdict"]) if c["verdict"] in VERDICTS else len(VERDICTS),
+                                 -c.get("moves", 0), c["contestId"]))
+    for c in rows[:limit]:
+        name = clean(f"{c['name']} {c['year']} {c['country']}")
+        flags = (" [R4 host]" if c.get("r4Host") else "") + (" [retired]" if c.get("retired") else "")
+        active = f", active {', '.join(str(r) for r in c['activeToMove'])}" if c.get("activeToMove") else ""
+        out.append(f"{c['verdict'].upper():6} {c['contestId']} {name}: {c['clusters']} clusters "
+                   f"({counts(c.get('actions', {}), ACTIONS)}), {c.get('moves', 0)} moves{active}{flags}")
+    if len(rows) > limit:
+        out.append(f"... and {len(rows) - limit} more")
+    if scan["status"] in ("queued", "running") and not rows:
+        out.append("wlxjury-diag reuse")
+    elif rows:
+        out.append(f"wlxjury-diag reuse {rows[0]['contestId']}")
+    else:
+        out.append("wlxjury-diag recent")
+    return out
+
+
+def reuse_contest_lines(report, verbose=False):
+    ref = report["contest"]
+    clusters = report.get("clusters", [])
+    flags = " [R4 host]" if report.get("r4Host") else ""
+    out = [f"Contest {ref['id']}: {contest_name(ref)}: {report['verdict'].upper()}, {len(clusters)} cluster"
+           f"{'s' if len(clusters) != 1 else ''}, {report.get('moves', 0)} moves, {report.get('jurorsToAdd', 0)} jurors to "
+           f"add, {report.get('unusedInSource', 0)} files left to moved rounds only{flags}"]
+    if not report.get("eras"):
+        out.append("(no scan has measured the eras yet: S1 and S3 not shown)")
+    for c in clusters:
+        rounds = c.get("rounds", [])
+        span = f"{rounds[0]['id']}-{rounds[-1]['id']}" if len(rounds) > 1 else (str(rounds[0]["id"]) if rounds else "-")
+        b = c["buckets"]
+        target = ""
+        if c.get("target"):
+            t = c["target"]
+            where = ("contest " + ", ".join(f"#{i}" for i in t["contests"])) if t.get("contests") else "a new contest"
+            target = f" -> {clean(t['seriesName'])} {t['year']} ({where})"
+        notes = []
+        if c.get("mixed"):
+            notes.append("R3 mixed")
+        if c.get("empty"):
+            notes.append("empty")
+        if c.get("activeRounds"):
+            notes.append("active " + ", ".join(str(r) for r in c["activeRounds"]))
+        if c.get("disagreements"):
+            notes.append("disagree " + ", ".join(clean(d) for d in c["disagreements"]))
+        note = f" [{'; '.join(notes)}]" if notes else ""
+        out.append(f"  {c['index']:>2} rounds {span} ({len(rounds)}): {c['action'].upper()} {clean(c['kind'])} "
+                   f"{clean(c['identity'])}{target}; files {b['matching']}/{b['foreign']}/{b['unclassified']}, "
+                   f"jurors {c['jurors']['total']}{note}")
+        if verbose:
+            s = c.get("signals", {})
+            named = "; ".join(f"{clean(n['identity'])} ({n['files']})" for n in s.get("s2", [])) or "-"
+            filters = "; ".join(f"{r['round']}: {clean(r['source'])}" for r in s.get("s5r", [])) or "-"
+            out.append(f"       S5r {filters} | S2 {named} | S1 {s.get('s1Year') or '-'} | S3 {s.get('s3Year') or '-'}")
+            j = c["jurors"]
+            out.append(f"       jurors: {j['toAdd']} to add, {j['deleted']} deleted, {j['protectedAccounts']} protected, "
+                       f"{j['conflict']} with another role there, {j['already']} there already, {j['notHostMembers']} "
+                       f"not members here; ran by {c['runners']['total']} ({c['runners']['hostAdmins']} admins here)")
+    out.append(f"wlxjury-diag reuse {ref['id']} --verbose" if not verbose else f"wlxjury-diag contest {ref['id']}")
+    return out
+
+
+def run_reuse(args, api):
+    if args.id is None:
+        return reuse_lines(api.get("diagnostics/reuse"))
+    return reuse_contest_lines(api.get(f"diagnostics/reuse/{args.id}"), args.verbose)
+
+
 # ── the commands ────────────────────────────────────────────────────────────
 
 def add_recent(p):
@@ -346,9 +455,15 @@ def add_contest(p):
     p.add_argument("--names", action="store_true", help="with --verbose: who started each import")
 
 
+def add_reuse(p):
+    p.add_argument("id", type=int, nargs="?", help="a contest's id: its clusters (else the latest scan)")
+    p.add_argument("--verbose", action="store_true", help="with an id: each cluster's signals and jurors")
+
+
 COMMANDS = {
     "recent": (add_recent, run_recent, "contests with activity in the window, the worst first"),
     "contest": (add_contest, run_contest, "a contest's health report"),
+    "reuse": (add_reuse, run_reuse, "the reuse dry-run report: the latest scan, or a contest's clusters"),
 }
 
 
