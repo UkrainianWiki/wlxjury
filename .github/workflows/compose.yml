@@ -11,7 +11,7 @@ name: docker-compose
 on:
   pull_request:
   push:
-    branches: [master, ukwikidev/followups]
+    branches: [master]
   workflow_dispatch:
 
 permissions:
