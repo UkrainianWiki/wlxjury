@@ -208,7 +208,11 @@ class ImageController @Inject() (
   def startRoundImageCache(id: Long, rid: Long): EssentialAction =
     withAuthForm(contestPermission(User.ADMIN_ROLES, Some(id))) { user => implicit request =>
       val script = Secured.isScriptRequest(request)
-      if (!inContest(id, rid))
+      // a round a split moved out of this contest: the same request to the contest it is in now (§4.6),
+      // its method and body kept (307)
+      val moved = Option.when(!inContest(id, rid))(rid).flatMap(db.scalikejdbc.ContestSplitJdbc.movedRound(_, id))
+      if (moved.isDefined) TemporaryRedirect(routes.ImageController.startRoundImageCache(moved.get, rid).url)
+      else if (!inContest(id, rid))
         if (script) NotFound(Json.obj("error" -> "round_not_found"))
         else NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found"))
       else {
@@ -220,7 +224,10 @@ class ImageController @Inject() (
 
   def roundImageCacheStatus(id: Long, rid: Long): EssentialAction =
     withAuthJson(contestPermission(User.ADMIN_ROLES, Some(id))) { _ => _ =>
-      if (!inContest(id, rid)) NotFound(Json.obj("error" -> "round_not_found"))
+      // a round a split moved out of this contest: its status in the contest it is in now (§4.6)
+      val moved = Option.when(!inContest(id, rid))(rid).flatMap(db.scalikejdbc.ContestSplitJdbc.movedRound(_, id))
+      if (moved.isDefined) Redirect(routes.ImageController.roundImageCacheStatus(moved.get, rid))
+      else if (!inContest(id, rid)) NotFound(Json.obj("error" -> "round_not_found"))
       else Ok(Json.toJson(localImageCacheService.progressForRound(rid)))
     }
 

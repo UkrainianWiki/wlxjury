@@ -1354,6 +1354,44 @@ stopped.
     far apart are shown beside these, never a sign alone. Such a contest is never proposed for a
     series. On **Contests** the **Reused** badge reads the sources and rounds only, not the rounds'
     files: the contest's **Series and status** page shows every sign.
+- **Split a reused contest** (a contest used again for other years, types or countries, as
+  Nepal's WLE 2020 contest held WLE Nepal's rounds of 2021 to 2026, Wiki Loves Fashion and
+  Folklore rounds, and Bhutan's 2026 rounds). The **reuse report** (`/admin/contests/reuse`, the
+  link on **Series**) scans every contest and lists those reused, each with its **clusters**: the
+  rounds chained by their previous rounds, each with the contest (type, year, country) its
+  signals name, its files sorted into those of that contest, of another, or of none known, and a
+  proposal: **move** it to the contest of that series and year, **leave** it (a cluster with no
+  files, or one whose files are mixed: never moved), or **your choice** where its signals
+  disagree. **Plan the split** on a contest's report opens the confirmation:
+  - the proposed moves are ticked; an empty cluster can be ticked to move with the others; a
+    cluster for your choice offers each contest its signals name, and stays unless you pick one;
+  - an **active round** in a cluster to move is refused unless you tick **pause it for the move**
+    (its jurors can't vote until the move ends) or stop it first; a round being created must be
+    finished or cancelled first. Its jurors who get no role in the target (another role there, an
+    account being joined, or votes without being one of the round's jurors) are listed: they lose
+    access to the round, and the split needs your tick that you read the list;
+  - each **target** (a series and year) gets a new contest, in a new series if there is none,
+    unless you pick an existing contest of that series and year (needed when the series already
+    has a contest of that year); its admins then see a note on their Rounds page;
+  - the people who ran the cluster's rounds are listed, **none ticked**: tick who gets the
+    **Admin** role in the target, and add others by email address or account id (a juror of the
+    moved rounds keeps the Juror role instead: a Juror can't also be Admin);
+  - enter the operation id of the **dump** you took before the split (see the operations guide).
+
+  **Start the split** runs it as a background job, shown on the split's page with its progress,
+  **Cancel** and **Retry**. Each move creates the target (its series' type, country and year, its
+  own files category), links into it the moved rounds' files of its own contest (the source keeps
+  all its files), gives the **Juror** role there to the moved rounds' jurors (not to deleted or
+  root accounts, nor to someone with another role there: they are listed) and the **Admin** role to
+  those you ticked, each told in the app (no email), then moves the rounds with their comments and
+  jobs. Votes, round ids and the source's memberships don't change, and old links to a moved round
+  with the source's contest number lead to it. The source's Rounds page notes what moved where.
+  **Undo** on the split's page moves the rounds back, removes the Juror roles it gave that nobody
+  used since and the Admin roles only with a contest it retires (the others are listed), and
+  retires a contest it created unless it is in use since; the files stay linked. Undo is refused
+  while a round of a target draws on a moved round, once a moved round has moved on, while a moved
+  round is busy (being created or distributed, or a job runs on it), and while a moved round has
+  jurors who aren't members of this contest (named: add them here or take them off first).
 - **Retire a contest**, and un-retire it, on its **Series and status** page: its members can't
   open it any more and menus and lists leave it out (**Status** on **Contests** shows the retired
   ones); its data stays; root still opens and can change it. A contest with a round open or

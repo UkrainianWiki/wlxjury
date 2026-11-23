@@ -1,0 +1,175 @@
+@(
+        user: db.scalikejdbc.User,
+        offer: services.series.ContestSplit.Proposal,
+        splits: Seq[db.scalikejdbc.ContestSplitRow],
+        contestNames: Map[Long, String]
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@import services.series.ContestSplit.{Mode, fieldId}
+@import services.series.ReuseReport.Action
+@* Root's confirmation of a reused contest's split (contest series plan §4.4–§4.6, CY-4;
+   ContestSplitController.confirmPage): the contest's clusters as an offer (move ticked; empty and
+   disagreeing clusters left unless root picks them; R3 never; its own stays), the active rounds to
+   pause, and per target its contest (a new one by default) and the people who ran its clusters,
+   none ticked (CA23), with a field for others. The hash says which offer root confirmed *@
+@contest = @{ offer.report.contest }
+@role(r: Option[String]) = @{ r.fold(Messages("reuse.member.none"))(x => Messages("role." + x)) }
+@mainAdmin("split.title", user, user.getId) {
+    <nav aria-label="@Messages("series.breadcrumb")"><ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="@routes.ContestController.list()">@Messages("contests")</a></li>
+        <li class="breadcrumb-item"><a href="@routes.ReuseReportController.list()">@Messages("reuse.title")</a></li>
+        <li class="breadcrumb-item"><a href="@routes.ReuseReportController.contest(contest.getId)">@contest.fullName</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@Messages("split.title")</li>
+    </ol></nav>
+    <h1 class="h3">@Messages("split.title") <span class="text-body-secondary">@contest.fullName #@contest.getId</span></h1>
+    @for(m <- flash.get("success")) {<div class="alert alert-success" role="status" id="split-flash">@m</div>}
+    @for(m <- flash.get("error")) {<div class="alert alert-warning" role="alert" id="split-flash">@m</div>}
+    <p class="text-body-secondary" id="split-help">@Messages("split.help")</p>
+    <div class="alert alert-info" id="split-dump-note">@Messages("split.dump.note")</div>
+
+    @if(!offer.selectable) {
+        <p id="split-nothing">@Messages("split.none")</p>
+    } else {
+    <form method="post" action="@routes.ContestSplitController.confirm(contest.getId)" data-submit-once="true" id="split-form">
+        @csrfField()
+        <input type="hidden" name="hash" value="@offer.hash">
+
+        <h2 class="h4">@Messages("reuse.clusters")</h2>
+        @for(o <- offer.offers) {
+            @defining(o.cluster) { c =>
+            <section class="card mb-3 split-cluster" id="split-cluster-@c.index" data-mode="@o.mode" aria-labelledby="split-cluster-@c.index-title">
+                <div class="card-header d-flex flex-wrap gap-2 align-items-center">
+                    <h3 class="h6 mb-0" id="split-cluster-@c.index-title">@if(c.roundIds.size == 1) {@Messages("reuse.cluster.one", c.index, c.roundIds.head.toString)} else {@Messages("reuse.cluster", c.index, c.roundIds.head.toString, c.roundIds.last.toString)}</h3>
+                    <span class="badge text-bg-light border">@Messages("reuse.kind." + c.kind)</span>
+                    <span class="badge text-bg-light border">@Messages("split.mode." + o.mode)</span>
+                    @if(c.empty && o.mode != Mode.Empty) {<span class="badge text-bg-secondary">@Messages("reuse.flag.empty")</span>}
+                </div>
+                <div class="card-body small">
+                    <p class="mb-1">@Messages("reuse.identity"): @c.identity.describe ·
+                        @Messages("reuse.buckets.text", c.buckets.matching, c.buckets.foreign, c.buckets.unclassified) ·
+                        @Messages("reuse.counts.text", c.rounds.size, c.jurors.size, c.votes, c.comments, c.jobs)</p>
+                    @if(c.disagreements.nonEmpty) {
+                        <p class="mb-1 split-disagreements">@Messages("reuse.disagree"): @{c.disagreements.map(d => Messages("reuse.disagree." + d.part, Messages("reuse.signal." + d.signal))).mkString("; ")}</p>
+                    }
+                    <ul class="mb-2 ps-3 split-rounds">
+                    @for(r <- c.rounds) {
+                        <li data-round="@r.id">@r.id (@r.number) @r.name.getOrElse("") · @Messages("health.status." + r.status) · @Messages("split.round.files", r.files)</li>
+                    }
+                    </ul>
+                    @o.mode match {
+                        case Mode.Move | Mode.Empty => {
+                            @for(a <- o.alternatives.headOption) {
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="c@c.index" value="@fieldId(a.key)" id="c@c.index"
+                                        @if(o.mode == Mode.Move) {checked}>
+                                    <label class="form-check-label" for="c@c.index">@if(o.mode == Mode.Move) {@Messages("split.move.to", a.target.seriesName, a.target.year.toString)} else {@Messages("split.move.empty", a.target.seriesName, a.target.year.toString)}</label>
+                                </div>
+                            }
+                        }
+                        case Mode.Choose => {
+                            <fieldset class="split-choose">
+                                <legend class="h6 small">@Messages("split.choose")</legend>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="c@c.index" value="leave" id="c@c.index-leave" checked>
+                                    <label class="form-check-label" for="c@c.index-leave">@Messages("split.leave")</label>
+                                </div>
+                                @for(a <- o.alternatives) {
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="c@c.index" value="@fieldId(a.key)" id="c@c.index-@fieldId(a.key)">
+                                        <label class="form-check-label" for="c@c.index-@fieldId(a.key)">@Messages("split.move.to.identity", a.target.identity.describe, a.target.seriesName, a.target.year.toString)</label>
+                                    </div>
+                                }
+                            </fieldset>
+                        }
+                        case Mode.Never => {<p class="mb-0 split-never">@Messages("split.never")</p>}
+                        case _ => {<p class="mb-0 split-stays">@Messages("split.stays")</p>}
+                    }
+                    @if(o.selectable) {
+                        @for(r <- c.rounds if r.status == db.scalikejdbc.Round.Status.Active) {
+                            <div class="form-check mt-1">
+                                <input class="form-check-input" type="checkbox" name="pause" value="@r.id" id="pause-@r.id">
+                                <label class="form-check-label text-danger" for="pause-@r.id">@Messages("split.pause", r.id.toString)</label>
+                            </div>
+                            @defining(offer.losing.getOrElse(r.id, Nil)) { losing =>
+                                @if(losing.nonEmpty) {
+                                    <div class="mt-1 split-losing" data-round="@r.id">@Messages("split.losing", r.id.toString)
+                                        <ul class="mb-0 ps-3">
+                                        @for(l <- losing) {<li data-account="@l.userId" data-reason="@l.reason">@l.name · @Messages("split.losing." + l.reason)</li>}
+                                        </ul>
+                                    </div>
+                                }
+                            }
+                        }
+                        @for(r <- c.rounds if r.distributing || r.status == db.scalikejdbc.Round.Status.Draft) {
+                            <p class="mb-0 text-danger split-busy">@Messages("split.round.creating", r.id.toString)</p>
+                        }
+                    }
+                </div>
+            </section>
+            }
+        }
+
+        <h2 class="h4 mt-4">@Messages("split.targets")</h2>
+        <p class="small text-body-secondary">@Messages("split.targets.help")</p>
+        @for(t <- offer.targets) {
+            <fieldset class="card mb-3 split-target" id="split-target-@t.fieldId" data-key="@t.key">
+                <div class="card-body small">
+                    <legend class="h6">@t.target.seriesName, @t.target.year
+                        @if(t.target.seriesId.isEmpty) {<span class="badge text-bg-info">@Messages("split.series.new")</span>}</legend>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="t@t.fieldId" value="new" id="t@t.fieldId-new"
+                            @if(t.newAllowed) {checked} else {disabled}>
+                        <label class="form-check-label" for="t@t.fieldId-new">@Messages("split.target.new")@if(!t.newAllowed) { · @Messages("split.target.held")}</label>
+                    </div>
+                    @for(id <- t.existing) {
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="t@t.fieldId" value="@id" id="t@t.fieldId-@id">
+                            <label class="form-check-label" for="t@t.fieldId-@id">@Messages("split.target.existing", contestNames.getOrElse(id, ""), id.toString)</label>
+                            @defining(offer.conflicts.getOrElse(id, Nil)) { conflicts =>
+                                @if(conflicts.nonEmpty) {
+                                    <div class="split-conflicts" data-contest="@id">@Messages("split.losing.target")
+                                        <ul class="mb-0 ps-3">
+                                        @for((r, l) <- conflicts) {<li data-round="@r" data-account="@l.userId">@l.name · @Messages("split.losing.round", r.toString) · @Messages("split.losing." + l.reason)</li>}
+                                        </ul>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                    <p class="mt-2 mb-1">@Messages("split.admins")</p>
+                    @if(t.runners.isEmpty) {<p class="mb-1 text-body-secondary">@Messages("split.runners.none")</p>}
+                    @for(r <- t.runners) {
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="a@t.fieldId" value="@r.userId" id="a@t.fieldId-@r.userId">
+                            <label class="form-check-label" for="a@t.fieldId-@r.userId">@r.name (@role(r.hostRole)@if(r.root) {, @Messages("role.root")})</label>
+                        </div>
+                    }
+                    <label class="form-label mt-1" for="o@t.fieldId">@Messages("split.admins.others")</label>
+                    <input class="form-control form-control-sm" type="text" name="o@t.fieldId" id="o@t.fieldId" autocomplete="off">
+                </div>
+            </fieldset>
+        }
+
+        @if(offer.anyLosing) {
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" name="ack" value="yes" id="split-ack">
+                <label class="form-check-label" for="split-ack">@Messages("split.access.ack.label")</label>
+            </div>
+        }
+        <div class="mb-3">
+            <label class="form-label" for="split-dump">@Messages("split.dump")</label>
+            <input class="form-control" type="text" name="dump" id="split-dump" maxlength="255" autocomplete="off">
+            <div class="form-text">@Messages("split.dump.help")</div>
+        </div>
+        <button type="submit" class="btn btn-primary" id="split-submit">@Messages("split.submit")</button>
+    </form>
+    }
+
+    @if(splits.nonEmpty) {
+        <h2 class="h4 mt-4">@Messages("split.list")</h2>
+        <ul id="split-list">
+            @for(s <- splits) {
+                <li><a href="@routes.ContestSplitController.split(s.id)">@Messages("split.name", s.id.toString)</a>@if(s.undone) { · @Messages("split.undone")}</li>
+            }
+        </ul>
+    }
+}

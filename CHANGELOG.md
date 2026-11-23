@@ -45,6 +45,21 @@ is listed below.
   maintainer's `wlxjury-diag` CLI (`scripts/diagnostics/wlxjury-diag.py`): `recent` (adding the
   log's denial counts per contest) and `contest 466`, each ending with one next command
   (operations §5.5).
+- **Splitting reused contests (CY-4)** (the contest series plan, docs/plans/2026-11-18-contest-series.md
+  §4.4–§4.6, CA9–CA13 and CA23 decided 2026-11-20; developed 2026-11-20, `stack/213-series-cy4-split`,
+  V111): on a contest's reuse report, root's **Plan the split** confirms which clusters of rounds
+  move into contests of their own series and year (proposed moves ticked; empty clusters and those
+  whose signals disagree only when root picks them; mixed ones never), a new contest by default
+  (an existing one of that series and year only when root picks it), the series created when
+  missing, active rounds only with "pause it for the move", the Admin role for the people root
+  ticks (none pre-ticked) or adds. A `contest_split` job does each move: the target with its own
+  category, the matching files linked (the source keeps its links), the Juror role for the moved
+  jurors (deleted, root, conflicting and joining accounts skipped and listed) with in-app notices
+  and no mail, then the rounds with their comments and jobs; votes and round ids unchanged,
+  `exclude_rounds` edges across the move cut and recorded. Each split's page shows what it did,
+  with **Undo** (the rounds, edges, comments, jobs and current round back, unused roles removed, a
+  created contest retired, the file links kept). Old links to a moved round under the source's
+  contest id redirect; the Rounds pages of the source and an existing target note the moves.
 - **Contest series (CY-1)** (the contest series plan, docs/plans/2026-11-18-contest-series.md, CA1,
   CA8, CA15 decided 2026-11-18; developed 2026-11-20, `stack/209-series-cy1`, V109): a series ties
   one contest per year across years ("Wiki Loves Monuments in Nepal"). Root's **Series** page

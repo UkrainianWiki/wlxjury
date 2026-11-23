@@ -16,6 +16,7 @@
 #   wlxjury-release [--config FILE] restore [OPERATION] [--yes]
 #   wlxjury-release [--config FILE] restore OPERATION --accept-data-loss [--yes]
 #   wlxjury-release [--config FILE] prune [--dry-run] [--verbose]
+#   wlxjury-release [--config FILE] snapshot
 #
 # SHA256 is the ZIP's hash as sent with the build, through another channel than
 # the upload: all 64 hex characters, or at least the first 16 (64 bits), checked
@@ -49,6 +50,12 @@
 # (docs/deployment.md, "Retention"). If only that prune fails, reopen exits 3:
 # traffic is open and the operation complete; run prune again once fixed.
 #
+# snapshot dumps the database while the app keeps running (every table InnoDB:
+# --single-transaction), as a complete operation of the current release that the
+# guarded restore backs out like a deployment reopened since: restore NAME
+# --accept-data-loss, typing RESTORE, under maintenance, with a rescue dump of the
+# writes since. Its dump is pruned like the deployments' (docs/deployment.md).
+#
 # Run as root inside tmux. Reads the deployment.json and runtime.env that
 # wlxjury-deploy uses, and shares its lock, so the two never run at once.
 # Needs bash, coreutils, util-linux, curl, unzip, python3 (JSON only) and the
@@ -77,6 +84,7 @@ usage: wlxjury-release [--config FILE] COMMAND
   restore OPERATION --accept-data-loss [--yes]
                                           after traffic resumed: always named
   prune [--dry-run] [--verbose]           --verbose: also what is kept, and why
+  snapshot                                a dump while the app runs, for restore NAME --accept-data-loss
 USAGE
   exit 2
 }
@@ -87,9 +95,11 @@ die() {
 }
 
 on_exit() {
-  local status=$?
+  local status=$? snapshot=''
+  # A snapshot dumps into its staging folder: removed, nothing of it stays, and maintenance never changed.
+  if [ -n "$staging" ] && [ "$op" = "$staging" ]; then snapshot=yes; fi
   [ -z "$staging" ] || rm -rf "$staging"
-  if [ "$status" != 0 ] && [ -n "$op" ]; then
+  if [ "$status" != 0 ] && [ -n "$op" ] && [ -z "$snapshot" ]; then
     echo "wlxjury-release: stopped (exit $status); maintenance is never cleared automatically." \
          "For the state and the next command:" >&2
     echo "  sudo wlxjury-release status" >&2
@@ -364,12 +374,16 @@ end_sessions() {
   [ "$others" = 0 ] || die "other sessions use the database; end them (SHOW PROCESSLIST), then rerun"
 }
 
-dump() {  # dump NAME: a new, verified and flushed dump in the operation folder
+dump() {  # dump NAME [online]: a new, verified and flushed dump in the operation folder
   [ ! -e "$op/$1" ] || die "$op/$1 exists; never overwrite a dump"
   # --lock-tables: MyISAM tables make --single-transaction alone inconsistent.
+  # online (snapshot, the app writing): one consistent read instead, which snapshot
+  # takes only when every table is InnoDB.
+  local consistency=--lock-tables
+  if [ "${2:-}" = online ]; then consistency=--single-transaction; fi
   # --databases --add-drop-database: a restore recreates the database with its
   # own character set and collation, and drops tables a migration added.
-  mariadb-dump "${CLIENT[@]}" --databases "$DATABASE" --add-drop-database --lock-tables --quick \
+  mariadb-dump "${CLIENT[@]}" --databases "$DATABASE" --add-drop-database "$consistency" --quick \
     --routines --events --triggers | gzip > "$op/$1"
   gzip -t "$op/$1"
   (cd "$op" && sha256sum "$1" > "$1.sha256")
@@ -570,6 +584,67 @@ deploy() {
   echo "  sudo wlxjury-release reopen"
 }
 
+snapshot() {  # An online dump of the running app's database, as a complete operation restore accepts.
+  local current build want have port tables name taken
+  local -a active=()
+  lock
+  [ ! -e "$FLAG" ] || die "maintenance is on: finish the open operation first (sudo wlxjury-release status); nothing was changed"
+  open_operations
+  [ "${#opened[@]}" = 0 ] ||
+    die "the operation $(basename "${opened[-1]}") is open: finish it first (sudo wlxjury-release status); nothing was changed"
+  remove_unfinished_snapshots
+  [ -L "$ROOT/current" ] || die "$ROOT/current must link to the running release"
+  current=$(readlink -f "$ROOT/current")
+  build=$(json "$current/wlxjury-build.json" build 2>/dev/null) || build=''
+  want=$(json "$current/wlxjury-build.json" schemaVersion 2>/dev/null) || want=''
+  if [ -z "$build" ] || [ -z "$want" ] || [ ! -x "$current/bin/wlxjury" ]; then
+    die "the current release $current lacks wlxjury-build.json or bin/wlxjury; nothing was changed"
+  fi
+  [[ $build =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$ ]] || die "invalid build identity in $current; nothing was changed"
+  # restore switches back to this release and checks its schema: both must hold now.
+  ready "$current" || die "$build is not ready: a snapshot is of the running app only; nothing was changed"
+  check_endpoint
+  port=$(admin -e 'SELECT @@port')
+  [ "$(sql 'SELECT COUNT(*) FROM flyway_schema_history WHERE success = 0')" = 0 ] ||
+    die "the database has a failed migration; nothing was changed"
+  have=$(schema)
+  [ "$have" = "$want" ] || die "the database is at schema $have but $build expects $want; nothing was changed"
+  # One consistent read covers only InnoDB tables: with any other engine an online dump could
+  # hold a half-written state. Such a database is backed up by deploy --backup (under maintenance).
+  tables=$(sql "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_TYPE = 'BASE TABLE' AND ENGINE <> 'InnoDB'")
+  [ "$tables" = 0 ] ||
+    die "$tables table(s) are not InnoDB, so a dump while the app writes would not be consistent;" \
+        "convert them, or back up under maintenance with a deployment (deploy --backup); nothing was changed"
+  capacity $((MIN_FREE + $(database_bytes)))
+  for unit in "${WRITERS[@]}"; do
+    if systemctl is-active --quiet "$unit"; then active+=("$unit"); fi
+  done
+  taken=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  name=$(date -u -d "$taken" +%Y%m%dT%H%M%SZ)-snapshot-$build
+  # Dumped into a hidden folder beside the operations and renamed in once complete: a failed
+  # snapshot leaves no operation behind (on_exit removes the folder).
+  staging=$(mktemp -d "$BACKUPS/.snapshot.XXXXXX")
+  op=$staging
+  dump database.sql.gz online
+  capacity  # The dump must not have used the reserve.
+  # previous = candidate = the running release: restore switches back to it; reopen restarts the writers.
+  printf 'previous=%s\ncandidate=%s\nzip_sha256=\nwriters=%s\ndatabase=%s\ndb_host=%s\nkind=snapshot\nschema=%s\ndb_port=%s\ntaken=%s\n' \
+    "$current" "$current" "${active[*]}" "$DATABASE" "$DB_HOST" "$have" "$port" "$taken" > "$op/record"
+  # Ready and open to traffic throughout: restore asks to type RESTORE, needs --accept-data-loss and
+  # takes a rescue dump of the writes since, as after a deployment that reopened.
+  printf '%s\n' started ready traffic-may-resume backup-complete complete > "$op/milestones"
+  printf '%s snapshot of %s (schema %s, port %s) while %s ran, with --single-transaction\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$DATABASE" "$have" "$port" "$build" > "$op/operation.log"
+  sync "$op/record" "$op/milestones" "$op/operation.log" "$op"
+  mv -T "$staging" "$BACKUPS/$name"
+  staging='' op=''
+  sync "$BACKUPS"
+  echo "Snapshot $name: $DATABASE at schema $have, taken while $build kept running."
+  echo "Its operation id is $name. For the state:"
+  echo "  sudo wlxjury-release status"
+}
+
 picked() {  # picked NAME: says, into the log, which operation was picked when NAME is empty
   [ -n "$1" ] || echo "Operation $(basename "$op"): picked as the current operation (the newest, open, of the current release)"
 }
@@ -643,6 +718,7 @@ require_current() {  # A restore only ever backs out the deployment the current 
   current=$(realpath -e -- "$ROOT/current")
   for dir in "$BACKUPS"/*; do  # Both tools name operation folders by UTC start time.
     if [ ! -d "$dir" ] || [ -L "$dir" ] || [[ ! $(basename "$dir") > $(basename "$op") ]]; then continue; fi
+    if is_snapshot "$dir"; then continue; fi  # It deployed nothing.
     candidate=$(operation_releases "$dir" 2>/dev/null | sed -n 2p) || candidate=''
     if [ -n "$candidate" ] && [ "$(realpath -m -- "$candidate")" = "$current" ]; then
       die "a later operation, $(basename "$dir"), deployed the current release $current again: back out that one," \
@@ -687,14 +763,18 @@ needs_confirmation() {  # The operation became ready, and this is not the rerun 
 }
 
 confirm_restore() {  # confirm_restore WHAT-HAPPENS-TO-THE-DATABASE, just before a restore changes anything
-  local answer previous name
+  local answer previous name what
   if [ "$confirmed" = yes ] || ! needs_confirmation; then return 0; fi
   name=$(basename "$op")
   previous=$(basename "$(record_value previous)")
   if [ ! -t 0 ]; then
+    if is_snapshot "$op"; then
+      what="a restore of $(snapshot_label "$op") replaces the live database"
+    else
+      what="$name became ready, so a restore undoes a good deployment"
+    fi
     op=''  # A refusal: nothing for the runbook.
-    die "$name became ready, so a restore undoes a good deployment and needs confirmation: run it in a terminal" \
-        "and type RESTORE, or add --yes; nothing was changed"
+    die "$what and needs confirmation: run it in a terminal and type RESTORE, or add --yes; nothing was changed"
   fi
   printf 'Type RESTORE to switch back to %s (%s): ' "$previous" "$1"
   read -r answer || answer=''
@@ -705,7 +785,8 @@ confirm_restore() {  # confirm_restore WHAT-HAPPENS-TO-THE-DATABASE, just before
 }
 
 restore() {  # restore NAME|'' yes|no
-  local name=$1 accept=$2 previous want rescue='' allowance=0
+  local name=$1 accept=$2 previous want rescue='' allowance=0 source_label='the pre-deployment database' unit
+  local -a running=()
   if [ -z "$name" ]; then
     lock  # Picked under the lock, so no other operation can start in between.
     pick_operation restore
@@ -749,10 +830,26 @@ restore() {  # restore NAME|'' yes|no
     allowance=$(database_bytes)
   fi
   capacity $((RESTORE_MIN_FREE + allowance))
-  if [ -n "$rescue" ]; then
+  if is_snapshot "$op"; then
+    source_label=$(snapshot_label "$op")
+    if [ -n "$rescue" ]; then
+      confirm_restore "the database is replaced by $source_label; writes since go to a rescue dump"
+    else
+      confirm_restore "the database is replaced by $source_label"
+    fi
+  elif [ -n "$rescue" ]; then
     confirm_restore "the database is replaced by the dump taken before the deployment; writes since reopening go to a rescue dump"
   else
     confirm_restore "the database is replaced by the dump taken before the deployment"
+  fi
+  if is_snapshot "$op" && [ -n "$rescue" ]; then
+    # reopen restarts the writers that run now, not those of the snapshot's time (a rerun of an
+    # unfinished restore has none running and keeps what the first run recorded).
+    for unit in "${WRITERS[@]}"; do
+      if systemctl is-active --quiet "$unit"; then running+=("$unit"); fi
+    done
+    sed -i "s/^writers=.*/writers=${running[*]}/" "$op/record"
+    sync "$op/record"
   fi
 
   enable_maintenance
@@ -775,7 +872,7 @@ restore() {  # restore NAME|'' yes|no
   mark database-restored
   systemctl start "$SERVICE"
   wait_ready "$previous"
-  echo "Restored the pre-deployment database and $(basename "$previous") under maintenance."
+  echo "Restored $source_label and $(basename "$previous") under maintenance."
   echo "Check it locally, then reopen:"
   echo "  sudo wlxjury-release reopen"
 }
@@ -805,6 +902,26 @@ operation_open() {  # operation_open DIR: anything but a finished operation; dam
 
 record_of() {  # record_of DIR KEY: a value from an operation's record
   sed -n "s/^$2=//p" "$1/record"
+}
+
+is_snapshot() {  # is_snapshot DIR: the operation is a snapshot (it deployed nothing)
+  [ -f "$1/record" ] && [ "$(record_of "$1" kind)" = snapshot ]
+}
+
+snapshot_label() {  # snapshot_label DIR: "the snapshot NAME taken TIME", for messages
+  local taken
+  taken=$(record_of "$1" taken)
+  echo "the snapshot $(basename "$1") taken ${taken:-at $(basename "$1" | cut -d- -f1)}"
+}
+
+remove_unfinished_snapshots() {  # Under the lock: what a snapshot left when it was killed (a power cut).
+  local dir
+  for dir in "$BACKUPS"/.snapshot.*; do
+    if [ -d "$dir" ] && [ ! -L "$dir" ]; then
+      rm -rf --one-file-system -- "$dir"
+      echo "Removed the unfinished snapshot $(basename "$dir")"
+    fi
+  done
 }
 
 operation_releases() {  # The previous and candidate releases, one per line; fails if unreadable.
@@ -912,7 +1029,8 @@ prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention 
         keep[$name]="named by the open operation $(basename "$dir")"
       fi
     done <<< "$paths"
-    if [ -f "$dir/record" ] && [ "$(release_name "$(record_of "$dir" candidate)")" = "$current" ]; then
+    if [ -f "$dir/record" ] && ! is_snapshot "$dir" &&
+       [ "$(release_name "$(record_of "$dir" candidate)")" = "$current" ]; then
       current_op=$i
     fi
   done
@@ -977,7 +1095,7 @@ prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention 
       drop_releases+=("$name")
     fi
   done
-  for dir in "$ROOT/releases"/.staging.*; do
+  for dir in "$ROOT/releases"/.staging.* "$BACKUPS"/.snapshot.*; do
     if [ -d "$dir" ] && [ ! -L "$dir" ]; then unpacks+=("$dir"); fi
   done
 
@@ -986,7 +1104,10 @@ prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention 
     remove "$apply" "$ROOT/releases/$name" "release $name" || exit 1
   done
   for dir in "${unpacks[@]}"; do
-    remove "$apply" "$dir" "the unfinished unpack $(basename "$dir")" || exit 1
+    case $(basename "$dir") in
+      .snapshot.*) remove "$apply" "$dir" "the unfinished snapshot $(basename "$dir")" || exit 1 ;;
+      *) remove "$apply" "$dir" "the unfinished unpack $(basename "$dir")" || exit 1 ;;
+    esac
   done
   for dir in "${drop_dumps[@]}"; do
     remove "$apply" "$dir/database.sql.gz" "dump $(basename "$dir")/database.sql.gz" "$dir/database.sql.gz.sha256" || exit 1
@@ -1198,6 +1319,9 @@ status() {  # status yes|no: verbose
       if grep -qx backup-skipped "$last/milestones" 2>/dev/null; then
         echo "  to back out $name (switches the release back, keeps the data; asks to type RESTORE):" \
              "sudo wlxjury-release restore $name"
+      elif [ -f "$last/database.sql.gz" ] && is_snapshot "$last"; then
+        echo "  to back out to $(snapshot_label "$last"), only after a reconciliation decision, as it loses every"
+        echo "  write since (asks to type RESTORE): sudo wlxjury-release restore $name --accept-data-loss"
       elif [ -f "$last/database.sql.gz" ]; then
         backout_hint "sudo wlxjury-release restore $name --accept-data-loss"
       fi
@@ -1294,6 +1418,9 @@ case ${1:-} in
     elif [ $# = 2 ] && [ -n "$2" ]; then reopen "$2"
     else usage
     fi ;;
+  snapshot)
+    [ $# = 1 ] || usage
+    snapshot ;;
   restore)
     shift
     accept=no name=''

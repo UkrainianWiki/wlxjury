@@ -804,6 +804,149 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertSucceeded(self.release('reopen', operation.name))
         self.assertOriginalDatabase()
 
+    def test_snapshot_refuses_a_database_with_other_engines_than_innodb(self):
+        # The fixture's votes table is MyISAM, as before V54: no consistent dump while the app writes.
+        result = self.release('snapshot')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('1 table(s) are not InnoDB', result.stderr)
+        self.assertNotIn('maintenance is never cleared', result.stderr)
+        self.assertUnchanged()
+
+    def test_snapshot_refuses_under_maintenance_and_while_an_operation_is_open(self):
+        self.sql('ALTER TABLE votes ENGINE=InnoDB')
+        self.flag.touch()
+        refused = self.release('snapshot')
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn('maintenance is on', refused.stderr)
+        self.flag.unlink()
+        archive, sha = self.release_zip()
+        self.assertSucceeded(self.release('deploy', archive, sha))
+        operation = self.operation()
+        self.flag.unlink()  # As if routing were reopened by hand: the operation is still open.
+        refused = self.release('snapshot')
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn('the operation %s is open' % operation.name, refused.stderr)
+        self.assertEqual(self.operation(), operation)
+
+    def test_snapshot_dumps_online_and_restore_backs_it_out_like_a_reopened_deployment(self):
+        self.sql('ALTER TABLE votes ENGINE=InnoDB')
+        result = self.release('snapshot')
+        self.assertSucceeded(result)
+        # The app kept running: no maintenance, nothing stopped, short output ending with status.
+        self.assertFalse(self.flag.exists())
+        self.assertTrue(self.active(SERVICE))
+        self.assertTrue(all(self.active(unit) for unit in WRITERS))
+        self.assertFalse(any(call.startswith('stop') for call in self.calls()), self.calls())
+        operation = self.operation()
+        self.assertTrue(operation.name.endswith('-snapshot-legacy-0.12-v53'), operation.name)
+        self.assertNextCommand(result.stdout, 'Its operation id is %s. For the state:' % operation.name,
+                               'sudo wlxjury-release status')
+        self.assertEqual(self.milestones(operation), ['started', 'ready', 'traffic-may-resume', 'backup-complete', 'complete'])
+        record = dict(line.split('=', 1) for line in (operation / 'record').read_text().splitlines())
+        self.assertEqual(record['kind'], 'snapshot')
+        self.assertEqual(record['schema'], '53')
+        self.assertEqual(record['db_port'], str(self.db_port))
+        self.assertEqual(record['previous'], str(self.old))
+        self.assertEqual(record['candidate'], str(self.old))
+        self.assertEqual(record['database'], 'jury')
+        subprocess.run(['sha256sum', '-c', '--quiet', 'database.sql.gz.sha256'], cwd=str(operation), check=True)
+        with gzip.open(str(operation / 'database.sql.gz'), 'rt', encoding='utf-8') as dump:
+            text = dump.read()
+        self.assertIn('DROP DATABASE IF EXISTS `jury`', text)
+        self.assertIn('first vote', text)
+        # status: complete, nothing to do
+        status = self.release('status')
+        self.assertSucceeded(status)
+        self.assertNotIn('restore', status.stdout)
+        # --verbose names the snapshot, its time and the exact command to back out to it.
+        verbose = self.release('status', '--verbose')
+        self.assertSucceeded(verbose)
+        self.assertIn('to back out to the snapshot %s taken %s' % (operation.name, record['taken']), verbose.stdout)
+        self.assertIn('sudo wlxjury-release restore %s --accept-data-loss' % operation.name, verbose.stdout)
+
+        # Writes after it, then the guarded restore: named, --accept-data-loss, a rescue dump first.
+        self.sql("INSERT INTO votes VALUES (3, 'vote after the snapshot')")
+        refused = self.release('restore', operation.name)
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn('--accept-data-loss', refused.stderr)
+        self.assertTrue(self.active(SERVICE))
+        unconfirmed = self.release('restore', operation.name, '--accept-data-loss')
+        self.assertEqual(unconfirmed.returncode, 1)
+        self.assertIn('type RESTORE', unconfirmed.stderr)
+        self.assertIn('a restore of the snapshot %s taken %s' % (operation.name, record['taken']), unconfirmed.stderr)
+        self.assertFalse(self.flag.exists())
+        # A writer stopped since the snapshot stays stopped after the reopen: reopen restarts what ran at the restore.
+        self.systemctl('stop', 'backup.service')
+        restored = self.release('restore', operation.name, '--accept-data-loss', '--yes')
+        self.assertSucceeded(restored)
+        self.assertIn('Restored the snapshot %s taken %s' % (operation.name, record['taken']), restored.stdout)
+        self.assertIn('writers=backup.timer\n', (operation / 'record').read_text())
+        self.assertTrue(self.flag.exists())
+        rescues = sorted(operation.glob('before-restore-*.sql.gz'))
+        self.assertEqual(len(rescues), 1)
+        with gzip.open(str(rescues[0]), 'rt', encoding='utf-8') as rescue:
+            self.assertIn('vote after the snapshot', rescue.read())
+        self.assertEqual(self.sql('SELECT * FROM votes ORDER BY id'), self.original_votes)
+        self.assertEqual((self.root / 'current').resolve(), self.old)
+        self.assertSucceeded(self.release('reopen', operation.name))
+        self.assertFalse(self.flag.exists())
+        self.assertTrue(self.active('backup.timer'))
+        self.assertFalse(self.active('backup.service'))
+
+    def test_snapshot_and_prune_remove_what_a_killed_snapshot_left(self):
+        self.sql('ALTER TABLE votes ENGINE=InnoDB')
+        # A power cut mid-dump leaves the hidden staging folder: the next snapshot removes it.
+        leftover = self.backups / '.snapshot.AbC123'
+        leftover.mkdir(parents=True)
+        (leftover / 'database.sql.gz').write_bytes(b'partial')
+        result = self.release('snapshot')
+        self.assertSucceeded(result)
+        self.assertIn('Removed the unfinished snapshot .snapshot.AbC123', result.stdout)
+        self.assertFalse(leftover.exists())
+        # And prune does, as with an unfinished unpack: listed by --dry-run, deleted by the run.
+        leftover.mkdir()
+        dry = self.release('prune', '--dry-run')
+        self.assertSucceeded(dry)
+        self.assertIn('Would delete the unfinished snapshot .snapshot.AbC123', dry.stdout)
+        self.assertTrue(leftover.exists())
+        pruned = self.release('prune')
+        self.assertSucceeded(pruned)
+        self.assertIn('Deleted the unfinished snapshot .snapshot.AbC123', pruned.stdout)
+        self.assertFalse(leftover.exists())
+        self.assertEqual(len([path for path in self.backups.iterdir() if path.is_dir()]), 1)
+
+    def test_a_snapshot_after_a_deployment_does_not_stop_backing_the_deployment_out(self):
+        operation = self.reopened_deployment()  # Its migration made votes InnoDB.
+        result = self.release('snapshot')
+        self.assertSucceeded(result)
+        snapshots = [path for path in self.backups.iterdir() if path.name.endswith('-snapshot-26.11-test')]
+        self.assertEqual(len(snapshots), 1)
+        # The deployment's own dump is still the one that backs it out.
+        self.assertSucceeded(self.release('restore', operation.name, '--accept-data-loss', '--yes'))
+        self.assertSucceeded(self.release('reopen', operation.name))
+        self.assertOriginalDatabase()
+        self.assertEqual((self.root / 'current').resolve(), self.old)
+        # Both dumps count for prune as any operation's.
+        dry = self.release('prune', '--dry-run', '--verbose')
+        self.assertSucceeded(dry)
+        self.assertIn('Keep dump %s/database.sql.gz' % snapshots[0].name, dry.stdout)
+
+    def test_a_failed_snapshot_leaves_no_operation(self):
+        self.sql('ALTER TABLE votes ENGINE=InnoDB')
+        # gzip fails mid-dump, as on a full disk.
+        stubs = self.base / 'bin'
+        (stubs / 'gzip').write_text('#!/bin/sh\ncase "$*" in -t*) exec /bin/gzip "$@" ;; esac\ncat > /dev/null\nexit 1\n')
+        (stubs / 'gzip').chmod(0o755)
+        try:
+            result = self.release('snapshot')
+        finally:
+            (stubs / 'gzip').unlink()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('maintenance is never cleared', result.stderr)
+        self.assertEqual(list(self.backups.iterdir()), [])
+        self.assertFalse(self.flag.exists())
+        self.assertTrue(self.active(SERVICE))
+
     def reopened_deployment(self):
         archive, sha = self.release_zip()
         self.assertSucceeded(self.release('deploy', archive, sha))

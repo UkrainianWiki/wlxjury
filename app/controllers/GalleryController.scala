@@ -585,6 +585,8 @@ class GalleryController @Inject() (
       country: Option[String], coi: Boolean = false, author: Option[String] = None,
       monument: Option[String] = None): EssentialAction =
     withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId))) { user => implicit request =>
+      // a round a split moved out of this contest: its files page in the contest it is in now (§4.6)
+      movedRound(contestId, round).fold(
       contestFilesView(user, contestId, deleted, round, region, country, coi, author, monument).fold(notFoundPage(user, _), { listed =>
         // all the category's files' counts (cached), which also give their number
         val all = categoryCountsOf(listed)
@@ -611,8 +613,14 @@ class GalleryController @Inject() (
         val files = view.list.fold(Seq.empty[ImageJdbc.StoredFile])(
           ImageJdbc.listFiles(_, view.region, pager.pageSize, pager.offset))
         Ok(views.html.contestFiles(user, files, pager, view))
-      })
+      }))(to => Redirect(routes.GalleryController.contestFiles(to, page, deleted, round, region, country, coi, author, monument)))
     }
+
+  /** Where a split moved `round` out of `contestId` (contest series plan §4.6, CY-4): its contest
+    * now; None if it wasn't moved out of there.
+    */
+  private def movedRound(contestId: Long, round: Option[Long]): Option[Long] =
+    round.flatMap(r => db.scalikejdbc.ContestSplitJdbc.movedRound(r, contestId))
 
   /** The regions of a contest files page's list (without its region), with the list's files in
     * each: its region menu's, read when the menu is opened (region-menu.js). For those who may

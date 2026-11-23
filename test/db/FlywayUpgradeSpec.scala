@@ -973,6 +973,51 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+  /** V111's rollback SQL after reopen (the script's last comment): the split tables dropped. */
+  private val v111Rollback = Seq(
+    "DROP TABLE IF EXISTS contest_split_item",
+    "DROP TABLE IF EXISTS contest_split",
+    "DELETE FROM flyway_schema_history WHERE version = '111'")
+
+  "V111's contest split" should {
+    "take a split and its items, refuse unknown kinds and invalid JSON, cascade items, rerun, and roll back" in {
+      emptyDb("fw_v111_prev")
+      flyway("fw_v111_prev", production.copy(target = Some("110"))).migrate()
+      emptyDb("fw_v111")
+      flyway("fw_v111", production.copy(target = Some("110"))).migrate().success must beTrue
+      flyway("fw_v111", production.copy(target = Some("111"))).migrate().success must beTrue
+      val once = schema("fw_v111")
+      def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+      def refused(sql: String): Boolean = Using.resource(connect("fw_v111"))(c => scala.util.Try(run(c, Seq(sql))).isFailure)
+      Using.resource(connect("fw_v111"))(c => run(c, Seq(
+        s"INSERT INTO contest_split (id, contest_id, plan, plan_hash, created_by) VALUES (1, 466, '{\"moves\":[]}', '${"a" * 64}', 9)",
+        "INSERT INTO contest_split_item (split_id, move_index, kind, subject_id, contest_id, old_value, new_value) " +
+          "VALUES (1, 1, 'round', 1900, 631, '{\"contestId\":466}', '{\"contestId\":631}')")))
+      val items = Using.resource(connect("fw_v111"))(c => rows(c, "SELECT kind, subject_id FROM contest_split_item")(rs =>
+        rs.getString(1) -> rs.getLong(2)))
+      (history("fw_v111").map(_.split(" \\| ")(1)) === upTo("111")) and (items === List("round" -> 1900L)) and
+        // kinds byte for byte, JSON only, every item of a split
+        (refused("INSERT INTO contest_split_item (split_id, move_index, kind) VALUES (1, 1, 'Round')") must beTrue) and
+        (refused("INSERT INTO contest_split_item (split_id, move_index, kind, old_value) VALUES (1, 1, 'round', 'x')") must beTrue) and
+        (refused("INSERT INTO contest_split_item (split_id, move_index, kind) VALUES (2, 1, 'round')") must beTrue) and
+        (refused(s"INSERT INTO contest_split (contest_id, plan, plan_hash, created_by) VALUES (1, 'x', '${"b" * 64}', 9)") must beTrue) and {
+          Using.resource(connect("fw_v111"))(c => run(c, Seq("DELETE FROM contest_split")))
+          val left = Using.resource(connect("fw_v111"))(c => rows(c, "SELECT COUNT(*) FROM contest_split_item")(_.getLong(1)))
+          Using.resource(connect("fw_v111"))(c => run(c, Seq("ALTER TABLE contest_split AUTO_INCREMENT = 1",
+            "ALTER TABLE contest_split_item AUTO_INCREMENT = 1")))
+          val reset = schema("fw_v111")
+          Using.resource(connect("fw_v111"))(c => run(c, statements("V111__Contest_split.sql")))
+          (left === List(0L)) and (schema("fw_v111") === reset)
+        } and {
+          Using.resource(connect("fw_v111"))(c => run(c, v111Rollback))
+          (history("fw_v111").map(_.split(" \\| ")(1)) === upTo("110")) and
+            (tablesOnly(schema("fw_v111")) === tablesOnly(schema("fw_v111_prev"))) and
+            (flyway("fw_v111", production.copy(target = Some("111"))).migrate().success must beTrue) and
+            (tablesOnly(schema("fw_v111")) === tablesOnly(once))
+        }
+    }
+  }
+
   /** V96's rollback SQL after reopen (CHANGELOG, the account change log): the live unsent
     * invitations revoked first, since an older release would show one as mailed; the log dropped.
     */

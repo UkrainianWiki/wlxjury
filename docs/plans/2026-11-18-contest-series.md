@@ -2,7 +2,8 @@
 
 **Status:** CY-1 built on `stack/209-series-cy1` (V109; 2026-11-20); CY-0, the reuse dry-run
 report, built on `stack/212-series-cy0-report` (no migration; its production-copy numbers in §4.7);
-the rest is plan. The first
+CY-4, the split with Undo, built on `stack/213-series-cy4-split` (V111; 2026-11-20; §4.4); the rest
+is plan. The first
 batch, CA8 and the second batch are decided (2026-11-18). **Refined by the maintainer on
 2026-11-20:** a national contest may host rounds of several other countries (R4, §4.1); CY-1's
 inline reuse check reads every round's signals for it (§3.2). **Every decision is taken:** CA24 and,
@@ -421,7 +422,7 @@ All of this is logged in `contest_change`.
 
 - **With CY-3:** root's and the contest Admins' paths, and the people picker.
 - **With whichever of CY-2 and CY-3 lands second** (they need both CY-3's form and CY-2's
-  `series_admin`, the next free number at its merge, V111 now):
+  `series_admin`, the next free number at its merge, V112 now):
   - creation by series admins;
   - CA6's disabled grantees in the people picker.
 
@@ -769,15 +770,15 @@ series. Specs cover a series admin with no real row, and a retired series.
   `db/Migrations.scala:41-42`). So each PR **takes the next free number when it merges**: if
   D-1b's migration hasn't merged before CY-1, CY-1 either waits for it (it depends on D-1a anyway)
   or takes its number and D-1b renumbers.
-- **The numbers below:** CY-1's V109 is fixed (no other branch had it, 2026-11-20). CY-2 and
-  CY-4 take the next free number at their merge: V111 and V112 now that D-1b has V110, one lower
-  each if CY-2 or CY-4 merges before D-1b and D-1b renumbers instead.
+- **The numbers below:** CY-1's V109 is fixed (no other branch had it, 2026-11-20). CY-4, built
+  before CY-2, took V111 (`stack/213-series-cy4-split`, 2026-11-20; no other branch had it); CY-2
+  takes the next free number at its merge, V112 now.
 
 | | PR | Content |
 |---|---|---|
 | V109 `Series` | CY-1 | Table `series`. On `contest_jury`: `series_id` (FK RESTRICT), `created_at TIMESTAMP(3) NULL` (no `ON UPDATE`), `created_by`, `retired_at`, `retired_by`, the generated `live_series_id` and `UNIQUE (live_series_id, year)`. Table `contest_change(id, contest_id, series_id, actor_id, kind, batch_id, detail JSON, comment, created_at)`, kinds `created`, `identity`, `series_assigned`, `series_unassigned`, `series_changed`, `split_out`, `split_in`, `split_undone`, `retired`, `unretired` (CA8, decided) |
-| V111 `Series_admin` (next free at merge) | CY-2 | Table `series_admin` with `admin_from_year` (NOT NULL, CA20), `live_grant_series_id` and its unique key. `account_change.field` adds `series_admin_granted`, `series_admin_revoked` and `series_admin_from_year` (keeping V106's and V107's) |
-| V112 `Contest_split` (next free at merge) | CY-4 | `contest_split` and `contest_split_item` |
+| V111 `Contest_split` | CY-4 | `contest_split` (root's confirmed plan, its hash, job, dump operation id, batch, Undo) and `contest_split_item` (each change with its old and new values, for Undo) |
+| V112 `Series_admin` (next free at merge) | CY-2 | Table `series_admin` with `admin_from_year` (NOT NULL, CA20), `live_grant_series_id` and its unique key. `account_change.field` adds `series_admin_granted`, `series_admin_revoked` and `series_admin_from_year` (keeping V106's and V107's) |
 
 Each migration is rerunnable and has a FlywayUpgradeSpec case.
 
@@ -1040,6 +1041,52 @@ Root confirms one contest's plan, and a `contest_split` job runs it.
 - COI people listed;
 - "Distribute new files" reads the target's category.
 
+**Built (CY-4, `stack/213-series-cy4-split`, 2026-11-20; V111):** `services.series.ContestSplit` (the
+offer from `ReuseReport`, root's plan, its hash, the preconditions, Undo, the Rounds pages' notes),
+`ContestSplitHandler` (the `contest_split` job: per move create, files, people, move; root only to
+cancel or retry), `ContestSplitController` (`/admin/contests/:id/split`, `/admin/splits/:id` with
+Undo), `ContestSplitJdbc.movedRound` (§4.6's redirects). How the plan's points were built:
+
+- **The confirmation** (CA9): proposed moves ticked; an empty cluster ("leave" by default) may be
+  ticked to move with the others; a cluster whose signals disagree offers each identity they name
+  (the report's, each round filter's, S2's), none picked; R3 never. Clusters of one target (type,
+  place, year) are one move.
+- **The target:** a new contest unless root picks an existing one of that series and year; where
+  the series already holds the year, the new contest is refused and root must pick the holder. The
+  series is created on confirmation when missing (its suggested name, type and country). The new
+  contest is named by the type, with the series' country and campaign, the year, root as
+  `created_by`, its own category; no source (`images`) is set: re-importing its own Commons source
+  is root's next step (§4.1).
+- **Step 1** pauses only the active rounds root ticked (V105 `paused`, the prior status recorded),
+  after re-checking the preconditions; a round started since, being created, frozen or with an
+  active job fails the job. **Steps 2–4** as above; the people step skips deleted accounts, root
+  (the protected accounts until CY-2's series admins), O14 conflicts (another role in the target,
+  or an Admin tick for a juror of the move: the Juror role wins), Juror there already and accounts
+  an account join holds, each recorded (`skipped`) and listed. The in-app notices are the
+  `account_change` role rows with the `from contest #<source>` comment (the owner's notices);
+  the source's and an existing target's admins see a note on their Rounds page (§4.6), as no
+  per-account notice exists for them.
+- **Lock order:** the series row, then the contests in id order, then the source's and target's
+  rounds in id order (`Round.lock`); one split per contest at a time (the job's dedupe key). A
+  failure resumes the rounds the job paused; Retry pauses them again; Cancel resumes them.
+- **Votes** are never written; a vote cast during the move keeps its round id (spec).
+- **After the review of e2e4e733:** moves into one missing series reuse the series the split created
+  (or a live one of that type and place); an existing target in no series joins the move's series;
+  round_user's organizer gets the Organizer role (V62's mapping); people added to the moved rounds
+  after the people step get their role in the move step; a round finalized during the pause stays
+  so; the confirmation lists, per active round, the jurors who lose access (another role in the
+  target, an account join, votes without being a juror of the round) and needs root's tick
+  acknowledging them.
+- **After the review of 01b0609e:** the conflicts are computed per existing target root may pick
+  (against the role the split would give: organizer for round_user's organizer, else Juror) and the
+  acknowledgement is required for the target actually picked. The dump before a split is
+  `wlxjury-release snapshot` (an online, guarded operation; its back-out the release tool's
+  `restore NAME --accept-data-loss`; docs/deployment.md, "A snapshot"). **Accepted risk:** the move
+  step's late grant (people added to the moved rounds after the people step) reads the accounts
+  without locking them, since locking them after the rounds would invert the account join's
+  users-then-round order; an account retired between that read and the grant gets a role it can't
+  use (listed on the split's page).
+
 ### 4.5 Safety and Undo
 
 **Before applying:** a plan hash, and a dump before each batch (its operation id is kept), the first
@@ -1054,7 +1101,16 @@ before the first production run (CA12, decided 2026-11-20: Undo plus a dump).
 - **the file links are kept**;
 - a created target is **retired**.
 
-Undo is refused once the target has rounds referring to moved ones.
+Undo is refused once the target has rounds referring to moved ones. **Built (CY-4):** also refused
+while the split's job runs or another split of the contest does, while its job is failed (Cancel it
+first, which resumes what it paused), and once a moved round has moved on; a round's old number is
+restored unless taken since (then the next free one); a membership counts as used when the account
+is a juror of a target round or commented there, or its role changed; an Admin role it gave is
+removed only with a target it retires; a created target in use since (rounds, comments, jobs or
+members of its own, or a change outside the split's batch) stays (listed); an existing target the
+split put into a series leaves it. Undo is also refused while a moved round is being created,
+distributed, frozen or has a queued or running job, and while a moved round has jurors who are no
+members of the source (named). (Review of e2e4e733.)
 
 **An active round in a cluster to move** (466's 1900, WLE 2026 Bhutan, active with 965 files on
 the copy): step 1 pauses a cluster's active rounds for the move and resumes them after (§4.4),
@@ -1301,9 +1357,9 @@ Everyone else with a contest in the series sees only their own contests' rows.
 | **CY-0** | The reuse report; Q0–Q4 tuning. Built on `stack/212-series-cy0-report` (§4.3, numbers in §4.7) | D-1a, D-1b | — | M (3–4 days) |
 | **CY-1** | Series table and key, derived previous, `contest_change` with batches, retired contests and series, `/admin/series`, proposals with bulk confirm, affected-grants list and batch undo, **the inline reuse check** (with every round's signals, R4), the menu grouped by series, the `/contests` filter, docs. Built on `stack/209-series-cy1` | D-1a | V109 | M–L (6–7 days) |
 | Ops after CY-1 | **Production assignment:** Q0 and Q5 on the copy, then root's bulk confirmation on production, in batches | CY-1 | — | 1 day |
-| **CY-2** | Series admins: `series_admin` with its live-grant key, CA19 adds with the grantee rules, root-only re-grant, **the chained revoke (required) with three-level specs**, root's 24-hour grants view, join and retirement hooks, `seriesAccountContests` in the account rules (CA17), `withSeries(user, currentContestId)`, `derivedRoles`, `contestPermission` real-only with the `derived = true` opt-in and `inContestReal`, CA20 derivation from `admin_from_year` with its computed default, bounds and root's later edit (logged), every action classified, `isProtectedTarget` replacing the 26 target checks, COI, the users-page line, the change-log view, the menu entry and landing, the grant UI with the start year and the contest list, guard specs, negatives; its own security review. Series admins' creation path and CA6's disabled grantees ship with whichever of CY-2 and CY-3 lands second | CY-1 | next free at merge (V111 now) | L (14–16 days) |
+| **CY-2** | Series admins: `series_admin` with its live-grant key, CA19 adds with the grantee rules, root-only re-grant, **the chained revoke (required) with three-level specs**, root's 24-hour grants view, join and retirement hooks, `seriesAccountContests` in the account rules (CA17), `withSeries(user, currentContestId)`, `derivedRoles`, `contestPermission` real-only with the `derived = true` opt-in and `inContestReal`, CA20 derivation from `admin_from_year` with its computed default, bounds and root's later edit (logged), every action classified, `isProtectedTarget` replacing the 26 target checks, COI, the users-page line, the change-log view, the menu entry and landing, the grant UI with the start year and the contest list, guard specs, negatives; its own security review. Series admins' creation path and CA6's disabled grantees ship with whichever of CY-2 and CY-3 lands second | CY-1 | next free at merge (V112 now) | L (14–16 days) |
 | **CY-3** | Creating contests: the series page, the next-year path (CA4), settings, the people picker, root's notices, the H1/import links. Creation by series admins (CA16) and CA6's disabled grantees ship with whichever of CY-2 and CY-3 lands second | CY-1 | — | M (5–6 days) |
-| **CY-4** | Split, Undo, redirects, runbook; R4's per-cluster targets, memberships in the target (CA11, CA23), COI and regions from the target (§4.1); root's page and a job (CA13), Undo plus a dump (CA12), source links kept (CA10). **Decided** (CA9, 2026-11-20) on CY-0's numbers | CY-0, CY-1 | next free at merge (V112 now) | L (9–11 days) |
+| **CY-4** | Split, Undo, redirects, runbook; R4's per-cluster targets, memberships in the target (CA11, CA23), COI and regions from the target (§4.1); root's page and a job (CA13), Undo plus a dump (CA12), source links kept (CA10). **Decided** (CA9, 2026-11-20) on CY-0's numbers. Built on `stack/213-series-cy4-split` (§4.4) | CY-0, CY-1 | V111 | L (9–11 days) |
 | **CY-5** | The production split run | CY-4 | — | ops, 1–2 days |
 
 **Order:**
