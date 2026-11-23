@@ -64,6 +64,11 @@ class Rules:
                 self.bad.append("line %d: the regex doesn't compile (position %s)"
                                 % (n, "?" if e.pos is None else e.pos))
                 continue
+            except RecursionError:
+                # the regex parser recurses per nesting level; a deeply nested group is a refused
+                # line like any other, not a crash with a traceback
+                self.bad.append("line %d: the regex is nested too deeply to compile" % n)
+                continue
             if cat == "allow":
                 self.allow.append(compiled)
             elif cat == "skip-path":
