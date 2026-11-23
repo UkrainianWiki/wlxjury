@@ -54,8 +54,8 @@ throttling and moves to S3 or S7.
 
 **Items:** O1, P2 (HSTS), P15 (logback), `useSSL` if the DB is ever remote.
 
-Not done here: they belong to `docs/plans/2026-11-01-infra-in-repo.md` (branch
-`ukwikidev/infra-in-repo`). Mapping:
+Not done here: they belong to the infrastructure plan, which lives in the maintainers'
+private infrastructure repository. Mapping:
 
 - **O1:** until the roles move, the user adds B5's block (`wlxjury.allowedHosts =
   ${WLXJURY_ALLOWED_HOSTS}`, `play.filters.hosts.allowed = []`, the three `secure` lines) to
@@ -71,8 +71,8 @@ Not done here: they belong to `docs/plans/2026-11-01-infra-in-repo.md` (branch
 **Decision (user):** patch `wlxjury-infra` now for O1/P2, or wait for the infra plan's Steps 2–4
 (then the followups branch waits too).
 
-**Decided (user, 2026-11-02):** folded into the infra plan (section "Security items folded in" on
-`ukwikidev/infra-in-repo`, 088b76e9), together with S4's fail2ban throttling. The followups branch
+**Decided (user, 2026-11-02):** folded into the infra plan (section "Security items folded in" of
+the plan in the private infrastructure repository), together with S4's fail2ban throttling. The followups branch
 is not deployed before O1 is in place.
 
 ## S9: Ops
