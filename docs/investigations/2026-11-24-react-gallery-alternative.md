@@ -29,14 +29,14 @@ from reading the code and plans.
    Estimate for the platform: **5-7 days** (build task, dev loop, `uiTest` in `sbt test`, CSP,
    the translated-texts mechanism, one Playwright smoke spec, docs).
 3. **First screen: the root contests grid** (the `react` branch's screen), on the existing REST
-   `/api/contests` now and moved to GraphQL when #135's first slice (`me`, `contests`, `contest`, `roundStat`) lands. It is
+   `/api/contests` now and moved to GraphQL when #135's slice 1 (foundation, `me`, `contests`, `contest`) lands. It is
    low-risk (root only; no juror sees it), useful (contest administration without a form per
    contest) and it exercises every integration point: session, CSRF, texts, CSP, build, tests.
    **Use the parked `react` and `react-custom-filter` branches as a skeleton, not as the base**:
    keep their Vite, TypeScript and Vitest setup and test style; drop MUI and MUI X (section 3.3:
    Emotion's injected styles fight #129's planned CSP step G-7, and the bundle is large; master's CSP would allow them today). Estimate for the
    screen on top of the platform: 3-5 days. A good second screen is round statistics for organizers on
-   GraphQL, using `roundStat` from #135's first slice, where GraphQL's query shape pays off.
+   GraphQL, using `roundStat` from #135's slice 2, where GraphQL's query shape pays off.
 4. **The gallery is a plausible later React target, not a first one.** #129's server half
    (keyset continuation, size schemes, prefetch, the window-size cookie, own-votes rules) serves
    a React gallery unchanged (section 5.3); only the front-end half would change. The answer on
@@ -51,7 +51,7 @@ from reading the code and plans.
 |---|---|
 | React platform (build, dev loop, tests, CSP, texts, docs) | 5-7 days |
 | First screen: root contests grid | 3-5 days after the platform |
-| #135's first slice (not React work) | see #135 (its figure may change; not restated here) |
+| GraphQL part of the first two screens: #135 slices 1-2 (not React work) | about 4-5.5 days (#135's figure) |
 | #129 as planned (decided) | 28-33 days |
 | Gallery in React instead of #129's front end | 45-60 days in all, with #129's server half (about 15-18 days) kept |
 | #129 plus a YARL lightbox island | #129 plus 8-12 days (reopens Q2) |
@@ -137,8 +137,7 @@ client-side state and sub-views (a `?tab=` or a hash).
   Bearer request without a session cookie does not. Token callers are query-only there.
 - **CSRF.** The Twirl page renders `data-csrf-token` on the mount element, as the gallery does for
   votes; the client sends it as `Csrf-Token` on every request to the API (urql's fetch options,
-  one place). #135's section 6 speaks of a Twirl shell at `/ui` with a meta tag; with islands each
-  screen's own page carries it on the mount element.
+  one place). As in #135, no shell page: each screen's own page carries it on the mount element.
 - **Texts (i18n).** Messages stay in `conf/messages.{en,fr,ru,uk}`. The Twirl page puts the
   keys the screen needs, translated in the user's language, into a `data-` attribute or an inline
   JSON (a Scala list of keys per screen): no build-time export, no second source of truth, no
@@ -168,13 +167,13 @@ client-side state and sub-views (a `?tab=` or a hash).
 | Screen | Users | Risk | Data source | Verdict |
 |---|---|---|---|---|
 | **Root contests grid** (the `react` branch) | root only | very low | REST `/api/contests` now, GraphQL later | **First**: exercises every integration point; nobody else sees it |
-| Round statistics (read-only) | organizers, admins | low | GraphQL `roundStat` (#135's first slice) | Second; where GraphQL's shape pays off |
+| Round statistics (read-only) | organizers, admins | low | GraphQL `roundStat` (#135 slice 2) | Second; where GraphQL's shape pays off |
 | Users page with filters | admins | medium | GraphQL users and the email rule | Later |
 | A juror screen (gallery, large view) | jurors | high | votes, own-votes rules, CSRF, keyboard | Last |
 
 The grid is a modest screen: useful for root, but its value is proving the platform. If the
 maintainer wants a first screen that more people use, round statistics is better, after the
-#135's first slice.
+#135's slice 2.
 
 **Base.** Take from `react` and `react-custom-filter`: the `ui/` layout, `vite.config.ts` with the
 dev proxy, `tsconfig.json`, the Vitest setup and test style, the contests API wrapper. Do not take
@@ -314,7 +313,7 @@ of 2-4 contexts.
 - YARL's keyboard, focus and ARIA behaviour was not tested; neither library was checked under
   `style-src` without `'unsafe-inline'`.
 - GraalJS's cost is unmeasured, and its supported JDK range is not confirmed (section 7).
-- The GraphQL plan is a plan (draft PR #135): its first slice, the `/api/graphql` action and the
+- The GraphQL plan is a plan (draft PR #135): its slice 1, the `/api/graphql` action and the
   query-only rule for tokens do not exist yet, so the first screen starts on REST.
 - No gallery prototype was built.
 
@@ -323,7 +322,7 @@ of 2-4 contexts.
 1. **Integration shape.** Islands on Twirl pages (recommended), or an SPA under `/ui` as the
    `react` branch did? Islands keep routes and authorization in Play.
 2. **First screen.** The root contests grid (low risk, small audience, can start on REST), or
-   wait for #135's first slice and start with round statistics for organizers?
+   wait for #135's slice 2 and start with round statistics for organizers?
 3. **UI kit.** No MUI; Bootstrap 5 classes with CSS modules and a headless table, because of
    CSP step G-7 and the look. Does the UI developer agree, or is a component kit a requirement
    (then the CSP plan changes)?
@@ -337,8 +336,8 @@ of 2-4 contexts.
    prerender spike of section 7 comes first)?
 8. **Lightbox.** Is a quick preview over the gallery wanted at all (Q2 said no)? If so, C1 is a
    small follow-up now that the platform exists.
-9. **Juror slice order** (shared with #135). Should the juror-facing slice (round images and
-   the vote) come before or after the admin and organizer screens? Recommendation: **after**:
+9. **Juror slice order** (the same question as #135's Q8: answer it once). Should the juror-facing slice (round images and
+   the vote, #135 slices 3-4) come before or after the admin and organizer screens? Recommendation: **after**:
    the admin and organizer screens carry less risk, prove the platform, and let the gallery
    decision (#129 or React) settle first.
 10. **The parked branches.** Close `react`, `react-custom-filter` and `104-port-gallery-to-react`
