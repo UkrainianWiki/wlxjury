@@ -1,70 +1,24 @@
 # One gallery of our own tiles: replacing Unite Gallery (plan, 2026-11-19)
 
-**Status (2026-11-23):** planned, not built; build right after release 26.11.14. **The
-maintainer's decisions of 2026-11-19 (Q1–Q25) and of 2026-11-20 (one-criterion rounds) are
-applied** in the sections below and recorded in §8. **Open:** Q19 (the last-viewed mark on the
-comments report) and Q22 (the round review), each with the plan's recommendation in §8.
-
-The decisions in short:
-
-- **Q1:** our own tiles, not lightGallery 3.
-- **Q2:** no lightbox.
-- **Q3:** tiles are never enlarged beyond their thumbnail, short rows stay short, and only
-  cached sizes are used (no direct Wikimedia URLs for now).
-- **Q4:** two size schemes, chosen per contest (§3.5).
-- **One gallery:** a single tile component for every gallery (binary, rated and by-rate,
-  contest files, round review), with one look (Q14).
-- **Batches and paging:** a batch is one screen (Q15); the view menu offers Pages (the default)
-  and Continuous, remembered per person (Q16, Q18, Q20).
-- **One-criterion rounds:** the gallery shows stars as in other rated rounds; the criterion's
-  name is shown once, at the top of the gallery, never on a tile (§3.1).
+**Status (2026-11-23):** planned, not built; build right after release 26.11.14. **All
+questions (Q1–Q25) and the one-criterion rule are decided by the maintainer** (2026-11-19 to
+2026-11-23); the decisions are applied in the sections they affect and listed in §8.
 
 This plan carries out option C of the
 [gallery investigation](../investigations/2026-11-04-gallery-keep-or-replace.md) ("our own
 tiles"), which the maintainer chose on 2026-11-04 for "later". It also weighs lightGallery 3
 (§2), at the maintainer's request.
 
-**Revision history (2026-11-19, then the last bullet):**
+**Revision history:**
 
-
-- **First independent review (14 findings):**
-  - keyset continuation;
-  - JSON refusals for chunks;
-  - lightGallery on verified points;
-  - one decision per question.
-- **Follow-up review (7 findings):**
-  - the cursor carried in the chunk URL;
-  - sub-region lists continued by key;
-  - `sizes` without rounding errors;
-  - only marked chunks inserted;
-  - deleted files' thumbnails.
-- **The maintainer's decisions Q2–Q4:**
-  - no direct Wikimedia URLs in tiles;
-  - rows capped at 247 px and short rows unstretched;
-  - two size schemes with a cleanup safe for both (new step G-1a).
-- **One gallery:**
-  - the by-rate grid (`galleryByRate`) moves to the same tile;
-  - by-rate is the shared tile's first user (G-1b);
-  - by-rate gets continuous scrolling with the others (G-5).
-  - The open questions were renumbered.
-- **Review of the one-gallery revision (12 findings):**
-  - a miss fills the file's current set first, and filling the second set scales from what is
-    on disk;
-  - the engines' real `srcset` choice, with Chromium's DPR-2 trade-off (Q12), and 1280 for
-    panoramas;
-  - the cleanup fails closed and never deletes a directory's widest file;
-  - the migration number and a separate read for the scheme;
-  - new contests stay `legacy` until G-3;
-  - the switch's cost is shown before it starts;
-  - deleted files' widths read from disk and always served;
-  - ratio classes instead of a script-set `--r`;
-  - files smaller than the row are never enlarged;
-  - G-1a at 5–6 days.
-  - The open questions were renumbered again (Q5 split into three; Q9–Q12 new; Q25 restores the
-    voted-tile question that the one-gallery revision had dropped).
-- **2026-11-23, the maintainer's answers to Q5–Q25 applied** (all but Q19 and Q22), and the
-  one-criterion decision of 2026-11-20. New: the Pages / Continuous choice (§3.6), a button to
-  switch size schemes (§3.5), caption-aware tile width (§3.2), one-screen batches (§3.6).
+- **2026-11-19:** three independent reviews and the first decisions (Q1–Q4, one gallery for every
+  view). They produced keyset continuation for chunks, JSON refusals for chunks, the engines'
+  real `srcset` choice, a cache cleanup that fails closed, ratio classes instead of a
+  script-set ratio, and the two size schemes.
+- **2026-11-23:** the maintainer's answers to Q5–Q25, the one-criterion rule (decided
+  2026-11-20) and the review fixes applied: the Pages / Continuous choice, window-sized batches,
+  a screen profile and prefetch of the large sizes, a switch that reuses cached images, the
+  caption-aware tile width.
 
 Written from the code at the 26.11.13.1 hotfix. Nothing was run for it:
 no sbt, fixture server, browser or Docker. Where a fact needs a browser, it is a measurement step (§5, G-0), not a claim.
@@ -96,7 +50,7 @@ no sbt, fixture server, browser or Docker. Where a fact needs a browser, it is a
 - [5. Steps: small reviewable PRs, in order](#5-steps-small-reviewable-prs-in-order)
 - [6. Test plan](#6-test-plan)
 - [7. Risks](#7-risks)
-- [8. Questions: decided and open](#8-questions-decided-and-open)
+- [8. Questions and decisions](#8-questions-and-decisions)
 
 ## Goals and non-goals
 
@@ -374,15 +328,17 @@ The row maths it would add is what flex-wrap does in CSS.
 
 | Option | Values | Binary gallery | Rated gallery / by-rate | Contest files, round review |
 |---|---|---|---|---|
-| `votes` | `thumbs` / `stars` / `none` | `thumbs` for a juror's own active round, else `none` | `stars` for a juror's own active rated round without criteria (`TileStars.round`), else `none` | `none` |
+| `votes` | `thumbs` / `stars` / `none` | `thumbs` for a juror's own active round, else `none` | `stars` for a juror's own active rated round, one-criterion rounds included (a multi-criteria round shows averages only, `none`), else `none` | `none` |
 | `tally` | on / off | on for all jurors' votes (`aggregateBinary`) | on for a binary round's by-rate of all jurors | off |
 | `caption` | `none` / `rank` | `none` | `rank`: the rank (ranked lists), stars or rate text, criteria averages | `none` |
 | `chips` | `overlay` / `caption` | `overlay` (lower left on the image, the 2026-11-15 decision) | `caption` (in the rank line, the 2026-11-16 decision) | `overlay` |
 | `layout` | `rows` | `rows` | `rows` (one look everywhere, Q14) | `rows` |
 
 **One-criterion rounds** (decided 2026-11-20): the gallery shows stars like any rated round
-(`votes = stars`), and the criterion's name appears once, at the top of the gallery, never on a
-tile. The tile has no criterion label.
+(`votes = stars`). The criterion's name is shown in the top bar's round menu, next to the round
+name, never on a tile and never above the tiles. A multi-criteria round keeps showing averages
+only on its tiles. This needs `TileStars.round` and the by-rate stars to accept a one-criterion
+round (G-1b).
 
 Sketch of a tile (attribute order and class names are for the PR):
 
@@ -495,7 +451,7 @@ its image, as for narrow or portrait files, the tile gets more width and spacing
 - **Tile width = max(image width, the info's minimum width).** The image stays at the width it
   would have had without the info (the `width: calc(…)` above), centred, with grey beside it. No
   image is widened, so the images in a row keep one height. The info is never overlapped or
-  clipped, which means the tile's `overflow: hidden` clips only the image, not the info.
+  clipped: only the image is cropped (by `object-fit`, as always), never the tile or its info.
 - **The caption's minimum width**, `--wlx-caption-min`, is a class per star count, in CSS: enough
   for the stars, the worst-mark button and the rate text (about 13rem for 10 stars). The chips'
   minimum is set the same way, from the widest chip set the tile can show.
@@ -544,6 +500,12 @@ look):
 is still answered with a redirect to Wikimedia (`ImageProxyController` `wikimedia` /
 `onWikimedia`, 303). For that one request the browser then loads from `upload.wikimedia.org`,
 as today.
+
+**Where sizes are fetched.** The browser never asks Wikimedia for a tile size. The server
+fetches from Wikimedia, through the proxy and at its throttled rate, and caches what it fetched:
+the 500 px source (or the file's own width when narrower) on a first miss or a prefetch, a
+960 or 1280 px size only for a juror whose screen needs it (§3.5, "Screen profile"). The one
+exception is the proxy's redirect above.
 
 **Candidates**, width descriptors through the proxy:
 
@@ -688,10 +650,10 @@ contest.
   Several widths are in both: 250, or 500, which is a 4:3 file's height-375 width and a 1:1
   file's height-500 width. Checking the file's current widths first keeps a `legacy` contest's
   misses from filling the standard set.
-- **The 960 px files are stored on demand** (Q11, decided): the first request for a 960 (or
-  1280) width fetches it from Wikimedia, as the proxy does today, and stores it on disk; a
-  contest's full download or switch does not fetch them ahead of time. Filling 250, 330 and 500
-  needs one Wikimedia width, 500, and scales the smaller two here.
+- **The 960 and 1280 px files are stored on demand** (Q11, decided): a contest's full download
+  or switch does not fetch them for every file. They are fetched for the jurors whose screens
+  need them (below), and any remaining miss fetches once through the proxy and is cached.
+  Filling 250, 330 and 500 needs one Wikimedia width, 500, and scales the smaller two here.
 - **`localSourceFile` scales from any cached width at least as wide as the target, in either
   scheme**, read from the registry, not only from the target set's own widths. So filling the
   second set for a file never fetches from Wikimedia again when a wide enough file is on disk.
@@ -700,26 +662,39 @@ contest.
   contest or for a round (`startDownloadForRound`), fills the files that are missing **at the
   contest's current sizes**, whichever scheme that is.
 
-**The switch** (Q8, Q9 and Q10, decided):
+**Screen profile and prefetch** (decided 2026-11-23). Only standard contests list 960 and 1280.
+
+- **A coarse profile per account**: a density class (1x, 2x or 3x) and a rough width bucket (for
+  example phone, laptop, large). It is not a fingerprint: two values, no exact sizes. The script
+  reports it when it changes; it is stored in a small table (a Flyway migration, numbered the
+  next free one at merge).
+- **When files are distributed to a juror with a known profile** (a new round, a top-up, "Add a
+  juror", "Distribute new files"), the distribution job queues a **paced prefetch** of the sizes
+  that profile needs for that juror's files, at `wlxjury.thumbs.rate-per-second`.
+- **A juror without a profile:** the prefetch is queued on the first visit, once the profile is
+  reported.
+- **Any miss left** is fetched once through the proxy and cached.
+
+**The switch** (Q8, Q9, Q10 and the 2026-11-23 decision):
 
 - **New contests** start in `standard` once G-3 has shipped (Q10, below).
 - **An existing contest switches only by its own admin button, "Switch to standard sizes"**,
-  separate from "Download images locally". Q9 is merged into it: switching **re-downloads every
-  file of the contest**, since no cached file provides the 500 px source the standard set needs.
-  The column flips to `standard` when the run **completes**.
+  separate from "Download images locally". The run **scales the standard sizes from cached
+  images that are wide enough** and downloads only the files that have no wide-enough source;
+  there is no full re-download. Scaled thumbnails differ slightly from the ones Wikimedia makes;
+  at these sizes the difference is small. The run asks for the standard set explicitly (the
+  current-set-first rule of a miss does not apply to it; a test covers it). The column flips to
+  `standard` when the run **completes**.
   - "Completes" means the download stream ends. Per-file errors are counted, as today, but
     don't stop it.
   - An interrupted run or a server restart during it means no flip; the contest stays as it
     was.
-- **What the switch costs, told before it starts:**
-  - for 38k files, about 38k fetches throttled at 10 a second (`wlxjury.thumbs.rate-per-second`),
-    over an hour;
-  - more disk for the new files (G-0 (f) measures the standard set without 960, and what the
-    960 px files add as they are requested).
-  The button says so: "Downloads every image again at the standard sizes (about an hour per
-  40,000 images, and more disk); the galleries switch when it finishes."
+- **What the switch costs, told before it starts:** the number of files that need a download
+  (the rest is scaled here) and the extra disk. **Unmeasured until G-0 (f):** the plan had
+  assumed about an hour per 40,000 images and about 6 GB for 38k files, which holds only if all
+  were downloaded and all 960 px sizes stored. The button shows the counts.
   - The admins' guide's advice to download before a round opens says the same for a `legacy`
-    contest, so the cost is never a surprise.
+    contest.
 - **Races are harmless.** The proxy serves both schemes' widths at all times, so a page rendered
   just before the flip and its thumbnails fetched after it, or the other way round, are always
   answered.
@@ -771,7 +746,7 @@ its direct Wikimedia `srcset` and its fallback through the proxy at `largeFallba
 ### 3.6 Pages and continuous scrolling
 
 **Which galleries:** every tile gallery: binary, rated and by-rate, contest files. The round
-review keeps the pager only (Q22, **open**; the recommendation is the pager only for now).
+review offers the same choice (Q22, decided).
 
 **The choice: Pages or Continuous** (Q16, Q18 and Q20, decided).
 
@@ -784,18 +759,24 @@ review keeps the pager only (Q22, **open**; the recommendation is the pager only
 - **Windowing** (removing far tiles) may become a third option later, if it is not too complex
   to maintain (G-5b, below).
 
-**Batches and pages** (Q15, decided).
+**Batches and pages** (Q15, decided; window size and page links decided 2026-11-23).
 
-- **A batch is one screen.** The script computes how many tiles fill the viewport (from its
-  width and height and the 200 px row height) and sends it as `n` with the chunk request. The
-  server caps `n` to 10..80. The first server-rendered page defaults to about 24 tiles; if that
-  doesn't fill the screen, the script tops up with a chunk. Without script, the pager uses the
-  fixed default.
+- **A batch is one screen**, and so is a page. The script computes how many tiles fill the
+  viewport (its width and height, the 200 px row height) and stores the window size in a
+  **cookie**. The server renders every later page at exactly that many tiles, capped to 10..80.
+  Where the browser supports them (Chromium), the viewport client hints (`Accept-CH`,
+  `Sec-CH-Viewport-Width`) let the server size the first page of a visit too. The first visit
+  without a cookie or hint, and a browser without script, get the default of about 24; if that
+  doesn't fill the screen, the script tops up with a chunk. Chunk requests send `n` explicitly.
+- **Page links carry the batch size** (`?n=…`) once it is set: the pager, `atUrl` /
+  `listAtId` (the large view's Back and Esc) and the navbar pager's links all honour it, so a
+  shared or reloaded link shows the same files, and Back from the large view lands on the same
+  page even if the window has changed since.
 - The first chunk of a page is exactly that page of the pager, so every URL stays meaningful
-  without script: `/gallery/round/7/user/12/page/5?…` is both "page 5" and where continuous
+  without script: `/gallery/round/7/user/12/page/5?n=24…` is both "page 5" and where continuous
   scrolling starts.
-- **Tile galleries get one size rule**: binary, rated, by-rate and contest files. The comments
-  report and the file list keep their page sizes.
+- **Tile galleries get one size rule**: binary, rated, by-rate, contest files and the round
+  review. The comments report and the file list keep their page sizes.
 
 **Continuing by key, not by offset.** A chunk after the first must not be "page n+1 by
 `OFFSET`":
@@ -909,11 +890,14 @@ below run only in Continuous; the failed-box and last-viewed parts run in both.
    loads upwards by itself (Q16, decided: simple now, downwards plus "Show earlier files").
 
 **Very large rounds.** A screening round can give one juror all 38k files (about 1,600 chunks of
-24).
+24 tiles).
 
 - Native lazy loading keeps far-away images from loading, and browsers drop the decoded data of
   off-screen images. The DOM is what grows: about 12 nodes per tile, more with a caption.
-- **Cap (Q18, decided):** after about 480 tiles (whole batches) the script stops loading by
+- **Cap (Q18, decided by measurement):** G-0 (g) measures 100, 250, 500, 1,000 and 2,000 tiles
+  (memory, scroll smoothness, vote response; Chromium and Firefox; a modest-laptop and a phone
+  profile). The cap is set below the point where it degrades and rechecked in G-5b; about 480
+  tiles is a placeholder until then. At the cap the script stops loading by
   itself and leaves the end link, "Continue with the next files", which opens them as a fresh
   page, with `after=…&k=…` where the list continues by key.
 - **Windowing** (removing far chunks and leaving a spacer of their height) is not in the first
@@ -953,9 +937,8 @@ boxes, not the page.
 - **No automatic scroll** anywhere: no `scrollIntoView` on load, and no `id` equal to the
   fragment.
 - **One script for every list** (`last-viewed.js`): all tile galleries, by-rate included since
-  it is a tile gallery now. **Open (Q19):** whether the comments report gets the mark too;
-  recommended yes, so every list brings you back the same way. If yes, its `id="@file.pageId"`
-  becomes `data-page-id`; G-4 checks with `rg` that those `id`s serve only as fragment targets.
+  it is a tile gallery now, and the comments report (Q19, decided: yes), so every list brings
+  you back the same way. The comments report's `id="@file.pageId"` becomes `data-page-id`; G-4 checks with `rg` that those `id`s serve only as fragment targets.
 
 ### 3.8 Keyboard and accessibility
 
@@ -1024,8 +1007,8 @@ boxes, not the page.
 | Binary gallery, organizers (one juror's; all jurors' with tally) | yes (`none`, `tally` for all) | yes | yes (one juror's by key; all jurors' by offset) | yes |
 | Rated gallery and every by-rate list | yes (`stars` or `none`, `caption = rank`, chips in caption) | yes | yes (Q20, covered by the choice): a juror's by key, all jurors' by offset | yes |
 | Contest files (all, deleted, COI, a round's deleted) | yes (`none`) | yes | yes, by offset | yes |
-| Round review | yes (`none`) | yes | no, pager only (Q22, **open**: recommended) | yes |
-| Comments report | **no**: its own article rows (below) | the shared image partial | no | recommended yes (Q19, **open**) |
+| Round review | yes (`none`) | yes | yes, the same Pages / Continuous choice (Q22) | yes |
+| Comments report | **no**: its own article rows (below) | the shared image partial | no | yes (Q19) |
 | File list | no (a table) | — | no | no |
 
 **Why the comments report is not a gallery.** Each row's main content is the file's comments, of
@@ -1086,7 +1069,10 @@ roundId)` gains a `part` mode (`Page` / `Chunk(cursor)`).
 No navbar or menus, and no counts the chunk doesn't show.
 
 - **The batch size** is the request's `n` (tiles per screen, Q15), parsed and capped to 10..80
-  by the server; a missing or bad `n` takes the default of about 24.
+  by the server. A missing `n` takes the window-size cookie, then the viewport client hint, then
+  the default of about 24; a bad `n` takes the default. Every page link the server writes (the
+  pager, the navbar pager, `atUrl` / `listAtId`, "Next files", "Show earlier files") carries
+  `n`.
 - A list that continues by key reads `n + 1` rows after the carried key to know `hasNext`, and
   writes the last shown row's key into the next link. Other lists read `Limit(n + 1, offset)`.
 - A ranked list computes its chunk's ranks (`rankCounts`). A criteria round reads its chunk's
@@ -1108,13 +1094,18 @@ No navbar or menus, and no counts the chunk doesn't show.
 - `Global.tileSrcSet`/`boxSrcSet`/`stripSrcSet` per scheme;
 - `servedWidths` as the union, and the miss filling the requested width's scheme; 960 and 1280
   stored when first requested (Q11);
-- the admin action "Switch to standard sizes": it re-downloads every file of the contest and
-  flips the column on completion; "Download images locally" never flips it (Q8, Q9);
+- the admin action "Switch to standard sizes": it scales the standard set from cached images
+  that are wide enough, downloads only the files without one, requests the standard set
+  explicitly, and flips the column on completion; "Download images locally" never flips it (Q8, Q9);
 - the cleanup's v2 marker, the aspect-only rule and the deleted-file skip;
 - the proxy serving any width on disk; deleted files' widths and `largestCachedWidth` read from
   their directory, with `largestCached*` moved to `LocalImageCacheService`;
 - `ContestJuryJdbc.thumbSizes`/`setThumbSizes` and the per-contest scheme cache;
 - `/thumb_urls` per scheme.
+
+**The screen profile** (§3.5): a small table keyed by account (a Flyway migration, numbered the
+next free one at merge), written by a CSRF-protected POST from the script, read by the
+distribution job to queue the paced prefetch.
 
 **The Pages / Continuous preference** (§3.6): a column on the account (a Flyway migration,
 numbered the next free one at merge), read with the page for the view menu and saved by a POST
@@ -1125,18 +1116,18 @@ No JSON API; the Tapir API is unchanged.
 ## 5. Steps: small reviewable PRs, in order
 
 Each PR gets the usual review and fix cycle, and the browser tests in three engines where it
-touches the tiles. **Total: about 23–28 days.**
+touches the tiles. **Total: about 28–33 days.**
 
 | Step | Content | Size |
 |---|---|---|
-| **G-0** | **Measure first, no product code.** On the fixture server (38k-file Gatling fixture DB), with Playwright's network log and traces, in Chromium, Firefox and WebKit, for the binary gallery, a by-rate list and contest files, at DPR 1, 2 and a phone viewport at DPR 3: <br>(a) does the hidden lightbox fetch large images; <br>(b) are both the hidden `srcset` image and the tile's `src` fetched; <br>(c) time to first tile and to all tiles, cold and warm cache, and a **cold, fast scroll** (proxy misses, 429s, stalled tiles); <br>(d) bytes per page; <br>(e) which candidate each engine takes at 100 %, 150 % and 200 % zoom, and bytes per chunk of about one screen (24 tiles), in the current and the standard widths (the latter fetched through the proxy at those widths); <br>(f) disk per file for the standard set (250/330/500, and 960 as it is requested) against the current set. <br>Results go into this plan as a "Measured" section. | S (1 day) |
-| **G-1a** | **Two size schemes, server side** (§3.5): migration (the next free number at merge, reserved in the roadmap) and `ContestJuryJdbc.thumbSizes` with its per-contest cache (no change to the `ContestJury` case class); `servedWidths` union, and any width on disk served first; a miss fills the file's current set first, else the standard set; `localSourceFile` from any cached width ≥ the target; "Download images locally" (contest or round) never switches: it fills missing files at the contest's current sizes (Q8); the separate admin button "Switch to standard sizes" re-downloads every file and flips the contest on completion, with the cost on the button (Q8, Q9); 960 and 1280 px files stored when first requested (Q11); new contests still `legacy` (Q10); cleanup v2 (marker, deleted files first or nothing, aspect-only rule, the widest file kept); deleted files' widths and `largestCached*` from their directory, moved to `LocalImageCacheService`; `/thumb_urls` and the large view's thumbnail bar per scheme. The tile pages keep their markup; their `src` follows the scheme. | L (5–6 days) |
-| **G-1b** | **The shared tile, first on by-rate** (the rated galleries and every by-rate list, already server-rendered): `snippets/galleryTile` and `galleryTiles` with `TileOptions`; the ratio classes and `wlx-tile-small`; the caption (rank line) moved in unchanged; the `rows` layout with the caption minimum width; `gallery-tiles.js` (failed box) and the shared CSS; `srcset`/`sizes` per scheme; lazy loading; `addListStars` on `.wlx-tile`. The comments report gets the shared image partial. Unite Gallery is untouched. | M–L (3–4 days) |
+| **G-0** | **Measure first, no product code.** On the fixture server (38k-file Gatling fixture DB), with Playwright's network log and traces, in Chromium, Firefox and WebKit, for the binary gallery, a by-rate list and contest files, at DPR 1, 2 and a phone viewport at DPR 3: <br>(a) does the hidden lightbox fetch large images; <br>(b) are both the hidden `srcset` image and the tile's `src` fetched; <br>(c) time to first tile and to all tiles, cold and warm cache, and a **cold, fast scroll** (proxy misses, 429s, stalled tiles); <br>(d) bytes per page; <br>(e) which candidate each engine takes at 100 %, 150 % and 200 % zoom, and bytes per chunk of about one screen (24 tiles), in the current and the standard widths (the latter fetched through the proxy at those widths); <br>(f) disk and download count for the standard set (250/330/500, and 960 as it is requested) against the current set, and the switch's number of files without a wide-enough source on the fixture; <br>(g) the Continuous cap: 100, 250, 500, 1,000 and 2,000 tiles, memory, scroll smoothness and vote response, in Chromium and Firefox, with a modest-laptop and a phone profile. <br>Results go into this plan as a "Measured" section. | S (2 days) |
+| **G-1a** | **Two size schemes, server side** (§3.5): migration (the next free number at merge, reserved in the roadmap) and `ContestJuryJdbc.thumbSizes` with its per-contest cache (no change to the `ContestJury` case class); `servedWidths` union, and any width on disk served first; a miss fills the file's current set first, else the standard set; `localSourceFile` from any cached width ≥ the target; "Download images locally" (contest or round) never switches: it fills missing files at the contest's current sizes (Q8); the separate admin button "Switch to standard sizes" scales from cached images and downloads only the files without a wide-enough source, requests the standard set explicitly and flips the contest on completion, with the counts on the button (Q8, Q9); 960 and 1280 px files stored on demand, with the screen profile table and the distribution job's paced prefetch (Q11, §3.5); new contests still `legacy` (Q10); cleanup v2 (marker, deleted files first or nothing, aspect-only rule, the widest file kept); deleted files' widths and `largestCached*` from their directory, moved to `LocalImageCacheService`; `/thumb_urls` and the large view's thumbnail bar per scheme. The tile pages keep their markup; their `src` follows the scheme. | L (7–8 days) |
+| **G-1b** | **The shared tile, first on by-rate** (the rated galleries and every by-rate list, already server-rendered): `snippets/galleryTile` and `galleryTiles` with `TileOptions`; the ratio classes and `wlx-tile-small`; the caption (rank line) moved in unchanged; the `rows` layout with the caption minimum width; `gallery-tiles.js` (failed box) and the shared CSS; `srcset`/`sizes` per scheme; lazy loading; `addListStars` on `.wlx-tile`; the one-criterion round's stars and the round menu's criterion name (§3.1); the script's screen-profile report. The comments report gets the shared image partial. Unite Gallery is untouched. | M–L (3–4 days) |
 | **G-2** | **Contest files and round review on the shared tile** (`votes = none`): deleted badge with the "Request undeletion" link, COI text. Unite Gallery leaves these pages. | M (2 days) |
 | **G-3** | **Binary galleries on the shared tile** (`thumbs`, tally, chips overlay, read-only vote mark): `tile-votes.js` from items to elements with a delegated listener; `voting.spec.js` reworked; screenshots redone; mock-ups of bigger Yes/No vote areas on tiles (Q17; not decided beyond the mock-ups). Unite Gallery is no longer used. **New contests are created as `standard` from here on** (Q10). | M–L (3–4 days, mock-ups included) |
-| **G-4** | **Last-viewed mark and jump button** (`last-viewed.js`) on every tile gallery, and on the comments report if Q19 (open) says yes, whose `id="@pageId"` then becomes `data-page-id`; `scroll-margin-top` for the top bar. | S (1 day) |
-| **G-5** | **The Pages / Continuous choice and continuous loading** for binary, by-rate and contest files (§3.6): the view-menu choice (default Pages) and its account column with a migration (next free number at merge); one-screen batches with `n` capped 10..80 (Q15); the chunk routes, marker and JSON-only answers (§4); the carried key (`after=`/`before=` with `k=`) for every one-juror list, sub-regions included, and on the page routes; ranks and criteria per chunk; dropping duplicates; sections, next/earlier/skip links; history and the tile click's `atUrl`; navbar pager follow; DOM cap (Q18). Gatling: chunks keyed and not, binary and by-rate. | L (5 days) |
-| **G-5b** | **Windowing spike** (Q16, Q18): a windowing library against our own windowing on the fixture (code size, resize, scroll anchoring, keyboard and screen readers); the result decides whether windowing becomes a third choice beside Pages and Continuous. No product code merged. | S (1–2 days) |
+| **G-4** | **Last-viewed mark and jump button** (`last-viewed.js`) on every tile gallery and the comments report (Q19), whose `id="@pageId"` becomes `data-page-id`; `scroll-margin-top` for the top bar. | S (1 day) |
+| **G-5** | **The Pages / Continuous choice and continuous loading** for binary, by-rate and contest files (§3.6): the view-menu choice (default Pages) and its account column with a migration (next free number at merge); one-screen batches: the window-size cookie, client hints, `n` capped 10..80 and carried by every page link (Q15); the chunk routes, marker and JSON-only answers (§4); the carried key (`after=`/`before=` with `k=`) for every one-juror list, sub-regions included, and on the page routes; ranks and criteria per chunk; dropping duplicates; sections, next/earlier/skip links; history and the tile click's `atUrl`; navbar pager follow; DOM cap from G-0 (g) (Q18); the round review offered the same choice (Q22). Gatling: chunks keyed and not, binary and by-rate. | L (6 days) |
+| **G-5b** | **Windowing spike** (Q16, Q18): a windowing library against our own windowing on the fixture (code size, resize, scroll anchoring, keyboard and screen readers); the result decides whether windowing becomes a third choice beside Pages and Continuous; it also rechecks the Continuous cap. No product code merged. | S (1–2 days) |
 | **G-6** | **Remove Unite Gallery and the by-rate grid's old markup:** `unitegallery.js`, `ug-theme-tiles.js`, both stylesheets, `galleryScripts.scala.html`, `gallery-init.js`, its images, the `ug-*` and `li.gallerybox`/`img.cropped` rules in `main.css`, `unitegallery-patches.test.js`, `unitegallery-alt.test.js`, `gallery-init.test.js`. Also: the `NOTICE` entry, `RawHtmlSinksSpec`'s exemption, dependencies §7 and T4, and `docs/vendor/unitegallery.md` (to `docs/history/`). The T1 tile-star path goes too (Q21, decided). | S (1 day) |
 | **G-7** | **CSP `style-src` without `'unsafe-inline'`**: templates to classes, one release Report-Only, then enforce (§3.10). | S–M, over two releases |
 
@@ -1179,8 +1170,8 @@ touches the tiles. **Total: about 23–28 days.**
     - the chips sit overlaid or in the caption per option.
   - The deleted badge is outside the link, with `rel="noopener"`, next to the "Request
     undeletion" link (Commons:Undeletion requests).
-  - **A one-criterion round's tile** shows stars and no criterion name; the name appears once on
-    the page above the tiles.
+  - **A one-criterion round's tile** shows stars and no criterion name; the name is in the top
+    bar's round menu.
   - **Info wider than the image:** a narrow portrait tile with 10 stars or full chips has a width
     of at least the info's minimum, the image is centred at its own width, and the info is not
     clipped (browser test, G-1b).
@@ -1197,7 +1188,9 @@ touches the tiles. **Total: about 23–28 days.**
   - `CommentsFilterSpec`, `JurorCommentsReportSpec`, `VoteTimeOrderSpec`, `ViewMenuSpec`,
     `NavbarMenusSpec`.
   - `ChipFixturesSpec`, `PagerSpec`, `RoundListSpec` (the batch size `n`: capped 10..80, the
-    default for a missing or bad value, one rule for every tile gallery).
+    default for a missing or bad value, one rule for every tile gallery; the cookie and client
+    hint order) and `PagerSpec` (every page link, the navbar pager's included, carries `n`;
+    `atUrl` / `listAtId` honour it, so Back lands on the same page after a window change).
   - `LargeViewFixturesSpec` and `LargeViewSideSpec`: the thumbnail bar per scheme (G-1a).
 - **New `GalleryChunkSpec`: authorization equals the page's.** A table run against the page and
   the chunk URL, for the binary gallery and by-rate, as JSON for the chunk:
@@ -1278,8 +1271,14 @@ touches the tiles. **Total: about 23–28 days.**
       sizes and never flips the column (Q8);
     - a completed "Switch to standard sizes" run flips the column, even with per-file errors;
     - an interrupted run, or a restart during it, doesn't flip it;
-    - the switch re-downloads every file of the contest;
-    - 960 and 1280 px files are stored when first requested, not by the switch (Q11);
+    - the switch scales from cached images that are wide enough and downloads only files
+      without one; it requests the standard set explicitly, so a width in both schemes fills the
+      standard set;
+    - 960 and 1280 px files are stored on demand, not by the switch (Q11);
+    - **screen profile:** stored per account, coarse values only; a distribution (new round,
+      top-up, Add a juror, Distribute new files) queues the paced prefetch for a juror with a
+      profile, and a juror without one gets it on the first visit; a legacy contest queues
+      none;
     - new contests are `legacy` before G-3 and `standard` from G-3;
     - the migration leaves existing ones `legacy`;
     - the switch button shows the cost text on a `legacy` contest, and is absent on a `standard` one.
@@ -1306,6 +1305,7 @@ touches the tiles. **Total: about 23–28 days.**
   - the end link doesn't auto-load while focused;
   - the cap holds;
   - none of this runs in Pages mode;
+  - the cap comes from the measured value (G-0 (g)).
   - "earlier" keeps the view in place.
   IntersectionObserver is faked.
 - **New `last-viewed.test.js`:**
@@ -1399,28 +1399,30 @@ touches the tiles. **Total: about 23–28 days.**
     measured in G-0 (f) on the fixture's cache.
 - **R5. Disk.**
   - Contests that switch keep their current-scheme files (Q13) and add the standard set. The
-    960 px files (about 150 KB each) are stored as they are requested (Q11), so the disk grows
-    with use, up to about 6 GB for 38k files if all are requested; G-0 (f) measures.
+    960 px files (about 150 KB each) are stored for the jurors who need them (Q11), so the disk
+    grows with use; the earlier figure of about 6 GB for 38k files is unmeasured and holds only
+    if every file's 960 is stored. G-0 (f) measures.
   - A `legacy` contest's misses never fill the standard set, since the current set is checked
     first.
   - Mitigation: switching is per contest, explicit and costed on its button; the images page
     shows the cache size.
-- **R5a. Switching takes time.** "Switch to standard sizes" fetches every file of a `legacy`
-  contest again (about an hour per 38k files at 10 a second). The button and the admins' guide
-  say so (Q9).
-- **R6. Wikimedia load.** A batch can burst up to 80 proxy misses from the server's IP, and a 429
-  backoff stalls those tiles. Mitigation: lazy loading limits misses to tiles near the view;
-  G-0 (c) measures; Q24's queue if needed; "Download images locally" before a round opens.
+- **R5a. Switching takes time.** "Switch to standard sizes" scales most files here and
+  downloads those without a wide-enough source, throttled at 10 a second. The count is
+  unmeasured until G-0 (f); the button and the admins' guide show it.
+- **R6. Wikimedia load.** All sizes are fetched by the server, from its one IP, never by the
+  browser (§3.4). A batch can burst up to 80 proxy misses, and a 429 backoff stalls those tiles.
+  Mitigation: the paced prefetch at distribution time (§3.5) means most sizes are cached before
+  a juror opens the round; lazy loading limits the remaining misses to tiles near the view;
+  G-0 (c) measures; Q24's queue only if stalls are observed.
 - **R7. History and Back differ by engine.** bfcache is usually not used for `no-store` pages,
   but engines differ. The design relies on neither bfcache nor scroll restoration, and the
   browser tests cover Back in three engines.
 - **R8. WebKit's `srcset` choice on zoom** may not change. Zoomed WebKit then stays at the DPR's
   candidate, still sharper than today's single 250 px image.
 - **R9. Page numbers change meaning.** A page is one screen of tiles (`n`, Q15), so page
-  numbers depend on the screen, and by-rate used to have 15 files per page. Once the script has
-  set `n`, the page URLs carry it (`?n=…`), so a reloaded or shared URL means the same files;
-  without `n` the default applies. Low impact: the pager always lands somewhere valid, and
-  `atUrl` links are by file.
+  numbers depend on the screen, and by-rate used to have 15 files per page. Every page link
+  carries `n`, so a reloaded or shared link means the same files. Low impact: the pager always
+  lands somewhere valid, and `atUrl` links are by file.
 - **R10. Nominal page numbers.** After in-page votes under a filter, the URL's page and the
   navbar's range can be off until a reload. A tile click uses the file's `atUrl`, so Back is
   exact.
@@ -1435,13 +1437,13 @@ touches the tiles. **Total: about 23–28 days.**
 - **R14. Ratio classes crop a sliver.** Rounding the ratio down to 0.05 crops up to one step at
   the sides (under 4 % for 4:3), in exchange for a layout without script.
 
-## 8. Questions: decided and open
+## 8. Questions and decisions
 
-Each question was asked on its own. The maintainer decided Q1–Q25 on 2026-11-19, except **Q19
-and Q22, which are open**; the decisions are applied in the sections they affect.
+Each question was asked on its own. **All are decided** (the maintainer, 2026-11-19 to
+2026-11-23); the decisions are applied in the sections they affect.
 
-- **Still to ask:** Q19 and Q22 (before G-4 and G-2, respectively).
-- **Revisit later:** Q12 (after G-0's measurements), Q25 (after a juror trial).
+- **Revisit later:** Q12 (after G-0's measurements), Q25 (after a juror trial), and the
+  Continuous cap (G-0 (g), G-5b).
 
 **Terms used:**
 
@@ -1474,21 +1476,25 @@ and Q22, which are open**; the decisions are applied in the sections they affect
 - **Q8.** "Download images locally" never switches the scheme: it fills missing files at the
   contest's current sizes. Switching is a separate admin button, "Switch to standard sizes"
   (§3.5).
-- **Q9.** Obsolete, merged into Q8: switching re-downloads every file of the contest, and the
-  button says so (§3.5).
+- **Q9.** Obsolete, merged into Q8. Switching scales the standard sizes from cached images that
+  are wide enough and downloads only the files without one (decided 2026-11-23); the button
+  shows the counts (§3.5).
 - **Q10.** New contests are created with the current sizes until G-3 (§3.5).
-- **Q11.** The 960 px files are stored on demand, when first requested (§3.5).
+- **Q11.** The 960 px files are stored on demand: prefetched, paced, for jurors whose coarse
+  screen profile needs them, otherwise on a first miss (§3.5).
 - **Q12.** Accept Chromium's slightly soft DPR-2 tiles in the standard scheme; revisit after
   G-0's measurements (§3.4).
 - **Q13.** Keep the old-size files while any contest uses them (§3.5).
 - **Q14.** One look everywhere, the justified rows. When a tile's info line is wider than its
   image (narrow or portrait files), the tile gets more width and spacing: tile width = max(image,
   the info's minimum), the image centred, nothing overlapped or clipped (§3.2).
-- **Q15.** A batch is one screen: the script computes the tiles per screen from the viewport, the
-  server caps `n` to 10..80, the first server page defaults to about 24 and the script tops up if
-  the screen isn't filled, and the no-script pager uses a fixed default (§3.6).
-- **Q16, Q18.** Simple now: continuous loading downwards, "Show earlier files" and a cap. A later
-  spike (G-5b) compares a windowing library with our own windowing (§3.6).
+- **Q15.** A batch is one screen: the script stores the window size in a cookie, the server
+  renders every later page at that size (capped 10..80; Chromium viewport client hints where
+  supported), the first visit and no-script default to about 24, and every page link carries
+  `?n=…` (§3.6).
+- **Q16, Q18.** Simple now: continuous loading downwards, "Show earlier files" and a cap set by
+  measurement (G-0 (g), about 480 tiles as a placeholder). A later spike (G-5b) compares a
+  windowing library with our own windowing (§3.6).
 - **Q17.** Instead of a whole-tile zoom or magnifier, G-3's mock-ups try bigger Yes/No vote
   areas on tiles (the maintainer's idea; not decided beyond the mock-ups) (§3.1).
 - **Q20.** Covered by the Pages / Continuous choice in the view menu, remembered per person in
@@ -1500,13 +1506,9 @@ and Q22, which are open**; the decisions are applied in the sections they affect
 - **Q25.** A tile voted out of the list's filter stays shown with its new vote; revisit after a
   juror trial (§3.9).
 - **One gallery** for every gallery view.
-- **One-criterion rounds (2026-11-20):** the gallery shows stars like normal rated rounds, and
-  the criterion's name appears once at the top of the gallery, never on a tile (§3.1).
-
-**Open:**
-
-- **Q19. The last-viewed mark (no jump on load) on the comments report too?** (Every tile
-  gallery gets it, by-rate included.)
-  **Recommendation: yes**, so every list brings you back the same way. Asked before G-4.
-- **Q22. The round review: shared tiles with the pager only?**
-  **Recommendation: yes, pager only for now.** Asked before G-2.
+- **One-criterion rounds (2026-11-20, refined 2026-11-23):** the gallery shows stars like normal
+  rated rounds; the criterion's name is in the top bar's round menu next to the round name,
+  never on a tile (§3.1).
+- **Q19.** The last-viewed mark (no jump on load) on the comments report too: yes (2026-11-23).
+- **Q22.** The round review offers the same Pages / Continuous choice as the other galleries
+  (2026-11-23).
