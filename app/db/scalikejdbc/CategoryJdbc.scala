@@ -24,7 +24,7 @@ object CategoryJdbc extends CRUDMapper[Category] {
   def findOrInsert(title: String)(implicit session: DBSession = AutoSession): Long = {
     // a title saved with underscores is the same category as its normalised form
     val exact = where("title" -> title).apply().headOption
-    exact.orElse(where(sqls"REPLACE(title, '_', ' ') = ${title.replace('_', ' ')}").apply().headOption).map(_.id).getOrElse {
+    exact.orElse(where(sqls"REPLACE(title, '_', ' ') = ${title.replace('_', ' ')}").orderBy(sqls"id").apply().headOption).map(_.id).getOrElse {
       createWithAttributes("title" -> title)
     }
   }
