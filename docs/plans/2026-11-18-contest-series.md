@@ -152,7 +152,8 @@ The maintainer asked on 2026-11-18:
   - H1, H2, H8 and H21 (D-1c);
   - DG10 and DG11, decided;
   - D-1a's `ContestHealth`;
-  - D-1b's read-only token, which reserves **V108**;
+  - D-1b's read-only token, which takes the next free number at its merge (V108 went to the
+    quick fixes' NOT NULL `round_user.active`, so V109 now);
   - its §8, "Admins can't create contests", is this plan.
 
 ## 1. Prior work and terminology
@@ -704,12 +705,14 @@ series. Specs cover a series admin with no real row, and a retired series.
 
 **Numbers:**
 
-- **V108 is reserved by D-1b.**
+- **V108 is taken** by the quick fixes' NOT NULL `round_user.active` (`stack/208-quick-fixes`);
+  D-1b, which reserved it, takes the next free number at its merge (V109 now).
 - **Flyway refuses an older version after a newer one** (`outOfOrder = false`,
   `db/Migrations.scala:41-42`). So each PR **takes the next free number when it merges**: if
-  D-1b's V108 hasn't merged before CY-1, CY-1 either waits for it (it depends on D-1a anyway) or
-  takes V108 and D-1b renumbers.
-- **The numbers below assume D-1b first.**
+  D-1b's migration hasn't merged before CY-1, CY-1 either waits for it (it depends on D-1a anyway)
+  or takes its number and D-1b renumbers.
+- **The numbers below assume D-1b first, at V108** (written before V108 was taken): with D-1b at
+  V109, each is one higher (CY-1 V110, CY-2 V111).
 
 | | PR | Content |
 |---|---|---|
@@ -1085,7 +1088,7 @@ Everyone else with a contest in the series sees only their own contests' rows.
 |---|---|---|---|---|
 | Now (decided) | Root creates WLM 2026 in Nepal and adds the admin | — | — | minutes |
 | **CY-0** | The reuse report; Q0–Q4 tuning | D-1a, D-1b | — | M (3–4 days) |
-| **CY-1** | Series table and key, derived previous, `contest_change` with batches, retired contests and series, `/admin/series`, proposals with bulk confirm, affected-grants list and batch undo, **the inline reuse check**, the menu grouped by series, the `/contests` filter, docs. CA8 is asked before it starts | D-1a; D-1b's V108 merged first, or the numbers swap (§3.4) | V109 | M–L (6–7 days) |
+| **CY-1** | Series table and key, derived previous, `contest_change` with batches, retired contests and series, `/admin/series`, proposals with bulk confirm, affected-grants list and batch undo, **the inline reuse check**, the menu grouped by series, the `/contests` filter, docs. CA8 is asked before it starts | D-1a; D-1b's migration merged first, or the numbers swap (§3.4) | V109 | M–L (6–7 days) |
 | Ops after CY-1 | **Production assignment:** Q0 and Q5 on the copy, then root's bulk confirmation on production, in batches | CY-1 | — | 1 day |
 | **CY-2** | Series admins: `series_admin` with its live-grant key, CA19 adds with the grantee rules, root-only re-grant, **the chained revoke (required) with three-level specs**, root's 24-hour grants view, join and retirement hooks, `seriesAccountContests` in the account rules (CA17), `withSeries(user, currentContestId)`, `derivedRoles`, `contestPermission` real-only with the `derived = true` opt-in and `inContestReal`, CA20 derivation from `admin_from_year` with its computed default, bounds and root's later edit (logged), every action classified, `isProtectedTarget` replacing the 26 target checks, COI, the users-page line, the change-log view, the menu entry and landing, the grant UI with the start year and the contest list, guard specs, negatives; its own security review. Series admins' creation path and CA6's disabled grantees ship with whichever of CY-2 and CY-3 lands second | CY-1 | V110 | L (14–16 days) |
 | **CY-3** | Creating contests: the series page, the next-year path (CA4), settings, the people picker, root's notices, the H1/import links. Creation by series admins (CA16) and CA6's disabled grantees ship with whichever of CY-2 and CY-3 lands second | CY-1 | — | M (5–6 days) |

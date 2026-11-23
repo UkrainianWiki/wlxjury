@@ -79,7 +79,7 @@
                                            form="coi-disqualify" aria-label="@title"/></td>
                             }
                             <td>@title</td>
-                            <td>@member.describe</td>
+                            <td>@member.label</td>
                         </tr>
                     }
                     </tbody>
@@ -115,9 +115,9 @@
                                            form="coi-requalify" aria-label="@file.title"/></td>
                             }
                             <td>@file.title</td>
-                            <td>@for(code <- file.row.code) {@Messages("coi.code." + code)}@for(detail <- file.row.detail) {: @detail}</td>
+                            <td>@for(code <- file.row.code) {@Messages("coi.code." + code)}@for(detail <- file.row.detail) {: @{if (file.row.code.contains(db.scalikejdbc.RoundImageJdbc.DqCode.Coi)) db.scalikejdbc.CoiMembers.detailLabel(detail) else detail}}</td>
                             <td>@for(at <- file.row.at) {@at.toLocalDate}</td>
-                            <td>@file.matchNow.fold(Messages("coi.match.ended"))(m => Messages("coi.match.still", m.describe))</td>
+                            <td>@file.matchNow.fold(Messages("coi.match.ended"))(m => Messages("coi.match.still", m.label))</td>
                         </tr>
                     }
                     </tbody>

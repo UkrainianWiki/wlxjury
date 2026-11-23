@@ -131,7 +131,7 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
           html must contain("File:Image1.jpg")
           html must contain("File:Image2.jpg")
           html must not(contain("File:Image3.jpg"))
-          html must contain("data-coi=\"Board member — board\"")
+          html must contain("data-coi=\"Board member — Board\"")
           true
         } must beTrue
       }

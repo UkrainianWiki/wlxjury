@@ -107,7 +107,7 @@ object AccountJoinJdbc {
       val aside = sql"""SELECT round_id, COUNT(*) FROM vote_aside WHERE jury_id = $accountId AND round_id IN ($roundIds)
                         GROUP BY round_id""".map(rs => rs.long(1) -> rs.long(2)).list.apply().toMap
       val assigned = sql"SELECT round_id, active FROM round_user WHERE user_id = $accountId AND round_id IN ($roundIds)"
-        .map(rs => rs.long(1) -> rs.booleanOpt(2).getOrElse(false)).list.apply().toMap
+        .map(rs => rs.long(1) -> rs.boolean(2)).list.apply().toMap
       roundIds.map { r =>
         val (v, rated) = votes.getOrElse(r, (0L, 0L))
         r -> InRound(v, rated, aside.getOrElse(r, 0L), assigned.get(r))
@@ -207,7 +207,7 @@ object AccountJoinJdbc {
     val joinedVotes = lockOwn(Vote)
     val keptVotes = lockKept(Vote)
     val users = sql"""SELECT user_id, active FROM round_user WHERE round_id = $roundId AND user_id IN ($kept, $joined)
-                      ORDER BY user_id FOR UPDATE""".map(rs => rs.long(1) -> rs.booleanOpt(2).getOrElse(false))
+                      ORDER BY user_id FOR UPDATE""".map(rs => rs.long(1) -> rs.boolean(2))
       .list.apply().toMap
     val joinedAside = lockOwn(Aside)
     val keptAside = lockKept(Aside)

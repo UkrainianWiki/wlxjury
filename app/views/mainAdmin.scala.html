@@ -20,6 +20,8 @@
    navbar sticks to the window's top and hides while the user scrolls down, as main's (a trial:
    topbar.js), on the lists *@
 @layout(Messages(title), bodyClass = Seq(if (gallery) "gallery" else "", if (reappearingBar) "wlx-topbar-reappears" else "").filter(_.nonEmpty).mkString(" ")) {
+        @* the top bar's menus kept inside a phone's window (menu-fit.js) *@
+        <script src="@routes.Assets.versioned("javascripts/menu-fit.js")"></script>
         @if(reappearingBar) {
         <script src="@routes.Assets.versioned("javascripts/topbar.js")"></script>
         }

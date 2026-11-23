@@ -360,12 +360,13 @@ test('on a phone: hides and comes back, its menus inside the window', async ({ c
     const b = await items.boundingBox();
     const id = (await menu.getAttribute('id')) || `menu ${i}`;
     expect(b.x, `${id} from the window's left edge`).toBeGreaterThanOrEqual(0);
-    if (b.x + b.width > 390) {
-      // known, not the sticky bar's (UI practices §6.2, phones not supported yet): a menu opens
-      // under its toggle, and one near the bar's right edge ends past the window's (the Comments
-      // menu at 420 px in Chromium, the region menu at 399 in WebKit); reported, not fixed here
-      test.info().annotations.push({ type: 'known', description: `${id} ends at ${Math.round(b.x + b.width)} px of 390` });
-    }
+    // a menu near the bar's right edge is moved inside the window (menu-fit.js; it ran past it,
+    // the Comments menu to 420 px in Chromium, the region menu to 399 in WebKit;
+    // phone-menus.spec.js checks every page's menus)
+    await expect.poll(async () => {
+      const box = await items.boundingBox();
+      return box.x + box.width;
+    }, { message: `${id} before the window's right edge` }).toBeLessThanOrEqual(390);
     expect(b.y + b.height, `${id} above the window's bottom`).toBeLessThanOrEqual(844);
     expect(await items.evaluate((l) => l.scrollWidth <= l.clientWidth), `${id} not scrolled sideways`).toBe(true);
     await page.keyboard.press('Escape');

@@ -182,7 +182,7 @@ class RoundJurorWarningsSpec extends PlaySpecification with PlayTestDb {
         val before = (contentAsString(stat(app, Admin, open)), contentAsString(stat(app, Admin, stopped)),
           contentAsString(roundsList(app)))
         RoundUser.setActive(open.getId, users("juror").getId, active = false)
-        sql"UPDATE round_user SET active = NULL WHERE round_id = ${open.getId} AND user_id = ${users("juror2").getId}".update()
+        RoundUser.setActive(open.getId, users("juror2").getId, active = false)
         val asAdmin = contentAsString(stat(app, Admin, open))
         val asRoot = contentAsString(stat(app, "root@example.com", open))
         val asOrganizer = contentAsString(stat(app, "organizer@example.com", open))

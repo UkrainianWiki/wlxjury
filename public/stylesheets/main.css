@@ -119,6 +119,26 @@ body.gallery {
     .dropdown-item.wlx-round-item { white-space: normal; }
     /* wider than Bootstrap's 10rem, so a name wraps by lines, not word by word */
     .dropdown-menu.wlx-round-menu { min-width: min(20rem, calc(100vw - 1rem)); }
+    /* the top bar's menus on a phone (the maintainer's decision of 2026-11-20): no wider than the
+       window less 1 rem, an open one moved inside it by menu-fit.js. A menu opening from its
+       toggle's left edge is as wide as its longest item, as before, up to that, its items then
+       wrapped (width: max-content, not the narrow toggle's width); the round menu keeps its own
+       rules above, a right-aligned menu (the account's) its width */
+    .navbar .dropdown-menu { max-width: calc(100vw - 1rem); }
+    /* a menu is measured where Bootstrap opens it before menu-fit.js moves it: clipped sideways at
+       the bar's edge meanwhile, so that it never widens the page (a phone's browser widened its
+       layout for good once a menu had run past the edge, and the page scrolled sideways); the
+       menus still open downwards (clip, unlike hidden, leaves the other axis visible) */
+    .navbar { overflow-x: clip; }
+    .navbar .dropdown-menu:not(.dropdown-menu-end):not(.wlx-round-menu) {
+        /* stylelint-disable-next-line plugin/no-unsupported-browser-features -- max-content works in
+           every supported browser (Firefox 66, Chrome 46); caniuse's "partial" is about stretch */
+        width: max-content;
+    }
+    .navbar .dropdown-menu:not(.dropdown-menu-end):not(.wlx-round-menu) .dropdown-item {
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
 }
 .table > tbody > tr.wlx-round-inactive > * { color: var(--bs-secondary-color); }
 /* the Rounds table (rounds.scala.html): the Number, File distribution, Rating type, Active and

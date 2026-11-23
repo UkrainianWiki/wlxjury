@@ -170,6 +170,11 @@ version seen, and a warning when the logs don't reach back that far).
 **6.2 Mobile: not supported yet.** Pages render on phones but are not designed or tested for
 them. Mobile support is queued in the roadmap ("Mobile support (not supported yet)"), and the
 browser tests' mobile profiles come with it. Write "not supported yet", never "broken", in issues and docs.
+One part is done already: the top bar's menus stay inside a window below 576 px (the
+maintainer's decision of 2026-11-20: `menu-fit.js` and `main.css`; `phone-menus.spec.js` opens
+every top-bar menu of the main pages at 390 and 412 px in Chromium). The fit applies below
+576 px only: a phone held sideways or a small tablet (576 to about 700 px) can still have a menu
+run past the edge when the bar does not wrap.
 
 ## 7. The vendored gallery
 

@@ -301,8 +301,9 @@ command as the last line, filled with the real ids it found, never a placeholder
     the token is created: "full" (today's behaviour, the default for every existing token) or
     "read-only, from the server only".
   - **What D-1b builds for it:**
-    - a migration `V108__Api_token_scope` (`api_token.scope`, default `full`; V108 is the next
-      free number on this branch, to be checked when building);
+    - a migration `V108__Api_token_scope` (`api_token.scope`, default `full`; V108 has since gone
+      to the quick fixes' NOT NULL `round_user.active`, so it takes the next free number at its
+      merge, V109 now);
     - the choice on the token page;
     - the check in `ApiAuth`.
   - **The check.** A read-only token is accepted only on GET endpoints and only from the server

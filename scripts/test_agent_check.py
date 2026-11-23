@@ -53,6 +53,35 @@ class AgentCheckTest(unittest.TestCase):
             self.assertEqual(again.returncode, 2)
             self.assertEqual(log.read_text().count("raw marker"), 1)
 
+    def run_with_unicode_log(self, encoding):
+        """agent-check on a failing command whose log has Cyrillic, typographic quotes and an
+        emoji, with PYTHONIOENCODING as given (None: unset)."""
+        text = "[error] Помилка “quoted” \U0001F600 failed"
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "check.log"
+            command = [sys.executable, str(SCRIPT), "--log", str(log), "--", sys.executable, "-c",
+                       "import sys; sys.stdout.buffer.write({!r}.encode('utf-8')); raise SystemExit(1)".format(text)]
+            env = {k: v for k, v in os.environ.items() if k not in ("PYTHONIOENCODING", "PYTHONUTF8")}
+            if encoding:
+                env["PYTHONIOENCODING"] = encoding
+            result = subprocess.run(command, capture_output=True, env=env)
+            self.assertEqual(result.returncode, 1, result.stderr.decode("utf-8", "replace"))
+            self.assertNotIn(b"UnicodeEncodeError", result.stderr)
+            return result.stdout
+
+    def test_the_summary_is_utf8_whatever_the_console_code_page(self):
+        # a Windows console's code page (cp1252) could not encode the log's text: print() raised
+        # UnicodeEncodeError and the summary was lost
+        out = self.run_with_unicode_log(None).decode("utf-8")
+        self.assertIn("exit=1", out)
+        self.assertIn("Помилка", out)
+
+    def test_an_explicit_pythonioencoding_is_kept_with_unencodable_text_replaced(self):
+        out = self.run_with_unicode_log("cp1252")
+        self.assertIn(b"exit=1", out)
+        self.assertIn(b"\x93quoted\x94", out)  # cp1252's typographic quotes, not UTF-8
+        self.assertIn(b"[error] ??????? ", out)
+
 
 # The child starts a grandchild that writes a marker after GRANDCHILD_DELAY s unless it is killed,
 # then sleeps far past the timeout.

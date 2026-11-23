@@ -286,10 +286,9 @@ class ContestHealthSpec extends Specification with TestDb with BeforeAll with Be
       val stopped = round(contest, 3, "Stopped", status = Round.Status.Paused, files = Seq(2L))
       keys(ContestHealth.report(contest, root), "H12") === Seq((Outcome.Pass, "health.h12.pass", Nil))
 
-      // its jurors' voting paused, one of them a NULL `active` (stopped, as the juror's pages take it)
+      // its jurors' voting paused
       DB.autoCommit { implicit s =>
-        sql"UPDATE round_user SET active = FALSE WHERE round_id = ${paused.getId} AND user_id = ${j2.getId}".update()
-        sql"UPDATE round_user SET active = NULL WHERE round_id = ${paused.getId} AND user_id = ${j3.getId}".update()
+        sql"UPDATE round_user SET active = FALSE WHERE round_id = ${paused.getId} AND user_id IN (${j2.getId}, ${j3.getId})".update()
       }
       val report = ContestHealth.report(contest, root)
       keys(report, "H12") === Seq((Outcome.Warn, "health.h12.jurorspaused", Seq(2L)))

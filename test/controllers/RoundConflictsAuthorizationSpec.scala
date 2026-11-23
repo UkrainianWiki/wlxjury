@@ -78,12 +78,38 @@ class RoundConflictsAuthorizationSpec extends PlaySpecification with PlayTestDb 
         val admin = get(app, "admin@example.com", page(r))
         val organizer = get(app, "organizer@example.com", page(r))
         (status(admin) === OK) and (contentAsString(admin) must contain("data-coi-match=\"1\"")) and
-          (contentAsString(admin) must contain("Board member — board")) and
+          (contentAsString(admin) must contain("Board member — Board")) and
           (contentAsString(admin) must contain(disqualify(r))) and
           (contentAsString(admin) must contain("name=\"pageId[]\"")) and
           (status(organizer) === OK) and (contentAsString(organizer) must contain("data-coi-match=\"2\"")) and
           (contentAsString(organizer) must not(contain(disqualify(r)))) and
           (contentAsString(organizer) must not(contain("name=\"pageId[]\"")))
+      }
+    }
+
+    "name each person's role in the user's language, never by its code" in {
+      testDbApp { app =>
+        val (round, _) = setUp()
+        // a second juror, the author of file 4, in the round
+        val juror = member("juror2@example.com", "jury", account = Some("Juror one"))
+        imageDao.batchInsert(Seq(Image(4L, "File:Image4.jpg", None, None, 640, 480, Some("12-345-4"), author = Some("Juror one"))))
+        VoteJdbc.create(4L, 0, juror.getId, round.getId)
+        def text(lang: String): String = contentAsString(route(app, FakeRequest(GET, page(round.getId))
+          .withSession(Secured.UserName -> "admin@example.com", Secured.CurrentContestId -> contestId.toString)
+          .withHeaders("Accept-Language" -> lang).withCSRFToken).get)
+        val (en, fr) = (text("en"), text("fr"))
+        // disqualified, the files keep the stored detail ("Juror one — jury"), shown translated
+        val dqStatus = status(post(app, Some("admin@example.com"), disqualify(round.getId), "pageId[]" -> "1", "pageId[]" -> "4"))
+        val stored = RoundImageJdbc.disqualified(round.getId).flatMap(_.detail).sorted
+        def disqualifiedTable(html: String) = html.substring(html.indexOf("id=\"coi-disqualified\""))
+        val (enDq, frDq) = (disqualifiedTable(text("en")), disqualifiedTable(text("fr")))
+        (en must contain("Juror one — Juror")) and (en must contain("Board member — Board")) and
+          (en must not(contain("— jury"))) and (en must not(contain("— board"))) and
+          (fr must contain("Juror one — Juré")) and (fr must not(contain("— jury"))) and
+          (dqStatus === SEE_OTHER) and (stored === Seq("Board member — board", "Juror one — jury")) and
+          (enDq must contain(": Juror one — Juror")) and (enDq must contain(": Board member — Board")) and
+          (frDq must contain(": Juror one — Juré")) and (frDq must contain(": Board member — Conseil d&#x27;administration")) and
+          (frDq must not(contain("— jury"))) and (frDq must not(contain("— board")))
       }
     }
 
