@@ -1577,3 +1577,4 @@ health.job.status.done = terminée
 health.job.status.failed = échouée
 health.job.status.cancelled = annulée
 import.source.identity.warn = Ce concours est {0}, mais la source nomme {1}. Les fichiers importés s''ajoutent à ceux que le concours a déjà. Pour un nouveau concours ou une nouvelle année, demandez un nouveau concours aux administrateurs de l''outil. Vous pouvez quand même importer.
+error.wiki.title.invalid = Ce n’est pas un titre valide de page ou de catégorie de Commons. Utilisez un nom comme Category:Images from Wiki Loves Earth 2020 in Brazil ; les caractères # < > [ ] | '{' '}' sont interdits.

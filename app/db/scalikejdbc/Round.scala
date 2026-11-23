@@ -227,10 +227,11 @@ case class Round(
     monuments.map(_.split(",").toSeq.map(_.trim).filter(_.nonEmpty)).getOrElse(Nil)
 
   def fixCategory(name: String): String = {
-    if (!name.toLowerCase().startsWith("category:")) {
-      "Category:" + name
+    val title = services.imports.WikiTitle.normalize(name)
+    if (!title.toLowerCase().startsWith("category:")) {
+      "Category:" + title
     } else {
-      name
+      title
     }
   }
 

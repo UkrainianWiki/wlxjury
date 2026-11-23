@@ -226,7 +226,7 @@ class ImageController @Inject() (
 
   val importImagesForm = Form(
     tuple(
-      "source" -> text,
+      "source" -> services.imports.WikiTitle.mapping,
       "list" -> text,
       "action" -> text
     )
