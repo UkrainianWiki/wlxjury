@@ -29,14 +29,14 @@ from reading the code and plans.
    Estimate for the platform: **5-7 days** (build task, dev loop, `uiTest` in `sbt test`, CSP,
    the translated-texts mechanism, one Playwright smoke spec, docs).
 3. **First screen: the root contests grid** (the `react` branch's screen), on the existing REST
-   `/api/contests` now and moved to GraphQL when PR #135's read-only schema lands. It is
+   `/api/contests` now and moved to GraphQL when #135's first slice (`me`, `contests`, `contest`, `roundStat`) lands. It is
    low-risk (root only; no juror sees it), useful (contest administration without a form per
    contest) and it exercises every integration point: session, CSRF, texts, CSP, build, tests.
    **Use the parked `react` and `react-custom-filter` branches as a skeleton, not as the base**:
    keep their Vite, TypeScript and Vitest setup and test style; drop MUI and MUI X (section 3.3:
-   Emotion's injected styles fight the CSP step G-7, and the bundle is large). Estimate for the
-   screen on top of the platform: 3-5 days. A good second screen is a read-only organizer page on
-   GraphQL (round statistics), where GraphQL's query shape pays off.
+   Emotion's injected styles fight #129's planned CSP step G-7, and the bundle is large; master's CSP would allow them today). Estimate for the
+   screen on top of the platform: 3-5 days. A good second screen is round statistics for organizers on
+   GraphQL, using `roundStat` from #135's first slice, where GraphQL's query shape pays off.
 4. **The gallery is a plausible later React target, not a first one.** #129's server half
    (keyset continuation, size schemes, prefetch, the window-size cookie, own-votes rules) serves
    a React gallery unchanged (section 5.3); only the front-end half would change. The answer on
@@ -51,7 +51,7 @@ from reading the code and plans.
 |---|---|
 | React platform (build, dev loop, tests, CSP, texts, docs) | 5-7 days |
 | First screen: root contests grid | 3-5 days after the platform |
-| GraphQL read-only API (PR #135's plan, not React work) | 2.5-3.5 days (its own estimate) |
+| #135's first slice (not React work) | see #135 (its figure may change; not restated here) |
 | #129 as planned (decided) | 28-33 days |
 | Gallery in React instead of #129's front end | 45-60 days in all, with #129's server half (about 15-18 days) kept |
 | #129 plus a YARL lightbox island | #129 plus 8-12 days (reopens Q2) |
@@ -115,29 +115,41 @@ client-side state and sub-views (a `?tab=` or a hash).
 - **Release tests.** The real-ZIP restore tests are about the ZIP and the scripts, not its
   contents; whether the ZIP's file manifest needs a line for the new assets is to be checked when
   the task is added.
-- **Developer loop.** Two modes. (a) `vite` on :5173 with a proxy of `/api`, the pages and the
-  assets to Play on :9000: hot reload, and the cookie works because the browser sees one origin.
-  (b) `vite build --watch` into `public/ui/` with `sbt ~run`: no proxy, slower refresh. The
-  `react` branch's `vite.config.ts` and `DEV.md` already describe (a).
+- **Developer loop.** With islands the HTML comes from Play, so the developer opens the Vite
+  dev server on :5173 and it proxies **everything to Play on :9000 except the script, style
+  and HMR paths of the screen under development** (which Vite serves itself, and which the dev
+  Twirl page references): one origin, so the session cookie and CSRF work as in production, and no
+  CORS. Fallback: `vite build --watch` into `public/ui/` with `sbt ~run` (no proxy, slower
+  refresh). The `react` branch's `vite.config.ts` and `DEV.md` describe a simpler proxy of `/api`
+  only, which suits an SPA, not islands. The developer runs the app on #135's fixture DB (the
+  Gatling dump: about 38k images, 20 jurors, a binary and a rated round) and signs in with its
+  fixture accounts (juror, organizer, admin).
+- **Generated types.** `graphql-codegen` runs inside `uiBuild` and in CI, from #135's SDL
+  (`conf/graphql/schema.graphql`) and the `.graphql` documents in `ui/`; the generated files are
+  not committed. The codegen packages join the `ui/` dependency rules.
 
 ### 3.3 Authentication, CSRF, texts, CSP, tests, API
 
 - **Authentication.** The session cookie, same origin, through `ApiAuth.caller`; a screen never
   holds a token. GraphQL (PR #135) mounts at `POST /api/graphql` behind the same caller, with the
-  same Host check and CSRF rule: a session mutation needs the `Csrf-Token` header; a Bearer
-  request without a session cookie does not. Token callers are query-only there.
+  same Host check and CSRF rule: **every session POST needs the `Csrf-Token` header** (the CSRF
+  filter, `modules.CsrfModule`; GraphQL queries are POSTs too, so queries need it as well); a
+  Bearer request without a session cookie does not. Token callers are query-only there.
 - **CSRF.** The Twirl page renders `data-csrf-token` on the mount element, as the gallery does for
-  votes; the client wrapper adds it to every write.
+  votes; the client sends it as `Csrf-Token` on every request to the API (urql's fetch options,
+  one place). #135's section 6 speaks of a Twirl shell at `/ui` with a meta tag; with islands each
+  screen's own page carries it on the mount element.
 - **Texts (i18n).** Messages stay in `conf/messages.{en,fr,ru,uk}`. The Twirl page puts the
   keys the screen needs, translated in the user's language, into a `data-` attribute or an inline
   JSON (a Scala list of keys per screen): no build-time export, no second source of truth, no
   client language detection. A test checks that every key of a screen exists in all four files.
   Dates and numbers use the browser's `Intl` with the page's `lang`.
 - **CSP.** `script-src 'self'` plus two hashes: a bundle served from this host needs no change.
-  `style-src` keeps `'unsafe-inline'` until #129's step G-7 (a Report-Only release, then
-  removal). Libraries that inject styles as `<style>` elements (**Emotion, hence MUI**) or as
+  master's `style-src` is `'self' 'unsafe-inline'` (`conf/application.conf`), so **MUI would
+  work today**; the objection is #129's planned step G-7 (on PR #129, which may not be on master
+  yet: a Report-Only release, then removal of `'unsafe-inline'`), and the look. Libraries that inject styles as `<style>` elements (**Emotion, hence MUI**) or as
   style attributes in server HTML fight that step; styles set through the CSSOM (React's `style`
-  prop) are allowed. So: no MUI; use Bootstrap 5's classes already on the page, or CSS modules,
+  prop) are allowed. So I recommend no MUI; use Bootstrap 5's classes already on the page, or CSS modules,
   and a headless table helper (for example TanStack Table) where a grid is needed. YARL and
   react-photo-album set sizes through the `style` prop and CSS variables; not verified under a
   strict policy. `connect-src 'self'` already allows the same-origin API.
@@ -147,20 +159,22 @@ client-side state and sub-views (a `?tab=` or a hash).
   runners (Jest, Vitest) is a cost; Jest can run TypeScript, so one runner is worth a short check.
 - **API.** Reads and later writes go through PR #135's endpoint. Until its first PR lands, a
   screen can use REST `/api` (contests exist; rounds and the rest do not). Plain `fetch` with a
-  typed query string is enough; a client library (urql, Apollo) is optional and adds weight.
+  typed query string is enough for the first screen; the default for GraphQL screens is **urql**
+  with **graphql-codegen** (typed documents), as #135's section 6 proposes (the UI developer may
+  swap it; Apollo is larger and its normalized cache pays only with many cross-screen updates).
 
 ## 4. First screen: recommendation
 
 | Screen | Users | Risk | Data source | Verdict |
 |---|---|---|---|---|
 | **Root contests grid** (the `react` branch) | root only | very low | REST `/api/contests` now, GraphQL later | **First**: exercises every integration point; nobody else sees it |
-| Round statistics (read-only) | organizers, admins | low | GraphQL `roundStat` (read-only schema, PR A of #135) | Second; where GraphQL's shape pays off |
+| Round statistics (read-only) | organizers, admins | low | GraphQL `roundStat` (#135's first slice) | Second; where GraphQL's shape pays off |
 | Users page with filters | admins | medium | GraphQL users and the email rule | Later |
 | A juror screen (gallery, large view) | jurors | high | votes, own-votes rules, CSRF, keyboard | Last |
 
 The grid is a modest screen: useful for root, but its value is proving the platform. If the
 maintainer wants a first screen that more people use, round statistics is better, after the
-read-only GraphQL PR.
+#135's first slice.
 
 **Base.** Take from `react` and `react-custom-filter`: the `ui/` layout, `vite.config.ts` with the
 dev proxy, `tsconfig.json`, the Vitest setup and test style, the contests API wrapper. Do not take
@@ -285,7 +299,7 @@ little else. Admin screens are behind a login, small, and fine with a placeholde
 | Approach | What it is | Fit |
 |---|---|---|
 | **Twirl no-JS grid, then React takes over** | The server renders the tiles as plain HTML (the #129 partial); React replaces or hydrates the container on load | Best fit: the no-JS path and first paint come from the partial #129 builds anyway, and React is an enhancement. Cost: two renderers for one tile, kept in step by tests |
-| **In-JVM GraalJS** | Run the bundle's server entry (`renderToString`) in a GraalJS context inside Play (the polyglot API and the JS language on a standard JDK), with a pool of contexts because a context is not thread-safe | Feasible, unmeasured. Open points: on a stock JDK GraalJS usually runs in interpreter mode without Graal's compiler, so rendering hundreds of tiles may be much slower than in Node; each pooled context holds the bundle in memory; production runs JDK 17 (`docs/deployment.md`), whose support and flags must be checked; renders must run on the blocking pool; hydration needs byte-identical markup |
+| **In-JVM GraalJS** | Run the bundle's server entry (`renderToString`) in a GraalJS context inside Play (the polyglot API and the JS language on a standard JDK), with a pool of contexts because a context is not thread-safe | Feasible, unmeasured. Open points: **the JDK.** Production and the build are JDK 17 (`docs/deployment.md`, `-release:17` in `build.sbt`). I checked the class files of `polyglot`, `truffle-api` and `js-language` on Maven Central (lines 23.1, 24.1, 24.2 and 25.0): all target Java 17, so loading on JDK 17 is not ruled out by them, but the minimum JDK the 25.x lines officially support was **not verified** (the release notes must be read; it may be 21 or later, in which case only an older line, or a JDK upgrade first, is possible). On a stock JDK there is no Graal compiler, so Truffle runs in interpreter mode (with a warning). on a stock JDK GraalJS usually runs in interpreter mode without Graal's compiler, so rendering hundreds of tiles may be much slower than in Node; each pooled context holds the bundle in memory; production runs JDK 17 (`docs/deployment.md`), whose support and flags must be checked; renders must run on the blocking pool; hydration needs byte-identical markup |
 | **A Node render service** | A second process, `renderToString` over HTTP | Not now: a new runtime to deploy, monitor and patch |
 | **Build-time prerender** | Render at build | **Not applicable**: tiles depend on the user, the round and their votes |
 | **react-photo-album's own SSR options** | Skeleton, `defaultContainerWidth`, container-query SSR component, Server Component | All need a React server render (one of the above) |
@@ -299,9 +313,9 @@ of 2-4 contexts.
 - Effort figures for B, C and the platform are estimates; A's is the plan's own.
 - YARL's keyboard, focus and ARIA behaviour was not tested; neither library was checked under
   `style-src` without `'unsafe-inline'`.
-- GraalJS's cost and the production JDK's behaviour are unmeasured.
-- The GraphQL plan is a plan (draft PR #135): the read-only schema, the `/api/graphql` action and
-  the query-only rule for tokens do not exist yet, so the first screen starts on REST.
+- GraalJS's cost is unmeasured, and its supported JDK range is not confirmed (section 7).
+- The GraphQL plan is a plan (draft PR #135): its first slice, the `/api/graphql` action and the
+  query-only rule for tokens do not exist yet, so the first screen starts on REST.
 - No gallery prototype was built.
 
 ## 9. Open questions for the maintainer
@@ -309,7 +323,7 @@ of 2-4 contexts.
 1. **Integration shape.** Islands on Twirl pages (recommended), or an SPA under `/ui` as the
    `react` branch did? Islands keep routes and authorization in Play.
 2. **First screen.** The root contests grid (low risk, small audience, can start on REST), or
-   wait for the GraphQL read-only PR and start with round statistics for organizers?
+   wait for #135's first slice and start with round statistics for organizers?
 3. **UI kit.** No MUI; Bootstrap 5 classes with CSS modules and a headless table, because of
    CSP step G-7 and the look. Does the UI developer agree, or is a component kit a requirement
    (then the CSP plan changes)?
@@ -323,5 +337,9 @@ of 2-4 contexts.
    prerender spike of section 7 comes first)?
 8. **Lightbox.** Is a quick preview over the gallery wanted at all (Q2 said no)? If so, C1 is a
    small follow-up now that the platform exists.
-9. **The parked branches.** Close `react`, `react-custom-filter` and `104-port-gallery-to-react`
+9. **Juror slice order** (shared with #135). Should the juror-facing slice (round images and
+   the vote) come before or after the admin and organizer screens? Recommendation: **after**:
+   the admin and organizer screens carry less risk, prove the platform, and let the gallery
+   decision (#129 or React) settle first.
+10. **The parked branches.** Close `react`, `react-custom-filter` and `104-port-gallery-to-react`
    when the first screen's PR merges, keeping only the skeleton pieces named in section 4?
