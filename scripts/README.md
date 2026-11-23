@@ -33,6 +33,13 @@ The container (`wlxjury-local-dev`) is left running after the script exits. To r
 docker rm -f wlxjury-local-dev
 ```
 
+## local-images-maintenance.sh
+
+Reports the size of the local image cache per modification month and prunes old files, with a
+dry-run mode. Bash with GNU find; tests in `test_local_images_maintenance.py`. The usage is in
+[deployment.md](../docs/deployment.md) ("The image cache folder"); `local-images-maintenance.sh help`
+prints every option.
+
 ## story-coverage.py
 
 The story coverage matrix ([testing practices](../docs/testing/practices.md) §9.4): which browser

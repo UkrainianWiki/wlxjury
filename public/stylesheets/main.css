@@ -1048,45 +1048,41 @@ div.thumb_small.wlx-thumb-failed .wlx-video-mark {
 .wlx-wm-name { margin-left: .35em; font-weight: 500; }
 
 /* a list's file that Back or Esc from its large view scrolls to (file-anchor.js, data-file-anchor):
-   room above it: none on a page without a top bar that stays in view, a little on a page with the
-   reappearing bar (below), in addition to the root's scroll-padding-top, the bar's height */
+   room above it: none on a page without a sticky top bar, a little on a page with one (below), in
+   addition to the root's scroll-padding-top, the bar's height */
 :root { --wlx-file-anchor-offset: 0px; }
 [data-file-anchor] { scroll-margin-top: var(--wlx-file-anchor-offset); }
 
-/* The reappearing top bar (a trial, 2026-11-20; topbar.js): on a page that opts in (the layouts'
-   reappearingBar: the galleries and lists, not the large views or the forms) the navbar sticks
-   to the window's top, on the page's own background (the galleries' grey, body.gallery), above
-   the tiles (Bootstrap's sticky layer, under its modals and tooltips), and slides up out of view
-   while the user scrolls down (wlx-topbar-hidden), without animation for those who prefer reduced
-   motion. --wlx-topbar-height (topbar.js, set on the root only on such a page) is the bar's height:
-   the root's scroll-padding-top, so that what the browser scrolls into view (a focused element, a
-   fragment's target, a found text, a file Back to gallery scrolls to) lands below the bar, also
-   once it comes back (WCAG 2.4.11), and what the window leaves for a menu of the bar, which
-   scrolls inside itself rather than end below the window (the sticky bar no longer scrolls with
-   the page to show a long menu's end) */
-html { scroll-padding-top: var(--wlx-topbar-height, 0px); }
-body.wlx-topbar-reappears {
-    --wlx-file-anchor-offset: .5rem;
-}
-body.wlx-topbar-reappears > .navbar {
-    position: sticky;
-    top: 0;
-    z-index: 1020;
-    background-color: inherit;
-    transition: transform .2s ease-in-out;
-}
-body.wlx-topbar-reappears > .navbar.wlx-topbar-hidden { transform: translateY(-100%); }
-@media (prefers-reduced-motion: reduce) {
-    body.wlx-topbar-reappears > .navbar { transition: none; }
-}
-body.wlx-topbar-reappears > .navbar .dropdown-menu {
-    max-height: calc(100vh - var(--wlx-topbar-height, 0px) - .5rem);
-    max-height: calc(100dvh - var(--wlx-topbar-height, 0px) - .5rem);
-    overflow-x: hidden;
-    overflow-y: auto;
-}
-body.wlx-topbar-reappears > .navbar .dropdown-menu.region-menu-list,
-body.wlx-topbar-reappears > .navbar .dropdown-menu.wlx-round-menu {
-    max-height: min(70vh, calc(100vh - var(--wlx-topbar-height, 0px) - .5rem));
-    max-height: min(70dvh, calc(100dvh - var(--wlx-topbar-height, 0px) - .5rem));
+/* The sticky top bar (the maintainer's decision of 2026-11-23, as MediaWiki's sticky header): on a
+   page that opts in (the layouts' stickyBar: the galleries and lists, not the large views or the
+   forms) the navbar stays at the window's top while the user scrolls, from 576 px wide, on the
+   page's own background (the galleries' grey, body.gallery), above the tiles and their menus
+   (Bootstrap's sticky layer, under its modals and tooltips). Below 576 px (a phone: the bar
+   wraps to about 200 px) it scrolls away with the page. --wlx-topbar-height (topbar.js, set on
+   the root only on such a page) is the bar's height: the root's scroll-padding-top, so that what
+   the browser scrolls into view (a focused element, a fragment's target, a found text, a file Back
+   to gallery scrolls to) lands below the bar (WCAG 2.4.11), and what the window leaves for a menu
+   of the bar, which scrolls inside itself rather than end below the window. */
+@media (min-width: 576px) {
+    html { scroll-padding-top: var(--wlx-topbar-height, 0px); }
+    body.wlx-topbar-sticky {
+        --wlx-file-anchor-offset: .5rem;
+    }
+    body.wlx-topbar-sticky > .navbar {
+        position: sticky;
+        top: 0;
+        z-index: 1020;
+        background-color: inherit;
+    }
+    body.wlx-topbar-sticky > .navbar .dropdown-menu {
+        max-height: calc(100vh - var(--wlx-topbar-height, 0px) - .5rem);
+        max-height: calc(100dvh - var(--wlx-topbar-height, 0px) - .5rem);
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+    body.wlx-topbar-sticky > .navbar .dropdown-menu.region-menu-list,
+    body.wlx-topbar-sticky > .navbar .dropdown-menu.wlx-round-menu {
+        max-height: min(70vh, calc(100vh - var(--wlx-topbar-height, 0px) - .5rem));
+        max-height: min(70dvh, calc(100dvh - var(--wlx-topbar-height, 0px) - .5rem));
+    }
 }

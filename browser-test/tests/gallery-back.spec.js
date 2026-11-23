@@ -131,7 +131,7 @@ test('the cause: the old #<pageId> fragment jumps the first file to the top edge
     const pageId = await page.locator('li[data-file-anchor]').first().getAttribute('data-file-anchor');
     await page.goto('about:blank');
     await page.goto(`${list}#${pageId}`);
-    // the old fragment's jump: the by-rate gallery's bar is sticky now (the reappearing top bar,
+    // the old fragment's jump: the by-rate gallery's bar is sticky now (the sticky top bar,
     // topbar.spec.js) and the root's scroll-padding-top its height, so the browser puts the file
     // below the bar, never under it
     await settledScrollY(page);

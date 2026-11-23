@@ -9,7 +9,7 @@ on:
   # Any base branch: stacked PRs target the PR below them, not master.
   pull_request:
   push:
-    branches: [master, ukwikidev/followups]
+    branches: [master]
   # Weekly on master, with MariaDB 10.11 too (the matrix below)
   schedule:
     - cron: '41 3 * * 1'   # Mondays 03:41 UTC
@@ -51,6 +51,11 @@ jobs:
       - name: agent-check tests
         working-directory: scripts
         run: python3 -B -m unittest -v test_agent_check
+
+      # The image cache maintenance script on a temporary directory (GNU find and date).
+      - name: local images maintenance tests
+        working-directory: scripts
+        run: python3 -B -m unittest -v test_local_images_maintenance
 
       # The rehearsal's schema parity check (synthetic column dumps). Standard library only.
       - name: schema parity tests

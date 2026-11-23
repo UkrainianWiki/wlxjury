@@ -90,17 +90,17 @@ class LayoutSpec extends PlaySpecification {
       page(views.html.main("gallery")(Html(""))) must contain("<title>Gallery</title>")
     }
 
-    "have the reappearing top bar only where the page opts in, never in the large views" in {
+    "have the sticky top bar only where the page opts in, never in the large views" in {
       val on = Seq(
-        page(views.html.main("gallery", gallery = true, reappearingBar = true)(Html(""))),
-        page(views.html.mainAdmin("users", reappearingBar = true)(Html("")))
+        page(views.html.main("gallery", gallery = true, stickyBar = true)(Html(""))),
+        page(views.html.mainAdmin("users", stickyBar = true)(Html("")))
       )
       forall(on) { p =>
-        p must beMatching("""(?s).*<body class="[^"]*\bwlx-topbar-reappears\b.*""")
+        p must beMatching("""(?s).*<body class="[^"]*\bwlx-topbar-sticky\b.*""")
         p must contain("javascripts/topbar.js")
       }
-      on.head must contain("""<body class="gallery wlx-topbar-reappears">""")
-      // topbar.js before file-anchor.js, which reads the bar's height on the same event
+      on.head must contain("""<body class="gallery wlx-topbar-sticky">""")
+      // topbar.js before file-anchor.js, which reads the bar's height
       on.head.indexOf("javascripts/topbar.js") must be_<(on.head.indexOf("javascripts/file-anchor.js"))
       val off = Seq(
         page(views.html.main("gallery", gallery = true)(Html(""))),
@@ -109,7 +109,7 @@ class LayoutSpec extends PlaySpecification {
         LargeViewRenders.contestFile(LargeViewRenders.middle)
       )
       forall(off) { p =>
-        p must not contain "wlx-topbar-reappears"
+        p must not contain "wlx-topbar-sticky"
         p must not contain "javascripts/topbar.js"
       }
     }
