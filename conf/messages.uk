@@ -765,6 +765,14 @@ sessions.end = Завершити сеанси
 sessions.ended = Усі сеанси цього облікового запису завершено; потрібно ввійти знову.
 api.tokens.revoke.all.mine = Відкликати всі токени
 api.tokens.revoked.all = Відкликано токенів: {0}.
+api.token.scope = Доступ
+api.token.scope.full = Повний: читання і запис, звідусіль
+api.token.scope.local_read = Лише читання, лише з сервера
+api.token.scope.help = Токен лише для читання приймається тільки для читання і тільки в запитах, зроблених на самому сервері (як-от запити інструмента wlxjury-diag через ssh), ніколи через вебсайт. Виберіть його для діагностики.
+api.token.scope.short.full = Повний
+api.token.scope.short.local_read = Лише читання, лише сервер
+api.token.scope.short.unknown = Невідомий (відхиляється)
+error.api.token.scope = Виберіть один із запропонованих видів доступу.
 
 # criteria rounds (C2): the round form, the catalogue, and the shipped criteria (V83)
 criteria = Критерії

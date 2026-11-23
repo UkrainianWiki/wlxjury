@@ -38,8 +38,10 @@ class ApiTokenJdbcSpec extends Specification with BeforeAll with BeforeEach with
           .map(rs => (rs.string(1), rs.string(2), rs.string(3))).list.apply()
       }
       // create_nonce: V79, the hash of the create form's nonce (ApiTokenService.createOnce)
-      columns.map(_._1) === Seq("id", "user_id", "name", "token_hash", "prefix", "create_nonce", "created_at",
+      // scope: V110, full or local_read (ApiTokenScope)
+      columns.map(_._1) === Seq("id", "user_id", "name", "token_hash", "prefix", "scope", "create_nonce", "created_at",
         "expires_at", "last_used_at", "revoked_at")
+      columns.find(_._1 == "scope").map(c => (c._2, c._3)) === Some(("varchar(16)", "NO"))
       columns.find(_._1 == "create_nonce").map(c => (c._2, c._3)) === Some(("char(64)", "YES"))
       columns.find(_._1 == "token_hash").map(_._2) === Some("char(64)")
       columns.filter(_._3 == "YES").map(_._1) === Seq("create_nonce", "expires_at", "last_used_at", "revoked_at")

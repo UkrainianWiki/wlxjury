@@ -22,6 +22,7 @@
                             <tr>
                                 <th scope="col">@Messages("api.token.name")</th>
                                 <th scope="col">@Messages("api.token.prefix")</th>
+                                <th scope="col">@Messages("api.token.scope")</th>
                                 <th scope="col">@Messages("api.token.created.at")</th>
                                 <th scope="col">@Messages("api.token.last.used")</th>
                                 <th scope="col">@Messages("api.token.expires")</th>
@@ -33,6 +34,7 @@
                             <tr>
                                 <td>@token.name</td>
                                 <td><code>@token.prefix…</code></td>
+                                <td>@controllers.ApiTokensCard.scopeLabel(token)</td>
                                 <td>@date(token.createdAt)</td>
                                 <td>@token.lastUsedAt.fold(Messages("api.token.not.used"))(date)</td>
                                 <td>@token.expiresAt.fold(Messages("api.token.expiry.never"))(date)</td>

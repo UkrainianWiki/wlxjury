@@ -648,6 +648,12 @@ can be done through the API yet, and only by root, so nobody else can create a t
 token acts with its owner's roles, so it must be kept secret. Ending sessions doesn't revoke
 tokens: the owner revokes them on the profile, and root on any account's tokens page.
 
+A token's **Access** is chosen when it is created: **Full** (the default) reads and writes from
+anywhere; **Read-only, from the server only** is for the diagnostics tool run on the server over
+ssh (`wlxjury-diag`): it only reads, and is refused on anything sent through the website. Both
+token lists show each token's access. The contest's health report (**Contest health**) can also
+be read through the API, by root and the contest's admins, as the page.
+
 <a id="a-contest"></a>
 ## The contest
 

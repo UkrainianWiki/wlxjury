@@ -3,14 +3,30 @@
 The jury tool serves a small REST API under `/api` (Tapir, `app/api/Api.scala`). Swagger UI
 and the OpenAPI document are public at `/api/docs` (`/api/docs/docs.yaml`); they hold no data.
 
-So far the API has the contest endpoints, for root only, as the contest pages are:
+So far the API has the contest endpoints, for root only, as the contest pages are, and two
+read-only diagnostics endpoints (support diagnostics plan, D-1b) that the `wlxjury-diag` tool
+reads ([operations §5.5](operations/practices.md)):
 
-| Method | Path | |
-|---|---|---|
-| `GET` | `/api/contests` | all contests |
-| `GET` | `/api/contests/{id}` | one contest |
-| `POST` | `/api/contests` | create a contest (an `id` in the body is ignored) |
-| `PUT` | `/api/contests` | update the contest of the body's `id` |
+| Method | Path | Who | |
+|---|---|---|---|
+| `GET` | `/api/contests` | root | all contests |
+| `GET` | `/api/contests/{id}` | root | one contest |
+| `POST` | `/api/contests` | root | create a contest (an `id` in the body is ignored) |
+| `PUT` | `/api/contests` | root | update the contest of the body's `id` |
+| `GET` | `/api/contests/{id}/health` | root and the contest's admins | the contest's health report, as its health page shows it |
+| `GET` | `/api/diagnostics/recent?hours=24` | root | every contest's jobs and round status changes of the last `hours` (1 to 720, 24 by default), the worst first, and the jobs of no contest |
+
+**The health report** (`/api/contests/{id}/health`) has the contest (`id`, `name`, `year`,
+`country`, `retired`), its `outcome` (`pass`, `info`, `warn`, `fail`: the worst check's), `files`,
+`recentActivity`, the `checks` (`code` H1…H12, `title`, `outcome`, and `hints`, each with its
+`outcome`, message `key`, numeric `args` and English `text`), the `imports` (job id, status, source,
+counts, error key and reference, and who started it as the health page names them to you) and the
+`rounds` (id, number, status, files, active jurors, the checks that flag it). The contest's admins
+get it as active members of the contest; organizers, jurors and other contests' admins get 403. A
+retired contest's report is root's only, as the page is. **The recent report** groups by contest
+(`contest`, `outcome`, `jobs`, `roundChanges`); a failed job that a later job of the same subject
+did not follow is `fail`, a job queued or running for over 30 minutes `warn`. It reads no log: the
+log's denials are `wlxjury-diag`'s to add.
 
 ## Signing in
 
@@ -21,6 +37,13 @@ So far the API has the contest endpoints, for root only, as the contest pages ar
   leaked. You can have at most 20 usable (not revoked, not expired) tokens. A token acts as
   you, with your memberships and roles; it can't create or revoke tokens. Keep it out of shell history and scripts you share (an environment variable or a
   file only you can read).
+- **Its access** is chosen when you create it: **Full** (the default, and every token made
+  before V110) reads and writes from anywhere; **Read-only, from the server only** is taken on
+  `GET` only, and only in a request made on the server itself: from a loopback address
+  (`127.0.0.1`, `::1`) with no `Forwarded` or `X-Forwarded-*` header, so never through the
+  website (Apache adds `X-Forwarded-For` to every request it passes on). Anything else with it
+  gets 403 `forbidden`. It is the token for `wlxjury-diag` over ssh: if it leaks, it reads only
+  what your account may read, only from the server, and writes nothing.
 - **The session cookie**, for a page of the tool calling the API from the browser. A write
   (`POST`, `PUT`, `DELETE`) then needs the `Csrf-Token` header, as the gallery's votes send it.
 
@@ -51,7 +74,7 @@ Errors are JSON, with a fixed code and never the request's text:
 |---|---|---|
 | 400 | `{"error": "bad_request"}` | a body or path that can't be read, or a `Host` that isn't one of the deployment's names (`WLXJURY_ALLOWED_HOSTS`, docs/deployment.md): call the API by the jury tool's host name, not the server's address |
 | 401 | `{"error": "unauthenticated"}`, `WWW-Authenticate: Bearer` | no credentials, or a token that is unknown, revoked, expired or malformed |
-| 403 | `{"error": "forbidden", "reference": "1a2b3c4d"}` | signed in, but not allowed; the reference finds the log line |
+| 403 | `{"error": "forbidden", "reference": "1a2b3c4d"}` | signed in, but not allowed, or a read-only token used for a write or not from the server itself; the reference finds the log line |
 | 403 | `{"error": "csrf", "reference": "…"}` | a session's write without a valid `Csrf-Token` header |
 | 404 | `{"error": "not_found"}` | no such contest, or no such path under `/api` |
 | 413 | `{"error": "payload_too_large"}` | a body over Play's parser limit (`play.http.parser.maxMemoryBuffer`) |
@@ -67,9 +90,18 @@ Errors are JSON, with a fixed code and never the request's text:
   prefix (`services.ApiTokenService` is at INFO in `conf/logback.xml` and in production's
   `conf/logback-production.xml`, which ships in the release); a malformed token or another
   `Authorization` scheme only at DEBUG, without a database lookup. A denial is logged on `security.authz` with its
-  reference and `auth=session` or `auth=token tokenId=…`.
-- Revoking a token for a user (root) is not in the UI yet: set `revoked_at` on their row,
-  e.g. `UPDATE api_token SET revoked_at = NOW(3) WHERE user_id = … AND revoked_at IS NULL`.
+  reference and `auth=session` or `auth=token tokenId=…` (and `scope=local_read` for a read-only
+  token). A read-only token refused by its scope is logged there too, before any permission check,
+  as `authorization_denied … resource=api:<endpoint> … reason=token_read_only` (not a `GET`),
+  `reason=token_endpoint` (an endpoint not open to read-only tokens: each endpoint is classified
+  in `ApiAuth.Endpoints`, a new one closed until it is) or `reason=token_not_local` (not from the
+  server itself), then `auth=token tokenId=… scope=local_read remote="…"`: the client's address as
+  the app resolved it (behind Apache, the forwarded one), to see where a leaked token is used.
+  A token whose stored scope this release doesn't know (a newer release's, after a backout) is
+  refused as `api_token_refused reason=unknown_scope`, never taken as full.
+- The scope is `api_token.scope` (V110: `full` or `local_read`, a CHECK keeps the two). Before a
+  rollback of the migration (its last comment), revoke the read-only tokens: an older release
+  ignores the column and would let them write.
 
 ## For developers
 
@@ -91,6 +123,11 @@ Errors are JSON, with a fixed code and never the request's text:
   (`ApiTokensCard.NonceKey`), so reloading the creating response makes no second token; a user
   revokes only their own. Tokens are accepted only under `/api/`: the page routes read the
   session alone.
+- **Token scope** (`api_token.scope`, V110): `full` (default) or `local_read`, which
+  `ApiAuth.scopeRefusal` lets in only on a GET of an endpoint allowlisted in `ApiAuth.Endpoints`
+  (every endpoint is named there; `ApiEndpointScopeSpec`), from the server itself
+  (`ApiAuth.fromServerItself`: loopback, no `Forwarded` / `X-Forwarded-*`); a new GET endpoint must
+  be classified there, and only one that only reads may be open to `local_read`.
 - **CSRF.** `modules.CsrfModule` replaces Play's CSRF module (same filter class) so that only a
   request under `/api/` with a Bearer header and without the session cookie skips the check
   (`ApiAuth.bearerWithoutSession`).

@@ -928,6 +928,51 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+  /** V110's rollback SQL after reopen (the script's last comment): the read-only tokens revoked
+    * first, so that none gains writes on an older binary; the column and its check dropped.
+    */
+  private val v110Rollback = Seq(
+    "UPDATE api_token SET revoked_at = NOW(3) WHERE scope <> 'full' AND revoked_at IS NULL",
+    "ALTER TABLE api_token DROP CONSTRAINT IF EXISTS api_token_scope_chk, DROP COLUMN IF EXISTS scope",
+    "DELETE FROM flyway_schema_history WHERE version = '110'")
+
+  "V110's API token scope" should {
+    "make every existing token full, take local_read, refuse any other value, rerun, and roll back" in {
+      emptyDb("fw_v110_prev")
+      flyway("fw_v110_prev", production.copy(target = Some("109"))).migrate()
+      emptyDb("fw_v110")
+      flyway("fw_v110", production.copy(target = Some("109"))).migrate().success must beTrue
+      Using.resource(connect("fw_v110"))(c => run(c, Seq(
+        "INSERT INTO users (id, fullname, email) VALUES (1, 'A', 'a@example.com')",
+        s"INSERT INTO api_token (id, user_id, name, token_hash, prefix) VALUES (1, 1, 'old', '${"a" * 64}', 'wlxj_aaaaaa')")))
+      flyway("fw_v110", production.copy(target = Some("110"))).migrate().success must beTrue
+      val once = schema("fw_v110")
+      def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+      def refused(sql: String): Boolean = Using.resource(connect("fw_v110"))(c => scala.util.Try(run(c, Seq(sql))).isFailure)
+      def insert(id: Int, scope: String) =
+        s"INSERT INTO api_token (id, user_id, name, token_hash, prefix, scope) VALUES ($id, 1, 't$id', '${"b" * 63}$id', 'wlxj_b', '$scope')"
+      val existing = Using.resource(connect("fw_v110"))(c => rows(c, "SELECT scope FROM api_token")(_.getString(1)))
+      // a rerun changes nothing
+      Using.resource(connect("fw_v110"))(c => run(c, statements("V110__Api_token_scope.sql")))
+      val rerun = schema("fw_v110")
+      (history("fw_v110").map(_.split(" \\| ")(1)) === upTo("110")) and
+        (existing === List("full")) and (rerun === once) and
+        (refused(insert(2, "local_read")) must beFalse) and
+        // exactly the two values: no other case, no padding, no other word
+        (refused(insert(3, "Full")) must beTrue) and (refused(insert(4, "local_read ")) must beTrue) and
+        (refused(insert(5, "read")) must beTrue) and {
+          Using.resource(connect("fw_v110"))(c => run(c, v110Rollback))
+          val revoked = Using.resource(connect("fw_v110"))(c =>
+            rows(c, "SELECT id, revoked_at IS NOT NULL FROM api_token ORDER BY id")(rs => rs.getLong(1) -> rs.getBoolean(2)))
+          (revoked === List(1L -> false, 2L -> true)) and
+            (history("fw_v110").map(_.split(" \\| ")(1)) === upTo("109")) and
+            (tablesOnly(schema("fw_v110")) === tablesOnly(schema("fw_v110_prev"))) and
+            (flyway("fw_v110", production.copy(target = Some("110"))).migrate().success must beTrue) and
+            (tablesOnly(schema("fw_v110")) === tablesOnly(once))
+        }
+    }
+  }
+
   /** V96's rollback SQL after reopen (CHANGELOG, the account change log): the live unsent
     * invitations revoked first, since an older release would show one as mailed; the log dropped.
     */

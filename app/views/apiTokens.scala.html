@@ -42,6 +42,7 @@
                         <tr>
                             <th scope="col">@Messages("api.token.name")</th>
                             <th scope="col">@Messages("api.token.prefix")</th>
+                            <th scope="col">@Messages("api.token.scope")</th>
                             <th scope="col">@Messages("api.token.created.at")</th>
                             <th scope="col">@Messages("api.token.last.used")</th>
                             <th scope="col">@Messages("api.token.expires")</th>
@@ -53,6 +54,7 @@
                         <tr>
                             <td>@token.name</td>
                             <td><code>@token.prefix…</code></td>
+                            <td>@controllers.ApiTokensCard.scopeLabel(token)</td>
                             <td>@date(token.createdAt)</td>
                             <td>@token.lastUsedAt.fold(Messages("api.token.not.used"))(date)</td>
                             <td>@token.expiresAt.fold(Messages("api.token.expiry.never"))(date)</td>
@@ -98,6 +100,10 @@
                     "365" -> Messages("api.token.expiry.365"),
                     "never" -> Messages("api.token.expiry.never")),
                 Symbol("_label") -> Messages("api.token.expiry"))
+            @* read-only and server-only is opt-in (support diagnostics plan, DG3): full at first *@
+            @bs.select(card.form("scope"), db.scalikejdbc.ApiTokenScope.All.map(s =>
+                    s.value -> Messages(s"api.token.scope.${s.value}")),
+                Symbol("_label") -> Messages("api.token.scope"), Symbol("_help") -> Messages("api.token.scope.help"))
             <button type="submit" class="btn btn-primary">@Messages("api.token.create")</button>
         }
     </div>

@@ -213,6 +213,13 @@ class PackagedReleaseTest(DatabaseFixture):
         # The unit starts the app with the release's own logging config.
         self.assertTrue(any(name.endswith('/conf/logback-production.xml') for name in names),
                         'The release must ship conf/logback-production.xml')
+        # The support diagnostics CLI runs from the release (operations §5.5); its tests stay out.
+        self.assertEqual([name for name in names
+                          if name.partition('/')[2].startswith('scripts/') and not name.endswith('/')],
+                         [name for name in names if name.endswith('/scripts/diagnostics/wlxjury-diag.py')],
+                         'Of scripts/, only the diagnostics CLI ships in the release')
+        self.assertTrue(any(name.endswith('/scripts/diagnostics/wlxjury-diag.py') for name in names),
+                        'The release must ship scripts/diagnostics/wlxjury-diag.py')
         with contextlib.redirect_stdout(io.StringIO()):
             release = self.tool.prepare(archive, deploy.digest(archive))
         env = deploy.read_env(self.tool.runtime / 'runtime.env')

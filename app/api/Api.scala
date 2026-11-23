@@ -4,11 +4,13 @@ import db.scalikejdbc.User
 import org.apache.pekko.actor.ActorSystem
 import org.apache.pekko.stream.Materializer
 import org.intracer.wmua.ContestJury
-import play.api.Logging
+import play.api.{Configuration, Logging}
 import play.api.http.HttpConfiguration
+import play.api.i18n.MessagesApi
 import play.api.mvc.{PlayBodyParsers, RequestHeader}
 import play.api.routing.Router.Routes
 import services.ContestService
+import services.diagnostics.{ContestHealth, RecentActivity}
 import sttp.apispec.SecurityScheme
 import sttp.apispec.openapi.{Components, OpenAPI}
 import sttp.model.HeaderNames
@@ -38,7 +40,9 @@ class Api @Inject() (
     contestService: ContestService,
     actorSystem: ActorSystem,
     httpConfiguration: HttpConfiguration,
-    bodyParsers: PlayBodyParsers
+    bodyParsers: PlayBodyParsers,
+    messagesApi: MessagesApi,
+    configuration: Configuration
 )(
     implicit mat: Materializer, ec: ExecutionContext
 ) extends JsonFormat
@@ -57,30 +61,46 @@ class Api @Inject() (
       .and(jsonBody[ApiError])
       .mapTo[ApiFailure]
 
-  /** An endpoint the caller must be let in to by `permission`: resolved and checked
-    * ([[ApiAuth.authorize]]) on the blocking dispatcher, before the body is read.
+  /** An endpoint, named `name` (its id in [[ApiAuth.Endpoints]] and the OpenAPI document), the
+    * caller must be let in to by `permission`: resolved and checked ([[ApiAuth.authorize]]) on the
+    * blocking dispatcher, before the body is read.
     */
-  private def secured(permission: User => Boolean) =
+  private def secured(name: String, permission: User => Boolean) =
     endpoint
+      .name(name)
       .securityIn(extractFromRequest(_.underlying.asInstanceOf[RequestHeader]))
       .errorOut(failureOutput)
-      .serverSecurityLogic[ApiAuth.Caller, Future](request => blocking(ApiAuth.authorize(request, permission)))
+      .serverSecurityLogic[ApiAuth.Caller, Future](request => blocking(ApiAuth.authorize(request, permission, name)))
+
+  /** An endpoint of one contest (`/contests/{id}/...`) the caller must be let in to by
+    * `permission(id)`: as [[secured]], the id a security input, so that the check can name the
+    * contest.
+    */
+  private def securedContest(name: String, permission: Long => User => Boolean) =
+    endpoint
+      .name(name)
+      .securityIn(contests / path[Long]("id"))
+      .securityIn(extractFromRequest(_.underlying.asInstanceOf[RequestHeader]))
+      .errorOut(failureOutput)
+      .serverSecurityLogic[(Long, ApiAuth.Caller), Future] { case (id, request) =>
+        blocking(ApiAuth.authorize(request, permission(id), name).map(id -> _))
+      }
 
   private val contests = "contests"
 
-  private val createContest = secured(rootOnly).post
+  private val createContest = secured("createContest", rootOnly).post
     .in(contests)
     .in(jsonBody[ContestJury])
     .out(jsonBody[ContestJury])
     .description("Creates a contest; an id in the body is ignored.")
     .serverLogicSuccess(caller => contest => blocking(contestService.createContest(contest.copy(id = None), Some(caller.user.getId))))
 
-  private val getContest = secured(rootOnly).get
+  private val getContest = secured("getContest", rootOnly).get
     .in(contests / path[Long]("id"))
     .out(jsonBody[ContestJury])
     .serverLogic(_ => id => blocking(contestService.getContest(id).toRight(ApiFailure.NotFound)))
 
-  private val updateContest = secured(rootOnly).put
+  private val updateContest = secured("updateContest", rootOnly).put
     .in(contests)
     .in(jsonBody[ContestJury])
     .description("Updates the contest of the body's id.")
@@ -94,13 +114,58 @@ class Api @Inject() (
         })
     )
 
-  private val listContests = secured(rootOnly).get
+  private val listContests = secured("listContests", rootOnly).get
     .in(contests)
     .out(jsonBody[List[ContestJury]])
     .serverLogicSuccess(_ => _ => blocking(contestService.findContests()))
 
-  private val apiEndpoints: List[ServerEndpoint[Any, Future]] =
-    List(createContest, getContest, updateContest, listContests)
+  private val healthSettings = ContestHealth.Settings(configuration)
+
+  /** The diagnostics' texts: English, whatever the JVM's locale, beside their message keys. */
+  private def english: play.api.i18n.Messages = messagesApi.preferred(Seq(play.api.i18n.Lang("en")))
+
+  /** The health page's permission (`ContestHealthController`, DG2): root, or an admin of the
+    * contest as an active member of it. A retired contest's membership opens nothing, so root
+    * alone reads a retired contest's report, as the page.
+    */
+  private def contestAdmins(contestId: Long): User => Boolean =
+    controllers.Secured.ContestPermission(User.ADMIN_ROLES, Some(contestId))
+
+  private val contestHealth = securedContest("contestHealth", contestAdmins).get
+    .in("health")
+    .out(jsonBody[DiagnosticsJson.Health])
+    .description("The contest's health report, as its health page shows it (support diagnostics, D-1a): " +
+      "root and the contest's admins. Titles and hints' texts are in English, beside their message keys.")
+    .serverLogic { case (id, caller) =>
+      _ =>
+        blocking(contestService.getContest(id).toRight(ApiFailure.NotFound).map { contest =>
+          val report = ContestHealth.report(contest, caller.user, healthSettings)
+          DiagnosticsJson.health(report)(english)
+        })
+    }
+
+  private val recentActivity = secured("recentActivity", rootOnly).get
+    .in("diagnostics" / "recent")
+    .in(query[Option[Int]]("hours").description(
+      s"The window in hours, ${RecentActivity.MinHours} to ${RecentActivity.MaxHours}; ${RecentActivity.DefaultHours} by default"))
+    .out(jsonBody[DiagnosticsJson.Recent])
+    .description("Every contest's jobs and round status changes of the window, the worst first, and the jobs of " +
+      "no contest: root only. The log's denials are not included.")
+    .serverLogic(_ =>
+      hours =>
+        hours.getOrElse(RecentActivity.DefaultHours) match {
+          case h if h < RecentActivity.MinHours || h > RecentActivity.MaxHours => Future.successful(Left(ApiFailure.BadRequest))
+          case h =>
+            blocking(Right(DiagnosticsJson.recent(RecentActivity.report(h, healthSettings.distributingMinutes))(
+              english)))
+        }
+    )
+
+  /** Every API endpoint; each is named and classified for read-only tokens in
+    * [[ApiAuth.Endpoints]] (`api.ApiEndpointScopeSpec` fails on one that isn't).
+    */
+  private[api] val apiEndpoints: List[ServerEndpoint[Any, Future]] =
+    List(createContest, getContest, updateContest, listContests, contestHealth, recentActivity)
 
   /** Any other path under `/api`: a JSON 404, not the HTML page of the app's error handler. */
   private val notFound: ServerEndpoint[Any, Future] =

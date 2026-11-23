@@ -1,7 +1,7 @@
 package controllers
 
 import controllers.CsrfTestApp.{token, withCsrfApp}
-import db.scalikejdbc.{ApiTokenJdbc, PlayTestDb, User, UserContestJdbc}
+import db.scalikejdbc.{ApiTokenJdbc, ApiTokenScope, PlayTestDb, User, UserContestJdbc}
 import play.api.Application
 import play.api.mvc.Result
 import play.api.test.{FakeRequest, PlaySpecification}
@@ -232,6 +232,37 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
         val byName = ApiTokenJdbc.findByUser(userId(email)).map(t => t.name -> t).toMap
         byName("forever").expiresAt must beNone
         byName("month").expiresAt.map(java.time.temporal.ChronoUnit.DAYS.between(byName("month").createdAt, _)) === Some(30L)
+      }
+    }
+
+    "make a full token unless read-only, server-only is chosen; refuse a scope not offered (D-1b)" in {
+      withCsrfApp { app =>
+        setUp()
+        val sessionToken = token(app)
+        // the form offers both, full selected
+        val form = contentAsString(profile(app))
+        form must contain("""<option value="full" selected>""")
+        form must contain("""<option value="local_read">""")
+        // each create from its own page (nonce), so that none replaces another
+        def create(name: String, scope: Option[String], nonce: String) =
+          post(app, "/users/tokens", sessionToken, Seq("name" -> name, "expiry" -> "90") ++ scope.map("scope" -> _),
+            nonce = Some(nonce), sessionNonce = Some(nonce))
+        status(create("diag", Some("local_read"), "n1")) === OK
+        status(create("tool", Some("full"), "n2")) === OK
+        // an older page without the field: full, as before
+        status(create("older", None, "n3")) === OK
+        forall(Seq("Full", "local-read", "readonly")) { scope =>
+          val result = create("bad", Some(scope), s"n-$scope")
+          status(result) === BAD_REQUEST
+          tokenPattern.findFirstIn(contentAsString(result)) must beNone
+        }
+        val byName = ApiTokenJdbc.findByUser(userId(email)).map(t => t.name -> t.scope).toMap
+        byName === Map("diag" -> Some(ApiTokenScope.LocalRead), "tool" -> Some(ApiTokenScope.Full),
+          "older" -> Some(ApiTokenScope.Full))
+        // the lists show each token's scope
+        val listed = contentAsString(profile(app))
+        listed must contain("<td>Read-only, server only</td>")
+        listed must contain("<td>Full</td>")
       }
     }
   }

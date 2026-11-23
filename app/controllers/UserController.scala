@@ -429,7 +429,7 @@ class UserController @Inject()(cc: ControllerComponents,
       status: Status,
       user: User,
       userForm: Option[Form[User]] = None,
-      tokenForm: Form[(String, Option[Int])] = ApiTokensCard.form,
+      tokenForm: Form[(String, Option[Int], db.scalikejdbc.ApiTokenScope)] = ApiTokensCard.form,
       newToken: Option[String] = None,
       notice: Option[String] = None
   )(implicit request: play.api.mvc.Request[_]): Result = {
@@ -470,8 +470,8 @@ class UserController @Inject()(cc: ControllerComponents,
         .bindFromRequest()
         .fold(
           formWithErrors => ownProfile(BadRequest, user, tokenForm = formWithErrors),
-          { case (name, expiresInDays) =>
-            ApiTokenService.createOnce(user, name, expiresInDays, nonce.get) match {
+          { case (name, expiresInDays, scope) =>
+            ApiTokenService.createOnce(user, name, expiresInDays, nonce.get, scope) match {
               case ApiTokenService.CreateOutcome.Created(token) =>
                 ownProfile(Ok, user, newToken = Some(token)).withHeaders(CACHE_CONTROL -> "no-store")
               case ApiTokenService.CreateOutcome.LimitReached =>
