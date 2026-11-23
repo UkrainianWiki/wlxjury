@@ -11,11 +11,13 @@ import time
 import unittest
 
 SCRIPT = Path(__file__).with_name("local-images-maintenance.sh")
+# The resolved bash: on Windows a bare "bash" can be the WSL launcher, which does not see these paths.
+BASH = shutil.which("bash")
 DAY = 86400
 
 
 def has_gnu_tools():
-    bash = shutil.which("bash")
+    bash = BASH
     if not bash:
         return False
     probe = subprocess.run(
@@ -41,7 +43,7 @@ class LocalImagesMaintenanceTest(unittest.TestCase):
         return path
 
     def run_script(self, *args, env_path=None):
-        cmd = ["bash", "./" + SCRIPT.name] + list(args)
+        cmd = [BASH, "./" + SCRIPT.name] + list(args)
         env = dict(os.environ)
         env.pop("WLXJURY_THUMBS_LOCAL_PATH", None)
         if env_path is not None:
@@ -101,12 +103,14 @@ class LocalImagesMaintenanceTest(unittest.TestCase):
         self.assertTrue(new.exists())
 
     def test_awkward_file_names(self):
-        names = ["with space.jpg", "tab\there.jpg", "line\nbreak.jpg", "-dash.jpg", "quote'\".jpg"]
+        names = ["with space.jpg", "-dash.jpg", "quote'.jpg"]
+        if os.name != "nt":  # Windows file names cannot hold these
+            names += ["tab\there.jpg", "line\nbreak.jpg", 'quote".jpg']
         old = [self.make("dir/" + name, 3, 100) for name in names]
         new = self.make("dir/new one.jpg", 3, 1)
         result = self.run_script("prune", "--days", "30", "--quiet", "--path", self.cache.as_posix())
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Deleted 5 file(s)", result.stdout)
+        self.assertIn("Deleted %d file(s)" % len(names), result.stdout)
         for path in old:
             self.assertFalse(path.exists(), repr(path.name))
         self.assertTrue(new.exists())
@@ -128,6 +132,43 @@ class LocalImagesMaintenanceTest(unittest.TestCase):
         self.assertTrue(precious.exists())
         self.assertTrue((self.cache / "filelink.jpg").is_symlink())
         self.assertTrue((self.cache / "link").is_symlink())
+
+    def test_app_marker_and_temp_files_are_kept_and_not_counted(self):
+        marker = self.make(".cache-sizes", 7, 400)
+        tmp = self.make("a/.tmp-123.jpg", 9, 400)
+        old = self.make("a/old.jpg", 1, 400)
+        report = self.run_script("report", "--csv", "--path", self.cache.as_posix())
+        self.assertIn("TOTAL,1,1", report.stdout)
+        result = self.run_script("prune", "--days", "30", "--path", self.cache.as_posix())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(old.exists())
+        self.assertTrue(marker.exists())
+        self.assertTrue(tmp.exists())
+
+    def test_cache_folder_that_is_a_symlink_is_used_not_ignored(self):
+        real = Path(self._tmp.name) / "real"
+        real.mkdir()
+        old = real / "old.jpg"
+        old.write_bytes(b"x")
+        when = time.time() - 100 * DAY
+        os.utime(old, (when, when))
+        link = Path(self._tmp.name) / "linked"
+        try:
+            link.symlink_to(real, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("symlinks not available")
+        report = self.run_script("report", "--csv", "--path", link.as_posix())
+        self.assertIn("TOTAL,1,1", report.stdout)
+        result = self.run_script("prune", "--days", "30", "--path", link.as_posix())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(old.exists())
+        self.assertTrue(real.is_dir())
+
+    def test_empty_values_are_refused(self):
+        old = self.make("old.jpg", 1, 100)
+        self.assertEqual(self.run_script("prune", "--days", "1", "--path", "").returncode, 2)
+        self.assertEqual(self.run_script("prune", "--days", "", "--path", self.cache.as_posix()).returncode, 2)
+        self.assertTrue(old.exists())
 
     def test_usage_errors_exit_2_and_delete_nothing(self):
         old = self.make("old.jpg", 1, 100)

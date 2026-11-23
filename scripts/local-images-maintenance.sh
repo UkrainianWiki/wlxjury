@@ -3,8 +3,9 @@
 #
 # The image cache (wlxjury.thumbs.local-path, default /var/www/jury-images) holds the
 # Commons thumbnails the app downloads. It only grows; this script shows how big it is and
-# deletes old files. Run it as the service user (or root): it deletes regular files only and
-# never follows symlinks.
+# deletes old files, never the app's .cache-sizes marker or its .tmp-* files. Run it as the
+# service user (or root): it deletes regular files only and never follows symlinks below the
+# cache folder (the folder itself may be a symlink).
 #
 # Usage:
 #   local-images-maintenance.sh report [--csv] [--path PATH]
@@ -44,6 +45,9 @@ QUIET=false
 CSV=false
 DAYS=""
 MONTHS=""
+# The app's bookkeeping file in the cache root (LocalImageCacheService.SizesMarker); .tmp-* files
+# are its writes in progress. Neither is a cached image: never counted or deleted.
+APP_FILES_MARKER=".cache-sizes"
 
 usage() {
   sed -n '2,/^$/{/^#/s/^# \{0,1\}//p}' "$0"
@@ -92,12 +96,18 @@ done
 
 [[ -n "$CACHE_PATH" && "$CACHE_PATH" != "/" ]] || die "refusing to use '$CACHE_PATH' as the cache path"
 [[ -d "$CACHE_PATH" ]] || die "cache path is not a directory: $CACHE_PATH"
+# The cache folder may itself be a symlink (deployment.md allows it): find does not follow a
+# symlink given as its start point, so it would see an empty cache. Resolve it once; files and
+# folders below it are still never followed.
+CACHE_PATH=$(readlink -f -- "$CACHE_PATH")
+[[ -n "$CACHE_PATH" && "$CACHE_PATH" != "/" && -d "$CACHE_PATH" ]] \
+  || die "refusing to use the cache path (it resolves to '$CACHE_PATH')"
 find "$CACHE_PATH" -maxdepth 0 -printf '' 2>/dev/null || die "GNU find is required (find -printf)"
 
 if [[ "$SUBCMD" == "report" ]]; then
   [[ -z "$DAYS$MONTHS" ]] || die "--days and --months belong to prune"
   report_tsv=$(
-    find "$CACHE_PATH" -type f -printf '%TY-%Tm %s\n' \
+    find "$CACHE_PATH" -type f ! -name "$APP_FILES_MARKER" ! -name '.tmp-*' -printf '%TY-%Tm %s\n' \
       | awk '{ files[$1]++; bytes[$1] += $2 }
              END { for (m in files) printf "%s\t%d\t%d\n", m, files[m], bytes[m] }' \
       | sort
@@ -176,7 +186,7 @@ while IFS= read -r -d '' record; do
     printf 'failed to delete: %q\n' "$file" >&2
     failed=$((failed + 1))
   fi
-done < <(find "$CACHE_PATH" -type f -printf '%T@\t%s\t%p\0')
+done < <(find "$CACHE_PATH" -type f ! -name "$APP_FILES_MARKER" ! -name '.tmp-*' -printf '%T@\t%s\t%p\0')
 
 if ! $DRY_RUN; then
   find "$CACHE_PATH" -mindepth 1 -type d -empty -delete

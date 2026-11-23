@@ -351,7 +351,8 @@ scripts/local-images-maintenance.sh prune --months 6 --dry-run      # list what 
 scripts/local-images-maintenance.sh prune --months 6 --quiet        # delete, then remove empty folders
 ```
 
-`--path` (or `WLXJURY_THUMBS_LOCAL_PATH`) names another cache folder. A deleted file is fetched
+`--path` (or the script's own `WLXJURY_THUMBS_LOCAL_PATH`; the app does not read it) names a cache
+folder other than the default, the one `wlxjury.thumbs.local-path` sets. A deleted file is fetched
 again from Commons on its next request. The script's tests are `scripts/test_local_images_maintenance.py`.
 
 ### Monitoring with monit
