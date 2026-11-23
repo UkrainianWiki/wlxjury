@@ -1,9 +1,8 @@
 # One gallery of our own tiles: replacing Unite Gallery (plan, 2026-11-19)
 
-**Status (2026-11-23):** planned, not built; build right after release 26.11.14. **Questions
-Q1–Q25 and the one-criterion rule are decided by the maintainer** (2026-11-19 to
-2026-11-23), applied in the sections they affect and listed in §8; **Q26** (the existing
-`file-anchor.js`) is open.
+**Status (2026-11-23):** planned, not built; build right after release 26.11.14. **All
+questions (Q1–Q26) and the one-criterion rule are decided by the maintainer** (2026-11-19 to
+2026-11-23); the decisions are applied in the sections they affect and listed in §8.
 
 This plan carries out option C of the
 [gallery investigation](../investigations/2026-11-04-gallery-keep-or-replace.md) ("our own
@@ -80,9 +79,9 @@ no sbt, fixture server, browser or Docker. Where a fact needs a browser, it is a
    as the person scrolls, in server-rendered batches of one screen, Q15). Either way votes cast
    on the page never make the list skip files. In Continuous the URL follows the scroll, so Back
    from the large view returns to the same place. Without script, the pager still works.
-5. **Position.** The last-viewed file is marked (outline and label). If it is off-screen, a
-   floating button jumps to it. Whether the page also scrolls by itself, as `file-anchor.js` does
-   today when the file is out of view, is Q26.
+5. **Position** (Q26, decided). Back and Esc from the large view scroll to the file only when it
+   is out of view, by master's `file-anchor.js`, as the by-rate gallery and the comments report
+   do today, and the returned-to tile is marked (outline and label). No jump button.
 6. **Everything the tiles and the by-rate list do now**, plus a keyboard path: the tile is a
    real link, focusable, opens with Enter and opens in a new tab.
 7. **Justified rows**, in CSS (flex-wrap and each file's aspect ratio). No new jQuery code.
@@ -259,7 +258,7 @@ Read from the code; step G-0 confirms it in a browser.
     does not jump. `file-anchor.js` scrolls the file to the middle of the window only if it is
     not wholly in view (not on a reload or Back/Forward), keeping the sticky bar's height above
     it (`--wlx-file-anchor-offset`, the root's `scroll-padding-top`). Without script the page
-    opens at its top. §3.7 and Q26 say what the tiles do with it.
+    opens at its top. The tiles reuse it (§3.7, Q26).
 
 ### 1.6 What the galleries do
 
@@ -889,7 +888,7 @@ below run only in Continuous; the failed-box and last-viewed parts run in both.
    - Esc and the large view's Back already go to `atUrl`.
 3. **Scroll restoration.** `history.scrollRestoration = 'manual'` on these pages. After a Back
    the page starts at the file's page, so the browser's remembered offset would point elsewhere.
-   The mark and the jump button take its place.
+   `file-anchor.js`'s scroll and the mark take its place.
 4. **The navbar pager** follows the topmost section: its range text from `data-first`/`data-last`,
    and its previous/next links set to that page ± 1. The page box is unchanged.
 5. **Earlier files.** A click on "Show earlier files" loads the chunk before the first tile (by
@@ -925,32 +924,34 @@ boxes, not the page.
   decided); no queue is built before then.
 - Either way, the admins' guide advises "Download images locally" before a round opens.
 
-### 3.7 Position without auto-scroll
+### 3.7 Position: scroll when out of view, and mark the tile (Q26, decided 2026-11-23)
 
 - **What is "last viewed":** the file in the fragment `#file-<pageId>`
   (`RoundList.fileFragment`).
   - The large view's Back and Esc set it (`atUrl`), and so does the tile click (§3.6).
   - Tiles carry `data-page-id` and `data-file-anchor`, not `id="<pageId>"`, so the fragment
-    matches no element and the browser does not jump. The script finds the tile and marks it.
-- **The mark:** the class `wlx-last-viewed` (a 3 px outline in the theme's focus colour) and a
-  small "Last viewed" label in the tile's top-left corner.
+    matches no element and the browser does not jump by itself.
+- **The scroll is master's `file-anchor.js`, reused unchanged in behaviour:** it scrolls the
+  tile to the middle of the window only if it is not wholly in view, never on a reload or
+  Back/Forward, and without script the page opens at its top. **One shared script serves every
+  gallery**: the tile galleries (by-rate included, since it is a tile gallery now), the comments
+  report (Q19), and so every list brings you back the same way. The script is already loaded on
+  every page by the main layout.
+- **Continuous mode:** the script scrolls only after the target tile is rendered. The target is
+  normally in the first chunk, because `atUrl` redirects to the page holding the file; if the
+  tile is not in the DOM yet, the script waits for the chunk that inserts it and then scrolls, once.
+- **The mark** (added to the same script): the class `wlx-last-viewed` (a 3 px outline in the
+  theme's focus colour) and a small "Last viewed" label in the tile's top-left corner.
   - The label is a server-rendered translated text on the container, put into a `span` and
     announced once (`role="status"`).
   - The mark stays until another tile is opened.
-- **Off-screen:** a floating button "↓ Last viewed file" (or ↑) appears at the bottom right.
-  - A click scrolls the tile into the middle of the view (`scrollIntoView({block: 'center'})`)
-    and moves focus to its link.
-  - The button hides while the tile is in view.
+  - **No jump button.**
 - **Room for the sticky top bar:** already given by the root's `scroll-padding-top:
   var(--wlx-topbar-height)` and `[data-file-anchor] { scroll-margin-top:
   var(--wlx-file-anchor-offset) }` in `main.css`; the tile keeps `data-file-anchor`, so the
-  jump button's `scrollIntoView` lands below the bar and no new rule is needed.
-- **No automatic scroll by the plan's scripts:** no `scrollIntoView` on load, and no `id` equal
-  to the fragment. `file-anchor.js` scrolls on Back/Esc when the file is out of view; keeping it
-  for the tiles or replacing it by the mark and the button is **Q26** (open).
-- **One script for every list** (`last-viewed.js`): all tile galleries, by-rate included since
-  it is a tile gallery now, and the comments report (Q19, decided: yes), so every list brings
-  you back the same way. The comments report's `id="@file.pageId"` becomes `data-page-id` (keeping its `data-file-anchor`); G-4 checks with `rg` that those `id`s serve only as fragment targets.
+  scroll lands below the bar and no new rule is needed.
+- The comments report's `id="@file.pageId"` becomes `data-page-id` (keeping its
+  `data-file-anchor`); G-4 checks with `rg` that those `id`s serve only as fragment targets.
 
 ### 3.8 Keyboard and accessibility
 
@@ -1137,7 +1138,7 @@ touches the tiles. **Total: about 28–33 days.**
 | **G-1b** | **The shared tile, first on by-rate** (the rated galleries and every by-rate list, already server-rendered): `snippets/galleryTile` and `galleryTiles` with `TileOptions`; the ratio classes and `wlx-tile-small`; the caption (rank line) moved in unchanged; the `rows` layout with the caption minimum width; `gallery-tiles.js` (failed box) and the shared CSS; `srcset`/`sizes` per scheme; lazy loading; `addListStars` on `.wlx-tile`; the one-criterion round's stars kept in the tile and the round menu's criterion name (§3.1); the script's screen-profile report. The comments report gets the shared image partial. Unite Gallery is untouched. | M–L (3–4 days) |
 | **G-2** | **Contest files and round review on the shared tile** (`votes = none`): deleted badge with the "Request undeletion" link, COI text. Unite Gallery leaves these pages. | M (2 days) |
 | **G-3** | **Binary galleries on the shared tile** (`thumbs`, tally, chips overlay, read-only vote mark): `tile-votes.js` from items to elements with a delegated listener; `voting.spec.js` reworked; screenshots redone; mock-ups of bigger Yes/No vote areas on tiles (Q17; not decided beyond the mock-ups). Unite Gallery is no longer used. **New contests are created as `standard` from here on** (Q10). | M–L (3–4 days, mock-ups included) |
-| **G-4** | **Last-viewed mark and jump button** (`last-viewed.js`) on every tile gallery and the comments report (Q19), whose `id="@pageId"` becomes `data-page-id`; the existing `data-file-anchor` kept; Q26 decided first. | S (1 day) |
+| **G-4** | **Last-viewed mark added to `file-anchor.js`** (Q26), one shared script for every tile gallery and the comments report (Q19): tiles keep `data-file-anchor`, and the script scrolls only once the target tile is rendered, which matters in Continuous; the comments report's `id="@pageId"` becomes `data-page-id`. No jump button. | S (1 day) |
 | **G-5** | **The Pages / Continuous choice and continuous loading** for binary, by-rate and contest files (§3.6): the view-menu choice (default Pages) and its account column with a migration (next free number at merge); one-screen batches: the window-size cookie, client hints, `n` capped 10..80 and carried by every page link (Q15); the chunk routes, marker and JSON-only answers (§4); the carried key (`after=`/`before=` with `k=`) for every one-juror list, sub-regions included, and on the page routes; ranks and criteria per chunk; dropping duplicates; sections, next/earlier/skip links; history and the tile click's `atUrl`; navbar pager follow; DOM cap from G-0 (g) (Q18); the round review offered the same choice (Q22). Gatling: chunks keyed and not, binary and by-rate. | L (6 days) |
 | **G-5b** | **Windowing spike** (Q16, Q18): a windowing library against our own windowing on the fixture (code size, resize, scroll anchoring, keyboard and screen readers); the result decides whether windowing becomes a third choice beside Pages and Continuous; it also rechecks the Continuous cap. No product code merged. | S (1–2 days) |
 | **G-6** | **Remove Unite Gallery and the by-rate grid's old markup:** `unitegallery.js`, `ug-theme-tiles.js`, both stylesheets, `galleryScripts.scala.html`, `gallery-init.js`, its images, the `ug-*` and `li.gallerybox`/`img.cropped` rules in `main.css`, `unitegallery-patches.test.js`, `unitegallery-alt.test.js`, `gallery-init.test.js`. Also: the `NOTICE` entry, `RawHtmlSinksSpec`'s exemption, dependencies §7 and T4, and `docs/vendor/unitegallery.md` (to `docs/history/`). The T1 tile-star path goes too (Q21, decided). | S (1 day) |
@@ -1320,11 +1321,10 @@ touches the tiles. **Total: about 28–33 days.**
   - the cap comes from the measured value (G-0 (g)).
   - "earlier" keeps the view in place.
   IntersectionObserver is faked.
-- **New `last-viewed.test.js`:**
+- **`file-anchor.test.js` (extended):**
   - the fragment marks the tile;
-  - no `scrollIntoView` on load;
-  - the button shows and hides with the observer;
-  - a click scrolls and focuses the link;
+  - it scrolls only if the tile is out of view, and not on a reload or Back/Forward;
+  - in Continuous, it waits until the chunk holding the tile is inserted, then scrolls once;
   - an unknown id does nothing.
 - **`tile-votes.test.js`:**
   - reworked to element tiles: the six click cases, pressed, busy, the vote-time chip, errors;
@@ -1354,8 +1354,8 @@ touches the tiles. **Total: about 28–33 days.**
   - in latest-vote order, and in a rated by-rate list, change the last tile's vote, then
     scroll: no jump back;
   - open a file, then browser Back: the same page, the tile marked; Esc gives the same;
-  - a far tile shows the jump button, which scrolls to it;
-  - `scrollY` stays 0 on load;
+  - Back to a far tile scrolls to it and marks it; a tile already in view causes no scroll;
+  - `scrollY` stays 0 on a plain load;
   - with JS disabled, the tiles and the "Next files" link work.
 - **Sharpness, per engine, for both schemes** (each engine's expectation fixed from G-0 (e)):
   - **current scheme, every engine:** DPR 1 takes the `resizeTo(250)` width, DPR 1.5 the
@@ -1451,8 +1451,8 @@ touches the tiles. **Total: about 28–33 days.**
 
 ## 8. Questions and decisions
 
-Each question was asked on its own. **Q1–Q25 are decided** (the maintainer, 2026-11-19 to
-2026-11-23); the decisions are applied in the sections they affect. **Q26 is open.**
+Each question was asked on its own. **All are decided** (the maintainer, 2026-11-19 to
+2026-11-23); the decisions are applied in the sections they affect.
 
 - **Revisit later:** Q12 (after G-0's measurements), Q25 (after a juror trial), and the
   Continuous cap (G-0 (g), G-5b).
@@ -1521,11 +1521,10 @@ Each question was asked on its own. **Q1–Q25 are decided** (the maintainer, 20
 - **One-criterion rounds (2026-11-20, refined 2026-11-23):** the gallery shows stars like normal
   rated rounds; the criterion's name is in the top bar's round menu next to the round name,
   never on a tile (§3.1).
-- **Q19.** The last-viewed mark (no jump on load) on the comments report too: yes (2026-11-23).
-- **Q26 (open, found in the follow-up review).** Since the plan was written, `file-anchor.js`
-  (with `#file-<pageId>` and `data-file-anchor`) scrolls Back/Esc to the file when it is out of
-  view, on the by-rate grid and the comments report. The plan's goal 5 and §3.7 (a mark and a
-  jump button, no scroll by script) were decided before it. Question: keep `file-anchor.js` on
-  the tiles beside the mark, or replace it by the mark and the button?
+- **Q19.** The last-viewed mark on the comments report too: yes (2026-11-23).
+- **Q26 (2026-11-23).** Keep scroll and add the mark: the tile galleries reuse master's
+  `file-anchor.js` (Back/Esc scrolls to the file only when it is out of view, as the by-rate
+  gallery and the comments report do) and also mark the returned-to tile. No jump button. This
+  replaces the earlier "mark and jump button, no scroll by script" decision (§3.7).
 - **Q22.** The round review offers the same Pages / Continuous choice as the other galleries
   (2026-11-23).
