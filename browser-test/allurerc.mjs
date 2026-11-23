@@ -7,7 +7,7 @@
 // Google Analytics with no opt-out (upstream allure3#476 and PR #784 open); allure2 honours
 // ALLURE_NO_ANALYTICS, set here and in browser.yml's report job. Recheck on every Allure update.
 // History: a JSONL file of earlier runs' results. CI restores it from its cache and appends this
-// run only on pushes to master and ukwikidev/followups (ALLURE_APPEND_HISTORY=true); a PR's run
+// run only on pushes to master (ALLURE_APPEND_HISTORY=true); a PR's run
 // reads it, so its trends are against its base. `.mjs`, not `.ts`: TypeScript config needs Node 22.18.
 import { defineConfig } from 'allure';
 
