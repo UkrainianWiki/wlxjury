@@ -22,7 +22,7 @@ object JurorContests {
     * current contest always. At most two queries, none for a user with one membership.
     */
   def switcherEntries(user: User): Seq[(UserContest, ContestJury)] = {
-    val memberships = user.userContests.filter(_.active)
+    val memberships = user.userContests.filter(_.opens)
     if (memberships.size <= 1) Nil
     else {
       val current = (m: UserContest) => user.contestId.contains(m.contestId)
@@ -36,6 +36,44 @@ object JurorContests {
       }
     }
   }
+
+  /** A heading of the contest menu and its entries: a series' (`Series: <name>`), "Earlier years"
+    * or "Other contests"; no heading for a menu with no live series.
+    */
+  final case class MenuGroup(heading: Option[MenuHeading], entries: Seq[(UserContest, ContestJury)])
+
+  sealed trait MenuHeading
+  final case class SeriesHeading(name: String) extends MenuHeading
+  case object EarlierYears extends MenuHeading
+  case object OtherContests extends MenuHeading
+
+  /** The contest menu's entries ([[switcherEntries]]) grouped by series (contest series plan
+    * §5.1): under each live series' heading (by name) its contests of this year and last year, the
+    * newest first; then the older contests of live series under "Earlier years"; then the contests
+    * in no series or a retired one under "Other contests". Without a live series among them, one
+    * group without a heading (as before series). One query for the series' names.
+    */
+  def switcherGroups(user: User, thisYear: Int = java.time.Year.now().getValue): Seq[MenuGroup] =
+    groups(switcherEntries(user), ids => db.scalikejdbc.SeriesJdbc.findByIds(ids), thisYear)
+
+  def groups(entries: Seq[(UserContest, ContestJury)], seriesOf: Seq[Long] => Seq[db.scalikejdbc.Series],
+      thisYear: Int): Seq[MenuGroup] =
+    if (entries.isEmpty) Nil
+    else {
+      val live = seriesOf(entries.flatMap(_._2.seriesId).distinct).filter(_.live).map(s => s.id -> s).toMap
+      val newestFirst = Ordering.by[(UserContest, ContestJury), (Int, Long)](e => (-e._2.year, -e._2.getId))
+      val (inSeries, other) = entries.partition(e => e._2.seriesId.exists(live.contains))
+      if (inSeries.isEmpty) Seq(MenuGroup(None, entries))
+      else {
+        val (recent, earlier) = inSeries.partition(_._2.year >= thisYear - 1)
+        val bySeries = recent.groupBy(_._2.seriesId.get).toSeq
+          .map { case (id, es) => MenuGroup(Some(SeriesHeading(live(id).name)), es.sorted(newestFirst)) }
+          .sortBy(_.heading.collect { case SeriesHeading(n) => n.toLowerCase(java.util.Locale.ROOT) })
+        bySeries ++
+          Option.when(earlier.nonEmpty)(MenuGroup(Some(EarlierYears), earlier.sorted(newestFirst))) ++
+          Option.when(other.nonEmpty)(MenuGroup(Some(OtherContests), other.sorted(newestFirst)))
+      }
+    }
 
   /** The juror's first open round: in the current contest, else in their latest NEWER contest
     * (a higher contest id than the current one's; the highest of them) where they are a juror
@@ -51,7 +89,7 @@ object JurorContests {
       if (current.nonEmpty && !current.subsetOf(User.JURY_ROLES)) None
       else {
         val newer = user.userContests
-          .filter(m => m.active && m.roles.exists(User.JURY_ROLES) && user.contestId.forall(m.contestId > _))
+          .filter(m => m.opens && m.roles.exists(User.JURY_ROLES) && user.contestId.forall(m.contestId > _))
           .map(_.contestId)
         Round.contestsWithOpenRound(user.getId, newer).maxOption
           .flatMap(id => Round.activeRounds(Secured.inContest(user, id)).headOption)

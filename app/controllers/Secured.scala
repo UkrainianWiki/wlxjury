@@ -131,7 +131,7 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
     */
   protected def suggestedAccess(user: User)(implicit request: RequestHeader): Option[Secured.AccessSuggestion] = {
     val memberships = user.userContests
-      .filter(_.active)
+      .filter(_.opens)
       .sortBy(membership => if (user.contestId.contains(membership.contestId)) 0 else 1)
 
     memberships.iterator.flatMap { membership =>
@@ -366,7 +366,7 @@ object Secured {
     */
   def deniedRoles(user: User, denial: Denial,
       contestsByIds: Seq[Long] => Seq[ContestJury] = contestsByIds): DeniedRoles = {
-    val active = user.userContests.filter(_.active)
+    val active = user.userContests.filter(_.opens)
     // the contests named, in one query
     def named(memberships: Seq[(Long, Set[String])]): Seq[DeniedRoles.In] =
       if (memberships.isEmpty) Nil
@@ -512,12 +512,13 @@ object Secured {
           user.userContests.find(_.contestId == id) match {
             case None                                                               => "not_member"
             case Some(m) if !m.active                                               => "membership_inactive"
+            case Some(m) if m.contestRetired                                        => "contest_retired"
             case Some(m) if required.nonEmpty && m.roles.intersect(required).isEmpty => "missing_role"
             case Some(_) if !user.contestId.contains(id)                            => "resource_in_other_contest"
             case Some(_)                                                            => "permission_check_failed"
           }
         case None =>
-          val active = user.userContests.filter(_.active)
+          val active = user.userContests.filter(_.opens)
           if (active.isEmpty && !user.hasRole(User.ROOT_ROLE)) {
             if (user.userContests.nonEmpty) "membership_inactive" else "not_member"
           }
@@ -656,7 +657,7 @@ object Secured {
     if (permission(user)) Some(user)
     else
       user.userContests.iterator
-        .filter(m => m.active && !user.contestId.contains(m.contestId))
+        .filter(m => m.opens && !user.contestId.contains(m.contestId))
         .map(user.inContest)
         .find(permission)
 
@@ -673,7 +674,8 @@ object Secured {
   def inCurrentContest(user: User, currentContestId: Option[String]): User = {
     val memberships = UserContestJdbc.findByUser(user.getId)
     val withMemberships = user.copy(userContests = memberships)
-    val active = memberships.filter(_.active)
+    // a retired contest's membership opens nothing (contest series plan §3.1)
+    val active = memberships.filter(_.opens)
     val requested = currentContestId.flatMap(_.toLongOption)
     requested
       .flatMap(id => active.find(_.contestId == id))
@@ -684,7 +686,7 @@ object Secured {
   /** The user in the contest, if they are an active member of it; else unchanged. */
   def inContest(user: User, contestId: Long): User =
     if (user.contestId.contains(contestId)) user
-    else user.userContests.find(m => m.contestId == contestId && m.active).fold(user)(user.inContest)
+    else user.userContests.find(m => m.contestId == contestId && m.opens).fold(user)(user.inContest)
 
   /** `result`, with `switchedTo`'s contest as the session's current one if it is not
     * `sessionUser`'s and the request is a page the browser opened ([[isPageRequest]]).

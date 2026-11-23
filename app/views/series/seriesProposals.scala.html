@@ -1,0 +1,95 @@
+@(
+        user: db.scalikejdbc.User,
+        result: services.series.SeriesProposals.Result,
+        affected: services.series.SeriesProposals.Proposal => Seq[String]
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@* The assignment proposals (contest series plan §3.5; SeriesController.proposalsPage): the live
+   contests in no series grouped by type and country, each group a proposal with a checkbox (none
+   ticked), its series' name (an existing series of its type and country offered first, else a new
+   one root may rename) and its contests by year, each with a checkbox (all ticked: untick to leave
+   one out). One confirmation is one batch, which /admin/series can undo. The contests never
+   proposed are listed with why: root assigns them one by one on their series page. The grants
+   each proposal affects (CY-2) are listed under it once there are series admins *@
+@mainAdmin("series.assign.title", user, user.getId) {
+    <nav aria-label="@Messages("series.breadcrumb")"><ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="@routes.SeriesController.list()">@Messages("series.title")</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@Messages("series.assign.title")</li>
+    </ol></nav>
+    <h1 class="h3">@Messages("series.assign.title")</h1>
+    <p class="text-body-secondary" id="series-assign-help">@Messages("series.assign.help")</p>
+    @outcome()
+
+    @if(result.proposals.isEmpty) {
+        <p class="text-body-secondary" id="series-proposals-none">@Messages("series.assign.none.proposed")</p>
+    } else {
+    <form method="post" action="@routes.SeriesController.confirm()" id="series-assign" data-submit-once="true">
+        @csrfField()
+        @for(p <- result.proposals) {
+            <fieldset class="border rounded p-3 mb-3 series-proposal" data-proposal="@p.key">
+                <legend class="h6 float-none w-auto px-1 mb-0">
+                    <input class="form-check-input" type="checkbox" name="p" value="@p.key" id="p-@p.key.replace(':', '-')">
+                    <label class="form-check-label" for="p-@p.key.replace(':', '-')">@Messages("series.of", p.name)</label>
+                </legend>
+                @p.existing match {
+                    case Some(existing) => {
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="target.@p.key" value="@existing.id" id="t-@p.key.replace(':', '-')-existing" checked>
+                            <label class="form-check-label" for="t-@p.key.replace(':', '-')-existing">@Messages("series.assign.existing", existing.name)</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="target.@p.key" value="new" id="t-@p.key.replace(':', '-')-new">
+                            <label class="form-check-label" for="t-@p.key.replace(':', '-')-new">@Messages("series.assign.new")</label>
+                        </div>
+                    }
+                    case None => {}
+                }
+                <div class="row g-2 my-1">
+                    <div class="col-md-6">
+                        <label class="form-label small" for="n-@p.key.replace(':', '-')">@Messages("series.assign.name")</label>
+                        <input type="text" class="form-control form-control-sm" name="name.@p.key" id="n-@p.key.replace(':', '-')" value="@services.series.SeriesIdentity.suggestedName(p.contestType, p.place)" maxlength="255">
+                    </div>
+                </div>
+                <input type="hidden" name="existing.@p.key" value="@p.existing.map(_.id.toString).getOrElse("none")">
+                <ul class="list-unstyled mb-1 ms-1">
+                    @for(c <- p.contests) {
+                        <li class="form-check">
+                            <input class="form-check-input" type="checkbox" name="c.@p.key" value="@c.getId" id="c-@c.getId" checked>
+                            <label class="form-check-label" for="c-@c.getId">@c.year · @c.fullName <span class="text-body-secondary">#@c.getId</span></label>
+                        </li>
+                    }
+                </ul>
+                @defining(affected(p)) { grants =>
+                    @if(grants.nonEmpty) {
+                        <p class="small mb-0 series-affected">@Messages("series.assign.affected"): @grants.mkString(", ")</p>
+                    }
+                }
+            </fieldset>
+        }
+        <button type="submit" class="btn btn-primary" id="series-assign-confirm">@Messages("series.assign.confirm")</button>
+    </form>
+    }
+
+    <h2 class="h4 mt-4">@Messages("series.assign.left")</h2>
+    @if(result.left.isEmpty) {
+        <p class="text-body-secondary" id="series-left-none">@Messages("series.assign.left.none")</p>
+    } else {
+        <div class="table-responsive">
+        <table class="table table-sm" id="series-left">
+            <caption class="visually-hidden">@Messages("series.assign.left")</caption>
+            <thead><tr>
+                <th scope="col">@Messages("contest")</th>
+                <th scope="col">@Messages("series.assign.left.why")</th>
+            </tr></thead>
+            <tbody>
+                @for(l <- result.left) {
+                    <tr class="series-left-row" data-contest="@l.contest.getId" data-reason="@l.reason">
+                        <td><a href="@routes.SeriesController.contestPage(l.contest.getId)">@l.contest.fullName</a> <span class="text-body-secondary">#@l.contest.getId</span></td>
+                        <td>@Messages("series.assign.left." + l.reason)@if(l.signs.nonEmpty) {
+                            <span class="d-block small text-body-secondary series-left-signs">@l.signs.map(s => Messages(services.series.ContestReuse.kindKey(s))).distinct.mkString(", ")</span>}</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+}

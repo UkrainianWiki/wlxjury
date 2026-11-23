@@ -1316,7 +1316,7 @@ class UserController @Inject()(cc: ControllerComponents,
     * with the CSRF token (the navbar's contest menu), never a link another site could open.
     */
   def switchContest(contestId: Long): EssentialAction = withAuth() { user => request =>
-    if (user.userContests.exists(m => m.contestId == contestId && m.active)) {
+    if (user.userContests.exists(m => m.contestId == contestId && m.opens)) {
       val newSession = request.session + (Secured.CurrentContestId -> contestId.toString)
       Redirect(routes.LoginController.index).withSession(newSession)
     } else {

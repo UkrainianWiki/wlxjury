@@ -1,0 +1,81 @@
+@(
+        user: db.scalikejdbc.User,
+        series: db.scalikejdbc.Series,
+        contests: Seq[org.intracer.wmua.ContestJury],
+        previous: Map[Long, org.intracer.wmua.ContestJury],
+        changes: Seq[db.scalikejdbc.ContestChange],
+        names: Map[Long, String]
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@* Root's page of one series (contest series plan §5.3; SeriesController.series): rename, retire
+   or un-retire it; its contests by year, the newest first, each with the previous year's contest
+   (derived: the live contest of the series with the next lower year) and a link to its series
+   page; the series' change log. CY-3 adds the series page for its admins (§5.2) *@
+@mainAdmin("series.title", user, user.getId) {
+    <nav aria-label="@Messages("series.breadcrumb")"><ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="@routes.SeriesController.list()">@Messages("series.title")</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@series.name</li>
+    </ol></nav>
+    <h1 class="h3" id="series-name-heading">@Messages("series.of", series.name)
+        @if(series.retired) {<span class="badge text-bg-secondary align-middle">@Messages("series.retired")</span>}</h1>
+    @outcome()
+    <dl class="row" id="series-identity">
+        <dt class="col-sm-3">@Messages("series.type")</dt><dd class="col-sm-9">@series.contestType.getOrElse("—")</dd>
+        <dt class="col-sm-3">@Messages("country")</dt><dd class="col-sm-9">@series.country.getOrElse("—")</dd>
+        <dt class="col-sm-3">@Messages("series.campaign")</dt><dd class="col-sm-9">@series.campaign.getOrElse("—")</dd>
+        <dt class="col-sm-3">@Messages("series.created.at")</dt><dd class="col-sm-9">@views.LinkTimes.utc(series.createdAt)@for(by <- series.createdBy) { · @names.getOrElse(by, s"#$by")}</dd>
+    </dl>
+
+    <h2 class="h4">@Messages("series.contests")</h2>
+    @if(contests.isEmpty) {
+        <p class="text-body-secondary" id="series-contests-none">@Messages("series.contests.none")</p>
+    } else {
+        <div class="table-responsive">
+        <table class="table table-striped table-sm" id="series-contests">
+            <caption class="visually-hidden">@Messages("series.contests")</caption>
+            <thead>
+                <tr>
+                    <th scope="col">@Messages("year")</th>
+                    <th scope="col">@Messages("contest")</th>
+                    <th scope="col">@Messages("series.previous")</th>
+                    <th scope="col">@Messages("series.status")</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for(c <- contests) {
+                    <tr class="series-contest" data-contest="@c.getId">
+                        <td>@c.year</td>
+                        <td><a href="@routes.SeriesController.contestPage(c.getId)">@c.fullName</a> <span class="text-body-secondary">#@c.getId</span></td>
+                        <td>@for(p <- previous.get(c.getId)) {@p.year <span class="text-body-secondary">#@p.getId</span>}</td>
+                        <td>@if(c.retired) {<span class="badge text-bg-secondary">@Messages("contest.retired")</span>} else {@Messages("series.live")}</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+    <p class="text-body-secondary small">@Messages("series.contests.assign.help")</p>
+
+    <h2 class="h4 mt-4" id="series-rename-heading">@Messages("series.rename")</h2>
+    <form method="post" action="@routes.SeriesController.rename(series.id)" id="series-rename" class="row g-2 align-items-end" data-submit-once="true" aria-labelledby="series-rename-heading">
+        @csrfField()
+        <div class="col-md-6">
+            <label class="form-label" for="series-new-name">@Messages("name")</label>
+            <input type="text" class="form-control" id="series-new-name" name="name" required maxlength="255" value="@series.name">
+        </div>
+        <div class="col-md-2"><button type="submit" class="btn btn-primary">@Messages("series.rename.button")</button></div>
+    </form>
+
+    <h2 class="h4 mt-4" id="series-retire-heading">@Messages(if (series.retired) "series.unretire" else "series.retire")</h2>
+    <p class="text-body-secondary">@Messages(if (series.retired) "series.unretire.help" else "series.retire.help")</p>
+    <form method="post" action="@(if (series.retired) routes.SeriesController.unretire(series.id) else routes.SeriesController.retire(series.id))" id="series-retire" class="row g-2 align-items-end" data-submit-once="true" aria-labelledby="series-retire-heading">
+        @csrfField()
+        <div class="col-md-6">
+            <label class="form-label" for="series-retire-comment">@Messages("series.comment")</label>
+            <input type="text" class="form-control" id="series-retire-comment" name="comment" maxlength="500">
+        </div>
+        <div class="col-md-3"><button type="submit" class="btn @if(series.retired) {btn-outline-primary} else {btn-outline-danger}">@Messages(if (series.retired) "series.unretire.button" else "series.retire.button")</button></div>
+    </form>
+
+    <h2 class="h4 mt-4">@Messages("series.changes")</h2>
+    @changeLog(changes, names, "series-changes")
+}

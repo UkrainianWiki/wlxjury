@@ -859,6 +859,75 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+  /** V109's rollback SQL after reopen (the script's last comment): the series columns, the log and
+    * the series dropped.
+    */
+  private val v109Rollback = Seq(
+    "ALTER TABLE contest_jury DROP FOREIGN KEY IF EXISTS contest_jury_series_id_fk, " +
+      "DROP KEY IF EXISTS contest_jury_live_series_year_uidx, DROP KEY IF EXISTS contest_jury_series_id_idx, " +
+      "DROP COLUMN IF EXISTS live_series_id, DROP COLUMN IF EXISTS series_id, DROP COLUMN IF EXISTS created_at, " +
+      "DROP COLUMN IF EXISTS created_by, DROP COLUMN IF EXISTS retired_at, DROP COLUMN IF EXISTS retired_by",
+    "DROP TABLE IF EXISTS contest_change",
+    "DROP TABLE IF EXISTS series",
+    "DELETE FROM flyway_schema_history WHERE version = '109'")
+
+  "V109's series" should {
+    "keep the contests, take one live contest per series and year, refuse unknown kinds, rerun, and roll back" in {
+      emptyDb("fw_v109_prev")
+      flyway("fw_v109_prev", production.copy(target = Some("108"))).migrate()
+      emptyDb("fw_v109")
+      flyway("fw_v109", production.copy(target = Some("108"))).migrate().success must beTrue
+      Using.resource(connect("fw_v109"))(c => run(c, Seq(
+        "INSERT INTO contest_jury (id, name, year, country) VALUES (1, 'Wiki Loves Monuments', 2025, 'Nepal'), " +
+          "(2, 'Wiki Loves Monuments', 2025, 'Nepal'), (3, 'Wiki Loves Monuments', 2026, 'Nepal')")))
+      flyway("fw_v109", production.copy(target = Some("109"))).migrate().success must beTrue
+      val once = schema("fw_v109")
+      def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+      def refused(sql: String): Boolean = Using.resource(connect("fw_v109"))(c => scala.util.Try(run(c, Seq(sql))).isFailure)
+      val migrated = Using.resource(connect("fw_v109")) { c =>
+        val kept = rows(c, "SELECT id, series_id IS NULL, created_at IS NULL, retired_at IS NULL FROM contest_jury ORDER BY id")(rs =>
+          (rs.getLong(1), rs.getBoolean(2), rs.getBoolean(3), rs.getBoolean(4)))
+        run(c, Seq("INSERT INTO series (id, name) VALUES (1, 'Wiki Loves Monuments in Nepal')",
+          "UPDATE contest_jury SET series_id = 1 WHERE id IN (1, 3)"))
+        // a created_at written once stays: no ON UPDATE
+        run(c, Seq("UPDATE contest_jury SET created_at = '2020-01-01 00:00:00' WHERE id = 1",
+          "UPDATE contest_jury SET name = 'Wiki Loves Monuments ' WHERE id = 1"))
+        val createdKept = rows(c, "SELECT created_at = '2020-01-01 00:00:00' FROM contest_jury WHERE id = 1")(_.getBoolean(1))
+        kept -> createdKept
+      }
+      // contest 2 is 2025 too: the key refuses it while 1 is live, takes it once 1 is retired
+      val keyRefused = refused("UPDATE contest_jury SET series_id = 1 WHERE id = 2")
+      Using.resource(connect("fw_v109"))(c => run(c, Seq(
+        "UPDATE contest_jury SET retired_at = NOW(3) WHERE id = 1",
+        "UPDATE contest_jury SET series_id = 1 WHERE id = 2",
+        "INSERT INTO contest_change (contest_id, series_id, actor_id, kind, batch_id, detail) VALUES (2, 1, 9, 'series_assigned', 1, '{\"to\":1}')")))
+      (history("fw_v109").map(_.split(" \\| ")(1)) === upTo("109")) and
+        (migrated._1 === List((1L, true, true, true), (2L, true, true, true), (3L, true, true, true))) and
+        (migrated._2 === List(true)) and (keyRefused must beTrue) and
+        // the series can't go while contests are in it; unknown kinds and invalid JSON are refused
+        (refused("DELETE FROM series WHERE id = 1") must beTrue) and
+        (refused("INSERT INTO contest_change (actor_id, kind) VALUES (9, 'Series_assigned')") must beTrue) and
+        (refused("INSERT INTO contest_change (series_id, actor_id, kind, detail) VALUES (1, 9, 'created', 'not json')") must beTrue) and
+        // every row is about a contest or a series
+        (refused("INSERT INTO contest_change (actor_id, kind) VALUES (9, 'created')") must beTrue) and
+        // one live series per name, case aside; a retired one may share it
+        (refused("INSERT INTO series (name) VALUES ('wiki loves monuments in nepal')") must beTrue) and
+        (refused("INSERT INTO series (name, retired_at) VALUES ('Wiki Loves Monuments in Nepal', NOW(3))") must beFalse) and {
+          Using.resource(connect("fw_v109"))(c => run(c, Seq("DELETE FROM contest_change", "UPDATE contest_jury SET series_id = NULL",
+            "DELETE FROM series", "ALTER TABLE series AUTO_INCREMENT = 1", "UPDATE contest_jury SET retired_at = NULL, created_at = NULL")))
+          val reset = schema("fw_v109")
+          Using.resource(connect("fw_v109"))(c => run(c, statements("V109__Series.sql")))
+          schema("fw_v109") === reset
+        } and {
+          Using.resource(connect("fw_v109"))(c => run(c, v109Rollback))
+          (history("fw_v109").map(_.split(" \\| ")(1)) === upTo("108")) and
+            (tablesOnly(schema("fw_v109")) === tablesOnly(schema("fw_v109_prev"))) and
+            (flyway("fw_v109", production.copy(target = Some("109"))).migrate().success must beTrue) and
+            (tablesOnly(schema("fw_v109")) === tablesOnly(once))
+        }
+    }
+  }
+
   /** V96's rollback SQL after reopen (CHANGELOG, the account change log): the live unsent
     * invitations revoked first, since an older release would show one as mailed; the log dropped.
     */

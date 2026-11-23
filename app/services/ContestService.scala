@@ -12,7 +12,7 @@ import javax.inject.Inject
 
 class ContestService @Inject() (val commons: MwBot) {
 
-  def importContests(formContest: String): Iterable[ContestJury] = {
+  def importContests(formContest: String, actorId: Option[Long] = None): Iterable[ContestJury] = {
     val imported =
       if (formContest.startsWith("Commons:")) {
         importListPage(formContest)
@@ -39,7 +39,7 @@ class ContestService @Inject() (val commons: MwBot) {
         monumentIdTemplate = contest.uploadConfigs.headOption.map(_.fileTemplate),
         campaign = Some(contest.campaign)
       )
-      createContest(contestJury)
+      createContest(contestJury, actorId, "import")
     }
   }
 
@@ -58,33 +58,46 @@ class ContestService @Inject() (val commons: MwBot) {
         .filter(_.country.name.nonEmpty)
   }
 
-  def createContest(contest: ContestJury): ContestJury = {
-    ContestJuryJdbc.create(
-      contest.id,
-      contest.name,
-      contest.year,
-      contest.country,
-      contest.images,
-      contest.categoryId,
-      contest.currentRound,
-      contest.monumentIdTemplate,
-      contest.campaign
-    )
-  }
-
-  def updateContest(contest: ContestJury): Unit = {
-    contest.id.foreach { id =>
-      ContestJuryJdbc.updateById(id)
-        .withAttributes(
-          "name" -> contest.name,
-          "year" -> contest.year,
-          "country" -> contest.country,
-          "images" -> contest.images,
-          "monumentIdTemplate" -> contest.monumentIdTemplate,
-          "campaign" -> contest.campaign
-        )
+  /** Adds the contest; with its creator (root; `how`: the add form, an import, the API), records
+    * its creation (V109: `created_at`, `created_by` and a `contest_change` row), in one transaction.
+    */
+  def createContest(contest: ContestJury, actorId: Option[Long] = None, how: String = "api"): ContestJury =
+    scalikejdbc.DB.localTx { implicit session =>
+      val created = ContestJuryJdbc.create(
+        contest.id,
+        contest.name,
+        contest.year,
+        contest.country,
+        contest.images,
+        contest.categoryId,
+        contest.currentRound,
+        contest.monumentIdTemplate,
+        contest.campaign
+      )
+      actorId.foreach(services.series.ContestSeries.recordCreated(created, _, how))
+      created
     }
-  }
+
+  /** Updates the contest's identity and settings (the API's, root's): refused (`Left`, a message
+    * key) if the contest is in a series its new type or country no longer fits, or the new year is
+    * taken there (contest series plan §3.1); an identity change is logged (`identity`) with the
+    * actor.
+    */
+  def updateContest(contest: ContestJury, actorId: Option[Long] = None): Either[String, Unit] =
+    contest.id.fold[Either[String, Unit]](Left("error.contest.not.found")) { id =>
+      services.series.ContestSeries.editIdentity(id, contest, actorId) { implicit session =>
+        ContestJuryJdbc.updateById(id)
+          .withAttributes(
+            "name" -> contest.name,
+            "year" -> contest.year,
+            "country" -> contest.country,
+            "images" -> contest.images,
+            "monumentIdTemplate" -> contest.monumentIdTemplate,
+            "campaign" -> contest.campaign
+          )
+        ()
+      }.left.map(k => if (k == "contest.not.found") "error.contest.not.found" else k)
+    }
 
   def findContests(): List[ContestJury] = {
     ContestJuryJdbc.findAll() // .map(_.copy(messages = applicationMessages))

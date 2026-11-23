@@ -302,8 +302,8 @@ command as the last line, filled with the real ids it found, never a placeholder
     "read-only, from the server only".
   - **What D-1b builds for it:**
     - a migration `V108__Api_token_scope` (`api_token.scope`, default `full`; V108 has since gone
-      to the quick fixes' NOT NULL `round_user.active`, so it takes the next free number at its
-      merge, V109 now);
+      to the quick fixes' NOT NULL `round_user.active` and V109 to the contest series' CY-1, so
+      it takes the next free number at its merge, V110 now);
     - the choice on the token page;
     - the check in `ApiAuth`.
   - **The check.** A read-only token is accepted only on GET endpoints and only from the server

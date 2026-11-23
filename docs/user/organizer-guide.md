@@ -36,6 +36,12 @@ a different role in each contest. Roles are explained in the [admin guide](admin
 If a button or page is missing for you, your role in the current contest probably doesn't allow
 it. The contest menu at the top of the page shows which contest you are in.
 
+**Series.** A contest may belong to a **series**, one contest per year, such as "Wiki Loves
+Monuments in Nepal". The contest menu lists your contests under their series' names: this year's
+and last year's contest of each series, then **Earlier years** and **Other contests** (those in
+no series). Each year is still its own contest, with its own role for you. A contest the tool's
+administrators retired is no longer in the menu. See [Series](admin-guide.md#a-series).
+
 <a id="o-start"></a>
 ## Where to start
 

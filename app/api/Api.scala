@@ -73,7 +73,7 @@ class Api @Inject() (
     .in(jsonBody[ContestJury])
     .out(jsonBody[ContestJury])
     .description("Creates a contest; an id in the body is ignored.")
-    .serverLogicSuccess(_ => contest => blocking(contestService.createContest(contest.copy(id = None))))
+    .serverLogicSuccess(caller => contest => blocking(contestService.createContest(contest.copy(id = None), Some(caller.user.getId))))
 
   private val getContest = secured(rootOnly).get
     .in(contests / path[Long]("id"))
@@ -84,12 +84,13 @@ class Api @Inject() (
     .in(contests)
     .in(jsonBody[ContestJury])
     .description("Updates the contest of the body's id.")
-    .serverLogic(_ =>
+    .serverLogic(caller =>
       contest =>
         blocking(contest.id match {
           case None                                              => Left(ApiFailure.BadRequest)
           case Some(id) if contestService.getContest(id).isEmpty => Left(ApiFailure.NotFound)
-          case Some(_)                                           => Right(contestService.updateContest(contest))
+          // a series contest whose new type, country or year no longer fits its series (plan §3.1)
+          case Some(_) => contestService.updateContest(contest, Some(caller.user.getId)).left.map(_ => ApiFailure.BadRequest)
         })
     )
 

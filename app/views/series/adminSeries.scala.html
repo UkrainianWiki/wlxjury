@@ -1,0 +1,129 @@
+@(
+        user: db.scalikejdbc.User,
+        series: Seq[db.scalikejdbc.Series],
+        contestsBySeries: Map[Long, Seq[org.intracer.wmua.ContestJury]],
+        batches: Seq[db.scalikejdbc.ContestChangeJdbc.Batch],
+        names: Map[Long, String],
+        contestTypes: Seq[services.series.SeriesIdentity.SeriesType],
+        unassigned: Int
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@* Root's series page (contest series plan §5.3, CY-1; SeriesController.list): the series with
+   their contests' years, a form to create one, the proposals' link, and the latest bulk
+   assignments with Undo. Names typed by root are escaped by Twirl *@
+@typeName(code: Option[String]) = @{ code.map(services.series.SeriesIdentity.typeOfCode(_).name).getOrElse("") }
+
+@mainAdmin("series.title", user, user.getId) {
+    <h1 class="h3">@Messages("series.title")</h1>
+    <p class="text-body-secondary" id="series-help">@Messages("series.help")</p>
+    @outcome()
+
+    <p>
+        <a class="btn btn-outline-primary" href="@routes.SeriesController.proposalsPage()" id="series-proposals-link">
+            <i class="bi bi-list-check" aria-hidden="true"></i> @Messages("series.assign.title")</a>
+        <span class="text-body-secondary ms-2" id="series-unassigned">@Messages("series.unassigned.count", unassigned)</span>
+    </p>
+
+    <h2 class="h4 mt-4">@Messages("series.list")</h2>
+    @if(series.isEmpty) {
+        <p class="text-body-secondary" id="series-none">@Messages("series.none")</p>
+    } else {
+        <div class="table-responsive">
+        <table class="table table-striped table-sm" id="series-table">
+            <caption class="visually-hidden">@Messages("series.list")</caption>
+            <thead>
+                <tr>
+                    <th scope="col">@Messages("name")</th>
+                    <th scope="col">@Messages("series.type")</th>
+                    <th scope="col">@Messages("country")</th>
+                    <th scope="col">@Messages("series.contests")</th>
+                    <th scope="col">@Messages("series.status")</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for(s <- series) {
+                    @defining(contestsBySeries.getOrElse(s.id, Nil)) { contests =>
+                    <tr class="series-row" data-series="@s.id">
+                        <td><a href="@routes.SeriesController.series(s.id)">@s.name</a></td>
+                        <td>@typeName(s.contestType)</td>
+                        <td>@s.country.getOrElse("")</td>
+                        <td>@contests.filterNot(_.retired).map(_.year).distinct.sorted.reverse.mkString(", ")</td>
+                        <td>@if(s.retired) {<span class="badge text-bg-secondary">@Messages("series.retired")</span>} else {@Messages("series.live")}</td>
+                    </tr>
+                    }
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+
+    <h2 class="h4 mt-4" id="series-create-heading">@Messages("series.create")</h2>
+    <form method="post" action="@routes.SeriesController.create()" id="series-create" class="row g-2 align-items-end" data-submit-once="true" aria-labelledby="series-create-heading">
+        @csrfField()
+        <div class="col-md-4">
+            <label class="form-label" for="series-name">@Messages("name")</label>
+            <input type="text" class="form-control" id="series-name" name="name" required maxlength="255" placeholder="@Messages("series.name.placeholder")">
+        </div>
+        <div class="col-md-2">
+            <label class="form-label" for="series-type">@Messages("series.type")</label>
+            @* a code: scalawiki's (wlm, wle) or the word after "Wiki Loves" (folklore; CA24); empty: any *@
+            <input type="text" class="form-control" id="series-type" name="contestType" list="series-type-codes" maxlength="32"
+                   placeholder="@Messages("series.type.none")" aria-describedby="series-type-help">
+            <datalist id="series-type-codes">
+                @for(t <- contestTypes) {<option value="@t.code">@t.name</option>}
+            </datalist>
+            <div class="form-text" id="series-type-help">@Messages("series.type.help")</div>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label" for="series-country">@Messages("country")</label>
+            <input type="text" class="form-control" id="series-country" name="country" maxlength="255" placeholder="@Messages("series.country.placeholder")">
+        </div>
+        <div class="col-md-2">
+            <label class="form-label" for="series-campaign">@Messages("series.campaign")</label>
+            <input type="text" class="form-control" id="series-campaign" name="campaign" maxlength="32">
+        </div>
+        <div class="col-md-1">
+            <button type="submit" class="btn btn-primary">@Messages("series.create.button")</button>
+        </div>
+    </form>
+
+    <h2 class="h4 mt-4">@Messages("series.batches")</h2>
+    @if(batches.isEmpty) {
+        <p class="text-body-secondary" id="series-batches-none">@Messages("series.batches.none")</p>
+    } else {
+        <div class="table-responsive">
+        <table class="table table-sm" id="series-batches">
+            <caption class="visually-hidden">@Messages("series.batches")</caption>
+            <thead>
+                <tr>
+                    <th scope="col">@Messages("series.batch")</th>
+                    <th scope="col">@Messages("series.batch.by")</th>
+                    <th scope="col">@Messages("series.batch.at")</th>
+                    <th scope="col">@Messages("series.contests")</th>
+                    <th scope="col"><span class="visually-hidden">@Messages("series.batch.undo")</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @for(b <- batches) {
+                    <tr class="series-batch" data-batch="@b.id">
+                        <td>#@b.id</td>
+                        <td>@names.getOrElse(b.actorId, s"#${b.actorId}")</td>
+                        <td class="text-nowrap">@views.LinkTimes.utc(b.createdAt)</td>
+                        <td>@b.contests</td>
+                        <td>
+                            @b.undoneBy match {
+                                case Some(undo) => {<span class="text-body-secondary">@Messages("series.batch.undone", undo)</span>}
+                                case None => {
+                                    <form method="post" action="@routes.SeriesController.undoBatch(b.id)" class="d-inline" data-submit-once="true">
+                                        @csrfField()
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" aria-label="@Messages("series.batch.undo.of", b.id)">@Messages("series.batch.undo")</button>
+                                    </form>
+                                }
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+}
