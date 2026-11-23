@@ -22,15 +22,17 @@ estimate.
 2. **Add htmx for "no full reload" on the existing server-rendered pages, starting with the large
    view's vote.** Prototype: the vote and the move to the next file ran in about half the time of
    the full page load (the next image prefetched), Back worked, keyboard voting worked, **no
-   server change** (the vote already redirects to the next file's page), htmx 4 needs **no CSP
-   change** (htmx 2 needs one under #129's planned strict `style-src`). Cost is not in htmx but in
+   server change** (the vote already redirects to the next file's page), htmx 4 needs **no
+   style-src change** (htmx 2 needs one under #129's planned strict `style-src`), **provided the
+   application never uses `hx-on`, `js:` values or trigger filters**, which htmx 4 builds with
+   `new Function` (section 3.2). Cost is not in htmx but in
    the page's scripts that initialise once at load (section 5.3): about four modules. Estimate
    for the large view: 2-4 days.
 3. **htmx version: start on 4.0.x, pinned and vendored.** 4.0.0 was released 2026-08-28 (stable, not
    a prerelease), 4.0.2 on 2026-11-18; it is smaller (13.4 KB gzipped against 16.8 KB), needs no
    inline style, and does not keep page snapshots in `localStorage`. Caveat: young (three months,
    three releases) and npm's `latest` tag still points to 2.0.11 (4.x is on `next`); 2.x is still
-   maintained (2.0.11 on 2026-11-01). Section 3.
+   maintained (2.0.11, GitHub release 2026-11-01). Section 3.
 4. **For the UI developer's new screens (organizer statistics, admin forms, contests): islands on
    Twirl pages, framework to be chosen with them.** The platform (build, texts, CSRF on the mount
    element, GraphQL, CSP) is framework-independent. **Vue 3 with Wikimedia Codex is a serious
@@ -83,7 +85,7 @@ islands (today, plus #129); (d) Vue 3 islands with Codex; (e) React islands (#13
 | Wikimedia audience, accessibility | Per library | Neither helps nor hinders | Today's Bootstrap | Codex: designed for it (components and icons with language and direction variants, RTL stylesheet) | Tokens only | Possible with Codex tokens |
 | Maintainer plus one UI developer | Two stacks plus a SPA shell | One 13-17 KB script, almost no new concepts for the Scala side | Lowest change | Vue is a second skill for the maintainer; Codex adds a design-system upgrade cadence | React is the UI developer's stated wish | A small library, a small ecosystem |
 | Build and release | Vite, a router, a store; full SPA release | **No build step** (a vendored file) | None | The platform of #136 | The platform of #136 | Bundler optional |
-| Effort for the large view's no-reload vote | 15-25 days (rewrite) | 2-4 days | 1-2 days (a fetch and a swap by hand) | As (a) for that screen | As (a) | 5-10 days |
+| Effort (estimate) for the large view's no-reload vote | 15-25 days (rewrite) | 2-4 days | 1-2 days (a fetch and a swap by hand) | As (a) for that screen | As (a) | 5-10 days |
 
 Reading it: only (b) and (c) improve the large view cheaply and keep every server rule where it
 is. (d) and (e) are for **new** screens; a SPA is the most expensive answer to a question the
@@ -94,8 +96,8 @@ large view does not ask.
 ### 3.1 Status of htmx 4 (checked 2026-11-24)
 
 - **Released.** `v4.0.0` on 2026-08-28 (not a prerelease; `v4.0.0-beta6` was 2026-07-23), `v4.0.1`
-  on 2026-11-01 and `v4.0.2` on 2026-11-18. The `2.x` line continues: `v2.0.11` on 2026-11-01
-  (npm `latest`); npm's `next` tag is 4.0.2. Licence 0BSD, no runtime dependencies. About
+  on 2026-11-01 and `v4.0.2` on 2026-11-18. The `2.x` line continues: `v2.0.11` (GitHub release
+  2026-11-01, published to npm 2026-09-22; npm `latest`); npm's `next` tag is 4.0.2. Licence 0BSD, no runtime dependencies. About
   49,000 GitHub stars; the repository was pushed to on 2026-11-20.
 - **Size (gzipped):** 4.0.2 is 13.4 KB (37 KB minified), 2.0.11 is 16.8 KB (52 KB).
 
@@ -106,16 +108,16 @@ large view does not ask.
 | Transport | Always `fetch()`, never XHR; default timeout 60 s (2.x none); `hx-delete` no longer sends the form's inputs | Fine; nothing here relies on XHR |
 | Inheritance | **Explicit**: `hx-boost` on `<body>` no longer applies to children; use `hx-boost:inherited="true"` (`:append` to extend) or `htmx.config.implicitInheritance = true` | The first thing that bites (the mock did not boost until this was set) |
 | Errors | 4xx and 5xx responses **are swapped** (only 204 and 304 are not); revert with `noSwap` | Our 403 and 404 pages would be swapped in; probably what we want, but the vote's JSON refusals and CSRF errors need a decision |
-| History | No page snapshots in `localStorage`; Back re-fetches the page | Better for this tool: htmx 2 stores page HTML in `localStorage`, which for a juror's page means other jurors' data and the CSRF token in browser storage |
+| History | No page snapshots in `localStorage`; Back re-fetches the page | Better for this tool: htmx 2 stores page HTML in `localStorage`, which for a juror's page means other jurors' data and the CSRF token in browser storage. The optional `hx-history-cache` extension (a separate file, 1.7 KB gzipped) stores snapshots in `sessionStorage`: **do not load it**, for the same reason `no-store` pages are kept out of bfcache (a snapshot shows stale votes) |
 | Out-of-band swaps | Run after the main swap | Minor |
 | Removals and renames | `hx-disable` is now `hx-ignore`; `hx-vars`, `hx-params`, `hx-ext`, `hx-inherit`, `hx-disinherit`, `hx-history` removed; events are `htmx:phase:action` (`htmx:before:swap`); the `queue` trigger modifier is removed (use `hx-sync`); selectors with spaces need quotes | A new adoption avoids all of it |
-| Extensions | A `<script>` tag loads one; `extensions` config is an allow-list; SSE, WebSocket, `hx-preload` and history cache ship in core; `htmx.defineExtension` is `registerExtension` | `hx-preload` (prefetch of a link) is in core |
-| CSP | `allowEval` and `allowScriptTags` removed; **`inlineStyleNonce` removed: indicator CSS uses a constructable stylesheet, so no nonce is needed**; `inlineScriptNonce` added; an `hx-csp` extension for strict policies | Measured: no violation under `style-src 'self'` (section 5.2) |
+| Extensions | A `<script>` tag loads one; `extensions` config is an allow-list; SSE, WebSocket, `hx-preload` and the history cache are **extension files in the package** (`dist/ext/hx-sse.js`, `hx-ws.js`, `hx-preload.js`, `hx-history-cache.js`), **not in `htmx.js`**; `htmx.defineExtension` is `registerExtension` | `hx-preload` (prefetch of a link) needs its own script: 0.9 KB gzipped (1.8 KB minified) on top of the core's 13.4 KB |
+| CSP | `allowEval` and `allowScriptTags` removed; **`inlineStyleNonce` removed: indicator CSS uses a constructable stylesheet, so no nonce is needed**; `inlineScriptNonce` added; an `hx-csp` extension for strict policies | Measured: no style violation under `style-src 'self'` (section 5.2). But `htmx.js` 4.0.2 still builds `new Function(...)` (about line 923) for `hx-on`, `js:` values and trigger filters, and `allowEval` no longer exists to switch it off. Under our `script-src` (no `'unsafe-eval'`) any use of those three features **fails at runtime with a CSP violation**; it does not silently work. So the application must never use `hx-on`, `js:` values or trigger filters, enforced by a spec that greps `app/views` and `public/javascripts` for them; and the comment in `conf/application.conf` ("no library uses eval or new Function") must be reworded to say htmx contains the call and the policy keeps it unusable |
 
 ### 3.3 Start on 2.x or 4?
 
-- **4.0.x** for a new adoption: the migration cost is zero, it is smaller, its CSP behaviour
-  suits G-7 and its history behaviour suits private pages. Pin the exact version, vendor the single
+- **4.0.x** for a new adoption: the migration cost is zero, it is smaller, its style behaviour
+  suits G-7 (with the `new Function` rule above) and its history behaviour suits private pages. Pin the exact version, vendor the single
   file under `public/` with the existing licence notice rules (0BSD), read the release notes on
   each update.
 - **2.0.x** if the maintainer prefers the line with more mileage: most tutorials, answers and
@@ -141,13 +143,14 @@ large view does not ask.
 
 - **What it is.** The Wikimedia design system: Vue 3 components, design tokens, icons and
   composables; version 2.8.0 (2026-11-13), releases every one to two months.
-- **Licence.** `@wikimedia/codex` and `@wikimedia/codex-design-tokens` are **GPL-2.0-or-later**
-  (npm `GPL-2.0+`; the package's `LICENSE` is the GPL version 2 text with "or any later version");
-  `@wikimedia/codex-icons` is MIT. This repository's `LICENSE` on master is **GPL-3.0-or-later**
-  (the README says the licence changed in 2026-11 from Apache-2.0), so GPL-2.0-or-later code may be
-  used in it. The two together are one GPL work when distributed; the release's `NOTICE` must list
-  Codex as a third-party component with its licence. Worth a legal check by the maintainer before
-  adoption; this is a reading of the licence texts, not legal advice.
+- **Licence.** `@wikimedia/codex` and `@wikimedia/codex-design-tokens` declare **GPL-2.0-or-later**
+  (`license: "GPL-2.0+"` in the npm `package.json`; the `LICENSE` file in the package is the stock
+  GPL version 2 text, so the "or later" grant comes from that field); `@wikimedia/codex-icons` is
+  MIT. This repository's `LICENSE` on master is **GPL-3.0-or-later** (the README says the licence
+  changed in 2026-11 from Apache-2.0), so GPL-2.0-or-later code may be used in it. **The repository
+  already vendors Codex's design tokens 2.7.0 under that reading** (`NOTICE`, `docs/vendor/codex.md`,
+  `licenses/GPL-2.0.txt`, `public/stylesheets/vendor/codex/`). So the open licence question is only
+  the components package (and the icons, MIT), not the tokens. Not legal advice.
 - **CSS-only components.** Install `@wikimedia/codex` and load `codex.style.css` once per page;
   write the component's HTML with its classes (for example `<button class="cdx-button
   cdx-button--action-progressive cdx-button--weight-primary">`). So Twirl pages can use Codex's
@@ -155,13 +158,15 @@ large view does not ask.
   support is limited to pages that are wholly left-to-right or right-to-left. Per-component CSS
   modules exist in `dist/modules`.
 - **Design tokens.** A separate package: `theme-wikimedia-ui.css` (plus root and dark-mode files for
-  `prefers-color-scheme`), usable without any framework. 24 KB (6 KB gzipped) in my measurement.
-- **Sizes (measured).** `codex.style.css` is 172 KB (17 KB gzipped) in full. Vue 3.5 runtime-only
-  with one Codex button bundled by esbuild was 75 KB gzipped (a rough figure: Codex does not
-  tree-shake well in my quick build, and I did not run it). Vue's runtime alone is 22.8 KB gzipped.
+  `prefers-color-scheme`), usable without any framework. 24 KB (6 KB gzipped), measured from the package's `theme-wikimedia-ui.css`.
+- **Sizes.** Measured on the package files: `codex.style.css` is 172 KB (17 KB gzipped) in full.
+  Measured in the scratch prototype build (esbuild, minified): Vue 3.5 runtime alone is 22.8 KB
+  gzipped; React 19 with react-dom is 69.5 KB gzipped (with a 13-line component). **Not measured:**
+  the size of a Vue app using Codex components (a quick bundle with one button was not
+  trustworthy and was not run), so no figure is given.
 - **React.** Codex has **no official React version** (the package and its documentation are Vue 3
-  only; `@wikimedia/codex-react` does not exist on npm). Unofficial ports exist under other names; I did not
-  evaluate them. With React, only the tokens and the CSS-only components can be used.
+  only; `@wikimedia/codex-react` does not exist on npm). Unofficial ports exist under other names; they were not
+  evaluated. With React, only the tokens and the CSS-only components can be used.
 - **CSP and Vue.** Codex needs Vue 3.5.13 or later. A runtime template compiler uses `new Function`
   and is not allowed under a strict `script-src`; build single-file components ahead of time (Vite's
   Vue plugin) and use the runtime-only build, which has no `eval` or `new Function` (grep of
@@ -178,7 +183,7 @@ large view does not ask.
 - So the Wikimedia ecosystem's own juror-style tool chose Vue 3 plus Codex as a SPA. That is a
   data point for the Wikimedia look and for contributors who already know Codex; it is not an
   argument for a SPA here, because Montage's server rules are small and ours are the product.
-  (Montage's Codex is two major versions behind: 1.14 against 2.8.)
+  (Montage's Codex is one major version behind: 1.14 against 2.8.)
 
 ### 4.3 React, Lit, Alpine
 
@@ -242,20 +247,24 @@ an underestimate and the gap larger in practice. The htmx numbers could improve 
 3. **A scripts-in-head trap.** In htmx 2 a response without an explicit `<head>` has its head
    scripts swapped into the body and executed again, which doubled the key handlers and made one
    Space press cast several votes (20 requests per vote). The layout must have an explicit
-   `<head>` element, as the large view's `main_large` presumably has (to be checked).
+   `<head>` element; `app/views/layout.scala.html` has one (about line 27), so this holds for the
+   real pages.
 4. **Scripts that initialise once.** In the real large view `large-keys.js` binds at jQuery ready
    and **captures the key URLs at that moment**, `large-stars.js` initialises raty at ready,
    `large-sections.js` restores sections from an inline `<script>`, and `keepCommentsInView` runs at
    `DOMContentLoaded`. After a swap they would act on the previous file (a Space vote would vote the
    old file). Each needs to be re-run from `htmx:after:swap` (4) or `htmx:afterSwap` (2), and
-   `large-keys.js` should read its URLs when the key is pressed. An inline `<script>` is blocked by
-   CSP unless hashed, so that call moves into `large-sections.js`. Estimate: 25-40 lines and Jest
+   `large-keys.js` should read its URLs when the key is pressed. htmx re-executes inline scripts in swapped content, and only hashed ones are allowed by the CSP: the
+   `wlxLargeSections.restore` inline script is hashed (`InlineScriptHashesSpec` covers it), so it
+   would run again after a swap, and moving it into `large-sections.js` is an option, not a necessity. Estimate: 25-40 lines and Jest
    specs. This, not htmx, is the cost.
-5. **Error handling.** 4xx and 5xx swap in htmx 4; the vote's refusals (a closed round: a redirect; an
+5. **Error handling and flashes.** The vote's redirect carries flash messages
+   (`.flashing(...)`, for a moved vote) and refusals flash too: they appear on the next page render
+   after the swap, so the swapped page must show the flash (a checklist item). 4xx and 5xx swap in htmx 4; the vote's refusals (a closed round: a redirect; an
    invalid rate: the 400 error page; a 403) must look right swapped in or be handled in
    `htmx:before:swap`.
 6. **Not measured:** bfcache restoration (headless Chromium: the navigation type after returning
-   was `back_forward` for every variant; I could not tell a bfcache restore from a reload),
+   was `back_forward` for every variant; it could not be told a bfcache restore from a reload),
    keyboard voting beyond Space, the criteria rounds, the real page weight.
 
 ## 6. How GraphQL (#135) and htmx coexist
@@ -278,7 +287,7 @@ They answer different questions and do not compete.
 
 ## 7. Recommendation
 
-1. **Large view:** htmx 4 boost for the vote and next file, `hx-preload` or a link prefetch for the
+1. **Large view:** htmx 4 boost for the vote and next file, `hx-preload` (its own 0.9 KB script) or a link prefetch for the
    next file and its image, after a 2-3 hour spike in the real application (the mock's findings 1-5
    as a checklist). 2-4 days with tests, in its own PR, after #129's gallery work lands or in parallel
    in the large-view files that #129 does not touch.
@@ -298,12 +307,12 @@ They answer different questions and do not compete.
 2. **Wikimedia look.** Is Codex's look and feel (and its accessibility and language variants) a goal
    for the tool, or is Bootstrap 5 staying? Codex on island screens next to Bootstrap pages would
    look mixed.
-3. **Licence.** Is GPL-2.0-or-later Codex acceptable alongside the repository's GPL-3.0-or-later,
-   with a `NOTICE` entry? (A reading of the licence texts above; confirm with whoever owns the
-   licence policy.)
+3. **Licence.** The tokens (GPL-2.0-or-later) are already vendored with a `NOTICE` entry. Is the same
+   acceptable for the Codex components package (GPL-2.0-or-later) and its icons (MIT)? (A reading
+   of the licence texts; confirm with whoever owns the licence policy.)
 4. **Re-skin.** Should Codex CSS and tokens replace Bootstrap on Twirl pages in time, or only be used
    in new island screens? The first is a design project of its own.
-5. **htmx 4 or 2.** Start on 4.0.x (recommended: smaller, no CSP change, no `localStorage`
+5. **htmx 4 or 2.** Start on 4.0.x (recommended: smaller, no style-src change, no `localStorage`
    snapshots; young) or on 2.0.x (more mileage)?
 6. **Large view with htmx.** Go ahead with the 2-3 hour spike in the real application, then the PR?
    Is no-reload voting in the large view wanted, and is "next file prefetched" enough for jurors?
