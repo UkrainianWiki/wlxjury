@@ -342,6 +342,23 @@ sudo find /var/www/jury-images -xdev -type f -perm /022 -exec chmod go-w {} +
 stat -c '%a %U:%G' /var/www/jury-images                                 # 755 wlxjury:wlxjury
 ```
 
+The cache only grows. `scripts/local-images-maintenance.sh` shows its size and deletes old files
+(regular files only, never through symlinks; run as the service user):
+
+```bash
+scripts/local-images-maintenance.sh report                          # files and bytes per modification month
+scripts/local-images-maintenance.sh prune --months 6 --dry-run      # list what would go; deletes nothing
+scripts/local-images-maintenance.sh prune --months 6 --quiet        # delete, then remove empty folders
+```
+
+Files are deleted by age since they were cached (their modification time), not because they are
+unused: a thumbnail that is still in use is fetched again from Commons on its next request. If
+`wlxjury.thumbs.local-path` is not `/var/www/jury-images`, pass that folder every time, with
+`--path FOLDER` or `export WLXJURY_THUMBS_LOCAL_PATH=FOLDER` (the script's own variable; the app does
+not read it), or the script works on the wrong folder. A folder the script cannot read, or a file it
+cannot delete, makes it exit 1 with a message on stderr and a partial result; fix the permissions
+(run as the service user) and run it again. The script's tests are `scripts/test_local_images_maintenance.py`.
+
 ### Monitoring with monit
 
 [`conf/monit/wlxjury`](../conf/monit/wlxjury) adds the app to monit, **alert only**: systemd already

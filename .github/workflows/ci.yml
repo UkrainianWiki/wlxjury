@@ -52,6 +52,11 @@ jobs:
         working-directory: scripts
         run: python3 -B -m unittest -v test_agent_check
 
+      # The image cache maintenance script on a temporary directory (GNU find and date).
+      - name: local images maintenance tests
+        working-directory: scripts
+        run: python3 -B -m unittest -v test_local_images_maintenance
+
       # The rehearsal's schema parity check (synthetic column dumps). Standard library only.
       - name: schema parity tests
         working-directory: scripts
