@@ -1,149 +1,270 @@
-# A React gallery instead of our own tiles? (investigation, 2026-11-24)
+# Adopting React in the jury tool, and what it means for the gallery (investigation, 2026-11-24)
 
-**Question (maintainer):** investigate a gallery alternative using React plus the components
+**Question.** The maintainer first asked to investigate a gallery built with React,
 [react-photo-album](https://react-photo-album.com/) and
-[yet-another-react-lightbox](https://yet-another-react-lightbox.com/) (YARL).
+[yet-another-react-lightbox](https://yet-another-react-lightbox.com/) (YARL). The question is now
+wider: a UI developer wants to build React screens, and GraphQL (draft PR #135,
+`docs/plans/2026-11-24-graphql-sangria.md`) is the cheap API for them. So this document asks first
+**how React fits this Play application**, recommends a first screen, and then re-evaluates the
+gallery (plan [own-gallery-tiles](../plans/2026-11-19-own-gallery-tiles.md), PR #129, not yet on
+master when this was written) as a later React target.
 
-**Status:** investigation only; nothing in the application changes. Compared against the accepted
-plan [own-gallery-tiles](../plans/2026-11-19-own-gallery-tiles.md) (PR #129, not yet on master when this was written; "#129" below), whose
-questions Q1 to Q26 the maintainer has decided. Nothing was run in the application (no sbt, no
-fixture server). The only measurement is a throwaway bundle-size build in a scratch directory
-outside the repository (section 3.4).
+**Status:** investigation only; nothing in the application changes. Nothing was run in the
+application (no sbt, fixture server or browser). The only measurement is a throwaway bundle-size
+build in a scratch directory outside the repository (section 6.2). Effort figures are estimates
+from reading the code and plans.
 
 ## Summary and recommendation
 
-**Recommendation: keep option A, the #129 plan as decided. Do not build a React gallery (B).
-Keep one narrow door open: a YARL lightbox as a later, optional island (C1), but only if the
-maintainer reopens Q2 ("no lightbox") after #129 ships.**
+1. **Adopt React as islands on server-rendered Twirl pages, one entry per screen.** A React
+   screen is an ordinary Play route and Twirl page (layout, navbar, theme, the route's
+   `Secured` permission check, the CSRF token and the translated texts rendered by the
+   server) with one mount point and one script. Not a SPA under `/ui`, and not a full SPA.
+   Authorization, redirects and `returnTo` stay in Play; the browser calls the API on the same
+   origin with the session cookie and the `Csrf-Token` header, as the gallery's votes do.
+2. **The build is one new sbt task, not a new pipeline.** Vite builds into `public/`; the
+   existing `sbt-digest` stage (`pipelineStages := Seq(digest)`) already gives every packaged
+   asset a content-hashed name, so Vite needs no hashing of its own. The release ZIP carries the
+   built files; production needs no Node. CI already has Node 22 (browser tests, `jsTest`).
+   Estimate for the platform: **5-7 days** (build task, dev loop, `uiTest` in `sbt test`, CSP,
+   the translated-texts mechanism, one Playwright smoke spec, docs).
+3. **First screen: the root contests grid** (the `react` branch's screen), on the existing REST
+   `/api/contests` now and moved to GraphQL when PR #135's read-only schema lands. It is
+   low-risk (root only; no juror sees it), useful (contest administration without a form per
+   contest) and it exercises every integration point: session, CSRF, texts, CSP, build, tests.
+   **Use the parked `react` and `react-custom-filter` branches as a skeleton, not as the base**:
+   keep their Vite, TypeScript and Vitest setup and test style; drop MUI and MUI X (section 3.3:
+   Emotion's injected styles fight the CSP step G-7, and the bundle is large). Estimate for the
+   screen on top of the platform: 3-5 days. A good second screen is a read-only organizer page on
+   GraphQL (round statistics), where GraphQL's query shape pays off.
+4. **The gallery is a plausible later React target, not a first one.** #129's server half
+   (keyset continuation, size schemes, prefetch, the window-size cookie, own-votes rules) serves
+   a React gallery unchanged (section 5.3); only the front-end half would change. The answer on
+   the gallery stays: **build #129 as decided**, then reconsider once the UI developer has shipped
+   two screens and the platform has proved itself. A React gallery first would put the most
+   voting-critical, no-JS-sensitive page on an unproven toolchain.
+5. **Prerendering** (section 7) matters for the gallery (no-JS, first paint), little for admin
+   screens. In-JVM GraalJS is possible on a stock JDK but its cost is unmeasured and production
+   runs JDK 17; a better fit is a Twirl no-JS grid that React takes over. No spike now.
 
-Why, in five points:
-
-1. **The two libraries solve the cheap part of #129, not the expensive part.** About half of
-   #129's effort is server work that no React library touches: the keyset continuation,
-   thumbnail size schemes and prefetch, the proxy and cache, the window-size cookie, the account
-   setting, authorization of other jurors' votes, the cache cleanup. That work stays under every
-   option.
-2. **react-photo-album renders nothing without script by default.** Its documented server output
-   is empty markup; its prerendering variants need a React server render, and Play has no Node
-   process. #129's rows are CSS and work without script (the pager still works, goal 4). With
-   React, no-JS becomes a second implementation, or is dropped.
-3. **A React gallery re-implements everything the tile partial, `tile-votes.js`,
-   `file-anchor.js` and the by-rate list do today** (binary thumbs, raty stars, criteria
-   averages, chips, rank, deleted badge, tallies, vote time, the hint), plus a JSON API for the
-   tiles and client-side i18n for ru/uk/fr. Today those are server-rendered Twirl with
-   `messages.*`, covered by Jest and Playwright specs that would be rewritten.
-4. **React was tried three times in this repository and none reached a page a user sees**
-   (section 2): a 2020 create-react-app demo with sample photos, and two April 2026 branches of
-   an admin contests grid. None touched the gallery, voting or authorization. There is no React
-   build in the production pipeline, so B also pays for the first one (Node in builds, CI and
-   packaging, the CSP and dependency review).
-5. **The gain is real but small and separable.** YARL is well kept (MIT, last release 2026-11-14)
-   and small (about 11 KB gzipped for the core, measured). Its value is a quick preview with
-   zoom, which #129 rejected (Q2) because voting, comments and details live in the large view. If
-   a preview is wanted later it can be added to the server-rendered page without moving the
-   gallery to React (C1).
-
-**Rough effort** (calendar days, one developer; A's figure is the plan's own, the others are
-estimates from this reading, not measurements):
-
-| Option | Effort | Risk |
-|---|---|---|
-| A. #129 as planned | 28-33 days (decided) | known; steps G-0..G-7 are already review-sized |
-| B. Full React gallery with both libraries | about 45-60 days, and #129's server half (about 15-18 days) is still needed | high: new build chain, rewrites of voting and by-rate, no-JS lost or doubled |
-| C1. A plus a YARL lightbox island | A plus about 8-12 days, after A | medium: reopens Q2; the lightbox must reuse the vote endpoint, CSRF and own-votes rules |
-| C2. A, but react-photo-album for layout only | A plus about 2 days, minus the CSS rows (2-3 days): no net gain | not worth it: React for a layout that is about 30 lines of CSS, and no-JS lost |
+| What | Effort (estimate) |
+|---|---|
+| React platform (build, dev loop, tests, CSP, texts, docs) | 5-7 days |
+| First screen: root contests grid | 3-5 days after the platform |
+| GraphQL read-only API (PR #135's plan, not React work) | 2.5-3.5 days (its own estimate) |
+| #129 as planned (decided) | 28-33 days |
+| Gallery in React instead of #129's front end | 45-60 days in all, with #129's server half (about 15-18 days) kept |
+| #129 plus a YARL lightbox island | #129 plus 8-12 days (reopens Q2) |
 
 ## 1. What was read
 
-- The #129 plan (all sections) and its decisions.
-- The three React branches and issue #104.
-- The current gallery code: `gallery.scala.html`, `galleryByRate.scala.html`, `tile-votes.js`,
-  `file-anchor.js`, `large-*.js`, `Global.thumbnailWidths`, `ImageProxyController`,
-  `LocalImageCacheService.servedWidths`, the CSP in `conf/application.conf`, `build.sbt`
-  (`jsTest`), `javascript-test/`, `browser-test/`.
-- The two libraries' documentation pages, the npm registry and the GitHub repositories (API).
+- The #129 plan, the GraphQL plan (PR #135), `docs/api.md`, `conf/routes`, `build.sbt` (the
+  release ZIP, `pipelineStages`, `jsTest`), the CSP in `conf/application.conf`, the CI workflows.
+- The branches `react`, `react-custom-filter`, `104-port-gallery-to-react` and issue #104.
+- The two libraries' documentation, the npm registry and the GitHub repositories (API).
 
 ## 2. Earlier React attempts in this repository
 
-All three branches were ported to this repository on 2026-11-23 from the private archive as
-single squashed commits; the original dates are in the commit messages.
+All three branches were ported here on 2026-11-23 from the private archive as single squashed
+commits; the original dates are in the commit messages.
 
-| Branch | What it is | Size | Why it stalled |
+| Branch | What it is | Size | Status |
 |---|---|---|---|
-| `104-port-gallery-to-react` (22 commits, based on a June 2020 master) | A create-react-app (`ui/`) with `react-photo-gallery` (the older predecessor of react-photo-album) showing nine **hard-coded sample photos** with a select-all toggle (`App.js`, `SelectedImage.js`); sbt hooks that run `npm start` in dev mode (`ui-build.sbt`, `FrontendRunHook.scala`) and a `FrontendController` | 20 files, +21,334 (almost all lockfiles and the CRA README) | A spike. It never read the application's images, votes or sessions; the gallery was later built on Unite Gallery. Issue #104 itself is an unrelated closed bug ("image upside down"); the branch name only borrowed the number |
-| `react` (21 commits, April 2026) | `ui/`: Vite, React 19, TypeScript, MUI and MUI X Data Grid; a **contests admin grid** over the Tapir `/api/contests`; Vitest; a design spec and plan in `docs/superpowers/` | 20 files, +5,616 | In April the Tapir API was not served and had no authentication, so the grid could not go live. **That is no longer true:** on master `/api` is served with a personal API token or the session cookie (`ApiRouter` in `conf/routes`, `docs/api.md`; contest endpoints for root only), so the original blocker is gone. The branches are parked, not blocked |
-| `react-custom-filter` (6 more commits) | The same grid with cell filters | its own commit: 4 files, +936/-8 (24 files, about +6,552 with `react`) | Same April blocker, since removed; parked with `react` |
+| `104-port-gallery-to-react` (22 commits, June 2020 base) | A create-react-app with `react-photo-gallery` (the older predecessor of react-photo-album) showing nine **hard-coded sample photos**; sbt hooks running `npm start` in dev mode (`ui-build.sbt`, `FrontendRunHook.scala`) | 20 files, +21,334 (almost all lockfiles) | A spike; never read real data. Issue #104 is an unrelated closed bug ("image upside down"); the branch only borrowed the number |
+| `react` (21 commits, April 2026) | `ui/`: Vite, React 19, TypeScript, MUI and MUI X Data Grid; a **contests admin grid** over `/api/contests`; Vitest; a spec and plan in `docs/superpowers/` | 20 files, +5,616 | In April the Tapir API was unserved and unauthenticated, so it could not go live. That is no longer true: on master `/api` is served with a personal API token or the session cookie (`ApiRouter`, `docs/api.md`; contests for root only). Parked, not blocked |
+| `react-custom-filter` | The same grid with cell filters | its own commit: 4 files, +936/-8 (24 files, about +6,552 with `react`) | Parked with `react` |
 
-What they show for this question:
+What they give: a working `ui/` skeleton (Vite, Vitest, React Testing Library, a dev proxy to Play
+on :9000) and a build sketch (`npm run build` copied into `public/ui/`, routes `/ui` and
+`/ui/*file`, a `uiTest` task beside `jsTest`). What they do not give: any integration with Play's
+session, CSRF, messages, layout or CSP, or any screen a user sees.
 
-- A working `ui/` skeleton exists (Vite, Vitest, React Testing Library). The April spec chose
-  `npm run build` copied into `public/ui/`, served by two routes, with a `uiTest` task beside
-  `jsTest`. That is a build-pipeline precedent, not a gallery.
-- No branch handled authorization, CSRF, sessions, i18n or the image proxy. Those are the hard
-  parts of a gallery, and a React gallery needs all of them.
-- The 2020 branch used react-photo-gallery, a different library with a different API from the
-  react-photo-album 3 the maintainer linked.
+## 3. How React screens fit this Play application
 
-## 3. The libraries
+### 3.1 Integration shape: islands, a `/ui` SPA, or a full SPA
 
-### 3.1 react-photo-album 3.6.2 (MIT, released 2026-10-17)
+| | Islands on Twirl pages (recommended) | SPA routes under a prefix (`/ui`, the `react` branch) | Full SPA |
+|---|---|---|---|
+| Routing and authorization | Play routes and `Secured` builders, as every page today; denials, `returnTo`, 403 and 404 pages unchanged | The SPA has its own router; every `/ui/*` request returns `index.html`; the API decides access and the shell must handle 401 and 403 itself | The same, for the whole tool |
+| Layout, navbar, theme, language, contest switcher | Inherited from the Twirl layout (sticky top bar, `theme-switch.js`, contest menu) | Rebuilt in React, or the screens look foreign | All rebuilt |
+| Session and CSRF | Same-origin cookie; the page carries `data-csrf-token`, writes send `Csrf-Token` | Same cookie, but the token must be handed to the shell (a Twirl shell, or an endpoint) | Same |
+| Deep links, Back | Plain page loads | A client router; scroll and history are the SPA's | Same |
+| Adoption cost | Lowest: one screen at a time, others untouched | Medium: a shell and a second navigation world | Highest: every page |
+| Fit for a UI developer | A page is a route plus a component; a small controller on the Scala side | Closer to a usual React workflow | The most freedom, the most risk |
 
-- **Layouts:** `RowsPhotoAlbum` (justified rows, like #129's), `ColumnsPhotoAlbum`,
-  `MasonryPhotoAlbum`, each with its own stylesheet. Photos need `width` and `height`
-  (we have both from the file's metadata, as #129 does for ratio classes).
-- **Responsive images:** a per-photo `srcSet` array (`{src, width, height}`) generates `srcset`;
-  a `sizes` prop describes the album's width per viewport. This fits #129's 960/1280 prefetch:
-  our proxy URLs go in the array and the browser chooses, as in #129.
-- **Rows:** `targetRowHeight` (a number or a function of width), rows justified to the
-  container width, which is measured in script. #129's rule "a short last row stays short, rows
-  grow to at most 247 px" can be approximated with the library's row options but not matched
-  exactly (not tested).
-- **SSR:** by default the server output is **empty** (the layout needs the container width).
-  Options: `defaultContainerWidth`, a skeleton, `visibility: hidden`, an `SSR` component that
-  pre-renders several breakpoint layouts with CSS container queries, and a Server Component with
-  no client JS. All need a **React server render**; Play/Scala cannot do that without a Node (or
-  GraalJS) rendering service in production.
-- **Infinite scroll:** an `InfiniteScroll` wrapper with a `fetch` callback that returns the next
-  photos or `null`; the docs advise against it with the Columns layout. **No windowing**: all
-  fetched photos stay in the DOM, as in #129's first build (the cap is measured in G-0/G-5).
-- **Customisation:** render props replace the container, track, wrapper, link, button, image or
-  whole photo, so our tile (vote buttons, chips, rank, "last viewed" mark) can be rendered;
-  `componentsProps` adds attributes such as `data-file-anchor`.
-- **Accessibility:** real links and buttons with the browser's focus ring (customisable by
-  CSS); `alt`, `title` and `aria-label` per photo.
-- **Maintenance:** 73 npm versions (82 entries in the registry history), one every one to three months (3.6.0 April, 3.6.1 July, 3.6.2
-  October 2026); a single author; 1 open issue, a push on the day of this reading; about 800
-  GitHub stars. Peer dependency React 18 or 19, no runtime dependencies.
+Recommendation: islands. The tool's value is in its server-enforced rules (own votes, roles per
+contest, `Secured.inContest`); the closer a screen stays to a server-rendered page, the fewer
+places those rules must be re-checked. A screen can still be an app inside its island, with
+client-side state and sub-views (a `?tab=` or a hash).
 
-### 3.2 yet-another-react-lightbox 3.33.1 (MIT, released 2026-11-14)
+### 3.2 Build and release
 
-- **Plugins:** Captions, Counter, Download, Fullscreen, Inline, Rotate, Share, Slideshow,
-  Thumbnails, Video, Zoom. Each is a separate import.
-- **Keyboard and focus:** arrows and Escape built in (`controller.closeOnEscape`). The pages read
-  here say nothing about rebinding keys or adding our vote keys; those would be a `keydown`
-  listener or a custom plugin that must not clash with YARL's own handling. Focus moves into the
-  lightbox; a focus trap is not described, and `controller.aria` (ARIA attributes on the
-  controller) is off by default. **Accessibility needs a hands-on check before any adoption.**
-- **Controlled index:** `index` and `on.view` give the current slide; the `slides` array must stay
-  referentially stable across renders.
-- **Customisation:** toolbar buttons, `render` slots for slide header/footer/controls and icons,
-  styles per slot. A vote bar in a slide footer is feasible.
-- **SSR:** a client component rendered into a portal when opened. For an island on a
-  server-rendered page that is no problem: there is nothing to render until it opens.
-- **Maintenance:** 157 npm versions, the last four on 2026-05-01 (3.32.0), 07-08, 07-30, 10-30 and
-  11-14; one author; 1 open issue; about 1,300 stars. Peer dependency React 16.8 to 19.
+- **Vite entries.** One entry per screen (`ui/src/screens/<name>.tsx`), built to `public/ui/`
+  with stable names (`<name>.js`, `<name>.css`) and a shared vendor chunk. Twirl pages
+  reference them with `routes.Assets.versioned`.
+- **Cache-busting.** Already solved: `build.sbt` runs `sbt-digest` over the packaged assets
+  (`<md5>-<name>` copies, served by `routes.Assets.versioned`); `sbt run` and tests serve plain
+  names. No second hashing scheme.
+- **sbt integration, not sbt-web's JS pipeline.** A task `uiBuild`, like `jsTest` (`npm.cmd` on
+  Windows, `npm ci` when `node_modules/.package-lock.json` is stale, then `npm run build`), runs
+  before assets are packaged, so `sbt dist` and `sbt run` both have the files. The built files
+  are git-ignored. The release ZIP carries them inside the application jar's `public/`;
+  production needs no Node.
+- **CI.** Node 22.23.4 is already set up, pinned and cached, in `ci.yml` and `browser.yml`. The
+  new `ui/package-lock.json` joins the dependency rules (pinned, old enough, lockfile checked).
+- **Release tests.** The real-ZIP restore tests are about the ZIP and the scripts, not its
+  contents; whether the ZIP's file manifest needs a line for the new assets is to be checked when
+  the task is added.
+- **Developer loop.** Two modes. (a) `vite` on :5173 with a proxy of `/api`, the pages and the
+  assets to Play on :9000: hot reload, and the cookie works because the browser sees one origin.
+  (b) `vite build --watch` into `public/ui/` with `sbt ~run`: no proxy, slower refresh. The
+  `react` branch's `vite.config.ts` and `DEV.md` already describe (a).
 
-### 3.3 Licence and supply chain
+### 3.3 Authentication, CSRF, texts, CSP, tests, API
 
-- Both are MIT. Neither has runtime dependencies, but React and react-dom come with them (about
-  69 KB gzipped for a trivial app, measured), and a build chain (Vite or esbuild, TypeScript,
-  Vitest) with its npm tree. A pinned, reviewed, lockfile-checked npm tree in the production
-  build is new for this repository (dependencies rules, sections 1 and 6, as #129 cites).
-- Both libraries have one maintainer each. Unite Gallery is vendored and patched by us because
-  it is unmaintained (`docs/vendor/unitegallery.md`); an active single-author library is less
-  risky than that, but is a dependency to watch.
+- **Authentication.** The session cookie, same origin, through `ApiAuth.caller`; a screen never
+  holds a token. GraphQL (PR #135) mounts at `POST /api/graphql` behind the same caller, with the
+  same Host check and CSRF rule: a session mutation needs the `Csrf-Token` header; a Bearer
+  request without a session cookie does not. Token callers are query-only there.
+- **CSRF.** The Twirl page renders `data-csrf-token` on the mount element, as the gallery does for
+  votes; the client wrapper adds it to every write.
+- **Texts (i18n).** Messages stay in `conf/messages.{en,fr,ru,uk}`. The Twirl page puts the
+  keys the screen needs, translated in the user's language, into a `data-` attribute or an inline
+  JSON (a Scala list of keys per screen): no build-time export, no second source of truth, no
+  client language detection. A test checks that every key of a screen exists in all four files.
+  Dates and numbers use the browser's `Intl` with the page's `lang`.
+- **CSP.** `script-src 'self'` plus two hashes: a bundle served from this host needs no change.
+  `style-src` keeps `'unsafe-inline'` until #129's step G-7 (a Report-Only release, then
+  removal). Libraries that inject styles as `<style>` elements (**Emotion, hence MUI**) or as
+  style attributes in server HTML fight that step; styles set through the CSSOM (React's `style`
+  prop) are allowed. So: no MUI; use Bootstrap 5's classes already on the page, or CSS modules,
+  and a headless table helper (for example TanStack Table) where a grid is needed. YARL and
+  react-photo-album set sizes through the `style` prop and CSS variables; not verified under a
+  strict policy. `connect-src 'self'` already allows the same-origin API.
+- **Tests.** Vitest and React Testing Library for components (as the April branches), a `uiTest`
+  task beside `jsTest` in `Test / test`, and the existing Playwright suite (`browser-test/`, three
+  engines) for one flow per screen against the real app. Jest stays for the plain scripts. Two unit
+  runners (Jest, Vitest) is a cost; Jest can run TypeScript, so one runner is worth a short check.
+- **API.** Reads and later writes go through PR #135's endpoint. Until its first PR lands, a
+  screen can use REST `/api` (contests exist; rounds and the rest do not). Plain `fetch` with a
+  typed query string is enough; a client library (urql, Apollo) is optional and adds weight.
 
-### 3.4 Bundle sizes (scratch build with esbuild, minified, production React)
+## 4. First screen: recommendation
+
+| Screen | Users | Risk | Data source | Verdict |
+|---|---|---|---|---|
+| **Root contests grid** (the `react` branch) | root only | very low | REST `/api/contests` now, GraphQL later | **First**: exercises every integration point; nobody else sees it |
+| Round statistics (read-only) | organizers, admins | low | GraphQL `roundStat` (read-only schema, PR A of #135) | Second; where GraphQL's shape pays off |
+| Users page with filters | admins | medium | GraphQL users and the email rule | Later |
+| A juror screen (gallery, large view) | jurors | high | votes, own-votes rules, CSRF, keyboard | Last |
+
+The grid is a modest screen: useful for root, but its value is proving the platform. If the
+maintainer wants a first screen that more people use, round statistics is better, after the
+read-only GraphQL PR.
+
+**Base.** Take from `react` and `react-custom-filter`: the `ui/` layout, `vite.config.ts` with the
+dev proxy, `tsconfig.json`, the Vitest setup and test style, the contests API wrapper. Do not take
+MUI and MUI X (CSP, size, a look unlike the rest of the tool), nor `public/ui` and the `/ui`
+routes (replaced by a Twirl page). Close the parked branches when the first screen's PR merges.
+
+## 5. The gallery under adoption
+
+### 5.1 The libraries
+
+**react-photo-album 3.6.2** (MIT, 2026-10-17; 73 npm versions; one author; 1 open issue). Rows,
+Columns and Masonry layouts; per-photo `srcSet` arrays and a `sizes` prop; render props for the
+container, link, image or whole photo; an `InfiniteScroll` wrapper (`fetch` returns photos or
+`null`); no windowing. **Its server output is empty markup by default**; its prerendering
+options (`defaultContainerWidth`, a skeleton, an `SSR` component with CSS container queries, a
+Server Component) assume a React server render. Rows are justified to the container width,
+measured in script.
+
+**yet-another-react-lightbox 3.33.1** (MIT, 2026-11-14; 157 npm versions; one author; 1 open
+issue). Plugins: Captions, Counter, Download, Fullscreen, Inline, Rotate, Share, Slideshow,
+Thumbnails, Video, Zoom. A client component in a portal; `render` slots for header, footer and
+controls; controlled `index` and `on.view`. The documentation read does not describe rebinding
+keys or a focus trap, and `controller.aria` is off by default: accessibility needs a hands-on check.
+
+Both have peer React 18 or 19, no runtime dependencies, and active maintenance.
+
+### 5.2 Re-evaluating A, B and C with a UI developer
+
+The earlier verdict against B (a full React gallery now) rested on three costs: a first
+production npm build, a JSON tile API that re-applies the own-votes rules, and no-JS. The UI
+developer and the platform of section 3 remove the first (shared by every screen) and shrink the
+second (the GraphQL work builds the visibility rules for a round's votes anyway, section 5.3). They
+do not remove the third, nor the rewrite of the tile, stars, by-rate and criteria rules.
+
+| Option | What it is | Effort | Now |
+|---|---|---|---|
+| **A** | #129 as decided: Twirl tiles, CSS rows, vanilla JS, Pages and Continuous | 28-33 days (decided) | **Build now.** Independent of the platform; no-JS works |
+| **B** | A React gallery with both libraries, instead of #129's front end | 45-60 days in all (#129's server half, 15-18 days, kept) | **Not now.** Reconsider after two shipped screens, with an answer on prerendering (section 7) |
+| **C1** | A, plus a YARL lightbox island (reopens Q2) | A plus 8-12 days (the platform part, 2-3 days of it, now exists) | Only if jurors want a quick preview |
+| **C2** | A, with react-photo-album only for the rows | no net gain | Not worth it: React for about 30 lines of CSS |
+
+The platform and first screen can run in parallel with #129, in different files (`ui/`, a new
+Twirl page and controller, against #129's gallery partial, `tile-votes.js`, the cache and the
+account setting). They meet in the layout, the CSP and `build.sbt`.
+
+### 5.3 Does #129's server half serve a React gallery? Yes
+
+| #129 server element | How it serves a React gallery |
+|---|---|
+| Keyset continuation (cursor in the URL: `after`, `k` values) | The same cursor goes in a GraphQL `images(roundId, after, ...)` page or a REST chunk and the client passes it back. The reason (votes change the filter) is front-end independent |
+| Own-votes rules (`viewerRounds`, `mayViewRound`, `viewAs`, `canViewOrgInfo`, 404 for non-jurors) | Reused by the GraphQL resolvers (PR #135 section 4.5 says so). A JSON tile API then has the same decision point as the HTML one, which removes most of the "second place to get a rule wrong" risk |
+| Thumbnail size schemes, 960/1280 prefetch, proxy and cache | The client gets a `srcset` or a list of widths per image; react-photo-album's `srcSet` array is the same data. Commons rate limits are the server's concern either way |
+| Window-size cookie and `?n` | The server still sizes pages and chunks; a React client may also send `n`. Page links keep `n` |
+| Account setting Pages vs Continuous (CSRF POST) | A preference, independent of the front end |
+| `GalleryService` and the vote endpoint with CSRF | Unchanged; a React tile posts to the same path with `Csrf-Token` |
+
+So #129 is not wasted if the gallery later goes React: **its server half, the larger and riskier
+half, is reusable almost completely.**
+
+### 5.4 What would change in #129 if the gallery later goes React
+
+| #129 section | Change |
+|---|---|
+| Goals 1, 4, 6, 7; 3.1 tile partial; 3.2 CSS rows; 3.3 lazy loading | The tile partial becomes a component (and stays a Twirl version if prerendering is chosen, section 7); rows by react-photo-album or kept in CSS |
+| 3.6 chunks | HTML sections become JSON or GraphQL pages; the cursor and `n` logic stay |
+| 3.7 position and mark (Q26) | The scroll and mark wait for React to render the tile; `file-anchor.js`'s rules move into the component |
+| 3.8 accessibility, 3.9 votes (`tile-votes.js`) | Rewritten as components; the roles, button names and focus rules stay as the specification |
+| 3.10 CSP | Same step G-7; the bundle adds script, not inline style |
+| 4 server and API; 5 steps G-1..G-5; 6 tests | New JSON endpoint steps; the Playwright specs keep their intent and change selectors |
+| 3.4, 3.5, proxy, cache, prefetch, account setting, keyset logic | None |
+
+### 5.5 Gallery comparison, requirement by requirement
+
+A = #129. B = a React gallery. C1 = A plus a YARL island.
+
+| # | Requirement | A | B | C1 |
+|---|---|---|---|---|
+| 1 | Binary voting in the grid | Server-rendered buttons, one delegated handler | React component, same endpoint | As A |
+| 2 | Stars, criteria, chips, rank, deleted badge | Twirl partial options; raty | Rewrite of `galleryByRate.scala.html` and `showRateGalery` in JSX | As A |
+| 3 | Voting in a preview | None (Q2): the large view votes | A YARL footer slot is feasible | A footer vote bar, same endpoint |
+| 4 | Keyboard voting (by paths; `LargeViewControllerSpec`) | Unchanged in the large view | A key layer on the grid is new; YARL owns arrows and Escape | A second key map to keep in step |
+| 5 | Own-votes rules | Decided while rendering | Decided in the resolvers (reused from `GalleryService`) | As A |
+| 6 | CSRF | `Csrf-Token` from `data-csrf-token` | Same | Same |
+| 7 | Deep links, Back, `file-anchor` and mark (Q26) | Tile is a link; the script scrolls if out of view | The target tile may not be rendered yet: the case becomes the normal one | The lightbox index must map to `#file-<pageId>` on close |
+| 8 | Pages vs Continuous, `?n`, keyset | HTML chunks | JSON chunks, same cursor | As A |
+| 9 | 38k-image rounds, memory | Cap measured (G-0) | React state per tile, JS layout over all loaded tiles, no windowing in either library: a lower cap, unmeasured | As A |
+| 10 | Thumbnail sizes, proxy, Commons rate limits | Server prefetch | Same server work | Same |
+| 11 | Accessibility | Real links and buttons, focus rules | Real elements, but empty server output until script runs | YARL's focus handling needs a check |
+| 12 | No-JS | The pager works | Lost, or a prerender (section 7) | As A |
+| 13 | bfcache and history | Relies on neither | Client history is harder to reason about | As A |
+| 14 | i18n ru/uk/fr | `messages.*` | The page's key list (section 3.3) | YARL's `labels` prop in three languages |
+| 15 | CSP | Step G-7 | CSSOM styles allowed; verify the libraries | Verify under Report-Only |
+| 16 | Tests | Jest and Playwright | Vitest plus Playwright | A plus a few specs |
+| 17 | Build | No npm build for app code | The platform of section 3.2 | The same |
+
+## 6. Libraries: licence, size, maintenance
+
+### 6.1 Licence and supply chain
+
+Both MIT, no runtime dependencies. React and react-dom come with them, and a Vite and TypeScript
+tree; the dependency rules apply to `ui/`. Each library has a single maintainer, with releases in
+the last month; Unite Gallery, which we vendor and patch, has none.
+
+### 6.2 Bundle sizes (scratch build, esbuild, minified, production React)
 
 | Bundle | Minified | Gzipped |
 |---|---|---|
@@ -151,129 +272,56 @@ What they show for this question:
 | plus react-photo-album Rows | 231 KB | 72 KB |
 | plus YARL core | 253 KB | 80 KB |
 | plus YARL with Zoom, Captions, Thumbnails, Fullscreen | 278 KB | 88 KB |
-| For comparison: today's `unitegallery.js` (vendored, patched) | 588 KB | 122 KB |
+| Today's `unitegallery.js` | 588 KB | 122 KB |
 
-A React gallery with both libraries would be about 90 KB gzipped, smaller than the Unite Gallery
-we ship today; but #129 removes Unite Gallery for CSS and a few hundred lines of vanilla JS,
-which is smaller still. Size is not a reason for or against React here (a login-only tool).
+The React runtime (69 KB gzipped) is paid once and cached across screens if every entry shares
+one vendor chunk. Size decides nothing for a login-only tool.
 
-## 4. Requirement-by-requirement comparison
+## 7. Prerendering
 
-A = #129 as planned. B = full React gallery. C1 = A plus a YARL lightbox island.
+It matters for the **gallery** (the no-JS pager and the first paint of a page of tiles) and
+little else. Admin screens are behind a login, small, and fine with a placeholder followed by data.
 
-| # | Requirement | A: #129 | B: React gallery | C1: A plus YARL island |
-|---|---|---|---|---|
-| 1 | **Binary voting in the grid** | Server-rendered thumbs buttons, one delegated click handler in `tile-votes.js`; Enter/Space free with `<button>` | Re-implement as a React component with per-tile state; same `selectWS` endpoint | As A |
-| 2 | **Rated 1-N stars, criteria averages, chips, rank, deleted badge** | A Twirl partial with tile options; raty stays for stars | Re-implement all of `galleryByRate.scala.html` (about 150 lines of Twirl with rules) and `showRateGalery` in JSX; raty replaced or wrapped | As A |
-| 3 | **Voting inside a preview** | No lightbox (Q2): the large view votes | A YARL footer slot with the same components is feasible | A vote bar in a footer slot, same endpoint; keys must be added (row 4) |
-| 4 | **Keyboard voting** (by paths, never absolute URLs; `LargeViewControllerSpec` guards it) | Unchanged: `large-keys.js` in the large view; tiles are links, Enter opens | A React-managed key layer on the grid is new; in the lightbox YARL owns arrows and Escape and the vote keys sit beside them | The large view keeps its keys; the lightbox needs its own, duplicating `large-keys.js` |
-| 5 | **Own-votes rules** (`viewerRounds`, `mayViewRound`, `viewAs`, 404 for non-jurors) | The server decides what each tile shows; unchanged | The server rules are unchanged, but a JSON tile API re-exposes them per field: a second place to get a security rule wrong (rendered HTML cannot leak a field that is not rendered) | Slides read the tile's attributes: no new rules |
-| 6 | **CSRF** | `Csrf-Token` header from `data-csrf-token` | Same header; the token must reach the bundle (as `data-csrf-token`) | Same |
-| 7 | **Large-view deep links, Back, file-anchor + mark (Q26)** | The tile is a real link; `atUrl` returns to the page holding the file; `file-anchor.js` scrolls only if out of view; the mark is a class and a label | Links survive (`render.link`), but scroll and mark must wait for React to render the tile (#129 section 3.7's "tile not yet rendered" case becomes the normal case), and the Back page needs the same JSON slice | As A; the lightbox adds a second notion of position (slide index) that must map to `#file-<pageId>` on close, or Back differs |
-| 8 | **Pages vs Continuous (Q16-Q20), `?n`, keyset cursor** | HTML chunks from the server, cursor in the URL | `InfiniteScroll.fetch` returns photos; the cursor logic is the same but the response is JSON; Pages mode still needs the server path | As A |
-| 9 | **38k-image rounds, memory** | Cap measured (G-0), placeholder 480, server-rendered sections | Layout recomputed in JS over all loaded photos on resize; React state per loaded tile; no windowing in either library; heavier per tile than plain DOM, so the cap would probably be lower (unmeasured) | As A (the lightbox holds only the visible slides) |
-| 10 | **Thumbnail sizes, our proxy, Commons rate limits** | 960/1280 prefetch at distribution; proxy `srcset` (R6) | The same server work; the `srcSet` array is the library's form of the same `srcset`: no advantage | Same; a slide's `srcSet` can use the 1280 file |
-| 11 | **Accessibility** | Real links and buttons, focus-ring rules (section 3.8), `role=status`, section labels | Real elements too, but the empty server output hides the gallery from assistive tech until script runs; focus after chunk insertion and "footer reachable" are ours to port | YARL's focus handling is undocumented (trap, return of focus): needs a hands-on check |
-| 12 | **No-JS fallback** | The pager works; rows in CSS | **Lost**, or a second server-rendered path kept in parallel (against "one gallery", goal 1) | As A |
-| 13 | **bfcache and history** | Relies on neither (R7) | React-managed history is harder to reason about; no gain | As A |
-| 14 | **i18n ru/uk/fr** | Twirl with `messages.*`; no new mechanism | The client needs the strings: a JSON bundle per language or `data-*` attributes; the message files stay the source | The lightbox's own labels (close, next, zoom) default to English and need its `labels` prop in three languages |
-| 15 | **CSP** | Removing `style-src 'unsafe-inline'` is step G-7 once Unite Gallery is gone | React sets styles through the CSSOM (allowed), but any server-rendered `style` attribute would still be blocked; not verified for either library. Our own bundle is same-origin and needs no hash | YARL's styling under Report-Only is to be verified |
-| 16 | **Tests** | Jest (jsdom) for the vanilla modules, Playwright for voting, Back and paging in three engines (`browser-test/`) | Jest plus Vitest or React Testing Library (the April branches show the setup): two stacks; the Playwright DOM contract changes | A plus a few Playwright specs |
-| 17 | **Build pipeline** | No npm build of application code today: `jsTest` runs Jest on plain files in `public/javascripts`, `browser-test` runs Playwright; scripts are served as they are | Needs a bundler (Vite or esbuild) producing `public/` assets: the April spec's pattern or sbt-web; Node in CI, packaging and every developer's machine; Windows `npm.cmd` quirks (`jsTest` already handles them) | The same bundler, for one component |
-| 18 | **Effort and risk** | 28-33 days; decided | 45-60 days plus A's server half; high | A plus 8-12 days; medium |
+| Approach | What it is | Fit |
+|---|---|---|
+| **Twirl no-JS grid, then React takes over** | The server renders the tiles as plain HTML (the #129 partial); React replaces or hydrates the container on load | Best fit: the no-JS path and first paint come from the partial #129 builds anyway, and React is an enhancement. Cost: two renderers for one tile, kept in step by tests |
+| **In-JVM GraalJS** | Run the bundle's server entry (`renderToString`) in a GraalJS context inside Play (the polyglot API and the JS language on a standard JDK), with a pool of contexts because a context is not thread-safe | Feasible, unmeasured. Open points: on a stock JDK GraalJS usually runs in interpreter mode without Graal's compiler, so rendering hundreds of tiles may be much slower than in Node; each pooled context holds the bundle in memory; production runs JDK 17 (`docs/deployment.md`), whose support and flags must be checked; renders must run on the blocking pool; hydration needs byte-identical markup |
+| **A Node render service** | A second process, `renderToString` over HTTP | Not now: a new runtime to deploy, monitor and patch |
+| **Build-time prerender** | Render at build | **Not applicable**: tiles depend on the user, the round and their votes |
+| **react-photo-album's own SSR options** | Skeleton, `defaultContainerWidth`, container-query SSR component, Server Component | All need a React server render (one of the above) |
 
-## 5. Options
+No spike now. If the maintainer chooses a React gallery, a one-day spike should first measure a
+GraalJS render of 24 and 80 tiles on the production JDK, cold and warm, and the memory of a pool
+of 2-4 contexts.
 
-### Option A: #129 as planned (recommended)
+## 8. Limits of this investigation
 
-Own tiles, CSS rows, server-rendered Twirl, Pages and Continuous, vanilla JS. No change from the
-accepted plan. 28-33 days; no new toolchain; no-JS works; one DOM contract for the existing
-Playwright specs.
+- Effort figures for B, C and the platform are estimates; A's is the plan's own.
+- YARL's keyboard, focus and ARIA behaviour was not tested; neither library was checked under
+  `style-src` without `'unsafe-inline'`.
+- GraalJS's cost and the production JDK's behaviour are unmeasured.
+- The GraphQL plan is a plan (draft PR #135): the read-only schema, the `/api/graphql` action and
+  the query-only rule for tokens do not exist yet, so the first screen starts on REST.
+- No gallery prototype was built.
 
-### Option B: a full React gallery with both libraries
+## 9. Open questions for the maintainer
 
-What it would be: a Vite bundle mounted into a thin Twirl page; a JSON API for tiles and chunks
-(with the own-votes rules re-applied per field); react-photo-album Rows plus `InfiniteScroll`
-for the grid; YARL for the preview; React components for votes, stars, criteria and chips; i18n
-through a JSON bundle.
-
-What it buys: a ready layout engine and lightbox, the zoom plugin, a component model for tiles.
-
-What it costs, beyond section 4:
-
-- The **JSON tile API** is a new security surface; today the same decisions are made while
-  rendering HTML.
-- **No-JS is lost** (#129 goal 4), or both renderers are kept.
-- #129's work on exact sizing (ratio classes, caption-aware width, the 247 px cap, a short last
-  row, Q14 "no view keeps a different look") would be redone against a library whose row
-  algorithm differs.
-- The first production React build: Node in release packaging (`packageDebSystemd` and the
-  others), the release deploy-test rule, dependency review, and an SSR decision (none, or a Node
-  service).
-- Estimate 45-60 days. The server half of #129 (about 15-18 days: keyset, size schemes,
-  prefetch, cookie and account setting, cleanup) is needed anyway, so the most B saves is the
-  front-end half of A, and B's front end is larger, not smaller.
-
-Verdict: higher cost and risk, and it gives up a decided requirement. Not recommended.
-
-### Option C: hybrid
-
-- **C1. YARL as an island on the server-rendered page, after A.** A small bundle (React, YARL
-  core and Zoom, about 85 KB gzipped) loaded only on the gallery pages; the tiles stay Twirl
-  links; a click or a key opens the lightbox over the page (progressive enhancement: without
-  script, or with Ctrl-click, the link goes to the large view). Slides come from tile `data-*`
-  attributes (the 960/1280 `srcset`, title, large-view URL, vote state). Closing sets
-  `#file-<pageId>` through the same `atUrl` logic so Back and the mark (Q26) behave the same. A
-  vote bar in the footer slot posts to the same endpoint with the CSRF header. This **reopens
-  Q2** (decided: no lightbox; voting happens in the large view where comments and details are).
-  Effort 8-12 days after A, including the one-component bundler setup (2-3 days), keys, i18n
-  labels, an accessibility check and Playwright specs in three engines. Risk: two competing
-  "open" paths and two key maps for the same action. Worth it only if jurors ask for a quick
-  look without leaving the page; the large view is one click away and already has voting,
-  comments and the criteria.
-- **C2. react-photo-album for layout only.** Justified rows from the file's aspect ratio are what
-  #129 already does in about 30 lines of CSS (flex-wrap and ratio classes), with no script and
-  no layout shift; the library measures the container in script, so tiles reflow after load, and
-  its server output is empty. It adds React to the page for no gain. Not recommended.
-
-## 6. What of #129 would change
-
-| Option | Sections of #129 that change |
-|---|---|
-| A | None |
-| B | Goals 1, 4, 6, 7; sections 3.1 (tile partial), 3.2 (rows), 3.3 (lazy loading), 3.6 (chunks become JSON), 3.7, 3.8, 3.9 (votes), 3.10 (CSP), 3.11, 4 (a JSON API), 5 (steps G-1 to G-5 replaced), 6 (test plan), R1-R3, R7, R12. Sections 3.4, 3.5, the proxy, cache, prefetch, account setting and keyset logic stay |
-| C1 | The non-goal "No lightbox or quick preview" (Q2), section 3.8 (keys, focus), a new step after G-7 ("G-8: lightbox island"), and added CSP and test-plan items. Everything else stays |
-| C2 | Section 3.2 and the CSS rows (step G-1) |
-
-## 7. Limits of this investigation
-
-- The effort figures for B and C are estimates from reading the code and the plan, not
-  measurements; their error is wider than A's.
-- YARL's keyboard, focus and ARIA behaviour is not described in the documentation pages read
-  here, and no browser test was run: accessibility is unverified.
-- Whether `style-src` without `'unsafe-inline'` works with either library was not checked.
-- No gallery prototype was built; only bundle sizes were measured, with trivial apps.
-
-## 8. Open questions for the maintainer
-
-1. **Confirm A.** Is the answer to "investigate a React alternative" that #129 stays as decided
-   and nothing here changes it?
-2. **Quick preview.** Do jurors or organizers want a preview over the gallery at all? Q2 said no
-   on 2026-11-19 because the large view votes. Has anything changed (for example mobile jurors
-   asking for zoom)? If yes, C1 is a follow-up after #129; if no, drop it.
-3. **If C1: scope.** Zoom only (the cheapest), or zoom plus voting in the footer? Voting in a
-   second place doubles the keyboard map; zoom only keeps the large view as the one place to vote.
-4. **If C1: a first production npm build.** Is a bundler (Vite or esbuild) in the release build
-   acceptable for one component, following the April `ui/` pattern (build, copy to `public/`, a
-   test task beside `jsTest`)? Or must application code stay plain scripts?
-5. **The April React grid.** `react` and `react-custom-filter` are a contests admin grid blocked
-   in April on an API that was then unserved and unauthenticated; master now serves `/api` with token or session authentication (`docs/api.md`), so they could be revived rather than closed. Revive, keep parked, or close as superseded? Closing removes
-   the only `ui/` precedent.
-6. **No-JS.** Is "the pager works without script" a firm requirement (it rules out B), or a
-   nicety? The decision on B turns on this.
-7. **An accessibility spike on YARL.** Should about an hour of hands-on checking (focus trap,
-   return of focus, a screen reader, Escape and arrows alongside our keys) be done now, so that
-   C1 is a known quantity later, or only if Q2 is reopened?
-8. **Server-side rendering.** Is any Node process in production (for React SSR) acceptable? If
-   not, react-photo-album's SSR options are out for good, which is the main reason it does not
-   fit.
+1. **Integration shape.** Islands on Twirl pages (recommended), or an SPA under `/ui` as the
+   `react` branch did? Islands keep routes and authorization in Play.
+2. **First screen.** The root contests grid (low risk, small audience, can start on REST), or
+   wait for the GraphQL read-only PR and start with round statistics for organizers?
+3. **UI kit.** No MUI; Bootstrap 5 classes with CSS modules and a headless table, because of
+   CSP step G-7 and the look. Does the UI developer agree, or is a component kit a requirement
+   (then the CSP plan changes)?
+4. **Build in the release.** Is a Vite step in `sbt dist` and `sbt run` acceptable, with Node
+   needed on developer and CI machines only?
+5. **Texts.** Keys rendered by the server into the page (recommended) or a JSON export per
+   language? The first keeps one source of truth.
+6. **Test runner.** Vitest for `ui/` beside Jest, or one runner (Jest with TypeScript)?
+7. **The gallery.** Confirm: build #129 now, revisit React for the gallery after two shipped
+   screens. If the gallery should go React earlier, is no-JS a firm requirement (then the
+   prerender spike of section 7 comes first)?
+8. **Lightbox.** Is a quick preview over the gallery wanted at all (Q2 said no)? If so, C1 is a
+   small follow-up now that the platform exists.
+9. **The parked branches.** Close `react`, `react-custom-filter` and `104-port-gallery-to-react`
+   when the first screen's PR merges, keeping only the skeleton pieces named in section 4?
