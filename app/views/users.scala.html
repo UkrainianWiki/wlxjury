@@ -40,7 +40,7 @@
 }
 
     @mainAdmin("users", adminUser, adminUser.getId, contestId = contestOpt.flatMap(_.id), head = pageScripts,
-            filters = usersBar.fold(play.twirl.api.HtmlFormat.empty)(filterMenus), reappearingBar = true) {
+            filters = usersBar.fold(play.twirl.api.HtmlFormat.empty)(filterMenus), stickyBar = true) {
         <div class="row">
 
             @* the page's title: the contest's name, or for all the contests the page's *@

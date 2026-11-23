@@ -28,7 +28,7 @@
 
 @* the category fields' Commons suggestions (category-suggest.js) are Tom Select controls *@
 @mainAdmin("contests", user, user.getId, head = snippets.tomSelectScripts(),
-        filters = bar.fold(play.twirl.api.HtmlFormat.empty)(filterMenus), orders = bar.fold(play.twirl.api.HtmlFormat.empty)(orderMenu), reappearingBar = true) {
+        filters = bar.fold(play.twirl.api.HtmlFormat.empty)(filterMenus), orders = bar.fold(play.twirl.api.HtmlFormat.empty)(orderMenu), stickyBar = true) {
     @* the page's title, shown; then its two sections: the import, the list *@
     <h1 class="h3">@Messages("contests")</h1>
     <div class="row" xmlns="http://www.w3.org/1999/html">
