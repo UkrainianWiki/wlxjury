@@ -2,7 +2,12 @@
 
 Status: verification done, implementation not started. Date: 2026-11-24.
 
-## 1. What the branches are
+## 1. Purpose and what the branches are
+
+Purpose (from the maintainer): a UI developer wants to build a React UI, and GraphQL is the cheap way to give
+them an API without designing and implementing REST endpoints one by one. Scope below is judged by what that
+developer needs to start building screens soon and safely (section 6 has the first slice).
+
 
 - `graphql-sangria` (98222f2a) is a port of an archived branch (19 commits, written 2026-04-21 to 04-25)
   stacked on a port of the `react` branch (21 commits: a Vite/React contests grid under `ui/`, served at
@@ -64,9 +69,8 @@ Port onto a fresh branch from master, taking only what is worth keeping; do not 
 - The port is: a new `app/graphql/` with the Sangria schema (copy the types for Contest, Round, Image, Comment,
   Monument, stats), a new context, a Play action, resolvers over the existing services; no `ui/`, no JWT, no
   `login`, no Pekko route, no Caliban.
-- Effort (focused agent work including review): read-only schema, action, auth and negative tests 2-3 days;
-  limits, timeouts, logging and docs half a day; mutations (separate PR, after Q3) 2 days; subscriptions 1-2 days
-  if wanted. The local merge branch `feature/graphql-sangria-update` is not pushed because it does not compile.
+- Effort: see section 6 (about 5-6 days to the first usable slice for the UI developer). The local merge branch
+  `feature/graphql-sangria-update` is not pushed because it does not compile.
 
 ## 4. Serving design (never unauthenticated)
 
@@ -144,27 +148,73 @@ Negative authorization (each must also log one `security.authz` WARN carrying th
 
 Review: the normal review and fix cycle; no template changes, so the large-view specs are not affected.
 
-## 6. Order of work
+## 6. UI developer workflow and first slice
 
-1. This plan merged, Q1-Q3 answered.
-2. PR A: read-only schema (contests, rounds, round stats, images, the viewer's votes, monuments), action, auth,
-   limits, denial logging, tests, a section in `docs/api.md`.
-3. PR B: comments and users queries; series fields once #119-#124 are in.
-4. PR C: mutations with write-scoped tokens and CSRF.
-5. PR D (optional): subscriptions.
+Purpose: a UI developer wants to build a React UI. GraphQL is the cheap way to give them an API without
+designing and implementing REST endpoints one by one: they ask for the fields a screen needs, and a schema
+change is a field, not a new endpoint. Scope is judged by what they need to start building screens soon, safely.
+REST stays beside it for tokens and scripts. The first client is a browser React app on the same origin, with
+the session cookie; the main write path is session plus CSRF, and tokens stay query-only.
+
+- Contract: the SDL (`conf/graphql/schema.graphql`) is the checked-in contract. A test renders the served schema
+  and compares it to the file, so a resolver change without an SDL change fails CI. The UI developer reads the
+  SDL, and a schema change is a reviewed diff of that file.
+- Types: `graphql-codegen` (typescript + typed-document-node) generates TypeScript types and typed documents from
+  the SDL and from the `.graphql` documents in `ui/`. Generated files are not committed; CI runs the codegen.
+- Client: urql (small, document cache by default, simple to read) over Apollo (larger, normalized cache that is
+  only worth it for many cross-screen updates). The screens here are lists and one voting view, so urql plus a
+  `graphcache` entry only for votes is enough. Revisit if the UI grows.
+- Dev setup: the Vite dev server proxies `/api` (and the session login pages) to a local Play app, so the
+  browser sees one origin: no CORS, the session cookie works, CSRF works as in production. The Play app runs on
+  a dev DB: the Gatling fixture DB (`data/cache/` dump, about 38k images, 20 jurors, a binary and a rated round)
+  is restored for them with one script, and the plan adds fixture sign-in accounts for a juror, an organizer and
+  an admin. No CORS is added to the app.
+- CSRF: the page that hosts the React app (a Twirl shell at `/ui`) renders the token into a meta tag
+  (`<meta name="csrf-token">`) as the large view does for `data-csrf-token`; the client sends it as the
+  `Csrf-Token` header on every mutation. Queries are POST too, but only mutations need the header (the server
+  checks the operation type; the CSRF filter stays on for the route).
+- Errors: GraphQL's standard `errors` array with `extensions.code` (`UNAUTHENTICATED`, `FORBIDDEN`,
+  `NOT_FOUND`, `BAD_INPUT`, `INTERNAL_ERROR`, `CSRF`) and `extensions.reference` for the log line; messages are
+  keys, never exception text. HTTP 401 for no session, 200 with `errors` otherwise.
+- Pagination: cursor connections (`first`, `after`, `pageInfo { endCursor hasNextPage }`, `totalCount`) with a
+  keyset cursor on the image id/rank, not offset: a 38k-image round paged by offset gets slow and unstable
+  while jurors vote and the order shifts. Page size is capped (200); the gallery asks for about 50 and the UI
+  uses infinite scroll or "load more". Offset is kept only for small lists (contests, rounds, users).
+- Explorer (GraphiQL): enabled in dev and test; in production root only, same-origin assets, no CDN. Recommendation:
+  dev and test only at first, and root-only in production later if support needs it, because every production
+  explorer is one more page to review.
+- Subscriptions: not in the first step; polling the round progress query every few seconds is enough until a
+  screen needs push.
+
+First slice (what the UI developer needs to build the juror's screens and a contest overview):
+
+1. `me` (user, current contest, role in it), `contests` the caller is in, `contest(id)` with its rounds.
+2. `round(id)` with state, rates, counts, the viewer's progress.
+3. `roundImages(roundId, filters, first, after)`: the gallery page with image fields and the viewer's own vote
+   (rate), through `viewerRounds` / `viewAs`; `image(roundId, pageId)` for the large view.
+4. Mutation `vote(roundId, pageId, rate)` for the session user, with CSRF, through the gallery's vote path.
+5. Everything above with the full authorization design (section 4) and its negative tests (section 5).
+
+Effort, with review: 3-4 days for items 1-3 plus auth, limits, denial logging, SDL test and the auth negative
+tests; 1 day for the `vote` mutation with its CSRF, juror and other-contest negative tests; 1 day for the UI
+workflow (codegen config, the `/ui` shell with the token, dev proxy, fixture sign-in, a section in
+`docs/api.md`). That is about 5-6 days to a first usable slice; the UI developer can start against the SDL after
+the first 2 days.
+
+Then, in order: PR B (comments, users, monuments, round statistics, series fields once #119-#124 are in), PR C
+(organizer and admin mutations through the services), PR D (subscriptions, only if a screen needs them).
 
 ## 7. Open questions for the maintainer
 
-- Q1. Should GraphQL replace the REST `/api` or sit beside it? Beside it (my assumption) keeps one auth path and
-  lets clients move piece by piece.
+- Q1. Answered by the maintainer: GraphQL sits beside the REST `/api`; REST stays for tokens and scripts.
 - Q2. Is the React `ui/` contests grid (from the `react` branch under this one) still wanted? The plan leaves it
   out; it would be its own topic and brings `npm` into `sbt test`.
 - Q3. Tokens can write over REST today and a read-only scope is only planned (D-1b). Agree that GraphQL tokens
   are query-only until a write scope exists, and which operations that scope should later allow?
 - Q4. Is Sangria fixed as the library? Caliban (ZIO) exists only on the old `graphql` branch and Tapir has no
   GraphQL. I recommend Sangria: no ZIO runtime, plain Futures like the rest of the app.
-- Q5. Which clients will call it (a React UI, external tools, Montage)? That decides subscriptions,
-  introspection, and whether a root-only explorer is enough.
+- Q5. Answered: the first client is a browser React UI on the same origin with the session cookie. Still open:
+  explorer in production (recommended: dev and test only for now), and whether any screen needs subscriptions.
 - Q6. Is `Vote` the right public name (the branch used `Selection`), and may emails appear in the `User` type
   for contest admins?
 - Q7. Should round creation over GraphQL exist at all, given job-based distribution (a mutation would only
