@@ -105,8 +105,9 @@ change the decision; estimate the runtime before a matrix (bench/README lists ea
 **2.2 Paired and interleaved.** A and B in one warmed JVM on the same inputs, order alternating
 (A, B, B, A per block, or AB/BA pairs), every pair's results compared for equality (B10 added
 that: a wrong count had been timed unnoticed). *Examples:* `RegionCountPairedBenchmark`,
-`RoundImageBenchmark`; `WritePathReadBenchmark` (15 interleaved pairs after 2 warm-ups) is on
-`ukwikidev/write-path-investigation` only.
+`RoundImageBenchmark`; `WritePathReadBenchmark` (15 interleaved pairs after 2 warm-ups) is kept in the
+private archive only (commit `6628fd07` on the archived write-path investigation branch): it was written
+for the schema before the round counts (V89) and the dropped single-column indexes (V100).
 
 **2.3 Same settings for both, like with like.** SQL debug logging off
 (`-Dscalikejdbc.global.loggingSQLAndTime.enabled=false`), recorded for both variants; the same
