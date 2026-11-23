@@ -61,6 +61,15 @@ class MwCommonsSourceSpec extends Specification with JuryTestHelpers {
       second("continue") === "gcmcontinue||"
     }
 
+    "refuse an illegal title before asking the API (#111)" in {
+      val bot = mockBot()
+      val refused = try { source(bot).listFiles(ImportSource.Category("Category:A{B}"), Json.obj(), 50); None }
+      catch { case e: MwException => Some(e.code) }
+      refused must beSome("invalidtitle")
+      org.mockito.Mockito.verify(bot, org.mockito.Mockito.never()).post(any[Map[String, String]])
+      success
+    }
+
     "list a page's files with the images generator" in {
       val bot = mockBot()
       bot.post(any[Map[String, String]]) returns Future.successful(lastPage)

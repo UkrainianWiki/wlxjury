@@ -48,6 +48,18 @@ class WikiTitleSpec extends Specification {
       WikiTitle.normalize("Wiki Loves Monuments 2026 in Nepal") === "Wiki Loves Monuments 2026 in Nepal"
     }
 
+    "cut the label of a link only, a bare pipe stays for isLegal to refuse" in {
+      WikiTitle.normalize("Foo|Bar") === "Foo|Bar"
+      WikiTitle.isLegal(WikiTitle.normalize("Category:Foo|Bar")) must beFalse
+    }
+
+    "drop a #fragment, of a link or a plain title" in {
+      WikiTitle.normalize("Page#Section") === "Page"
+      WikiTitle.normalize("[[Category:Foo#bar|key]]") === "Category:Foo"
+      WikiTitle.normalize("[[:Page_name#A B]]") === "Page name"
+      WikiTitle.normalize("Category:A#B").contains('#') must beFalse
+    }
+
     "turn empty and blank into empty" in {
       WikiTitle.normalize("") === ""
       WikiTitle.normalize("   \t ") === ""
@@ -65,7 +77,7 @@ class WikiTitleSpec extends Specification {
     }
 
     "refuse what MediaWiki refuses in a title" in {
-      Seq("Category:A#B", "Category:A<B", "Category:A>B", "Category:A[B", "Category:A]B", "Category:A|B",
+      Seq("Category:A#B", "Category:A|B", "Category:A<B", "Category:A>B", "Category:A[B", "Category:A]B", "Category:A|B",
         "Category:A{B", "Category:A}B", "Category:A\u0000B", "Category:" + "x" * 300)
         .map(t => WikiTitle.isLegal(t) must beFalse).reduce(_ and _)
     }

@@ -84,6 +84,7 @@ class WikiLinkSourceSpec extends PlaySpecification with PlayTestDb {
           .withSession(Secured.UserName -> admin.email)
           .withFormUrlEncodedBody("images" -> "Category:A{B}").withCSRFToken).get
         status(bad) === SEE_OTHER
+        flash(bad).get("error").exists(_.contains("not a valid Commons page or category title")) must beTrue
         contestDao.findById(contest.getId).flatMap(_.images) must beSome("Category:Foo")
       }
     }
