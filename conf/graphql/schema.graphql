@@ -1,0 +1,204 @@
+type Contest {
+  id: ID!
+  name: String!
+  year: Int!
+  country: String!
+  images: String
+  currentRound: ID
+  monumentIdTemplate: String
+  campaign: String
+  rounds: [Round!]!
+}
+
+type Round {
+  id: ID!
+  number: Int!
+  name: String
+  contestId: ID!
+  active: Boolean!
+  distribution: Int!
+  minMpx: Int
+  category: String
+  regions: String
+  mediaType: String
+  hasCriteria: Boolean!
+  jurors: [User!]!
+  images(page: Int, pageSize: Int, rate: Int, region: String): [ImageWithRating!]!
+}
+
+type User {
+  id: ID!
+  fullname: String!
+  email: String!
+  roles: [String!]!
+  contestId: ID
+  lang: String
+  wikiAccount: String
+  active: Boolean
+}
+
+type Image {
+  pageId: ID!
+  title: String!
+  url: String
+  pageUrl: String
+  width: Int!
+  height: Int!
+  monumentId: String
+  author: String
+  mime: String
+  mpx: Float        # computed: width * height / 1_000_000.0
+  isVideo: Boolean! # computed: from mime type
+}
+
+type Selection {
+  id: ID
+  pageId: ID!
+  juryId: ID!
+  roundId: ID!
+  rate: Int!
+  criteriaId: Int
+  monumentId: String
+  createdAt: String
+}
+
+type ImageWithRating {
+  image: Image!
+  selections: [Selection!]!
+  totalRate: Float!
+  rateSum: Int!
+  rank: Int
+}
+
+type Comment {
+  id: ID!
+  userId: ID!
+  username: String!
+  roundId: ID!
+  contestId: ID
+  imagePageId: ID!  # maps to domain field 'room' (DB column: room)
+  body: String!
+  createdAt: String!
+}
+
+type Monument {
+  id: ID!
+  name: String!
+  description: String
+  year: String
+  city: String
+  place: String
+  lat: String
+  lon: String
+  typ: String
+  subType: String
+  photo: String
+  contestId: ID  # was named 'contest' in domain model
+}
+
+type RoundStat {
+  roundId: ID!
+  totalImages: Int!
+  ratedImages: Int!
+  jurorStats: [JurorStat!]!
+}
+
+type JurorStat {
+  user: User!
+  rated: Int!
+  selected: Int!
+}
+
+type AuthPayload {
+  token: String!
+  user: User!
+}
+
+type ImageRatedEvent {
+  roundId: ID!
+  pageId: ID!
+  juryId: ID!
+  rate: Int!
+}
+
+type RoundProgressEvent {
+  roundId: ID!
+  ratedImages: Int!
+  totalImages: Int!
+  jurorStats: [JurorStat!]!
+}
+
+input ContestInput {
+  name: String!
+  year: Int!
+  country: String!
+  images: String
+  monumentIdTemplate: String
+  campaign: String
+}
+
+input RoundInput {
+  contestId: ID!
+  name: String
+  distribution: Int
+  minMpx: Int
+  category: String
+  regions: String
+  mediaType: String
+  hasCriteria: Boolean
+  previousRoundId: ID
+  prevSelectedBy: Int
+}
+
+input UserInput {
+  fullname: String!
+  email: String!
+  roles: [String!]!
+  contestId: ID
+  lang: String
+  wikiAccount: String
+}
+
+input RatingInput {
+  pageId: ID!
+  rate: Int!
+}
+
+type Query {
+  contests: [Contest!]!
+  contest(id: ID!): Contest
+  round(id: ID!): Round
+  rounds(contestId: ID!): [Round!]!
+  images(roundId: ID!, userId: ID, page: Int, pageSize: Int, rate: Int, region: String): [ImageWithRating!]!
+  image(pageId: ID!): Image
+  users(contestId: ID): [User!]!
+  user(id: ID!): User
+  me: User
+  comments(roundId: ID!, imagePageId: ID): [Comment!]!
+  monuments(contestId: ID!): [Monument!]!
+  monument(id: ID!): Monument
+  roundStat(roundId: ID!): RoundStat!
+}
+
+type Mutation {
+  login(email: String!, password: String!): AuthPayload!
+  createContest(input: ContestInput!): Contest!
+  updateContest(id: ID!, input: ContestInput!): Contest!
+  deleteContest(id: ID!): Boolean!
+  createRound(input: RoundInput!): Round!
+  updateRound(id: ID!, input: RoundInput!): Round!
+  setActiveRound(id: ID!): Round!
+  rateImage(roundId: ID!, pageId: ID!, rate: Int!, criteriaId: Int): Selection!
+  rateImageBulk(roundId: ID!, ratings: [RatingInput!]!): [Selection!]!
+  createUser(input: UserInput!): User!
+  updateUser(id: ID!, input: UserInput!): User!
+  resetPassword(id: ID!): Boolean!
+  addJurorsToRound(roundId: ID!, userIds: [ID!]!): Round!
+  addComment(roundId: ID!, imagePageId: ID!, body: String!): Comment!
+  setRoundImages(roundId: ID!, category: String!): Boolean!
+}
+
+type Subscription {
+  imageRated(roundId: ID!): ImageRatedEvent!
+  roundProgress(roundId: ID!): RoundProgressEvent!
+}
