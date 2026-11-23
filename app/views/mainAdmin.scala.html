@@ -19,6 +19,8 @@
    menus in the navbar's filter and order groups (the contests page's); `stickyBar`: the
    navbar stays at the window's top from 576 px wide, as main's (topbar.js), on the lists *@
 @layout(Messages(title), bodyClass = Seq(if (gallery) "gallery" else "", if (stickyBar) "wlx-topbar-sticky" else "").filter(_.nonEmpty).mkString(" ")) {
+        @* the top bar's menus kept inside a phone's window (menu-fit.js) *@
+        <script src="@routes.Assets.versioned("javascripts/menu-fit.js")"></script>
         @if(stickyBar) {
         <script src="@routes.Assets.versioned("javascripts/topbar.js")"></script>
         }

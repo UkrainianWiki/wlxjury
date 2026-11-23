@@ -39,7 +39,8 @@ object AddFromContest {
   val RoleFilters: Seq[String] = Seq(User.JURY_ROLE, "organizer", User.ADMIN_ROLE)
 
   /** The contests `actor` may add people from into `contestId`, the newest first: those they
-    * administer (an active Admin membership), root every contest; never `contestId` itself.
+    * administer (an active Admin membership of a contest not retired), root every contest not
+    * retired; never `contestId` itself, nor a retired contest (contest series plan §3.1).
     */
   def sources(actor: User, contestId: Long): Seq[ContestJury] = {
     val all = AccountSearch.administered(actor) match {
@@ -49,17 +50,19 @@ object AddFromContest {
         if (others.isEmpty) Nil
         else ContestJuryJdbc.findAllBy(scalikejdbc.sqls.in(ContestJuryJdbc.defaultAlias.id, others))
     }
-    all.filterNot(_.id.contains(contestId)).sortBy(c => (-c.year, -c.id.getOrElse(0L)))
+    all.filterNot(c => c.id.contains(contestId) || c.retired).sortBy(c => (-c.year, -c.id.getOrElse(0L)))
   }
 
   /** Whether `actor` has any contest to add people from into `contestId` (the users page's link). */
   def hasSources(actor: User, contestId: Long): Boolean =
     AccountSearch.administered(actor).forall(_.exists(_ != contestId))
 
-  /** The source contest `sourceId` if `actor` may add people from it into `contestId`. */
+  /** The source contest `sourceId` if `actor` may add people from it into `contestId`: not a
+    * retired one.
+    */
   def source(actor: User, contestId: Long, sourceId: Long): Option[ContestJury] =
     if (sourceId == contestId || !AccountSearch.administered(actor).forall(_.contains(sourceId))) None
-    else ContestJuryJdbc.findById(sourceId)
+    else ContestJuryJdbc.findById(sourceId).filterNot(_.retired)
 
   /** A member of the source as the list shows them: as the search describes the account, their
     * role in the source, and why they can't be ticked, if so (`blocked`: a message key).

@@ -76,7 +76,7 @@ class GalleryService {
       case Some(round) =>
         // only the round's own jurors learn its state: to anyone else it stays a denial
         if (!User.isRoundJuror(round.getId, user.getId)) Some(Refusal.Denied)
-        else GalleryService.jurorRoundState(round, db.scalikejdbc.RoundUser.isNotActive(round.getId, user.getId))
+        else GalleryService.jurorRoundState(round, db.scalikejdbc.RoundUser.isStopped(round.getId, user.getId))
           .orElse(Some(Refusal.Denied))
     }
   }

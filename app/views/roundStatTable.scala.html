@@ -42,6 +42,8 @@
     <tbody>
     @defining(reassignableJurors) { reassignable =>
     @for((juror, index) <- stat.jurors.zipWithIndex) {
+        @* juror.active is their round_user row's (NOT NULL since V108); None: no row (a legacy
+           round's voter), not stopped, as RoundUser.isStopped takes it *@
         <tr>
             <td> @{index + 1} </td>
             <td> @juror.fullname </td>

@@ -57,7 +57,8 @@ const SBT_COMMANDS = [
 
 function sbtCommand() {
   const launcher = process.env.SBT_LAUNCHER || (fs.existsSync(WINDOWS_LAUNCHER) ? WINDOWS_LAUNCHER : null);
-  if (launcher) return ['java', ['-Xmx1g', '-Dfile.encoding=UTF-8', '-jar', launcher, ...SBT_COMMANDS]];
+  // sbt's own JVM: 2g, as the sbt script below; with 1g a cold worktree's first compile ran out of heap
+  if (launcher) return ['java', ['-Xmx2g', '-Dfile.encoding=UTF-8', '-jar', launcher, ...SBT_COMMANDS]];
   return ['sbt', ['-J-Xmx2g', '-J-Dfile.encoding=UTF-8', ...SBT_COMMANDS]];
 }
 

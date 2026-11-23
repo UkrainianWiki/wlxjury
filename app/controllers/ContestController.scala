@@ -18,7 +18,8 @@ import scala.concurrent.Future
 class ContestController @Inject() (
     val commons: MwBot,
     cc: ControllerComponents,
-    contestService: ContestService
+    contestService: ContestService,
+    config: play.api.Configuration
 ) extends Secured(cc)
     with I18nSupport {
 
@@ -42,9 +43,10 @@ class ContestController @Inject() (
   /** The contests page, root's: the contests of the Type, Country, Year and Order menus
     * ([[ContestsFilter]]; by default those of the latest year of the contests, oldest first).
     */
-  def list(contestType: Option[String], year: Option[String], country: Option[String], order: Option[String]) =
+  def list(contestType: Option[String], year: Option[String], country: Option[String], order: Option[String],
+      series: Option[String], status: Option[String]) =
     withAuth(rolePermission(Set(User.ROOT_ROLE))) { user => implicit request =>
-      val bar = listBar(ContestsFilter.of(contestType, year, country, order))
+      val bar = listBar(ContestsFilter.of(contestType, year, country, order, series, status))
 
       Ok(
         views.html.contests(
@@ -52,15 +54,18 @@ class ContestController @Inject() (
           bar.shown,
           editContestForm,
           importContestsForm,
-          Some(bar)
+          Some(bar),
+          ContestsSeriesInfo.of(bar.shown, bar.contests, reuseSettings)
         )
       )
     }
 
+  private val reuseSettings = services.series.ContestReuse.Settings(config)
+
   /** The contests page's list and menus with this filter, the countries named in the request's language. */
   private def listBar(filter: ContestsFilter)(implicit request: RequestHeader): ContestsFilterBar =
     ContestsFilterBar(filter, f => f.addTo(routes.ContestController.list().url), contestService.findContests(),
-      request2Messages(request).lang.locale)
+      request2Messages(request).lang.locale, db.scalikejdbc.SeriesJdbc.findAll())
 
   /** Adds a contest; then the list in the new contest's year, with the type, country and order the
     * add form carried (ContestsFilter.fromForm) where the new contest is of them, so it is listed.
@@ -79,13 +84,19 @@ class ContestController @Inject() (
               bar.shown,
               formWithErrors,
               importContestsForm,
-              Some(bar)
+              Some(bar),
+              ContestsSeriesInfo.of(bar.shown, bar.contests, reuseSettings)
             )
           )
         },
         formContest => {
-          val added = contestService.createContest(formContest)
-          Redirect(ContestsFilter.afterAdd(carried, added).addTo(routes.ContestController.list().url))
+          // outside a series a duplicate name, year and country is only a warning (plan §3.1)
+          val duplicate = contestService.findContests().find(c =>
+            c.name.trim.equalsIgnoreCase(formContest.name.trim) && c.year == formContest.year &&
+              c.country.trim.equalsIgnoreCase(formContest.country.trim))
+          val added = contestService.createContest(formContest, Some(user.getId), "form")
+          val back = Redirect(ContestsFilter.afterAdd(carried, added).addTo(routes.ContestController.list().url))
+          duplicate.fold(back)(d => back.flashing("contest-duplicate" -> d.getId.toString))
         }
       )
   }
@@ -102,13 +113,14 @@ class ContestController @Inject() (
               bar.shown,
               editContestForm,
               formWithErrors,
-              Some(bar)
+              Some(bar),
+              ContestsSeriesInfo.of(bar.shown, bar.contests, reuseSettings)
             )
           )
         },
         formContest => {
           // the imported contests' year if they share one, else all years, so they are listed
-          val imported = contestService.importContests(formContest)
+          val imported = contestService.importContests(formContest, Some(user.getId))
           Redirect(ContestsFilter.afterImport(imported).addTo(routes.ContestController.list().url))
         }
       )

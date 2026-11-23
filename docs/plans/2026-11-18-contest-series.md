@@ -1,7 +1,10 @@
 # Contest series: adminship across years, and splitting contests reused across years (plan, 2026-11-18)
 
-**Status:** plan, no code. The first batch, CA8 and the second batch are decided (2026-11-18).
-Only the third batch (CA9–CA13) remains open, asked after Q0–Q4 and the CY-0 report. Revised
+**Status:** CY-1 built on `stack/209-series-cy1` (V109; 2026-11-20); the rest is plan. The first
+batch, CA8 and the second batch are decided (2026-11-18). **Refined by the maintainer on
+2026-11-20:** a national contest may host rounds of several other countries (R4, §4.1); CY-1's
+inline reuse check reads every round's signals for it (§3.2), and CY-4 is now likely (§4.7, §7).
+Only the third batch (CA9–CA13, and CA23 from 2026-11-20) remains open; CA24 was decided on 2026-11-20, asked after Q0–Q4 and the CY-0 report. Revised
 after the final review of 348407ca. **CA20 reworked by the maintainer later on 2026-11-18:** one
 start year per grant replaces the fixed window. **CA17 re-decided and CA18 dropped the same day:**
 the start year is the only rule; the grant date no longer matters.
@@ -12,6 +15,14 @@ adminship after each PR, then the Nepal admin (§7, Pilot).
   derived scopes.
 - **Reviewed:** an independent review, a follow-up review, then a review of the series rework
   (a6ab6f82). The security rules those reviews set are kept here, re-expressed for series admins.
+
+**Decided by the maintainer, 2026-11-20:**
+
+- **CA24: types scalawiki doesn't know.** When scalawiki doesn't know a contest's type, its type
+  code is the word after "Wiki Loves" in the contest's name, in lower case (`folklore`, `fashion`,
+  `science`); no migration (`series.contest_type` is VARCHAR(32)). The proposals then group such
+  contests into their own series ("Wiki Loves Folklore in Nepal"). scalawiki may learn these types
+  later; their codes would stay the same words. Built in CY-1.
 
 **Decided by the maintainer, 2026-11-18:**
 
@@ -90,7 +101,7 @@ adminship after each PR, then the Nepal admin (§7, Pilot).
 The first batch (CA1, CA2, CA4, CA6, CA14, CA15, CA16, CA19), CA8 and the second batch (CA3,
 CA17, CA18, CA20, CA21, CA22) are decided; CA20 was reworked the same day (one start year per
 grant), CA16 reconciled with it, CA17 re-decided (reach from the start year on) and CA18
-dropped. **Only the third batch (CA9–CA13) remains open,** asked one by one after Q0–Q4 and the
+dropped. **Only the third batch (CA9–CA13, with CA23 added 2026-11-20) remains open,** (CA24 decided 2026-11-20) asked one by one after Q0–Q4 and the
 CY-0 report.
 
 The maintainer asked on 2026-11-18:
@@ -105,7 +116,7 @@ The maintainer asked on 2026-11-18:
 - **Where the admin worked:** contest 466 on jury.wikilovesearth.org.
   - 466 is an old WLE contest that already held WLE files from Armenia, Sri Lanka, Bhutan and
     other countries. "About 2020 files" in the investigation is a count of files.
-  - 466's name, year and country can't be read without the DB.
+  - 466 is Wiki Loves Earth 2020, Nepal (the production copy, read 2026-11-20; its 48 rounds in §4.7).
 - **Its earlier rounds:**
   - The investigation named 731, 1597, 1899 and 1900.
   - The access logs of 2026-11-04 to 11-18 show 731, 1597 and 1899.
@@ -152,7 +163,8 @@ The maintainer asked on 2026-11-18:
   - H1, H2, H8 and H21 (D-1c);
   - DG10 and DG11, decided;
   - D-1a's `ContestHealth`;
-  - D-1b's read-only token, which reserves **V108**;
+  - D-1b's read-only token, which takes the next free number at its merge (V108 went to the
+    quick fixes' NOT NULL `round_user.active`, V109 to CY-1's `Series`, so V110 now);
   - its §8, "Admins can't create contests", is this plan.
 
 ## 1. Prior work and terminology
@@ -308,7 +320,7 @@ The maintainer asked on 2026-11-18:
 |---|---|
 | `id` | |
 | `name` | "Wiki Loves Monuments in Nepal" |
-| `contest_type` | a scalawiki `ContestType` code, or NULL |
+| `contest_type` | a scalawiki `ContestType` code (`wlm`), or for a type scalawiki doesn't know the word after "Wiki Loves" in lower case (`folklore`; CA24), or NULL (any type). VARCHAR(32), not an enum |
 | `country` | a country name, "International", or NULL |
 | `campaign` | the Commons campaign config code, if any |
 | `created_by`, `created_at` | |
@@ -341,6 +353,10 @@ All of this is logged in `contest_change`.
   country and campaign.
 - **Root's identity edits in a series:** a change to the type or country of a series contest
   that no longer matches its series is refused. Root moves the contest first.
+- **Assigning or moving one contest:** refused only for a positive mismatch, a recognised type or
+  country (a known country, or International) that differs from the series'. A contest whose type
+  or country the tool doesn't recognise ("USA", "Непал", "Photo contest") may be assigned by root;
+  its `contest_change` row says "not recognised; assigned by root".
 - **`ContestKind` is unchanged.** Membership never depends on parsing; parsing only feeds the
   proposals (§3.5).
 
@@ -354,10 +370,15 @@ All of this is logged in `contest_change`.
 
 **Retired contests:**
 
-- their memberships give no access; root may open them read-only;
+- their memberships give no access; root may open them read-only (**CY-1 follow-up:** CY-1 hides
+  them and takes away members' access, but root keeps write access; a read-only check on root's
+  write paths is still to do);
 - hidden from menus and lists (root's list has a filter);
 - ignored by "previous" and "newest", the key, COI and the H checks;
-- still counted by `contestsWorkedIn` and the account rules;
+- still counted by `contestsWorkedIn` and by the account rules on the target's side (a member of
+  a retired contest stays out of an admin's reach unless the admin administers it); an actor's
+  reach skips them (`UserContest.opens` in `AccountSearch.administered`, `AccountJoin`'s scope),
+  and they are no source for "Add people from another contest", root's included;
 - retiring is refused while a round is active, paused or distributing;
 - un-retiring is refused if a live contest holds the series and year;
 - root only, logged.
@@ -384,16 +405,37 @@ All of this is logged in `contest_change`.
 
 - **With CY-3:** root's and the contest Admins' paths, and the people picker.
 - **With whichever of CY-2 and CY-3 lands second** (they need both CY-3's form and CY-2's
-  `series_admin`, V110):
+  `series_admin`, the next free number at its merge, V110 now):
   - creation by series admins;
   - CA6's disabled grantees in the people picker.
 
   Until then the picker has no grantees to show.
 
-**The inline reuse check** (CY-1; D-1a's H1 logic) flags a contest with:
+**The inline reuse check** (CY-1; D-1a's H1 logic; `services.series.ContestReuse`) flags a
+contest with:
 
 - an import source since V60, or `contest.images`, of another type, country or year;
-- or round ids spanning more than the threshold (default 150).
+- **every round's signals** (the maintainer's refinement of 2026-11-20, R4 in §4.1: one country's
+  contest may host rounds of several other countries, its own source still right):
+  - a round's category filter naming another type, country or year;
+  - of a round drawn from the contest's files (one with no previous round in the contest), its
+    files in a category of another identity: another contest's own category (that contest's
+    identity) or a country category whose title names one (S2): flagged when such files are both
+    at least 5 and at least 2 % of the round's files (`series.reuse.foreignMin`,
+    `series.reuse.foreignShare`);
+  - a national contest whose rounds name two or more countries by those signals;
+- round ids spanning more than the threshold (default 150, `series.reuse.roundIdSpan`) are shown
+  beside another sign, **never a flag by themselves**: on the production copy (2026-11-20) 17 of
+  239 contests with rounds span more than 150 ids, 13 of them with another sign; the other 4 are
+  national contests with a late round.
+
+Its rounds' files are read by keys only (round, contest and `round_image` by primary key,
+`category_members` by its page index, in a forced order; `ContestReuseSpec` EXPLAINs it). Measured
+on the production copy (V107, 2026-11-20): for every unassigned live contest (912 rounds drawn
+from contests' files, 1.35 million files) 4.4 s, so the proposals page runs on the blocking pool
+and its confirmation reads only the ticked contests' files; a year's 24 contests (50 such rounds)
+142 ms. The contests page's "Reused" badge reads the sources and rounds only (about 2 ms), never
+the files; a contest's series page and the proposals read them.
 
 It refuses CA4's path, and it keeps a contest out of the assignment proposals (§3.5).
 
@@ -704,18 +746,22 @@ series. Specs cover a series admin with no real row, and a retired series.
 
 **Numbers:**
 
-- **V108 is reserved by D-1b.**
+- **V108 is taken** by the quick fixes' NOT NULL `round_user.active` (`stack/208-quick-fixes`);
+  **V109 by CY-1's `Series`** (`stack/209-series-cy1`, built 2026-11-20). D-1b, which reserved
+  V108, takes the next free number at its merge (V110 now).
 - **Flyway refuses an older version after a newer one** (`outOfOrder = false`,
   `db/Migrations.scala:41-42`). So each PR **takes the next free number when it merges**: if
-  D-1b's V108 hasn't merged before CY-1, CY-1 either waits for it (it depends on D-1a anyway) or
-  takes V108 and D-1b renumbers.
-- **The numbers below assume D-1b first.**
+  D-1b's migration hasn't merged before CY-1, CY-1 either waits for it (it depends on D-1a anyway)
+  or takes its number and D-1b renumbers.
+- **The numbers below:** CY-1's V109 is fixed (no other branch had it, 2026-11-20). CY-2 and
+  CY-4 take the next free number at their merge: V110 and V111 if D-1b merges after them, one
+  higher each if D-1b's migration merges first.
 
 | | PR | Content |
 |---|---|---|
 | V109 `Series` | CY-1 | Table `series`. On `contest_jury`: `series_id` (FK RESTRICT), `created_at TIMESTAMP(3) NULL` (no `ON UPDATE`), `created_by`, `retired_at`, `retired_by`, the generated `live_series_id` and `UNIQUE (live_series_id, year)`. Table `contest_change(id, contest_id, series_id, actor_id, kind, batch_id, detail JSON, comment, created_at)`, kinds `created`, `identity`, `series_assigned`, `series_unassigned`, `series_changed`, `split_out`, `split_in`, `split_undone`, `retired`, `unretired` (CA8, decided) |
-| V110 `Series_admin` | CY-2 | Table `series_admin` with `admin_from_year` (NOT NULL, CA20), `live_grant_series_id` and its unique key. `account_change.field` adds `series_admin_granted`, `series_admin_revoked` and `series_admin_from_year` (keeping V106's and V107's) |
-| V111 `Contest_split` | CY-4 | `contest_split` and `contest_split_item` |
+| V110 `Series_admin` (next free at merge) | CY-2 | Table `series_admin` with `admin_from_year` (NOT NULL, CA20), `live_grant_series_id` and its unique key. `account_change.field` adds `series_admin_granted`, `series_admin_revoked` and `series_admin_from_year` (keeping V106's and V107's) |
+| V111 `Contest_split` (next free at merge) | CY-4 | `contest_split` and `contest_split_item` |
 
 Each migration is rerunnable and has a FlywayUpgradeSpec case.
 
@@ -729,22 +775,27 @@ Each migration is rerunnable and has a FlywayUpgradeSpec case.
 - if a matching series already exists, it is offered first.
 
 **Root confirms in bulk**, with one checkbox per proposal; root may rename a proposal or drop
-contests from it.
+contests from it. **All or nothing against what root saw:** the proposals are computed again; a
+proposal gone, another series offered than the page showed, or a ticked contest no longer in its
+proposal (assigned, retired, flagged or grouped otherwise meanwhile) refuses the whole
+confirmation, naming the contest, and nothing is written.
 
 - **The confirmation lists the grants affected:** who gains reach to which contests, as derived
   Admin or Organizer by each grant's start year (CA20). Derived Admin includes account reach over
   the contest's members (CA17), so assigning an old contest at or after a grant's start year
   widens that grant's account reach.
 - **One confirmation is one batch** (`batch_id`). **"Undo batch"** writes `series_unassigned` for
-  each contest of it.
+  each contest of it (those changed since are left and listed). A series the batch created stays,
+  empty: root retires it if it isn't wanted.
 
 **Never proposed** (root handles them one by one):
 
 - unparsed names;
 - two live contests of one type, country and year;
 - unusual country values;
-- contests flagged by the inline reuse check or, later, by the CY-0 report. **466 stays
-  unassigned** and goes through §4.
+- contests flagged by the inline reuse check (its round signals included, so an R4 host is
+  never in a plain series assignment) or, later, by the CY-0 report. **466 stays unassigned** and
+  goes through §4.
 
 **Moving a contest between series** (root):
 
@@ -782,6 +833,28 @@ country. For an International target, any country of its type and year matches.
 - **R2:** other countries or types (466).
 - **R3:** foreign files above a small share (default 2 %) of the S2-classed files. R3 is never
   moved and stays as history (round 1974).
+- **R4: a national contest hosting other countries' rounds** (found by the maintainer,
+  2026-11-20). One country's contest (for example Nepal's) holds whole round clusters of several
+  other countries, each cluster of one other identity. Not R3: within each cluster the files are
+  mostly one identity, only not the host's. Handled per cluster:
+  - **the target identity comes from the cluster's own signals,** never from the host contest's
+    identity: the cluster's dominant S2 identity, its S5 import sources, and its S6 juror set
+    (jurors of one country's earlier rounds); the report shows the signals that agree and those
+    that don't, and root confirms the identity;
+  - **the buckets are computed against the cluster's own target,** not the host's: a Bhutan
+    cluster's matching files are Bhutan's, and the host's own country is foreign to it;
+  - **memberships follow the cluster:** a move gives the cluster's jurors (its `round_user`
+    accounts) the Juror role in the target contest, by `UserService.addToContest`, with in-app
+    notices and no mail; the people who ran those rounds (the rounds' `status_changed_by`, the
+    jobs' `created_by`) are listed for root to give the Admin role there (**open, CA23:** the
+    recommendation is none pre-ticked, as multi-role decision 7 and CA6). Their memberships in
+    the host contest stay as they are (no automatic removal) and are listed for the host's Admin
+    to keep or remove;
+  - **COI and regions follow the target:** the moved rounds' conflicts of interest are computed
+    against the target contest's members (`CoiMembers.forContest`) and their region menus from
+    the target's identity (`RegionScheme`), not the host's;
+  - the host keeps its own clusters, and once only those remain it can be assigned to its own
+    series (§4.3).
 
 **Filling the target:** re-importing its own Commons source fills its file set reliably. The
 report offers this.
@@ -805,9 +878,22 @@ can disqualify them.
 | S3 round id era | round ids | report |
 | S4 `vote.voted_at` | `vote` | since V97 only |
 | S5 import sources | `job.params.source`, `contest.images` | since V60 only |
+| **S5r round source** | `round.category` of the cluster's first round (its import source: "Category:Images from Wiki Loves Earth 2024 in Nepal") | **the strongest per-cluster signal for old rounds**, which have no V60 job params (466's every year, §4.7); CY-1's inline check reads it too |
 | S6 juror sets | `round_user` | supporting |
 
-`round.created_at` is not used.
+`round.created_at` is not used: it is unreliable (466's 1601 was created 2026-04-08 but chains
+from 2025's 1597; 1381 was created in 2025 from 2024's rounds).
+
+**Defaults the report applies per cluster** (from 466, §4.7):
+
+- **types beyond WLE and WLM** (Wiki Loves Folklore, Wiki Loves Fashion, …): a cluster's
+  identity is the "Wiki Loves <type> <year> in <country>" its signals name, whatever the type
+  (`ContestIdentity` already parses any type word), and its target series is of that type;
+- **an empty cluster** (its rounds have no files, as 466's WLE 2023 Philippines rounds 1250–1253
+  and 1258): **leave** by default, listed, never moved;
+- **signals that disagree** (466's 1255: its category names "2023 in Philippines", but its 1808
+  files are the count of Nepal's 1213 and 1254, so likely Nepal's): **flagged for root's manual
+  choice**, with each signal shown, never moved automatically.
 
 ### 4.3 The dry-run report (CY-0)
 
@@ -824,7 +910,8 @@ can disqualify them.
 - the buckets;
 - S1–S6;
 - the verdict;
-- the proposed **series and year**, and the action.
+- the proposed **series and year**, and the action. For an R4 host, each cluster's proposed
+  identity is its own (§4.1), never the host's, with the signals behind it.
 
 **Actions:**
 
@@ -862,8 +949,10 @@ Root confirms one contest's plan, and a `contest_split` job runs it.
    - write `contest_change`.
 2. **Files:** `INSERT IGNORE` only the **matching** files into the target's own category, in
    chunks with a cursor. The source keeps its links (CA10).
-3. **Jurors** (one transaction):
-   - give each `round_user` of the cluster the Juror role in the target;
+3. **Jurors and admins** (one transaction):
+   - give each `round_user` of the cluster the Juror role in the target, and the Admin role to
+     those of the cluster's admins root ticked (R4, §4.1; CA23); host memberships stay and are
+     listed, never removed;
    - skip deleted accounts, O14 conflicts and protected targets;
    - list everyone else for root;
    - in-app notices, no mail;
@@ -905,6 +994,12 @@ Root confirms one contest's plan, and a `contest_split` job runs it.
 
 Undo is refused once the target has rounds referring to moved ones.
 
+**An active round in a cluster to move** (466's 1900, WLE 2026 Bhutan, active with 965 files on
+the copy): step 1 pauses a cluster's active rounds for the move and resumes them after (§4.4),
+which jurors notice. So the confirmation names each active round, and the apply is **refused
+unless root ticks "pause it for the move"** for it, or stops it first; the plan hash covers the
+choice.
+
 **Why not O1's dump restore only:** the split runs online, and a restore would lose everyone's
 votes since.
 
@@ -926,9 +1021,29 @@ votes since.
 - **Apache logs, 2026-11-04 to 11-18:** 13 contests were active.
   - Only **466** shows old and new rounds together.
   - 619–631 only show this season's rounds.
-- **One confirmed case.**
+- **One confirmed case, and a second kind** (R4, the maintainer, 2026-11-20): a national contest
+  hosting other countries' rounds, each such host holding several clusters to move.
+- **The worked example: contest 466** (Wiki Loves Earth 2020, Nepal; the production copy at V107,
+  read 2026-11-20). 48 rounds from 2020 to 2026, chained by `previous`; the first round of each
+  year has `round.category` = "Category:Images from Wiki Loves Earth <year> in Nepal" (S5r):
+  - **WLE Nepal, its own type and country, other years (R1):** 2020 (rounds 731–765), 2021
+    (962–996, and 997 "Intl Round", created in 2023 from 972), 2023 (1213–1217, 1254), 2024
+    (1366–1381), 2025 (1592–1607), 2026 (1882–1899). Proposed: 2020 stays (466's own year); each
+    other year moves to the WLE Nepal series' contest of that year.
+  - **Other types (R2):** Wiki Loves Fashion 2022 (1172, 1173, "…in the Phil…") and Wiki Loves
+    Folklore 2026 Nepal (1817, 1818, 1831): each to a series of its own type.
+  - **Other countries (R4):** WLE 2023 Philippines (1250–1253 with no files, and 1258 with
+    "Category:WLE PH 2023 Quality Photos" and no files: empty, **leave**) and WLE 2026 Bhutan
+    (1900, **active** on the copy, 965 files: moves only with root's "pause it for the move", or
+    once stopped, §4.5).
+  - **Disagreeing signals:** 1255 "WLE NP Test" (category "…2023 in Philippines", 1808 files, the
+    count of Nepal's 1213/1254): flagged, root chooses.
+  - So one contest needs about a dozen moves into six or more series, which "start clean" can't
+    replace.
   - Q0–Q4 on the production copy give the count (Q5 serves the assignment proposals).
-  - CY-4 is **conditional** on CY-0.
+  - **CY-4 is now likely,** not just conditional: R4 hosts can't be fixed by "start clean", since
+    their clusters are other countries' whole contests. It stays **gated on the CY-0 report's
+    numbers**: CY-0 counts the R4 hosts and their clusters, and CY-4 starts only if they warrant it.
   - If there are few cases, "start clean" and leaving the history are enough (CA9).
 
 ## 5. UI
@@ -974,6 +1089,9 @@ Everyone else with a contest in the series sees only their own contests' rows.
   - assignment, with batch undo.
 - **`/contests`:**
   - a series filter and column;
+  - beside the Series menu, root's **Manage series** link to `/admin/series` (the maintainer's
+    decision of 2026-11-20: series are not in root's top bar or Pages menu); each contest's series
+    page from its row's series column;
   - created by and at;
   - the previous year's contest;
   - a "reused" badge;
@@ -1085,11 +1203,11 @@ Everyone else with a contest in the series sees only their own contests' rows.
 |---|---|---|---|---|
 | Now (decided) | Root creates WLM 2026 in Nepal and adds the admin | — | — | minutes |
 | **CY-0** | The reuse report; Q0–Q4 tuning | D-1a, D-1b | — | M (3–4 days) |
-| **CY-1** | Series table and key, derived previous, `contest_change` with batches, retired contests and series, `/admin/series`, proposals with bulk confirm, affected-grants list and batch undo, **the inline reuse check**, the menu grouped by series, the `/contests` filter, docs. CA8 is asked before it starts | D-1a; D-1b's V108 merged first, or the numbers swap (§3.4) | V109 | M–L (6–7 days) |
+| **CY-1** | Series table and key, derived previous, `contest_change` with batches, retired contests and series, `/admin/series`, proposals with bulk confirm, affected-grants list and batch undo, **the inline reuse check** (with every round's signals, R4), the menu grouped by series, the `/contests` filter, docs. Built on `stack/209-series-cy1` | D-1a | V109 | M–L (6–7 days) |
 | Ops after CY-1 | **Production assignment:** Q0 and Q5 on the copy, then root's bulk confirmation on production, in batches | CY-1 | — | 1 day |
 | **CY-2** | Series admins: `series_admin` with its live-grant key, CA19 adds with the grantee rules, root-only re-grant, **the chained revoke (required) with three-level specs**, root's 24-hour grants view, join and retirement hooks, `seriesAccountContests` in the account rules (CA17), `withSeries(user, currentContestId)`, `derivedRoles`, `contestPermission` real-only with the `derived = true` opt-in and `inContestReal`, CA20 derivation from `admin_from_year` with its computed default, bounds and root's later edit (logged), every action classified, `isProtectedTarget` replacing the 26 target checks, COI, the users-page line, the change-log view, the menu entry and landing, the grant UI with the start year and the contest list, guard specs, negatives; its own security review. Series admins' creation path and CA6's disabled grantees ship with whichever of CY-2 and CY-3 lands second | CY-1 | V110 | L (14–16 days) |
 | **CY-3** | Creating contests: the series page, the next-year path (CA4), settings, the people picker, root's notices, the H1/import links. Creation by series admins (CA16) and CA6's disabled grantees ship with whichever of CY-2 and CY-3 lands second | CY-1 | — | M (5–6 days) |
-| **CY-4** | Split, Undo, redirects, runbook. **Conditional** | CY-0, CY-1 | V111 | L (8–10 days) |
+| **CY-4** | Split, Undo, redirects, runbook; R4's per-cluster targets, memberships in the target, COI and regions from the target (§4.1). **Likely** since R4 (2026-11-20), still gated on CY-0's numbers | CY-0, CY-1 | next free at merge (V111 now) | L (9–11 days) |
 | **CY-5** | The production split run | CY-4 | — | ops, 1–2 days |
 
 **Order:**
@@ -1102,7 +1220,7 @@ Everyone else with a contest in the series sees only their own contests' rows.
    second.
 
 CY-0 runs in parallel once D-1a and D-1b are in. CY-4 and CY-5 run only if the report warrants
-them.
+them; with R4 (2026-11-20) that is now likely.
 
 **Effort:**
 
@@ -1369,6 +1487,15 @@ reuse report (CY-0) and a series created from scratch.
   - [recommended] Root's page and a job.
   - A CLI step.
   - Series admins (later).
+- **CA24: decided 2026-11-20** (as recommended): the word after "Wiki Loves" as the type code
+  when scalawiki doesn't know the type. See the decisions at the top.
+- **CA23: The Admin role in an R4 cluster's target** (raised by the 2026-11-20 refinement, §4.1).
+  CA11 covers the moved jurors; the people who ran the cluster's rounds in the host contest are
+  usually that country's own team.
+  - [recommended] List them on the confirmation with none pre-ticked (multi-role decision 7,
+    CA6); root ticks who gets Admin in the target; in-app notices, no mail.
+  - Give each of them Admin in the target automatically.
+  - No Admin rows: root or a series admin adds them afterwards.
 
 ## Appendix: queries for the production copy (read-only)
 

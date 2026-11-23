@@ -24,6 +24,26 @@ class MessagesCompletenessSpec extends Specification {
 
   private def file(lang: String) = Paths.get(s"conf/messages.$lang")
 
+  /** What goes wrong with a message's apostrophes ("keep every apostrophe when formatted"): a lone
+    * ', a pattern that does not format, or an output for 0, 1, 2 or 5 that differs from the one
+    * with each '''' and '' as a marker character put back as '.
+    */
+  private def apostropheProblems(v: String, locale: java.util.Locale): Seq[String] = {
+    val marker = '\u0001'
+    def format(pattern: String, n: Long) =
+      new java.text.MessageFormat(pattern, locale).format(Array.fill[AnyRef](10)(Long.box(n)))
+    val marked = v.replace("''''", marker.toString).replace("''", marker.toString)
+    if (marked.contains('\'')) Seq("a lone '")
+    else
+      Seq(0L, 1L, 2L, 5L).flatMap { n =>
+        scala.util.Try((format(v, n), format(marked, n).replace(marker, '\''))) match {
+          case scala.util.Failure(e)                         => Seq(s"does not format ($e)")
+          case scala.util.Success((out, want)) if out != want => Seq(s"(n=$n) «$out», not «$want»")
+          case _                                             => Nil
+        }
+      }.distinct
+  }
+
   /** A file's messages, parsed by Play's own parser (comments, continuations, escapes). */
   private def messagesOf(lang: String): Map[String, String] =
     parse(UrlMessageSource(file(lang).toUri.toURL), s"messages.$lang") match {
@@ -97,11 +117,15 @@ class MessagesCompletenessSpec extends Specification {
     "round.state.text." -> services.GalleryService.RoundState.All.map(_.reason),    // roundState.scala.html
     "round.state.title." -> services.GalleryService.RoundState.All.map(_.reason),   // noRoundYet.scala.html
     "health.job.status." -> Seq("queued", "running", "done", "failed", "cancelled"), // contestHealth.scala.html
-    "health.status." -> db.scalikejdbc.Round.Status.All                             // contestHealth.scala.html
+    "health.status." -> db.scalikejdbc.Round.Status.All,                            // contestHealth.scala.html
+    "series.assign.left." -> services.series.SeriesProposals.Reasons,               // series/seriesProposals.scala.html
+    "series.reuse.kind." -> services.series.ContestReuse.Kinds                      // ContestReuse.kindKey
   )
 
   /** Keys looked up from a value rather than a literal. */
   private val dynamicKeys: Seq[String] = Seq(
+    db.scalikejdbc.ContestChangeJdbc.Kinds.map("series.change." + _),  // series/changeLog.scala.html, a contest's rows
+    Seq("created", "identity", "retired", "unretired").map("series.change.series." + _), // and a series' own rows
     User.FORM_ROLES.map("role." + _),                           // every role name, as Messages("role." + r)
     Seq("role." + User.ROOT_ROLE),                              // editUser offers root to root
     MediaType.mediaTypes,
@@ -180,6 +204,36 @@ class MessagesCompletenessSpec extends Specification {
         values(lang).collect { case (k, v) if en.get(k).exists(e => args(e) != args(v)) => k }.toSeq.sorted aka
           s"keys with other placeholders in messages.$lang" must beEmpty
       }
+    }
+
+    // Play formats every message with MessageFormat, arguments or not: a lone ' starts a quote and
+    // is dropped, and in a choice segment holding an argument ({0,choice,…|1<{0,number} …}) a ''
+    // is dropped too (the segment is formatted twice: there it takes ''''), while a '''' anywhere
+    // else comes out as two. Each '''' or '' of a message must come out as one ', whatever is around
+    // it: the message is formatted as it is and with each of them as a marker character (which
+    // MessageFormat leaves alone) put back as ', for 0, 1, 2 and 5 (each choice segment of the
+    // files), and the two must be the same; a message that does not format fails
+    "keep every apostrophe when formatted" in {
+      foreach(langs) { lang =>
+        val locale = java.util.Locale.forLanguageTag(lang)
+        val lost = values(lang).toSeq.sortBy(_._1).flatMap { case (k, v) => apostropheProblems(v, locale).map(p => s"$k: $p") }
+        lost aka s"messages.$lang that lose an apostrophe or don't format" must beEmpty
+      }
+    }
+
+    "find the apostrophe mistakes the check above is for (it is not vacuous)" in {
+      def broken(v: String) = apostropheProblems(v, java.util.Locale.FRENCH).nonEmpty
+      // a '' in a choice segment holding an argument, a '''' outside one, a lone ', a pattern
+      // that does not format: broken; a '''' in such a segment, a '' elsewhere, before or after an
+      // argument or in a choice segment without one: fine
+      (broken("{0,choice,1#1 fichier|1<{0,number,integer} fichiers d''origine}") must beTrue) and
+        (broken("{0,choice,1#l''{1}|1<les {1}} d''origine") must beTrue) and
+        (broken("Le fichier d''''origine") must beTrue) and
+        (broken("Le fichier d'origine") must beTrue) and
+        (broken("{0,choice,") must beTrue) and
+        (broken("{0,choice,1#1 fichier|1<{0,number,integer} fichiers d''''origine}") must beFalse) and
+        (broken("{0}''s files, l''{1}") must beFalse) and
+        (broken("{0,choice,1#l''enregistre|1<les enregistre} d''origine") must beFalse)
     }
 
     "have every key the app uses" in {

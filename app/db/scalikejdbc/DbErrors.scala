@@ -16,6 +16,16 @@ object DbErrors {
 
   private def message(t: Throwable, text: String): Boolean = Option(t.getMessage).exists(_.contains(text))
 
+  /** ER_DUP_ENTRY: a unique key refused the row. */
+  val DuplicateKeyErrorCode = 1062
+
+  /** A unique key's refusal (e.g. V109's one live contest per series and year). */
+  def isDuplicateKey(e: Throwable): Boolean =
+    causes(e).exists {
+      case sql: SQLException => sql.getErrorCode == DuplicateKeyErrorCode
+      case _                 => false
+    }
+
   /** A deadlock: the whole transaction was rolled back, so it can be run again. */
   def isDeadlock(e: Throwable): Boolean =
     causes(e).exists {

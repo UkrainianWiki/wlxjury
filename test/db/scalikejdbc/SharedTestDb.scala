@@ -9,7 +9,7 @@ object SharedTestDb {
   private val dataTables = Seq(
     "account_change", "account_join_request", "account_token", "api_token", "job", "legacy_password_retired", "criteria_rate", "criteria_rate_orphan", "round_image_event", "round_image_dirty", "round_image", "vote", "vote_aside", "image_renames", "category_members", "comment",
     "criteria", "round_criterion", "round_user", "user_contest", "user_identity", "images", "round", "users",
-    "category", "monument", "contest_jury"
+    "category", "monument", "contest_change", "contest_jury", "series"
   )
 
   def truncateAll(): Unit = {

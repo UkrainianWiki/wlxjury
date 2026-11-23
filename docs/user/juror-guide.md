@@ -172,13 +172,15 @@ your open rounds of the contest, or a line saying that no other round is open to
 
 One account can be a juror in several contests. When you are in more than one, the top bar has
 a contest menu (shuffle icon) showing the current contest's name. Open it and choose a contest:
-each one is listed with your role there, for example "(Jury)". The tool opens your first round in
+each one is listed with your role there, for example "(Juror)". The tool opens your first round in
 that contest. A contest where you are only a juror and no round is open for you (say, last
 year's) is not listed, so with one such contest left there is no menu.
 
 Opening a link to a page of another contest you belong to also takes you to that contest.
 
-<!-- screenshot to add: the contest menu in the top bar -->
+The contest menu is at the right end of the top bar, just before the theme menu (a sun, moon or
+half-filled circle) and your account menu (person icon). In its list the contest you are in now
+is highlighted.
 
 ## Kinds of rounds
 

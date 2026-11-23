@@ -95,7 +95,7 @@
             @for((member, files) <- view.coiPeople) {
                 @* the account as the files are matched (CoiMembers.normalize), never the wiki
                    account as entered: the author filter compares byte for byte *@
-                <li>@snippets.authorLinks(db.scalikejdbc.CoiMembers.normalize(member.account), view.contest.getId) — @member.role@snippets.count(files, spoken = Some(views.CommentCount.files(files)))</li>
+                <li>@snippets.authorLinks(db.scalikejdbc.CoiMembers.normalize(member.account), view.contest.getId) — @member.roleName@snippets.count(files, spoken = Some(views.CommentCount.files(files)))</li>
             }
             </ul>
         }
@@ -116,11 +116,11 @@
                 data-image="@Global.largeImage(file.image).src"
                 data-width="@file.image.width"
                 data-height="@file.image.height"
-                data-description="<b>@play.twirl.api.HtmlFormat.escape(file.image.title).body</b>@for(m <- view.coiFiles.flatMap(_.get(file.image.pageId))) {<br>@play.twirl.api.HtmlFormat.escape(m.describe).body}"
+                data-description="<b>@play.twirl.api.HtmlFormat.escape(file.image.title).body</b>@for(m <- view.coiFiles.flatMap(_.get(file.image.pageId))) {<br>@play.twirl.api.HtmlFormat.escape(m.label).body}"
                 @* the people of the conflicts of interest: coiFiles is only built for those who may
                    see authors (GalleryController.contestFilesView, User.canViewAuthors) *@
                 @for(m <- view.coiFiles.flatMap(_.get(file.image.pageId))) {
-                    data-coi="@m.describe"
+                    data-coi="@m.label"
                 }
                 data-pageId="@file.image.pageId"
                 data-largeUrl="@view.largeUrl(file.image.pageId)"

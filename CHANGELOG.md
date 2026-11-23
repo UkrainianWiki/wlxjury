@@ -33,6 +33,26 @@ is listed below.
 
 **Features**
 
+- **Contest series (CY-1)** (the contest series plan, docs/plans/2026-11-18-contest-series.md, CA1,
+  CA8, CA15 decided 2026-11-18; developed 2026-11-20, `stack/209-series-cy1`, V109): a series ties
+  one contest per year across years ("Wiki Loves Monuments in Nepal"). Root's **Series** page
+  (`/admin/series`, the **Manage series** link beside the Contests page's Series menu, not in
+  the top bar): create, rename, retire and un-retire series; **Assignment
+  proposals** group the live contests in no series by type and country, an existing series
+  offered first (types scalawiki doesn't know, such as Wiki Loves Folklore, by the word after
+  "Wiki Loves": CA24), confirmed in bulk as one batch, all or nothing against what root saw, with
+  **Undo batch**; a contest's **Series and
+  status** page assigns, moves, unassigns, retires and un-retires it, with its change log. One
+  live contest per series and year (a database key); the previous year's contest is derived. The
+  **inline reuse check** (H1's logic over the contest's import sources and source, and every
+  round's category filter and files, 5 files and 2 % at least; the round ids' span only beside
+  another sign; the maintainer's refinement of 2026-11-20: a national contest hosting other
+  countries' rounds) keeps a contest out of the proposals and shows **Reused** on **Contests**
+  (there by sources and rounds only). A **retired contest**'s memberships open nothing, give an
+  admin no account reach, and menus and lists leave it out. The **contest menu** groups a person's contests by series (this and last
+  year under the series, then **Earlier years**, **Other contests**). **Contests** gets **Series**
+  and **Status** menus and **Series** and **Created** columns; adding a duplicate name, year and
+  country warns. Series admins (CY-2) and creating next year's contest (CY-3) come later.
 - **A sticky top bar** (the maintainer's decision of 2026-11-23, replacing the trial of a bar
   that hid while scrolling down; developed 2026-11-23, `fix/sticky-topbar`): on the galleries, the
   by-rate gallery, the file list, the comments report, the contest files, the Rounds, round
@@ -137,6 +157,23 @@ is listed below.
 
 **Fixes**
 
+- **Old juror assignments with no recorded status are now treated as stopped** (the maintainer's
+  decision of 2026-11-20; developed 2026-11-20, `stack/208-quick-fixes`): in old rounds, closed
+  long ago, some jurors' assignments had no "voting / stopped" status at all. The juror's own pages
+  and the round statistics showed such a juror as stopped, but the file's large view still opened
+  for voting and a vote they sent was still taken. Those assignments are now stopped everywhere,
+  votes included; a stopped juror can be started again on the round statistics page as before.
+  New assignments always have a status. Migration V108 (see Development).
+- **Roles named in the user's language on the conflicts of interest pages** (developed
+  2026-11-20, `stack/208-quick-fixes`): a round's conflicts page (its matches and the reasons of
+  its disqualified files), the contest files page's list of people and its files' captions named
+  each person's role by its code ("Olena — jury"); they now say it as the rest of the tool does
+  ("Olena — Juror", in French "Olena — Juré").
+- **Top-bar menus stay inside a phone's screen** (the maintainer's decision of 2026-11-20;
+  developed 2026-11-20, `stack/208-quick-fixes`): on a phone, the Comments and Region menus near
+  the right end of the top bar could open past the screen's edge, depending on what the bar shows.
+  Such a menu now opens further left and is never wider than the screen, its long names wrapped.
+  Desktop menus are unchanged.
 - **The first keys typed in a saved category or import source are kept** (a follow-up of the
   26.11.13.1 hotfix item "A saved category or import source can be edited again"; developed
   2026-11-19, `stack/201-chromium-ci`): on a phone or a busy page, the first keys typed after a
@@ -160,6 +197,48 @@ is listed below.
 
 **Development**
 
+- **Migration V108** (`stack/208-quick-fixes`, the fix "Old juror assignments with no recorded
+  status are now treated as stopped"): `round_user.active` NULL set to FALSE, then
+  `NOT NULL DEFAULT TRUE` online, as V91 (`ALGORITHM = INPLACE, LOCK = NONE` with strict mode
+  added, a 60 s lock wait, only while the column is still nullable), its `(round_id, active)` index
+  kept; rerunnable; the undo is in the script's last comment; FlywayUpgradeSpec "V108's NOT NULL
+  round_user.active". V38's copy wrote TRUE: the NULLs came from later writes. The readers' NULL
+  handling is gone, `RoundUser.isNotActive` with it (the same as `isStopped` now). Pre-deploy,
+  read-only: the NULL rows of rounds open now (the PR's deploy note).
+- **The conflict-of-interest roles' names** come from the existing `role.*` keys
+  (`CoiMembers.Member.label`; `CoiMembers.detailLabel` for a disqualified file's stored reason,
+  which keeps the code). No new keys.
+- **The phone menus** (`stack/208-quick-fixes`): below 576 px, `menu-fit.js` (Jest) moves an open
+  top-bar menu left by as much as it would pass the window's right edge or the bar's, whichever
+  comes first, never past the left edge, again as it fills itself or the window is resized;
+  `main.css` caps the bar's menus at the window's width less 1 rem there, a left-opening one as
+  wide as its longest item up to that, its items wrapped. It also clips the bar sideways
+  (`overflow-x: clip`), which guards against a menu widening the page while it is measured where
+  Bootstrap opens it (in Chromium's mobile emulation the page stayed wider without it).
+  `phone-menus.spec.js` (Chromium) opens every top-bar menu of the galleries, lists, comments
+  report, contest files, Rounds, statistics, Contests and users pages at 390 and 412 px in the
+  browser-test fixture, where the bar does not wrap, and checks each inside the window, the page
+  no wider than with its menus closed; `topbar.spec.js`'s phone test asserts it instead of noting
+  the overflow. Measured there before the fix: the Comments menu 30 px past a 390 px window, the
+  organisers' Region menu 153 px. A window of 576 to about 700 px (a phone held sideways, a small
+  tablet) is not covered.
+- **Every message's apostrophes checked** (`stack/208-quick-fixes`; test only): the French author
+  normalisation messages had lost their apostrophes (fixed in `stack/185`, RoundEditingFormatsSpec
+  pins them). `MessagesCompletenessSpec` now formats every message of the four files with 0, 1, 2
+  and 5, as it is and with each doubled or quadrupled apostrophe as a marker put back as one, and
+  fails where the two differ (a doubled one in a choice segment holding an argument, a quadrupled
+  one outside), on a lone apostrophe, or on a message that does not format; none is found today.
+  Self-tested.
+- **RouteAuthSpec's scan hardened** (from the review of `56f4e4eb`; `stack/208-quick-fixes`): it
+  looks for a builder or a helper call in the action's body with comments and string and character
+  literals blanked, a bracket inside a literal no longer ends a body early (self-tested), and a
+  body also ends at a `case`, `sealed`, `abstract`, `type` or annotated (`@volatile`,
+  `@nowarn(…)`) member.
+- **Tooling** (`stack/208-quick-fixes`): the browser tests' fixture server starts sbt with a 2 GB
+  heap through the launcher too (1 GB ran out on a fresh worktree's first compile);
+  `scripts/agent-check.py` no longer fails printing a log a cp1252 Windows console can't encode: it
+  prints UTF-8, or, with `PYTHONIOENCODING` set, that encoding with what it can't encode replaced
+  (unless it names its own error handler).
 - **Chromium browser tests green on CI** (`stack/201-chromium-ci`): `category-suggest.spec.js`'s
   phone tests (A-09) by the fix above; `rounds-filter.spec.js` (O-07) waits for a pager link's
   colour transition before comparing it with the secondary grey; `voting.spec.js`'s Back checks

@@ -148,7 +148,8 @@ object AccountJoin {
   private def scopeOf(actor: User)(implicit session: DBSession): Option[Option[Set[Long]]] =
     actor.id.flatMap(User.findById(_)).filter(_.deletedAt.isEmpty).map { fresh =>
       if (AccountSearch.isRoot(fresh)) None
-      else Some(UserContestJdbc.findByUser(fresh.getId).filter(m => m.active && m.role == User.ADMIN_ROLE)
+      // the actor's reach: admin memberships of contests not retired (UserContest.opens)
+      else Some(UserContestJdbc.findByUser(fresh.getId).filter(m => m.opens && m.role == User.ADMIN_ROLE)
         .map(_.contestId).toSet)
     }
 

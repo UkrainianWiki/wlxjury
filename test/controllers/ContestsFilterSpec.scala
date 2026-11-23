@@ -364,7 +364,7 @@ class ContestsFilterSpec extends PlaySpecification with PlayTestDb {
     "open the imported contests' year after Import, or all years if they are of several" in {
       val imported = new java.util.concurrent.atomic.AtomicReference[Seq[ContestJury]](Nil)
       val stub = new services.ContestService(null) {
-        override def importContests(formContest: String): Iterable[ContestJury] =
+        override def importContests(formContest: String, actorId: Option[Long]): Iterable[ContestJury] =
           imported.get.map(c => contestDao.create(None, c.name, c.year, c.country))
       }
       testDbAppWith(play.api.inject.bind[services.ContestService].toInstance(stub)) { implicit app =>

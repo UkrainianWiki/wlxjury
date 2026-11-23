@@ -64,12 +64,13 @@ object AccountSearch {
   /** Whether the actor is root: every account is within their contests. */
   def isRoot(actor: User): Boolean = actor.isRoot || actor.hasRole(User.ROOT_ROLE)
 
-  /** The contests the actor administers (an active admin membership); None for root, who
-    * administers every contest.
+  /** The contests the actor administers (an active admin membership of a contest not retired:
+    * [[db.scalikejdbc.UserContest.opens]], the actor's reach; a target's memberships still count
+    * whatever the contest); None for root, who administers every contest.
     */
   def administered(actor: User): Option[Seq[Long]] =
     if (isRoot(actor)) None
-    else Some(actor.userContests.filter(m => m.active && m.roles.contains(User.ADMIN_ROLE)).map(_.contestId).distinct)
+    else Some(actor.userContests.filter(m => m.opens && m.roles.contains(User.ADMIN_ROLE)).map(_.contestId).distinct)
 
   /** `accounts` as `actor` may see them ([[Found]], the search's rule), with their membership of
     * `contestId` if given: the Edit user form's panel of the other accounts with a wiki account

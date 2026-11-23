@@ -1,0 +1,15 @@
+@()(implicit flash: Flash, messages: Messages)
+@* The outcome of the last series action (SeriesController's flash): done, or refused with the
+   reason's message key, and the contest it concerned (a bulk assignment's) *@
+@for(key <- flash.get("series-done")) {
+    <div class="alert alert-success" role="status" id="series-done" data-key="@key">
+        @Messages(key, flash.get("series-batch").getOrElse(""), flash.get("series-undone").getOrElse("0"))
+        @for(left <- flash.get("series-left").filter(_.nonEmpty)) {<br>@Messages("series.batch.undo.left", left)}
+    </div>
+}
+@for(key <- flash.get("series-error")) {
+    <div class="alert alert-danger" role="alert" id="series-error" data-key="@key">
+        @Messages(key)
+        @for(contest <- flash.get("series-error-contest")) {(@Messages("series.contest.id", contest))}
+    </div>
+}

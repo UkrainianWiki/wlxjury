@@ -264,24 +264,26 @@ class RoundStatePageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    // pins the current behaviour, a known gap (the 2026-11-19 review of #381): a round_user row
-    // whose `active` is NULL is not active for the juror's rounds and pages (Round.activeRounds,
-    // RoundUser.isNotActive: "juror stopped"), but the vote path checks RoundUser.isStopped
-    // (FALSE only), so a direct vote is still taken. Not changed here
-    "show a NULL round_user.active as juror stopped, while the vote path still takes a vote" in {
+    // an old round_user row with no recorded status (`active` NULL) is stopped since V108 (the
+    // maintainer's decision of 2026-11-20; the 2026-11-19 review of #381 found the gallery saying
+    // "juror stopped" while the vote path took a vote): the column is NOT NULL, the page and the
+    // vote agree
+    "refuse NULL in round_user.active, and show a stopped juror as stopped while refusing their vote" in {
       testDbApp { implicit app =>
-        val f = fixture(c => Round(None, 2, Some("Null one"), contestId = c, active = true))
-        scalikejdbc.DB.autoCommit(implicit s => scalikejdbc.SQL(
+        val f = fixture(c => Round(None, 2, Some("Old one"), contestId = c, active = true))
+        scala.util.Try(scalikejdbc.DB.autoCommit(implicit s => scalikejdbc.SQL(
           "UPDATE round_user SET active = NULL WHERE round_id = ? AND user_id = ?")
-          .bind(f.round.getId, f.juror.getId).update.apply())
+          .bind(f.round.getId, f.juror.getId).update.apply())) must beAFailedTry
+        RoundUser.setActive(f.round.getId, f.juror.getId, active = false)
         val gallery = get(app, galleryUrl(f.round, f.juror), f.juror)
         status(gallery) === OK
         contentAsString(gallery) must contain("data-reason=\"juror_stopped\"")
         val vote = route(app, FakeRequest(POST, s"/rate/round/${f.round.getId}/pageid/$pageId/select/1")
           .withSession(Secured.UserName -> f.juror.email).withHeaders("X-Requested-With" -> "XMLHttpRequest")
           .withCSRFToken).get
-        status(vote) === OK
-        VoteJdbc.findBy(pageId, f.juror.getId, f.round.getId).map(_.rate) === Some(1)
+        status(vote) === CONFLICT
+        (contentAsJson(vote) \ "error").as[String] === "round_closed"
+        VoteJdbc.findBy(pageId, f.juror.getId, f.round.getId).map(_.rate) === Some(0)
       }
     }
   }

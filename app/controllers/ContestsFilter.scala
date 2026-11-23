@@ -21,7 +21,9 @@ final case class ContestsFilter(
     kind: Option[String] = None,
     country: ContestsFilter.Country = ContestsFilter.Country.All,
     year: ContestsFilter.Year = ContestsFilter.Year.Latest,
-    order: ContestsFilter.Order = ContestsFilter.Order.Oldest
+    order: ContestsFilter.Order = ContestsFilter.Order.Oldest,
+    series: ContestsFilter.SeriesChoice = ContestsFilter.SeriesChoice.All,
+    status: ContestsFilter.Status = ContestsFilter.Status.Live
 ) {
 
   import ContestsFilter._
@@ -30,6 +32,8 @@ final case class ContestsFilter(
   def withCountry(c: Country): ContestsFilter = copy(country = c)
   def withYear(y: Year): ContestsFilter = copy(year = y)
   def withOrder(o: Order): ContestsFilter = copy(order = o)
+  def withSeries(s: SeriesChoice): ContestsFilter = copy(series = s)
+  def withStatus(s: Status): ContestsFilter = copy(status = s)
 
   /** The query params of the choices that aren't the default, in a fixed order. */
   def params: Seq[(String, String)] =
@@ -37,7 +41,9 @@ final case class ContestsFilter(
       kind.map(TypeParam -> _),
       country.param.map(CountryParam -> _),
       year.param.map(YearParam -> _),
-      Option.when(order != Order.Oldest)(OrderParam -> order.param)
+      Option.when(order != Order.Oldest)(OrderParam -> order.param),
+      series.param.map(SeriesParam -> _),
+      status.param.map(StatusParam -> _)
     ).flatten
 
   /** `url` with this filter's params added (after its own, if it has a query); as it is for the
@@ -53,6 +59,49 @@ object ContestsFilter {
   val CountryParam = "country"
   val YearParam = "year"
   val OrderParam = "order"
+  val SeriesParam = "series"
+  val StatusParam = "status"
+
+  /** The Series menu (contest series plan §5.3): every contest, those in no series, or one
+    * series' (by id). An unknown value is every contest.
+    */
+  sealed trait SeriesChoice { def param: Option[String] }
+
+  object SeriesChoice {
+    case object All extends SeriesChoice { val param: Option[String] = None }
+    case object NoSeries extends SeriesChoice { val param: Option[String] = Some("none") }
+    final case class In(id: Long) extends SeriesChoice { def param: Option[String] = Some(id.toString) }
+
+    def parse(s: String): SeriesChoice = s.trim.toLowerCase(Locale.ROOT) match {
+      case "none" => NoSeries
+      case v      => v.toLongOption.fold[SeriesChoice](All)(In)
+    }
+
+    def matches(choice: SeriesChoice, c: ContestJury): Boolean = choice match {
+      case All      => true
+      case NoSeries => c.seriesId.isEmpty
+      case In(id)   => c.seriesId.contains(id)
+    }
+  }
+
+  /** The Status menu (§3.1, §5.3): live contests by default; the retired ones, or all, by choice. */
+  sealed abstract class Status(val value: String, val messageKey: String) {
+    def param: Option[String] = Option.when(this != Status.Live)(value)
+  }
+
+  object Status {
+    case object Live extends Status("live", "contests.status.live")
+    case object Retired extends Status("retired", "contests.status.retired")
+    case object Any extends Status("all", "contests.status.all")
+    val values: Seq[Status] = Seq(Live, Retired, Any)
+    def parse(s: String): Status = values.find(_.value == s.trim.toLowerCase(Locale.ROOT)).getOrElse(Live)
+
+    def matches(choice: Status, c: ContestJury): Boolean = choice match {
+      case Live    => !c.retired
+      case Retired => c.retired
+      case Any     => true
+    }
+  }
 
   val Default: ContestsFilter = ContestsFilter()
 
@@ -180,12 +229,15 @@ object ContestsFilter {
   }
 
   /** From the route's params; any missing or unknown is the default. */
-  def of(contestType: Option[String], year: Option[String], country: Option[String], order: Option[String]): ContestsFilter =
+  def of(contestType: Option[String], year: Option[String], country: Option[String], order: Option[String],
+      series: Option[String] = None, status: Option[String] = None): ContestsFilter =
     ContestsFilter(
       contestType.map(_.trim).filter(_.nonEmpty),
       country.fold[Country](Country.All)(Country.parse),
       year.fold[Year](Year.Latest)(Year.parse),
-      order.flatMap(Order.parse).getOrElse(Order.Oldest)
+      order.flatMap(Order.parse).getOrElse(Order.Oldest),
+      series.fold[SeriesChoice](SeriesChoice.All)(SeriesChoice.parse),
+      status.fold[Status](Status.Live)(Status.parse)
     )
 
   /** The prefix of the add form's hidden fields that carry the list's type, country and order. */
@@ -225,12 +277,22 @@ final case class ContestsFilterBar(
     filter: ContestsFilter,
     url: ContestsFilter => String,
     contests: Seq[ContestJury],
-    locale: Locale = Locale.ENGLISH
+    locale: Locale = Locale.ENGLISH,
+    /** The series, for the Series menu (contest series plan §5.3). */
+    series: Seq[db.scalikejdbc.Series] = Nil
 ) extends ContestMenuCounts {
 
   import ContestsFilter._
 
-  private val rows: Seq[(ContestJury, Country)] = contests.map(c => c -> placeOf(c))
+  /** The contests of the Series and Status choices: the other menus choose among these only. */
+  private val rows: Seq[(ContestJury, Country)] =
+    contests.filter(c => SeriesChoice.matches(filter.series, c) && Status.matches(filter.status, c)).map(c => c -> placeOf(c))
+
+  /** How many contests a Series choice keeps, within the Status choice (the other menus aside). */
+  def countSeries(s: SeriesChoice): Int = contests.count(c => SeriesChoice.matches(s, c) && Status.matches(filter.status, c))
+
+  /** How many contests a Status choice keeps, within the Series choice (the other menus aside). */
+  def countStatus(s: Status): Int = contests.count(c => SeriesChoice.matches(filter.series, c) && Status.matches(s, c))
 
   /** The page language's alphabetical order (Ukrainian І, Ї, Є in their places). */
   private val collator = java.text.Collator.getInstance(locale)

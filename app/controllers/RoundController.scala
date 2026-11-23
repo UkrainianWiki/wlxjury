@@ -483,6 +483,8 @@ class RoundController @Inject() (
               onUnAuthorized(user, request, Secured.Denial.contest(Some(contestId), User.ADMIN_ROLES))
             else round.id match {
               case None if unreadable.nonEmpty => unreadableLines
+              // no new round in a retired contest (contest series plan §3.1; root alone opens one)
+              case None if ContestJuryJdbc.findById(contestId).exists(_.retired) => reRender(round, "round.create.retired")
               // "rejected by at least N" (V93) from no previous round whose votes may reject: it
               // would leave out nothing, or keep nothing; refused, with the form kept
               case None if !EditRound.rejectedByHasSource(round,

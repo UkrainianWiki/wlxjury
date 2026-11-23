@@ -57,6 +57,12 @@ Each request runs in one contest, the **current contest**. It comes from the con
 when someone follows a link to a page of another contest they belong to, the tool switches to
 that contest. Admins manage only the contests in which they are admins.
 
+The contest menu groups a person's contests by **series** (see [Series](#a-series)): under
+"Series: Wiki Loves Monuments in Nepal" this year's and last year's contest of that series, the
+newest first; the older contests of series under **Earlier years**; the contests in no series
+under **Other contests**. Someone with only one contest has no menu. A **retired** contest isn't
+in the menu, and its members can't open it.
+
 <a id="a-users"></a>
 ## People
 
@@ -664,6 +670,18 @@ people ([People](#a-users)), its [greeting](#a-greeting), its [files](#a-import-
 [rounds](#a-running).
 
 <img src="images/admin-contests.png" alt="The Contests page, where root creates and imports contests" width="1280">
+
+<a id="a-series"></a>
+### Series
+
+A **series** ties one contest per year across the years: "Wiki Loves Monuments in Nepal" holds
+the 2024, 2025 and 2026 contests of WLM in Nepal. Each year stays its own contest, with its own
+people, files and rounds. The **previous year's contest** is the series' contest with the next
+lower year. A series is not a Montage series, which covers a whole competition.
+
+Today only root creates series and puts contests into them (see [What only root can
+do](#a-root)). Contests of a series show under its name in the contest menu. Contests in no
+series work as before.
 
 <a id="a-more-than-one-admin"></a>
 ### Several admins
@@ -1293,7 +1311,47 @@ stopped.
 ## What only root can do
 
 - Create contests, and import them from a Commons list, on **Contests**, and change a contest's
-  settings there.
+  settings there. A contest added there records who added it and when (the **Created** column).
+  Adding a contest with the name, year and country of an existing one is allowed, with a warning.
+- Manage **series** on **Series** (the **Manage series** link beside the **Series** menu on **Contests**):
+  - **create** a series with its name, type (`wlm`, `wle`, or the word after "Wiki Loves" in
+    lower case, such as `folklore`; empty for any type), country and campaign; **rename** it
+    (two live series can't share a name); **retire** it
+    (its contests stay live and show under **Other contests**; nothing new goes into it) and
+    un-retire it;
+  - **assign contests in bulk:** **Assignment proposals** groups the live contests in no series
+    by type and country across years, and offers an existing series of that type and country
+    first; a type the tool doesn't know otherwise ("Wiki Loves Folklore") groups by the word after
+    "Wiki Loves". Tick the proposals to assign and untick contests to leave out; one confirmation
+    is one **batch**, all or nothing: if the proposals changed since the page was shown (a contest
+    assigned, retired or flagged meanwhile), nothing is assigned and the page says to look again.
+    **Undo batch** on the Series page takes the batch's contests out of their series again, except
+    those changed since (they are listed); a series the batch created stays, empty (retire it if
+    it isn't wanted). The proposals leave out, with why: a name of no contest type, an unusual
+    country, two live contests of one type, country and year, a year the series already has, and a
+    contest the **reuse check** flags (with the kinds of signs it found). The page reads every
+    unassigned contest's rounds and files, so it takes a few seconds;
+  - **one contest at a time:** the contest's **Series and status** page (the **Series** column on
+    **Contests**) assigns it, moves it to another series or takes it out. A series holds one live
+    contest per year, and a contest the tool reads as of another type or country than the series is
+    refused. A contest whose type or country it can't read ("USA", a name in another language) may
+    be assigned, and its change log says so. The page shows the reuse check and the change log;
+  - the **reuse check** looks for signs that a contest was reused for another year or country: an
+    import source or files source naming another contest, a round filtered by another contest's
+    category, a round with at least 5 files, and at least 2 % of its files, in another contest's or
+    country's categories, and rounds of several countries in a national contest. Rounds created
+    far apart are shown beside these, never a sign alone. Such a contest is never proposed for a
+    series. On **Contests** the **Reused** badge reads the sources and rounds only, not the rounds'
+    files: the contest's **Series and status** page shows every sign.
+- **Retire a contest**, and un-retire it, on its **Series and status** page: its members can't
+  open it any more and menus and lists leave it out (**Status** on **Contests** shows the retired
+  ones); its data stays; root still opens and can change it. A contest with a round open or
+  paused can't be retired (stop the round first), nor one with a round being created or reviewed,
+  or whose creation failed (finish or cancel it on the Rounds page). Its admins no longer reach
+  accounts through it, and it is no source for adding people from another contest. A retired contest doesn't count as its series' contest of that year, and
+  can't be un-retired while another live contest of the series has that year.
+- On **Contests**, the **Series** menu lists the contests of one series or of none, and **Status**
+  the live (the default), retired or all contests.
 - See **Users** across all contests, every account by default. The **Type**, **Country**, **Year**
   and **Role** menus in the top bar narrow the list to the accounts that are an **Admin**, an
   **Organizer** or a **Juror** (or any of these, with **All**) of a contest of that type, country

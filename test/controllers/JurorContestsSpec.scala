@@ -236,26 +236,6 @@ class JurorContestsSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "see an open round whose round_user row has no active value as their voting stopped" in {
-      testDbApp { implicit app =>
-        createContests(10)
-        val juror = member("juror@example.com", 10L -> "jury")
-        val round = openRound(10, juror)
-        scalikejdbc.DB.autoCommit(implicit s => scalikejdbc.SQL(
-          "UPDATE round_user SET active = NULL WHERE round_id = ? AND user_id = ?")
-          .bind(round.getId, juror.getId).update.apply())
-        val inContest = Secured.inCurrentContest(User.findById(juror.getId).get, Some("10"))
-        val start = send(app, GET, "/", juror, 10)
-        // not open to them, as activeRounds takes it, so the start page lists it
-        (Round.activeRounds(inContest) must beEmpty) and
-          (status(start) === OK) and
-          (closedItems(contentAsString(start)).map(i => (i._1, i._2)) ===
-            Seq(round.getId.toString -> "juror_stopped")) and
-          // and its gallery says the same, not a denial
-          (new services.GalleryService().roundState(inContest, round).map(_.reason) must beSome("juror_stopped"))
-      }
-    }
-
     "see a round still being prepared, and the same list in the gallery without a round" in {
       testDbApp { implicit app =>
         createContests(10)

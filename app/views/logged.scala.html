@@ -5,7 +5,11 @@
         @* the contests to switch to, computed once (JurorContests.switcherEntries): a juror-only
            membership without a round open to the user (last year's) is left out, the current
            contest always shown; nothing with one entry *@
-        @defining(controllers.JurorContests.switcherEntries(user)) { entries =>
+        @* grouped by series (contest series plan §5.1, JurorContests.switcherGroups): a heading per
+           live series with this and last year's contests, then "Earlier years", then "Other
+           contests" (no series, or a retired one); no headings without a live series *@
+        @defining(controllers.JurorContests.switcherGroups(user)) { groups =>
+        @defining(groups.flatMap(_.entries)) { entries =>
         @if(entries.nonEmpty) {
         <li class="nav-item dropdown">
             <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="@Messages("contest.switch")">
@@ -15,7 +19,16 @@
                 @entries.find(e => user.contestId.contains(e._1.contestId)).fold(Messages("contest.switch"))(_._2.fullName)
             </button>
             <ul class="dropdown-menu dropdown-menu-end">
-                @for((uc, contest) <- entries) {
+                @for((group, index) <- groups.zipWithIndex) {
+                    @for(heading <- group.heading) {
+                        @if(index > 0) {<li><hr class="dropdown-divider"></li>}
+                        <li><h6 class="dropdown-header contest-menu-heading">@heading match {
+                            case controllers.JurorContests.SeriesHeading(name) => {@Messages("series.of", name)}
+                            case controllers.JurorContests.EarlierYears => {@Messages("contest.menu.earlier")}
+                            case _ => {@Messages("contest.menu.other")}
+                        }</h6></li>
+                    }
+                @for((uc, contest) <- group.entries) {
                     <li>
                         @* a POST with the CSRF token: a link could switch it from another site *@
                         <form method="post" action="@routes.UserController.switchContest(uc.contestId)" class="navbar-menu-form">
@@ -24,8 +37,10 @@
                         </form>
                     </li>
                 }
+                }
             </ul>
         </li>
+        }
         }
         }
         @* the colour mode: the current one's icon, opening light, dark and auto. A POST with the
