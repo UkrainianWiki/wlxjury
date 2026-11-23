@@ -8,7 +8,7 @@ Status: verification done, implementation not started. Date: 2026-11-24.
   stacked on a port of the `react` branch (21 commits: a Vite/React contests grid under `ui/`, served at
   `/ui`). Its merge base with master is recent (fa45a746) and master is only 6 commits ahead of it (docs, CI
   and the top bar), so the merge itself is conflict-free. The age shows in the code, not in the git distance.
-- It adds `app/graphql/` (about 1,260 lines): `SchemaDefinition`, `GraphQLContext`, `GraphQLRoute`,
+- It adds `app/graphql/` (13 files, 1,037 lines in the merge-base diff; the 1,264 of the whole `app`/`conf`/`build.sbt` diff also counts the SDL, routes and build changes): `SchemaDefinition`, `GraphQLContext`, `GraphQLRoute`,
   `SubscriptionEventBus`, resolvers for contests, rounds, images, users, comments, monuments and login, plus
   `conf/graphql/schema.graphql` (SDL, 204 lines, documentation only: the code builds the schema in Scala), 10
   specs in `test/graphql/`, and a design spec and implementation plan under `docs/superpowers/`.
@@ -44,7 +44,7 @@ all in `app/graphql/` (the compiler stops in the typer, so more may follow):
 | Rounds | `Round` as of April | `distributing`, round image counts (`round_image`), jobs (V60), lineage, criteria | type mismatch in `RoundResolver` plus new fields; mutations go through `RoundService` and the job path, never a direct `Round.create` |
 | Authorization | `requireRole`, no contest scope, no visibility rules | `Secured` builders, `Denial` logging on `security.authz`, `GalleryService.viewerRounds/mayViewRound/viewAs`, `User.canViewOrgInfo` | the real work; none of it exists in the branch |
 | API auth | own JWT and proxy header | `api.ApiAuth.caller`: personal Bearer tokens or the session, mounted under `/api` (`ApiRouter`), see `docs/api.md` | reuse it |
-| CSRF | none | CSRF filter; `Csrf-Token` for session POSTs | session mutations need it; Bearer calls skip it |
+| CSRF | none | CSRF filter; `Csrf-Token` for session POSTs | session mutations need it; only a request with a Bearer header and no session cookie skips it (`ApiAuth.bearerWithoutSession`); with a cookie CSRF is required |
 | Serving | Pekko HTTP :9001 route | Play routes only; Tapir served through Play | new Play action |
 | Build | `uiTest` wired into `Test / test`, needs npm in `ui/` | `jsTest` only | the React UI is a separate topic (Q2) |
 | Series | none | contest series in flight (#119-#124) | go through `ContestService`; add series fields after they merge |
@@ -71,13 +71,17 @@ Port onto a fresh branch from master, taking only what is worth keeping; do not 
 ## 4. Serving design (never unauthenticated)
 
 1. Endpoint: a Play action `POST /api/graphql`, inside the `/api` router so it shares `ApiAuth.caller`, the 401
-   shape, the Bearer-skips-CSRF rule and the docs. JSON body `{query, variables, operationName}`; body size
+   shape, the CSRF rule (a Bearer request without a session cookie skips it, one with a cookie does not), the `Host` check and the docs. JSON body `{query, variables, operationName}`; body size
    limit (for example 64 KB). Persisted queries are out of scope.
 2. Authentication: `ApiAuth.caller` only (Bearer token or session). 401 JSON when absent, as for REST. No proxy
    header, no JWT, no `login` mutation (tokens are created on the account page).
-3. Token scope: D-1b (#121) tokens are read-only and server-local. Until a write scope exists, a token request
-   that contains a mutation or subscription is refused with 403 and logged; session callers may mutate only
-   with the CSRF token. Check #121's scope field before wiring this.
+3. Token scope: personal API tokens on master are full-power (they act as the user; `docs/api.md` shows a PUT
+   with one), so over REST they can write today. A read-only token scope is only planned (D-1b, #121, V108
+   reserved in `2026-11-18-contest-series.md`). GraphQL sets its own rule: a token caller may run queries only;
+   a mutation or subscription from a token is refused with 403 and logged until a write scope exists. Session
+   callers may mutate only with the CSRF token. If a request carries both a token and a session cookie, the
+   token decides (the rule `ApiAuth.caller` already applies) and so the query-only limit applies: a cookie can
+   never raise a token's rights.
 4. Contest and role: resolvers never take a contest id from the query as a permission. Each top-level field
    loads the resource (round, contest, image) first, then runs as `Secured.inContest(user, contestId)` (active
    membership, root bypass). A missing resource and a contest the caller is not in give the same answer (null
@@ -116,8 +120,21 @@ Negative authorization (each must also log one `security.authz` WARN carrying th
 - an organizer asks for votes of a user who is not a juror of the round: not found.
 - a juror lists `users` and sees members or emails of other contests: none.
 - a juror queries a `distributing` round: not found.
-- a non-admin calls a mutation; a token calls a mutation (read-only scope); a session mutation without the CSRF
-  token.
+- a non-admin calls a mutation; a token calls a mutation (queries only for tokens); a session mutation without
+  the CSRF token; Bearer plus a session cookie without the CSRF token: refused.
+- signed-out introspection (`__schema`, `__type`) is refused; a signed-in juror may introspect (the schema is not
+  secret), and the test pins which of the two the plan chose.
+- batching: an array body, or several operations in one document, is rejected; `GET /api/graphql` does not
+  execute anything (405).
+- an organizer sees no emails or admin-only fields while the contest's admin does.
+- token and session in the same request: the token wins, no escalation (a read-only caller with an admin cookie
+  stays query-only).
+- one user with different roles in two contests, querying both in one request: each field is judged in its own
+  contest.
+- a mutation naming another contest's round id: refused, nothing changed.
+- a `Host` not in `WLXJURY_ALLOWED_HOSTS` gets the REST API's 400.
+- the complexity budget counts list times nested list (`rounds { images { votes } }` with page sizes), not only
+  depth.
 - cross-contest id guessing: a round id of contest B inside a query about contest A.
 - a depth bomb, an alias flood and an over-complex query are rejected before any SQL; an oversize body; a page
   size over the cap is clamped; a slow resolver hits the timeout and leaves the pool usable.
@@ -142,8 +159,8 @@ Review: the normal review and fix cycle; no template changes, so the large-view 
   lets clients move piece by piece.
 - Q2. Is the React `ui/` contests grid (from the `react` branch under this one) still wanted? The plan leaves it
   out; it would be its own topic and brings `npm` into `sbt test`.
-- Q3. Should API tokens get a write scope, and for which operations? Without it GraphQL stays read-only for
-  tokens.
+- Q3. Tokens can write over REST today and a read-only scope is only planned (D-1b). Agree that GraphQL tokens
+  are query-only until a write scope exists, and which operations that scope should later allow?
 - Q4. Is Sangria fixed as the library? Caliban (ZIO) exists only on the old `graphql` branch and Tapir has no
   GraphQL. I recommend Sangria: no ZIO runtime, plain Futures like the rest of the app.
 - Q5. Which clients will call it (a React UI, external tools, Montage)? That decides subscriptions,
