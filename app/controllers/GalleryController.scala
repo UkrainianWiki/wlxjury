@@ -482,9 +482,6 @@ class GalleryController @Inject() (
     // frozen while a distribution reads its votes, or a round still being distributed; and only
     // by a juror not stopped on the round (P6: as if the round were stopped for them). A round
     // paused while a job moves its files (Round.pausedCond) says so: its jurors reload shortly.
-    // A known gap: a round_user row whose `active` is NULL is not active for the juror's pages
-    // (Round.activeRounds, RoundUser.isNotActive: "juror stopped"), but isStopped is FALSE only,
-    // so such a juror's direct vote is still taken (RoundStatePageSpec pins it)
     if (round.exists(r => r.mayBePaused && Round.isPaused(roundId)) && !RoundUser.isStopped(roundId, user.getId))
       Conflict(play.api.libs.json.Json.obj("error" -> "round_paused"))
     else if (!round.exists(_.openToJurors) || RoundUser.isStopped(roundId, user.getId))

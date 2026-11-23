@@ -31,6 +31,7 @@
    before file-anchor.js, which reads the bar's height *@
 @layout(Messages(title), bodyClass = Seq(if (gallery) "gallery" else "", if (stickyBar) "wlx-topbar-sticky" else "").filter(_.nonEmpty).mkString(" ")) {
         <script src="@routes.Assets.versioned("javascripts/region-menu.js")"></script>
+        <script src="@routes.Assets.versioned("javascripts/menu-fit.js")"></script>
         <script src="@routes.Assets.versioned("javascripts/pager-jump.js")"></script>
         <script src="@routes.Assets.versioned("javascripts/vote-time.js")"></script>
         @if(stickyBar) {

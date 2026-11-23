@@ -19,8 +19,63 @@ class RouteAuthSpec extends Specification {
     """\b(?:withAuthJsonOn|withAuthJson|withAuthOn|withAuthForm|withAuth)\(|\bAction\b|\bEssentialAction\s*[{(]|\bactionBuilder\b""".r
   /** An unqualified call: `routes.ImageController.images(` or `xs.map(` is no helper of the file. */
   private val Call = """(?<![.\w])(\w+)\(""".r
+  /** A member's start on a new line: its annotations (`@volatile`, `@scala.annotation.nowarn`,
+    * `@throws[E]`, `@nowarn("…")`, arguments with one level of nested parentheses; strings are
+    * blanked before the scan, [[blank]]), its modifiers (`case` of a case class or object among
+    * them), then `def`, `val`, `var`, `lazy val`, `object`, `class`, `trait` or `type`. A `case` of
+    * a match is inside its braces, never at the body's depth 0.
+    */
   private val NextMember =
-    """\n\s*(?:(?:private|protected|override|final|implicit)(?:\[\w+\])?\s+)*(?:def|val|var|lazy\s+val|object|class|trait)\s""".r
+    ("""\n\s*(?:@[\w.]+(?:\[[^\]]*\])?(?:\((?:[^()]|\([^()]*\))*\))?\s+)*""" +
+      """(?:(?:private|protected|override|final|implicit|sealed|abstract|case)(?:\[\w+\])?\s+)*""" +
+      """(?:def|val|var|lazy\s+val|object|class|trait|type)\s""").r
+
+  /** `text` with every comment and every string and character literal's contents as spaces (new
+    * lines kept, so positions and lines stay), the quotes kept: a builder's name or a bracket in a
+    * comment or a literal is not code. An interpolated string's `${…}` is blanked with it.
+    */
+  private def blank(text: String): String = {
+    val out = new StringBuilder(text)
+    def spaces(from: Int, until: Int): Unit =
+      (from until math.min(until, text.length)).foreach(k => if (text.charAt(k) != '\n') out.setCharAt(k, ' '))
+    def endOf(i: Int, close: String): Int = {
+      val k = text.indexOf(close, i)
+      if (k < 0) text.length else k + close.length
+    }
+    var i = 0
+    while (i < text.length) {
+      val c = text.charAt(i)
+      if (text.startsWith("\"\"\"", i)) {
+        val e = endOf(i + 3, "\"\"\"")
+        spaces(i + 3, e - 3)
+        i = e
+      } else if (text.startsWith("//", i)) {
+        val e = endOf(i, "\n") - 1
+        spaces(i, e)
+        i = e
+      } else if (text.startsWith("/*", i)) {
+        val e = endOf(i + 2, "*/")
+        spaces(i, e)
+        i = e
+      } else if (c == '"') {
+        var k = i + 1
+        while (k < text.length && text.charAt(k) != '"' && text.charAt(k) != '\n')
+          k += (if (text.charAt(k) == '\\') 2 else 1)
+        spaces(i + 1, k)
+        i = k + 1
+      } else if (c == '\'' && text.startsWith("\\u", i + 1) && text.startsWith("'", i + 7)) {
+        spaces(i + 1, i + 7)
+        i += 8
+      } else if (c == '\'' && text.startsWith("\\", i + 1) && text.startsWith("'", i + 3)) {
+        spaces(i + 1, i + 3)
+        i += 4
+      } else if (c == '\'' && text.startsWith("'", i + 2)) {
+        spaces(i + 1, i + 2)
+        i += 3
+      } else i += 1
+    }
+    out.toString
+  }
 
   /** The body of `def name` in `text`, if any: after its signature's `=`, to the next member at
     * the body's own nesting level (an inner `val`/`def` is part of it), or to the bracket that
@@ -84,16 +139,19 @@ class RouteAuthSpec extends Specification {
   }
 
   /** How `name`'s action is built: "builder", "Action" (unchecked), or "none"; through
-    * helpers of the same file it calls before any builder.
+    * helpers of the same file it calls before any builder. Read in the source with its comments
+    * and literals blanked ([[blank]]).
     */
-  private def builtWith(text: String, name: String, depth: Int = 0): String =
+  private def builtWith(text: String, name: String): String = scan(blank(text), name, 0)
+
+  private def scan(text: String, name: String, depth: Int): String =
     body(text, name).fold("none") { b =>
       Builder.findFirstMatchIn(b) match {
         case Some(m) if m.matched.startsWith("with") => "builder"
         case Some(m) =>
           // a helper called before the bare Action may hold the builder
-          helper(text, name, b.substring(0, m.start)).filter(_ => depth < 3).fold("Action")(h => builtWith(text, h, depth + 1))
-        case None => helper(text, name, b).filter(_ => depth < 3).fold("none")(h => builtWith(text, h, depth + 1))
+          helper(text, name, b.substring(0, m.start)).filter(_ => depth < 3).fold("Action")(h => scan(text, h, depth + 1))
+        case None => helper(text, name, b).filter(_ => depth < 3).fold("none")(h => scan(text, h, depth + 1))
       }
     }
 
@@ -137,6 +195,60 @@ class RouteAuthSpec extends Specification {
         (builtWith(delegated, "d") === "builder") and (builtWith(bare, "missing") === "none") and
         (builtWith(form, "f") === "builder") and (builtWith(innerVal, "g") === "builder") and
         (builtWith(next, "h") === "Action") and (builtWith(reverse, "j") === "none")
+    }
+
+    "read no builder or helper call in a comment or a literal" in {
+      val commented = "def a(): EssentialAction = {\n    // withAuth() { u => r => Ok }\n    /* withAuthJson( */\n" +
+        "    Action { r => Ok }\n  }\n"
+      val quoted = "def b(): EssentialAction = {\n    val s = \"withAuth(\"\n    val t = \"\"\"withAuthOn(blocking)\"\"\"\n" +
+        "    Action { r => Ok }\n  }\n"
+      // a helper named only in a comment or a string is not called
+      val helperInComment = "def c(): EssentialAction = {\n    // see d()\n    log(\"d()\")\n    Action { r => Ok }\n  }\n" +
+        "  def d(): EssentialAction = withAuth() { u => r => Ok }\n"
+      (builtWith(commented, "a") === "Action") and (builtWith(quoted, "b") === "Action") and
+        (builtWith(helperInComment, "c") === "Action")
+    }
+
+    "not end a body at a closing bracket inside a literal or a comment" in {
+      // a `}` or `)` in a string, a character, a triple-quoted string or a comment would close the
+      // def's scope early, leaving its builder out
+      val closing = "def a(): EssentialAction = {\n    val s = \"}\"\n    val c = ')'\n    val e = '\\\\'\n" +
+        "    val t = \"\"\") }\"\"\"\n    val u = '\\u007d'\n    // }\n    /* ) */\n    withAuth() { u => r => Ok }\n  }\n" +
+        "  def b(): EssentialAction = Action { r => Ok }\n"
+      (builtWith(closing, "a") === "builder") and (body(closing, "a").exists(_.contains("withAuth()")) must beTrue) and
+        (blank(closing).length === closing.length) and (blank(closing) must not(contain("\"}\""))) and
+        (builtWith(closing, "b") === "Action")
+    }
+
+    "end a body at the next member, case, sealed, abstract, type and annotated members too" in {
+      def after(member: String) = s"def a(): EssentialAction =\n    noBuilder { r => Ok }\n  $member\n"
+      foreach(Seq(
+        "case class C(p: P = withAuth() { u => r => Ok })",
+        "case object O { val e = withAuth() { u => r => Ok } }",
+        "final case class F(e: EssentialAction = withAuth() { u => r => Ok })",
+        "sealed trait S { def e = withAuth() { u => r => Ok } }",
+        "abstract class A { def e = withAuth() { u => r => Ok } }",
+        "type T = Wrapped { def e = withAuth() { u => r => Ok } }",
+        "private type U = Int; val e = withAuth() { u => r => Ok }",
+        "lazy val e = withAuth() { u => r => Ok }",
+        "@volatile var e = withAuth() { u => r => Ok }",
+        "@nowarn(\"cat=deprecation\") def e = withAuth() { u => r => Ok }",
+        "@deprecated(\"x\", \"1\") @inline private def e = withAuth() { u => r => Ok }",
+        "@scala.annotation.nowarn def e = withAuth() { u => r => Ok }",
+        "@throws[IllegalStateException] def e = withAuth() { u => r => Ok }",
+        "@deprecated(\"use f()\", \"1\") def e = withAuth() { u => r => Ok }",
+        "@SuppressWarnings(Array(\"x\")) val e = withAuth() { u => r => Ok }"
+      )) { member =>
+        builtWith(after(member), "a") aka member must_=== "none"
+      }
+    }
+
+    "recognise annotated members on the source as written too (strings not blanked)" in {
+      // NextMember itself: nested parentheses and a parenthesis inside a string
+      foreach(Seq("@scala.annotation.nowarn def e", "@throws[E] def e", "@deprecated(\"use f()\", \"1\") def e",
+        "@SuppressWarnings(Array(\"x\")) val e")) { member =>
+        NextMember.pattern.matcher(s"\n  $member = 1").lookingAt() aka member must beTrue
+      }
     }
 
     "have no stale entry in the lists" in {

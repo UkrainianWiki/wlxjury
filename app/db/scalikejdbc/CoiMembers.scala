@@ -15,7 +15,27 @@ object CoiMembers {
     * id, and their role in the contest, or `root` for a root user who is not a member of it.
     */
   final case class Member(userId: Long, account: String, role: String) {
+
+    /** The account and the role code, for the stored disqualification detail and the job's
+      * state (not translated: they outlive the request's language).
+      */
     def describe: String = s"$account — $role"
+
+    /** The account and the role's name in the user's language (`role.*`), for the pages. */
+    def label(implicit messages: play.api.i18n.Messages): String = s"$account — $roleName"
+
+    def roleName(implicit messages: play.api.i18n.Messages): String = messages("role." + role)
+  }
+
+  /** A stored conflict-of-interest detail ([[Member.describe]]: "account — role code") with the
+    * role named in the user's language, as [[Member.label]]; any other text as it is (a role that
+    * is not a conflict-of-interest one, or a detail written otherwise).
+    */
+  def detailLabel(detail: String)(implicit messages: play.api.i18n.Messages): String = {
+    val at = detail.lastIndexOf(" — ")
+    val role = if (at < 0) "" else detail.substring(at + 3)
+    if (User.COI_ROLES.contains(role) || role == User.ROOT_ROLE) Member(0L, detail.substring(0, at), role).label
+    else detail
   }
 
   /** A user name as MediaWiki normalizes it: without a `User:` prefix, `_` as a space, runs

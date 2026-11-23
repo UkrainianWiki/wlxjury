@@ -485,7 +485,27 @@ def release_lock(lock, text):
         print("Could not release lock {}: {}".format(lock, error), file=sys.stderr)
 
 
+def utf8_safe_console():
+    """Make printing safe on any console: a Windows console's code page (cp1252) cannot encode
+    much of what a log holds (Cyrillic, typographic quotes, emoji), and print() raised
+    UnicodeEncodeError, losing the summary. Output is UTF-8, an unencodable character replaced.
+    An explicit PYTHONIOENCODING is kept: its encoding as given, with errors replaced unless it
+    names its own error handler ("cp1252:strict")."""
+    explicit = os.environ.get("PYTHONIOENCODING", "").strip()
+    if explicit and ":" in explicit:
+        return
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if explicit:
+                stream.reconfigure(errors="replace")
+            else:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def main():
+    utf8_safe_console()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--log", type=Path)
     parser.add_argument("--summarize", type=Path, help="Summarize an existing log without running anything")

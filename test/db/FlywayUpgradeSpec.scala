@@ -807,6 +807,58 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+  /** V108's rollback SQL after reopen (the script's last comment): the column nullable again (the
+    * rows set to FALSE stay FALSE).
+    */
+  private val v108Rollback = Seq(
+    "ALTER TABLE round_user MODIFY active BOOLEAN NULL DEFAULT NULL, ALGORITHM = INPLACE, LOCK = NONE",
+    "DELETE FROM flyway_schema_history WHERE version = '108'")
+
+  "V108's NOT NULL round_user.active" should {
+    "set a NULL active to FALSE (stopped), keep the others, make it NOT NULL DEFAULT TRUE with its index, rerun, roll back" in {
+      emptyDb("fw_v108_prev")
+      flyway("fw_v108_prev", production.copy(target = Some("107"))).migrate()
+      emptyDb("fw_v108")
+      flyway("fw_v108", production.copy(target = Some("107"))).migrate().success must beTrue
+      Using.resource(connect("fw_v108"))(c => run(c, Seq(
+        "INSERT INTO users (id, fullname, email) VALUES (1, 'A', 'a@example.com'), (2, 'B', 'b@example.com'), " +
+          "(3, 'C', 'c@example.com'), (4, 'D', 'd@example.com')",
+        "INSERT INTO round (id, number, contest_id, rates, created_at) VALUES (1, 1, 1, 1, NOW())",
+        "INSERT INTO round_user (user_id, round_id, role, active) VALUES (1, 1, 'jury', NULL), (2, 1, 'jury', TRUE), " +
+          "(3, 1, 'jury', FALSE)")))
+      flyway("fw_v108", production.copy(target = Some("108"))).migrate().success must beTrue
+      val once = schema("fw_v108")
+      def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+      val migrated = Using.resource(connect("fw_v108")) { c =>
+        val actives = rows(c, "SELECT user_id, active FROM round_user ORDER BY user_id")(rs => rs.getLong(1) -> rs.getBoolean(2))
+        val column = rows(c, "SELECT IS_NULLABLE, COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = " +
+          "DATABASE() AND TABLE_NAME = 'round_user' AND COLUMN_NAME = 'active'")(rs => (rs.getString(1), rs.getString(2)))
+        val index = rows(c, "SELECT COLUMN_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() " +
+          "AND TABLE_NAME = 'round_user' AND INDEX_NAME = 'idx_round_user_round_active' ORDER BY SEQ_IN_INDEX")(_.getString(1))
+        // a row written without `active` is active; a NULL one is refused (strict mode)
+        run(c, Seq("INSERT INTO round_user (user_id, round_id, role) VALUES (4, 1, 'jury')"))
+        val default = rows(c, "SELECT active FROM round_user WHERE user_id = 4")(_.getBoolean(1))
+        val nullRefused = scala.util.Try(run(c, Seq("UPDATE round_user SET active = NULL WHERE user_id = 4"))).isFailure
+        run(c, Seq("DELETE FROM round_user WHERE user_id = 4"))
+        (actives, column, index, default, nullRefused)
+      }
+      (history("fw_v108").map(_.split(" \\| ")(1)) === upTo("108")) and
+        (migrated._1 === List(1L -> false, 2L -> true, 3L -> false)) and
+        (migrated._2 === List(("NO", "1"))) and
+        (migrated._3 === List("round_id", "active")) and
+        (migrated._4 === List(true)) and (migrated._5 must beTrue) and {
+          Using.resource(connect("fw_v108"))(c => run(c, statements("V108__Round_user_active_not_null.sql")))
+          schema("fw_v108") === once
+        } and {
+          Using.resource(connect("fw_v108"))(c => run(c, v108Rollback))
+          (history("fw_v108").map(_.split(" \\| ")(1)) === upTo("107")) and
+            (tablesOnly(schema("fw_v108")) === tablesOnly(schema("fw_v108_prev"))) and
+            (flyway("fw_v108", production.copy(target = Some("108"))).migrate().success must beTrue) and
+            (tablesOnly(schema("fw_v108")) === tablesOnly(once))
+        }
+    }
+  }
+
   /** V96's rollback SQL after reopen (CHANGELOG, the account change log): the live unsent
     * invitations revoked first, since an older release would show one as mailed; the log dropped.
     */
