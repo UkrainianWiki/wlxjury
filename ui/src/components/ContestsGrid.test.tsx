@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import ContestsGrid from './ContestsGrid'
+import ContestsGrid, { FilterChips } from './ContestsGrid'
 import * as api from '../api/contests'
 import type { Contest } from '../api/contests'
 
@@ -177,4 +177,76 @@ test('saving with blank name shows error and does not call API', async () => {
 
   await waitFor(() => expect(screen.getByText(/name.*required|required.*name/i)).toBeInTheDocument())
   expect(api.updateContest).not.toHaveBeenCalled()
+})
+
+describe('FilterChips', () => {
+  const noFilters = { name: null, year: null, country: null }
+
+  test('renders nothing when all filters are null', () => {
+    render(<FilterChips filters={noFilters} onRemove={() => {}} onClearAll={() => {}} />)
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  test('renders a chip for each active filter', () => {
+    render(
+      <FilterChips
+        filters={{ name: null, year: '2023', country: 'Ukraine' }}
+        onRemove={() => {}}
+        onClearAll={() => {}}
+      />
+    )
+    expect(screen.getByText('Year: 2023')).toBeInTheDocument()
+    expect(screen.getByText('Country: Ukraine')).toBeInTheDocument()
+    expect(screen.queryByText(/Name:/)).not.toBeInTheDocument()
+  })
+
+  test('calls onRemove with the correct key when chip delete is clicked', async () => {
+    const user = userEvent.setup()
+    const onRemove = vi.fn()
+    render(
+      <FilterChips
+        filters={{ name: null, year: '2023', country: null }}
+        onRemove={onRemove}
+        onClearAll={() => {}}
+      />
+    )
+    await user.click(screen.getByTestId('remove-filter-year'))
+    expect(onRemove).toHaveBeenCalledWith('year')
+  })
+
+  test('shows Clear all button when 2 or more filters are active', () => {
+    render(
+      <FilterChips
+        filters={{ name: null, year: '2023', country: 'Ukraine' }}
+        onRemove={() => {}}
+        onClearAll={() => {}}
+      />
+    )
+    expect(screen.getByRole('button', { name: /clear all/i })).toBeInTheDocument()
+  })
+
+  test('does not show Clear all when only 1 filter is active', () => {
+    render(
+      <FilterChips
+        filters={{ name: null, year: '2023', country: null }}
+        onRemove={() => {}}
+        onClearAll={() => {}}
+      />
+    )
+    expect(screen.queryByRole('button', { name: /clear all/i })).not.toBeInTheDocument()
+  })
+
+  test('calls onClearAll when Clear all is clicked', async () => {
+    const user = userEvent.setup()
+    const onClearAll = vi.fn()
+    render(
+      <FilterChips
+        filters={{ name: 'WLM Ukraine', year: '2023', country: null }}
+        onRemove={() => {}}
+        onClearAll={onClearAll}
+      />
+    )
+    await user.click(screen.getByRole('button', { name: /clear all/i }))
+    expect(onClearAll).toHaveBeenCalled()
+  })
 })

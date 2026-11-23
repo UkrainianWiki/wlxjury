@@ -11,13 +11,55 @@ import {
   GridEventListener,
   GridRowEditStopReasons,
 } from '@mui/x-data-grid'
-import { Button, Alert, Box } from '@mui/material'
+import { Button, Alert, Box, Chip } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import EditIcon from '@mui/icons-material/Edit'
 import SaveIcon from '@mui/icons-material/Save'
 import CancelIcon from '@mui/icons-material/Cancel'
 import { listContests, createContest, updateContest } from '../api/contests'
 import type { Contest } from '../api/contests'
+
+export type FilterKey = 'name' | 'year' | 'country'
+export type Filters = Record<FilterKey, string | null>
+
+const FILTER_LABELS: Record<FilterKey, string> = {
+  name: 'Name',
+  year: 'Year',
+  country: 'Country',
+}
+
+const FILTER_KEYS: FilterKey[] = ['name', 'year', 'country']
+
+export interface FilterChipsProps {
+  filters: Filters
+  onRemove: (key: FilterKey) => void
+  onClearAll: () => void
+}
+
+export function FilterChips({ filters, onRemove, onClearAll }: FilterChipsProps) {
+  const active = FILTER_KEYS.filter(k => filters[k] !== null)
+  if (active.length === 0) return null
+  return (
+    <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, px: 1, py: 0.5, bgcolor: 'grey.50' }}>
+      <Box component="span" sx={{ fontSize: 12, color: 'text.secondary', fontWeight: 500 }}>Filters:</Box>
+      {active.map(key => (
+        <Chip
+          key={key}
+          label={`${FILTER_LABELS[key]}: ${filters[key]}`}
+          onDelete={() => onRemove(key)}
+          deleteIcon={<CancelIcon data-testid={`remove-filter-${key}`} />}
+          size="small"
+          color="primary"
+        />
+      ))}
+      {active.length >= 2 && (
+        <Button size="small" onClick={onClearAll} sx={{ fontSize: 11, minWidth: 0, px: 1 }}>
+          Clear all
+        </Button>
+      )}
+    </Box>
+  )
+}
 
 declare module '@mui/x-data-grid' {
   interface ToolbarPropsOverrides {
@@ -114,13 +156,12 @@ export default function ContestsGrid() {
   }, [])
 
   const columns: GridColDef[] = [
-    { field: 'id', headerName: 'ID', width: 70, editable: false },
-    { field: 'name', headerName: 'Name', flex: 1, editable: true },
+    { field: 'id', headerName: 'ID', width: 90, editable: false },
+    { field: 'name', headerName: 'Name', flex: 1, minWidth: 120, maxWidth: 220, editable: true },
     { field: 'year', headerName: 'Year', width: 80, type: 'number', editable: true },
-    { field: 'country', headerName: 'Country', width: 120, editable: true },
-    { field: 'images', headerName: 'Images category', flex: 1, editable: true },
-    { field: 'campaign', headerName: 'Campaign', width: 130, editable: true },
-    { field: 'monumentIdTemplate', headerName: 'Monument template', width: 160, editable: true },
+    { field: 'country', headerName: 'Country', flex: 0.8, minWidth: 90, editable: true },
+    { field: 'images', headerName: 'Images category', flex: 2, minWidth: 150, editable: true },
+    { field: 'monumentIdTemplate', headerName: 'Monument template', flex: 1.5, minWidth: 140, editable: true },
     {
       field: 'actions',
       type: 'actions',
