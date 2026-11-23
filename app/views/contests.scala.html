@@ -4,7 +4,8 @@
         filtered: Seq[org.intracer.wmua.ContestJury],
         editContestForm: Form[org.intracer.wmua.ContestJury],
         importForm: Form[String],
-        bar: Option[controllers.ContestsFilterBar] = None
+        bar: Option[controllers.ContestsFilterBar] = None,
+        info: controllers.ContestsSeriesInfo = controllers.ContestsSeriesInfo.Empty
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 @import helper._
 @import controllers.ContestsFilter
@@ -17,6 +18,28 @@
    shared with root's all-users page *@
 @filterMenus(b: controllers.ContestsFilterBar) = {
     @contestFilterMenus(b, b, "contests")
+    @* the Series and Status menus (contest series plan §5.3): every contest, those in no series or
+       one series' (live series by name, then retired ones); live contests by default, the retired
+       ones or all by choice; each item with its count within the other of the two *@
+    @(new UiSelectionDto[ContestsFilter.SeriesChoice](
+        (s: ContestsFilter.SeriesChoice) => Call("GET", b.url(b.filter.withSeries(s))),
+        b.filter.series,
+        Seq(ContestsFilter.SeriesChoice.NoSeries -> SelectionItem("contests.series.none", count = Some(b.countSeries(ContestsFilter.SeriesChoice.NoSeries)))) ++
+        (b.series.filter(_.live).sortBy(_.name.toLowerCase) ++ b.series.filter(_.retired).sortBy(_.name.toLowerCase)).map(s =>
+            ContestsFilter.SeriesChoice.In(s.id) -> SelectionItem(s.name, localized = false, count = Some(b.countSeries(ContestsFilter.SeriesChoice.In(s.id))))),
+        Some(ContestsFilter.SeriesChoice.All -> SelectionItem("contests.series.all", count = Some(b.countSeries(ContestsFilter.SeriesChoice.All)))),
+        hideEmpty = true
+    ).toDropDown(id = Some("contests-series-menu"), label = Some(Messages("series")), labelShown = true, menuClass = "region-menu-list"))
+    @* next to it, root's way to the series pages (/admin/series; the maintainer's decision of
+       2026-11-20: not in root's Pages menu or page links) *@
+    @if(user.hasRole(User.ROOT_ROLE)) {
+        <li class="nav-item" id="contests-manage-series"><a class="nav-link" href="@routes.SeriesController.list()"><i class="bi bi-diagram-3" aria-hidden="true"></i> @Messages("contests.series.manage")</a></li>
+    }
+    @(new UiSelectionDto[ContestsFilter.Status](
+        (s: ContestsFilter.Status) => Call("GET", b.url(b.filter.withStatus(s))),
+        b.filter.status,
+        ContestsFilter.Status.values.map(s => s -> SelectionItem(s.messageKey, count = Some(b.countStatus(s))))
+    ).toDropDown(id = Some("contests-status-menu"), label = Some(Messages("series.status")), labelShown = true))
 }
 @orderMenu(b: controllers.ContestsFilterBar) = {
     @(new UiSelectionDto[ContestsFilter.Order](
@@ -31,6 +54,9 @@
         filters = bar.fold(play.twirl.api.HtmlFormat.empty)(filterMenus), orders = bar.fold(play.twirl.api.HtmlFormat.empty)(orderMenu), stickyBar = true) {
     @* the page's title, shown; then its two sections: the import, the list *@
     <h1 class="h3">@Messages("contests")</h1>
+    @for(id <- flash.get("contest-duplicate")) {
+        <div class="alert alert-warning" role="status" id="contest-duplicate">@Messages("contests.duplicate.warning", id)</div>
+    }
     <div class="row" xmlns="http://www.w3.org/1999/html">
 
         <h2 class="h4">@Messages("import.from.list.page.images.category")</h2>
@@ -72,6 +98,8 @@
                     <th>@Messages("name")</th>
                     <th>@Messages("country")</th>
                     <th>@Messages("year")</th>
+                    <th>@Messages("series")</th>
+                    <th>@Messages("contests.created")</th>
                     <th>@Messages("files.source")</th>
                     <th>@Messages("users")</th>
                     <th>@Messages("current.round")</th>
@@ -104,6 +132,8 @@
                             @bs.text(editContestForm("year"), Symbol("placeholder") -> Messages("year"), Symbol("_hiddenLabel") -> Messages("year"), Symbol("_help") -> "",
                                 Symbol("class") -> "wlx-year-input")
                             </td>
+                            <td></td>
+                            <td></td>
                             <td>
                             @* its suggestions hang from the body: the .table-responsive box would clip them *@
                             @bs.text(editContestForm("images"), Symbol("placeholder") -> Messages("files.source.placeholder"), Symbol("_hiddenLabel") -> Messages("files.source"), Symbol("_help") -> "",
@@ -132,6 +162,15 @@
                         <td>@Messages(contest.name)</td>
                         <td>@Messages(contest.country)</td>
                         <td>@contest.year</td>
+                        @* its series (a link to its series page, where root assigns it), the previous
+                           year's contest, the reuse check's badge; who created it and when (V109) *@
+                        <td class="contest-series">
+                            <a href="@routes.SeriesController.contestPage(contest.getId)">@contest.seriesId.flatMap(info.seriesNames.get).getOrElse(Messages("contests.series.set"))</a>
+                            @for(p <- info.previous.get(contest.getId)) {<span class="d-block small text-body-secondary contest-previous">@Messages("contests.previous", p.year.toString, p.getId.toString)</span>}
+                            @if(info.reused(contest.getId)) {<span class="badge text-bg-warning contest-reused">@Messages("contests.reused")</span>}
+                            @if(contest.retired) {<span class="badge text-bg-secondary contest-retired">@Messages("contest.retired")</span>}
+                        </td>
+                        <td class="small text-nowrap contest-created">@info.created.get(contest.getId).flatMap(_._2).map(views.LinkTimes.utc)@for(by <- info.created.get(contest.getId).flatMap(_._1)) {<span class="d-block">@info.creators.getOrElse(by, s"#$by")</span>}</td>
                         @* the source of the contest's files (a category or a list page), linking its files
                            page, where it is imported and set; without one, the state ("Not set") and a
                            separate link to set it (never a link without text) *@

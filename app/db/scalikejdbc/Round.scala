@@ -681,8 +681,11 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     * @return false if the round can't be started now (it is still being distributed)
     */
   def setActiveGuarded(id: Long, active: Boolean, by: Option[Long] = None): Boolean = {
+    // a round of a retired contest isn't started either (contest series plan §3.1): checked again
+    // in the update, which waits for a retirement holding the round's lock (ContestSeries.retireContest)
     val refused =
-      sql"SELECT distributing FROM round WHERE id = $id".map(_.boolean(1)).single().getOrElse(false) && active
+      sql"""SELECT r.distributing OR c.retired_at IS NOT NULL FROM round r LEFT JOIN contest_jury c ON c.id = r.contest_id
+            WHERE r.id = $id""".map(_.boolean(1)).single().getOrElse(false) && active
     val archived = WriteTx.write { implicit session =>
       val wasOpen = isOpen(id)
       sql"""UPDATE round
@@ -690,7 +693,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
                 active_before_freeze = IF(freeze_count > 0, $active AND NOT distributing, active_before_freeze),
                 active = IF(freeze_count > 0, active, $active AND NOT distributing),
                 created_at = created_at
-            WHERE id = $id""".update()
+            WHERE id = $id
+              AND NOT ($active AND EXISTS (SELECT 1 FROM contest_jury c WHERE c.id = round.contest_id AND c.retired_at IS NOT NULL))""".update()
       // After the update, and read as of then: see ImageJdbc.lockOpenRoundsOf
       !wasOpen && isOpen(id) && ImageJdbc.archiveDeletedVotesInRound(id).nonEmpty
     }

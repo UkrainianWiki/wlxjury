@@ -1,0 +1,97 @@
+@(
+        user: db.scalikejdbc.User,
+        contest: org.intracer.wmua.ContestJury,
+        allSeries: Seq[db.scalikejdbc.Series],
+        previous: Option[org.intracer.wmua.ContestJury],
+        matching: Set[Long],
+        reuse: Seq[services.series.ContestReuse.Sign],
+        changes: Seq[db.scalikejdbc.ContestChange],
+        names: Map[Long, String],
+        liveRound: Option[String]
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@import services.series.ContestReuse
+@* Root's page of a contest's series and status (contest series plan §3.1, §3.5; SeriesController
+   .contestPage): its series and previous year's contest; assign it, move it or take it out of its
+   series (the live series of its type and country listed first); retire or un-retire it; the
+   inline reuse check's signs; its change log. CY-2 lists here the series admins a move gives or
+   takes reach *@
+@current = @{ contest.seriesId.flatMap(id => allSeries.find(_.id == id)) }
+@mainAdmin("series.contest.title", user, user.getId) {
+    <nav aria-label="@Messages("series.breadcrumb")"><ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="@routes.ContestController.list()">@Messages("contests")</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@contest.fullName</li>
+    </ol></nav>
+    <h1 class="h3">@Messages("series.contest.title") <span class="text-body-secondary">@contest.fullName #@contest.getId</span>
+        @if(contest.retired) {<span class="badge text-bg-secondary align-middle">@Messages("contest.retired")</span>}</h1>
+    @outcome()
+
+    <dl class="row" id="contest-series-facts">
+        <dt class="col-sm-3">@Messages("series")</dt>
+        <dd class="col-sm-9" id="contest-series-current">@current match {
+            case Some(s) => {<a href="@routes.SeriesController.series(s.id)">@s.name</a>@if(s.retired) { <span class="badge text-bg-secondary">@Messages("series.retired")</span>}}
+            case None => {<span class="text-body-secondary">@Messages("series.none.assigned")</span>}
+        }</dd>
+        <dt class="col-sm-3">@Messages("series.previous")</dt>
+        <dd class="col-sm-9" id="contest-series-previous">@previous match {
+            case Some(p) => {<a href="@routes.SeriesController.contestPage(p.getId)">@p.fullName</a> <span class="text-body-secondary">#@p.getId</span>}
+            case None => {<span class="text-body-secondary">—</span>}
+        }</dd>
+    </dl>
+
+    <h2 class="h4">@Messages("series.reuse")</h2>
+    @if(reuse.isEmpty) {
+        <p id="contest-reuse-none">@Messages("series.reuse.none")</p>
+    } else {
+        <ul id="contest-reuse">
+            @for(sign <- reuse) {
+                <li class="contest-reuse-sign">@sign match {
+                    case ContestReuse.OtherSource(source, named) => {@Messages("series.reuse.source", source, named.describe)}
+                    case ContestReuse.RoundSource(round, source, named) => {@Messages("series.reuse.round.source", round.toString, source, named.describe)}
+                    case ContestReuse.RoundFiles(round, named, files, of) => {@Messages("series.reuse.round.files", round.toString, files, of, named.describe)}
+                    case ContestReuse.RoundCountries(countries) => {@Messages("series.reuse.round.countries", countries.mkString(", "))}
+                    case ContestReuse.RoundSpan(first, last) => {@Messages("series.reuse.span", first.toString, last.toString)}
+                }</li>
+            }
+        </ul>
+        <p class="text-body-secondary small">@Messages("series.reuse.help")</p>
+    }
+
+    <h2 class="h4 mt-4" id="contest-series-set-heading">@Messages(if (current.isEmpty) "series.contest.assign" else "series.contest.move")</h2>
+    <form method="post" action="@routes.SeriesController.setContestSeries(contest.getId)" id="contest-series-set" class="row g-2 align-items-end" data-submit-once="true" aria-labelledby="contest-series-set-heading">
+        @csrfField()
+        <div class="col-md-5">
+            <label class="form-label" for="contest-series-target">@Messages("series")</label>
+            <select class="form-select" id="contest-series-target" name="seriesId">
+                <option value="">@Messages("series.contest.none.option")</option>
+                @defining(allSeries.filter(s => s.live || contest.seriesId.contains(s.id))) { shown =>
+                @for(s <- shown.filter(s => matching(s.id)) ++ shown.filterNot(s => matching(s.id))) {
+                    <option value="@s.id" @if(contest.seriesId.contains(s.id)) {selected}>@s.name@if(!matching(s.id)) { (@Messages("series.contest.other.identity"))}</option>
+                }
+                }
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="contest-series-comment">@Messages("series.comment")</label>
+            <input type="text" class="form-control" id="contest-series-comment" name="comment" maxlength="500">
+        </div>
+        <div class="col-md-2"><button type="submit" class="btn btn-primary">@Messages("series.contest.save")</button></div>
+    </form>
+    <p class="text-body-secondary small mt-1">@Messages("series.contest.move.help")</p>
+
+    <h2 class="h4 mt-4" id="contest-retire-heading">@Messages(if (contest.retired) "contest.unretire" else "contest.retire")</h2>
+    <p class="text-body-secondary">@Messages(if (contest.retired) "contest.unretire.help" else "contest.retire.help")</p>
+    @for(key <- liveRound if !contest.retired) {
+        <p class="text-warning-emphasis" id="contest-retire-live">@Messages(key)</p>
+    }
+    <form method="post" action="@(if (contest.retired) routes.SeriesController.unretireContest(contest.getId) else routes.SeriesController.retireContest(contest.getId))" id="contest-retire" class="row g-2 align-items-end" data-submit-once="true" aria-labelledby="contest-retire-heading">
+        @csrfField()
+        <div class="col-md-6">
+            <label class="form-label" for="contest-retire-comment">@Messages("series.comment")</label>
+            <input type="text" class="form-control" id="contest-retire-comment" name="comment" maxlength="500">
+        </div>
+        <div class="col-md-3"><button type="submit" class="btn @if(contest.retired) {btn-outline-primary} else {btn-outline-danger}">@Messages(if (contest.retired) "contest.unretire.button" else "contest.retire.button")</button></div>
+    </form>
+
+    <h2 class="h4 mt-4">@Messages("series.changes")</h2>
+    @changeLog(changes, names, "contest-changes")
+}

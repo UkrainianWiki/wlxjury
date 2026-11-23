@@ -117,11 +117,15 @@ class MessagesCompletenessSpec extends Specification {
     "round.state.text." -> services.GalleryService.RoundState.All.map(_.reason),    // roundState.scala.html
     "round.state.title." -> services.GalleryService.RoundState.All.map(_.reason),   // noRoundYet.scala.html
     "health.job.status." -> Seq("queued", "running", "done", "failed", "cancelled"), // contestHealth.scala.html
-    "health.status." -> db.scalikejdbc.Round.Status.All                             // contestHealth.scala.html
+    "health.status." -> db.scalikejdbc.Round.Status.All,                            // contestHealth.scala.html
+    "series.assign.left." -> services.series.SeriesProposals.Reasons,               // series/seriesProposals.scala.html
+    "series.reuse.kind." -> services.series.ContestReuse.Kinds                      // ContestReuse.kindKey
   )
 
   /** Keys looked up from a value rather than a literal. */
   private val dynamicKeys: Seq[String] = Seq(
+    db.scalikejdbc.ContestChangeJdbc.Kinds.map("series.change." + _),  // series/changeLog.scala.html, a contest's rows
+    Seq("created", "identity", "retired", "unretired").map("series.change.series." + _), // and a series' own rows
     User.FORM_ROLES.map("role." + _),                           // every role name, as Messages("role." + r)
     Seq("role." + User.ROOT_ROLE),                              // editUser offers root to root
     MediaType.mediaTypes,

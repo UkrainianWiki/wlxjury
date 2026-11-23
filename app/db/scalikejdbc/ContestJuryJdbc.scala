@@ -29,7 +29,11 @@ object ContestJuryJdbc extends CRUDMapper[ContestJury] {
       rs.stringOpt(c.column("greeting")),
       rs.booleanOpt(c.column("use_greeting")).getOrElse(true)
     ),
-    campaign = rs.stringOpt(c.campaign)
+    campaign = rs.stringOpt(c.campaign),
+    seriesId = rs.longOpt(c.seriesId),
+    // only whether it is set: a JDBC timestamp read is zone-dependent (DbTime); the time is read
+    // where it is shown (ContestSeries.createdInfo)
+    retired = rs.anyOpt(c.column("retired_at")).isDefined
   )
 
   /** Sets the contest's source of files, and its category (by the source's title, unless

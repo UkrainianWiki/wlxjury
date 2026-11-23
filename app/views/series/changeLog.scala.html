@@ -1,0 +1,32 @@
+@(changes: Seq[db.scalikejdbc.ContestChange], names: Map[Long, String], id: String)(implicit messages: Messages)
+@* A contest's or a series' change log (contest_change, V109; CA8): newest first, what changed,
+   who and when; details as stored (names and years root typed, escaped by Twirl) *@
+@if(changes.isEmpty) {
+    <p class="text-body-secondary" id="@id-none">@Messages("series.changes.none")</p>
+} else {
+    <div class="table-responsive">
+    <table class="table table-sm" id="@id">
+        <caption class="visually-hidden">@Messages("series.changes")</caption>
+        <thead>
+            <tr>
+                <th scope="col">@Messages("series.batch.at")</th>
+                <th scope="col">@Messages("series.change")</th>
+                <th scope="col">@Messages("contest")</th>
+                <th scope="col">@Messages("series.batch.by")</th>
+                <th scope="col">@Messages("series.change.detail")</th>
+            </tr>
+        </thead>
+        <tbody>
+            @for(c <- changes) {
+                <tr class="contest-change" data-kind="@c.kind">
+                    <td class="text-nowrap">@views.LinkTimes.utc(c.createdAt)</td>
+                    <td>@Messages((if (c.contestId.isEmpty) "series.change.series." else "series.change.") + c.kind)@for(b <- c.batchId) { <span class="text-body-secondary">(@Messages("series.batch") #@b)</span>}</td>
+                    <td>@for(contest <- c.contestId) {<a href="@routes.SeriesController.contestPage(contest)">#@contest</a>}</td>
+                    <td>@names.getOrElse(c.actorId, s"#${c.actorId}")</td>
+                    <td class="small text-break">@play.api.libs.json.Json.stringify(c.detail - "how")@for(text <- c.comment) { — @text}</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    </div>
+}

@@ -26,6 +26,7 @@ the move to Ubuntu 24.04, [`2026-10-19-mariadb-10.11.md`](../plans/2026-10-19-ma
 6. [Runtime limits](#6-runtime-limits)
 7. [Guards](#7-guards)
 8. [Where the setup doesn't follow these yet (for triage)](#8-where-the-setup-doesnt-follow-these-yet-for-triage)
+9. [Contest series (root)](#9-contest-series-root)
 
 ## 1. Log lines
 
@@ -54,7 +55,12 @@ of secure-coding §14, INFO, by ids only: `account_search`, `account_added_notic
 account chooser, `OAuthChooserController`; the password sign-in form, `LoginController`, logs no
 failure line: OP4), `security.roles`, `security.password`; `coi` (conflict-of-interest
 removals, the only record of them, INFO); `readiness`; `services.ApiTokenService` (refused tokens by
-prefix); `round.admin` (a round's admin changes: `freeze_release`, `juror_add`, `juror_reassign`);
+prefix); `round.admin` (a round's admin changes: `freeze_release`, `juror_add`, `juror_reassign`;
+and root's contest series work: `series_created`, `series_renamed`, `series_retired`,
+`series_unretired`, `series_assigned`, `series_unassigned`, `series_changed` (each with `contestId=`,
+`seriesId=`, `from=`, `by=` and a bulk assignment's `batch=`), `series_batch_undone batch= undone=
+left= by=`, `contest_created contestId= how= by=`, `contest_identity`, `contest_retired`,
+`contest_unretired`; §9);
 `round.access` (a juror refused a round's gallery or large view, §1.7); `services.imports` and
 `services.jobs` (the class loggers of the imports and the job scheduler, §1.7). A new class of security event gets a `security.*` logger and a level the production
 logback writes.
@@ -297,3 +303,29 @@ secure-coding §18. A new pool, worker count or limit is checked against those b
 - **OP7 (3.3a):** prune never deletes rescue dumps (`before-restore-*`) or `wlxjury-deploy`'s
   cutover records (their dumps and config copies). They go by hand after review, or with the
   cutover's retirement (roadmap).
+
+## 9. Contest series (root)
+
+**9.1 What is recorded.** Every change root makes to series and contests through the series
+pages is a row of `contest_change` (V109; the contest's or series' **Change log**, newest first)
+and a `round.admin` INFO line (§1.3). A bulk assignment's rows share a `batch_id`; an undo is a
+batch of `series_unassigned` rows whose `detail.undoOf` names the batch it undid.
+
+**9.2 Assigning existing contests** (the plan's ops step after CY-1). On a production copy first:
+open `/admin/series/assign`, read what is proposed and what is left out with why; then on
+production confirm in batches of a few proposals each, reading the Series page's batches list
+after each. A wrong batch: **Undo batch** (contests changed since are left and listed; move them
+one by one on their Series and status page; a series the batch created stays, empty: retire it
+if it isn't wanted). A confirmation is all or nothing against the page root saw: if the proposals
+changed meanwhile, nothing is assigned. The proposals page reads every unassigned contest's rounds
+and their files' categories: on the production copy (V107, 2026-11-20) 912 rounds' 1.35 million
+files in 4.4 s, on the blocking pool; its confirmation reads only the ticked contests' files.
+
+**9.3 Retiring.** A contest is retired on its Series and status page, refused while a round is
+open, paused (frozen while open), being created or reviewed, or whose creation failed (finish or
+cancel it first); the contest's rounds are locked while it is retired. Its members lose access at
+once; root still opens it and keeps write access (a read-only root view is a follow-up). To bring it back, un-retire it (refused while another live contest of its series has
+its year: move or retire that one first). A retired series keeps its contests live.
+
+**9.4 Back-out.** V109's rollback is in its last comment (the series assignments and the log are
+lost); a pre-V109 binary runs on the V109 schema.

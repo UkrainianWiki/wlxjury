@@ -4,7 +4,11 @@ import scalikejdbc._
 import scalikejdbc.orm.JoinTable
 
 /** A user's membership in a contest, with their role in it (jury, organizer, admin, ...). */
-case class UserContest(userId: Long, contestId: Long, role: String) {
+case class UserContest(userId: Long, contestId: Long, role: String,
+                       /** Its contest is retired (V109; read by [[UserContestJdbc.findByUser]] only, false
+                         * elsewhere): the membership then opens nothing ([[opens]]).
+                         */
+                       contestRetired: Boolean = false) {
 
   /** The role, if exactly one allowlisted value ([[User.ContestRoles]]); else none, and the
     * membership is inactive. Never split, trimmed or case-folded: a stored `jury,root` or
@@ -23,6 +27,13 @@ case class UserContest(userId: Long, contestId: Long, role: String) {
     * picked at login, not in the contest switcher, never the contest a request runs in).
     */
   def active: Boolean = (roles -- User.INACTIVE_ROLES).nonEmpty
+
+  /** Whether the membership lets the user into its contest: active, and the contest not retired
+    * (contest series plan §3.1: a retired contest's memberships give no access). The session's
+    * paths read this ([[controllers.Secured.inCurrentContest]], `inContest`, `permitted`, the
+    * contest menu); the account rules still read [[active]], which counts retired contests.
+    */
+  def opens: Boolean = active && !contestRetired
 }
 
 object UserContest {
@@ -40,9 +51,14 @@ object UserContestJdbc extends JoinTable[UserContest] {
       role      = rs.string(n.role)
     )
 
-  /** The user's memberships, the latest contest first. */
+  /** The user's memberships, the latest contest first, each marked if its contest is retired
+    * ([[UserContest.contestRetired]]).
+    */
   def findByUser(userId: Long)(implicit session: DBSession = AutoSession): Seq[UserContest] =
-    where("userId" -> userId).orderBy(defaultAlias.contestId.desc).apply()
+    sql"""SELECT uc.user_id, uc.contest_id, uc.role, c.retired_at IS NOT NULL AS retired
+          FROM user_contest uc LEFT JOIN contest_jury c ON c.id = uc.contest_id
+          WHERE uc.user_id = $userId ORDER BY uc.contest_id DESC"""
+      .map(rs => UserContest(rs.long(1), rs.long(2), rs.string(3), rs.booleanOpt(4).getOrElse(false))).list.apply()
 
   /** The memberships of each of the users, in one query (the users page's batch). */
   def findByUsers(userIds: Seq[Long])(implicit session: DBSession = AutoSession): Map[Long, Seq[UserContest]] =

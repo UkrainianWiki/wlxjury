@@ -33,6 +33,26 @@ is listed below.
 
 **Features**
 
+- **Contest series (CY-1)** (the contest series plan, docs/plans/2026-11-18-contest-series.md, CA1,
+  CA8, CA15 decided 2026-11-18; developed 2026-11-20, `stack/209-series-cy1`, V109): a series ties
+  one contest per year across years ("Wiki Loves Monuments in Nepal"). Root's **Series** page
+  (`/admin/series`, the **Manage series** link beside the Contests page's Series menu, not in
+  the top bar): create, rename, retire and un-retire series; **Assignment
+  proposals** group the live contests in no series by type and country, an existing series
+  offered first (types scalawiki doesn't know, such as Wiki Loves Folklore, by the word after
+  "Wiki Loves": CA24), confirmed in bulk as one batch, all or nothing against what root saw, with
+  **Undo batch**; a contest's **Series and
+  status** page assigns, moves, unassigns, retires and un-retires it, with its change log. One
+  live contest per series and year (a database key); the previous year's contest is derived. The
+  **inline reuse check** (H1's logic over the contest's import sources and source, and every
+  round's category filter and files, 5 files and 2 % at least; the round ids' span only beside
+  another sign; the maintainer's refinement of 2026-11-20: a national contest hosting other
+  countries' rounds) keeps a contest out of the proposals and shows **Reused** on **Contests**
+  (there by sources and rounds only). A **retired contest**'s memberships open nothing, give an
+  admin no account reach, and menus and lists leave it out. The **contest menu** groups a person's contests by series (this and last
+  year under the series, then **Earlier years**, **Other contests**). **Contests** gets **Series**
+  and **Status** menus and **Series** and **Created** columns; adding a duplicate name, year and
+  country warns. Series admins (CY-2) and creating next year's contest (CY-3) come later.
 - **A sticky top bar** (the maintainer's decision of 2026-11-23, replacing the trial of a bar
   that hid while scrolling down; developed 2026-11-23, `fix/sticky-topbar`): on the galleries, the
   by-rate gallery, the file list, the comments report, the contest files, the Rounds, round
