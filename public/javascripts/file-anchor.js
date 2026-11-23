@@ -7,10 +7,8 @@
 // Not on a reload or Back/Forward to the page, where the browser puts back where the user was.
 // Without script, or in a list without such elements (the tiles), the page opens at its top.
 // The element's scroll-margin-top (main.css --wlx-file-anchor-offset) and the root's
-// scroll-padding-top are the room kept above it: on a page with the reappearing top bar
-// (topbar.js) the bar's height and a little more. After scrolling it tells the bar (the event
-// wlx:file-anchor on the document) to stay shown until the user's next wheel, key, tap or click,
-// so that the file lands below the bar, the list's menus in view.
+// scroll-padding-top are the room kept above it: on a page with the sticky top bar (topbar.js,
+// from 576 px wide) the bar's height and a little more, so that the file lands below the bar.
 (function () {
   'use strict';
 
@@ -23,7 +21,7 @@
   }
 
   /** The room kept above the element (its scroll-margin-top and the root's scroll-padding-top,
-    * the reappearing top bar's height) and the window's size. */
+    * the sticky top bar's height) and the window's size. */
   function frame(win, el) {
     return {
       top: (parseFloat(win.getComputedStyle(el).scrollMarginTop) || 0) +
@@ -65,7 +63,6 @@
     var el = target(win.document, win.location.hash);
     if (!el || inView(win, el)) return false;
     el.scrollIntoView({ block: tall(win, el) ? 'start' : 'center' });
-    if (typeof win.CustomEvent === 'function') win.document.dispatchEvent(new win.CustomEvent('wlx:file-anchor'));
     return true;
   }
 

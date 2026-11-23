@@ -12,7 +12,7 @@ on:
   # Any base branch, like ci.yml: stacked PRs target the PR below them
   pull_request:
   push:
-    branches: [master, ukwikidev/followups]
+    branches: [master]
   workflow_dispatch:
 
 permissions:

@@ -9,7 +9,7 @@ on:
   # Any base branch: stacked PRs target the PR below them, not master.
   pull_request:
   push:
-    branches: [master, ukwikidev/followups]
+    branches: [master]
   # Weekly on master, with MariaDB 10.11 too (the matrix below)
   schedule:
     - cron: '41 3 * * 1'   # Mondays 03:41 UTC
