@@ -400,8 +400,8 @@ story, and carries no tag.
 
   **What the two columns measure.** The PR column is measured on GitHub's test merge commit of
   the PR into its base (a `pull_request` run checks that out), labelled with the PR's head SHA.
-  The base column comes from the base branch's latest successful Coverage run: for `master` (or
-  `ukwikidev/followups`), a push run on that commit; for a stacked base such as `stack/*`, the
+  The base column comes from the base branch's latest successful Coverage run: for `master`, a
+  push run on that commit; for a stacked base (another PR's branch), the
   lower PR's own `pull_request` run, which measured *its* merge commit into the branch below it.
   So in a stack the change is between two merge commits, not between two branch heads. A run
   without a summary, e.g. of a PR branch whose `coverage.yml` predates this step, is skipped with
