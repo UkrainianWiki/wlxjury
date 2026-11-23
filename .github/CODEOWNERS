@@ -1,0 +1,7 @@
+# Code owners of the files that decide what CI runs and what the private-strings checks refuse.
+# Owners are requested for review automatically; this does not block a merge unless branch
+# protection turns on "Require review from Code Owners".
+/.github/workflows/                  @UkrainianWiki/maintainers
+/.githooks/                          @UkrainianWiki/maintainers
+/scripts/check-private-strings.py    @UkrainianWiki/maintainers
+/.github/CODEOWNERS                  @UkrainianWiki/maintainers
