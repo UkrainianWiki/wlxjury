@@ -131,3 +131,13 @@ queries instead of an all-years parse) is unmeasured.
    show the table or the read is too heavy.
 4. Sync years and campaigns that have no jury contest? Default yes: the sets come from the
    scalawiki contest definitions, not from the jury's contest table.
+
+## Conclusion
+
+Sharing one store in the jury's database looks feasible and keeps both applications working at each
+step (section 2), and the report queries reduce to aggregates (section 3). It is not scheduled:
+the cost is a large schema and cross-repository change, and the gains (cheaper re-imports, reports
+without CSV caches, lower report heap) are unmeasured. The part the jury needs on its own, handling
+deleted and renamed files without losing votes, is in the
+[deleted and renamed files plan](../plans/2026-10-22-deleted-renamed-files.md). Decide the open questions above
+before any of the rest is planned.
