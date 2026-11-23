@@ -40,7 +40,7 @@ is listed below.
   now always stays at the top of the window while scrolling, as the header of Wikipedia does, on
   screens 576 px wide or more; on a phone it scrolls away with the page. Whatever the browser
   scrolls into view there (a focused element, a link's target, a found text, the file Back to
-  gallery returns to) lands below the bar. Its menus open above the page and fit the window. Not
+  gallery returns to) lands below the bar. Its menus open above the page; on screens 576 px and wider their height fits the window and a long one scrolls inside itself, on phones the page scrolls. Not
   in the large views, nor on the forms and other pages (`topbar.js`; `main`/`mainAdmin`
   `stickyBar`, the body class `wlx-topbar-sticky`).
 - **The round form's criteria start small; one criterion allowed** (the maintainer's decisions of

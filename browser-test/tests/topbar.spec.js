@@ -120,6 +120,25 @@ test.describe('the sticky top bar on a desktop', () => {
     await context.close();
   });
 
+  test('sticky and scroll-padding-top switch together at 576 px', async ({ contextAs, fixture }) => {
+    const context = await contextAs('organizer', { viewport: { width: 576, height: 800 } });
+    const page = await context.newPage();
+    await page.goto(byRate(fixture));
+    await page.waitForLoadState('load');
+    const read = () => page.evaluate(() => ({
+      position: getComputedStyle(document.querySelector('body > nav.navbar')).position,
+      padding: getComputedStyle(document.documentElement).scrollPaddingTop,
+      bar: document.querySelector('body > nav.navbar').offsetHeight,
+    }));
+    const at576 = await read();
+    expect(at576.position).toBe('sticky');
+    expect(at576.padding).toBe(`${at576.bar}px`);
+    await page.setViewportSize({ width: 575, height: 800 });
+    await expect.poll(async () => (await read()).position).not.toBe('sticky');
+    expect((await read()).padding).toBe('0px');
+    await context.close();
+  });
+
   test('a mainAdmin page (Users) has it too', { tag: '@R-03' }, async ({ contextAs }) => {
     const context = await contextAs('root', { viewport: { width: 1366, height: 600 } });
     const page = await context.newPage();
