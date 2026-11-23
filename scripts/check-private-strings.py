@@ -64,6 +64,11 @@ class Rules:
                 self.bad.append("line %d: the regex doesn't compile (position %s)"
                                 % (n, "?" if e.pos is None else e.pos))
                 continue
+            except (RecursionError, OverflowError, MemoryError):
+                # the regex parser recurses per nesting level and a huge repeat count overflows; both are a refused
+                # line like any other, not a crash with a traceback
+                self.bad.append("line %d: the regex is too large or too deeply nested to compile" % n)
+                continue
             if cat == "allow":
                 self.allow.append(compiled)
             elif cat == "skip-path":

@@ -438,7 +438,7 @@ TRANSACTION_READ_COMMITTED`: every connection), or the server's `transaction_iso
 
 ### (c) Less denormalization: no `vote.monument_id` (or `round_image.monument_id`)
 
-Measured on the Gatling fixture (`gatling.setup.WritePathReadBenchmark`, 38k files, rated round
+Measured on the Gatling fixture (`gatling.setup.WritePathReadBenchmark`, kept in the private archive: commit `6628fd07` on the archived investigation branch, not on master; 38k files, rated round
 384k vote rows, MariaDB 10.6.22, 512 MB buffer pool, SQL logging off; 15 interleaved pairs
 after 2 warm-ups, order alternating, every pair's results equal; log
 `target/checks/20261103-075306-17020.log`, `target/gatling/write-path-read-bench-20261103-075349/`):
@@ -804,7 +804,7 @@ covers these.
 ## 10. Files, commits, checks
 
 - New: `test/stress/WritePathStress.scala` (`db.stress.WritePathStress`, the harness, and
-  `DeadlockLog`), `test/gatling/setup/WritePathReadBenchmark.scala`,
+  `DeadlockLog`), `test/gatling/setup/WritePathReadBenchmark.scala` (private archive only, see (c)),
   `app/db/scalikejdbc/RoundWrites.scala` (spikes (a) and (h), off by default),
   `test/security/StructuralWritesSpec.scala` (the writers' guard), this document.
 - Commits: `68908f5c` spikes (a) and (h) behind flags, `StructuralWritesSpec`; `0e7600aa` the
