@@ -230,6 +230,9 @@ GET         /thumb_urls/:contestId                                              
 #GET         /selectRound/:round/:region/:pageId                  controllers.Gallery.selectRound2(region: String, pageId:Long, round:Int)
 #GET         /unselectRound/:round/:region/:pageId                controllers.Gallery.unselectRound2(region: String, pageId:Long, round:Int)
 
+GET         /ui                                                                     @controllers.Assets.at(path="/public/ui", file="index.html")
+GET         /ui/*file                                                               @controllers.Assets.at(path="/public/ui", file)
+
 # Last: a GET (or HEAD) to a path ending in "/" that no route above takes, e.g. /auth/, is
 # redirected (302) to it without the trailing slashes, the query kept; never off the site
 # (TrailingSlashController). Other methods with a trailing slash stay a 404.

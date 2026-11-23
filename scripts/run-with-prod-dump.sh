@@ -157,6 +157,7 @@ remove_secrets() {
     SECRETS_DIR=""
   fi
 }
+UI_PID=""
 
 make_secrets_dir() {
   if [[ -z "$SECRETS_DIR" ]]; then
@@ -213,6 +214,7 @@ cleanup() {
   local exit_code=$?
   remove_secrets
   if [[ -n "$DUMP_TMP" ]]; then rm -f "$DUMP_TMP" 2>/dev/null || true; fi
+  [[ -n "$UI_PID" ]] && kill "$UI_PID" 2>/dev/null || true
   if [[ $exit_code -ne 0 ]]; then
     echo ""
     echo "Script exited with code $exit_code."
@@ -421,6 +423,17 @@ fi
 echo "==> Starting sbt dev server against local prod dump..."
 echo "    DB  : jdbc:mariadb://${LOCAL_BIND}:${LOCAL_PORT}/${LOCAL_DB}"
 echo "    Stop: Ctrl-C  (container '$CONTAINER_NAME' remains; remove: docker rm -f $CONTAINER_NAME)"
+echo ""
+
+# Start Vite dev server in background
+UI_DIR="$REPO_DIR/ui"
+if [[ ! -d "$UI_DIR/node_modules" ]]; then
+  echo "==> Installing UI dependencies..."
+  npm install --prefix "$UI_DIR"
+fi
+npm run dev --prefix "$UI_DIR" &
+UI_PID=$!
+echo "    React UI : http://localhost:5173"
 echo ""
 
 WLXJURY_DB_HOST="${LOCAL_BIND}:${LOCAL_PORT}" \

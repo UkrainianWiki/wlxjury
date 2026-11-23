@@ -1,3 +1,70 @@
+## React UI (Contests)
+
+### Dev workflow
+
+Two convenience scripts start everything (Play + Vite) in one command:
+
+| Script | DB source |
+|---|---|
+| `./run-dev.sh` | credentials from `.env` (same as production) |
+| `./scripts/run-with-prod-dump.sh` | dumps production DB, restores into a local Docker container |
+
+Both scripts install `ui/node_modules` on first run if missing, start the Vite dev server in the background, and kill it automatically when Play exits.
+
+```bash
+./run-dev.sh                                    # local .env DB
+./scripts/run-with-prod-dump.sh                 # fresh prod dump → local container
+./scripts/run-with-prod-dump.sh --skip-dump     # re-use last dump
+./scripts/run-with-prod-dump.sh --reuse-container  # skip dump+restore entirely
+```
+
+- Play (HTML pages): [http://localhost:9000](http://localhost:9000)
+- Tapir REST API + Swagger UI: [http://localhost:9001/api/contests](http://localhost:9001/api/contests) · [http://localhost:9001/api/docs](http://localhost:9001/api/docs)
+- React UI (hot-reload, proxies /api to 9001): [http://localhost:5173](http://localhost:5173)
+
+**Running manually (if you need separate terminals):**
+
+Terminal 1 — Play backend:
+```bash
+WLXJURY_DB_HOST=... WLXJURY_DB=... WLXJURY_DB_USER=... WLXJURY_DB_PASSWORD=... sbt run
+```
+
+Terminal 2 — Vite dev server:
+```bash
+cd ui && npm run dev
+```
+
+### Tests
+
+```bash
+cd ui && npm test          # run once (CI mode)
+cd ui && npm run test:watch  # watch mode for development
+```
+
+Tests are also run as part of `sbt test` via the `uiTest` task.
+
+### Deploying (production build)
+
+1. Build the UI:
+   ```bash
+   cd ui && npm run build
+   ```
+   This outputs static assets to `ui/dist/`.
+
+2. Copy to the Play public directory before running `sbt dist`:
+   ```bash
+   cp -r ui/dist/* public/ui/
+   ```
+
+3. Package and deploy as normal:
+   ```bash
+   sbt dist
+   ```
+
+Play serves the built UI at `/ui` via the routes added to `conf/routes`. The API at `/api/*` continues to be served by Tapir/Pekko HTTP on the same port.
+
+---
+
 ## Running locally
 
 Install JDK 17 and sbt, start a MariaDB (10.6 or 10.11), and set `WLXJURY_DB_HOST`,
