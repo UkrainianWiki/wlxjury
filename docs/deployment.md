@@ -645,8 +645,9 @@ as `wlxjury` (uid and gid 10001). Its jars are in three layers (third-party, sca
 with `bin/` and `conf/`), so a code change rebuilds only the top one (`dockerGroupLayers` in
 `build.sbt`).
 
-**What the compose file sets.** MariaDB 10.6.22, pinned by digest, with production's 256 MiB buffer
-pool as a command-line option and its data in the volume `db`; its port is not published. The app
+**What the compose file sets.** MariaDB 10.6.22, pinned by digest, with the recommended 256 MiB
+buffer pool (`bench/cnf/recommended-60-wlxjury.cnf`; production runs 128 MiB, performance §4.6) as
+a command-line option and its data in the volume `db`; its port is not published. The app
 takes `WLXJURY_COMPOSE_DB_PASSWORD`, `PLAY_HTTP_SECRET_KEY` and `WLXJURY_SETUP_TOKEN` from `.env`
 (compose refuses to start without the first two; MariaDB's root password
 `WLXJURY_COMPOSE_DB_ROOT_PASSWORD` is required too), migrates at start, uses Commons anonymously,
