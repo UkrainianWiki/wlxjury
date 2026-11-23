@@ -9,6 +9,8 @@ wider: a UI developer wants to build React screens, and GraphQL (draft PR #135,
 gallery (plan [own-gallery-tiles](../plans/2026-11-19-own-gallery-tiles.md), PR #129, not yet on
 master when this was written) as a later React target.
 
+**The wider question** (would a SPA improve the UI; htmx, Vue with Wikimedia Codex, Lit and Alpine as alternatives; a measured prototype of the large view's vote without a reload) is in the companion [UI approach](2026-11-24-ui-approach.md). Its conclusion: no SPA; htmx 4 for the large view's vote; islands for the UI developer's new screens, with Vue plus Codex as a candidate beside React.
+
 **Status:** investigation only; nothing in the application changes. Nothing was run in the
 application (no sbt, fixture server or browser). The only measurement is a throwaway bundle-size
 build in a scratch directory outside the repository (section 6.2). Effort figures are estimates
