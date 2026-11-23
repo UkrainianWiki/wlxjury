@@ -9,7 +9,7 @@ on:
   # Any base branch: stacked PRs target the PR below them, not master.
   pull_request:
   push:
-    branches: [master, ukwikidev/followups]
+    branches: [master]
   # Weekly on master, with MariaDB 10.11 too (the matrix below)
   schedule:
     - cron: '41 3 * * 1'   # Mondays 03:41 UTC
@@ -52,6 +52,11 @@ jobs:
         working-directory: scripts
         run: python3 -B -m unittest -v test_agent_check
 
+      # The image cache maintenance script on a temporary directory (GNU find and date).
+      - name: local images maintenance tests
+        working-directory: scripts
+        run: python3 -B -m unittest -v test_local_images_maintenance
+
       # The rehearsal's schema parity check (synthetic column dumps). Standard library only.
       - name: schema parity tests
         working-directory: scripts
@@ -61,6 +66,11 @@ jobs:
       - name: browser-stats tests
         working-directory: scripts
         run: python3 -B -m unittest -v test_browser_stats
+
+      # The private-strings checker's rule reading (synthetic rules only). Standard library only.
+      - name: private-strings checker tests
+        working-directory: scripts
+        run: python3 -B -m unittest -v test_check_private_strings
 
       # The one-off vote time backfill (synthetic log lines only). Standard library only.
       - name: voted_at backfill tests

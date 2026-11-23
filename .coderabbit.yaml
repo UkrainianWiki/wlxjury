@@ -1,0 +1,5 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# Review PRs to any base, not only master: stacked PRs target the PR below them.
+reviews:
+  auto_review:
+    base_branches: [".*"]
