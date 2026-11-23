@@ -5,7 +5,7 @@
 [yet-another-react-lightbox](https://yet-another-react-lightbox.com/) (YARL).
 
 **Status:** investigation only; nothing in the application changes. Compared against the accepted
-plan [own-gallery-tiles](../plans/2026-11-19-own-gallery-tiles.md) (PR #129; "#129" below), whose
+plan [own-gallery-tiles](../plans/2026-11-19-own-gallery-tiles.md) (PR #129, not yet on master when this was written; "#129" below), whose
 questions Q1 to Q26 the maintainer has decided. Nothing was run in the application (no sbt, no
 fixture server). The only measurement is a throwaway bundle-size build in a scratch directory
 outside the repository (section 3.4).
@@ -71,8 +71,8 @@ single squashed commits; the original dates are in the commit messages.
 | Branch | What it is | Size | Why it stalled |
 |---|---|---|---|
 | `104-port-gallery-to-react` (22 commits, based on a June 2020 master) | A create-react-app (`ui/`) with `react-photo-gallery` (the older predecessor of react-photo-album) showing nine **hard-coded sample photos** with a select-all toggle (`App.js`, `SelectedImage.js`); sbt hooks that run `npm start` in dev mode (`ui-build.sbt`, `FrontendRunHook.scala`) and a `FrontendController` | 20 files, +21,334 (almost all lockfiles and the CRA README) | A spike. It never read the application's images, votes or sessions; the gallery was later built on Unite Gallery. Issue #104 itself is an unrelated closed bug ("image upside down"); the branch name only borrowed the number |
-| `react` (21 commits, April 2026) | `ui/`: Vite, React 19, TypeScript, MUI and MUI X Data Grid; a **contests admin grid** over the Tapir `/api/contests`; Vitest; a design spec and plan in `docs/superpowers/` | 20 files, +5,616 | The Tapir API is not served and has no authentication (CLAUDE.md "REST API"), so the grid could not go live |
-| `react-custom-filter` (6 more commits) | The same grid with cell filters | 22 files, +6,544 in all | Same dependency on the unserved, unauthenticated API |
+| `react` (21 commits, April 2026) | `ui/`: Vite, React 19, TypeScript, MUI and MUI X Data Grid; a **contests admin grid** over the Tapir `/api/contests`; Vitest; a design spec and plan in `docs/superpowers/` | 20 files, +5,616 | In April the Tapir API was not served and had no authentication, so the grid could not go live. **That is no longer true:** on master `/api` is served with a personal API token or the session cookie (`ApiRouter` in `conf/routes`, `docs/api.md`; contest endpoints for root only), so the original blocker is gone. The branches are parked, not blocked |
+| `react-custom-filter` (6 more commits) | The same grid with cell filters | its own commit: 4 files, +936/-8 (24 files, about +6,552 with `react`) | Same April blocker, since removed; parked with `react` |
 
 What they show for this question:
 
@@ -111,7 +111,7 @@ What they show for this question:
   `componentsProps` adds attributes such as `data-file-anchor`.
 - **Accessibility:** real links and buttons with the browser's focus ring (customisable by
   CSS); `alt`, `title` and `aria-label` per photo.
-- **Maintenance:** 82 releases, one every one to three months (3.6.0 April, 3.6.1 July, 3.6.2
+- **Maintenance:** 73 npm versions (82 entries in the registry history), one every one to three months (3.6.0 April, 3.6.1 July, 3.6.2
   October 2026); a single author; 1 open issue, a push on the day of this reading; about 800
   GitHub stars. Peer dependency React 18 or 19, no runtime dependencies.
 
@@ -130,7 +130,7 @@ What they show for this question:
   styles per slot. A vote bar in a slide footer is feasible.
 - **SSR:** a client component rendered into a portal when opened. For an island on a
   server-rendered page that is no problem: there is nothing to render until it opens.
-- **Maintenance:** 157 releases, the last four on 2026-05-01 (3.32.0), 07-08, 07-30, 10-30 and
+- **Maintenance:** 157 npm versions, the last four on 2026-05-01 (3.32.0), 07-08, 07-30, 10-30 and
   11-14; one author; 1 open issue; about 1,300 stars. Peer dependency React 16.8 to 19.
 
 ### 3.3 Licence and supply chain
@@ -267,7 +267,7 @@ Verdict: higher cost and risk, and it gives up a decided requirement. Not recomm
    acceptable for one component, following the April `ui/` pattern (build, copy to `public/`, a
    test task beside `jsTest`)? Or must application code stay plain scripts?
 5. **The April React grid.** `react` and `react-custom-filter` are a contests admin grid blocked
-   on an unserved, unauthenticated API. Keep them, or close them as superseded? Closing removes
+   in April on an API that was then unserved and unauthenticated; master now serves `/api` with token or session authentication (`docs/api.md`), so they could be revived rather than closed. Revive, keep parked, or close as superseded? Closing removes
    the only `ui/` precedent.
 6. **No-JS.** Is "the pager works without script" a firm requirement (it rules out B), or a
    nicety? The decision on B turns on this.
