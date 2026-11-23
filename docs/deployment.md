@@ -351,9 +351,13 @@ scripts/local-images-maintenance.sh prune --months 6 --dry-run      # list what 
 scripts/local-images-maintenance.sh prune --months 6 --quiet        # delete, then remove empty folders
 ```
 
-`--path` (or the script's own `WLXJURY_THUMBS_LOCAL_PATH`; the app does not read it) names a cache
-folder other than the default, the one `wlxjury.thumbs.local-path` sets. A deleted file is fetched
-again from Commons on its next request. The script's tests are `scripts/test_local_images_maintenance.py`.
+Files are deleted by age since they were cached (their modification time), not because they are
+unused: a thumbnail that is still in use is fetched again from Commons on its next request. If
+`wlxjury.thumbs.local-path` is not `/var/www/jury-images`, pass that folder every time, with
+`--path FOLDER` or `export WLXJURY_THUMBS_LOCAL_PATH=FOLDER` (the script's own variable; the app does
+not read it), or the script works on the wrong folder. A folder the script cannot read, or a file it
+cannot delete, makes it exit 1 with a message on stderr and a partial result; fix the permissions
+(run as the service user) and run it again. The script's tests are `scripts/test_local_images_maintenance.py`.
 
 ### Monitoring with monit
 

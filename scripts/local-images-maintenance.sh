@@ -27,7 +27,8 @@
 #       --csv            report: month,files,bytes lines and a TOTAL line
 #   -h, --help           This text
 #
-# Exit status: 0 on success, 1 when a file could not be deleted, 2 on a usage error.
+# Exit status: 0 on success; 1 when a file could not be deleted or the scan hit an error (for
+# example an unreadable folder): the figures shown are then partial; 2 on a usage error.
 #
 # Needs GNU find and date (Debian, Ubuntu, RHEL). File names with spaces, tabs or line
 # breaks are handled.
@@ -104,12 +105,28 @@ CACHE_PATH=$(readlink -f -- "$CACHE_PATH")
   || die "refusing to use the cache path (it resolves to '$CACHE_PATH')"
 find "$CACHE_PATH" -maxdepth 0 -printf '' 2>/dev/null || die "GNU find is required (find -printf)"
 
+# The scan's records go to a file, so that find's exit status is known: find keeps going after
+# an error (an unreadable folder) and exits 1, which must never end as a quiet success.
+SCAN=$(mktemp) || { echo "Error: cannot create a temporary file" >&2; exit 1; }
+trap 'rm -f -- "$SCAN"' EXIT
+scan_failed=false
+scan() {
+  find "$CACHE_PATH" -type f ! -name "$APP_FILES_MARKER" ! -name '.tmp-*' -printf "$1" >"$SCAN" || scan_failed=true
+}
+# After the results are shown: say so, and fail, if the scan was incomplete.
+scan_check() {
+  if $scan_failed; then
+    echo "Error: the scan of $CACHE_PATH hit errors (see above); the figures are partial." >&2
+    exit 1
+  fi
+}
+
 if [[ "$SUBCMD" == "report" ]]; then
   [[ -z "$DAYS$MONTHS" ]] || die "--days and --months belong to prune"
+  scan '%TY-%Tm %s\n'
   report_tsv=$(
-    find "$CACHE_PATH" -type f ! -name "$APP_FILES_MARKER" ! -name '.tmp-*' -printf '%TY-%Tm %s\n' \
-      | awk '{ files[$1]++; bytes[$1] += $2 }
-             END { for (m in files) printf "%s\t%d\t%d\n", m, files[m], bytes[m] }' \
+    awk '{ files[$1]++; bytes[$1] += $2 }
+             END { for (m in files) printf "%s\t%d\t%d\n", m, files[m], bytes[m] }' "$SCAN" \
       | sort
   )
   total_files=0
@@ -127,6 +144,7 @@ if [[ "$SUBCMD" == "report" ]]; then
       echo "$month,$m_files,$m_bytes"
     done <<<"$report_tsv"
     echo "TOTAL,$total_files,$total_bytes"
+    scan_check
     exit 0
   fi
 
@@ -138,6 +156,7 @@ if [[ "$SUBCMD" == "report" ]]; then
     printf '%-10s  %10d  %12s\n' "$month" "$m_files" "$(human_size "$m_bytes")"
   done <<<"$report_tsv"
   printf '%-10s  %10d  %12s\n' "TOTAL" "$total_files" "$(human_size "$total_bytes")"
+  scan_check
   exit 0
 fi
 
@@ -167,6 +186,7 @@ count=0
 bytes=0
 failed=0
 # NUL-terminated records "mtime<TAB>size<TAB>path": the path is last, so any file name works.
+scan '%T@\t%s\t%p\0'
 while IFS= read -r -d '' record; do
   mtime=${record%%$'\t'*}
   rest=${record#*$'\t'}
@@ -186,10 +206,10 @@ while IFS= read -r -d '' record; do
     printf 'failed to delete: %q\n' "$file" >&2
     failed=$((failed + 1))
   fi
-done < <(find "$CACHE_PATH" -type f ! -name "$APP_FILES_MARKER" ! -name '.tmp-*' -printf '%T@\t%s\t%p\0')
+done <"$SCAN"
 
 if ! $DRY_RUN; then
-  find "$CACHE_PATH" -mindepth 1 -type d -empty -delete
+  find "$CACHE_PATH" -mindepth 1 -type d -empty -delete || scan_failed=true
 fi
 
 if $DRY_RUN; then
@@ -198,4 +218,5 @@ else
   echo "Deleted $count file(s), freed $(human_size "$bytes") ($bytes bytes)"
   [[ "$failed" -eq 0 ]] || echo "Could not delete $failed file(s)" >&2
 fi
+scan_check
 [[ "$failed" -eq 0 ]]

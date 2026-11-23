@@ -170,6 +170,21 @@ class LocalImagesMaintenanceTest(unittest.TestCase):
         self.assertEqual(self.run_script("prune", "--days", "", "--path", self.cache.as_posix()).returncode, 2)
         self.assertTrue(old.exists())
 
+    def test_unreadable_folder_is_an_error_not_a_quiet_success(self):
+        if os.name == "nt" or os.geteuid() == 0:
+            self.skipTest("a folder cannot be made unreadable here")
+        self.make("ok/old.jpg", 1, 100)
+        hidden = self.make("locked/old.jpg", 1, 100).parent
+        hidden.chmod(0)
+        self.addCleanup(hidden.chmod, 0o755)
+        for args in (("report", "--csv"), ("report"), ("prune", "--days", "30"),
+                     ("prune", "--days", "30", "--dry-run")):
+            args = (args,) if isinstance(args, str) else args
+            result = self.run_script(*args, "--path", self.cache.as_posix())
+            self.assertEqual(result.returncode, 1, "%s: %s" % (args, result.stdout))
+            self.assertIn("hit errors", result.stderr)
+        self.assertFalse((self.cache / "ok" / "old.jpg").exists())  # the readable part was pruned
+
     def test_usage_errors_exit_2_and_delete_nothing(self):
         old = self.make("old.jpg", 1, 100)
         cases = [
