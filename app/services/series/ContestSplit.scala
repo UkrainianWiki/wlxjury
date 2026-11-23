@@ -6,12 +6,9 @@ import org.intracer.wmua.ContestJury
 import play.api.Logger
 import play.api.libs.json._
 import scalikejdbc._
-import services.AccountChangeLog
+import services.{AccountChangeLog, ApiTokenService}
 import services.jobs.{Job, JobScheduler, NewJob, Progress}
 import services.series.ReuseReport.{Catalog, Cluster, Report, Runner, Target}
-
-import java.nio.charset.StandardCharsets
-import java.security.MessageDigest
 
 /** Splitting a reused contest (contest series plan §4.4–§4.6; PR CY-4; CA9–CA13 and CA23 decided by
   * the maintainer 2026-11-20): root confirms one contest's plan on its split page, a
@@ -40,8 +37,8 @@ object ContestSplit {
 
   private def refusal(key: String, args: Any*): Refusal = (key, args.map(_.toString))
 
-  def sha256(text: String): String =
-    MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8)).map("%02x".format(_)).mkString
+  /** SHA-256 of `text` in lowercase hex, by the project's one SHA-256 helper (RawSqlSpec: digests only there). */
+  def sha256(text: String): String = ApiTokenService.hash(text)
 
   /** The message keys of a refusal, a job's failure and an account skipped (MessagesCompletenessSpec). */
   object Keys {
