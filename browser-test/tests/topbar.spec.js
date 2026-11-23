@@ -135,7 +135,8 @@ test.describe('the sticky top bar on a desktop', () => {
     expect(at576.padding).toBe(`${at576.bar}px`);
     await page.setViewportSize({ width: 575, height: 800 });
     await expect.poll(async () => (await read()).position).not.toBe('sticky');
-    expect((await read()).padding).toBe('0px');
+    // no padding below 576 px: the initial value, computed as auto (or 0px)
+    expect((await read()).padding).toMatch(/^(auto|0px)$/);
     await context.close();
   });
 
