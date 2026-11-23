@@ -27,9 +27,7 @@ class DeepRegexTest(unittest.TestCase):
         self.assertNotIn("secretish", "".join(rules.problems()))
 
     def test_huge_repeat_count_is_refused_and_others_kept(self):
-        rules = cps.Rules("name	neutralword
-name	a{99999999999}
-", "t")
+        rules = cps.Rules("name\tneutralword\nname\ta{99999999999}\n", "t")
         self.assertEqual(["line 2: the regex is too large or too deeply nested to compile"], rules.bad)
         self.assertEqual(1, len(rules.patterns))
         self.assertNotIn("99999999999", "".join(rules.problems()))
