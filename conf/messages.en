@@ -1102,8 +1102,9 @@ round.juror.add.title.of=Add a juror to round {0} {1}
 round.juror.add.help=The new juror gets the round''s files they don''t have yet, unrated. Votes already given stay as they are. The round must be running.
 round.juror.add.jury=Jurors of the round
 round.juror.stopped=stopped
-round.juror.add.none=There is no juror to add: the contest has no jurors. Add the juror to the contest first (Users).
+round.juror.add.none=There is no one to add: every juror of the contest is already in this round, or the contest has no jurors. Add the juror to the contest first (Users).
 round.juror.add.choose=Juror to add
+round.juror.add.choose.placeholder=Choose a juror
 round.juror.add.show=Show what this does
 round.juror.add.all={0} gets {1} files of the round: those they don''t have yet.
 round.juror.add.pause=The round pauses for a few seconds while this runs: its jurors see a “paused” page meanwhile and can vote again right after.
@@ -1121,8 +1122,6 @@ round.warning.nojurors.short=Open, but no juror can vote
 round.freeze.release=Release
 round.freeze.released=Round {0} released: it is active again if it was before.
 round.freeze.none=Round {0} had nothing to release.
-round.juror.add.in.round=in the round
-round.juror.add.topup={0} is already a juror of this round: they get only what they are short of.
 
 # adding a juror with a fair share of the donors' unrated files (round_rebalance, PR 1b)
 round.juror.add.donors.help=Ticked jurors give some of their unrated files to the new juror, so that they all end with about as many unrated files. Stopped jurors are listed unticked; a ticked stopped juror gives and stays stopped.
@@ -1131,8 +1130,12 @@ round.juror.add.share={0} unrated files over {1} jurors. {2} gets about {3}: fro
 round.juror.add.share.none={0} gets nothing: no ticked juror has more unrated files than {0}.
 round.juror.add.stopped.donor=A ticked stopped juror gives their unrated files and stays stopped.
 round.juror.add.restart={0} is stopped in this round: the add starts them again, and they can then change their earlier votes in the round.
+round.juror.add.restart.confirm=Start {0} again
+round.juror.add.restart.subject=Juror to start again:
 round.juror.share=Start and give a fair share…
 job.error.rebalance.donor=Account {0}, ticked to give files, isn''t a juror of round {1}.
+job.error.rebalance.already.juror={0} is already an active juror of round {1}: they can''t be added again.
+job.error.rebalance.stopped.juror={0} is stopped in round {1}: start them again from the round statistics (Start and give a fair share…).
 job.error.rebalance.donor.verify=Round {0}: juror {1} has lost another number of files than they gave. Retry checks again.
 # reassigning a juror's unrated files (round_rebalance, docs/plans/2026-11-16-round-editing.md, step 3)
 round.juror.reassign=Reassign files…

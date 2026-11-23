@@ -76,6 +76,13 @@ class RoundJurorsAuthorizationSpec extends PlaySpecification with PlayTestDb {
     rows.filter(_.active).map(_.userId).sorted.mkString(",") + "|" + rows.filterNot(_.active).map(_.userId).sorted.mkString(",")
   }
 
+  /** The values of the add page's juror select, in order. */
+  private def options(body: String): Seq[String] = {
+    val start = body.indexOf("id=\"round-juror-add-select\"")
+    if (start < 0) Nil
+    else """<option value="(\d*)"""".r.findAllMatchIn(body.substring(start, body.indexOf("</select>", start))).map(_.group(1)).toSeq
+  }
+
   private def rebalanceJobs(): Int =
     sql"SELECT COUNT(*) FROM job WHERE kind = ${RoundRebalanceHandler.Kind}".map(_.int(1)).single().getOrElse(0)
 
@@ -122,18 +129,44 @@ class RoundJurorsAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "say why a juror of another contest, a non-member or an inactive member can't be added; a juror in the round gets a top-up" in {
+    "say why a juror of another contest, a non-member, an inactive member or an active juror of the round can't be added" in {
       testDbApp { app =>
         val (round, _, users) = setUp()
         val r = round.getId
-        val topUp = get(app, Some("admin@example.com"), page(r) + s"?juror=${users("juror").getId}")
-        (status(topUp) === OK) and (contentAsString(topUp) must contain("round-juror-add-topup")) and
-          (contentAsString(topUp) must contain("data-files=\"0\"")) and
+        val active = get(app, Some("admin@example.com"), page(r) + s"?juror=${users("juror").getId}")
+        (status(active) === OK) and (contentAsString(active) must contain("round-juror-add-refused")) and
+          (contentAsString(active) must contain("is already an active juror of round 1")) and
+          (contentAsString(active) must not(contain("round-juror-add-form"))) and
         Seq("other-juror", "organizer", "inactive").map { k =>
           val result = get(app, Some("admin@example.com"), page(r) + s"?juror=${users(k).getId}")
           (status(result) === OK) and (contentAsString(result) must contain("round-juror-add-refused")) and
             (contentAsString(result) must not(contain("round-juror-add-form")))
         }.reduce(_ and _)
+      }
+    }
+
+    "offer only the contest's jurors outside the round, never an active or a stopped juror of the round" in {
+      testDbApp { app =>
+        val (round, _, users) = setUp()
+        val r = round.getId
+        RoundUser.setActive(r, users("juror2").getId, active = false)
+        val body = contentAsString(get(app, Some("admin@example.com"), page(r)))
+        // the round's jurors are still listed in the jury (donors), not offered
+        (options(body) === Seq(users("newjuror").getId.toString)) and
+          (body must contain(s"data-juror=\"${users("juror").getId}\"")) and
+          (body must contain(s"data-juror=\"${users("juror2").getId}\""))
+      }
+    }
+
+    "say who an active juror asked for is, with no one chosen in the select" in {
+      testDbApp { app =>
+        val (round, _, users) = setUp()
+        val body = contentAsString(get(app, Some("admin@example.com"), page(round.getId) + s"?juror=${users("juror").getId}"))
+        // the placeholder chosen, not the first juror outside the round
+        (options(body) === Seq("", users("newjuror").getId.toString)) and
+          (body must contain("<option value=\"\" selected disabled>")) and
+          (body must not(contain(s"<option value=\"${users("newjuror").getId}\" selected"))) and
+          (body must contain("juror@example.com is already an active juror of round 1"))
       }
     }
 
@@ -188,6 +221,20 @@ class RoundJurorsAuthorizationSpec extends PlaySpecification with PlayTestDb {
         val stopped = post(app, Some("admin@example.com"), page(r), "juror" -> users("newjuror").getId.toString, "jury" -> jury(r))
         refused and (status(stale) === CONFLICT) and (status(stopped) === CONFLICT) and (rebalanceJobs() === 0) and
           (files(r, users("newjuror")) === 0)
+      }
+    }
+
+    "refuse an active juror of the round with the message, writing nothing and queueing no job" in {
+      testDbApp { app =>
+        val (round, _, users) = setUp()
+        val r = round.getId
+        val juror = users("juror")
+        val shown = jury(r)
+        val result = post(app, Some("admin@example.com"), page(r), "juror" -> juror.getId.toString, "jury" -> shown)
+        (status(result) === CONFLICT) and (contentAsString(result) must contain("round-juror-add-notice")) and
+          (contentAsString(result) must contain(s"${juror.fullname} is already an active juror of round 1")) and
+          (rebalanceJobs() === 0) and (files(r, juror) === 3) and (jury(r) === shown) and
+          (Round.findById(r).map(r => r.active -> r.freezeCount) must beSome(true -> 0))
       }
     }
 
@@ -335,6 +382,30 @@ class RoundJurorsAuthorizationSpec extends PlaySpecification with PlayTestDb {
         (contentAsString(get(app, Some("admin@example.com"), stat)) must contain(link.replace("?", "?"))) and
           (contentAsString(get(app, Some("organizer@example.com"), stat)) must not(contain(link))) and
           (contentAsString(get(app, Some("admin@example.com"), link)) must contain("round-juror-add-restart"))
+      }
+    }
+
+    "show the stopped juror of the statistics' link as the page's subject, and start them again with restart" in {
+      testDbApp { app =>
+        val (round, _, users) = setUp()
+        val r = round.getId
+        val stopped = users("juror2")
+        RoundUser.setActive(r, stopped.getId, active = false)
+        // juror2 lacks file 3: the restart gives it
+        sql"DELETE FROM vote WHERE round_id = $r AND jury_id = ${stopped.getId} AND page_id = 3".update()
+        val body = contentAsString(get(app, Some("admin@example.com"), page(r) + s"?juror=${stopped.getId}"))
+        val tampered = post(app, Some("admin@example.com"), page(r), "juror" -> stopped.getId.toString, "jury" -> jury(r))
+        val tamperedBody = contentAsString(tampered)
+        val jobsAfterTamper = rebalanceJobs()
+        val restarted = post(app, Some("admin@example.com"), page(r), "juror" -> stopped.getId.toString, "jury" -> jury(r),
+          "restart" -> "true")
+        (body must contain(s"id=\"round-juror-add-subject\" data-juror=\"${stopped.getId}\"")) and
+          (body must not(contain("id=\"round-juror-add-select\""))) and
+          (body must contain("name=\"restart\" value=\"true\"")) and (body must contain("round-juror-add-form")) and
+          (status(tampered) === CONFLICT) and (tamperedBody must contain("juror2@example.com is stopped in round 1")) and
+          (jobsAfterTamper === 0) and
+          (status(restarted) === SEE_OTHER) and (files(r, stopped) === 3) and
+          (RoundUser.byRoundId(r).find(_.userId == stopped.getId).map(_.active) must beSome(true))
       }
     }
   }

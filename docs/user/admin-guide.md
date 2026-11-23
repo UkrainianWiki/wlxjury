@@ -1173,10 +1173,14 @@ files being reassigned), these buttons are refused with a message: try again whe
 
 Under the jurors' table of the [statistics page](organizer-guide.md#o-statistics) (and of the
 round form's jurors panel), **Add juror…** opens a page listing the round's jurors (stopped ones
-marked **stopped**) and the contest's jurors who aren't in the round. Choose one and **Show what
-this does**: the page says how many files they get, or why they can't be added now. **Add**
-queues the work; the rounds list's job column shows it, and the number of files given when it
-is done. The person must first be a juror of the contest (**Users**).
+marked **stopped**). Its list of people to add has only the contest's jurors who aren't in the
+round. Choose one and **Show what this does**: the page says how many files they get, or why they
+can't be added now. **Add** queues the work; the rounds list's job column shows it, and the number
+of files given when it is done. The person must first be a juror of the contest (**Users**).
+
+The round's own jurors aren't in that list. A stopped juror is brought back from their row in the
+table (**Start and give a fair share…**, below). An active juror can't be added again: to give them
+more files, **Stop** them, then use **Start and give a fair share…**.
 
 - Only a running round takes a juror: started, its distribution done, and not held by another
   round's distribution. Start the round first.
@@ -1201,9 +1205,10 @@ is done. The person must first be a juror of the contest (**Users**).
   take").
 - Votes already given never move: only unrated files do (in a round with criteria, a file with
   any criterion rated counts as rated).
-- A stopped juror's row in the table has **Start and give a fair share…**: the same page for
-  them, which starts them again with a share of the others' unrated files (their own unrated
-  files counted). They can then change their earlier votes in the round, as after a plain Start.
+- A stopped juror's row in the table has **Start and give a fair share…**: the same page with
+  that juror as its subject instead of the list. **Start … again** starts them again with a share
+  of the others' unrated files (their own unrated files counted). They can then change their
+  earlier votes in the round, as after a plain Start.
 - The round pauses for a few seconds while the files are given: its jurors see a page saying so
   ("Reload shortly") and their votes are refused meanwhile; then the round is open again.
 - If the job fails, the round is open again and **Retry** resumes it. **Cancel** also opens the

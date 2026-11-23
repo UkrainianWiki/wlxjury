@@ -1086,8 +1086,9 @@ round.juror.add.title.of=Ajouter un juré au tour {0} {1}
 round.juror.add.help=Le nouveau juré reçoit, non notés, les fichiers du tour qu''il n''a pas encore. Les votes déjà donnés restent tels quels. Le tour doit être en cours.
 round.juror.add.jury=Jurés du tour
 round.juror.stopped=arrêté
-round.juror.add.none=Aucun juré à ajouter : le concours n''a pas de jurés. Ajoutez d''abord le juré au concours (Utilisateurs).
+round.juror.add.none=Personne à ajouter : tous les jurés du concours sont déjà dans ce tour, ou le concours n''a pas de jurés. Ajoutez d''abord le juré au concours (Utilisateurs).
 round.juror.add.choose=Juré à ajouter
+round.juror.add.choose.placeholder=Choisir un juré
 round.juror.add.show=Voir ce que cela fait
 round.juror.add.all={0} reçoit {1} fichiers du tour : ceux qu''il n''a pas encore.
 round.juror.add.pause=Le tour se met en pause quelques secondes pendant l''opération : ses jurés voient entre-temps une page « en pause » et peuvent voter de nouveau juste après.
@@ -1105,8 +1106,6 @@ round.warning.nojurors.short=Ouvert, mais aucun juré ne peut voter
 round.freeze.release=Libérer
 round.freeze.released=Tour {0} libéré : il est de nouveau actif s''il l''était avant.
 round.freeze.none=Le tour {0} n''avait rien à libérer.
-round.juror.add.in.round=dans le tour
-round.juror.add.topup={0} est déjà juré de ce tour : il ne reçoit que ce qui lui manque.
 
 # adding a juror with a fair share of the donors' unrated files (round_rebalance, PR 1b)
 round.juror.add.donors.help=Les jurés cochés donnent une partie de leurs fichiers non notés au nouveau juré, pour que tous finissent avec à peu près autant de fichiers non notés. Les jurés arrêtés sont listés non cochés ; un juré arrêté coché donne et reste arrêté.
@@ -1115,8 +1114,12 @@ round.juror.add.share={0} fichiers non notés chez {1} jurés. {2} en reçoit en
 round.juror.add.share.none={0} ne reçoit rien : aucun juré coché n''a plus de fichiers non notés que {0}.
 round.juror.add.stopped.donor=Un juré arrêté coché donne ses fichiers non notés et reste arrêté.
 round.juror.add.restart={0} est arrêté dans ce tour : l''ajout le redémarre, et il pourra alors modifier ses votes précédents dans le tour.
+round.juror.add.restart.confirm=Redémarrer {0}
+round.juror.add.restart.subject=Juré à redémarrer :
 round.juror.share=Démarrer et donner une part équitable…
 job.error.rebalance.donor=Le compte {0}, coché pour donner des fichiers, n''est pas un juré du tour {1}.
+job.error.rebalance.already.juror={0} est déjà un juré actif du tour {1} : il ne peut pas être ajouté à nouveau.
+job.error.rebalance.stopped.juror={0} est arrêté dans le tour {1} : redémarrez-le depuis les statistiques du tour (Démarrer et donner une part équitable…).
 job.error.rebalance.donor.verify=Tour {0} : le juré {1} a perdu un autre nombre de fichiers que ceux qu''il a donnés. Réessayer vérifie à nouveau.
 # reassigning a juror's unrated files (round_rebalance, docs/plans/2026-11-16-round-editing.md, step 3)
 round.juror.reassign=Réattribuer les fichiers…

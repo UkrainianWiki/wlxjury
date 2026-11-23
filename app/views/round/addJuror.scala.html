@@ -10,9 +10,12 @@
         paused: Boolean
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
-@* Adding a juror to a running round (RoundJurorsController): a GET form to choose the juror (the
-   contest's jurors outside the round, and the round's stopped jurors, started again by the add)
-   and, in a round where each file goes to N jurors, the donors (D1: the active jurors ticked, the
+@* Adding a juror to a running round (RoundJurorsController): a GET form to choose the juror (only the
+   contest's jurors outside the round; the server refuses an active juror of the round). A stopped juror
+   of the round, reached by the round statistics' "Start and give a fair share…" (`?juror=`), is the
+   page's fixed subject instead of the select, and its confirm sends `restart` (a stopped juror without
+   it is refused). An active juror reached by `?juror=`: the refusal names them, the select shows no one
+   chosen. And, in a round where each file goes to N jurors, the donors (D1: the active jurors ticked, the
    stopped ones listed unticked and marked); then for the juror chosen the figures and the confirm
    form, a POST with the CSRF token, the donors, the jury as shown (`jury`, checked again under the
    round's lock), sent once (submit-once.js). The confirm carries the juror and donors the figures were
@@ -22,6 +25,8 @@
 @import helper._
 @shares = @{ round.distribution > 0 }
 @chosen = @{ preview.flatMap(_.juror).flatMap(_.id) }
+@* a stopped juror of the round chosen: started again, the page's subject *@
+@subject = @{ preview.filter(_.restart).flatMap(_.juror) }
 @ticked(id: Long) = @{ preview.fold(jury.jurors.exists(r => r.active && r.user.id.contains(id)))(_.donors.contains(id)) }
 @nameOf(id: Long) = @{ jury.jurors.find(_.user.id.contains(id)).fold(id.toString)(_.user.fullname) }
 @scripts = {
@@ -65,26 +70,47 @@
                 </ul>
                 </fieldset>
 
-                @* the contest's jurors outside the round, then the round's: a stopped one is started again, an
-                   active one topped up *@
-                @defining(jury.candidates.map(u => (u, None: Option[Boolean])) ++ jury.jurors.map(r => (r.user, Some(r.active)))) { options =>
-                @if(options.isEmpty) {
-                    <p id="round-juror-add-none">@Messages("round.juror.add.none")</p>
-                } else {
-                    <div class="row g-2 align-items-end mb-3">
-                        <div class="col-auto">
-                            <label for="round-juror-add-select" class="form-label">@Messages("round.juror.add.choose")</label>
-                            <select name="juror" id="round-juror-add-select" class="form-select">
-                            @for((candidate, inRound) <- options) {
-                                <option value="@candidate.getId" @if(chosen == candidate.id) {selected}>@candidate.fullname (@candidate.email)@for(active <- inRound) { — @Messages(if (active) "round.juror.add.in.round" else "round.juror.stopped")}</option>
+                @subject match {
+                    case Some(s) => {
+                        @* a stopped juror of the round: the page's subject, not an option *@
+                        <input type="hidden" name="juror" value="@s.getId">
+                        <div class="row g-2 align-items-end mb-3">
+                            <div class="col-auto">
+                                <p class="mb-0" id="round-juror-add-subject" data-juror="@s.getId">@Messages("round.juror.add.restart.subject")
+                                    <strong>@s.fullname (@s.email)</strong> <span class="badge text-bg-secondary">@Messages("round.juror.stopped")</span></p>
+                            </div>
+                            <div class="col-auto">
+                                <button type="submit" class="btn btn-outline-secondary">@Messages("round.juror.add.show")</button>
+                            </div>
+                        </div>
+                    }
+                    case None => {
+                        @* only the contest's jurors outside the round *@
+                        @if(jury.candidates.isEmpty) {
+                            <p id="round-juror-add-none">@Messages("round.juror.add.none")</p>
+                        } else {
+                            @* a juror asked for who isn't an option (in the round, or not a juror of the contest):
+                               the refusal names them, the select chooses no one *@
+                            @defining(preview.isDefined && !jury.candidates.exists(c => chosen == c.id)) { noneChosen =>
+                            <div class="row g-2 align-items-end mb-3">
+                                <div class="col-auto">
+                                    <label for="round-juror-add-select" class="form-label">@Messages("round.juror.add.choose")</label>
+                                    <select name="juror" id="round-juror-add-select" class="form-select" @if(noneChosen) {required}>
+                                    @if(noneChosen) {
+                                        <option value="" selected disabled>@Messages("round.juror.add.choose.placeholder")</option>
+                                    }
+                                    @for(candidate <- jury.candidates) {
+                                        <option value="@candidate.getId" @if(chosen == candidate.id) {selected}>@candidate.fullname (@candidate.email)</option>
+                                    }
+                                    </select>
+                                </div>
+                                <div class="col-auto">
+                                    <button type="submit" class="btn btn-outline-secondary">@Messages("round.juror.add.show")</button>
+                                </div>
+                            </div>
                             }
-                            </select>
-                        </div>
-                        <div class="col-auto">
-                            <button type="submit" class="btn btn-outline-secondary">@Messages("round.juror.add.show")</button>
-                        </div>
-                    </div>
-                }
+                        }
+                    }
                 }
             </form>
 
@@ -127,9 +153,6 @@
                                 @if(p.restart) {
                                     <p class="text-muted" id="round-juror-add-restart">@Messages("round.juror.add.restart", juror.fullname)</p>
                                 }
-                                @if(p.topUp) {
-                                    <p class="text-muted" id="round-juror-add-topup">@Messages("round.juror.add.topup", juror.fullname)</p>
-                                }
                                 <p class="text-muted">@Messages("round.juror.add.pause")</p>
                             </div>
                             <p class="text-muted" id="round-juror-add-stale" role="status" data-stale-text="@Messages("round.juror.preview.stale", Messages("round.juror.add.show"))"></p>
@@ -142,7 +165,12 @@
                                 @for(d <- p.donors if shares) {
                                     <input type="hidden" name="donor[]" value="@d">
                                 }
-                                <button type="submit" class="btn btn-primary">@Messages("round.juror.add.confirm", juror.fullname)</button>
+                                @if(subject.isDefined) {
+                                    <input type="hidden" name="restart" value="true">
+                                    <button type="submit" class="btn btn-primary">@Messages("round.juror.add.restart.confirm", juror.fullname)</button>
+                                } else {
+                                    <button type="submit" class="btn btn-primary">@Messages("round.juror.add.confirm", juror.fullname)</button>
+                                }
                             }
                         }
                     }
