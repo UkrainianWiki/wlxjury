@@ -51,7 +51,7 @@ all in `app/graphql/` (the compiler stops in the typer, so more may follow):
 | API auth | own JWT and proxy header | `api.ApiAuth.caller`: personal Bearer tokens or the session, mounted under `/api` (`ApiRouter`), see `docs/api.md` | reuse it |
 | CSRF | none | CSRF filter; `Csrf-Token` for session POSTs | session mutations need it; only a request with a Bearer header and no session cookie skips it (`ApiAuth.bearerWithoutSession`); with a cookie CSRF is required |
 | Serving | Pekko HTTP :9001 route | Play routes only; Tapir served through Play | new Play action |
-| Build | `uiTest` wired into `Test / test`, needs npm in `ui/` | `jsTest` only | the React UI is a separate topic (Q2) |
+| Build | `uiTest` wired into `Test / test`, needs npm in `ui/` | `jsTest` only | `ui/` is created by #136's platform step (Q2) |
 | Series | none | contest series in flight (#119-#124) | go through `ContestService`; add series fields after they merge |
 | Tests | specs build a bare `GraphQLContext(Some(user))` | `SharedTestDb`, `SharedPlayApp`, `CsrfTestApp` | rewrite on the shared fixtures |
 
@@ -67,7 +67,7 @@ Port onto a fresh branch from master, taking only what is worth keeping; do not 
   that has to be redone: authentication, authorization, the vote and round model, serving. Reusable: the object
   type definitions (about 40%), the SDL as documentation, the event bus idea, the shape of the specs.
 - The port is: a new `app/graphql/` with the Sangria schema (copy the types for Contest, Round, Image, Comment,
-  Monument, stats), a new context, a Play action, resolvers over the existing services; no `ui/`, no JWT, no
+  Monument, stats), a new context, a Play action, resolvers over the existing services; no `ui/` (see Q2), no JWT, no
   `login`, no Pekko route, no Caliban.
 - Effort: see section 6 (about 5-6 days to the first usable slice for the UI developer). The local merge branch
   `feature/graphql-sangria-update` is not pushed because it does not compile.
@@ -160,55 +160,64 @@ the session cookie; the main write path is session plus CSRF, and tokens stay qu
   and compares it to the file, so a resolver change without an SDL change fails CI. The UI developer reads the
   SDL, and a schema change is a reviewed diff of that file.
 - Types: `graphql-codegen` (typescript + typed-document-node) generates TypeScript types and typed documents from
-  the SDL and from the `.graphql` documents in `ui/`. Generated files are not committed; CI runs the codegen.
-- Client: urql (small, document cache by default, simple to read) over Apollo (larger, normalized cache that is
-  only worth it for many cross-screen updates). The screens here are lists and one voting view, so urql plus a
-  `graphcache` entry only for votes is enough. Revisit if the UI grows.
-- Dev setup: the Vite dev server proxies `/api` (and the session login pages) to a local Play app, so the
-  browser sees one origin: no CORS, the session cookie works, CSRF works as in production. The Play app runs on
-  a dev DB: the Gatling fixture DB (`data/cache/` dump, about 38k images, 20 jurors, a binary and a rated round)
-  is restored for them with one script, and the plan adds fixture sign-in accounts for a juror, an organizer and
-  an admin. No CORS is added to the app.
-- CSRF: the page that hosts the React app (a Twirl shell at `/ui`) renders the token into a meta tag
-  (`<meta name="csrf-token">`) as the large view does for `data-csrf-token`; the client sends it as the
-  `Csrf-Token` header on every mutation. Queries are POST too, but only mutations need the header (the server
-  checks the operation type; the CSRF filter stays on for the route).
+  the SDL and from the `.graphql` documents of the screens. `ui/` itself is created by the React investigation's
+  platform step (#136); this plan supplies the SDL, the endpoint and the codegen config. Generated files are not
+  committed; codegen runs in #136's `uiBuild` and in CI.
+- Client: urql with graphql-codegen is the recommended default (#136 adopts the same). It is small, has a document
+  cache by default and is simple to read; Apollo's normalized cache pays off only with many cross-screen
+  updates, which these screens do not have. Revisit if the UI grows.
+- Dev setup: as in #136 section 3.2 (Vite dev server with a proxy to the local Play app, port 9000 by default, so
+  the browser sees one origin: no CORS, the session cookie and CSRF work as in production). The Play app runs on a
+  dev DB: the Gatling fixture DB (`data/cache/` dump, about 38k images, 20 jurors, a binary and a rated round) is
+  restored with one script, and the plan adds fixture sign-in accounts for a juror, an organizer and an admin.
+- CSRF: `modules.CsrfModule` checks every session POST, so GraphQL queries over POST with the session cookie need
+  the `Csrf-Token` header as well. The client sends it on every request (recommended, and simplest). There is no
+  `/ui` shell and no meta tag: #136 recommends React islands on per-screen Twirl pages, and the mount element
+  carries `data-csrf-token`, as the gallery vote does (`voteTexts.scala.html`). Bearer without a session cookie
+  is the token path and needs no header.
 - Errors: GraphQL's standard `errors` array with `extensions.code` (`UNAUTHENTICATED`, `FORBIDDEN`,
   `NOT_FOUND`, `BAD_INPUT`, `INTERNAL_ERROR`, `CSRF`) and `extensions.reference` for the log line; messages are
   keys, never exception text. HTTP 401 for no session, 200 with `errors` otherwise.
-- Pagination: cursor connections (`first`, `after`, `pageInfo { endCursor hasNextPage }`, `totalCount`) with a
-  keyset cursor on the image id/rank, not offset: a 38k-image round paged by offset gets slow and unstable
-  while jurors vote and the order shifts. Page size is capped (200); the gallery asks for about 50 and the UI
-  uses infinite scroll or "load more". Offset is kept only for small lists (contests, rounds, users).
+- Pagination: cursor connections (`first`, `after`, `pageInfo { endCursor hasNextPage }`, `totalCount`), not
+  offset: a 38k-image round paged by offset gets slow and unstable while jurors vote and the order shifts. For
+  images GraphQL reuses #129's keyset continuation rules (the full sort key plus the page id as tie-break, per
+  ordering), one cursor design for both. Page size is capped (200). Offset is kept only for small lists
+  (contests, rounds, users).
 - Explorer (GraphiQL): enabled in dev and test; in production root only, same-origin assets, no CDN. Recommendation:
   dev and test only at first, and root-only in production later if support needs it, because every production
   explorer is one more page to review.
 - Subscriptions: not in the first step; polling the round progress query every few seconds is enough until a
   screen needs push.
 
-First slice (what the UI developer needs to build the juror's screens and a contest overview):
+Slices (each a PR; "slice 1" and so on are what #136 should cite). Authorization design (section 4) and negative
+tests (section 5) apply to every slice. Days include review.
 
-1. `me` (user, current contest, role in it), `contests` the caller is in, `contest(id)` with its rounds.
-2. `round(id)` with state, rates, counts, the viewer's progress.
-3. `roundImages(roundId, filters, first, after)`: the gallery page with image fields and the viewer's own vote
-   (rate), through `viewerRounds` / `viewAs`; `image(roundId, pageId)` for the large view.
-4. Mutation `vote(roundId, pageId, rate)` for the session user, with CSRF, through the gallery's vote path.
-5. Everything above with the full authorization design (section 4) and its negative tests (section 5).
+| Slice | Content | Serves | Days |
+|---|---|---|---|
+| 1 | Foundation and first screens: Play action `POST /api/graphql`, auth, limits, denial logging, SDL file plus the schema-matches-SDL test, codegen config, a section in `docs/api.md`, fixture sign-in; queries `me`, `contests`, `contest(id)` with rounds | #136's first screen, the root contests grid | 3-4 |
+| 2 | `roundStat` (round statistics, juror stats) and `round(id)` | #136's second screen, organizer round statistics | 1-1.5 |
+| 3 | After the gallery decision (#129): `roundImages` (keyset connection, the viewer's own vote, through `viewerRounds` / `viewAs`), `image(roundId, pageId)` | the juror gallery and large view | 2 |
+| 4 | Mutation `vote(roundId, pageId, rate, criterion?)`, after its rules are extracted into a service (below) | juror voting | 3 |
+| 5 | Comments, users, monuments; series fields once #119-#124 are in | organizer and admin screens | 2 |
+| 6 | Organizer and admin mutations through the services; subscriptions only if a screen needs them | later | open |
 
-Effort, with review: 3-4 days for items 1-3 plus auth, limits, denial logging, SDL test and the auth negative
-tests; 1 day for the `vote` mutation with its CSRF, juror and other-contest negative tests; 1 day for the UI
-workflow (codegen config, the `/ui` shell with the token, dev proxy, fixture sign-in, a section in
-`docs/api.md`). That is about 5-6 days to a first usable slice; the UI developer can start against the SDL after
-the first 2 days.
+The UI developer can start against the SDL after about 2 days of slice 1. Slices 1 and 2 are about 4-5.5 days.
 
-Then, in order: PR B (comments, users, monuments, round statistics, series fields once #119-#124 are in), PR C
-(organizer and admin mutations through the services), PR D (subscriptions, only if a screen needs them).
+Voting rules (slice 4). The gallery's vote rules are inline in `GalleryController` (about lines 470-500):
+`VotePermission(roundId)`, `openToJurors`, `RoundUser.isStopped`, paused gives 409 `round_paused`, closed gives
+409 `round_closed`, `acceptsRate`, `hasCriteria == criteria.isDefined` else 400 `invalid_rate`, and 404 if no row
+changed. They are extracted first into a service that both the controller and the GraphQL mutation call (the
+controller keeps its responses; the refactor is its own commit with the existing gallery specs unchanged), so the
+two paths cannot drift. The mutation has the optional `criterion` argument. Negative tests: paused round, closed
+round, stopped juror, a rate the round does not accept, criteria mismatch, an organizer voting (403), another
+contest's round, no CSRF header, a token caller. This is why slice 4 is 3 days and not 1.
 
 ## 7. Open questions for the maintainer
 
 - Q1. Answered by the maintainer: GraphQL sits beside the REST `/api`; REST stays for tokens and scripts.
-- Q2. Is the React `ui/` contests grid (from the `react` branch under this one) still wanted? The plan leaves it
-  out; it would be its own topic and brings `npm` into `sbt test`.
+- Q2. The React `ui/` of the `react` branch is not taken from here: #136 creates `ui/` in its platform step
+  (React islands on Twirl pages, see its sections 3 and 4). This plan only supplies the SDL, the endpoint and the
+  codegen config. Is that split right?
 - Q3. Tokens can write over REST today and a read-only scope is only planned (D-1b). Agree that GraphQL tokens
   are query-only until a write scope exists, and which operations that scope should later allow?
 - Q4. Is Sangria fixed as the library? Caliban (ZIO) exists only on the old `graphql` branch and Tapir has no
@@ -219,3 +228,6 @@ Then, in order: PR B (comments, users, monuments, round statistics, series field
   for contest admins?
 - Q7. Should round creation over GraphQL exist at all, given job-based distribution (a mutation would only
   enqueue and return the job)?
+- Q8. Should the juror-facing slice (round images and vote, slices 3-4) come before or after the admin and
+  organizer screens (slices 1-2, 5)? The order above follows #136's first two screens and waits for the gallery
+  decision (#129).
