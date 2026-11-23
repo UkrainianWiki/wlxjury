@@ -282,7 +282,12 @@ untrusted text quoted) with the reference the user sees, the account by `account
 (support looks the account up by id).
 The REST API has no role model of its own: `api.ApiAuth` authorizes through the same `Secured`
 permissions and `User` role checks. An API token is accepted only under `/api/`, and its value is
-never logged, flashed, put in a URL or stored in plain text (SHA-256 only, §3). *Why:* a second
+never logged, flashed, put in a URL or stored in plain text (SHA-256 only, §3). A token of the
+read-only, server-only scope (`api_token.scope = local_read`, V110) is refused, before any
+permission, on anything but a GET from the server itself (`ApiAuth.scopeRefusal`,
+`ApiAuth.fromServerItself`: a literal loopback address and no `Forwarded` / `X-Forwarded-*`
+header; headers only ever refuse), and a scope the binary doesn't know is never taken as full.
+Every GET endpoint of the API only reads. *Why:* a second
 model drifts from the first, and a token is a password. *Source:* api-auth
 plan (`98a8a79e:docs/plans/2026-11-01-api-auth.md`), "Invariants".
 

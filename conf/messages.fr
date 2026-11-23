@@ -773,6 +773,14 @@ sessions.end = Terminer les sessions
 sessions.ended = Toutes les sessions de ce compte sont terminées ; il doit se reconnecter.
 api.tokens.revoke.all.mine = Révoquer tous les jetons
 api.tokens.revoked.all = Jetons révoqués : {0}.
+api.token.scope = Accès
+api.token.scope.full = Complet : lecture et écriture, depuis n''importe où
+api.token.scope.local_read = Lecture seule, depuis le serveur uniquement
+api.token.scope.help = Un jeton en lecture seule n''est accepté que pour lire, et seulement dans les requêtes faites sur le serveur lui-même (comme celles de l''outil wlxjury-diag par ssh), jamais via le site web. Choisissez-le pour le diagnostic.
+api.token.scope.short.full = Complet
+api.token.scope.short.local_read = Lecture seule, serveur uniquement
+api.token.scope.short.unknown = Inconnu (refusé)
+error.api.token.scope = Choisissez l''un des accès proposés.
 
 # criteria rounds (C2): the round form, the catalogue, and the shipped criteria (V83)
 criteria = Critères

@@ -125,6 +125,14 @@ finds them):
 - The Commons and image-cache WARN lines (`MwApi`, `CommonsLogin`, `CommonsFileCheck`,
   `LocalImageCacheService`) quote file titles, URLs, response bodies and exception text with
   `logValue`.
+- `authorization_denied … resource=api:<endpoint> reason=token_read_only|token_endpoint|token_not_local
+  … auth=token tokenId=… scope=local_read remote="…"` (`security.authz`, WARN; D-1b): a read-only,
+  server-only API token used for anything but a `GET`, on an endpoint not open to such tokens, or
+  not from the server itself (a remote address, or any `Forwarded` / `X-Forwarded-*` header:
+  through Apache). `remote` is the client's address as Play resolved it (behind Apache, the
+  forwarded one); it is on these lines only. A remote one is a sign the token leaked:
+  revoke it on the owner's profile ([api.md](../api.md)). `wlxjury-diag recent` (§5.5) counts the
+  denials with a `targetContestId` and the `round_access_refused` lines per contest.
 
 ## 2. Health and readiness
 
@@ -246,6 +254,42 @@ doesn't exist yet (OP4; only the OAuth chooser's `oauth_choose_proof_failed` has
 
 **5.4 Watch after a release:** RSS after adding a library with native buffers (performance §4.7),
 heap after GC, and the error rate in the first hour.
+
+**5.5 `wlxjury-diag`: what happened, over ssh** (support diagnostics plan §3.4, D-1b). A read-only
+CLI the maintainer (and Claude, as the maintainer's own account) runs on the server, with no sudo
+and no database login. It ships in each release as `scripts/diagnostics/wlxjury-diag.py` (`sbt dist`
+refuses a ZIP without it) and reads the app's API on `http://127.0.0.1:9000` with a personal API
+token of the **read-only, from the server only** scope, plus the app log for denials:
+
+- `wlxjury-diag recent [--since 24h]`: the contests with activity in the window (jobs and round
+  status changes from `GET /api/diagnostics/recent`, root only; denial counts per contest from
+  `/var/log/wlxjury/application.log*`, gzip included), the worst first.
+- `wlxjury-diag contest 466 [--verbose] [--names]`: the contest's health report
+  (`GET /api/contests/466/health`), warnings and failures first; `--verbose` every check, round
+  and import, `--names` who started each import.
+
+Every command prints a few lines and ends with one next command filled with real ids
+(`recent` names the worst contest's `contest` command). Contest names, sources and hint texts are
+printed with control characters stripped; no email is in its output. It sends the token only to
+plain HTTP on a loopback address, follows no redirect, and refuses a token file others can read.
+
+One-time setup, as the maintainer's own account (the token is created on root's profile page, **API
+tokens**, access **Read-only, from the server only**; paste it when `cat` waits, then Ctrl-D):
+
+```bash
+mkdir -p ~/.config/wlxjury-diag ~/bin && chmod 700 ~/.config/wlxjury-diag
+(umask 077; cat > ~/.config/wlxjury-diag/token)
+echo jury.wle.org.ua > ~/.config/wlxjury-diag/host
+printf '#!/bin/sh\nexec python3 /opt/wlxjury/current/scripts/diagnostics/wlxjury-diag.py "$@"\n' > ~/bin/wlxjury-diag
+chmod 755 ~/bin/wlxjury-diag
+~/bin/wlxjury-diag recent
+```
+
+Ubuntu's `~/.profile` puts `~/bin` on the `PATH` from the next login, so the commands it prints
+then run as they are. The host is any name of `WLXJURY_ALLOWED_HOSTS` (the app answers no other `Host`). The wrapper
+follows `current`, so each release brings the CLI that matches its API. Revoke the token on the
+profile page when it is no longer needed; a revoked or expired token gets a one-line `HTTP 401`
+error. `log` (the request and denial lines of one contest, account or reference) comes with D-1c.
 
 ## 6. Runtime limits
 

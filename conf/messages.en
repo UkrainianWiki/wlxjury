@@ -787,6 +787,14 @@ sessions.end = End sessions
 sessions.ended = Every session of this account has ended; it must sign in again.
 api.tokens.revoke.all.mine = Revoke all tokens
 api.tokens.revoked.all = Tokens revoked: {0}.
+api.token.scope = Access
+api.token.scope.full = Full: read and write, from anywhere
+api.token.scope.local_read = Read-only, from the server only
+api.token.scope.help = A read-only token is taken only for reading, and only in requests made on the server itself (such as the wlxjury-diag tool''s over ssh), never through the website. Choose it for diagnostics.
+api.token.scope.short.full = Full
+api.token.scope.short.local_read = Read-only, server only
+api.token.scope.short.unknown = Unknown (refused)
+error.api.token.scope = Choose one of the kinds of access offered.
 
 # criteria rounds (C2): the round form, the catalogue, and the shipped criteria (V83)
 criteria = Criteria

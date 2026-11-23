@@ -3,8 +3,10 @@
 **Status:** D-0a built (#372, `stack/189-logging-config-in-releases`); D-0b built
 (`stack/191-diagnostics-quick-fixes`, 2026-11-18); D-1a built (`stack/192-contest-health`,
 2026-11-18: `services.diagnostics.ContestHealth`, `/admin/contests/:id/health`, the import form's
-DG10 warning; H2's read measured on the Gatling fixture DB, `ContestHealthBenchmark`); D-1b onwards
-not built. The plan was revised
+DG10 warning; H2's read measured on the Gatling fixture DB, `ContestHealthBenchmark`); D-1b built
+(`stack/210-d1b-token-scope`, 2026-11-20: `V110__Api_token_scope`, `ApiAuth.scopeRefusal`,
+`GET /api/contests/{id}/health`, `GET /api/diagnostics/recent`, `scripts/diagnostics/wlxjury-diag.py`
+shipped in the release ZIP, operations §5.5); D-1c onwards not built. The plan was revised
 after its independent review and a follow-up review (2026-11-18).
 
 - **Decided by the maintainer, 2026-11-18:** the whole first batch.
@@ -301,9 +303,10 @@ command as the last line, filled with the real ids it found, never a placeholder
     the token is created: "full" (today's behaviour, the default for every existing token) or
     "read-only, from the server only".
   - **What D-1b builds for it:**
-    - a migration `V108__Api_token_scope` (`api_token.scope`, default `full`; V108 has since gone
-      to the quick fixes' NOT NULL `round_user.active` and V109 to the contest series' CY-1, so
-      it takes the next free number at its merge, V110 now);
+    - a migration `V110__Api_token_scope` (`api_token.scope`, default `full`; planned as V108,
+      which went to the quick fixes' NOT NULL `round_user.active`, and V109 to the contest
+      series' CY-1; built as V110, 2026-11-20, renumbered at its merge if another takes V110
+      first);
     - the choice on the token page;
     - the check in `ApiAuth`.
   - **The check.** A read-only token is accepted only on GET endpoints and only from the server
@@ -400,7 +403,7 @@ report over ssh.
 | **D-0a** | The logging plan as designed: `conf/logback-production.xml` in the ZIP, the unit switch in `wlxjury-infra`, the deploy tools' lists | S (half a day + 1 h infra; one release and one playbook run) |
 | **D-0b** | **Logs:** the job summary lines as key-value lines with `contestId` and `logValue`-quoted source (`import_done job= contestId= source="…" seen= inserted= linked= updated= missing= notInCountries= byCountry=`); Commons and image-cache WARN lines quote titles and exception text; `server_error` and `csrf_failure` gain `accountId` (and `contestId` when the session has one); the production logback (via D-0a) gets at INFO: `services.imports`, `services.jobs`, `security.account`, `security.roles`, `round.admin`, and the new `round.access` (below). `round.counts` stays at WARN: its INFO line is the periodic recompute's summary (`round_counts windows= files= changed=`), with no support value, and its failures are already WARN. **Gallery and large view only:** `isNotAuthorized` returns a reason: `round_stopped`, `round_distributing`, `juror_stopped` (paused in the round), or the existing membership reasons; the juror sees a 200 state page for it (DG7, decided), with new message keys, since the existing `round_stopped` text on `accessDenied` is the comment path's and stays. With DG7 (decided: a 200 page, no authz line) each refusal is still logged once at INFO on the new logger `round.access`: `round_access_refused reason=round_stopped\|round_distributing\|juror_stopped roundId= accountId= contestId=`. H17 and the CLI read that line. The vote path's 409 `round_closed` is unchanged (`vote-errors.js` relies on it). **Import form:** DG11's Commons check of a prefix-less source (page and `Category:<name>`; use the one that exists, ask when both do, refuse when neither does, say so when Commons is unreachable), and the images page's note on an import that found 0 files | M (3–4 days) |
 | **D-1a** | `ContestHealth`; the page `/admin/contests/:id/health`, linked from the contest's admin pages; the Nepal checks H1, H2, H4, H5, H7, H8, H9, H10, H12; the import form's H1 warning (DG10), from the same H1 logic run on the typed source before the job is queued; specs for each check, the form warning, the page's authz negatives, and H2's cost on the Gatling fixture DB (38k files) | M (3–4 days) |
-| **D-1b** | The token scope "read-only, from the server only": `V108__Api_token_scope` (`api_token.scope`, default `full`), the choice on the token page, the check in `ApiAuth` (GET only; `isLocal` and no `X-Forwarded-For`/`Forwarded`), with negative specs (a scoped token on PUT/POST, through a forwarded request, from a remote address) and the existing `ApiSpec` token blocks unchanged; `GET /api/contests/{id}/health` and `GET /api/diagnostics/recent` (root; jobs and round status changes); `wlxjury-diag recent` (denial counts from the log) and `contest`; packaging or infra install; docs (`docs/api.md`, operations §1, §5; admin guide) | M (3–4 days) |
+| **D-1b** | The token scope "read-only, from the server only": `V110__Api_token_scope` (planned as V108) (`api_token.scope`, default `full`), the choice on the token page, the check in `ApiAuth` (GET only; `isLocal` and no `X-Forwarded-For`/`Forwarded`), with negative specs (a scoped token on PUT/POST, through a forwarded request, from a remote address) and the existing `ApiSpec` token blocks unchanged; `GET /api/contests/{id}/health` and `GET /api/diagnostics/recent` (root; jobs and round status changes); `wlxjury-diag recent` (denial counts from the log) and `contest`; packaging or infra install; docs (`docs/api.md`, operations §1, §5; admin guide) | M (3–4 days) |
 | **D-1c** | `wlxjury-diag log` (H17–H19 from the logs); the remaining checks H6, H11, H13–H16, H20, H21 | M (3 days) |
 | **D-2** | (a) the request line and one reference per request; `requests.log` | M (2–3 days) |
 | **D-3** | (f1) `support_event` and its purge; the health page shows it, and `GET /api/diagnostics/recent` gains denials | S–M (2 days) |
@@ -585,7 +588,7 @@ option 4). It would bypass the app's scoping and duplicate the checks in SQL.
 - **DG3: How the maintainer and Claude reach the report over ssh. Decided by the maintainer,
   2026-11-18:** the new token scope (the default).
   - [chosen] **A new scope for personal API tokens.** A scope "read-only, from the server only",
-    chosen when a token is created (`V108__Api_token_scope`, the token page, the check in
+    chosen when a token is created (`V110__Api_token_scope`, planned as V108; the token page, the check in
     `ApiAuth`):
     - the token works on GET endpoints only;
     - it works only from the server itself (`isLocal` and no `X-Forwarded-For` / `Forwarded`

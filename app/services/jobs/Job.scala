@@ -178,6 +178,17 @@ object JobJdbc {
         .map(extract)
         .list()
 
+  /** The jobs created or finished in the last `hours`, or still queued or running, the newest
+    * first, at most `limit` (support diagnostics, `RecentActivity`).
+    */
+  def recent(hours: Int, limit: Int)(implicit session: DBSession = AutoSession): Seq[Job] =
+    sql"""SELECT $columns FROM job
+          WHERE created_at >= NOW(3) - INTERVAL $hours HOUR OR finished_at >= NOW(3) - INTERVAL $hours HOUR
+             OR status IN (${JobStatus.active.toSeq})
+          ORDER BY id DESC LIMIT $limit"""
+      .map(extract)
+      .list()
+
   def activeOfKind(kind: String)(implicit session: DBSession = AutoSession): Seq[Job] =
     sql"SELECT $columns FROM job WHERE status IN (${JobStatus.active.toSeq}) AND kind = $kind ORDER BY id"
       .map(extract)

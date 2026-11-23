@@ -8,6 +8,9 @@ import java.time.Instant
   * lists and the API checks ([[services.ApiTokenService]]).
   *
   * @param prefix  "wlxj_" and the token's first 6 characters, to tell tokens apart
+  * @param scope   what the API takes it for (V110): [[ApiTokenScope.Full]] or the read-only,
+  *                server-only [[ApiTokenScope.LocalRead]]; None for a stored value this binary
+  *                doesn't know, which the API refuses
   * @param expired whether `expiresAt` has passed, by the database clock
   */
 final case class ApiToken(
@@ -15,6 +18,7 @@ final case class ApiToken(
     userId: Long,
     name: String,
     prefix: String,
+    scope: Option[ApiTokenScope],
     createdAt: Instant,
     expiresAt: Option[Instant],
     lastUsedAt: Option[Instant],
@@ -27,13 +31,34 @@ final case class ApiToken(
   def usable: Boolean = !revoked && !expired
 }
 
+/** A token's scope (`api_token.scope`, V110; support diagnostics plan §3.4, DG3), chosen when it is
+  * created. `value`: as stored and as the profile form sends it.
+  */
+sealed abstract class ApiTokenScope(val value: String)
+
+object ApiTokenScope {
+
+  /** Everything its user may do, from anywhere: every token before V110, and the default. */
+  case object Full extends ApiTokenScope("full")
+
+  /** Read-only, from the server only: the API takes it on GET only, and only from the server
+    * itself ([[api.ApiAuth.fromServerItself]]). For the maintainer's `wlxjury-diag` over ssh.
+    */
+  case object LocalRead extends ApiTokenScope("local_read")
+
+  val All: Seq[ApiTokenScope] = Seq(Full, LocalRead)
+
+  /** The scope of a stored or submitted value, exactly (no trimming or case folding). */
+  def find(value: String): Option[ApiTokenScope] = All.find(_.value == value)
+}
+
 /** The `api_token` table. Times come from the database clock (NOW(3)), as [[services.jobs.JobJdbc]]'s,
   * and are read as instants whatever the JVM's and the session's zones ([[DbTime]]).
   */
 object ApiTokenJdbc {
 
   private val columns =
-    sqls"""id, user_id, name, prefix, ${DbTime.epoch("created_at")}, ${DbTime.epoch("expires_at")},
+    sqls"""id, user_id, name, prefix, scope, ${DbTime.epoch("created_at")}, ${DbTime.epoch("expires_at")},
            ${DbTime.epoch("last_used_at")}, ${DbTime.epoch("revoked_at")},
            (expires_at IS NOT NULL AND expires_at <= NOW(3)) AS expired"""
 
@@ -43,6 +68,7 @@ object ApiTokenJdbc {
       userId = rs.long("user_id"),
       name = rs.string("name"),
       prefix = rs.string("prefix"),
+      scope = ApiTokenScope.find(rs.string("scope")),
       createdAt = DbTime.instant(rs, "created_at"),
       expiresAt = DbTime.instantOpt(rs, "expires_at"),
       lastUsedAt = DbTime.instantOpt(rs, "last_used_at"),
@@ -50,11 +76,14 @@ object ApiTokenJdbc {
       expired = rs.boolean("expired")
     )
 
-  /** A new token of the user, expiring in `expiresInDays` (never without), by its hash; its id. */
+  /** A new token of the user, of `scope`, expiring in `expiresInDays` (never without), by its hash;
+    * its id.
+    */
   def create(userId: Long, name: String, tokenHash: String, prefix: String, expiresInDays: Option[Int],
-      createNonce: Option[String] = None)(implicit session: DBSession = AutoSession): Long =
-    sql"""INSERT INTO api_token (user_id, name, token_hash, prefix, create_nonce, created_at, expires_at)
-          VALUES ($userId, $name, $tokenHash, $prefix, $createNonce, NOW(3),
+      createNonce: Option[String] = None, scope: ApiTokenScope = ApiTokenScope.Full)(implicit
+      session: DBSession = AutoSession): Long =
+    sql"""INSERT INTO api_token (user_id, name, token_hash, prefix, scope, create_nonce, created_at, expires_at)
+          VALUES ($userId, $name, $tokenHash, $prefix, ${scope.value}, $createNonce, NOW(3),
                   IF(${expiresInDays.isDefined}, NOW(3) + INTERVAL ${expiresInDays.getOrElse(0)} DAY, NULL))"""
       .updateAndReturnGeneratedKey.apply()
 

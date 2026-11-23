@@ -151,7 +151,9 @@ class MessagesCompletenessSpec extends Specification {
       s"comments.report.empty.commenter.$w")),                             // commentsReport, by scope
     Plural.Forms.map("comments.report.others." + _),                       // commentsReport's folded comments
     services.GalleryService.RoundState.All.map("round.state.title." + _.reason), // roundState.scala.html's title
-    Seq("no.round.yet.closed")                                                   // noRoundYet.scala.html's title
+    Seq("no.round.yet.closed"),                                                  // noRoundYet.scala.html's title
+    db.scalikejdbc.ApiTokenScope.All.flatMap(s =>
+      Seq(s"api.token.scope.${s.value}", s"api.token.scope.short.${s.value}")) // apiTokens, apiTokenScope
   ).flatten
 
   /** Texts in a key's place that are shown as they are, not keys, each with its reason. */

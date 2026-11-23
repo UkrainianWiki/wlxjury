@@ -153,6 +153,11 @@ Universal / mappings ++= Seq(
   baseDirectory.value / "LICENSE" -> "LICENSE",
   baseDirectory.value / "NOTICE" -> "NOTICE"
 ) ++ (baseDirectory.value / "licenses").listFiles().toSeq.map(f => f -> s"licenses/${f.getName}")
+// The support diagnostics CLI (docs/plans/2026-11-18-support-diagnostics.md §3.4, D-1b): the
+// maintainer runs /opt/wlxjury/current/scripts/diagnostics/wlxjury-diag.py over ssh, with no
+// install step, so each release brings the CLI that matches its API. Its tests stay in the checkout.
+Universal / mappings += (baseDirectory.value / "scripts" / "diagnostics" / "wlxjury-diag.py") ->
+  "scripts/diagnostics/wlxjury-diag.py"
 // Server setup files come from wlxjury-infra, or are installed by hand from a reviewed checkout
 // (docs/deployment.md, "The server");
 // keep them out of releases, whose conf/ directory is also on the app's classpath.
@@ -173,6 +178,8 @@ Universal / mappings := {
     throw new MessageOnlyException("Coverage instrumentation is on: run `coverageOff`, or start a new sbt session, before packaging")
   if (!packaged.exists { case (_, path) => path.replace('\\', '/') == "conf/logback-production.xml" })
     throw new MessageOnlyException("The release must contain conf/logback-production.xml (the systemd unit's -Dlogger.file)")
+  if (!packaged.exists { case (_, path) => path.replace('\\', '/') == "scripts/diagnostics/wlxjury-diag.py" })
+    throw new MessageOnlyException("The release must contain scripts/diagnostics/wlxjury-diag.py (operations §5.5)")
   packaged
 }
 Test / unmanagedSources += baseDirectory.value / "project" / "BuildIdentity.scala"

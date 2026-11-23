@@ -33,6 +33,18 @@ is listed below.
 
 **Features**
 
+- **Support diagnostics over ssh (D-1b)** (the support diagnostics plan,
+  docs/plans/2026-11-18-support-diagnostics.md, DG3 decided 2026-11-18; developed 2026-11-20,
+  `stack/210-d1b-token-scope`, V110): a personal API token gets an **Access** chosen when it is
+  created, **Full** (the default, and every existing token) or **Read-only, from the server only**:
+  taken on GET only, and only in a request from the server itself (a loopback address with no
+  `Forwarded` / `X-Forwarded-*` header, so never through the website); both token lists show it.
+  The API gains `GET /api/contests/{id}/health` (the health page's report, root and the contest's
+  admins; a retired contest's root only) and `GET /api/diagnostics/recent` (root: every contest's
+  jobs and round status changes of the window, the worst first). The release ships the
+  maintainer's `wlxjury-diag` CLI (`scripts/diagnostics/wlxjury-diag.py`): `recent` (adding the
+  log's denial counts per contest) and `contest 466`, each ending with one next command
+  (operations §5.5).
 - **Contest series (CY-1)** (the contest series plan, docs/plans/2026-11-18-contest-series.md, CA1,
   CA8, CA15 decided 2026-11-18; developed 2026-11-20, `stack/209-series-cy1`, V109): a series ties
   one contest per year across years ("Wiki Loves Monuments in Nepal"). Root's **Series** page
@@ -202,6 +214,10 @@ is listed below.
 
 **Development**
 
+- **Migration V110** (`stack/210-d1b-token-scope`, D-1b): `api_token.scope` (`full` | `local_read`,
+  ascii_bin, NOT NULL DEFAULT `full`, a CHECK on the bytes), rerunnable; production's few token
+  rows copy in milliseconds. An older release ignores the column: before rolling it back, revoke
+  the read-only tokens (the script's last comment; FlywayUpgradeSpec "V110's API token scope").
 - **Migration V108** (`stack/208-quick-fixes`, the fix "Old juror assignments with no recorded
   status are now treated as stopped"): `round_user.active` NULL set to FALSE, then
   `NOT NULL DEFAULT TRUE` online, as V91 (`ALGORITHM = INPLACE, LOCK = NONE` with strict mode

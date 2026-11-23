@@ -1,7 +1,7 @@
 package services
 
 import controllers.Secured
-import db.scalikejdbc.{ApiToken, ApiTokenJdbc, WriteTx, User}
+import db.scalikejdbc.{ApiToken, ApiTokenJdbc, ApiTokenScope, WriteTx, User}
 import play.api.Logging
 import scalikejdbc.{AutoSession, DB, DBSession}
 
@@ -51,19 +51,19 @@ object ApiTokenService extends Logging {
   /** What names the token in lists and logs: [[Prefix]] and its first 6 characters. */
   def displayPrefix(token: String): String = token.take(Prefix.length + 6)
 
-  /** A new token of the user; its value, to be shown once. */
-  def create(userId: Long, name: String, expiresInDays: Option[Int], createNonce: Option[String] = None)(implicit
-      session: DBSession = AutoSession
-  ): String = {
+  /** A new token of the user, of `scope`; its value, to be shown once. */
+  def create(userId: Long, name: String, expiresInDays: Option[Int], createNonce: Option[String] = None,
+      scope: ApiTokenScope = ApiTokenScope.Full)(implicit session: DBSession = AutoSession): String = {
     val token = generate()
     ApiTokenJdbc.create(userId, name.trim.take(NameMaxLength), hash(token), displayPrefix(token), expiresInDays,
-      createNonce.map(hash))
+      createNonce.map(hash), scope)
     token
   }
 
   /** The token's record and its user, in their latest contest ([[Secured.inCurrentContest]],
     * as a session without a current contest), if the token is usable: well-formed, known,
-    * neither revoked nor expired, and its user not deleted. Records the use. A refused token
+    * neither revoked nor expired, of a scope this binary knows, and its user not deleted. Records
+    * the use; what the scope allows is [[api.ApiAuth]]'s check. A refused token
     * is logged with its id (an unknown one with its prefix), never its value. A revoked or
     * expired token, or one of a deleted user, at WARN: it takes a real token's hash, so random
     * input can't flood it, and a revoked token still in use is the clearest sign of a leak.
@@ -79,6 +79,8 @@ object ApiTokenService extends Logging {
         case None                         => refused(info = true, "unknown", s"prefix=${Secured.logValue(displayPrefix(token))}")
         case Some(found) if found.revoked   => refused(info = false, "revoked", s"tokenId=${found.id}")
         case Some(found) if found.expired   => refused(info = false, "expired", s"tokenId=${found.id}")
+        // a scope this binary doesn't know (a newer release's, after a backout): never taken as full
+        case Some(found) if found.scope.isEmpty => refused(info = false, "unknown_scope", s"tokenId=${found.id}")
         case Some(found) =>
           User.findById(found.userId).filter(_.deletedAt.isEmpty) match {
             case None => refused(info = false, "user_missing", s"tokenId=${found.id}")
@@ -104,8 +106,8 @@ object ApiTokenService extends Logging {
     case object SessionEnded extends CreateOutcome
   }
 
-  /** A new token of the user, created by the profile form's submit with `nonce` (its one-time
-    * nonce, [[controllers.ApiTokensCard]]), unless the user has [[MaxActive]] usable tokens.
+  /** A new token of the user, of `scope`, created by the profile form's submit with `nonce` (its
+    * one-time nonce, [[controllers.ApiTokensCard]]), unless the user has [[MaxActive]] usable tokens.
     *
     * The same form sent again (P13: a double click sends the page's nonce twice before either
     * response replaces it) replaces its earlier tokens if they were never used: the browser shows
@@ -115,7 +117,8 @@ object ApiTokenService extends Logging {
     * version is still the session's (`user.authVersion`; L1: an accepted link that ended the
     * session meanwhile revokes every token, so none may follow it).
     */
-  def createOnce(user: User, name: String, expiresInDays: Option[Int], nonce: String): CreateOutcome =
+  def createOnce(user: User, name: String, expiresInDays: Option[Int], nonce: String,
+      scope: ApiTokenScope = ApiTokenScope.Full): CreateOutcome =
   {
     val userId = user.getId
     val (outcome, replaced) = WriteTx.write { implicit s =>
@@ -126,7 +129,7 @@ object ApiTokenService extends Logging {
         val replaced = ApiTokenJdbc.unusedOfSubmit(userId, hash(nonce))
         replaced.foreach(ApiTokenJdbc.revoke(_, userId))
         if (ApiTokenJdbc.findByUser(userId).count(_.usable) >= MaxActive) (CreateOutcome.LimitReached, replaced)
-        else (CreateOutcome.Created(create(userId, name, expiresInDays, Some(nonce))), replaced)
+        else (CreateOutcome.Created(create(userId, name, expiresInDays, Some(nonce), scope)), replaced)
       }
     }
     // after the commit: a retried or rolled-back transaction logs nothing it didn't do
