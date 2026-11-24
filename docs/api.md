@@ -151,17 +151,27 @@ the contract the UI is written against. So far (slice 1) it has queries only:
 
 | Query | Who sees what |
 |---|---|
-| `me` | the caller: id, name, whether root, the session's current contest, `authMethod` (`SESSION` or `TOKEN`); `email` only for root and for the Admins of a contest the account is a member of (null for anyone else, the caller's own email included) |
-| `contests(offset, limit)` | root: every contest, retired ones too; anyone else: the contests where they hold an access role (juror, organizer, admin) in a contest not retired. The latest year first; `limit` 100 by default, clamped to 1..200; `totalCount`, and each contest's `viewerRoles` |
+| `me` | the caller: id, name, their own `email` (every role), whether root, the session's current contest, `authMethod` (`SESSION` or `TOKEN`). Other accounts' emails, when a later slice lists users, only for root and for the Admins of a contest the account is a member of |
+| `contests(offset, limit)` | root: every contest, retired ones too; anyone else: the contests where they hold an access role (juror, organizer, admin) in a contest not retired, and, from a session, the contests a series admin's grants reach (below). The latest year first; `limit` 100 by default, clamped to 1..200; `totalCount`, and each contest's `viewerRoles` |
 | `contest(id)` | one of those contests, else null with a `NOT_FOUND` error: the same answer for a missing contest and for one the caller is not in (the second is logged as a denial) |
-| a contest's `rounds` | all its rounds for root and its admins and organizers; for a juror, the rounds they are a juror of, once distributed (a round being created or in review is not listed) |
+| a contest's `rounds` | all its rounds for root and its admins and organizers; for a juror, the rounds they are a juror of, once distributed (a round being created or in review is not listed), also one they are stopped in |
+| a round's `myStatus` | the caller as a juror of the round: `ACTIVE`, `STOPPED` (stopped on it by its admins: still listed, no new files, no votes), or null when not one of its jurors |
+| a round's `othersVotesVisible` | whether the caller may see other jurors' votes there, as in its galleries: root and the contest's admins and organizers, but not while the round is open if they are one of its jurors (conflict of interest: their own votes only); never a juror |
 
 No vote, count or juror data yet; those come with the round and gallery slices, under the
-own-votes rules.
+own-votes rules (`othersVotesVisible` says which applies).
+
+**Series admins** (contest series plan §3.3, CA7, CA20) get from a **session** the roles the web
+pages give them: derived Admin in their series' live contests from the grant's start year on,
+derived Organizer (read-only) in older ones, a real role adding on top; but in a contest where the
+account holds a real Juror row the series doesn't apply (CA7), and they are a juror there. A
+revoked grant ends this on the next request. A **personal token** never gets series reach: only the
+account's real memberships count, as on the REST API.
 
 **Calling it.** A JSON body `{"query": "...", "operationName": ..., "variables": {...}}` with
 `Content-Type: application/json`; one operation per request (an array body, a batch, is 400, and a
-document with two operations is refused). GET and other methods are 405: queries are POSTs.
+document with two operations is refused). GET and other methods are 405 for a caller (401
+without one): queries are POSTs.
 
 - **From a page of the tool** (the session cookie): every request needs the `Csrf-Token` header,
   queries too (they are POSTs; the CSRF filter checks every session POST). The island's mount
@@ -228,8 +238,13 @@ served by the app in this slice. Use the SDL, or introspection from a signed-in 
 
 **For developers.** `graphql.GraphQLController` (the HTTP part and the checks, in order),
 `graphql.GraphQLSchema` (types and resolvers), `graphql.GraphQLContext` (the caller and
-`asMemberOf`: the caller judged in the resource's contest, never a contest id taken from the query
-as a permission; root bypasses), `graphql.QueryLimits`. A resolver loads the resource first, then
+`asMemberOf`: the caller judged in the resource's contest by `Secured.checked` with a permission
+that takes a series grant's derived role, as the round pages do, never a contest id taken from the
+query as a permission; root bypasses), `graphql.QueryLimits`. The router (`api.ApiRouter`) mounts
+only Tapir's endpoints and `api.CallerRoutes` groups, such as GraphQL's, whose handlers take the
+caller: `ApiRouter.guarded` resolves it (`ApiAuth.caller`) before the handler runs and answers the
+group's 401 without one, so a new non-Tapir route can't be mounted unauthenticated
+(`api.ApiRouterGuardSpec`). A resolver loads the resource first, then
 judges the caller in its contest; a contest the caller may not see is logged on `security.authz`
 (`resource=contest:<id>`) with the reference the `NOT_FOUND` error carries. Tests:
 `graphql.GraphQLApiSpec` (through the router and filters) and `graphql.GraphQLSchemaSpec`.

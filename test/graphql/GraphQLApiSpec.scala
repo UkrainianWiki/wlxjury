@@ -34,6 +34,11 @@ class GraphQLApiSpec extends PlaySpecification with PlayTestDb {
 
   private case class Rounds(open10: Long, distributing10: Long, others10: Long, mine20: Long, others20: Long)
 
+  /** The series admins' fixture (`seriesSetUp` in "a series admin"). */
+  private case class SeriesFixture(seriesAdmin: User, otherAdmin: User, nobody: User, grantId: Long,
+      old: Long, prev: Long, now: Long, b: Long, coiNow: Long, stoppedNow: Long, freeNow: Long,
+      mineInPrev: Long, othersInPrev: Long, inOld: Long, inB: Long)
+
   /** Contests 10, 20 and 30 (retired); the accounts above; rounds: in 10 one the juror judges, one
     * being distributed that the juror is assigned to, one of another juror; in 20 one the admin
     * judges and one of nobody.
@@ -177,6 +182,18 @@ class GraphQLApiSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "answer 401 to any method without a caller: the router's guard runs before the endpoint" in {
+      testDbApp { app =>
+        setUp()
+        forall(Seq(GET, PUT, DELETE, POST)) { method =>
+          val result = route(app, FakeRequest(method, "/api/graphql?query=%7Bme%7Bid%7D%7D")).get
+          status(result) === UNAUTHORIZED
+          header(WWW_AUTHENTICATE, result) === Some("Bearer")
+          codes(result) === Seq("UNAUTHENTICATED")
+        }
+      }
+    }
+
     "refuse a batch (an array body) with 400, and a document with two operations" in {
       testDbApp { app =>
         setUp()
@@ -215,13 +232,13 @@ class GraphQLApiSpec extends PlaySpecification with PlayTestDb {
   }
 
   "me" should {
-    "show a juror and an organizer themselves without their email" in {
+    "show a juror and an organizer themselves, their own email included" in {
       testDbApp { app =>
         setUp()
         forall(Seq(jurorEmail, organizerEmail)) { email =>
           val me = json(gql(app, meQuery, as = Some(email))) \ "data" \ "me"
           (me \ "id").as[String] === userId(email).toString
-          (me \ "email").get === JsNull
+          (me \ "email").as[String] === email
           (me \ "isRoot").as[Boolean] must beFalse
           (me \ "currentContestId").as[String] === "10"
           (me \ "authMethod").as[String] === "SESSION"
@@ -229,15 +246,17 @@ class GraphQLApiSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "show root and a contest's Admin their email" in {
+    "show root, a contest's Admin, an Admin of a retired contest only and a token caller their own email" in {
       testDbApp { app =>
         setUp()
         val root = json(gql(app, meQuery, as = Some(rootEmail))) \ "data" \ "me"
         (root \ "email").as[String] === rootEmail
         (root \ "isRoot").as[Boolean] must beTrue
         ((json(gql(app, meQuery, as = Some(adminEmail))) \ "data" \ "me") \ "email").as[String] === adminEmail
-        // an Admin of a retired contest only: no
-        ((json(gql(app, meQuery, as = Some(retiredEmail))) \ "data" \ "me") \ "email").get === JsNull
+        ((json(gql(app, meQuery, as = Some(retiredEmail))) \ "data" \ "me") \ "email").as[String] === retiredEmail
+        val byToken = json(gql(app, meQuery, headers = Seq(bearer(tokenOf(jurorEmail))))) \ "data" \ "me"
+        (byToken \ "email").as[String] === jurorEmail
+        (byToken \ "authMethod").as[String] === "TOKEN"
       }
     }
   }
@@ -348,6 +367,26 @@ class GraphQLApiSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "tell the caller their status as a juror of each round: ACTIVE, STOPPED, or null when not one of its jurors" in {
+      testDbApp { app =>
+        val r = setUp()
+        val query = "query C($id: ID!) { contest(id: $id) { rounds { id myStatus } } }"
+        def statuses(email: String, id: String) =
+          (json(gql(app, query, as = Some(email), variables = Json.obj("id" -> id))) \ "data" \ "contest" \ "rounds")
+            .as[Seq[JsObject]].map(o => (o \ "id").as[String].toLong -> (o \ "myStatus").asOpt[String]).toMap
+        statuses(jurorEmail, "10") === Map(r.open10 -> Some("ACTIVE"))
+        DB.autoCommit(implicit s =>
+          sql"UPDATE round_user SET active = FALSE WHERE round_id = ${r.open10} AND user_id = ${userId(jurorEmail)}".update.apply())
+        // still listed, now STOPPED
+        statuses(jurorEmail, "10") === Map(r.open10 -> Some("STOPPED"))
+        // the organizer judges none of them; root none either
+        statuses(organizerEmail, "10") === Map(r.open10 -> None, r.distributing10 -> None, r.others10 -> None)
+        statuses(rootEmail, "10") === Map(r.open10 -> None, r.distributing10 -> None, r.others10 -> None)
+        // the admin of 10 is a juror in 20
+        statuses(adminEmail, "20") === Map(r.mine20 -> Some("ACTIVE"))
+      }
+    }
+
     "log one denial line per request, however many fields are denied, all carrying its reference" in {
       testDbApp { app =>
         setUp()
@@ -359,6 +398,32 @@ class GraphQLApiSpec extends PlaySpecification with PlayTestDb {
         lines.filter(_.contains("authorization_denied ")) must haveSize(1)
         lines.filter(_.contains("authorization_denied_repeated")) === Seq(s"WARN authorization_denied_repeated ref=${references.head} " +
           "more=2 resource=\"api:graphql\" auth=session")
+      }
+    }
+
+    "show other jurors' votes as the galleries do: never to a juror; to an organizer, admin or root unless a juror of the open round" in {
+      testDbApp { app =>
+        val r = setUp()
+        val query = "query C($id: ID!) { contest(id: $id) { rounds { id othersVotesVisible } } }"
+        def visible(email: String, id: String) =
+          (json(gql(app, query, as = Some(email), variables = Json.obj("id" -> id))) \ "data" \ "contest" \ "rounds")
+            .as[Seq[JsObject]].map(o => (o \ "id").as[String].toLong -> (o \ "othersVotesVisible").as[Boolean]).toMap
+        val all10 = Map(r.open10 -> true, r.distributing10 -> true, r.others10 -> true)
+        visible(organizerEmail, "10") === all10
+        visible(rootEmail, "10") === all10
+        visible(jurorEmail, "10") === Map(r.open10 -> false)
+        // the admin of 10 is a juror of 20: a juror there
+        visible(adminEmail, "20") === Map(r.mine20 -> false)
+        // the organizer becomes a juror of the open round: only their own votes there (conflict of interest)
+        Round.findById(r.open10).get.addUsers(Seq(RoundUser(r.open10, userId(organizerEmail), "organizer", active = true)))
+        visible(organizerEmail, "10") === all10.updated(r.open10, false)
+        // a stopped juror row still counts while the round is open
+        DB.autoCommit(implicit s =>
+          sql"UPDATE round_user SET active = FALSE WHERE round_id = ${r.open10} AND user_id = ${userId(organizerEmail)}".update.apply())
+        visible(organizerEmail, "10") === all10.updated(r.open10, false)
+        // once the round is stopped, the rule no longer applies
+        DB.autoCommit(implicit s => sql"UPDATE round SET active = FALSE WHERE id = ${r.open10}".update.apply())
+        visible(organizerEmail, "10") === all10
       }
     }
 
@@ -603,34 +668,126 @@ class GraphQLApiSpec extends PlaySpecification with PlayTestDb {
   }
 
   "a series admin" should {
-    "get no contest or round through a series grant alone (no derived role in slice 1)" in {
-      testDbApp { app =>
-        createContests(10)
-        val root = User.create(User("Root", rootEmail, None, isRoot = true))
-        val thisYear = java.time.Year.now().getValue
-        val series = services.series.ContestSeries.createSeriesTx("Nepal", Some("wlm"), Some("Nepal"), None, root.getId)
-          .toOption.get
-        val contests = Seq(thisYear - 1, thisYear).map { year =>
-          val c = db.scalikejdbc.ContestJuryJdbc.create(None, "Wiki Loves Monuments", year, "Nepal")
-          services.series.ContestSeries.setSeries(c.getId, Some(series), root.getId, None)
-          c.getId
-        }
-        val now = contests.last
-        val admin = User.create(User("Series admin", "series@example.com", None, Set("organizer"), Some("hash"), Some(now)))
-        services.series.SeriesAdmins.grant(root, series, admin.getId, None, None) must beRight
-        UserContestJdbc.delete(admin.getId, now)
-        Round.create(Round(None, 1, Some("r"), now, active = true))
 
-        def asSeriesAdmin(query: String) =
-          postJson(app, Json.obj("query" -> query), session = Seq(Secured.UserName -> admin.email,
-            Secured.CurrentContestId -> now.toString))
-        contestIds(asSeriesAdmin("{ contests { items { id } } }")) === Nil
-        forall(contests) { id =>
-          val result = asSeriesAdmin(s"{ contest(id: $id) { id rounds { id } } }")
-          (json(result) \ "data" \ "contest").get === JsNull
-          codes(result) === Seq("NOT_FOUND")
-        }
-        ((json(asSeriesAdmin(meQuery)) \ "data" \ "me") \ "email").get === JsNull
+    /** Series A (contests old, prev and now: two years ago, last year and this year) and series B (one
+      * contest, this year). `seriesAdmin` holds A's grant from last year on (the default): derived
+      * Admin in prev and now, derived Organizer in old; but a real Juror row in prev (CA7: the series
+      * doesn't apply there). `otherAdmin` holds B's grant. `nobody` is in no contest. Rounds: in now,
+      * an open one `seriesAdmin` judges (conflict of interest), a stopped one they judge, an open one
+      * of nobody; in prev an open one they judge and one of nobody; one in old and one in B.
+      */
+    def seriesSetUp(): SeriesFixture = {
+      val thisYear = java.time.Year.now().getValue
+      val root = User.create(User("Root", rootEmail, None, isRoot = true))
+      def series(name: String) =
+        services.series.ContestSeries.createSeriesTx(name, Some("wlm"), Some(name), None, root.getId).toOption.get
+      def contest(seriesId: Long, year: Int, country: String) = {
+        val c = db.scalikejdbc.ContestJuryJdbc.create(None, "Wiki Loves Monuments", year, country)
+        services.series.ContestSeries.setSeries(c.getId, Some(seriesId), root.getId, None)
+        c.getId
+      }
+      val a = series("Nepal")
+      val bSeries = series("Ghana")
+      val Seq(old, prev, now) = Seq(thisYear - 2, thisYear - 1, thisYear).map(contest(a, _, "Nepal"))
+      val b = contest(bSeries, thisYear, "Ghana")
+      def account(name: String) = User.create(User(name, s"$name@example.com", None, password = Some("hash")))
+      // a grant needs a member of the series' contests; the membership goes after it
+      def grant(user: User, seriesId: Long, contestId: Long) = {
+        UserContestJdbc.createMembership(user.getId, contestId, "organizer")
+        val granted = services.series.SeriesAdmins.grant(root, seriesId, user.getId, None, None)
+        UserContestJdbc.delete(user.getId, contestId)
+        granted.toOption.get.grantId
+      }
+      val seriesAdmin = account("seriesadmin")
+      val grantId = grant(seriesAdmin, a, now)
+      UserContestJdbc.createMembership(seriesAdmin.getId, prev, User.JURY_ROLE)
+      val otherAdmin = account("otheradmin")
+      grant(otherAdmin, bSeries, b)
+      val nobody = account("nobody")
+      def round(contestId: Long, number: Long, jurors: Seq[User], active: Boolean = true) = {
+        val r = Round.create(Round(None, number, Some(s"round $number"), contestId, active = active))
+        r.addUsers(jurors.map(j => RoundUser(r.getId, j.getId, "jury", active = true)))
+        r.getId
+      }
+      SeriesFixture(seriesAdmin, otherAdmin, nobody, grantId, old, prev, now, b,
+        coiNow = round(now, 1, Seq(seriesAdmin)), stoppedNow = round(now, 2, Seq(seriesAdmin), active = false),
+        freeNow = round(now, 3, Nil), mineInPrev = round(prev, 1, Seq(seriesAdmin)), othersInPrev = round(prev, 2, Nil),
+        inOld = round(old, 1, Nil), inB = round(b, 1, Nil))
+    }
+
+    def asSession(app: Application, user: User, contestId: Long, query: String) =
+      postJson(app, Json.obj("query" -> query), session = Seq(Secured.UserName -> user.email,
+        Secured.CurrentContestId -> contestId.toString))
+
+    def asToken(app: Application, user: User, query: String) =
+      postJson(app, Json.obj("query" -> query), headers = Seq(bearer(ApiTokenService.create(user.getId, "cli", Some(90)))))
+
+    val contestsQuery = "{ contests { totalCount items { id viewerRoles } } }"
+
+    def rolesOf(result: Future[Result]): Seq[(Long, Seq[String])] =
+      (json(result) \ "data" \ "contests" \ "items").as[Seq[JsObject]]
+        .map(o => (o \ "id").as[String].toLong -> (o \ "viewerRoles").as[Seq[String]])
+
+    def rounds(result: Future[Result]): Map[Long, (Option[String], Boolean)] =
+      (json(result) \ "data" \ "contest" \ "rounds").as[Seq[JsObject]].map(o =>
+        (o \ "id").as[String].toLong -> ((o \ "myStatus").asOpt[String], (o \ "othersVotesVisible").as[Boolean])).toMap
+
+    def roundsQuery(id: Long) = s"{ contest(id: $id) { id viewerRoles rounds { id myStatus othersVotesVisible } } }"
+
+    def notFound(result: Future[Result]) =
+      ((json(result) \ "data" \ "contest").get === JsNull) and (codes(result) === Seq("NOT_FOUND"))
+
+    "see the series' contests with the roles the web UI derives: Admin from the start year, Organizer below, a real Juror row winning (CA7)" in {
+      testDbApp { app =>
+        val f = seriesSetUp()
+        rolesOf(asSession(app, f.seriesAdmin, f.now, contestsQuery)) ===
+          Seq(f.now -> Seq("ADMIN"), f.prev -> Seq("JURY"), f.old -> Seq("ORGANIZER"))
+        // derived Admin: every round; own votes only in the open round they judge (conflict of interest)
+        rounds(asSession(app, f.seriesAdmin, f.now, roundsQuery(f.now))) === Map(
+          f.coiNow -> (Some("ACTIVE") -> false), f.stoppedNow -> (Some("ACTIVE") -> true), f.freeNow -> (None -> true))
+        // CA7: a juror in prev, the series ignored: their round only, own votes only
+        rounds(asSession(app, f.seriesAdmin, f.now, roundsQuery(f.prev))) === Map(f.mineInPrev -> (Some("ACTIVE") -> false))
+        // derived Organizer (below the start year): every round, read-only roles
+        rounds(asSession(app, f.seriesAdmin, f.now, roundsQuery(f.old))) === Map(f.inOld -> (None -> true))
+        // the same answers whatever the session's current contest
+        rolesOf(asSession(app, f.seriesAdmin, f.prev, contestsQuery)).map(_._1) === Seq(f.now, f.prev, f.old)
+        ((json(asSession(app, f.seriesAdmin, f.now, meQuery)) \ "data" \ "me") \ "email").as[String] === f.seriesAdmin.email
+      }
+    }
+
+    "not see another series' contests, logging the denial; another series' admin and a non-member see none of A's" in {
+      testDbApp { app =>
+        val f = seriesSetUp()
+        val (result, lines) = withAuthzLog(done(asSession(app, f.seriesAdmin, f.now, roundsQuery(f.b))))
+        notFound(result)
+        val reference = (errors(result).head \ "extensions" \ "reference").as[String]
+        lines.filter(_.contains(s"ref=$reference")) must haveSize(1)
+
+        rolesOf(asSession(app, f.otherAdmin, f.b, contestsQuery)) === Seq(f.b -> Seq("ADMIN"))
+        forall(Seq(f.old, f.prev, f.now))(id => notFound(asSession(app, f.otherAdmin, f.b, roundsQuery(id))))
+
+        rolesOf(asSession(app, f.nobody, f.now, contestsQuery)) === Nil
+        forall(Seq(f.old, f.prev, f.now, f.b))(id => notFound(asSession(app, f.nobody, f.now, roundsQuery(id))))
+      }
+    }
+
+    "get no series reach through a personal token: only the real Juror row counts" in {
+      testDbApp { app =>
+        val f = seriesSetUp()
+        rolesOf(asToken(app, f.seriesAdmin, contestsQuery)) === Seq(f.prev -> Seq("JURY"))
+        forall(Seq(f.old, f.now))(id => notFound(asToken(app, f.seriesAdmin, roundsQuery(id))))
+        rounds(asToken(app, f.seriesAdmin, roundsQuery(f.prev))) === Map(f.mineInPrev -> (Some("ACTIVE") -> false))
+        rolesOf(asToken(app, f.otherAdmin, contestsQuery)) === Nil
+      }
+    }
+
+    "lose the series' contests on the next request once root revokes the grant" in {
+      testDbApp { app =>
+        val f = seriesSetUp()
+        val root = User.findByEmail(rootEmail).head
+        services.series.SeriesAdmins.revoke(root, f.grantId, chain = false) must beRight
+        rolesOf(asSession(app, f.seriesAdmin, f.now, contestsQuery)) === Seq(f.prev -> Seq("JURY"))
+        notFound(asSession(app, f.seriesAdmin, f.now, roundsQuery(f.now)))
       }
     }
   }

@@ -234,3 +234,20 @@ contest's round, no CSRF header, a token caller. This is why slice 4 is 3 days a
   The vote and round-image resolvers apply it (section 4, item 5; negative test in section 5).
 
 Still open: which operations a future write scope for tokens should allow (Q3 asked it; not answered).
+
+### Follow-up to slice 1 (decided 2026-11-24, built on `feat/graphql-followup`)
+
+- F1. Series admins: GraphQL follows the web UI. A session caller is judged in a contest by
+  `Secured.checked` with `ContestPermission(ACCESS_ROLES, contest, derived = true)` (listed in
+  `security.SeriesReachGuardSpec`), the opt-in the round and gallery pages use: derived Admin from the
+  grant's start year, derived Organizer below it (CA20), a real Juror row winning (CA7). `contests` adds
+  the contests the grants reach (`Secured.seriesReachOf`). Tokens get no series reach (contest series
+  plan §3.3). The conflict-of-interest rule is exposed per round as `othersVotesVisible`
+  (`GalleryService.othersVotesVisibleIn`, the same rule as `othersVotesVisible`); the vote fields of
+  slices 3-4 must apply it.
+- F2. `me.email` is the caller's own email, always. Other accounts' emails stay Q6's rule
+  (`GraphQLSchema.emailVisible`, for slice 5's `users`).
+- F3. A stopped juror's round stays listed; `Round.myStatus` (`ACTIVE`, `STOPPED`, null) tells them.
+- F4. `api.ApiRouter` mounts only Tapir's endpoints and `api.CallerRoutes` groups; `ApiRouter.guarded`
+  resolves the caller before a group's handler runs (`api.ApiRouterGuardSpec`). A signed-out GET of
+  `/api/graphql` is now 401, not 405.

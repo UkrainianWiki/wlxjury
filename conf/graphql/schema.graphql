@@ -42,12 +42,21 @@ enum ContestRole {
   JURY
 }
 
+"The caller's status as a juror of a round."
+enum JurorStatus {
+  "A juror of the round, not stopped."
+  ACTIVE
+
+  "Stopped on the round by its admins: no new files, no votes; its gallery says so."
+  STOPPED
+}
+
 "The caller."
 type Me {
   id: ID!
   fullname: String!
 
-  "Only for root and for the Admins of a contest the account is a member of; null for anyone else."
+  "The caller's own email (null if the account has none)."
   email: String
   isRoot: Boolean!
 
@@ -98,6 +107,12 @@ type Round {
 
   "Whether a rated round is voted on per criterion."
   hasCriteria: Boolean!
+
+  "The caller's status as a juror of this round: STOPPED when stopped on it (the round is still listed); null when the caller is not one of its jurors."
+  myStatus: JurorStatus
+
+  "Whether the caller may see other jurors' votes in this round, as in its galleries: root and the contest's admins and organizers, except while the round is open if they are one of its jurors (conflict of interest: then only their own votes); never a juror."
+  othersVotesVisible: Boolean!
 }
 
 "How jurors vote in a round."

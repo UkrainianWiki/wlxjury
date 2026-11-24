@@ -43,7 +43,9 @@ class SeriesReachGuardSpec extends Specification {
     "app/controllers/ContestHealthController.scala" -> (1, "the contest's health (statistics)"),
     "app/controllers/UserController.scala" -> (3, "the greeting (settings, twice); saveUser, whose body runs the account rules"),
     "app/controllers/JobController.scala" -> (2, "a coarse gate: adminOf decides, by a real row or account reach"),
-    "app/controllers/AccountJoinController.scala" -> (1, "a coarse gate: mayManage decides, by a real row or account reach")
+    "app/controllers/AccountJoinController.scala" -> (1, "a coarse gate: mayManage decides, by a real row or account reach"),
+    "app/graphql/GraphQLContext.scala" -> (1, "GraphQL's contests and rounds, as the round pages (a session's only: " +
+      "a token has no series reach)")
   )
 
   /** Each action that takes account reach (CA17: a real Admin row, or a contest the grant reaches). */

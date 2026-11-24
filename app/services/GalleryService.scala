@@ -243,6 +243,15 @@ object GalleryService {
   def othersVotesVisible(user: User, round: Round): Boolean =
     user.canViewOrgInfo(round) && ownVotesOnlyRounds(user, Seq(round)).isEmpty
 
+  /** Of `rounds`, those where `user` sees other jurors' votes: [[othersVotesVisible]] of each, in two
+    * queries at most (GraphQL's `othersVotesVisible` of a contest's rounds).
+    */
+  def othersVotesVisibleIn(user: User, rounds: Seq[Round]): Set[Long] = {
+    val staff = rounds.filter(user.canViewOrgInfo)
+    val ownOnly = ownVotesOnlyRounds(user, staff)
+    staff.flatMap(_.id).filterNot(ownOnly).toSet
+  }
+
   /** Of `rounds`, those where `user` sees only their own votes ([[othersVotesVisible]]): the open
     * rounds they are a juror of. In two queries at most, for a menu of rounds (the galleries' round
     * menu opens these on the viewer's own votes).
