@@ -14,7 +14,9 @@ Deploy dates come from production's migration history, as described at the end.
 
 Nothing merged to master after the 26.11.15 build yet.
 
-## 26.11.15 (built 2026-11-24, deploy pending)
+## Deployed releases
+
+### 26.11.15 (2026-11-24)
 
 Built from master after `26.11.14`; it migrates the database, so the deploy takes a backup.
 
@@ -61,8 +63,6 @@ Built from master after `26.11.14`; it migrates the database, so the deploy take
 - Nightly backup no longer locks the database's tables (legacy tables converted to InnoDB).
 - Rolling back past V110: revoke the read-only API tokens first.
 - Script for maintaining the local image cache (#132).
-
-## Deployed releases
 
 ### 26.11.14 (2026-11-24)
 
