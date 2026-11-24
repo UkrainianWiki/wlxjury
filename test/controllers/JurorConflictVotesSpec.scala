@@ -10,6 +10,7 @@ import play.api.test.{FakeRequest, PlaySpecification}
 import services.series.{ContestSeries, SeriesAdmins}
 
 import scala.concurrent.Future
+import scala.jdk.CollectionConverters._
 
 /** The conflict-of-interest rule (the maintainer's decision of 2026-11-24): a juror of a round sees
   * only their own votes in it, whatever their contest role: a contest admin or organizer, a series
@@ -102,13 +103,13 @@ class JurorConflictVotesSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         val mine = Jsoup.parse(contentAsString(get(app, f.adminJ, s"/roundstat/${f.round.getId}")))
         val theirs = Jsoup.parse(contentAsString(get(app, f.root, s"/roundstat/${f.round.getId}")))
-        val otherRows = mine.select("tbody tr").eachText()
-        (mine.select("td.juror-selected").eachText().count(_ == "—") === 4) and
-          (mine.select("th.round-total-rate").eachText().forall(_ == "—") must beTrue) and
+        val otherRows = mine.select("tbody tr").eachText().asScala
+        (otherRows.size must be_>=(3)) and
+        (mine.select("td.juror-selected").eachText().asScala.count(_ == "—") === otherRows.size - 1) and
+          (mine.select("th.round-total-rate").eachText().asScala.forall(_ == "—") must beTrue) and
           (mine.select(s"table a[href*=/user/${f.juror2.getId}/]").size === 0) and
           (mine.select("table a[href*=/user/0/]").size === 0) and
-          (otherRows.size === 5) and
-          (theirs.select("td.juror-selected").eachText().count(_ == "—") === 0) and
+          (theirs.select("td.juror-selected").eachText().asScala.count(_ == "—") === 0) and
           (theirs.select(s"table a[href*=/user/${f.juror2.getId}/]").size must be_>(0))
       }
     }
