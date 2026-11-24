@@ -11,12 +11,12 @@ def lv(path):
     return m, rows, V, blocks
 
 out.append("## Large view: keypress to next file's main image painted (ms)\n")
-out.append("| round | link | variant | median | min-max | paired delta vs A (median, range) | faster than A in | interactive median |")
-out.append("|---|---|---|---|---|---|---|---|")
-for p in sorted(glob.glob(D + '/lv-*.json')):
+out.append("| round | link | variant | median | min-max | paired delta vs A (median, range) | faster than A in | interactive median | main image from cache | CSS/JS from cache |")
+out.append("|---|---|---|---|---|---|---|---|---|---|")
+for p in sorted(glob.glob(D + '/lv2-*.json')) + sorted(glob.glob(D + '/lv3-*.json')):
     m, rows, V, blocks = lv(p)
-    prof = os.path.basename(p)[3:-5].split('-', 1)[1]
-    link = {'rtt0': 'RTT 0, unlimited', 'rtt80': 'RTT 80, unlimited', 'rtt80-8mbit': 'RTT 80, 8 Mbit/s', 'h2-rtt80': 'h2, RTT 80', 'h2-rtt80-8mbit': 'h2, RTT 80, 8 Mbit/s'}[prof]
+    prof = os.path.basename(p)[4:-5].split('-', 1)[1]
+    link = {'rtt0': 'RTT 0', 'rtt80': 'RTT 80', 'rtt80-8mbit': 'RTT 80, 8 Mbit/s'}[prof] + (' (h2, set 1)' if os.path.basename(p).startswith('lv2') else ' (h2, set 2)')
     for v in V:
         rr = [r for r in rows if r['variant'] == v]
         t = [r['total_painted'] for r in rr]
@@ -28,14 +28,14 @@ for p in sorted(glob.glob(D + '/lv-*.json')):
                 a = [r for r in b if r['variant'] == 'A']; x = [r for r in b if r['variant'] == v]
                 if a and x: ds.append(x[0]['total_painted'] - a[0]['total_painted'])
             d = f"{med(ds):+.0f} ({min(ds):+.0f}..{max(ds):+.0f})"; k = f"{sum(1 for x in ds if x < 0)} of {len(ds)}"
-        out.append(f"| {m['round']} | {link} | {v} | {f0(med(t))} | {f0(min(t))}-{f0(max(t))} | {d} | {k} | {f0(med([r['total_interactive'] for r in rr]))} |")
+        out.append(f"| {m['round']} | {link} | {v} | {f0(med(t))} | {f0(min(t))}-{f0(max(t))} | {d} | {k} | {f0(med([r['total_interactive'] for r in rr]))} | {sum(1 for r in rr if (not r['main']) or r['main']['cached'])} of {len(rr)} | {med([r['files']['cached'] for r in rr]):.0f} of {med([r['files']['n'] for r in rr]):.0f} |")
 
 out.append("\n## Large view breakdown, variant A, medians (ms from keypress)\n")
 out.append("| round | link | keypress to form submit | vote POST + redirect | next page request to first byte | HTML download | HTML end | CSS/JS end | DOMContentLoaded | main image: response end | main image: duration | strip: images | strip: last image end | painted | server POST total | server GET total | server GET render | server GET queries |")
 out.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
-for p in sorted(glob.glob(D + '/lv-*.json')):
+for p in sorted(glob.glob(D + '/lv2-*.json')) + sorted(glob.glob(D + '/lv3-*.json')):
     m, rows, V, blocks = lv(p)
-    prof = os.path.basename(p)[3:-5].split('-', 1)[1]
+    prof = os.path.basename(p)[4:-5].split('-', 1)[1]
     rr = [r for r in rows if r['variant'] == 'A']
     g = lambda f: med([f(r) for r in rr])
     sp = [r['server_post']['total'] for r in rr if r['server_post']]; sg = [r['server_get'] for r in rr if r['server_get']]

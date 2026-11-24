@@ -3,6 +3,7 @@
 // A scenario measures the navigation to `to` after being on `from` (a page turn, a filter change); `from` null = cold link.
 import fs from 'node:fs';
 import { startStub } from './stub.mjs';
+import { startH2Proxy } from './h2proxy.mjs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -11,7 +12,9 @@ const require = createRequire(E.PW_DIR + '/package.json');
 const { chromium } = require('playwright-core');
 const server = JSON.parse(fs.readFileSync(E.SERVER_JSON, 'utf8'));
 const scenarios = JSON.parse(fs.readFileSync(E.SCENARIOS, 'utf8'));
-const RTT = Number(E.RTT || 0), REPS = Number(E.REPS || 8), base = server.baseUrl;
+const RTT = Number(E.RTT || 0), REPS = Number(E.REPS || 8);
+let base = server.baseUrl;
+if (E.H2 === '1') { const p = await startH2Proxy(dirname(fileURLToPath(import.meta.url)), Number(new URL(base).port), E.IMMUTABLE === '1'); base = 'https://localhost:' + p.port; }
 const accounts = { juror: server.jurors[0], organizer: server.organizer };
 const hostname = new URL(base).hostname;
 
@@ -25,7 +28,7 @@ const lineDiff = (a, b) => { // bytes of B's lines not present in A (multiset)
 for (const role of ['juror', 'organizer']) {
   const mine = scenarios.filter((s) => s.role === role);
   if (!mine.length) continue;
-  const ctx = await browser.newContext({ baseURL: base, viewport: { width: 1366, height: 768 } });
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true, baseURL: base, viewport: { width: 1366, height: 768 } });
   await ctx.addInitScript(() => {
     new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__lcp = e.startTime; }).observe({ type: 'largest-contentful-paint', buffered: true });
   });
@@ -76,5 +79,5 @@ for (const sc of out) {
     r.server = g ? { total: g.totalMs, work: g.workMs, render: g.renderMs, query: g.queryMs, renderQuery: g.renderQueryMs, queries: g.queries } : null;
   }
 }
-fs.writeFileSync(E.OUT, JSON.stringify({ meta: { rtt: RTT, reps: REPS }, scenarios: out }, null, 1));
+fs.writeFileSync(E.OUT, JSON.stringify({ meta: { rtt: RTT, reps: REPS, h2: E.H2 === '1', immutable: E.IMMUTABLE === '1' }, scenarios: out }, null, 1));
 console.log('stub (stand-in for upload.wikimedia.org) requests:', globalThis.__stub.seen.length, 'bytes each', globalThis.__stub.bytes); process.exit(0);

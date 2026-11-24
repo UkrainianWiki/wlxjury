@@ -14,15 +14,22 @@ const server = JSON.parse(fs.readFileSync(E.SERVER_JSON, 'utf8'));
 const ROUND = E.ROUND || 'binary', RTT = Number(E.RTT || 0), N = Number(E.N || 10), WARM = Number(E.WARM || 4), DWELL = Number(E.DWELL || 1200);
 const VARIANTS = (E.VARIANTS || 'A,B,C,D').split(',');
 // [strip cookie, preload cookie]: strip '' (as today), C (off), L (loading=lazy); preload 1
-const DEF = { A: ['', 0], B: ['', 1], C: ['C', 0], D: ['C', 1], E: ['L', 0], F: ['L', 1] };
+// third: also start the preload from script (new Image(), via lvj cookie and the init script): F = B + script, G = D + script
+const DEF = { A: ['', 0, 0], B: ['', 1, 0], C: ['C', 0, 0], D: ['C', 1, 0], E: ['L', 0, 0], F: ['', 1, 1], G: ['C', 1, 1] };
 const roundId = ROUND === 'binary' ? server.roundBinaryId : server.roundRatingId;
 const juror = server.jurors[Number(E.JUROR || 0)];
 const startPage = ROUND === 'binary' ? server.pageId : server.ratedPageId;
 let base = server.baseUrl;
-if (E.H2 === '1') { const p = await startH2Proxy(dirname(fileURLToPath(import.meta.url)), Number(new URL(base).port)); base = 'https://localhost:' + p.port; }
+if (E.H2 === '1') { const p = await startH2Proxy(dirname(fileURLToPath(import.meta.url)), Number(new URL(base).port), E.IMMUTABLE === '1'); base = 'https://localhost:' + p.port; }
 const median = (a) => { const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
 const INIT = () => {
+  document.addEventListener('DOMContentLoaded', () => {
+    if (!/(^|; )lvj=1/.test(document.cookie)) return;
+    const l = document.querySelector('link[rel=preload][as=image]');
+    if (!l) return;
+    const i = new Image(); i.sizes = l.getAttribute('imagesizes') || ''; i.srcset = l.getAttribute('imagesrcset') || ''; i.src = l.href;
+  });
   const now = () => performance.timeOrigin + performance.now();
   addEventListener('keydown', () => { try { sessionStorage.setItem('lv_t0', String(now())); } catch (e) {} }, true);
   const lv = (window.__lv = { t0: null });
@@ -53,7 +60,8 @@ const cdp = await ctx.newCDPSession(page);
 await cdp.send('Network.enable');
 await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: RTT, downloadThroughput: Number(E.BPS || -1), uploadThroughput: Number(E.BPS || -1) });
 const hostname = new URL(base).hostname;
-const setVariant = async (strip, pre) => ctx.addCookies([
+const setVariant = async (strip, pre, js = 0) => ctx.addCookies([
+  { name: 'lvj', value: String(js), domain: hostname, path: '/' },
   { name: 'lvs', value: strip === '' ? 'x' : strip, domain: hostname, path: '/' },
   { name: 'lvp', value: String(pre), domain: hostname, path: '/' }]);
 
@@ -61,17 +69,19 @@ await setVariant('', 0);
 await page.goto(`/large/round/${roundId}/user/${juror.id}/pageid/${startPage}`);
 await page.waitForFunction(() => window.__lv && window.__lv.imgPainted);
 
-// WARM warm-up votes of A, then blocks of the variants, the order reversed every other block
+// Each measured vote is preceded by a neutral vote, whose page carries the preload of the measured vote's variant (so the
+// preload has been fetched when the measured vote starts, after DWELL) and nothing else; the measured vote's own
+// destination page carries no preload. WARM neutral votes first; then N blocks, the order reversed in every second block.
 const sched = [];
-for (let i = 0; i < WARM; i++) sched.push({ v: 'A', warm: true });
-for (let b = 0; b < N; b++) { const order = b % 2 ? [...VARIANTS].reverse() : VARIANTS; for (const v of order) sched.push({ v, warm: false }); }
+for (let i = 0; i < WARM; i++) sched.push({ v: 'A', neutral: true, warm: true });
+for (let b = 0; b < N; b++) { const order = b % 2 ? [...VARIANTS].reverse() : VARIANTS; for (const v of order) { sched.push({ v, neutral: true, warm: false }); sched.push({ v, neutral: false, warm: false }); } }
 
 const rows = [];
 let rated = 0;
 for (let i = 0; i < sched.length; i++) {
-  const cur = sched[i], nxt = sched[i + 1] || cur;
+  const cur = sched[i];
   await page.waitForTimeout(DWELL);
-  await setVariant(DEF[cur.v][0], DEF[nxt.v][1]);
+  if (cur.neutral) await setVariant('', DEF[cur.v][1], DEF[cur.v][2]); else await setVariant(DEF[cur.v][0], 0);
   const keys = await page.evaluate(() => { const el = document.getElementById('large-keys'); return el ? [...el.attributes].filter((a) => a.name.startsWith('data-vote-key-')).map((a) => [a.name.slice(14), a.value]) : []; });
   if (!keys.length) { console.error('no vote keys on', page.url()); break; }
   let key, votePath;
@@ -96,6 +106,7 @@ for (let i = 0; i < sched.length; i++) {
   const blocking = m.res.filter((r) => r.t === 'script' || (r.t === 'link' && /\.css/.test(r.n)));
   const lastEnd = Math.max(0, ...blocking.map((r) => r.re));
   const e = (x) => o + x;
+  if (cur.neutral) { continue; }
   rows.push({
     i, variant: cur.v, warm: cur.warm, round: ROUND, rtt: RTT, key, votePath, toUrl: page.url(),
     total_painted: m.lv.imgPainted - t0, total_interactive: m.lv.interactive - t0,
@@ -111,6 +122,7 @@ for (let i = 0; i < sched.length; i++) {
     main: mainRes ? { start: e(mainRes.s) - t0, ttfb: mainRes.rs - mainRes.s, end: e(mainRes.re) - t0, dur: mainRes.re - mainRes.s, transfer: mainRes.ts, cached: mainRes.ts === 0, bytes: mainRes.eb } : null,
     paint_after_image_end: mainRes ? m.lv.imgPainted - e(mainRes.re) : null,
     thumbs: { n: thumbRes.length, imgs_in_dom: m.thumbs, bytes: thumbRes.reduce((a, r) => a + r.eb, 0), end_from_t0: thumbRes.length ? e(Math.max(...thumbRes.map((r) => r.re))) - t0 : null },
+    files: { n: blocking.length, cached: blocking.filter((r) => r.ts === 0).length },
     lcp_from_t0: m.lv.lcp ? m.lv.lcp.t - t0 : null,
     t0_epoch: t0,
   });
@@ -127,7 +139,7 @@ for (const r of rows) {
   r.server_post = post ? { total: post.totalMs, work: post.workMs, query: post.queryMs } : null;
   r.server_get = get ? { total: get.totalMs, work: get.workMs, render: get.renderMs, query: get.queryMs } : null;
 }
-fs.writeFileSync(E.OUT, JSON.stringify({ meta: { round: ROUND, rtt: RTT, n: N, warm: WARM, dwell: DWELL, variants: VARIANTS, roundId }, rows }, null, 1));
+fs.writeFileSync(E.OUT, JSON.stringify({ meta: { immutable: E.IMMUTABLE === '1', h2: E.H2 === '1', bps: E.BPS || null, round: ROUND, rtt: RTT, n: N, warm: WARM, dwell: DWELL, variants: VARIANTS, roundId }, rows }, null, 1));
 const measured = rows.filter((r) => !r.warm);
 for (const v of VARIANTS) {
   const rr = measured.filter((r) => r.variant === v);

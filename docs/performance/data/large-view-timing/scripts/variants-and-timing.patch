@@ -1,0 +1,55 @@
+diff --git a/app/views/large/large.scala.html b/app/views/large/large.scala.html
+index f1c237f5..595f007d 100644
+--- a/app/views/large/large.scala.html
++++ b/app/views/large/large.scala.html
+@@ -24,6 +24,10 @@
+     @defining(round.perCriterion(hood.file.starRate(round)) / round.starUnits) { score =>
+     @defining(!user.roles.contains("jury") || !round.active || user.getId != list.asUserId) { readOnly =>
+     @main_large(user, list, readOnly = readOnly, hood = hood) {
++        @defining(request.cookies.get("lvs").map(_.value).getOrElse("")) { lvv =>
++        @if(request.cookies.get("lvp").exists(_.value == "1")) { @for(next <- hood.following.headOption.filter(_.image.isImage)) { @defining(Global.largeImage(next.image)) { nl =>
++            <link rel="preload" as="image" href="@nl.src" imagesrcset="@nl.srcset" @nl.sizes.map { sizes => imagesizes="@sizes" }>
++        } } }
+         @defining(hood.file.image) { image =>
+         <div class="container-fluid large-view h-100">
+             <div class="row h-100">
+@@ -74,7 +78,7 @@
+                         @fullSizeUrl(image, round)
+                         @juryStat(votes, list, jurorCriteria)
+                     }
+-                    @thumbsBar(list, hood, commentCounts)
++                    @if(!lvv.contains("C")) { @thumbsBar(list, hood, commentCounts) }
+                     @* the sections' stored states, before the column is painted (large-sections.js): the one
+                        inline script besides the layout's theme script. Chrome paints frames before
+                        DOMContentLoaded (scripts/ui_checks.py saw them), so a restore then would show the
+@@ -121,3 +125,4 @@
+     }
+     }
+     }
++    }
+diff --git a/app/views/large/thumbsBar.scala.html b/app/views/large/thumbsBar.scala.html
+index 5e8e3aaa..c788f403 100644
+--- a/app/views/large/thumbsBar.scala.html
++++ b/app/views/large/thumbsBar.scala.html
+@@ -21,7 +21,7 @@
+         <div class="my-1 mx-auto">
+             <a href="@list.largeUrl(file.pageId)">
+                 @* an image's or a video's thumbnail; a video's with its mark *@
+-                <img class="cropped" alt="@if(file.image.isVideo) {@Messages("video"): }@file.title"
++                <img @if(request.cookies.get("lvs").exists(_.value.contains("L"))) {loading="lazy"} class="cropped" alt="@if(file.image.isVideo) {@Messages("video"): }@file.title"
+                 src="@Global.resizeTo(file.image, Global.thumbSizeX, Global.thumbSizeY)"
+                 srcset="@Global.srcSet(file.image, Global.thumbSizeX, Global.thumbSizeY)">
+                 @if(file.image.isVideo) {@snippets.videoMark()}
+diff --git a/browser-test/fixture-server.mjs b/browser-test/fixture-server.mjs
+index 19f4d851..d4fe9839 100644
+--- a/browser-test/fixture-server.mjs
++++ b/browser-test/fixture-server.mjs
+@@ -49,7 +49,7 @@ for (const name of PHOTOS) {
+   if (!/^[a-z]+(-[a-z]+)*$/.test(name)) throw new Error(`DOCS_PHOTOS: '${name}' is not a list name (wlm-ua, wlm-intl, wle-ua, wle-intl)`);
+ }
+ const SBT_COMMANDS = [
+-  `set Test / javaOptions ++= Seq("-Xmx1g", "-Dfile.encoding=UTF-8", "-Dui.csp=production", "-Dui.csrf=on", "-Dui.images=${IMAGES}", "-Dui.photos=${PHOTOS.join(',')}")`,
++  `set Test / javaOptions ++= Seq("-Xmx1g", "-Dfile.encoding=UTF-8", "-Dui.csp=production", "-Dui.csrf=on", "-Dgatling.timing=true", "-Dgatling.timingFile=target/lvbench-timing.jsonl", "-Dscalikejdbc.global.loggingSQLAndTime.enabled=false", "-Dui.images=${IMAGES}", "-Dui.photos=${PHOTOS.join(',')}")`,
+   // Play's Assets serves public/ from the classpath, which the test classpath lacks
+   'set Test / unmanagedClasspath += Attributed.blank((Assets / packageBin).value)',
+   'Test/runMain gatling.setup.UiShotsServer',
