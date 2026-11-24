@@ -131,6 +131,9 @@ Playwright fixture server alike) by prefixing the command with
   `conf/messages.en`, `.fr`, `.uk` and `.ru`, with the same placeholders
   (`MessagesCompletenessSpec` checks it). List the new or changed keys in the PR description:
   the maintainer checks Ukrainian and Russian and asks a French speaker for French.
+- Front-end changes are reviewed with the [UI review checklist](docs/ui/review-checklist.md). If
+  you copy text or code from Modern Web Guidance (CC-BY 4.0 text, Apache-2.0 code), credit it with
+  a source link where it is copied and add a NOTICE entry.
 
 ## Security
 
