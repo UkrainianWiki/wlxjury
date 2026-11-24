@@ -114,6 +114,8 @@ object AccountRetirement {
     else if (current.isEmpty) Some(NotAllowed)
     else if (actor.id == account.id) Some(OwnAccount)
     else if (isRoot(account)) Some(RootAccount)
+    // a series admin (a protected target, contest series plan §3.3): root's only
+    else if (!current.exists(isRoot) && User.isProtectedTarget(account)) Some(RootAccount)
     else current.filterNot(isRoot).flatMap { a =>
       if (!controllers.UserController.mayEditAccountNow(a, account) || !tiedTo(account.getId, contestId))
         Some(NotAllowed)
@@ -227,6 +229,8 @@ object AccountRetirement {
             password = NULL, auth_version = ${User.BumpAuthVersion}
           WHERE id = $accountId""".update.apply()
     ApiTokenJdbc.revokeAll(accountId)
+    // its series grants go with it (contest series plan §3.3, "Joins and retirement")
+    series.SeriesAdmins.onRetire(actor, accountId)
     AccountChangeLog.record(actor, accountId, contestId, AccountChangeJdbc.AccountRetired, oldValue = oldEmail,
       comment = keptAccountId.map("#" + _))
     for (kept <- keptAccountId)

@@ -209,6 +209,9 @@ class AccountJoinHandler @Inject() (mail: AccountJoinMail) extends JobHandler {
         val comments = AccountJoinJdbc.moveComments(p.keptId, p.joinedId)
         val memberships = AccountJoinJdbc.mergeMemberships(p.keptId, p.joinedId)
         val identities = UserIdentityJdbc.deleteByUser(p.joinedId)
+        // the joined account's series grants move to the kept account, or are revoked where it
+        // holds one on the same series (contest series plan §3.3, "Joins and retirement")
+        series.SeriesAdmins.onJoin(actor, p.keptId, p.joinedId)
         val coi = AccountJoin.Coi(kept.wikiAccount.map(_.trim).filter(_.nonEmpty), kept.wikiAccountVerified,
           joined.wikiAccount.map(_.trim).filter(_.nonEmpty), joined.wikiAccountVerified)
         if (coi.result != coi.kept || coi.resultVerified != coi.keptVerified) {
