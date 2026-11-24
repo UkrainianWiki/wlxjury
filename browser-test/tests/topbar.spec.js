@@ -83,6 +83,8 @@ test.describe('the sticky top bar on a desktop', () => {
       await page.waitForLoadState('load');
       const nav = page.locator(NAV);
       const links = page.locator('li[data-file-anchor] a[href*="/large/"]');
+      // Bootstrap's smooth root scroll applies unless motion is reduced: the focus scroll would animate
+      await page.emulateMedia({ reducedMotion: 'reduce' });
       // from the page's end, Shift+Tab onto files above the window until the page scrolls up
       await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }));
       await links.last().focus();
@@ -90,7 +92,9 @@ test.describe('the sticky top bar on a desktop', () => {
       let moved = false;
       for (let i = 0; i < 12 && !moved; i++) {
         await page.keyboard.press('Shift+Tab');
-        moved = await page.evaluate((y) => window.scrollY < y - 20, start);
+        // two frames after the key: the scroll it caused has landed on the main thread
+        moved = await page.evaluate((y) => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(
+          () => done(window.scrollY < y - 20)))), start);
       }
       expect(moved, 'Shift+Tab reached a file above the window').toBe(true);
       await expect.poll(() => page.evaluate((sel) => {
