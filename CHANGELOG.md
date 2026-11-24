@@ -54,7 +54,9 @@ Merged to master after the 26.11.14 build.
 - Rolling back past V110: revoke the read-only API tokens first.
 - Script for maintaining the local image cache (#132).
 
-## 26.11.14 (built 2026-11-23, deploy pending)
+## Deployed releases
+
+### 26.11.14 (2026-11-24)
 
 Built from `26.11.13.1`; no migration.
 
@@ -75,8 +77,6 @@ Built from `26.11.13.1`; no migration.
 - A started round's criteria can no longer be changed.
 - Round statistics no longer break on a juror with no status.
 - First keys typed in a saved category or import source are no longer lost.
-
-## Deployed releases
 
 ### 26.11.13.1 (2026-11-19)
 

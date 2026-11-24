@@ -241,8 +241,9 @@ changed since the last released version; the release record lists which ran and 
 
 **7.2 Releases are cut from master; hotfixes go to master first.** From 26.11.15 on, a release
 is a release-commit PR on master (§7.4), squash-merged, and its tag goes on that master commit.
-Earlier releases are recorded by their `release/<version>` branches (26.11.14 stays on
-`release/26.11.14`). A hotfix while master has unreleased work: the smallest fix as a PR to
+Earlier releases are recorded by their `release/<version>` branches (26.11.14 was deployed on
+2026-11-24 from `release/26.11.14`, kept in the private archive; 26.11.15 is the first release
+cut from this repository's master). A hotfix while master has unreleased work: the smallest fix as a PR to
 master first; then a `release/<version>` branch from the last release's tag (once release tags
 exist; until then from its `release/<version>` branch) gets the squash commit with
 `git cherry-pick -x`, and the hotfix release is built, deployed and tagged there. Planned
