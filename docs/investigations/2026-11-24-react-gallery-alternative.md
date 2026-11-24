@@ -9,9 +9,9 @@ wider: a UI developer wants to build React screens, and GraphQL (draft PR #135,
 gallery (plan [own-gallery-tiles](../plans/2026-11-19-own-gallery-tiles.md), PR #129, not yet on
 master when this was written) as a later React target.
 
-**The wider question** (would a SPA improve the UI; htmx, Vue with Wikimedia Codex, Lit and Alpine as alternatives; a measured prototype of the large view's vote without a reload) is in the companion [UI approach](2026-11-24-ui-approach.md). Its conclusion: no SPA; htmx 4 for the large view's vote; islands for the UI developer's new screens, with Vue plus Codex as a candidate beside React.
+**The wider question** (would a SPA improve the UI; htmx, Vue with Wikimedia Codex, Lit and Alpine as alternatives; a measured prototype of the large view's vote without a reload) is in the companion [UI approach](2026-11-24-ui-approach.md). Its conclusion: no SPA; islands for the UI developer's new screens, React by default with Vue plus Codex put to the UI developer as a question; the htmx steps are deferred (decisions in its section 11).
 
-**Status:** investigation only; nothing in the application changes. Nothing was run in the
+**Status:** investigation; the maintainer's decisions (2026-11-24) are in section 9. Nothing in the application changes; nothing in the application changes. Nothing was run in the
 application (no sbt, fixture server or browser). The only measurement is a throwaway bundle-size
 build in a scratch directory outside the repository (section 6.2). Effort figures are estimates
 from reading the code and plans.
@@ -319,28 +319,21 @@ of 2-4 contexts.
   query-only rule for tokens do not exist yet, so the first screen starts on REST.
 - No gallery prototype was built.
 
-## 9. Open questions for the maintainer
+## 9. Decisions (2026-11-24)
 
-1. **Integration shape.** Islands on Twirl pages (recommended), or an SPA under `/ui` as the
-   `react` branch did? Islands keep routes and authorization in Play.
-2. **First screen.** The root contests grid (low risk, small audience, can start on REST), or
-   wait for #135's slice 2 and start with round statistics for organizers?
-3. **UI kit.** No MUI; Bootstrap 5 classes with CSS modules and a headless table, because of
-   CSP step G-7 and the look. Does the UI developer agree, or is a component kit a requirement
-   (then the CSP plan changes)?
-4. **Build in the release.** Is a Vite step in `sbt dist` and `sbt run` acceptable, with Node
-   needed on developer and CI machines only?
-5. **Texts.** Keys rendered by the server into the page (recommended) or a JSON export per
-   language? The first keeps one source of truth.
-6. **Test runner.** Vitest for `ui/` beside Jest, or one runner (Jest with TypeScript)?
-7. **The gallery.** Confirm: build #129 now, revisit React for the gallery after two shipped
-   screens. If the gallery should go React earlier, is no-JS a firm requirement (then the
-   prerender spike of section 7 comes first)?
-8. **Lightbox.** Is a quick preview over the gallery wanted at all (Q2 said no)? If so, C1 is a
-   small follow-up now that the platform exists.
-9. **Juror slice order** (the same question as #135's Q8: answer it once). Should the juror-facing slice (round images and
-   the vote, #135 slices 3-4) come before or after the admin and organizer screens? Recommendation: **after**:
-   the admin and organizer screens carry less risk, prove the platform, and let the gallery
-   decision (#129 or React) settle first.
-10. **The parked branches.** Close `react`, `react-custom-filter` and `104-port-gallery-to-react`
-   when the first screen's PR merges, keeping only the skeleton pieces named in section 4?
+1. **Integration shape: islands on Twirl pages.** Routes and authorization stay in Play.
+2. **First screen: the root contests grid.** REST first; moved to GraphQL after #135's slice 1.
+3. **UI kit: no MUI.** Bootstrap 5 classes, CSS modules and a headless table.
+4. **Build: a Vite step in sbt** (`sbt dist` and `sbt run`); Node on developer and CI machines only.
+5. **Texts: the server renders the screen's message keys into the page.** No JSON export per language.
+6. **Test runner: Vitest for `ui/`**, beside Jest for the plain scripts.
+7. **The gallery: build #129 now.** Revisit a React gallery after two shipped screens.
+8. **Lightbox: keep "no lightbox"** (Q2 of #129 stands); option C1 is not pursued.
+9. **Juror slice order: the same answer as #135's Q8.** Admin and organizer screens first; the juror
+   slices (#135 slices 3-4) after #129 and the vote-rule extraction.
+10. **Parked branches: close `react` and `react-custom-filter`** (and the other parked react branch,
+    `104-port-gallery-to-react`, if the maintainer wants it included; the decision named "the parked
+    react branches") when the first screen's PR merges, keeping the skeleton pieces named in section 4.
+
+Still open: whether no-JS is a firm requirement if the gallery later goes React (it decides whether the
+prerender spike of section 7 comes first); to be asked when the gallery is revisited.

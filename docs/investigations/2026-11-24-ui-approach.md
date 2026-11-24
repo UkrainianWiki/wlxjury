@@ -5,7 +5,7 @@ The maintainer's question: **would a single-page application improve the UI, and
 alternatives fit this application?** Related plans: [own gallery tiles](../plans/2026-11-19-own-gallery-tiles.md)
 (PR #129) and the GraphQL plan (PR #135).
 
-**Status:** investigation. Facts about the libraries come from the npm registry, GitHub and the
+**Status:** investigation; the maintainer's decisions (2026-11-24) are in section 8, and they defer the htmx steps (sections 2, 3 and 7 below were written before that). Facts about the libraries come from the npm registry, GitHub and the
 projects' documentation (2026-11-24). The numbers in section 5 come from a throwaway mock in a
 scratch directory (not in this repository): it imitates the large view's vote and was run in a
 real Chromium. The application itself was not run (a real run would need the database
@@ -19,7 +19,7 @@ estimate.
    server and works through plain page loads. A SPA moves routing, history, scroll and the
    rendering of those rules to the browser, for a gain (no page reload) that the large view can
    get much more cheaply (section 5).
-2. **Add htmx for "no full reload" on the existing server-rendered pages, starting with the large
+2. **(Deferred by the maintainer, section 8.) Add htmx for "no full reload" on the existing server-rendered pages, starting with the large
    view's vote.** Prototype: the vote and the move to the next file ran in about half the time of
    the full page load (the next image prefetched), Back worked, keyboard voting worked, **no
    server change** (the vote already redirects to the next file's page), htmx 4 needs **no
@@ -28,7 +28,7 @@ estimate.
    `new Function` (section 3.2). Cost is not in htmx but in
    the page's scripts that initialise once at load (section 5.3): about four modules. Estimate
    for the large view: 2-4 days.
-3. **htmx version: start on 4.0.x, pinned and vendored.** 4.0.0 was released 2026-08-28 (stable, not
+3. **(Deferred.) htmx version: start on 4.0.x, pinned and vendored.** 4.0.0 was released 2026-08-28 (stable, not
    a prerelease), 4.0.2 on 2026-11-18; it is smaller (13.4 KB gzipped against 16.8 KB), needs no
    inline style, and does not keep page snapshots in `localStorage`. Caveat: young (three months,
    three releases) and npm's `latest` tag still points to 2.0.11 (4.x is on `next`); 2.x is still
@@ -40,8 +40,8 @@ estimate.
    tokens, CSS-only components usable on server-rendered pages), its licence (GPL-2.0-or-later) is
    compatible with this repository's GPL-3.0-or-later, and Montage, the closest comparable tool,
    uses it. React has no official Codex version, so with React only the design tokens would carry
-   over. The deciding input is the UI developer's skills and the maintainer's wish for a
-   Wikimedia look: ask them (Q1, Q2).
+   over. The decision (section 8): the maintainer asks the UI developer about Vue 3 with Codex, React by
+   default; Bootstrap stays, and only Codex's design tokens are used, no re-skin.
 5. **The gallery stays as in the #136 recommendation** (#129 first). htmx does not replace it:
    chunks are already server-rendered HTML in #129's plan, which htmx can load as fragments if
    a later step wants it.
@@ -287,7 +287,7 @@ They answer different questions and do not compete.
 
 ## 7. Recommendation
 
-1. **Large view:** htmx 4 boost for the vote and next file, `hx-preload` (its own 0.9 KB script) or a link prefetch for the
+1. **Large view (deferred, section 8):** htmx 4 boost for the vote and next file, `hx-preload` (its own 0.9 KB script) or a link prefetch for the
    next file and its image, after a 2-3 hour spike in the real application (the mock's findings 1-5
    as a checklist). 2-4 days with tests, in its own PR, after #129's gallery work lands or in parallel
    in the large-view files that #129 does not touch.
@@ -300,22 +300,24 @@ They answer different questions and do not compete.
    router became useful.
 5. **#129 stays as planned.**
 
-## 8. Open questions for the maintainer
+## 8. Decisions (2026-11-24)
 
-1. **Ask the UI developer:** is Vue 3 with Codex acceptable instead of React? Which do they know,
-   and which would they rather maintain? (The platform is the same for both.)
-2. **Wikimedia look.** Is Codex's look and feel (and its accessibility and language variants) a goal
-   for the tool, or is Bootstrap 5 staying? Codex on island screens next to Bootstrap pages would
-   look mixed.
-3. **Licence.** The tokens (GPL-2.0-or-later) are already vendored with a `NOTICE` entry. Is the same
-   acceptable for the Codex components package (GPL-2.0-or-later) and its icons (MIT)? (A reading
-   of the licence texts; confirm with whoever owns the licence policy.)
-4. **Re-skin.** Should Codex CSS and tokens replace Bootstrap on Twirl pages in time, or only be used
-   in new island screens? The first is a design project of its own.
-5. **htmx 4 or 2.** Start on 4.0.x (recommended: smaller, no style-src change, no `localStorage`
-   snapshots; young) or on 2.0.x (more mileage)?
-6. **Large view with htmx.** Go ahead with the 2-3 hour spike in the real application, then the PR?
-   Is no-reload voting in the large view wanted, and is "next file prefetched" enough for jurors?
-7. **Juror slice order** (this is the same as #135's Q8 and #136's Q9): with htmx on the large
-   view, the juror slice of GraphQL is less urgent: after the admin and organizer screens?
-8. **Unpoly or Turbo.** Any interest, or is htmx the only one to try?
+1. **UI developer and framework.** The maintainer asks the UI developer about Vue 3 with Codex; React is
+   the default until they answer.
+2. **Wikimedia look, and Q4 re-skin.** Bootstrap 5 stays; only Codex's design tokens are used. No re-skin of
+   the Twirl pages.
+3. **Licence of the Codex components package.** Matters only if Vue is chosen; kept open, conditional (the
+   tokens are already vendored with a `NOTICE` entry). Confirm with whoever owns the licence policy if it
+   comes to that.
+4. (Merged into 2.)
+5. **htmx 4 or 2: deferred.**
+6. **Large view with htmx, and its spike: deferred.**
+7. **Juror slice order:** the same answer as #135's Q8 (admin and organizer screens first).
+8. **Unpoly or Turbo: deferred.**
+
+Why htmx is deferred: the real-app timing (#142, being re-measured after a confound) suggests htmx is not
+needed now. Production caches CSS and JS for a year, so the wait is the vote round trip, the redirect, the
+HTML and the server time, not script loading. The mock's numbers in section 5 should be read with that in
+mind, and the measurement of #142 supersedes them when it lands.
+
+Still open: item 3 (conditional on Vue), and the htmx questions, which are deferred rather than answered.
