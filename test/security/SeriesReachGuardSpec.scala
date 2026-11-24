@@ -143,7 +143,7 @@ class SeriesReachGuardSpec extends Specification {
       * `liveGrantCondition`) and of held grants (protection: `heldGrantCondition`).
       */
     val LiveReaders = Seq("liveBySeries", "liveInSeries", "liveByUser", "seriesContests", "liveForContest")
-    val HeldReaders = Seq("hasHeldGrant", "withHeldGrant")
+    val HeldReaders = Seq("hasHeldGrant", "withHeldGrant", "holdsGrantOnContest")
 
     /** The SQL literals (triple-quoted) of `text` that name the `series_admin` table, any case. */
     def queries(text: String): Seq[String] =
@@ -182,6 +182,28 @@ class SeriesReachGuardSpec extends Specification {
   "target root checks" should {
     "be User.isProtectedTarget: the isRoot and is_root sites left are the listed ones" in {
       counts("""\.isRoot\b|\bis_root\b""".r) === RootSites.view.mapValues(_._1).toMap
+    }
+  }
+
+  /** The places that show other jurors' votes of a round, each behind
+    * `GalleryService.othersVotesVisible` (the conflict-of-interest rule, the maintainer's decision of
+    * 2026-11-24: a juror of a round sees only their own votes in it, whatever their role).
+    */
+  private val OthersVotesSites: Map[String, (Int, String)] = Map(
+    "app/services/GalleryService.scala" -> (2, "the definition; viewAs: every gallery view (gallery, by rate, file list, " +
+      "CSV, comments report and its CSV, the JSON endpoints) and the large view as another juror or all (0)"),
+    "app/controllers/LargeViewController.scala" -> (1, "the large view's every-juror votes panel (juryStat)"),
+    "app/controllers/MonumentController.scala" -> (1, "a monument's files in a round: own votes only"),
+    "app/controllers/AuthorsController.scala" -> (1, "a round's authors with every juror's votes"),
+    "app/views/roundStatTable.scala.html" -> (1, "the statistics: other jurors' selections, rejections, lists, totals"),
+    "app/views/navbar.scala.html" -> (1, "the organisers' bar: the juror menu and all the jurors' views")
+  )
+
+  "the conflict-of-interest rule" should {
+    "guard every place that shows other jurors' votes, and the every-juror votes query only there" in {
+      (counts("""othersVotesVisible\(""".r) === OthersVotesSites.view.mapValues(_._1).toMap) and
+        ((counts("""byRoundAndImageWithJury\(""".r).keySet --
+          Set("app/db/scalikejdbc/VoteJdbc.scala", "app/controllers/LargeViewController.scala")) must beEmpty)
     }
   }
 }

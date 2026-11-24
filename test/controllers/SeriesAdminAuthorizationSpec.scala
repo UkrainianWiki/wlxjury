@@ -274,24 +274,25 @@ class SeriesAdminAuthorizationSpec extends PlaySpecification with PlayTestDb {
 
   "the role writes' series rule" should {
 
-    "leave a protected account's roles to root, in every contest, its grant waiting too (M2, M1)" in {
+    "refuse a non-root actor making a series admin a Juror or lowering their Admin row in the series' contests, not elsewhere (plan §3.3)" in {
       testDbApp { implicit app =>
         val f = fixture()
         UserContestJdbc.createMembership(f.sa.getId, f.cLast.getId, "admin")
         UserContestJdbc.createMembership(f.sa.getId, f.tNow.getId, "organizer")
         val inLast = User.findInContest(f.sa.getId, f.cLast.getId).get
         val inT = User.findInContest(f.sa.getId, f.tNow.getId).get
-        val plain = User.findInContest(f.juror.getId, f.cNow.getId).get
-        val writes = (UserController.protectedRoleWriteAllowed(f.admin, inLast) must beFalse) and
-          (UserController.protectedRoleWriteAllowed(f.saT, inT) must beFalse) and
-          (UserController.protectedRoleWriteAllowed(f.admin, plain) must beTrue) and
-          (UserController.protectedRoleWriteAllowed(f.root, inLast) must beTrue)
-        // a grant waiting for root's confirmation protects too: no email change by a contest admin
+        val writes = (UserController.seriesRoleWriteAllowed(f.admin, inLast, User.JURY_ROLE) must beFalse) and
+          (UserController.seriesRoleWriteAllowed(f.admin, inLast, "organizer") must beFalse) and
+          (UserController.seriesRoleWriteAllowed(f.admin, inLast, User.ADMIN_ROLE) must beTrue) and
+          (UserController.seriesRoleWriteAllowed(f.saT, inT, User.JURY_ROLE) must beTrue) and
+          (UserController.seriesRoleWriteAllowed(f.root, inLast, User.JURY_ROLE) must beTrue)
+        // a grant waiting for root's confirmation protects too (M1): the series rule, and no email
+        // change by a contest admin
         ContestSeries.retireSeries(f.s, f.root.getId, None) must beRight
         ContestSeries.unretireSeries(f.s, f.root.getId, None) must beRight
         val c = new UserController(app.injector.instanceOf[play.api.mvc.ControllerComponents],
           app.injector.instanceOf[services.UserService], app.injector.instanceOf[modules.BlockingExecutionContext])
-        writes and (UserController.protectedRoleWriteAllowed(f.admin, inLast) must beFalse) and
+        writes and (UserController.seriesRoleWriteAllowed(f.admin, inLast, User.JURY_ROLE) must beFalse) and
           (c.canEditAccount(Secured.inCurrentContest(User.findById(f.admin.getId).get, Some(f.cNow.getId.toString)), f.sa) must beFalse)
       }
     }

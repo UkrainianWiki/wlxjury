@@ -738,9 +738,18 @@ series. Specs cover a series admin with no real row, and a retired series.
   added on `/admin/series`, and root's chained revoke.
 - **Protection outlasts access.** An unrevoked grant protects its holder whether it is live,
   waiting for root's confirmation or of a retired series (protection only restricts others); only
-  a live grant gives access. A protected account's roles are root's to change in every contest
-  (stricter than the role-write rule above, which let Admins of unrelated contests change its
-  Juror or Organizer rows).
+  a live grant gives access. The role writes stay as above (the maintainer, 2026-11-24, rather
+  than the review's "only root changes a protected account's roles"): in the series' contests no
+  one but root makes it a Juror or removes or lowers its Admin row; elsewhere its Juror and
+  Organizer rows change as any member's.
+- **A juror of a round sees only their own votes in it** (the maintainer's conflict-of-interest rule,
+  2026-11-24), whatever their contest role: a contest Admin or Organizer, a series admin by a
+  derived or real role, root. A juror of the round: a `round_user` row, active or stopped, or votes
+  of their own in it. One check, `GalleryService.othersVotesVisible`, guards every place that shows
+  other jurors' votes (the galleries as another juror or all, by rate, file list, CSV, comments
+  report, the large view, a monument's files, the round's authors with votes, the statistics'
+  selections and totals, the organisers' bar); each juror's progress counts stay. With CA7 this
+  closes most of a juror-admin's view of their own round; the sock route above stays as accepted.
 
 **Visible to the contest:**
 

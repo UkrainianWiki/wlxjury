@@ -179,7 +179,9 @@ votes menu shows only its icon and the names are cut shorter. Point at an icon t
 it to see it whole). The bar and its pager stay on one line from 1280 pixels.
 
 You can see a juror's votes only for a juror of that round. Choosing another person's page
-shows the tool's "not found" page.
+shows the tool's "not found" page. If you are a juror of the round yourself, you see only your own
+votes in it: not another juror's, not all the jurors' together, and on its **Statistics** each
+juror's progress but not their selections (the conflict-of-interest rule).
 
 <a id="o-comments-filter"></a>
 **Files with comments:** the **Comments** menu, after the votes menu, has **All files**, **Only

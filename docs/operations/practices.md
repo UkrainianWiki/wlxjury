@@ -406,7 +406,8 @@ grantId=`, `series_admin_moved account= from= series= grantId= from_year= by=`.
   revoked granter doesn't block it). An unconfirmed grant can be revoked as any.
 - **Protection** (the security review of #140): an account with any unrevoked grant, live or waiting
   for confirmation or of a retired series, is protected: only root edits, links, invites, retires or
-  joins it, or changes its roles in any contest. A join moves only live grants (it revokes waiting
+  joins it, and in the series' contests only root makes it a Juror or removes or lowers its Admin
+  role (plan §3.3, kept by the maintainer). A join moves only live grants (it revokes waiting
   ones and those of a retired series) and carries the joined account's revoked grants to the kept
   one, so a grant root revoked stays root's to give again. Root's **Confirm** is refused if the
   account's email, password, wiki account, root flag, joins, links or sign-in identities changed

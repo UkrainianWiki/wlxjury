@@ -703,8 +703,8 @@ removes them. Each grant has a **start year**:
   but change nothing;
 - where a series admin is a **Juror**, the series doesn't apply: they stay a Juror there;
 - a series admin can't act on root accounts, other series admins, or people who also belong to a
-  contest the series admin doesn't administer; only root changes a series admin's roles or
-  account, in any contest.
+  contest the series admin doesn't administer; only root changes a series admin's account, and in
+  the series' contests only root makes them a Juror or removes or lowers their Admin role.
 
 A series admin's contest menu has one entry per series, **Series: Wiki Loves Monuments in Nepal
 (Series admin)**, leading to the **series page**: its contests by year, with your role in each and
@@ -1311,6 +1311,13 @@ A juror sees a round only when it is started, the juror is in it and not paused,
 distribution is done. When a round is stopped it disappears from the jurors' view, and votes in
 it are refused ("This round is closed for voting"). Votes are kept, and the round comes back
 when you start it again. A juror with no round open sees **No round configured yet**.
+
+A **juror of a round** sees only their own votes in it, whatever their role in the contest: an
+Admin, an Organizer, a series admin or root who is also a juror of a round can't open another
+juror's votes there, nor all the jurors' votes together (by rate, the file list, the CSV, the large
+view's votes of every juror, the round's authors with votes); on the round's **Statistics** they
+see each juror's progress (files, unrated, rated) but not the others' selections or rejections
+nor the totals by vote. In rounds they don't judge they see every juror's votes as usual.
 
 Jurors see their own votes only, and never the files' authors: the author's name and links, the
 contest files page's author filter and the authors list are for admins, organizers and root
