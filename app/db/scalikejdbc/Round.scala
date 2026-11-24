@@ -687,7 +687,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     val refused =
       sql"""SELECT r.distributing OR c.retired_at IS NOT NULL FROM round r LEFT JOIN contest_jury c ON c.id = r.contest_id
             WHERE r.id = $id""".map(_.boolean(1)).single().getOrElse(false) && active
-    val archived = WriteTx.write { implicit session =>
+    val (archived, jurorChanges) = WriteTx.write { implicit session =>
       val wasOpen = isOpen(id)
       sql"""UPDATE round
             SET ${statusOfStartStop(active, by)},
@@ -696,9 +696,16 @@ object Round extends RoundRepo with CRUDMapper[Round] {
                 created_at = created_at
             WHERE id = $id
               AND NOT ($active AND EXISTS (SELECT 1 FROM contest_jury c WHERE c.id = round.contest_id AND c.retired_at IS NOT NULL))""".update()
+      val nowOpen = isOpen(id)
+      // stopped or started again by an account that judges it: logged (RoundJurorChanges)
+      val jurorChanges =
+        if (wasOpen == nowOpen) Nil
+        else RoundJurorChanges.record(
+          if (nowOpen) ContestChangeJdbc.RoundJurorReopened else ContestChangeJdbc.RoundJurorStopped, Seq(id), by)
       // After the update, and read as of then: see ImageJdbc.lockOpenRoundsOf
-      !wasOpen && isOpen(id) && ImageJdbc.archiveDeletedVotesInRound(id).nonEmpty
+      (!wasOpen && nowOpen && ImageJdbc.archiveDeletedVotesInRound(id).nonEmpty, jurorChanges)
     }
+    RoundJurorChanges.log(jurorChanges)
     if (archived) RoundImageCounts.invalidate(id)
     !refused
   }

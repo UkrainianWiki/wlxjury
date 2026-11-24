@@ -114,6 +114,7 @@ class MessagesCompletenessSpec extends Specification {
     "link.status." -> Seq("active", "used", "expired", "revoked").flatMap(s => Seq(s, s"$s.at")),
     "link.purpose." -> db.scalikejdbc.AccountTokenJdbc.SetsPassword,                // editUser's set-password links
     "account.change.field." -> db.scalikejdbc.AccountChangeJdbc.Fields,             // accountChangeTable.scala.html
+    "round.juror.change." -> db.scalikejdbc.ContestChangeJdbc.RoundKinds,           // roundStat.scala.html, a round's juror entries
     "round.state.text." -> services.GalleryService.RoundState.All.map(_.reason),    // roundState.scala.html
     "round.state.title." -> services.GalleryService.RoundState.All.map(_.reason),   // noRoundYet.scala.html
     "health.job.status." -> Seq("queued", "running", "done", "failed", "cancelled"), // contestHealth.scala.html

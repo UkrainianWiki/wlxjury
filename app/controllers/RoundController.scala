@@ -725,9 +725,19 @@ class RoundController @Inject() (
               val comments = org.intracer.wmua.CommentJdbc.roundCounts(round.contestId, round.getId)
               // open, but nobody can vote in it: a notice (DG10)
               val noActiveJuror = RoundUser.openWithoutActiveJuror(Seq(round)).nonEmpty
+              // the round stopped, started again or closed by a juror of it (RoundJurorChanges), with
+              // who: for those who see the organiser view, not a juror of the open round
+              val jurorChanges =
+                if (!services.GalleryService.othersVotesVisible(user, round)) Nil
+                else {
+                  val changes = ContestChangeJdbc.findByRound(round.contestId, round.getId, RoundController.JurorChangesShown)
+                  val names = User.findByIds(changes.map(_.actorId).distinct).map(u => u.getId -> u.fullname).toMap
+                  changes.map(c => c -> names.getOrElse(c.actorId, s"#${c.actorId}"))
+                }
 
               Secured.switchingContest(sessionUser, user)(
-                Ok(views.html.roundStat(user, round, stat, comments, RoundsFilter.fromRequest(request), noActiveJuror)))
+                Ok(views.html.roundStat(user, round, stat, comments, RoundsFilter.fromRequest(request), noActiveJuror,
+                  jurorChanges)))
             }
           }
           .getOrElse {
@@ -803,6 +813,9 @@ class RoundController @Inject() (
 }
 
 object RoundController {
+
+  /** The statistics page's latest entries of the round stopped, started again or closed by a juror of it. */
+  val JurorChangesShown = 20
 
   /** A rated round's stored criteria if it is started ([[RoundCriterion.started]]: running or
     * with a vote, criterion rates included, as the save checks), for its edit form: its

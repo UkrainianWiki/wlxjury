@@ -1321,6 +1321,12 @@ unrated, rated) but not the others' selections or rejections nor the totals by v
 menu opens the round on their own votes. Once the round is **closed** (stopped or finished) they
 see its results like any admin. In rounds they don't judge nothing changes.
 
+If an admin who is a juror of a round **stops** it, **starts it again**, or closes it by
+**creating the next round** from it, the round's **Statistics** page lists it under "Changed by a
+juror of this round", with who did it and when (in UTC), newest first. Everyone who sees the page's
+full view sees the list; a juror of the round doesn't while it is open. The same done by an admin
+who doesn't judge the round isn't listed.
+
 Jurors see their own votes only, and never the files' authors: the author's name and links, the
 contest files page's author filter and the authors list are for admins, organizers and root
 (the organizer guide explains [them](organizer-guide.md#o-authors)). In the large view of a file

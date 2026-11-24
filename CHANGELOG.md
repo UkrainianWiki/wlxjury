@@ -94,6 +94,12 @@ is listed below.
   the round's authors with votes); the round's statistics keep each juror's progress but not the
   others' selections or the totals by vote; the round menu opens such a round on their own votes.
   In rounds they don't judge nothing changes.
+- **A round stopped, started again, or closed by creating the next round by one of its own jurors**
+  (an admin who also judges it; the maintainer's decision of 2026-11-24) is recorded: the round's
+  statistics list it with who and when ("stopped by …, a juror of this round") for those who see its
+  organiser view, and the server log has a `juror_round_change` warning line (ids only). The same by
+  an admin who doesn't judge the round records nothing new. Root's contest change log lists these
+  entries too.
 - **A sticky top bar** (the maintainer's decision of 2026-11-23, replacing the trial of a bar
   that hid while scrolling down; developed 2026-11-23, `fix/sticky-topbar`): on the galleries, the
   by-rate gallery, the file list, the comments report, the contest files, the Rounds, round

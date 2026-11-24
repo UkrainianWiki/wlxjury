@@ -754,6 +754,23 @@ series. Specs cover a series admin with no real row, and a retired series.
   report, the large view, a monument's files, the round's authors with votes, the statistics'
   selections and totals, the organisers' bar); each juror's progress counts stay. With CA7 this
   closes most of a juror-admin's view of their own round; the sock route above stays as accepted.
+- **A juror-admin's stop, start or close of their own round is recorded** (the maintainer's choice
+  (i) of 2026-11-24, F1 of the conflict-of-interest review): the open rule above lets a juror-admin
+  stop their round to see its results, start it again, or close it by creating the next round from
+  it. Each such change of the round's open state (`Round.openCond`) by an account that judges the
+  round (`User.roundsJuredIn`, any role, root included) writes a `contest_change` row in the same
+  transaction (`RoundJurorChanges`; kinds `round_juror_stopped`, `round_juror_reopened`,
+  `round_juror_closed`, V112 widening V109's CHECK; detail `round`, `number`, and for a close
+  `byRound`, `byRoundNumber`) and, after the commit, a WARN `juror_round_change` line on
+  `security.authz` with ids only. Written at `Round.setActiveGuarded` (the rounds list's and the
+  conflicts page's Start/Stop) and at a creation's completion (`RoundDistributionHandler.complete`,
+  the job's `createdBy` as the actor). The round's statistics list the entries with who and when
+  to those who see its organiser view (`othersVotesVisible`); root's contest change log shows them;
+  "Undo batch" ignores them (`ContestChangeJdbc.latestOf` reads the contest's own kinds only).
+  Considered and not chosen: (ii) a line from `round.status_changed_by`, which keeps only the latest
+  change and has no close by creation. F2: `SeriesReachGuardSpec` pins each query of every juror's
+  votes together outside `RoundList` (`getRoundStat`, `roundUserStat`, `imageCountsByRate`,
+  `AuthorStats.ofRound`, `byRoundAndImageWithJury`, `RoundImageQuery.of`) to its listed callers.
 
 **Visible to the contest:**
 

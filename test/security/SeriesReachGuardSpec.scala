@@ -197,14 +197,44 @@ class SeriesReachGuardSpec extends Specification {
     "app/controllers/AuthorsController.scala" -> (1, "a round's authors with every juror's votes"),
     "app/views/roundStatTable.scala.html" -> (1, "the statistics: other jurors' selections, rejections, lists, totals"),
     "app/views/navbar.scala.html" -> (1, "the organisers' bar: the juror menu and all the jurors' views"),
-    "app/views/roundStat.scala.html" -> (1, "the statistics' comments report link: the viewer's own list in an open round they judge")
+    "app/views/roundStat.scala.html" -> (1, "the statistics' comments report link: the viewer's own list in an open round they judge"),
+    "app/controllers/RoundController.scala" -> (1, "the statistics' entries of the round stopped, started again or closed by " +
+      "a juror of it: none for a juror of the open round")
+  )
+
+  /** The queries that read every juror's votes of a round together outside [[controllers.RoundList]]
+    * (whose all-jurors lists come from `GalleryService.viewAs`, behind the rule), and the only files
+    * that may name each: its definition, and callers that show the result behind `othersVotesVisible`
+    * or not at all (F2 of the conflict-of-interest review). A new caller is checked against the rule
+    * and listed here.
+    */
+  private val AggregateVoteReaders: Seq[(String, Set[String], String)] = Seq(
+    ("""\bgetRoundStat\(""", Set("app/services/RoundService.scala", "app/controllers/RoundController.scala"),
+      "each juror's tallies and the totals by vote: the round's stat table only (the edit page's panel and the " +
+        "statistics), which hides other jurors' columns and the totals from a juror of the open round (roundStatTable)"),
+    ("""\broundUserStat\(""", Set("app/db/RoundRepo.scala", "app/db/scalikejdbc/Round.scala", "app/services/RoundService.scala"),
+      "every juror's count per rate: getRoundStat only"),
+    ("""\bimageCountsByRate\(""", Set("app/db/RoundRepo.scala", "app/db/scalikejdbc/Round.scala", "app/services/RoundService.scala"),
+      "a binary round's files with a vote of each rate: getRoundStat only"),
+    ("""\bselectedImageCount\(""", Set("app/db/RoundRepo.scala", "app/db/scalikejdbc/Round.scala"),
+      "a binary round's selected files: no caller"),
+    ("""AuthorStats\.ofRound\(""", Set("app/controllers/AuthorsController.scala"),
+      "a round's authors with every juror's votes: refused to a juror of the open round"),
+    ("""\bbyRoundAndImageWithJury\(""", Set("app/db/scalikejdbc/VoteJdbc.scala", "app/controllers/LargeViewController.scala"),
+      "a file's every juror's votes: the large view's panel, behind the rule"),
+    ("""RoundImageQuery\.of\(""", Set("app/controllers/RoundList.scala"),
+      "a list's files with round_image's sums: RoundList only")
   )
 
   "the conflict-of-interest rule" should {
-    "guard every place that shows other jurors' votes, and the every-juror votes query only there" in {
-      (counts("""othersVotesVisible\(""".r) === OthersVotesSites.view.mapValues(_._1).toMap) and
-        ((counts("""byRoundAndImageWithJury\(""".r).keySet --
-          Set("app/db/scalikejdbc/VoteJdbc.scala", "app/controllers/LargeViewController.scala")) must beEmpty)
+    "guard every place that shows other jurors' votes" in {
+      counts("""othersVotesVisible\(""".r) === OthersVotesSites.view.mapValues(_._1).toMap
+    }
+
+    "keep the queries of every juror's votes together to their listed callers, each still found there" in {
+      forall(AggregateVoteReaders) { case (pattern, allowed, _) =>
+        (pattern -> counts(pattern.r).keySet) === (pattern -> allowed)
+      }
     }
   }
 }

@@ -807,7 +807,12 @@ class RoundDistributionHandler @Inject() (
     val creating = distributing || (job.params \ "completingCreation").asOpt[Boolean].getOrElse(false)
     // who queued it (the creator, the reviewer who distributed, a reinstating admin): the status's who
     if (distributing) Round.completeCreation(roundId, job.createdBy)
+    val openBefore = if (creating) Round.openIds(st.frozen) else Set.empty[Long]
     Round.release(st.frozen, close = creating)
+    // previous rounds closed by the creation of one by an account that judges them: logged
+    val jurorChanges = RoundJurorChanges.record(ContestChangeJdbc.RoundJurorClosed,
+      (openBefore -- Round.openIds(openBefore.toSeq)).toSeq.sorted, job.createdBy, Some(roundId))
+    ctx.afterCommit(RoundJurorChanges.log(jurorChanges))
     settleFiles(roundId) // after the rounds' updates: rounds before votes, as DeletedFiles locks them
     val visible = visibleImageCount(roundId)
     ctx.afterCommit(RoundImageCounts.refresh(roundId)(visible.toInt))

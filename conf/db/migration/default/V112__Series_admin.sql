@@ -28,10 +28,15 @@
 --    series_admin_revoked (old_value: the start year) and series_admin_from_year (old and new
 --    values) and series_admin_confirmed (root's confirmation; old_value the start year), each with the
 --    comment "series #<id>".
+--  * contest_change's kind CHECK (V109, whose values it keeps) gains round_juror_stopped,
+--    round_juror_reopened and round_juror_closed (the maintainer's decision of 2026-11-24): a round
+--    stopped, started again, or closed by creating the next round, by an account that judges it
+--    (db.scalikejdbc.RoundJurorChanges), written in the transaction of the change; detail
+--    {"round": id, "number": n} and, for a close, "byRound" and "byRoundNumber": the new round's.
 --
--- Rerunnable: CREATE TABLE IF NOT EXISTS; the CHECK dropped if there and added again. The new table
--- is empty; the CHECK copies account_change (production: a few hundred rows, milliseconds; writes
--- wait for it). The foreign keys take metadata locks on series and users for a moment. A 60 s
+-- Rerunnable: CREATE TABLE IF NOT EXISTS; the CHECKs dropped if there and added again. The new table
+-- is empty; each CHECK copies its table (account_change: a few hundred rows in production,
+-- contest_change: fewer; milliseconds; writes wait for it). The foreign keys take metadata locks on series and users for a moment. A 60 s
 -- lock_wait_timeout for each statement (a long transaction or backup: it fails with nothing changed).
 SET STATEMENT lock_wait_timeout = 60 FOR
 CREATE TABLE IF NOT EXISTS series_admin (
@@ -63,13 +68,28 @@ ALTER TABLE account_change DROP CONSTRAINT IF EXISTS account_change_field_chk,
                             'account_joined', 'account_retired', 'series_admin_granted', 'series_admin_revoked',
                             'series_admin_from_year', 'series_admin_confirmed'));
 
+SET STATEMENT lock_wait_timeout = 60 FOR
+ALTER TABLE contest_change DROP CONSTRAINT IF EXISTS contest_change_kind_chk,
+  ADD CONSTRAINT contest_change_kind_chk
+    CHECK (kind IN ('created', 'identity', 'series_assigned', 'series_unassigned', 'series_changed',
+                    'split_out', 'split_in', 'split_undone', 'retired', 'unretired',
+                    'round_juror_stopped', 'round_juror_reopened', 'round_juror_closed'));
+
 -- A pre-V112 binary runs on this schema: it never names series_admin (no series admin has any
--- access there) and writes none of the new fields; it shows their log rows by message keys it lacks.
--- Undo, after reopen (every grant and its log rows are lost; revoke the grants first if the
--- accounts' sessions should end their series access before the older binary starts, which happens
--- anyway: the older binary reads no grant):
+-- access there) and writes none of the new fields or kinds; it shows their log rows by message keys
+-- it lacks. Undo, after reopen (every grant, its log rows and the rounds' juror entries are lost;
+-- revoke the grants first if the accounts' sessions should end their series access before the
+-- older binary starts, which happens anyway: the older binary reads no grant):
 --   DELETE FROM account_change WHERE field IN ('series_admin_granted', 'series_admin_revoked', 'series_admin_from_year',
 --     'series_admin_confirmed');
+--   DELETE FROM contest_change WHERE kind IN ('round_juror_stopped', 'round_juror_reopened', 'round_juror_closed');
+--   ALTER TABLE contest_change DROP CONSTRAINT IF EXISTS contest_change_kind_chk,
+--     DROP CONSTRAINT IF EXISTS contest_change_detail_chk, DROP CONSTRAINT IF EXISTS contest_change_subject_chk,
+--     ADD CONSTRAINT contest_change_kind_chk CHECK (kind IN ('created', 'identity', 'series_assigned',
+--     'series_unassigned', 'series_changed', 'split_out', 'split_in', 'split_undone', 'retired', 'unretired')),
+--     ADD CONSTRAINT contest_change_detail_chk CHECK (detail IS NULL OR JSON_VALID(detail)),
+--     ADD CONSTRAINT contest_change_subject_chk CHECK (contest_id IS NOT NULL OR series_id IS NOT NULL);
+--   (all three CHECKs again, in V109's order)
 --   ALTER TABLE account_change DROP CONSTRAINT IF EXISTS account_change_field_chk,
 --     ADD CONSTRAINT account_change_field_chk CHECK (BINARY field IN ('email', 'password', 'role',
 --     'name', 'wiki_account', 'root', 'account_created', 'invitation', 'invitation_cancelled',
