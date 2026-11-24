@@ -43,6 +43,10 @@ class LargeViewNextImageSpec extends Specification {
         (next(Jsoup.parse(large(ratedRound, middle))) must beNone)
     }
 
+    "carry the next file in a round of several criteria too: the same-file reloads find it cached" in {
+      next(Jsoup.parse(large(criteriaRound, middle, sizes = known))) must beSome
+    }
+
     "not preload by a server link" in {
       Jsoup.parse(large(ratedRound, middle, sizes = known)).select("link[rel=preload]").size must_== 0
     }

@@ -831,11 +831,12 @@ test.describe('the large view\'s comments link', () => {
     let stored;
     let serve;
     let held;
-    let requested;
-    // the large image (the view's first file from the upload host; the next file's, which
-    // large-next-image.js loads once the page is up, comes after it), served when the test says
+    let requests = [];
+    // the large image, served when the test says, and the next file's, which large-next-image.js
+    // loads once the page is up: every upload-host request is kept, the large image's is the one in
+    // its srcset (file() below)
     await page.route((u) => u.hostname === 'upload.wikimedia.org', async (route) => {
-      requested ??= route.request().url();
+      requests.push(route.request().url());
       const body = await held;
       await route.fulfill({ status: 200, contentType: 'image/png', body }).catch(() => {});
     });
@@ -844,19 +845,20 @@ test.describe('the large view\'s comments link', () => {
       if (serve) serve(PLACEHOLDER);
       await page.goto('about:blank');
       held = new Promise((resolve) => { serve = resolve; });
-      requested = null;
+      requests = [];
       await page.goto(path, { waitUntil: 'domcontentloaded' });
     };
     // the file the page asked for, `tall` times as tall as the stored proportions make it: as wide as
     // its srcset says (the browser shows it the srcset's width over the sizes' wide)
     const file = async (tall) => {
-      await expect.poll(() => requested, { message: 'the page asked for the file' }).toBeTruthy();
-      const width = await image.evaluate((img, url) => {
-        const candidate = img.srcset.split(/,\s+/).map((c) => c.trim().split(/\s+/))
-          .find(([u]) => new URL(u, location.href).href === url);
-        return candidate ? parseInt(candidate[1], 10) : 0;
-      }, requested);
-      expect(width, `the file asked for is in the srcset: ${requested}`).toBeGreaterThan(0);
+      // the request of the large image: the one whose URL is in its srcset
+      const own = () => image.evaluate((img, urls) => {
+        const set = img.srcset.split(/,\s+/).map((c) => c.trim().split(/\s+/));
+        const hit = urls.find((u) => set.some(([c]) => new URL(c, location.href).href === u));
+        return hit ? { url: hit, width: parseInt(set.find(([c]) => new URL(c, location.href).href === hit)[1], 10) } : null;
+      }, requests);
+      await expect.poll(own, { message: 'the page asked for the file (a request in the large image srcset)' }).toBeTruthy();
+      const { width } = await own();
       return png(width, Math.round(tall * width * stored.height / stored.width), [120, 140, 160]);
     };
     const image = page.locator('#large_image');
