@@ -9,7 +9,7 @@ on:
   # Any base branch: stacked PRs target the PR below them, not master.
   pull_request:
   push:
-    branches: [master, ukwikidev/followups]
+    branches: [master]
   # Weekly on master, with MariaDB 10.11 too (the matrix below)
   schedule:
     - cron: '41 3 * * 1'   # Mondays 03:41 UTC
@@ -52,6 +52,11 @@ jobs:
         working-directory: scripts
         run: python3 -B -m unittest -v test_agent_check
 
+      # The image cache maintenance script on a temporary directory (GNU find and date).
+      - name: local images maintenance tests
+        working-directory: scripts
+        run: python3 -B -m unittest -v test_local_images_maintenance
+
       # The rehearsal's schema parity check (synthetic column dumps). Standard library only.
       - name: schema parity tests
         working-directory: scripts
@@ -61,6 +66,21 @@ jobs:
       - name: browser-stats tests
         working-directory: scripts
         run: python3 -B -m unittest -v test_browser_stats
+
+      # The Pages report's filter: only screenshots stay in a published Allure report (pages.yml)
+      - name: allure-public-filter tests
+        working-directory: scripts
+        run: python3 -B -m unittest -v test_allure_public_filter
+
+      # The Pages badges' SVG (number format, colour thresholds)
+      - name: coverage-badge tests
+        working-directory: scripts
+        run: python3 -B -m unittest -v test_coverage_badge
+
+      # The private-strings checker's rule reading (synthetic rules only). Standard library only.
+      - name: private-strings checker tests
+        working-directory: scripts
+        run: python3 -B -m unittest -v test_check_private_strings
 
       # The support diagnostics CLI (synthetic API answers and log lines). Standard library only.
       - name: wlxjury-diag tests

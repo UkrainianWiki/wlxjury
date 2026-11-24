@@ -11,7 +11,8 @@
         shareable: Set[Long] = Set.empty,
         wikimediaSignIn: Boolean = false,
         usersBar: Option[controllers.UsersFilterBar] = None,
-        commonsLinks: services.CommonsLinks = services.CommonsLinks.default
+        commonsLinks: services.CommonsLinks = services.CommonsLinks.default,
+        seriesAdmins: Seq[String] = Nil
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
     @import helper._
     @import controllers.UsersFilter
@@ -40,7 +41,7 @@
 }
 
     @mainAdmin("users", adminUser, adminUser.getId, contestId = contestOpt.flatMap(_.id), head = pageScripts,
-            filters = usersBar.fold(play.twirl.api.HtmlFormat.empty)(filterMenus), reappearingBar = true) {
+            filters = usersBar.fold(play.twirl.api.HtmlFormat.empty)(filterMenus), stickyBar = true) {
         <div class="row">
 
             @* the page's title: the contest's name, or for all the contests the page's *@
@@ -60,6 +61,11 @@
 
             @for(contest <- contestOpt) {
                 <h1 class="h3">@Messages("contest") @contest.fullName</h1>
+                @* the series admins of the contest's live series (contest series plan §3.3): names only,
+                   no edit control here; root manages them on the series' page *@
+                @if(seriesAdmins.nonEmpty) {
+                    <p class="text-body-secondary" id="users-series-admins">@Messages("users.series.admins", seriesAdmins.mkString(", "))</p>
+                }
 
                 @flash.get("users-added").map { msg =>
                     <div class="alert alert-info">@msg</div>

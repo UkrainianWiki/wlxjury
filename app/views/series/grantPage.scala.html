@@ -1,0 +1,75 @@
+@(
+        user: db.scalikejdbc.User,
+        series: db.scalikejdbc.Series,
+        grantee: db.scalikejdbc.User,
+        fromYear: Int,
+        defaultYear: Int,
+        earliest: Int,
+        latest: Int,
+        reach: Seq[services.series.SeriesAdmins.Reach]
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@* "Add a series admin" (contest series plan §3.3, CA19, CA20; SeriesController.grantPage): the
+   account, the start year pre-filled with the default and editable within the granter's bounds
+   ("Show for this year" shows the list again for another year, a GET: no script), the series' live
+   contests with what the grant gives in each from that year (derived Admin with account reach,
+   derived Organizer below it, the real Admin rows the account holds), the contests where it holds a
+   Juror row (the series doesn't apply there, CA7), and the note on account reach (CA17). The grant
+   is a POST with the CSRF token; SeriesAdmins.grant checks everything again *@
+@mainAdmin("series.admin.add", user, user.getId) {
+    <nav aria-label="@Messages("series.breadcrumb")"><ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="@routes.SeriesController.seriesHome(series.id)">@Messages("series.of", series.name)</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@Messages("series.admin.add")</li>
+    </ol></nav>
+    <h1 class="h3" id="series-grant-heading">@Messages("series.admin.add.of", grantee.fullname, series.name)</h1>
+    <p id="series-grant-account">@grantee.fullname @grantee.wikiAccount.fold("")(w => s"(User:$w)") <span class="text-body-secondary">#@grantee.getId</span></p>
+
+    <form method="get" action="@routes.SeriesController.grantPage(series.id)" id="series-grant-year" class="row g-2 align-items-end">
+        <input type="hidden" name="account" value="@grantee.getId">
+        <div class="col-md-3">
+            <label class="form-label" for="series-grant-year-input">@Messages("series.admin.start.year")</label>
+            <input type="number" class="form-control" id="series-grant-year-input" name="fromYear" value="@fromYear" min="@earliest" max="@latest" required aria-describedby="series-grant-year-help">
+        </div>
+        <div class="col-md-3"><button type="submit" class="btn btn-outline-secondary">@Messages("series.admin.start.year.show")</button></div>
+        <div class="form-text" id="series-grant-year-help">@Messages("series.admin.start.year.help", defaultYear, earliest, latest)</div>
+    </form>
+
+    <h2 class="h4 mt-4">@Messages("series.admin.reach")</h2>
+    <p class="text-body-secondary" id="series-grant-reach-note">@Messages("series.admin.reach.note", fromYear)</p>
+    <div class="table-responsive">
+    <table class="table table-striped table-sm" id="series-grant-reach">
+        <caption class="visually-hidden">@Messages("series.admin.reach")</caption>
+        <thead>
+            <tr>
+                <th scope="col">@Messages("year")</th>
+                <th scope="col">@Messages("contest")</th>
+                <th scope="col">@Messages("series.admin.reach.role")</th>
+            </tr>
+        </thead>
+        <tbody>
+            @for(r <- reach) {
+                <tr class="series-grant-contest" data-contest="@r.contest.getId" data-admin="@r.admin">
+                    <td>@r.contest.year</td>
+                    <td>@r.contest.fullName</td>
+                    <td>@if(r.juror) {
+                            @Messages("series.admin.reach.juror")
+                        } else {
+                            @Messages(if (r.admin) "series.admin.reach.admin" else "series.admin.reach.organizer")
+                            @if(r.realAdmin) {<span class="text-body-secondary">(@Messages("series.admin.reach.real.admin"))</span>}
+                        }</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    </div>
+
+    <form method="post" action="@routes.SeriesController.grant(series.id)" id="series-grant" class="row g-2 align-items-end" data-submit-once="true">
+        @csrfField()
+        <input type="hidden" name="account" value="@grantee.getId">
+        <input type="hidden" name="fromYear" value="@fromYear">
+        <div class="col-md-6">
+            <label class="form-label" for="series-grant-comment">@Messages("series.comment")</label>
+            <input type="text" class="form-control" id="series-grant-comment" name="comment" maxlength="500">
+        </div>
+        <div class="col-md-4"><button type="submit" class="btn btn-primary">@Messages("series.admin.grant.button", fromYear)</button></div>
+    </form>
+}

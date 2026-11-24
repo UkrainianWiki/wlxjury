@@ -1,8 +1,8 @@
 -- Splitting reused contests (docs/plans/2026-11-18-contest-series.md §4.4–§4.6; PR CY-4; CA9–CA13 and
 -- CA23 decided by the maintainer 2026-11-20): root confirms one contest's plan (its clusters of rounds
 -- to move into contests of the right series and year), and a contest_split job runs it
--- (services.series.ContestSplit, ContestSplitHandler). Planned as V112 (V111 for CY-2's series_admin);
--- CY-4 merges first, so it took the next free number.
+-- (services.series.ContestSplit, ContestSplitHandler). Built as V111 before CY-2's V112 (series_admin)
+-- merged; renumbered to V113, above master's top (Flyway never takes a lower version after a higher one).
 --
 --  * contest_split: one confirmation of root's. contest_id: the source contest; job_id: its job; plan:
 --    what root confirmed (JSON: per move the target series and year, the contest to create or the
@@ -63,9 +63,9 @@ CREATE TABLE IF NOT EXISTS contest_split_item (
   CONSTRAINT contest_split_item_new_chk CHECK (new_value IS NULL OR JSON_VALID(new_value))
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci;
 
--- A pre-V111 binary runs on this schema: it reads neither table (the moved rounds stay where the
+-- A pre-V113 binary runs on this schema: it reads neither table (the moved rounds stay where the
 -- splits put them; their old contest-qualified links no longer redirect). Undo, after reopen (the
 -- record of the splits is lost, so Undo them first if they may be needed):
 --   DROP TABLE IF EXISTS contest_split_item;
 --   DROP TABLE IF EXISTS contest_split;
---   DELETE FROM flyway_schema_history WHERE version = '111';
+--   DELETE FROM flyway_schema_history WHERE version = '113';

@@ -29,7 +29,7 @@ class MonumentController @Inject() (
     with I18nSupport {
 
   /** Find a monument by its id: the monument's page, or the form again saying there is none. */
-  def list(id: Option[String]): EssentialAction = withAuth() { user => implicit request =>
+  def list(id: Option[String]): EssentialAction = withAuth(rolePermission(Secured.ViewerRoles, derived = true)) { user => implicit request =>
     id.map(_.trim).filter(_.nonEmpty) match {
       case Some(i) if MonumentJdbc.find(i).isDefined => Redirect(routes.MonumentController.byId(i))
       case Some(i)                                    => NotFound(views.html.monumentSearch(user, Some(i)))
@@ -41,7 +41,7 @@ class MonumentController @Inject() (
     * them. An unknown monument is a 404.
     */
   def byId(id: String, contest: Option[Long], round: Option[Long]): EssentialAction =
-    withAuthOn(blocking)() { user => implicit request =>
+    withAuthOn(blocking)(rolePermission(Secured.ViewerRoles, derived = true)) { user => implicit request =>
       MonumentJdbc.find(id).fold(NotFound(views.html.errorPage(Some(user), "error.title", "error.monument.not.found"))) {
         monument => Ok(views.html.monument(user, MonumentPage(monument, MonumentController.context(user, monument.id,
           contest, round, galleryService))))
@@ -85,7 +85,8 @@ object MonumentController {
       val files = Option.when(member.canViewContestFiles(cid))(
         contest.categoryId.map(ImageJdbc.categoryMonumentFiles(_, monumentId).size)).flatten
       val inRound = round.filter(galleryService.mayViewRound(member, _)).map { r =>
-        val own = !member.canViewOrgInfo(r)
+        // a juror of the round sees only their own votes (the conflict-of-interest rule)
+        val own = !GalleryService.othersVotesVisible(member, r)
         val list = (if (own) RoundList.landing(r, member) else RoundList(r, 0)).withMonument(Some(monumentId))
         MonumentPage.InRound(r, ImageJdbc.roundMonumentFileCount(r.getId, monumentId, Option.when(own)(member.getId)),
           own, list.pageUrl(1))

@@ -973,47 +973,121 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
-  /** V111's rollback SQL after reopen (the script's last comment): the split tables dropped. */
-  private val v111Rollback = Seq(
+  /** V112's rollback SQL after reopen (the script's last comment): the series fields' log rows, the
+    * rounds' juror entries and the grants go, the CHECKs as V107 and V109 left them.
+    */
+  private val v112Rollback = Seq(
+    "DELETE FROM account_change WHERE field IN ('series_admin_granted', 'series_admin_revoked', 'series_admin_from_year', " +
+      "'series_admin_confirmed')",
+    "DELETE FROM contest_change WHERE kind IN ('round_juror_stopped', 'round_juror_reopened', 'round_juror_closed')",
+    "ALTER TABLE contest_change DROP CONSTRAINT IF EXISTS contest_change_kind_chk, " +
+      "DROP CONSTRAINT IF EXISTS contest_change_detail_chk, DROP CONSTRAINT IF EXISTS contest_change_subject_chk, " +
+      "ADD CONSTRAINT contest_change_kind_chk CHECK (kind IN ('created', 'identity', 'series_assigned', 'series_unassigned', " +
+      "'series_changed', 'split_out', 'split_in', 'split_undone', 'retired', 'unretired')), " +
+      "ADD CONSTRAINT contest_change_detail_chk CHECK (detail IS NULL OR JSON_VALID(detail)), " +
+      "ADD CONSTRAINT contest_change_subject_chk CHECK (contest_id IS NOT NULL OR series_id IS NOT NULL)",
+    "ALTER TABLE account_change DROP CONSTRAINT IF EXISTS account_change_field_chk, ADD CONSTRAINT account_change_field_chk " +
+      "CHECK (BINARY field IN ('email', 'password', 'role', 'name', 'wiki_account', 'root', 'account_created', 'invitation', " +
+      "'invitation_cancelled', 'password_link', 'share_link', 'sessions_ended', 'account_joined', 'account_retired'))",
+    "DROP TABLE IF EXISTS series_admin",
+    "DELETE FROM flyway_schema_history WHERE version = '112'")
+
+  "V112's series admins" should {
+    "run after V110, keep one live grant per account and series, take the series fields and the " +
+      "rounds' juror kinds, rerun, roll back" in {
+      emptyDb("fw_v112_prev")
+      flyway("fw_v112_prev", production.copy(target = Some("110"))).migrate()
+      emptyDb("fw_v112")
+      flyway("fw_v112", production.copy(target = Some("110"))).migrate().success must beTrue
+      Using.resource(connect("fw_v112"))(c => run(c, Seq(
+        "INSERT INTO users (id, fullname, email) VALUES (1, 'A', 'a@example.com'), (2, 'B', 'b@example.com')",
+        "INSERT INTO series (id, name) VALUES (1, 'Wiki Loves Monuments in Nepal')",
+        "INSERT INTO account_change (user_id, actor_id, field) VALUES (1, 2, 'account_retired')")))
+      flyway("fw_v112", production.copy(target = Some("112"))).migrate().success must beTrue
+      val once = schema("fw_v112")
+      def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+      def refused(sql: String): Boolean = Using.resource(connect("fw_v112"))(c => scala.util.Try(run(c, Seq(sql))).isFailure)
+      def grant(user: Int) =
+        s"INSERT INTO series_admin (series_id, user_id, admin_from_year, granted_by) VALUES (1, $user, 2025, 2)"
+      val firstTaken = !refused(grant(1))
+      // a second live grant of the account on the series: the key; once revoked, a new one fits
+      val secondRefused = refused(grant(1))
+      Using.resource(connect("fw_v112"))(c => run(c, Seq("UPDATE series_admin SET revoked_at = NOW(3) WHERE user_id = 1")))
+      val regranted = !refused(grant(1))
+      val fields = Seq("series_admin_granted", "series_admin_revoked", "series_admin_from_year", "series_admin_confirmed")
+        .map(f => !refused(s"INSERT INTO account_change (user_id, actor_id, field, comment) VALUES (1, 2, '$f', 'series #1')"))
+      val kinds = Seq("round_juror_stopped", "round_juror_reopened", "round_juror_closed", "series_assigned")
+        .map(k => !refused(s"INSERT INTO contest_change (series_id, actor_id, kind, detail) VALUES (1, 2, '$k', '{\"round\":1}')"))
+      (history("fw_v112").map(_.split(" \\| ")(1)) === upTo("112")) and
+        (history("fw_v112").map(_.split(" \\| ")(1)) must not(contain("111"))) and
+        (firstTaken must beTrue) and (secondRefused must beTrue) and (regranted must beTrue) and
+        (fields === Seq(true, true, true, true)) and
+        // V109's kinds kept; the new ones in this case only
+        (kinds === Seq(true, true, true, true)) and
+        (refused("INSERT INTO contest_change (series_id, actor_id, kind) VALUES (1, 2, 'Round_juror_stopped')") must beTrue) and
+        // V107's field kept; another value, or another case, refused
+        (refused("INSERT INTO account_change (user_id, actor_id, field) VALUES (1, 2, 'account_retired')") must beFalse) and
+        (refused("INSERT INTO account_change (user_id, actor_id, field) VALUES (1, 2, 'Series_admin_granted')") must beTrue) and
+        // a series with grants can't be deleted
+        (refused("DELETE FROM series WHERE id = 1") must beTrue) and {
+          Using.resource(connect("fw_v112"))(c => run(c, Seq(
+            "DELETE FROM account_change WHERE field LIKE 'series_admin%'", "DELETE FROM series_admin",
+            "ALTER TABLE series_admin AUTO_INCREMENT = 1", "DELETE FROM contest_change",
+            "ALTER TABLE contest_change AUTO_INCREMENT = 1")))
+          val reset = schema("fw_v112")
+          Using.resource(connect("fw_v112"))(c => run(c, statements("V112__Series_admin.sql")))
+          schema("fw_v112") === reset
+        } and {
+          Using.resource(connect("fw_v112"))(c => run(c, v112Rollback))
+          (history("fw_v112").map(_.split(" \\| ")(1)) === upTo("110")) and
+            (tablesOnly(schema("fw_v112")) === tablesOnly(schema("fw_v112_prev"))) and
+            (flyway("fw_v112", production.copy(target = Some("112"))).migrate().success must beTrue) and
+            (tablesOnly(schema("fw_v112")) === tablesOnly(once))
+        }
+    }
+  }
+
+  /** V113's rollback SQL after reopen (the script's last comment): the split tables dropped. */
+  private val v113Rollback = Seq(
     "DROP TABLE IF EXISTS contest_split_item",
     "DROP TABLE IF EXISTS contest_split",
-    "DELETE FROM flyway_schema_history WHERE version = '111'")
+    "DELETE FROM flyway_schema_history WHERE version = '113'")
 
-  "V111's contest split" should {
+  "V113's contest split" should {
     "take a split and its items, refuse unknown kinds and invalid JSON, cascade items, rerun, and roll back" in {
-      emptyDb("fw_v111_prev")
-      flyway("fw_v111_prev", production.copy(target = Some("110"))).migrate()
-      emptyDb("fw_v111")
-      flyway("fw_v111", production.copy(target = Some("110"))).migrate().success must beTrue
-      flyway("fw_v111", production.copy(target = Some("111"))).migrate().success must beTrue
-      val once = schema("fw_v111")
+      emptyDb("fw_v113_prev")
+      flyway("fw_v113_prev", production.copy(target = Some("112"))).migrate()
+      emptyDb("fw_v113")
+      flyway("fw_v113", production.copy(target = Some("112"))).migrate().success must beTrue
+      flyway("fw_v113", production.copy(target = Some("113"))).migrate().success must beTrue
+      val once = schema("fw_v113")
       def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
-      def refused(sql: String): Boolean = Using.resource(connect("fw_v111"))(c => scala.util.Try(run(c, Seq(sql))).isFailure)
-      Using.resource(connect("fw_v111"))(c => run(c, Seq(
+      def refused(sql: String): Boolean = Using.resource(connect("fw_v113"))(c => scala.util.Try(run(c, Seq(sql))).isFailure)
+      Using.resource(connect("fw_v113"))(c => run(c, Seq(
         s"INSERT INTO contest_split (id, contest_id, plan, plan_hash, created_by) VALUES (1, 466, '{\"moves\":[]}', '${"a" * 64}', 9)",
         "INSERT INTO contest_split_item (split_id, move_index, kind, subject_id, contest_id, old_value, new_value) " +
           "VALUES (1, 1, 'round', 1900, 631, '{\"contestId\":466}', '{\"contestId\":631}')")))
-      val items = Using.resource(connect("fw_v111"))(c => rows(c, "SELECT kind, subject_id FROM contest_split_item")(rs =>
+      val items = Using.resource(connect("fw_v113"))(c => rows(c, "SELECT kind, subject_id FROM contest_split_item")(rs =>
         rs.getString(1) -> rs.getLong(2)))
-      (history("fw_v111").map(_.split(" \\| ")(1)) === upTo("111")) and (items === List("round" -> 1900L)) and
+      (history("fw_v113").map(_.split(" \\| ")(1)) === upTo("113")) and (items === List("round" -> 1900L)) and
         // kinds byte for byte, JSON only, every item of a split
         (refused("INSERT INTO contest_split_item (split_id, move_index, kind) VALUES (1, 1, 'Round')") must beTrue) and
         (refused("INSERT INTO contest_split_item (split_id, move_index, kind, old_value) VALUES (1, 1, 'round', 'x')") must beTrue) and
         (refused("INSERT INTO contest_split_item (split_id, move_index, kind) VALUES (2, 1, 'round')") must beTrue) and
         (refused(s"INSERT INTO contest_split (contest_id, plan, plan_hash, created_by) VALUES (1, 'x', '${"b" * 64}', 9)") must beTrue) and {
-          Using.resource(connect("fw_v111"))(c => run(c, Seq("DELETE FROM contest_split")))
-          val left = Using.resource(connect("fw_v111"))(c => rows(c, "SELECT COUNT(*) FROM contest_split_item")(_.getLong(1)))
-          Using.resource(connect("fw_v111"))(c => run(c, Seq("ALTER TABLE contest_split AUTO_INCREMENT = 1",
+          Using.resource(connect("fw_v113"))(c => run(c, Seq("DELETE FROM contest_split")))
+          val left = Using.resource(connect("fw_v113"))(c => rows(c, "SELECT COUNT(*) FROM contest_split_item")(_.getLong(1)))
+          Using.resource(connect("fw_v113"))(c => run(c, Seq("ALTER TABLE contest_split AUTO_INCREMENT = 1",
             "ALTER TABLE contest_split_item AUTO_INCREMENT = 1")))
-          val reset = schema("fw_v111")
-          Using.resource(connect("fw_v111"))(c => run(c, statements("V111__Contest_split.sql")))
-          (left === List(0L)) and (schema("fw_v111") === reset)
+          val reset = schema("fw_v113")
+          Using.resource(connect("fw_v113"))(c => run(c, statements("V113__Contest_split.sql")))
+          (left === List(0L)) and (schema("fw_v113") === reset)
         } and {
-          Using.resource(connect("fw_v111"))(c => run(c, v111Rollback))
-          (history("fw_v111").map(_.split(" \\| ")(1)) === upTo("110")) and
-            (tablesOnly(schema("fw_v111")) === tablesOnly(schema("fw_v111_prev"))) and
-            (flyway("fw_v111", production.copy(target = Some("111"))).migrate().success must beTrue) and
-            (tablesOnly(schema("fw_v111")) === tablesOnly(once))
+          Using.resource(connect("fw_v113"))(c => run(c, v113Rollback))
+          (history("fw_v113").map(_.split(" \\| ")(1)) === upTo("112")) and
+            (tablesOnly(schema("fw_v113")) === tablesOnly(schema("fw_v113_prev"))) and
+            (flyway("fw_v113", production.copy(target = Some("113"))).migrate().success must beTrue) and
+            (tablesOnly(schema("fw_v113")) === tablesOnly(once))
         }
     }
   }

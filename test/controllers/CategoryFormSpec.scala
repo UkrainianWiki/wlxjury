@@ -51,6 +51,20 @@ class CategoryFormSpec extends PlaySpecification {
       }
     }
 
+    "save the plain title of a pasted wiki link" in {
+      val bound = bind("categoryClause" -> "minus", "source" -> "[[:Category:A_b|key]]",
+        "excludeCategory" -> " [[Category:B]] ")
+      bound.hasErrors must beFalse
+      val round = bound.value.get.round
+      (round.category === Some("Category:A b")) and (round.excludeCategory === Some("Category:B"))
+    }
+
+    "give a field error, never an exception, for a title that cannot be one" in {
+      val bound = bind("categoryClause" -> "include", "source" -> "[[[Category:A#B]]]")
+      (bound.hasErrors must beTrue) and
+        (bound.errors("source").map(_.message) === Seq(services.imports.WikiTitle.InvalidKey))
+    }
+
     "reject whitespace-only operands and unsupported operations" in {
       (bind("categoryClause" -> "and", "source" -> "   ", "excludeCategory" -> "B").hasErrors must beTrue) and
         (bind("categoryClause" -> "999", "source" -> "A").hasErrors must beTrue) and

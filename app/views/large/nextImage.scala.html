@@ -1,0 +1,11 @@
+@(next: Option[org.intracer.wmua.Image])
+@* The file after the large view's, for large-next-image.js to load by script once this page is
+   up, so that the next vote's photo comes from the browser cache (measured in
+   docs/performance/2026-11-24-large-view-timing.md, variant S). Its src, srcset and sizes are
+   what that file's own page gives its #large_image (Global.largeImage), as the cache needs.
+   Only a file Wikimedia serves (it has `sizes`): a file through this server (unknown size), a
+   video and a deleted file (the caller passes None) get none, and nothing for the last file.
+   No server <link rel=preload>: Chromium didn't reuse it. *@
+@for(image <- next.filter(_.isImage); large <- Some(controllers.Global.largeImage(image)); sizes <- large.sizes) {
+    <span id="wlx-next-image" hidden data-src="@large.src" data-srcset="@large.srcset" data-sizes="@sizes"></span>
+}

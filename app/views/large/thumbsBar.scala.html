@@ -21,7 +21,9 @@
         <div class="my-1 mx-auto">
             <a href="@list.largeUrl(file.pageId)">
                 @* an image's or a video's thumbnail; a video's with its mark *@
-                <img class="cropped" alt="@if(file.image.isVideo) {@Messages("video"): }@file.title"
+                @* loading/decoding: the strip is long; its box is fixed, width/height keep the image's own size from jumping *@
+                <img class="cropped" loading="lazy" decoding="async" alt="@if(file.image.isVideo) {@Messages("video"): }@file.title"
+                @for((width, height) <- Global.thumbBox(file.image, Global.thumbSizeX, Global.thumbSizeY)) {width="@width" height="@height"}
                 src="@Global.resizeTo(file.image, Global.thumbSizeX, Global.thumbSizeY)"
                 srcset="@Global.srcSet(file.image, Global.thumbSizeX, Global.thumbSizeY)">
                 @if(file.image.isVideo) {@snippets.videoMark()}

@@ -28,7 +28,7 @@ class JobController @Inject() (cc: ControllerComponents, jobs: JobScheduler, blo
     }
 
   def cancel(id: Long): EssentialAction =
-    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
       withJob(user, id, request) { job =>
         jobs.cancelOrRefuse(job.id, user.id) match {
           // what the cancelled job left, if its handler says (a reassign stopped part-way)
@@ -44,7 +44,7 @@ class JobController @Inject() (cc: ControllerComponents, jobs: JobScheduler, blo
     }
 
   def retry(id: Long): EssentialAction =
-    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
       withJob(user, id, request) { job =>
         jobs.retry(job.id, by = user.id) match {
           case Right(_)     => back(request, job)
@@ -73,8 +73,12 @@ class JobController @Inject() (cc: ControllerComponents, jobs: JobScheduler, blo
     if (json) NotFound(Json.obj("error" -> "job not found"))
     else NotFound(views.html.errorPage(Some(user), "error.title", "error.not.found")(cc.messagesApi.preferred(request), request))
 
+  /** Whether the user administers the job's contest by a real Admin row, or by a live series grant
+    * that reaches it for the account rules (CA17): `Secured.inContestReal`, never a merged role
+    * (contest series plan §3.3, account-kind jobs).
+    */
   private def adminOf(user: User, contestId: Option[Long]): Boolean =
-    contestPermission(User.ADMIN_ROLES, contestId)(contestId.fold(user)(Secured.inContest(user, _)))
+    contestPermission(User.ADMIN_ROLES, contestId, accountReach = true)(contestId.fold(user)(Secured.inContestReal(user, _)))
 
   /** Back to the page the button was on (a local path only), else the contest's rounds. */
   private def back(request: Request[AnyContent], job: Job): Result = {

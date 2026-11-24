@@ -32,7 +32,7 @@ class AccountJoinController @Inject() (cc: ControllerComponents, jobs: JobSchedu
   def preview(contestId: Option[Long]): EssentialAction =
     // the builder first in the body (RouteAuthSpec): root without a contest, else its admins and root
     withAuthOn(blocking)(contestId.fold[Secured.DescribedPermission](rolePermission(Set(User.ROOT_ROLE)))(c =>
-      contestPermission(User.ADMIN_ROLES, Some(c)))) { user => implicit request =>
+      accountAdminPermission(Some(c)))) { user => implicit request =>
       val ids = request.queryString.getOrElse("account", Nil).map(_.trim.toLongOption)
       val kept = request.getQueryString("kept").filter(_.trim.nonEmpty).map(_.trim.toLongOption)
       withAccounts(user, contestId, ids, kept) { (contest, accounts, keptId) =>
@@ -46,7 +46,7 @@ class AccountJoinController @Inject() (cc: ControllerComponents, jobs: JobSchedu
     */
   def start(contestId: Option[Long]): EssentialAction =
     withAuthOn(blocking)(contestId.fold[Secured.DescribedPermission](rolePermission(Set(User.ROOT_ROLE)))(c =>
-      contestPermission(User.ADMIN_ROLES, Some(c)))) { user => implicit request =>
+      accountAdminPermission(Some(c)))) { user => implicit request =>
       val form = request.body.asFormUrlEncoded.getOrElse(Map.empty)
       def one(name: String) = form.get(name).flatMap(_.headOption).map(_.trim)
       val keptId = one("kept").flatMap(_.toLongOption)
@@ -71,7 +71,7 @@ class AccountJoinController @Inject() (cc: ControllerComponents, jobs: JobSchedu
     * Retry; for who may manage it (the job's contest's admins under the performer's rule, root).
     */
   def job(jobId: Long): EssentialAction =
-    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
       JobJdbc.findById(jobId).filter(_.kind == db.scalikejdbc.AccountJoinJdbc.Kind) match {
         case Some(job) if mayManage(user, job) =>
           val p = AccountJoinHandler.paramsOf(job)
@@ -100,8 +100,9 @@ class AccountJoinController @Inject() (cc: ControllerComponents, jobs: JobSchedu
     }
 
   private def mayManage(user: User, job: services.jobs.Job): Boolean = {
-    val inJobContest = job.contestId.fold(user)(Secured.inContest(user, _))
-    contestPermission(User.ADMIN_ROLES, job.contestId)(inJobContest) &&
+    // a real Admin row, or a live series grant that reaches the contest (CA17), never a merged role
+    val inJobContest = job.contestId.fold(user)(Secured.inContestReal(user, _))
+    contestPermission(User.ADMIN_ROLES, job.contestId, accountReach = true)(inJobContest) &&
       jobs.handler(job.kind).forall(_.mayManage(job, user))
   }
 

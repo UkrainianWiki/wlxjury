@@ -13,16 +13,15 @@
         roundFilter: Option[RoundsFilterBar] = None,
         filters: Html = Html(""),
         orders: Html = Html(""),
-        reappearingBar: Boolean = false)(content: Html)(implicit messages: Messages, request: RequestHeader)
+        stickyBar: Boolean = false)(content: Html)(implicit messages: Messages, request: RequestHeader)
 @* `title`: a message key, as main's; `head`: the page's own scripts and styles; `roundFilter`: the
    Rounds page's Status, Type and Order menus (navbar.scala.html); `filters`, `orders`: a page's own
-   menus in the navbar's filter and order groups (the contests page's); `reappearingBar`: the
-   navbar sticks to the window's top and hides while the user scrolls down, as main's (a trial:
-   topbar.js), on the lists *@
-@layout(Messages(title), bodyClass = Seq(if (gallery) "gallery" else "", if (reappearingBar) "wlx-topbar-reappears" else "").filter(_.nonEmpty).mkString(" ")) {
+   menus in the navbar's filter and order groups (the contests page's); `stickyBar`: the
+   navbar stays at the window's top from 576 px wide, as main's (topbar.js), on the lists *@
+@layout(Messages(title), bodyClass = Seq(if (gallery) "gallery" else "", if (stickyBar) "wlx-topbar-sticky" else "").filter(_.nonEmpty).mkString(" ")) {
         @* the top bar's menus kept inside a phone's window (menu-fit.js) *@
         <script src="@routes.Assets.versioned("javascripts/menu-fit.js")"></script>
-        @if(reappearingBar) {
+        @if(stickyBar) {
         <script src="@routes.Assets.versioned("javascripts/topbar.js")"></script>
         }
         @head

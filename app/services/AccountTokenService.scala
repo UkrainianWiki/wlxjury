@@ -374,10 +374,15 @@ object AccountTokenService {
   private def mayStillGrant(invitation: AccountToken, contestId: Long)(implicit session: DBSession): Boolean =
     mayGrant(invitation.createdBy, contestId)
 
-  /** Whether the account `senderId` may give a role in the contest now: root, or its admin. */
+  /** Whether the account `senderId` may give a role in the contest now: root, or its admin by a real
+    * row or by a live series grant that reaches the contest (CA17,
+    * [[db.scalikejdbc.SeriesAdminJdbc.seriesAccountContests]]: from the database, so an invitation
+    * issued under a grant is refused once the grant is revoked).
+    */
   private def mayGrant(senderId: Option[Long], contestId: Long)(implicit session: DBSession): Boolean =
     senderId.flatMap(id => User.findById(id)(session)).filter(_.deletedAt.isEmpty).exists { sender =>
-      sender.isRoot || UserContestJdbc.find(sender.getId, contestId).exists(_.role == User.ADMIN_ROLE)
+      sender.isRoot || UserContestJdbc.find(sender.getId, contestId).exists(_.role == User.ADMIN_ROLE) ||
+        db.scalikejdbc.SeriesAdminJdbc.seriesAccountContests(sender.getId).contains(contestId)
     }
 
   /** Confirms an email change: the account's email becomes the link's address, verified, and

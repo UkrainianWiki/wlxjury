@@ -5,7 +5,7 @@ import scalikejdbc._
 
 import java.time.Instant
 
-/** A split of a reused contest (V111, contest series plan §4.4–§4.5; CY-4): root's confirmed plan,
+/** A split of a reused contest (V113, contest series plan §4.4–§4.5; CY-4): root's confirmed plan,
   * its job, and its Undo.
   */
 final case class ContestSplitRow(

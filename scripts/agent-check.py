@@ -51,6 +51,10 @@ FAILURE = re.compile(
     r"^FAIL(?:ED)?\b|^ERROR:|^Traceback \("
 )
 
+# A failed dependency download: the sbt error ends with a "not found" line for a local repository,
+# while the cause (a remote's HTTP 429) is on an earlier "download error" line
+DOWNLOAD = re.compile(r"download error|HTTP response code")
+
 TIMEOUT_EXIT = 124
 LOCK_EXIT = 75
 DEFAULT_TIMEOUT = 1200
@@ -86,6 +90,7 @@ def summarize(text, exit_code=None, max_lines=40, max_chars=6000):
         for i in anchors[:3]:
             indices.update(range(max(0, i - 1), min(len(lines), i + 9)))
         detail = [lines[i] for i in sorted(indices)] if anchors else lines[-20:]
+        detail += [line for line in lines if DOWNLOAD.search(line)][:6]
         selected = detail + selected
     # Application error logs in successful failure-path tests are not test failures.
     if not selected:

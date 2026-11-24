@@ -36,6 +36,9 @@ trait LoginResults { this: Secured with I18nSupport =>
         Redirect(routes.ContestController.list())
       case u if u.hasAnyRole(User.ADMIN_ROLES) =>
         Redirect(routes.UserController.users(u.contestId))
+      case u if Secured.seriesLanding(u).nonEmpty =>
+        // a series admin without a real role here: their series page (contest series plan §3.3)
+        Secured.seriesLanding(u).fold(Redirect(routes.LoginController.index))(id => Redirect(routes.SeriesController.seriesHome(id)))
       case _ =>
         // the reason (not a member, an inactive membership, no role) is derived
         onUnAuthorized(user, request, Secured.denialOf(rolePermission(Secured.ViewerRoles)))
@@ -60,8 +63,10 @@ trait LoginResults { this: Secured with I18nSupport =>
 
   private def startSession(user: User, login: String, returnTo: Option[String], keep: Boolean,
                contestId: Option[Long])(implicit request: RequestHeader): Result = {
-    val latest = Secured.inCurrentContest(user, contestId.map(_.toString))
-    // defensive: inCurrentContest already picks an active membership; kept should its rules change
+    // with the series' reach (contest series plan §3.3): a user with only series reach has no
+    // contest and lands on their series page (indexRedirect)
+    val latest = Secured.withSeries(user, contestId.map(_.toString))
+    // defensive: withSeries already picks an active membership; kept should its rules change
     val inContest = Secured.permitted(latest, _.hasAnyRole(Secured.ViewerRoles)).getOrElse(latest)
     // adds from other admins' search the owner hasn't dismissed in this browser: a bar on every
     // page leads to them (services.AccountNotices)

@@ -6,7 +6,7 @@
 
 Both break the juror gallery today: one thumbnail that fails to load leaves **no** images shown.
 
-Replaces, for now, `2026-10-22-shared-image-store.md` (kept as background only).
+Replaces, for now, the [shared image store investigation](../investigations/2026-10-22-shared-image-store.md) (background only).
 
 ## Why the gallery shows nothing
 

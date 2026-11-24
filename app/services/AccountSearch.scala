@@ -70,7 +70,9 @@ object AccountSearch {
     */
   def administered(actor: User): Option[Seq[Long]] =
     if (isRoot(actor)) None
-    else Some(actor.userContests.filter(m => m.opens && m.roles.contains(User.ADMIN_ROLE)).map(_.contestId).distinct)
+    else Some((actor.userContests.filter(m => m.opens && m.roles.contains(User.ADMIN_ROLE)).map(_.contestId) ++
+      // and the contests the actor's live series grants reach (CA17)
+      db.scalikejdbc.SeriesAdminJdbc.seriesAccountContests(actor.getId)).distinct)
 
   /** `accounts` as `actor` may see them ([[Found]], the search's rule), with their membership of
     * `contestId` if given: the Edit user form's panel of the other accounts with a wiki account
@@ -93,6 +95,8 @@ object AccountSearch {
       else ContestJuryJdbc.findAllBy(scalikejdbc.sqls.in(ContestJuryJdbc.defaultAlias.id, contestIds))
         .flatMap(c => c.id.map(_ -> c)).toMap
     val root = adminOf.isEmpty
+    // series admins are listed like anyone (CA21), but no one but root acts on a protected account
+    val protectedIds = if (root) Set.empty[Long] else User.protectedTargets(rows.map(_._1))
     rows.map { case (account, within) =>
       val own = memberships.getOrElse(account.getId, Nil)
       val member = contestId.flatMap(c => own.find(_.contestId == c)).map(_.roles)
@@ -108,7 +112,7 @@ object AccountSearch {
         contests = own.filter(m => adminOf.forall(_.contains(m.contestId))).sortBy(-_.contestId)
           .map(m => (m.contestId, contests.get(m.contestId), m.roles)),
         member = member,
-        editable = root || member.nonEmpty)
+        editable = root || member.nonEmpty && !protectedIds(account.getId))
     }
   }
 

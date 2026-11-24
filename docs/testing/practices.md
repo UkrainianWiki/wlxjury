@@ -40,7 +40,7 @@ milliseconds; a spec through the router starts an app and truncates tables.
 | Router + CSRF | `CsrfTestApp.withCsrfApp` (the CSRF filter on; the test config has it off) | POSTs with and without the token, `Csrf-Token` headers |
 | Production filters | `security.ProductionFilters.withSharedApp`; `withApp` / `withAppWith` / `OwnApp` for app-level state | CSP, allowed hosts, security headers, `SecurityHeadersSpec`, `LoginCsrfSpec` |
 | Jest | `javascript-test/*.test.js` on `public/javascripts/`, jsdom; `sbt test` runs it (`jsTest`, `npm ci`) | page scripts: votes, keys, menus, pager |
-| Python | `scripts/deployment/test_deployment.py` (68 tests, `python:3.8.20-slim`, `--network none`), `test_database_restore`, `test_release_script` (24, in `Dockerfile.test` against the `sbt dist` ZIP); `scripts/test_agent_check.py` | the deploy and release tools |
+| Python | `scripts/deployment/test_deployment.py` (68 tests, `python:3.8.20-slim`, `--network none`), `test_database_restore`, `test_release_script` (24, in `Dockerfile.test` against the `sbt dist` ZIP); `scripts/test_agent_check.py`, `scripts/test_local_images_maintenance.py` (a temporary cache folder) | the deploy and release tools |
 | Gatling | `test/gatling/`, `sbt gatlingAll` | load and latency: [performance](../performance/practices.md) §1 |
 | Browser | `browser-test/` (Playwright: one current build each of Chromium, Firefox and WebKit) on the `UiShotsServer` fixture: §10 | what only a real engine shows: votes and Back, keys, first frames, CSP and console |
 
@@ -400,8 +400,8 @@ story, and carries no tag.
 
   **What the two columns measure.** The PR column is measured on GitHub's test merge commit of
   the PR into its base (a `pull_request` run checks that out), labelled with the PR's head SHA.
-  The base column comes from the base branch's latest successful Coverage run: for `master` (or
-  `ukwikidev/followups`), a push run on that commit; for a stacked base such as `stack/*`, the
+  The base column comes from the base branch's latest successful Coverage run: for `master`, a
+  push run on that commit; for a stacked base (another PR's branch), the
   lower PR's own `pull_request` run, which measured *its* merge commit into the branch below it.
   So in a stack the change is between two merge commits, not between two branch heads. A run
   without a summary, e.g. of a PR branch whose `coverage.yml` predates this step, is skipped with
@@ -582,9 +582,13 @@ accumulate until `target/browser-test/` is deleted.
   neither sent to `trace.playwright.dev` nor viewable in the report. Download it (or the
   `browser-failures-<engine>-attempt-<n>` artifact) and open it with `npx playwright show-trace`.
 - **CI:** the `report` job merges each engine's latest attempt and uploads
-  `allure-report-attempt-<n>` (14 days). **An artifact only:** GitHub Pages would publish test
-  names, steps and failure screenshots, and is not decided
-  (plan [`2026-11-04-story-coverage.md`](../plans/2026-11-04-story-coverage.md) §4.5).
+  `allure-report-attempt-<n>` (14 days). **Pages:** `pages.yml` (master pushes only) rebuilds the
+  report from the engines' results after `scripts/allure-public-filter.py` has deleted every
+  attachment but the failure screenshots (traces, videos, logs), drops the stack traces, cuts
+  failure messages to their first line, removes the `host` label, checks it with
+  `allure-offline.mjs`, and publishes it with the Scala coverage HTML and an index page. Test
+  names, steps and screenshots are public there; the fixture's data is synthetic or public Commons
+  data (plan [`2026-11-04-story-coverage.md`](../plans/2026-11-04-story-coverage.md) §4.5).
 - **History:** a JSONL file (`historyPath`, the last 30 runs by `historyLimit`) in the Actions
   cache, appended only on pushes to the branches `browser.yml` runs on push, so a PR's report shows
   trends against its base without adding to them. A cache unused for seven days is evicted: the

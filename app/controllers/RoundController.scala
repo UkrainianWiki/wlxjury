@@ -13,7 +13,7 @@ import play.twirl.api.Html
 import services.RoundService
 import services.distribution.{RoundDistributionHandler, RoundFreezes, RoundImageCheckHandler, RoundRebalanceHandler,
   RoundRebalanceService}
-import services.imports.{FileTitles, ImportSource}
+import services.imports.{FileTitles, ImportSource, WikiTitle}
 import services.jobs.JobJdbc
 
 import javax.inject.Inject
@@ -38,7 +38,7 @@ class RoundController @Inject() (
     * @return
     */
   def rounds(contestIdParam: Option[Long] = None): EssentialAction =
-    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, contestIdParam)) { user => implicit request =>
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, contestIdParam, derived = true)) { user => implicit request =>
       val roundsView =
         for (
           contestId <- contestIdParam.orElse(user.currentContest);
@@ -88,7 +88,7 @@ class RoundController @Inject() (
     * @return
     */
   def editRound(roundId: Option[Long], contestId: Long, topImages: Option[Int]): EssentialAction =
-    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, Some(contestId), derived = true)) { user => implicit request =>
       val rounds = Round.findByContest(contestId)
       // a round a split moved out of this contest: its form in the contest it is in now (§4.6)
       val moved = roundId.filterNot(id => rounds.exists(_.id.contains(id)))
@@ -260,7 +260,7 @@ class RoundController @Inject() (
     * "jurors" panel, loaded when the panel is opened.
     */
   def roundStatTable(roundId: Long): EssentialAction =
-    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
       withAdminRound(user, roundId, NotFound(""), request) { round =>
         Ok(views.html.roundStatTable(user, round, roundsService.getRoundStat(roundId, round)))
       }
@@ -305,7 +305,7 @@ class RoundController @Inject() (
   }
 
   def saveRound(): EssentialAction =
-    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
       editRoundForm
         .bindFromRequest()
         .fold(
@@ -564,7 +564,7 @@ class RoundController @Inject() (
     * with `returnTo=conflicts` (the round's conflicts page's "Stop the round"), to that page
     * with a message. `returnTo` is a fixed word, never a path.
     */
-  def setRound(): EssentialAction = withAuth(rolePermission(User.ADMIN_ROLES)) {
+  def setRound(): EssentialAction = withAuth(rolePermission(User.ADMIN_ROLES, derived = true)) {
     user => implicit request =>
       selectRoundForm
         .bindFromRequest()
@@ -600,7 +600,7 @@ class RoundController @Inject() (
     * or the last active juror of an open round stopped (nobody can vote in it).
     */
   def setRoundUser(): EssentialAction =
-    withAuth(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
+    withAuth(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
       setRoundUserForm
         .bindFromRequest()
         .fold(
@@ -634,26 +634,31 @@ class RoundController @Inject() (
 
   /** Sets the images source of `contestIdParam`, else of the user's current contest. */
   def setImages(contestIdParam: Option[Long] = None): EssentialAction =
-    withAuth(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
+    withAuth(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
       contestIdParam.orElse(user.currentContest) match {
         case None => Redirect(routes.ContestController.list())
         case contestId if !contestPermission(User.ADMIN_ROLES, contestId)(user) =>
           onUnAuthorized(user, request, Secured.Denial.contest(contestId, User.ADMIN_ROLES))
         case contestId =>
-          val imagesSource: Option[String] = imagesForm.bindFromRequest().get
-          for (contest <- contestId.flatMap(ContestJuryJdbc.findById)) {
-            // the source only: the contest's files stay those of its imports
-            ContestJuryJdbc.setImagesSource(contest.getId, imagesSource, contest.categoryId)
-          }
-
-          Redirect(routes.RoundController.rounds(contestId))
+          imagesForm.bindFromRequest().fold(
+            // a source that is no title is refused, not saved (nor a 500)
+            _ => Redirect(routes.RoundController.rounds(contestId))
+              .flashing("error" -> messagesApi.preferred(request)(WikiTitle.InvalidKey)),
+            imagesSource => {
+              for (contest <- contestId.flatMap(ContestJuryJdbc.findById)) {
+                // the source only: the contest's files stay those of its imports
+                ContestJuryJdbc.setImagesSource(contest.getId, imagesSource, contest.categoryId)
+              }
+              Redirect(routes.RoundController.rounds(contestId))
+            }
+          )
       }
     }
 
   // the round statistics are organizer views (User.canViewOrgInfo): never a juror's, who gets
   // the 403 page naming the roles at once
   def currentRoundStat(contestId: Option[Long] = None): EssentialAction =
-    withAuth(rolePermission(Set(User.ADMIN_ROLE, "root") ++ User.ORG_COM_ROLES)) {
+    withAuth(rolePermission(Set(User.ADMIN_ROLE, "root") ++ User.ORG_COM_ROLES, derived = true)) {
       sessionUser => implicit request =>
         // the asked-for contest's rounds are checked as a member of it, if an active one
         val user = contestId.fold(sessionUser)(Secured.inContest(sessionUser, _))
@@ -712,7 +717,7 @@ class RoundController @Inject() (
     }
 
   def roundStat(roundId: Long): EssentialAction =
-    withAuthOn(blocking)(rolePermission(Set(User.ADMIN_ROLE, "root") ++ User.ORG_COM_ROLES)) {
+    withAuthOn(blocking)(rolePermission(Set(User.ADMIN_ROLE, "root") ++ User.ORG_COM_ROLES, derived = true)) {
       sessionUser => implicit request =>
         Round
           .findById(roundId)
@@ -727,9 +732,19 @@ class RoundController @Inject() (
               val comments = org.intracer.wmua.CommentJdbc.roundCounts(round.contestId, round.getId)
               // open, but nobody can vote in it: a notice (DG10)
               val noActiveJuror = RoundUser.openWithoutActiveJuror(Seq(round)).nonEmpty
+              // the round stopped, started again or closed by a juror of it (RoundJurorChanges), with
+              // who: for those who see the organiser view, not a juror of the open round
+              val jurorChanges =
+                if (!services.GalleryService.othersVotesVisible(user, round)) Nil
+                else {
+                  val changes = ContestChangeJdbc.findByRound(round.contestId, round.getId, RoundController.JurorChangesShown)
+                  val names = User.findByIds(changes.map(_.actorId).distinct).map(u => u.getId -> u.fullname).toMap
+                  changes.map(c => c -> names.getOrElse(c.actorId, s"#${c.actorId}"))
+                }
 
               Secured.switchingContest(sessionUser, user)(
-                Ok(views.html.roundStat(user, round, stat, comments, RoundsFilter.fromRequest(request), noActiveJuror)))
+                Ok(views.html.roundStat(user, round, stat, comments, RoundsFilter.fromRequest(request), noActiveJuror,
+                  jurorChanges)))
             }
           }
           .getOrElse {
@@ -746,7 +761,7 @@ class RoundController @Inject() (
     * round: JSON 404.
     */
   def roundStatCounts(roundId: Long): EssentialAction =
-    withAuthJsonOn(blocking)() { sessionUser => implicit request =>
+    withAuthJsonOn(blocking)(rolePermission(Secured.ViewerRoles, derived = true)) { sessionUser => implicit request =>
       Round.findById(roundId).fold[Result](NotFound(Json.obj("error" -> "round_not_found"))) { round =>
         val user = Secured.inContest(sessionUser, round.contestId)
         if (!RoundStatLinks.mayView(user, round))
@@ -784,7 +799,7 @@ class RoundController @Inject() (
   ////        Ok(views.html.galleryByRate(user, round, imagesByRate))
   //  })
 
-  val imagesForm = Form("images" -> optional(text))
+  val imagesForm = Form("images" -> services.imports.WikiTitle.optionalMapping)
 
   val selectRoundForm = Form(
     mapping(
@@ -805,6 +820,9 @@ class RoundController @Inject() (
 }
 
 object RoundController {
+
+  /** The statistics page's latest entries of the round stopped, started again or closed by a juror of it. */
+  val JurorChangesShown = 20
 
   /** A rated round's stored criteria if it is started ([[RoundCriterion.started]]: running or
     * with a vote, criterion rates included, as the save checks), for its edit form: its

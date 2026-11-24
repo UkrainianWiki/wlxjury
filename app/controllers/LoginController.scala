@@ -38,7 +38,9 @@ class LoginController @Inject() (
 
   private val accountLogger = Logger("security.account")
 
-  def index: EssentialAction = withAuth() { user => implicit request =>
+  // a series admin with no real role lands on their series page (contest series plan §3.3)
+  def index: EssentialAction = withAuth(Secured.AnyOf(rolePermission(Secured.ViewerRoles), Secured.AnySeries)) {
+      user => implicit request =>
     indexRedirect(user)
   }
 

@@ -131,6 +131,9 @@ Playwright fixture server alike) by prefixing the command with
   `conf/messages.en`, `.fr`, `.uk` and `.ru`, with the same placeholders
   (`MessagesCompletenessSpec` checks it). List the new or changed keys in the PR description:
   the maintainer checks Ukrainian and Russian and asks a French speaker for French.
+- Front-end changes are reviewed with the [UI review checklist](docs/ui/review-checklist.md). If
+  you copy text or code from Modern Web Guidance (CC-BY 4.0 text, Apache-2.0 code), credit it with
+  a source link where it is copied and add a NOTICE entry.
 
 ## Security
 
@@ -153,3 +156,14 @@ recorded by their `release/<version>` branches. A hotfix goes to master first; t
 `release/<version>` branch from the last release's tag (once release tags exist; until then from
 its `release/<version>` branch) gets the fix with `git cherry-pick -x`, and the hotfix is built
 and tagged there. Details: [workflow practices](docs/workflow/practices.md) §7.
+
+### Changelog entries
+
+Add one short line per user-visible change to `CHANGELOG.md` under "Unreleased", grouped as
+**Features**, **Fixes**, **Security** or **Operations** (deploy, infrastructure and tooling that
+admins or operators notice; a release's migrations go on one line, "Migrations: V108, V109.").
+Keep it to a few words in plain language for what a juror, organizer, admin or operator notices
+("Sticky top bar on desktop."). No class names, file paths, SQL, spec names, decision ids or
+measurements, and no step-by-step behaviour: that belongs in the PR and the git history. Merge
+micro-changes into one line, leave out refactors, tests-only, docs-only and CI changes, and cite
+only PRs of this repository, as `(#123)`.

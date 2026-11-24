@@ -27,8 +27,9 @@ final case class ContestChange(
     createdAt: Instant
 )
 
-/** The `contest_change` table (V109). History for root to read; no rule reads it except "Undo
-  * batch", which reverses a batch's assignments. Times from the database clock.
+/** The `contest_change` table (V109). History for root to read, and a round's entries on its
+  * statistics page; no rule reads it except "Undo batch", which reverses a batch's assignments.
+  * Times from the database clock.
   */
 object ContestChangeJdbc {
 
@@ -42,10 +43,22 @@ object ContestChangeJdbc {
   val SplitUndone = "split_undone"
   val Retired = "retired"
   val Unretired = "unretired"
+  /** A round stopped by an account that judges it ([[RoundJurorChanges]], V112). */
+  val RoundJurorStopped = "round_juror_stopped"
+  /** A round started again by an account that judges it. */
+  val RoundJurorReopened = "round_juror_reopened"
+  /** A round closed by creating the next round, by an account that judges it. */
+  val RoundJurorClosed = "round_juror_closed"
 
-  /** The kinds the check allows (V109); the split kinds are written by CY-4 only. */
-  val Kinds: Seq[String] =
+  /** The kinds about a contest or a series (V109); the split kinds are written by CY-4 only. */
+  val ContestKinds: Seq[String] =
     Seq(Created, Identity, SeriesAssigned, SeriesUnassigned, SeriesChanged, SplitOut, SplitIn, SplitUndone, Retired, Unretired)
+
+  /** The kinds about a round of the contest (V112): its detail's `round` names it. */
+  val RoundKinds: Seq[String] = Seq(RoundJurorStopped, RoundJurorReopened, RoundJurorClosed)
+
+  /** The kinds the check allows. */
+  val Kinds: Seq[String] = ContestKinds ++ RoundKinds
 
   val CommentMaxLength = 500
 
@@ -100,12 +113,21 @@ object ContestChangeJdbc {
   def findByBatch(batchId: Long)(implicit session: DBSession = AutoSession): Seq[ContestChange] =
     sql"SELECT $columns FROM contest_change WHERE batch_id = $batchId ORDER BY id".map(extract).list.apply()
 
-  /** The latest change of each of the contests (its id), for an undo to tell what changed since. */
+  /** A round's entries ([[RoundKinds]]), the newest first, at most `limit`: its statistics page. */
+  def findByRound(contestId: Long, roundId: Long, limit: Int)(implicit session: DBSession = AutoSession): Seq[ContestChange] =
+    sql"""SELECT $columns FROM contest_change WHERE contest_id = $contestId AND kind IN ($RoundKinds)
+          AND CAST(JSON_VALUE(detail, '$$.round') AS UNSIGNED) = $roundId ORDER BY id DESC LIMIT $limit"""
+      .map(extract).list.apply()
+
+  /** The latest change of each of the contests (its id), of the contest's own kinds (not its
+    * rounds'), for an undo to tell what changed since.
+    */
   def latestOf(contestIds: Seq[Long])(implicit session: DBSession = AutoSession): Map[Long, ContestChange] =
     if (contestIds.isEmpty) Map.empty
     else
       sql"""SELECT $columns FROM contest_change WHERE id IN (
-              SELECT MAX(id) FROM contest_change WHERE contest_id IN (${contestIds.distinct}) GROUP BY contest_id)"""
+              SELECT MAX(id) FROM contest_change WHERE contest_id IN (${contestIds.distinct}) AND kind IN ($ContestKinds)
+              GROUP BY contest_id)"""
         .map(extract).list.apply().flatMap(c => c.contestId.map(_ -> c)).toMap
 
   /** A bulk assignment: its id, who confirmed it and when, how many contests it assigned, and the

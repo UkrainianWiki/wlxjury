@@ -11,7 +11,7 @@ name: Browser tests
 on:
   pull_request:
   push:
-    branches: [master, ukwikidev/followups]
+    branches: [master]
   workflow_dispatch:
 
 permissions:
@@ -194,10 +194,10 @@ jobs:
 
   # The three engines' results merged into one Allure report (testing practices §10.10): a test per
   # engine (its "Project" parameter), grouped by the stories its tags name. One HTML file that
-  # opens offline, uploaded as an artifact only (GitHub Pages is not decided: plan
-  # 2026-11-04-story-coverage.md §4.5). Advisory: its failure fails no engine's job. History: a
-  # JSONL file in the Actions cache, appended only on pushes (master and ukwikidev/followups, the
-  # push triggers above); a PR's report reads its base's.
+  # opens offline, uploaded as an artifact (pages.yml publishes a screenshots-only
+  # rebuild of it on GitHub Pages; plan 2026-11-04-story-coverage.md §4.5). Advisory: its failure fails no engine's job. History: a
+  # JSONL file in the Actions cache, appended only on pushes (master, the push trigger above); a
+  # PR's report reads its base's.
   report:
     name: Allure report
     needs: browser

@@ -34,7 +34,8 @@ object ImportSource {
     */
   final case class PageFiles(title: String) extends ImportSource
 
-  def apply(source: String): ImportSource = {
+  def apply(raw: String): ImportSource = {
+    val source = WikiTitle.normalize(raw)
     val lower = source.toLowerCase
     if (lower.startsWith("category:")) Category(source)
     else if (lower.startsWith("template:")) Template(source)
@@ -197,6 +198,9 @@ class MwCommonsSource @Inject() (bot: MwBot, login: CommonsLogin) extends Common
   def maxIdsPerRequest: Int = login.idsPerRequest
 
   def listFiles(source: ImportSource, cursor: JsObject, limit: Int): FilePage = {
+    // an illegal title makes the API answer an error that scalawiki fails to read (`JsError.get`): refused here
+    if (!WikiTitle.isLegal(source.title))
+      throw MwException("invalidtitle", s"Not a title: ${controllers.Secured.logValue(source.title)}")
     val (module, generatorTitle, pageTitle) = source match {
       case ImportSource.Category(t)  => ("categorymembers", Some(t), None)
       case ImportSource.Template(t)  => ("embeddedin", Some(t), None)

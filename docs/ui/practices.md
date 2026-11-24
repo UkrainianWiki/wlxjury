@@ -87,21 +87,17 @@ New forms use them, not hand-written markup.
 pager's page box, the round form's dependent fields, the large view's keys and failed or deleted
 thumbnails still work after any restyling; the screenshots (§5) and the specs show it.
 
-**3.6 The reappearing top bar (a trial, 2026-11-20).** A gallery or list page opts in with
-`reappearingBar = true` on `main` or `mainAdmin` (the body class `wlx-topbar-reappears`; on now:
-the galleries, by-rate, file list, comments report, contest files, Rounds, round statistics,
-Contests, Users). Its navbar is sticky and `topbar.js` hides it (`wlx-topbar-hidden`, a transform;
-no transition under `prefers-reduced-motion`) on a scroll down, and shows it on a scroll up, at the
-top, under an open menu, on focus, and after `file-anchor.js` scrolled to a file (until the user's
-next wheel, key, tap or click). Not in the large views, nor on forms. `topbar.js` keeps the bar's
-height in `--wlx-topbar-height` on the root, which is the root's `scroll-padding-top`: a focused
-element, a fragment's target or a found text lands below the bar, also once it comes back (WCAG
-2.4.11). Something else sticky at the top of such a page must sit below the bar (`top:
-var(--wlx-topbar-height)`) and follow `wlx-topbar-hidden` (move up with it when the bar hides),
-or accept a gap above it while the bar is hidden; there is none yet. A menu in the bar fits the
-window and scrolls inside itself (main.css). *Why:* the bar's menus
-within reach on long pages without taking the screen; a trial, kept or dropped by what users say
-(`topbar.test.js`, `topbar.spec.js`).
+**3.6 The sticky top bar (2026-11-23).** A gallery or list page opts in with `stickyBar = true`
+on `main` or `mainAdmin` (the body class `wlx-topbar-sticky`; on now: the galleries, by-rate, file
+list, comments report, contest files, Rounds, round statistics, Contests, Users). From 576 px wide
+its navbar is `position: sticky; top: 0` and never hides, as MediaWiki's Vector 2022 header; below
+576 px (a phone, the bar wraps to about 200 px) it scrolls away with the page. Not in the large
+views, nor on forms. `topbar.js` only keeps the bar's height in `--wlx-topbar-height` on the root,
+which is the root's `scroll-padding-top` from 576 px: a focused element, a fragment's target or
+Back to gallery's file lands below the bar (WCAG 2.4.11). Something else sticky at the top of such
+a page must sit below the bar (`top: var(--wlx-topbar-height)`). A menu in the bar stays above the
+content (z-index), fits the window and scrolls inside itself (main.css). *Why:* the bar's menus
+within reach on long pages (`topbar.test.js`, `topbar.spec.js`).
 
 ## 4. Accessibility and the keyboard
 
@@ -117,7 +113,7 @@ page shows none (a gallery, the large view) (`HeadingsViewSpec`).
 reads its paths from `#large-keys`' `data-vote-key-*` and `data-key-*`: Space/Del to select or
 reject, digits to rate; Up/Down, Page Up/Down, Home/End and Esc to move); each vote posts to a
 path on this host, never an `http://` URL. *Why:* `Call.absoluteURL` behind the HTTPS proxy
-redirected the POST to a GET and lost the vote (`views.LargeViewControllerSpec` guards it). Back after a vote shows the stored vote (pages are `no-store`; `ui_checks.py`).
+redirected the POST to a GET and lost the vote (`views.LargeViewControllerSpec` guards it). Back after a vote shows the stored vote (pages are `no-store`; `ui_checks.py`). Decision (the maintainer, 2026-11-24): keep `no-store`; the back/forward cache stays off for the vote pages.
 
 ## 5. The screenshot harness
 

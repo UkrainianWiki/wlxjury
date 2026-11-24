@@ -3,7 +3,8 @@
 For a change made for speed or memory, a change to a hot path (galleries, the large view, votes,
 round creation, imports, the image proxy), a new cache, chunk, pool or dispatcher, and every
 performance claim in a plan or PR. Each line points to [practices.md](practices.md); query-level
-items are in [the DB checklist](../db/review-checklist.md) "Performance".
+items are in [the DB checklist](../db/review-checklist.md) "Performance". Front-end items (lazy images,
+sizes, `fetchpriority`, CSP, accessibility) are in [the UI checklist](../ui/review-checklist.md).
 
 ## Measuring
 

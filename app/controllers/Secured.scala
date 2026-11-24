@@ -1,7 +1,7 @@
 package controllers
 
 import controllers.Secured.{CurrentContestId, UserName}
-import db.scalikejdbc.{ContestJuryJdbc, Round, User, UserContest, UserContestJdbc}
+import db.scalikejdbc.{ContestJuryJdbc, Round, SeriesAdminJdbc, User, UserContest, UserContestJdbc}
 import org.intracer.wmua.ContestJury
 import modules.RequestTiming
 import play.api.Logging
@@ -68,7 +68,10 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
         reference,
         Secured.referenceTime(),
         notice,
-        back.flatMap(url => Secured.safeLocalPath(Some(url)))
+        back.flatMap(url => Secured.safeLocalPath(Some(url))),
+        // a series admin's series, named (a help, not the page: none on a database error)
+        Secured.orOnFailure[Seq[(String, Option[String])]]("denial_series_unavailable", user, reference, Nil)(
+          Secured.seriesDenial(user, denial))
       )(request.flash, messages, request)
     )
   }
@@ -154,6 +157,10 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
         }
       }
     }.nextOption()
+      // a series admin: their series page (contest series plan §3.3, "Menu and hints")
+      .orElse(Secured.seriesLanding(user).map(id =>
+        Secured.AccessSuggestion(routes.SeriesController.seriesHome(id).url, "access.denied.suggested.series", None, None,
+          Seq.empty)))
   }
 
   def withAuth(
@@ -256,15 +263,31 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
   private def checked(user: User, permission: Permission): Either[Secured.Denial, User] =
     Secured.checked(user, permission)
 
-  def rolePermission(roles: Set[String]): Secured.RolePermission = Secured.RolePermission(roles)
+  /** One of `roles` in the user's contest; `derived = true` lets a series grant's derived role count
+    * ([[Secured.RolePermission]]).
+    */
+  def rolePermission(roles: Set[String], derived: Boolean = false): Secured.RolePermission =
+    Secured.RolePermission(roles, derived)
 
   def isRoot(user: User): Boolean = rolePermission(Set(User.ROOT_ROLE))(user)
 
-  def contestPermission(roles: Set[String], contestId: Option[Long]): Secured.ContestPermission =
-    Secured.ContestPermission(roles, contestId)
+  /** Root, or one of `roles` in the contest by a real membership only, unless the action opts in
+    * (contest series plan §3.3): `derived = true`, a series grant's derived role counts (the guard
+    * spec lists every such action); `accountReach = true`, a contest the user's grants reach for the
+    * account rules counts as a real Admin row (CA17).
+    */
+  def contestPermission(roles: Set[String], contestId: Option[Long], derived: Boolean = false,
+      accountReach: Boolean = false): Secured.ContestPermission =
+    Secured.ContestPermission(roles, contestId, derived, accountReach)
 
-  def roundPermission(roles: Set[String], roundId: Long): Secured.RoundPermission =
-    Secured.RoundPermission(roles, roundId)
+  def roundPermission(roles: Set[String], roundId: Long, derived: Boolean = false): Secured.RoundPermission =
+    Secured.RoundPermission(roles, roundId, derived)
+
+  /** The contest's Admins, real or by account reach (CA17): the permission of the actions the plan
+    * puts in "Real Admin row needed, or a series contest with year >= the grant's start year".
+    */
+  def accountAdminPermission(contestId: Option[Long]): Secured.ContestPermission =
+    contestPermission(User.ADMIN_ROLES, contestId, accountReach = true)
 }
 
 object Secured {
@@ -425,27 +448,61 @@ object Secured {
   /** A permission that tells its denial what it requires. */
   sealed trait DescribedPermission extends (User => Boolean) {
     def denial: Denial
+
+    /** Whether the action opts in to a series grant's derived role or account reach (contest series
+      * plan §3.3): then the permitted user carries the merged role ([[withDerivedRoles]]).
+      */
+    def optsIn: Boolean = false
   }
 
-  /** One of the roles, in the user's contest ([[permitted]] tries their others too). */
-  final case class RolePermission(roles: Set[String]) extends DescribedPermission {
-    def apply(user: User): Boolean = user.hasAnyRole(roles)
+  /** Whether the user's series grants give one of `roles` in the contest, the user's current one (a
+    * derived role: contest series plan §3.3, CA20). A session's only ([[withSeries]]).
+    */
+  private def derivedRoleIn(user: User, roles: Set[String], contestId: Option[Long]): Boolean =
+    contestId.exists(c => user.isInContest(Some(c)) && user.derivedRoles.getOrElse(c, Set.empty).exists(roles))
+
+  /** One of the roles, in the user's contest ([[permitted]] tries their others too); with
+    * `derived`, a series grant's derived role there counts.
+    */
+  final case class RolePermission(roles: Set[String], derived: Boolean = false) extends DescribedPermission {
+    def apply(user: User): Boolean = user.hasAnyRole(roles) || derived && derivedRoleIn(user, roles, user.contestId)
     def denial: Denial = Denial(requiredRoles = roles)
+    override def optsIn: Boolean = derived
   }
 
   /** Root, or one of the roles in the contest ([[User.hasContestRole]]); a request's without
-    * a contest is checked in the session's current one ([[forUser]]).
+    * a contest is checked in the session's current one ([[forUser]]). Real memberships only, unless
+    * `derived` (a series grant's derived role counts) or `accountReach` (for the Admin role, a
+    * contest the user's live grants reach for the account rules counts, CA17: read from the
+    * database by [[SeriesAdminJdbc.seriesAccountContests]], for a session's user only).
     */
-  final case class ContestPermission(roles: Set[String], contestId: Option[Long]) extends DescribedPermission {
-    def apply(user: User): Boolean = user.hasContestRole(roles, contestId)
+  final case class ContestPermission(roles: Set[String], contestId: Option[Long], derived: Boolean = false,
+      accountReach: Boolean = false) extends DescribedPermission {
+    def apply(user: User): Boolean =
+      user.hasContestRole(roles, contestId) ||
+        derived && derivedRoleIn(user, roles, contestId) ||
+        accountReach && roles.contains(User.ADMIN_ROLE) && reaches(user, contestId)
     def denial: Denial = Denial.contest(contestId, roles)
+    override def optsIn: Boolean = derived || accountReach
   }
 
-  /** Root, or one of the roles in the round's contest; the round is loaded once. */
-  final case class RoundPermission(roles: Set[String], roundId: Long) extends DescribedPermission {
+  /** Whether the session user's live grants reach the contest, their current one, for the account
+    * rules (CA17).
+    */
+  private def reaches(user: User, contestId: Option[Long]): Boolean =
+    user.seriesGranted.nonEmpty && contestId.exists(c =>
+      user.isInContest(Some(c)) && SeriesAdminJdbc.seriesAccountContests(user.getId).contains(c))
+
+  /** Root, or one of the roles in the round's contest; the round is loaded once. With `derived`, a
+    * series grant's derived role there counts.
+    */
+  final case class RoundPermission(roles: Set[String], roundId: Long, derived: Boolean = false)
+      extends DescribedPermission {
     private lazy val round = Round.findById(roundId)
-    def apply(user: User): Boolean = round.exists(r => user.hasContestRole(roles, Some(r.contestId)))
+    def apply(user: User): Boolean = round.exists(r =>
+      user.hasContestRole(roles, Some(r.contestId)) || derived && derivedRoleIn(user, roles, Some(r.contestId)))
     def denial: Denial = Denial(round.map(_.contestId), Some(s"round:$roundId"), roles)
+    override def optsIn: Boolean = derived
   }
 
   /** A vote in the round, by any path (the gallery's tiles and stars, the large view's buttons
@@ -459,6 +516,41 @@ object Secured {
     private lazy val round = Round.findById(roundId)
     def apply(user: User): Boolean = round.exists(user.mayVoteIn)
     def denial: Denial = Denial(round.map(_.contestId), Some(s"round:$roundId"), User.VoterRoles)
+  }
+
+  /** Any of `permissions` (the denial: the first's, with every one's roles): an own page or an Admin's
+    * ([[UserController.editUser]]).
+    */
+  final case class AnyOf(permissions: Seq[DescribedPermission]) extends DescribedPermission {
+    def apply(user: User): Boolean = permissions.exists(_(user))
+    def denial: Denial = permissions.headOption.fold(Denial.empty)(first =>
+      first.denial.copy(requiredRoles = permissions.flatMap(_.denial.requiredRoles).toSet))
+    override def optsIn: Boolean = permissions.exists(_.optsIn)
+  }
+
+  /** A series admin of any live series (a session's): the start page, which sends them to their
+    * series page ([[seriesLanding]]). Its denial names no role: [[AnyOf]] puts another first.
+    */
+  case object AnySeries extends DescribedPermission {
+    def apply(user: User): Boolean = user.seriesGranted.nonEmpty
+    def denial: Denial = Denial.empty
+  }
+
+  object AnyOf {
+    def apply(first: DescribedPermission, others: DescribedPermission*): AnyOf = AnyOf(first +: others)
+  }
+
+  /** The role name of a series admin (contest series plan §3.3, CA3): not a contest role, never
+    * stored in `user_contest`; only a denial names it (`role.series_admin`).
+    */
+  val SeriesAdminRole = "series_admin"
+
+  /** Root, or a series admin of the series (a live grant, the session's: [[withSeries]], so a
+    * revocation takes effect on the next request): the series page and its grant form.
+    */
+  final case class SeriesPermission(seriesId: Long) extends DescribedPermission {
+    def apply(user: User): Boolean = user.hasRole(User.ROOT_ROLE) || user.seriesGranted.contains(seriesId)
+    def denial: Denial = Denial(None, Some(s"series:$seriesId"), Set(User.ROOT_ROLE, SeriesAdminRole), Some("not_series_admin"))
   }
 
   /** Whether `user` administers the round's contest, as an active member of it (root needs
@@ -481,8 +573,21 @@ object Secured {
     */
   def checked(user: User, permission: User => Boolean): Either[Denial, User] = {
     val userPermission = forUser(user, permission)
-    permitted(user, userPermission).toRight(denialOf(userPermission))
+    val optsIn = userPermission match {
+      case p: DescribedPermission => p.optsIn
+      case _                      => false
+    }
+    permitted(user, userPermission).map(u => if (optsIn) withDerivedRoles(u) else u).toRight(denialOf(userPermission))
   }
+
+  /** The user as an action that opts in to derived roles sees them (contest series plan §3.3):
+    * [[User.roles]] with the merged role in the current contest (real roles add on top, the higher
+    * wins), and [[User.derivedOptIn]] set, so that [[inContest]] merges it in the contest it moves
+    * to. Only for a permission with `derived = true` or `accountReach = true` ([[checked]]).
+    */
+  def withDerivedRoles(user: User): User =
+    user.copy(derivedOptIn = true,
+      roles = user.roles ++ user.contestId.flatMap(user.derivedRoles.get).getOrElse(Set.empty))
 
   /** Logs the denial at WARN and returns the line's reference, for the page to show.
     * `fields`: trusted key-value fields appended to the line (the API's `auth=token
@@ -636,7 +741,7 @@ object Secured {
       // once its first step ends the sessions: an in-flight session votes, makes tokens or writes
       // nothing more
       .filterNot(u => db.scalikejdbc.AccountJoinJdbc.retiring(u.id.toSeq).nonEmpty)
-      .map(inCurrentContest(_, currentContestId))
+      .map(withSeries(_, currentContestId))
 
   /** `permission` as checked for the session's user: a [[ContestPermission]] without a
     * contest (a page whose optional `contestId` is missing) in their current contest, the
@@ -644,8 +749,13 @@ object Secured {
     * current contest, root aside.
     */
   def forUser(user: User, permission: User => Boolean): User => Boolean = permission match {
-    case ContestPermission(roles, None) => ContestPermission(roles, user.contestId)
-    case other                          => other
+    case p @ ContestPermission(_, None, _, _) => p.copy(contestId = user.contestId)
+    case AnyOf(permissions) =>
+      AnyOf(permissions.map(p => forUser(user, p) match {
+        case described: DescribedPermission => described
+        case _                              => p
+      }))
+    case other                                => other
   }
 
   /** The user if `permission` lets them in, in the session's current contest; else in
@@ -660,6 +770,14 @@ object Secured {
         .filter(m => m.opens && !user.contestId.contains(m.contestId))
         .map(user.inContest)
         .find(permission)
+        // then the contests the user's series grants reach (a session's only, [[withSeries]]),
+        // which a real-only permission never lets in
+        .orElse(seriesOnly(user).iterator.map(user.inSeriesContest).find(permission))
+
+  /** The contests the user's series grants reach where no real membership opens, but the current one. */
+  private def seriesOnly(user: User): Seq[Long] =
+    user.seriesContests.map(_.contestId)
+      .filterNot(id => user.contestId.contains(id) || user.userContests.exists(m => m.contestId == id && m.opens))
 
   /** Whether the session's user may see a page of [[Secured.withAuth]]'s default
     * permission, in any of their contests.
@@ -683,10 +801,81 @@ object Secured {
       .fold(withMemberships)(withMemberships.inContest)
   }
 
-  /** The user in the contest, if they are an active member of it; else unchanged. */
+  /** The user in the contest, if they are an active member of it, or (a session's) if their series
+    * grants reach it: there with no real role, and the derived one only in an action that opted in
+    * ([[User.derivedOptIn]]); else unchanged.
+    */
   def inContest(user: User, contestId: Long): User =
     if (user.contestId.contains(contestId)) user
-    else user.userContests.find(m => m.contestId == contestId && m.opens).fold(user)(user.inContest)
+    else user.userContests.find(m => m.contestId == contestId && m.opens).map(user.inContest)
+      .orElse(Option.when(user.seriesContests.exists(_.contestId == contestId))(user.inSeriesContest(contestId)))
+      .getOrElse(user)
+
+  /** [[inContest]] by real memberships only, never a series grant or a merged role (contest series
+    * plan §3.3): for the checks that need a real Admin row whatever the action
+    * (`JobController.adminOf`, `AccountJoinController.mayManage`). Outside a real membership, the
+    * user with no contest role.
+    */
+  def inContestReal(user: User, contestId: Long): User = {
+    val real = user.copy(derivedOptIn = false, seriesContests = Nil)
+    user.userContests.find(m => m.contestId == contestId && m.opens)
+      .fold(real.copy(roles = real.roles -- real.contestRoles, contestId = Some(contestId)))(real.inContest)
+  }
+
+  /** The session's user with their series reach (contest series plan §3.3): [[inCurrentContest]]
+    * (raw), plus the contests their live grants reach ([[User.seriesContests]], with the derived
+    * role in each) and the series granted. The current contest is resolved over the real contests
+    * first, then the series' (a contest switched to through [[maySwitchTo]] sticks): without a
+    * real membership of `currentContestId`, the series contest it names. A user with only series
+    * reach and no such contest has none. Called only from [[sessionUser]] and [[LoginResults]] (a
+    * guard spec): API tokens and root's edit form never get it.
+    */
+  def withSeries(user: User, currentContestId: Option[String]): User = {
+    val real = inCurrentContest(user, currentContestId)
+    val granted = SeriesAdminJdbc.liveByUser(user.getId).map(_.seriesId)
+    if (granted.isEmpty) real
+    else {
+      val reach = SeriesAdminJdbc.seriesContests(user.getId)
+      val withReach = real.copy(seriesContests = reach, seriesGranted = granted)
+      currentContestId.flatMap(_.toLongOption)
+        .filterNot(id => withReach.contestId.contains(id))
+        .filter(id => reach.exists(_.contestId == id) && !withReach.userContests.exists(m => m.contestId == id && m.opens))
+        .fold(withReach)(withReach.inSeriesContest)
+    }
+  }
+
+  /** Whether the user may make the contest their session's current one ([[UserController.switchContest]]):
+    * a real membership that opens it, or (a session's) a contest their series grants reach.
+    */
+  def maySwitchTo(user: User, contestId: Long): Boolean =
+    user.userContests.exists(m => m.contestId == contestId && m.opens) || user.seriesContests.exists(_.contestId == contestId)
+
+  /** A series admin's series page, where the start page sends a session with no real role in its
+    * current contest (contest series plan §3.3, "Signing in"): the current contest's series if the
+    * grants reach it, else the first series granted. None for anyone else.
+    */
+  def seriesLanding(user: User): Option[Long] =
+    if (user.seriesGranted.isEmpty) None
+    else user.contestId.flatMap(c => user.seriesContests.find(_.contestId == c)).map(_.seriesId)
+      .orElse(user.seriesGranted.headOption)
+
+  /** What a denial page says of a series admin's series (contest series plan §3.3, "deniedRoles names
+    * the series"): each live series granted by name, with the derived role the grant gives in the
+    * denied resource's contest if that contest is one of the series'. None for anyone else.
+    */
+  def seriesDenial(user: User, denial: Denial): Seq[(String, Option[String])] =
+    if (user.seriesGranted.isEmpty) Nil
+    else {
+      val inTarget = denial.contestId.flatMap(c => user.seriesContests.find(_.contestId == c))
+      db.scalikejdbc.SeriesJdbc.findByIds(user.seriesGranted).filter(_.live).sortBy(_.name)
+        .map(s => s.name -> inTarget.filter(_.seriesId == s.id).map(_.role))
+    }
+
+  /** The series the user is a series admin of (a session's, [[withSeries]]). */
+  def seriesGrantedTo(user: User): Seq[Long] = user.seriesGranted
+
+  /** What the user's series grants give in the contests they reach (a session's), by contest id. */
+  def seriesReachOf(user: User): Seq[db.scalikejdbc.SeriesContest] = user.seriesContests
 
   /** `result`, with `switchedTo`'s contest as the session's current one if it is not
     * `sessionUser`'s and the request is a page the browser opened ([[isPageRequest]]).

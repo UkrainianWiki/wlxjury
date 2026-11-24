@@ -62,7 +62,7 @@ class RoundReviewController @Inject() (
     * country, or all.
     */
   def review(id: Long, status: String, page: Int, region: String, country: Option[String]): EssentialAction =
-    withAuthOn(blocking)(rolePermission(ViewRoles)) { sessionUser => implicit request =>
+    withAuthOn(blocking)(rolePermission(ViewRoles, derived = true)) { sessionUser => implicit request =>
       withRound(sessionUser, id) { (user, round) =>
         reviewView(round, status, region, country).fold(notFound(user, _), { view =>
           val counts = RoundImageJdbc.statusCounts(round.getId)
@@ -111,7 +111,7 @@ class RoundReviewController @Inject() (
     * script request, which never switches the session's contest.
     */
   def regions(id: Long, status: String, region: String, country: Option[String]): EssentialAction =
-    withAuthJsonOn(blocking)(rolePermission(ViewRoles)) { sessionUser => implicit request =>
+    withAuthJsonOn(blocking)(rolePermission(ViewRoles, derived = true)) { sessionUser => implicit request =>
       Round.findById(id) match {
         case None => NotFound(Json.obj("error" -> "round_not_found"))
         case Some(round) =>
@@ -139,7 +139,7 @@ class RoundReviewController @Inject() (
     * comments, which its staff may write ([[ImageDiscussionController.addComment]]).
     */
   def file(id: Long, pageId: Long, status: String, region: String, country: Option[String]): EssentialAction =
-    withAuthOn(blocking)(rolePermission(ViewRoles)) { sessionUser => implicit request =>
+    withAuthOn(blocking)(rolePermission(ViewRoles, derived = true)) { sessionUser => implicit request =>
       withRound(sessionUser, id) { (user, round) =>
         reviewView(round, status, region, country).fold(notFound(user, _), { view =>
           val list = view.list.get
@@ -171,7 +171,7 @@ class RoundReviewController @Inject() (
     * and the way to its review page, without the form.
     */
   def jurors(id: Long, waited: Int): EssentialAction =
-    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { sessionUser => implicit request =>
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { sessionUser => implicit request =>
       Round.findById(id) match {
         case None => notFound(sessionUser, "error.round.not.found")
         case Some(round) =>
@@ -227,7 +227,7 @@ class RoundReviewController @Inject() (
     * picker: the form of a round whose jurors are fixed, or an older rounds list's button).
     */
   def distribute(id: Long): EssentialAction =
-    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { sessionUser => implicit request =>
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { sessionUser => implicit request =>
       Round.findById(id) match {
         case None => notFound(sessionUser, "error.round.not.found")
         case Some(round) =>

@@ -27,7 +27,7 @@ class AuthorsController @Inject() (
     with I18nSupport {
 
   def list(contestId: Long, round: Option[Long], sort: Option[String]): EssentialAction =
-    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId))) {
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId), derived = true)) {
       user => implicit request =>
         val contest = ContestJuryJdbc.findById(contestId)
         val rounds = contest.fold(Seq.empty[Round])(_ => Round.findByContest(contestId))
@@ -39,6 +39,11 @@ class AuthorsController @Inject() (
             NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found"))
           case (Some(c), _) if !user.canViewAuthors(c.getId) =>
             onUnAuthorized(user, request, Secured.Denial.contest(c.id, User.ADMIN_ROLES ++ User.ORG_COM_ROLES))
+          // a round's authors with all the jurors' votes: not for a juror of the round (the
+          // conflict-of-interest rule); the contest's authors (no round) show no votes
+          case (Some(_), Some(Some(r))) if !services.GalleryService.othersVotesVisible(Secured.inContest(user, r.contestId), r) =>
+            onUnAuthorized(user, request, Secured.Denial.round(r, User.ADMIN_ROLES ++ User.ORG_COM_ROLES)
+              .copy(reason = Some(services.GalleryService.OtherUsersVotesReason)))
           case (Some(c), r) =>
             val page = AuthorsPage.of(c, r.flatten, rounds, AuthorsPage.Sort.parse(sort))
             Ok(views.html.authors(user, page))

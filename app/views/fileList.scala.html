@@ -53,7 +53,7 @@
 @* a page of the list, its pager in the navbar: a round's 38k files with all the jurors' votes
    at once ran a 1 GB server out of memory *@
 @main("filelist", user, list.asUserId, Some(list.round), rounds, gallery = false, Some(list),
-    pager = pagerNav(pager, list.pageUrl), rates = rates, filters = views.html.regionMenu(regionMenu), commented = commented, reappearingBar = true) {
+    pager = pagerNav(pager, list.pageUrl), rates = rates, filters = views.html.regionMenu(regionMenu), commented = commented, stickyBar = true) {
 
     @defining(Some(list.round)) { round =>
     @defining(list.asUserId) { asUserId =>

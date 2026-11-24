@@ -177,6 +177,13 @@ object Global {
       w -> math.max(1L, math.round(w.toDouble * image.height / image.width)).toInt
     }
 
+  /** The size a thumbnail is shown at in a `x` × `y` box ([[Image.resizeTo]], as [[resizeTo]]
+    * fetches it), for its `width` and `height` attributes: its place is known before it loads.
+    * None without a stored size.
+    */
+  def thumbBox(image: Image, x: Int, y: Int): Option[(Int, Int)] =
+    largeImageBox(image, Some(image.resizeTo(x, y)))
+
   /** The width of the large view's [[LargeImage.fallback]], on this server: the narrowest of
     * Wikimedia's sizes the large box needs.
     */

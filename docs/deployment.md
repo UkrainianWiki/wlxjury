@@ -363,6 +363,23 @@ sudo find /var/www/jury-images -xdev -type f -perm /022 -exec chmod go-w {} +
 stat -c '%a %U:%G' /var/www/jury-images                                 # 755 wlxjury:wlxjury
 ```
 
+The cache only grows. `scripts/local-images-maintenance.sh` shows its size and deletes old files
+(regular files only, never through symlinks; run as the service user):
+
+```bash
+scripts/local-images-maintenance.sh report                          # files and bytes per modification month
+scripts/local-images-maintenance.sh prune --months 6 --dry-run      # list what would go; deletes nothing
+scripts/local-images-maintenance.sh prune --months 6 --quiet        # delete, then remove empty folders
+```
+
+Files are deleted by age since they were cached (their modification time), not because they are
+unused: a thumbnail that is still in use is fetched again from Commons on its next request. If
+`wlxjury.thumbs.local-path` is not `/var/www/jury-images`, pass that folder every time, with
+`--path FOLDER` or `export WLXJURY_THUMBS_LOCAL_PATH=FOLDER` (the script's own variable; the app does
+not read it), or the script works on the wrong folder. A folder the script cannot read, or a file it
+cannot delete, makes it exit 1 with a message on stderr and a partial result; fix the permissions
+(run as the service user) and run it again. The script's tests are `scripts/test_local_images_maintenance.py`.
+
 ### Monitoring with monit
 
 [`conf/monit/wlxjury`](../conf/monit/wlxjury) adds the app to monit, **alert only**: systemd already
@@ -666,8 +683,9 @@ as `wlxjury` (uid and gid 10001). Its jars are in three layers (third-party, sca
 with `bin/` and `conf/`), so a code change rebuilds only the top one (`dockerGroupLayers` in
 `build.sbt`).
 
-**What the compose file sets.** MariaDB 10.6.22, pinned by digest, with production's 256 MiB buffer
-pool as a command-line option and its data in the volume `db`; its port is not published. The app
+**What the compose file sets.** MariaDB 10.6.22, pinned by digest, with the recommended 256 MiB
+buffer pool (`bench/cnf/recommended-60-wlxjury.cnf`; production runs 128 MiB, performance §4.6) as
+a command-line option and its data in the volume `db`; its port is not published. The app
 takes `WLXJURY_COMPOSE_DB_PASSWORD`, `PLAY_HTTP_SECRET_KEY` and `WLXJURY_SETUP_TOKEN` from `.env`
 (compose refuses to start without the first two; MariaDB's root password
 `WLXJURY_COMPOSE_DB_ROOT_PASSWORD` is required too), migrates at start, uses Commons anonymously,
