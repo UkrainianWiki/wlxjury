@@ -234,8 +234,8 @@ class RoundRebalanceHandler @Inject() (config: Configuration) extends JobHandler
 
   /** Releases the round if the job froze it; on Cancel, a juror the job started who wasn't
     * active before is stopped again, only if it gave them nothing: a juror holding files the job
-    * gave stays started, so no file it moved sits with a stopped juror (adding them again tops up
-    * the rest). The round first, then round_user, as the "stop" step.
+    * gave stays started, so no file it moved sits with a stopped juror (to give them the rest:
+    * Stop, then "Start and give a fair share…"). The round first, then round_user, as the "stop" step.
     */
   private def end(job: Job, ctx: StepContext, cancelled: Boolean): JsObject = {
     implicit val session: DBSession = ctx.session
@@ -313,8 +313,9 @@ class RoundRebalanceHandler @Inject() (config: Configuration) extends JobHandler
           if (st.frozen.contains(roundId)) st.frozen
           else { Round.freeze(Seq(roundId)); Seq(roundId) }
         // the juror's row active, in every "stop" (a Retry's too); its state before, the first time
+        // a NULL (a schema before V108) is stopped
         val before = sql"""SELECT active FROM round_user WHERE round_id = $roundId AND user_id = $jurorId FOR UPDATE"""
-          .map(_.boolean(1)).single()
+          .map(_.booleanOpt(1).getOrElse(false)).single()
         sql"""INSERT INTO round_user (round_id, user_id, role, active) VALUES ($roundId, $jurorId, ${User.JURY_ROLE}, TRUE)
               ON DUPLICATE KEY UPDATE active = TRUE""".update()
         val (wasActive, added) = (if (st.jurorAdded) st.jurorWasActive else before, true)
@@ -621,7 +622,7 @@ class RoundRebalanceHandler @Inject() (config: Configuration) extends JobHandler
         // the jurors' rows locked in id order; the juror stopped, the ticked receivers started (D1), in
         // every "stop" (a Retry's too); their states before, the first time
         val before = sql"""SELECT user_id, active FROM round_user WHERE round_id = $roundId AND user_id IN (${accounts.sorted})
-                           ORDER BY user_id FOR UPDATE""".map(rs => rs.long(1) -> rs.boolean(2)).list().toMap
+                           ORDER BY user_id FOR UPDATE""".map(rs => rs.long(1) -> rs.booleanOpt(2).getOrElse(false)).list().toMap
         sql"UPDATE round_user SET active = FALSE WHERE round_id = $roundId AND user_id = $from".update()
         if (to.nonEmpty) sql"UPDATE round_user SET active = TRUE WHERE round_id = $roundId AND user_id IN ($to)".update()
         val restartedNow = to.filter(r => before.get(r).contains(false))
@@ -837,6 +838,14 @@ object RoundRebalanceHandler {
   val VerifyKey = "job.error.rebalance.verify"
   val DonorVerifyKey = "job.error.rebalance.donor.verify"
   val DonorKey = "job.error.rebalance.donor"
+  /** The juror is already an active juror of the round: refused by the page and the POST
+    * ([[RoundRebalanceService]]), not by the steps, whose own "stop" makes its juror active.
+    */
+  val AlreadyJurorKey = "job.error.rebalance.already.juror"
+  /** The juror is a stopped juror of the round, sent without the restart page: refused by the POST
+    * ([[RoundRebalanceService.add]]'s `restart`), not by the steps.
+    */
+  val StoppedJurorKey = "job.error.rebalance.stopped.juror"
   // a reassign's (§7)
   val ReassignNotRunningKey = "job.error.rebalance.reassign.not.running"
   val ReassignLegacyKey = "job.error.rebalance.reassign.legacy"
@@ -1052,8 +1061,12 @@ object RoundRebalanceHandler {
     * and by every step, each under the round's lock (but the page). In this order: frozen by
     * another job; not running; no round_user rows (a legacy round); the juror not an active jury
     * member of the round's contest; a ticked donor not a juror of the round (round_user, active or
-    * not). A juror already active in the round isn't refused: the add tops them up (N = 0: the files
-    * they don't have; N > 0: the water-filling counts their own unrated files).
+    * not). Not checked here, so that the steps don't refuse their own juror: a juror already active
+    * in the round ([[AlreadyJurorKey]]), and a stopped one sent without the restart page
+    * ([[StoppedJurorKey]]), are refused by [[RoundRebalanceService]] (the page, and the POST under the
+    * round's lock) before a job exists. The job's "stop" makes its juror active, so each later step
+    * and a Retry find them active; they still give only the files the juror lacks (N = 0) or count
+    * the juror's own unrated files (N > 0).
     *
     * @param frozenByUs the job holds the round frozen (its own pause)
     */
@@ -1111,6 +1124,13 @@ object RoundRebalanceHandler {
 
   def isRoundJuror(roundId: Long, jurorId: Long)(implicit session: DBSession): Boolean =
     sql"SELECT 1 FROM round_user WHERE round_id = $roundId AND user_id = $jurorId".map(_ => ()).single().isDefined
+
+  /** The juror's `round_user` row in the round: None (not in it), Some(true) active, Some(false)
+    * stopped (a NULL, of a schema before V108, too: stopped, as the add page lists it).
+    */
+  def jurorState(roundId: Long, jurorId: Long)(implicit session: DBSession): Option[Boolean] =
+    sql"SELECT COALESCE(active, FALSE) FROM round_user WHERE round_id = $roundId AND user_id = $jurorId"
+      .map(_.boolean(1)).single()
 
   def isActiveJuror(roundId: Long, jurorId: Long)(implicit session: DBSession): Boolean =
     sql"SELECT 1 FROM round_user WHERE round_id = $roundId AND user_id = $jurorId AND active = TRUE"

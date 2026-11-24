@@ -533,6 +533,21 @@ class RoundReviewFlowSpec extends Specification with TestDb with BeforeAll with 
         (RoundUser.activeJurors(r.getId).map(_.userId).toSet === jurors.map(_.getId).toSet) and
         (VoteJdbc.byRound(r.getId).count(_.juryId == added.getId) === 2) and noDuplicates(r.getId, 6, 1)
     }
+
+    "refuse adding an active juror to a round held in review, writing nothing" in {
+      val (contest, jurors) = setUp(6)
+      val service = TestRoundServices.roundService()
+      val r = service.submit(newRound(contest, "R", distribution = 1), jurors.take(2).map(_.getId), None, review = true).round
+      val rebalance = new RoundRebalanceService(TestRoundServices.inlineScheduler(TestRoundServices.handler()))
+      val shown = RoundRebalanceService.signature(rebalance.jury(r).jurors)
+      def jobs() = DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM job WHERE subject_id = ${r.getId}".map(_.int(1)).single())
+      val jobsBefore = jobs()
+      val outcome = rebalance.add(r, jurors.head.getId, User("Admin", "admin@example.com", id = Some(1L)), shown)
+      (outcome must beLike { case RoundRebalanceService.Refused(e) => e.key === RoundRebalanceHandler.AlreadyJurorKey }) and
+        (rebalance.preview(r, jurors.head.getId).refusal.map(_.key) must beSome(RoundRebalanceHandler.AlreadyJurorKey)) and
+        (jobs() === jobsBefore) and
+        (RoundUser.activeJurors(r.getId).map(_.userId).toSet === jurors.take(2).map(_.getId).toSet)
+    }
   }
 
   "the Retry of a distribute that completes no creation" should {

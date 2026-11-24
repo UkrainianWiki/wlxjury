@@ -302,7 +302,9 @@ code:
 
 - **Where:** under the round stat table, **Add juror…** (admins). The select lists contest jurors
   with an active membership who aren't in the round.
-- A stopped juror's row also offers **Start and give a fair share…** beside the plain Start (1b).
+- A stopped juror's row also offers **Start and give a fair share…** beside the plain Start (1b):
+  the add page with that juror as its fixed subject (`?juror=`), not a select option; its confirm
+  sends `restart` (decided 2026-11-20: the select lists only people outside the round).
 - **The page (GET), with the jury listed as decided in D1:**
   - active jurors are listed and ticked by default as donors;
   - stopped jurors are listed, unticked, and visibly marked "stopped". Ticking one lets their
@@ -325,8 +327,14 @@ failure names the reason; Retry checks again):
 - the round isn't running;
 - it has no `round_user` rows;
 - it is cancelled, or another job holds its key, or another job froze it;
-- Y has no active jury membership of the round's contest. *(Built: an already active juror is
-  not refused; the add tops them up, see the build notes.)*
+- Y has no active jury membership of the round's contest;
+- Y is already an active juror of the round (`job.error.rebalance.already.juror`, on the page and
+  the POST; 2026-11-20, the maintainer's bug report: the select offered active jurors and the add
+  topped them up);
+- Y is a stopped juror of the round and the POST has no `restart` (only the restart page sends it)
+  (`job.error.rebalance.stopped.juror`). A NULL `round_user.active` (before V108) is stopped on the
+  page and in these checks.
+- The steps check neither: their own `stop` makes Y active.
 - a ticked donor isn't a juror of the round.
 
 The other direction:
@@ -383,9 +391,9 @@ Where the build chose the safer option than the text above (details in
 - **Cancel and top-up (default, the orchestrator's decision after review, to be confirmed by the
   maintainer):** Cancel stops the juror again only if the job gave them nothing (`filesGiven = 0`)
   and they weren't active before; otherwise they stay started, so no file the job moved sits with
-  a stopped juror. An already active juror is not refused: adding them is a top-up (N = 0: the
-  files they lack; N > 0: the water-filling counts their own unrated files), which is how a
-  cancelled add is finished.
+  a stopped juror. *(Changed 2026-11-20: an already active juror is refused, and isn't offered.
+  A cancelled add that gave files is finished by Stop, then "Start and give a fair share…", which
+  gives the files they lack (N = 0) or counts their own unrated files (N > 0).)*
 - Every `stop` step (a Retry's too) writes the juror's row active again; its state before is
   recorded the first time only. A distribution's Retry, and "Distribute new files" resuming a
   failed one, are refused while a previous round has a rebalance (its freeze would fail the
@@ -410,8 +418,10 @@ Where the build chose the safer option than the text above (details in
   continues below it. The per-step check (each file's vote rows unchanged) throws, so the whole
   step rolls back and the job fails with a logged reference; Retry resumes.
 - `verify` also checks each donor lost exactly the rows it gave (`job.error.rebalance.donor.verify`).
-- The add page lists the round's stopped jurors in its select too, so "Start and give a fair
-  share…" (the stat table's stopped-juror link) is the same page with the juror chosen.
+- "Start and give a fair share…" (the stat table's stopped-juror link) is the add page with the
+  juror chosen. *(Changed 2026-11-20, the maintainer's decision: the select lists only the
+  contest's jurors outside the round, never the round's active or stopped jurors; the stopped
+  juror is the page's fixed subject, and the POST needs `restart` for them.)*
 
 ## 6. Step 2: P3 as decided
 

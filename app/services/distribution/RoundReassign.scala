@@ -181,7 +181,7 @@ object RoundReassign {
     */
   def possibleReceivers(roundId: Long, contestId: Long)(implicit session: DBSession = AutoSession): Map[Long, Boolean] = {
     val jurors = sql"SELECT user_id, active FROM round_user WHERE round_id = $roundId"
-      .map(rs => rs.long(1) -> rs.boolean(2)).list().toMap
+      .map(rs => rs.long(1) -> rs.booleanOpt(2).getOrElse(false)).list().toMap
     User.contestMembers(contestId, roles = Some(Seq(User.JURY_ROLE)), ids = Some(jurors.keys.toSeq))
       .filter(_.deletedAt.isEmpty).map(u => u.getId -> jurors(u.getId)).toMap
   }

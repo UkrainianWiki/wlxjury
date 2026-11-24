@@ -3,7 +3,7 @@ package controllers
 import db.scalikejdbc.{Round, User}
 import modules.BlockingExecutionContext
 import play.api.data.Form
-import play.api.data.Forms.{longNumber, nonEmptyText, seq, tuple}
+import play.api.data.Forms.{boolean, longNumber, nonEmptyText, seq, tuple}
 import play.api.mvc.{AnyContent, ControllerComponents, EssentialAction, Request, Result}
 import services.distribution.{RoundFreezes, RoundRebalanceHandler, RoundRebalanceService}
 import services.jobs.JobError
@@ -48,8 +48,8 @@ class RoundJurorsController @Inject() (
         val messages = messagesApi.preferred(request)
         addForm.bindFromRequest().fold(
           _ => BadRequest(page(user, round, None, notice = Some(messages("error.invalid")))),
-          { case (jurorId, shownJury, donors) =>
-            rebalance.add(round, jurorId, user, shownJury, donors) match {
+          { case (jurorId, shownJury, donors, restart) =>
+            rebalance.add(round, jurorId, user, shownJury, donors, restart) match {
               case Queued(job) =>
                 val name = User.findById(jurorId).map(_.fullname).getOrElse(jurorId.toString)
                 val text =
@@ -185,9 +185,13 @@ class RoundJurorsController @Inject() (
     "receiver" -> seq(longNumber).verifying("error.invalid", _.size <= 1000)
   ))
 
-  private val addForm: Form[(Long, String, Seq[Long])] = Form(tuple(
+  /** `restart`: sent by the page whose subject is a stopped juror of the round (the round statistics'
+    * "Start and give a fair share"); a stopped juror without it is refused.
+    */
+  private val addForm: Form[(Long, String, Seq[Long], Boolean)] = Form(tuple(
     "juror" -> longNumber,
     "jury" -> nonEmptyText(maxLength = 20000),
-    "donor" -> seq(longNumber).verifying("error.invalid", _.size <= 1000)
+    "donor" -> seq(longNumber).verifying("error.invalid", _.size <= 1000),
+    "restart" -> boolean
   ))
 }

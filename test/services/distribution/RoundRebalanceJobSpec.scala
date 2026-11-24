@@ -118,6 +118,20 @@ class RoundRebalanceJobSpec extends Specification with TestDb with BeforeAll wit
     case _                                => None
   }
 
+  /** `f` with `round_user.active` nullable, as before V108 (production until it runs), then the column
+    * as it was: NULLs become FALSE (as V108 does) before NOT NULL comes back. DDL commits on its own.
+    */
+  private def withNullableActive[T](f: => T): T = {
+    val nullable = sql"""SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()
+                         AND TABLE_NAME = 'round_user' AND COLUMN_NAME = 'active'""".map(_.string(1)).single()
+    if (nullable.contains("NO")) sql"ALTER TABLE round_user MODIFY active BOOLEAN NULL DEFAULT TRUE".execute()
+    try f
+    finally if (nullable.contains("NO")) {
+      sql"UPDATE round_user SET active = FALSE WHERE active IS NULL".update()
+      sql"ALTER TABLE round_user MODIFY active BOOLEAN NOT NULL DEFAULT TRUE".execute()
+    }
+  }
+
   private def rebalanceJobs(): Seq[Job] =
     sql"SELECT id FROM job WHERE kind = ${RoundRebalanceHandler.Kind}".map(_.long(1)).list()
       .flatMap(JobJdbc.findById(_))
@@ -241,7 +255,7 @@ class RoundRebalanceJobSpec extends Specification with TestDb with BeforeAll wit
       result and (flags(r) === (true -> 0))
     }
 
-    "release the round on Cancel; the juror stays started with the files given, and adding them again tops up" in {
+    "release the round on Cancel; the juror stays started with the files given, isn't added again, and Stop then a fair share gives the rest" in {
       val (_, round, _, y, admin) = setUp(6)
       val r = round.getId
       val h = new TestRebalance(chunkRows = 2)
@@ -252,8 +266,13 @@ class RoundRebalanceJobSpec extends Specification with TestDb with BeforeAll wit
       val cancelled = JobJdbc.findById(job.id).get
       (cancelled.status === JobStatus.Cancelled) and (flags(r) === (true -> 0)) and
         (roundUser(r, y.getId) must beSome(true)) and (rows(r, y.getId).size === 2) and {
-          // added again, already active: a top-up, the rest only
-          val again = queued(service.add(Round.findById(r).get, y.getId, admin, signature(Round.findById(r).get)))
+          // added again, already active: refused, no job
+          val refused = refusedKey(service.add(Round.findById(r).get, y.getId, admin, signature(Round.findById(r).get)))
+          (refused must beSome(RoundRebalanceHandler.AlreadyJurorKey)) and (rebalanceJobs().size === 1) and
+            (rows(r, y.getId).size === 2)
+        } and (RoundRebalanceService.setJurorActive(r, y.getId, active = false) must beTrue) and {
+          // stopped, then "Start and give a fair share…": the rest only
+          val again = queued(service.add(Round.findById(r).get, y.getId, admin, signature(Round.findById(r).get), restart = true))
           (JobJdbc.findById(again.id).map(_.status) must beSome(JobStatus.Done)) and
             (rows(r, y.getId) === (1L to 6L).map(_ -> 0)) and (roundUser(r, y.getId) must beSome(true)) and
             (RoundImageInvariants.violations(r) must beEmpty)
@@ -375,6 +394,54 @@ class RoundRebalanceJobSpec extends Specification with TestDb with BeforeAll wit
       (keys === Seq.fill(4)(Some(RoundRebalanceHandler.NotJurorKey))) and (rebalanceJobs() must beEmpty)
     }
 
+    "refuse an active juror of the round on the page and the POST, writing nothing; a stopped one is offered" in {
+      val (_, round, js, _, admin) = setUp(3)
+      val r = round.getId
+      val juror = js.head
+      implicit val (service, _) = inline(new TestRebalance(chunkRows = 10))
+      val rowsBefore = rows(r, juror.getId)
+      val preview = service.preview(round, juror.getId)
+      val outcome = service.add(round, juror.getId, admin, signature(round))
+      val jury = service.jury(round)
+      RoundUser.setActive(r, js(1).getId, active = false)
+      val stopped = service.preview(Round.findById(r).get, js(1).getId)
+      // a stopped juror sent without the restart page (the select tampered with): refused, nothing written
+      val noRestart = service.add(Round.findById(r).get, js(1).getId, admin, signature(round))
+      val juryAfter = service.jury(Round.findById(r).get)
+      (preview.refusal.map(_.key) must beSome(RoundRebalanceHandler.AlreadyJurorKey)) and (preview.files === 0L) and
+        (refusedKey(outcome) must beSome(RoundRebalanceHandler.AlreadyJurorKey)) and
+        (outcome must beLike { case RoundRebalanceService.Refused(e) => e.args === Seq(juror.fullname, round.number.toString) }) and
+        (rebalanceJobs() must beEmpty) and (roundUser(r, juror.getId) must beSome(true)) and
+        (rows(r, juror.getId) === rowsBefore) and (flags(r) === (true -> 0)) and
+        (jury.candidates.map(_.getId) must not(contain(juror.getId))) and
+        (stopped.refusal must beNone) and (stopped.restart must beTrue) and
+        (noRestart must beLike { case RoundRebalanceService.Refused(e) =>
+          e.args === Seq(js(1).fullname, round.number.toString) and (e.key === RoundRebalanceHandler.StoppedJurorKey) }) and
+        (rebalanceJobs() must beEmpty) and (roundUser(r, js(1).getId) must beSome(false)) and
+        (juryAfter.candidates.map(_.getId) must not(contain(js(1).getId)))
+    }
+
+    "take a NULL round_user.active (a schema before V108) as stopped on the page and in the add" in {
+      val (_, round, js, _, admin) = setUp(3)
+      val r = round.getId
+      val nullJuror = js.head
+      implicit val (service, _) = inline(new TestRebalance(chunkRows = 10))
+      withNullableActive {
+        sql"UPDATE round_user SET active = NULL WHERE round_id = $r AND user_id = ${nullJuror.getId}".update()
+        val jury = service.jury(round)
+        val preview = service.preview(round, nullJuror.getId)
+        val noRestart = refusedKey(service.add(round, nullJuror.getId, admin, signature(round)))
+        val jobsBefore = rebalanceJobs().size
+        val restarted = queued(service.add(round, nullJuror.getId, admin, signature(round), restart = true))
+        (jury.jurors.find(_.user.id == nullJuror.id).map(_.active) must beSome(false)) and
+          (jury.candidates.map(_.getId) must not(contain(nullJuror.getId))) and
+          (preview.restart must beTrue) and (preview.refusal must beNone) and
+          (noRestart must beSome(RoundRebalanceHandler.StoppedJurorKey)) and (jobsBefore === 0) and
+          (JobJdbc.findById(restarted.id).map(_.status) must beSome(JobStatus.Done)) and
+          (roundUser(r, nullJuror.getId) must beSome(true)) and (RoundImageInvariants.violations(r) must beEmpty)
+      }
+    }
+
     "show the page again if the jury changed since it was shown" in {
       val (_, round, js, y, admin) = setUp(3)
       implicit val (service, _) = inline(new TestRebalance(chunkRows = 10))
@@ -401,7 +468,7 @@ class RoundRebalanceJobSpec extends Specification with TestDb with BeforeAll wit
         (Round.findByContest(contest.getId).size === 1)
     }
 
-    "top up an active juror who lacks files (stopped while new files were distributed): only those" in {
+    "refuse an active juror who lacks files (stopped while new files were distributed); stopped, a fair share gives only those" in {
       val (contest, round, js, _, admin) = setUp(4)
       val r = round.getId
       val late = js.head
@@ -414,9 +481,16 @@ class RoundRebalanceJobSpec extends Specification with TestDb with BeforeAll wit
       VoteJdbc.rate(1, late.getId, r, 1)
       implicit val (service, _) = inline(new TestRebalance(chunkRows = 10))
       val fresh = Round.findById(r).get
+      val activePreview = service.preview(fresh, late.getId)
+      val activeAdd = refusedKey(service.add(fresh, late.getId, admin, signature(fresh)))
+      val rowsActive = rows(r, late.getId)
+      RoundRebalanceService.setJurorActive(r, late.getId, active = false) must beTrue
       val preview = service.preview(fresh, late.getId)
-      val job = queued(service.add(fresh, late.getId, admin, signature(fresh)))
-      (preview.topUp must beTrue) and (preview.files === 2L) and
+      val job = queued(service.add(fresh, late.getId, admin, signature(fresh), restart = true))
+      (activePreview.refusal.map(_.key) must beSome(RoundRebalanceHandler.AlreadyJurorKey)) and
+        (activePreview.files === 0L) and (activeAdd must beSome(RoundRebalanceHandler.AlreadyJurorKey)) and
+        (rowsActive === Seq(1L -> 1, 2L -> 0, 3L -> 0, 4L -> 0)) and (rebalanceJobs().size === 1) and
+        (preview.restart must beTrue) and (preview.files === 2L) and
         (RoundRebalanceHandler.filesGiven(JobJdbc.findById(job.id).get) === 2L) and
         (rows(r, late.getId) === Seq(1L -> 1, 2L -> 0, 3L -> 0, 4L -> 0, 5L -> 0, 6L -> 0)) and
         (RoundImageInvariants.violations(r) must beEmpty)
@@ -678,7 +752,7 @@ class RoundRebalanceJobSpec extends Specification with TestDb with BeforeAll wit
       implicit val (service, _) = inline(new TestRebalance(chunkRows = 100))
       val preview = service.preview(Round.findById(r).get, stopped.getId)
       val before = unrated(r, js.map(_.getId))
-      queued(service.add(round, stopped.getId, admin, signature(round), others))
+      queued(service.add(round, stopped.getId, admin, signature(round), others, restart = true))
       val after = unrated(r, js.map(_.getId))
       (preview.restart must beTrue) and (preview.donors === others) and (preview.refusal must beNone) and
         (roundUser(r, stopped.getId) must beSome(true)) and
@@ -804,17 +878,24 @@ class RoundRebalanceJobSpec extends Specification with TestDb with BeforeAll wit
         (roundUser(r, y.getId) must beSome(true)) and (rows(r, y.getId) must not(beEmpty)) and (flags(r) === (true -> 0))
     }
 
-    "top up an active juror with a share counting their own unrated files" in {
+    "refuse an active juror; stopped, a fair share counts their own unrated files" in {
       val (round, js, _, admin) = setUpN(30, 1, jurors = 3)
       val r = round.getId
       val Seq(a, b, c) = js
       // a has rated 6 of their 10: 4 unrated against 10 and 10
       rows(r, a.getId).take(6).foreach { case (p, _) => VoteJdbc.rate(p, a.getId, r, 1) }
       implicit val (service, _) = inline(new TestRebalance(chunkRows = 100))
-      val preview = service.preview(round, a.getId)
-      queued(service.add(round, a.getId, admin, signature(round), Seq(b.getId, c.getId)))
+      val activePreview = service.preview(round, a.getId)
+      val activeAdd = refusedKey(service.add(round, a.getId, admin, signature(round), Seq(b.getId, c.getId)))
+      val before = unrated(r, js.map(_.getId))
+      RoundRebalanceService.setJurorActive(r, a.getId, active = false) must beTrue
+      val preview = service.preview(round, a.getId, Some(Seq(b.getId, c.getId)))
+      queued(service.add(round, a.getId, admin, signature(round), Seq(b.getId, c.getId), restart = true))
       val after = unrated(r, js.map(_.getId))
-      (preview.topUp must beTrue) and (preview.files === 4L) and (after === Map(a.getId -> 8L, b.getId -> 8L, c.getId -> 8L)) and
+      (activePreview.refusal.map(_.key) must beSome(RoundRebalanceHandler.AlreadyJurorKey)) and
+        (activeAdd must beSome(RoundRebalanceHandler.AlreadyJurorKey)) and
+        (before === Map(a.getId -> 4L, b.getId -> 10L, c.getId -> 10L)) and
+        (preview.restart must beTrue) and (preview.files === 4L) and (after === Map(a.getId -> 8L, b.getId -> 8L, c.getId -> 8L)) and
         (roundUser(r, a.getId) must beSome(true)) and (RoundImageInvariants.violations(r) must beEmpty)
     }
 
@@ -832,7 +913,7 @@ class RoundRebalanceJobSpec extends Specification with TestDb with BeforeAll wit
       val plain = RoundRebalanceHandler.unratedCounts(r, others)
       val before = others.map(o => o -> rows(r, o)).toMap
       implicit val (service, _) = inline(new TestRebalance(chunkRows = 100))
-      queued(service.add(Round.findById(r).get, a.getId, admin, signature(round), others))
+      queued(service.add(Round.findById(r).get, a.getId, admin, signature(round), others, restart = true))
       val got = rows(r, a.getId).map(_._1).toSet -- held
       // the deleted file's rows count nowhere; the rows of files a holds don't count for a
       (plain(others.head) === before(others.head).size.toLong - 1) and

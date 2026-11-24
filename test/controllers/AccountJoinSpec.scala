@@ -397,11 +397,13 @@ class AccountJoinSpec extends PlaySpecification with PlayTestDb with AccountTest
           Round(None, 0, Some("New"), contest.getId, distribution = 0, rates = Round.binaryRound, active = true),
           Seq(k.getId, j.getId, y.getId))
         roundUsers(created.getId).map(_._1) === Seq(k.getId, y.getId).sorted
-        // adding either to a round (round-first): refused
+        // adding either to a round (round-first): refused. k is in the round: stopped, then started
+        // again by the restart page (an active juror would be refused as already in the round)
+        RoundUser.setActive(created.getId, k.getId, active = false)
         val rebalance = new RoundRebalanceService(TestRoundServices.inlineScheduler(new RoundRebalanceHandler(play.api.Configuration())))
         val open = Round.findById(created.getId).get
         val shown = rebalance.preview(open, 0L).signature
-        rebalance.add(open, k.getId, admin, shown) === RoundRebalanceService.Refused(
+        rebalance.add(open, k.getId, admin, shown, restart = true) === RoundRebalanceService.Refused(
           services.jobs.JobError(RoundRebalanceHandler.JoiningKey, Seq(k.getId.toString)))
         roundUsers(created.getId).map(_._1) === Seq(k.getId, y.getId).sorted
         // a round_rebalance adding an account refuses a join's start
