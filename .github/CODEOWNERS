@@ -6,4 +6,6 @@
 /scripts/check-private-strings.py    @UkrainianWiki/maintainers
 /scripts/allure-public-filter.py       @UkrainianWiki/maintainers
 /scripts/test_allure_public_filter.py  @UkrainianWiki/maintainers
+/scripts/coverage-badge.py             @UkrainianWiki/maintainers
+/scripts/test_coverage_badge.py        @UkrainianWiki/maintainers
 /.github/CODEOWNERS                  @UkrainianWiki/maintainers
