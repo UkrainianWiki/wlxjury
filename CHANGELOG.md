@@ -10,9 +10,9 @@ for an extra deploy in the same month (`26.11.1`), and release headings read
 `YY.MM.N.H` (`26.11.13.1`). Earlier releases keep their dates and tag names (`0.8`, `0.9`, `0.10`).
 Deploy dates come from production's migration history, as described at the end.
 
-## Unreleased (developed, not yet deployed)
+## Unreleased (on master, not yet deployed)
 
-Developed after the hotfix `26.11.13.1`; no next release is set yet.
+Merged to master after the 26.11.14 build.
 
 **Features**
 
@@ -27,15 +27,7 @@ Developed after the hotfix `26.11.13.1`; no next release is set yet.
 - Contest menu groups contests by series and year.
 - Contests page gets Series and Status menus and Series and Created columns.
 - Warning when adding a contest with a duplicate name, year and country.
-- Sticky top bar on desktop (#128).
-- Round form criteria start small, with Add and Remove buttons.
-- A round may have a single criterion.
-- Back from the large view keeps the top bar visible.
-- "Download images locally" no longer reloads the page.
-- Filter menus leave out empty items.
-- All-users page gets Type, Country, Year and Role menus.
-- Warnings when no juror can vote in an open round.
-- Add juror lists only people outside the round; a stopped juror is restarted from Round statistics (#122).
+- Add juror offers only people outside the round; restart a stopped juror from Round statistics (#122).
 - Root's contest reuse report shows which contests hold rounds of other contests (#123).
 - Large view loads the next file's photo ahead of time (#146).
 - Category names pasted with [[ ]] are accepted (#139).
@@ -45,17 +37,37 @@ Developed after the hotfix `26.11.13.1`; no next release is set yet.
 - Old juror assignments with no status are treated as stopped, votes included (#119).
 - Roles on conflict-of-interest pages are shown in the user's language.
 - Top-bar menus stay inside a phone's screen.
-- First keys typed in a saved category or import source are no longer lost.
-- A started round's criteria can no longer be changed.
-- Round statistics no longer break on a juror with no status.
 
 **Operations**
 
 - Migrations: V108, V109, V110.
-- Script for maintaining the local image cache (#132).
 - Rolling back past V110: revoke the read-only API tokens first.
+- Script for maintaining the local image cache (#132).
 
-## 26.11.13.1 (2026-11-19)
+## 26.11.14 (built 2026-11-23, deploy pending)
+
+Built from `26.11.13.1`; no migration.
+
+**Features**
+
+- Sticky top bar on desktop (#128).
+- Round form criteria start small, with Add and Remove buttons.
+- A round may have a single criterion.
+- Back from the large view keeps the top bar visible.
+- "Download images locally" no longer reloads the page.
+- Filter menus leave out empty items.
+- All-users page gets Type, Country, Year and Role menus.
+- Warnings when no juror can vote in an open round.
+
+**Fixes**
+
+- A started round's criteria can no longer be changed.
+- Round statistics no longer break on a juror with no status.
+- First keys typed in a saved category or import source are no longer lost.
+
+## Deployed releases
+
+### 26.11.13.1 (2026-11-19)
 
 Hotfix; no migration.
 
@@ -65,7 +77,7 @@ Hotfix; no migration.
 - No "Reassign files…" button in a round of one juror.
 - A saved category or import source can be edited again.
 
-## 26.11.13 (2026-11-19)
+### 26.11.13 (2026-11-19)
 
 **Features**
 
@@ -100,7 +112,7 @@ Hotfix; no migration.
 - Production logging config ships in the release; run the infra playbook and restart after deploy.
 - Rolling back: finish or cancel reassign jobs first.
 
-## 26.11.12 (2026-11-17)
+### 26.11.12 (2026-11-17)
 
 **Features**
 
@@ -119,7 +131,7 @@ Hotfix; no migration.
 
 - Migrations: V106, V107.
 
-## 26.11.11 (2026-11-16)
+### 26.11.11 (2026-11-16)
 
 **Features**
 
@@ -140,7 +152,7 @@ Hotfix; no migration.
 
 - Removed the "Distribute as soon as the images are ready" checkbox.
 
-## 26.11.10 (2026-11-16)
+### 26.11.10 (2026-11-16)
 
 **Features**
 
@@ -157,7 +169,7 @@ Hotfix; no migration.
 - Monument ids filter `a, b` now matches both monuments.
 - Votes button and tile ✓/✗ buttons aligned.
 
-## 26.11.9 (2026-11-16)
+### 26.11.9 (2026-11-16)
 
 **Features**
 
@@ -171,7 +183,7 @@ Hotfix; no migration.
 - Migrations: V105.
 - Rolling back: finish or cancel rounds held in review and "Adding juror" jobs first.
 
-## 26.11.8 (2026-11-16)
+### 26.11.8 (2026-11-16)
 
 **Features**
 
@@ -198,7 +210,7 @@ Hotfix; no migration.
 - Migrations: V102, V104.
 - Release tool prints the next command and asks to confirm a restore.
 
-## 26.11.7 (2026-11-14)
+### 26.11.7 (2026-11-14)
 
 **Features**
 
@@ -206,7 +218,7 @@ Hotfix; no migration.
 - Authors list for the contest and for a round, with file counts and vote results.
 - Comments by one person: filter the comments report to one author.
 
-## 26.11.6 (2026-11-13)
+### 26.11.6 (2026-11-13)
 
 **Features**
 
@@ -223,7 +235,7 @@ Hotfix; no migration.
 
 - Deployment credential scanner and write-path checks tightened.
 
-## 26.11.5 (2026-11-13)
+### 26.11.5 (2026-11-13)
 
 **Features**
 
@@ -242,7 +254,7 @@ Hotfix; no migration.
 - Migrations: V101.
 - Release tool shows status and the exact next commands, and takes a short hash.
 
-## 26.11.4 (2026-11-13)
+### 26.11.4 (2026-11-13)
 
 **Features**
 
@@ -259,12 +271,12 @@ Hotfix; no migration.
 - Migrations: V99, V100.
 - Release tool refuses to deploy while a background job is running.
 
-## 26.11.3 (2026-11-12)
+### 26.11.3 (2026-11-12)
 
 **Features**
 
 - Image check result shown on the page instead of raw JSON.
-- Sort a juror's gallery by newest or oldest vote; vote times shown on tiles and the large view.
+- Sort a juror's gallery by vote time; times shown on tiles.
 - Organizers see one juror's votes on the tiles, read-only.
 - Organizers' results bar stays on one line.
 
@@ -279,7 +291,7 @@ Hotfix; no migration.
 - Migrations: V97, V98.
 - Script to fill earlier votes' times from access logs.
 
-## 26.11.2 (2026-11-12)
+### 26.11.2 (2026-11-12)
 
 **Features**
 
@@ -303,14 +315,14 @@ Hotfix; no migration.
 
 - Migrations: V96.
 
-## 26.11.1 (2026-11-12)
+### 26.11.1 (2026-11-12)
 
 **Fixes**
 
 - Dark mode: secondary buttons and pager links have visible borders and text.
 - Light mode: secondary buttons no longer look disabled.
 
-## 26.11 (2026-11-11)
+### 26.11 (2026-11-11)
 
 First calendar-version release; includes everything developed since the previous deploy (V71-V95).
 
@@ -318,7 +330,7 @@ First calendar-version release; includes everything developed since the previous
 
 - Light, dark and auto colour modes on a refreshed layout, kept per user.
 - Yes/no rounds: the all-jurors gallery shows each file's approvals; "selected by at least N" filter.
-- REST API under `/api` with Swagger UI, for root only, with API tokens on the profile page.
+- REST API with Swagger UI for root, using API tokens.
 - Accounts are created by invitation only; email change is confirmed from the new address.
 - "Keep me signed in", "Sign out everywhere", and idle and absolute session lifetimes.
 - Criteria catalogue: admins pick each round's criteria from a shared list.
@@ -363,10 +375,6 @@ First calendar-version release; includes everything developed since the previous
 - docker-compose works again.
 - Smaller ZIP: no Scaladoc.
 
-## Deployed
-
-Releases deployed before calendar versions, dated by production's migration history.
-
 ### 2026-11-02 14:01Z: hotfix `0.13-round-filters-rolefix-f3f2c73617de`
 
 **Security**
@@ -387,7 +395,7 @@ Releases deployed before calendar versions, dated by production's migration hist
 
 **Features**
 
-- Rounds can leave out files by the contest's organizers, jurors and staff, with a count on the round form.
+- Rounds can leave out the contest staff's own files.
 - Better region filters: named special nominations, Wiki Loves Earth regions, cached counts.
 - Clear access-denied pages; jurors see only their own votes.
 - Galleries keep the juror's place and a stable order, and each click is faster.
@@ -442,7 +450,7 @@ Releases deployed before calendar versions, dated by production's migration hist
 **Operations**
 
 - Migrations: V54-V62.
-- Single service with versioned releases (`wlxjury-release`), restore path and recovery runbook.
+- Single service with versioned releases, restore path and recovery runbook.
 - Tables converted to InnoDB.
 
 ### 2026-09-07: query and security work from spring 2026

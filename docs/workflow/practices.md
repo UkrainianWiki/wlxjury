@@ -257,7 +257,7 @@ next release. *Example:* 26.11.13.1, on `release/26.11.13.1` from `release/26.11
 **Features**, **Fixes**, **Security** and **Operations** groups as needed, with its migrations on one
 line; implementation detail stays in the PRs and the git history. It leaves out unmerged work,
 hosting and server details, refactors, tests-only, docs-only and CI changes. "Unreleased
-(developed, not yet deployed)" comes first. Deployed releases are dated from their migrations
+(on master, not yet deployed)" comes first, then the release built but not deployed. Deployed releases are dated from their migrations
 (production's `flyway_schema_history.installed_on`, the first migration a deploy applied; a change
 without a migration is dated from a deploy record); earlier releases by their development period
 or git tag. A batch adds its line under Unreleased in the same PR; a deploy moves the block under
