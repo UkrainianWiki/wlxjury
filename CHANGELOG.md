@@ -68,6 +68,7 @@ Built from `26.11.13.1`; no migration.
 
 **Fixes**
 
+- Thumbnails load as you scroll, and pages no longer jump while they load (#150).
 - A started round's criteria can no longer be changed.
 - Round statistics no longer break on a juror with no status.
 - First keys typed in a saved category or import source are no longer lost.

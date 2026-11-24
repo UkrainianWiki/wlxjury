@@ -95,7 +95,7 @@
                                Its box at its size before the file arrives (Global.largeImageBox), so
                                that the comments below stay where a link to #comments scrolled *@
                             @defining(Global.largeImage(image)) { large =>
-                            <img id="large_image" alt="@hood.file.title"
+                            <img id="large_image" fetchpriority="high" alt="@hood.file.title"
                                 src="@large.src" class="mw-100 mh-100"
                                 @for((width, height) <- Global.largeImageBox(image, large.width)) {width="@width" height="@height"}
                                 srcset="@large.srcset" @large.sizes.map { sizes => sizes="@sizes" }
