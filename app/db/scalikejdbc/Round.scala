@@ -687,7 +687,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     val refused =
       sql"""SELECT r.distributing OR c.retired_at IS NOT NULL FROM round r LEFT JOIN contest_jury c ON c.id = r.contest_id
             WHERE r.id = $id""".map(_.boolean(1)).single().getOrElse(false) && active
-    val archived = WriteTx.write { implicit session =>
+    val (archived, jurorChanges) = WriteTx.write { implicit session =>
       val wasOpen = isOpen(id)
       sql"""UPDATE round
             SET ${statusOfStartStop(active, by)},
@@ -696,9 +696,16 @@ object Round extends RoundRepo with CRUDMapper[Round] {
                 created_at = created_at
             WHERE id = $id
               AND NOT ($active AND EXISTS (SELECT 1 FROM contest_jury c WHERE c.id = round.contest_id AND c.retired_at IS NOT NULL))""".update()
+      val nowOpen = isOpen(id)
+      // stopped or started again by an account that judges it: logged (RoundJurorChanges)
+      val jurorChanges =
+        if (wasOpen == nowOpen) Nil
+        else RoundJurorChanges.record(
+          if (nowOpen) ContestChangeJdbc.RoundJurorReopened else ContestChangeJdbc.RoundJurorStopped, Seq(id), by)
       // After the update, and read as of then: see ImageJdbc.lockOpenRoundsOf
-      !wasOpen && isOpen(id) && ImageJdbc.archiveDeletedVotesInRound(id).nonEmpty
+      (!wasOpen && nowOpen && ImageJdbc.archiveDeletedVotesInRound(id).nonEmpty, jurorChanges)
     }
+    RoundJurorChanges.log(jurorChanges)
     if (archived) RoundImageCounts.invalidate(id)
     !refused
   }
@@ -725,6 +732,14 @@ object Round extends RoundRepo with CRUDMapper[Round] {
   def openCond(table: SQLSyntax): SQLSyntax =
     sqls"""($table.active = 1 OR $table.distributing = 1
             OR ($table.freeze_count > 0 AND $table.active_before_freeze = 1))"""
+
+  /** Of `ids`, the rounds open now ([[openCond]]: active, being created or reviewed, or paused by a
+    * freeze while open), a plain read in one query: the conflict-of-interest rule's
+    * ([[services.GalleryService.othersVotesVisible]]).
+    */
+  def openIds(ids: Seq[Long])(implicit session: DBSession = AutoSession): Set[Long] =
+    if (ids.isEmpty) Set.empty
+    else sql"SELECT id FROM round WHERE id IN (${ids.distinct}) AND ${openCond(sqls"round")}".map(_.long(1)).list().toSet
 
   /** Whether the round is open ([[openCond]]), read as committed and locked for update. */
   def isOpen(id: Long)(implicit session: DBSession): Boolean = {

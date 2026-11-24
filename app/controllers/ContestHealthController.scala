@@ -24,7 +24,7 @@ class ContestHealthController @Inject() (cc: ControllerComponents, blocking: Blo
   private val settings = ContestHealth.Settings(config)
 
   def page(contestId: Long): EssentialAction =
-    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, Some(contestId), derived = true)) { user => implicit request =>
       ContestJuryJdbc.findById(contestId).fold[Result](
         NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))
       ) { contest =>

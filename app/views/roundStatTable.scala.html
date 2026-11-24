@@ -5,6 +5,12 @@
    (RoundController.setRoundUser): the contest's admins. Its organizers (who monitor the voting)
    and jurors see each juror's state as text instead. *@
 @mayPause = @{ controllers.Secured.administersRound(user, round) }
+@* a viewer who is a juror of the round sees only their own votes in it, whatever their role (the
+   conflict-of-interest rule, GalleryService.othersVotesVisible): each juror's progress (files,
+   unrated, rated) stays; another juror's selected and rejected counts, their lists and the lists
+   and counts of all the jurors' votes don't *@
+@others = @{ services.GalleryService.othersVotesVisible(user, round) }
+@ownRow(juror: User) = @{ others || user.id == juror.id }
 @* the statistics page's Status, Type and Order choices (RoundsFilter, from its URL), posted with a
    juror's pause and resume so that it comes back to the same page (RoundController.setRoundUser) *@
 @filterFields = {@for((name, value) <- controllers.RoundsFilter.fromRequest(req).params) {<input type="hidden" name="@name" value="@value">}}
@@ -71,27 +77,31 @@
 
                 @* the juror's gallery and file list, in any round, the count beside them, all centred on
                    one line (wlx-links-count, main.css) *@
+                @if(ownRow(juror)) {
                 <span class="wlx-links-count">@snippets.iconLink(RoundList(round, juror.getId, view = GalleryView.Gallery).pageUrl(1), "grid-3x3-gap-fill", Messages("gallery"), count != 0)
                 @snippets.iconLink(RoundList(round, juror.getId, view = GalleryView.FileList).pageUrl(1), "list-ul", Messages("filelist"), count != 0)
                 <span class="wlx-links-count-n">@count</span></span>
+                } else {
+                <span class="wlx-links-count-n">@count</span>
+                }
             }
             </td>
             @if(round.isBinary) {
-                <td>
-                    @roundStatLinks(round, juror, 1, stat.byUserRateCount)
+                <td class="juror-selected">
+                    @if(ownRow(juror)) {@roundStatLinks(round, juror, 1, stat.byUserRateCount)} else {—}
                 </td>
                 <td>
-                    @roundStatLinks(round, juror, 0, stat.byUserRateCount)
+                    @roundStatLinks(round, juror, 0, stat.byUserRateCount, links = ownRow(juror))
                 </td>
-                <td>
-                    @roundStatLinks(round, juror, -1, stat.byUserRateCount)
+                <td class="juror-rejected">
+                    @if(ownRow(juror)) {@roundStatLinks(round, juror, -1, stat.byUserRateCount)} else {—}
                 </td>
             } else {
                 <td>
-                @roundStatLinks(round, juror, 1, stat.byUserRateCount)
+                @roundStatLinks(round, juror, 1, stat.byUserRateCount, links = ownRow(juror))
                 </td>
                 <td>
-                @roundStatLinks(round, juror, 0, stat.byUserRateCount)
+                @roundStatLinks(round, juror, 0, stat.byUserRateCount, links = ownRow(juror))
                 </td>
             }
         </tr>
@@ -108,9 +118,13 @@
                     }
                 </th>
                 <th>
+                    @if(others) {
                     <span class="wlx-links-count">@snippets.iconLink(RoundList(round, 0, view = GalleryView.ByRate).pageUrl(1), "bar-chart-fill", Messages("byrate"), total != 0)
                         @snippets.iconLink(RoundList(round, 0, view = GalleryView.FileList).pageUrl(1), "list-ul", Messages("filelist"), total != 0)
                     <span class="wlx-links-count-n">@total</span></span>
+                    } else {
+                    <span class="wlx-links-count-n">@total</span>
+                    }
                     @if(user.isAdmin(Some(round.contestId))) {
                         <br>
                         <a href="/thumb_urls/@round.contestId?roundId=@round.getId" title="@Messages("thumbnail.urls.help")">@Messages("thumbnail.urls")</a>
@@ -119,7 +133,9 @@
                 @* a binary round's files with at least one vote of each kind, as the lists of all
                    the jurors' votes filtered by it list them (a file with votes of two kinds is
                    in both): selected, unrated, rejected, the jurors' columns' order *@
-                @if(round.isBinary) {
+                @if(round.isBinary && !others) {
+                    <th class="round-total-rate">—</th><th class="round-total-rate">—</th><th class="round-total-rate">—</th>
+                } else if (round.isBinary) {
                     @for(rate <- Seq(1, 0, -1)) {
                         @defining(stat.totalByRate.getOrElse(rate, 0)) { count =>
                         <th>

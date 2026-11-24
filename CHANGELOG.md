@@ -65,6 +65,41 @@ is listed below.
   year under the series, then **Earlier years**, **Other contests**). **Contests** gets **Series**
   and **Status** menus and **Series** and **Created** columns; adding a duplicate name, year and
   country warns. Series admins (CY-2) and creating next year's contest (CY-3) come later.
+- **Series admins (CY-2)** (the contest series plan, CA3, CA17, CA19, CA20, CA22 decided
+  2026-11-18; developed 2026-11-24, V112): root makes an account **Series admin** of a series, and
+  a series admin may add more of their own series (only root removes them; a grant root revoked
+  only root gives again). Each grant has a **start year** (by default the person's earliest Admin
+  year in the series, at most last year): from it on the series admin is an Admin of the series'
+  contests, account reach included, below it an Organizer; a Juror role wins. The **series page**
+  (`/series/<id>`, one entry per series in the contest menu, where a series admin with no contest
+  role lands) lists the contests with the viewer's role and an Open button, the series admins, and
+  **Add a series admin** with the start year and what the grant gives in each contest. On root's
+  series page the grants as a tree of who added whom, with **Revoke** (optionally the whole
+  branch) and the start year; root's **Series** page shows each series' grants of the last 24 hours
+  and those series admins added. Root and series admins are protected accounts: no one else edits,
+  links, invites, retires or joins them. A contest's **Users** page names its series admins, its
+  **Account changes** list the series' grants, and COI counts them. Creating a contest from the
+  series page comes with CY-3. Un-retiring a series brings its series admins back **to confirm**,
+  with no access until root confirms each (the maintainer's decision of 2026-11-24). A denial page
+  names a series admin's series and their role there; moving a contest lists the series admins it
+  gives or takes it from. After the security review: an account with any unrevoked grant (waiting
+  or of a retired series too) stays protected; a revoke also
+  revokes the links that series admin made in the series' contests; root's Confirm is refused if the
+  account changed hands meanwhile.
+- **A juror of an open round sees only their own votes in it** (the maintainer's conflict-of-interest
+  rule of 2026-11-24; open: active, paused, or being created or reviewed; once the round is closed
+  its results are visible as before), whatever their contest role: an admin, organizer, series admin or root who also
+  judges a round can't open another juror's votes there or all the jurors' together (galleries by
+  juror or by rate, the file list, CSV, the large view's votes of every juror, a monument's files,
+  the round's authors with votes); the round's statistics keep each juror's progress but not the
+  others' selections or the totals by vote; the round menu opens such a round on their own votes.
+  In rounds they don't judge nothing changes.
+- **A round stopped, started again, or closed by creating the next round by one of its own jurors**
+  (an admin who also judges it; the maintainer's decision of 2026-11-24) is recorded: the round's
+  statistics list it with who and when ("stopped by …, a juror of this round") for those who see its
+  organiser view, and the server log has a `juror_round_change` warning line (ids only). The same by
+  an admin who doesn't judge the round records nothing new. Root's contest change log lists these
+  entries too.
 - **A sticky top bar** (the maintainer's decision of 2026-11-23, replacing the trial of a bar
   that hid while scrolling down; developed 2026-11-23, `fix/sticky-topbar`): on the galleries, the
   by-rate gallery, the file list, the comments report, the contest files, the Rounds, round
@@ -209,6 +244,16 @@ is listed below.
 
 **Development**
 
+- **Migration V112** (CY-2, planned as V111, which #124's CY-4 holds; whichever merges second
+  renumbers above master's top): table `series_admin` (one live grant per account and series by
+  the generated `live_grant_series_id`, `admin_from_year`, `granted_by`, `revoked_by_root`; the
+  series RESTRICT, the account CASCADE) and `account_change`'s CHECK widened by
+  `series_admin_granted`, `series_admin_revoked`, `series_admin_from_year`, `series_admin_confirmed`
+  (`series_admin.confirm_needed_at` marks a grant to confirm after an un-retirement; V106's and V107's
+  values kept); rerunnable; a pre-V112 binary reads no grant; the undo is in the script's last
+  comment (FlywayUpgradeSpec "V112's series admins"). Guard specs (`security.SeriesReachGuardSpec`)
+  hold the session's series reach to `Secured`, the derived-role and account-reach opt-ins to their
+  lists, and target root checks to `User.isProtectedTarget`.
 - **Migration V110** (`stack/210-d1b-token-scope`, D-1b): `api_token.scope` (`full` | `local_read`,
   ascii_bin, NOT NULL DEFAULT `full`, a CHECK on the bytes), rerunnable; production's few token
   rows copy in milliseconds. An older release ignores the column: before rolling it back, revoke

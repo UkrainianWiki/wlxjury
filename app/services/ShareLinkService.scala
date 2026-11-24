@@ -65,9 +65,12 @@ object ShareLinkService {
       AccountTokenJdbc.findByUser(accountId).filter(t => t.live && t.purpose == AccountTokenJdbc.Invitation),
       User.contestsWorkedIn(accountId))
 
-  /** The contests `actor` is an admin of now, from the database. */
+  /** The contests `actor` is an admin of now, from the database: their real Admin rows, and the
+    * contests their live series grants reach (CA17, [[db.scalikejdbc.SeriesAdminJdbc.seriesAccountContests]]).
+    */
   private def adminContests(actor: User)(implicit session: DBSession): Set[Long] =
-    UserContestJdbc.findByUser(actor.getId).filter(_.role == User.ADMIN_ROLE).map(_.contestId).toSet
+    UserContestJdbc.findByUser(actor.getId).filter(_.role == User.ADMIN_ROLE).map(_.contestId).toSet ++
+      db.scalikejdbc.SeriesAdminJdbc.seriesAccountContests(actor.getId)
 
   /** The rule itself, on what was read: `adminOf` is `actor`'s admin contests. */
   private def refusalOf(actor: User, adminOf: => Set[Long], account: User, ties: Ties, purpose: String,
@@ -83,7 +86,8 @@ object ShareLinkService {
     else if (isRoot(actor)) None
     else if (actor.deletedAt.nonEmpty || !contestId.exists(admins.contains)) Some(NotAdmin)
     else if (actor.id == account.id) Some(OwnAccount)
-    else if (isRoot(account)) Some(TargetRoot)
+    // a protected account (root, a series admin: contest series plan §3.3) is root's only
+    else if (User.isProtectedTarget(account)) Some(TargetRoot)
     else if (!inContest) Some(NotInContest)
     else if (memberships.exists(m => m.active && !ShareableRoles.contains(m.role)) ||
       invitations.exists(_.role.exists(r => User.ACCESS_ROLES.contains(r) && !ShareableRoles.contains(r))))
@@ -127,7 +131,7 @@ object ShareLinkService {
       lazy val admins = adminContests(actor)
       if (actor.deletedAt.nonEmpty) Some(NotAdmin)
       else if (actor.id == account.id) Some(OwnAccount)
-      else if (isRoot(account)) Some(TargetRoot)
+      else if (User.isProtectedTarget(account)) Some(TargetRoot)
       else if (memberships.exists(m => m.active && !ShareableRoles.contains(m.role)) ||
         invitations.exists(_.role.exists(r => User.ACCESS_ROLES.contains(r) && !ShareableRoles.contains(r))))
         Some(TargetRole)

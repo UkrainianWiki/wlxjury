@@ -23,7 +23,7 @@ class RoundImageCheckController @Inject() (
 
   /** "Check round images" on a round's edit page. */
   def checkRound(id: Long): EssentialAction =
-    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
       Round.findById(id) match {
         case None =>
           NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found")(messagesApi.preferred(request), request))

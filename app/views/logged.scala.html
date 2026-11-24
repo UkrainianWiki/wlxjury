@@ -8,15 +8,20 @@
         @* grouped by series (contest series plan §5.1, JurorContests.switcherGroups): a heading per
            live series with this and last year's contests, then "Earlier years", then "Other
            contests" (no series, or a retired one); no headings without a live series *@
+        @* a series admin's series (contest series plan §3.3, JurorContests.seriesEntries): one entry
+           each, to the series page, after the contests; the contest the session is in by the
+           series only is named on the button *@
         @defining(controllers.JurorContests.switcherGroups(user)) { groups =>
         @defining(groups.flatMap(_.entries)) { entries =>
-        @if(entries.nonEmpty) {
+        @defining(controllers.JurorContests.seriesEntries(user)) { seriesEntries =>
+        @defining(controllers.JurorContests.seriesCurrent(user)) { seriesCurrent =>
+        @if(entries.nonEmpty || seriesEntries.nonEmpty) {
         <li class="nav-item dropdown">
             <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="@Messages("contest.switch")">
                 <i class="bi bi-shuffle" aria-hidden="true"></i>
                 @* what the menu does, read before the contest by screen readers *@
-                @if(entries.exists(e => user.contestId.contains(e._1.contestId))) {<span class="visually-hidden">@Messages("contest.switch"): </span>}
-                @entries.find(e => user.contestId.contains(e._1.contestId)).fold(Messages("contest.switch"))(_._2.fullName)
+                @if(entries.exists(e => user.contestId.contains(e._1.contestId)) || seriesCurrent.nonEmpty) {<span class="visually-hidden">@Messages("contest.switch"): </span>}
+                @entries.find(e => user.contestId.contains(e._1.contestId)).map(_._2.fullName).orElse(seriesCurrent.map(_._1.fullName)).getOrElse(Messages("contest.switch"))
             </button>
             <ul class="dropdown-menu dropdown-menu-end">
                 @for((group, index) <- groups.zipWithIndex) {
@@ -38,8 +43,16 @@
                     </li>
                 }
                 }
+                @if(seriesEntries.nonEmpty) {
+                    @if(entries.nonEmpty) {<li><hr class="dropdown-divider"></li>}
+                    @for(s <- seriesEntries) {
+                        <li><a class="dropdown-item contest-menu-series" href="@routes.SeriesController.seriesHome(s.id)">@Messages("series.menu.entry", s.name)</a></li>
+                    }
+                }
             </ul>
         </li>
+        }
+        }
         }
         }
         }

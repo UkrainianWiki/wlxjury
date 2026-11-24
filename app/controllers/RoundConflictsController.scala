@@ -36,7 +36,7 @@ class RoundConflictsController @Inject() (
     contestPermission(User.ADMIN_ROLES, Some(round.contestId))(user)
 
   def page(id: Long): EssentialAction =
-    withAuthOn(blocking)(rolePermission(ViewRoles)) { sessionUser => implicit request =>
+    withAuthOn(blocking)(rolePermission(ViewRoles, derived = true)) { sessionUser => implicit request =>
       withRound(sessionUser, id, ViewRoles, mayView) { (user, round) =>
         val review = RoundConflicts.review(round)
         Secured.switchingContest(sessionUser, user)(
@@ -47,7 +47,7 @@ class RoundConflictsController @Inject() (
 
   /** "Disqualify" of the files ticked (`pageId[]`): those still conflicts of interest. */
   def disqualify(id: Long): EssentialAction =
-    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { sessionUser => implicit request =>
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { sessionUser => implicit request =>
       withRound(sessionUser, id, User.ADMIN_ROLES, mayEdit) { (user, round) =>
         val messages = messagesApi.preferred(request)
         withFiles(round, messages) { (pageIds, _) =>
@@ -63,7 +63,7 @@ class RoundConflictsController @Inject() (
 
   /** "Requalify" of the files ticked (`pageId[]`), with a reason (`reason`, a code). */
   def requalify(id: Long): EssentialAction =
-    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { sessionUser => implicit request =>
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { sessionUser => implicit request =>
       withRound(sessionUser, id, User.ADMIN_ROLES, mayEdit) { (user, round) =>
         val messages = messagesApi.preferred(request)
         withFiles(round, messages) {

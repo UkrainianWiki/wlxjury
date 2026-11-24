@@ -279,31 +279,27 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "have no link to the staff's own votes, which the juror menu lists (no My votes until multi-role)" in {
+    "refuse an organizer who judges the open round all the jurors' votes in it, not once it is closed" in {
       testDbApp { app =>
         val f = fixture()
-        val own = page(app, f.orgJuror, gallery(f.round, 0))
-        own.select("#menu-my-votes").size === 0
-        own.select("#juror-menu a.dropdown-item").asScala.map(_.attr("href")).toList must
-          contain(startWith(gallery(f.round, f.orgJuror.getId)))
-        own.select("#votes-menu").size === 1
+        // the maintainer's decisions of 2026-11-24: a juror of an open round sees only their own votes
+        // in it, whatever their role; the organisers' bar and its juror menu are not theirs there.
+        // Once the round is closed they see its results as any organizer
+        val open = (status(get(app, f.orgJuror, gallery(f.round, 0))) === FORBIDDEN) and
+          (status(get(app, f.orgJuror, gallery(f.round, f.quiet.getId))) === FORBIDDEN) and
+          (status(get(app, f.organizer, gallery(f.round, 0))) === OK)
+        scalikejdbc.DB.autoCommit(implicit s => scalikejdbc.SQL(s"UPDATE round SET active = 0 WHERE id = ${f.round.getId}").update())
+        open and (status(get(app, f.orgJuror, gallery(f.round, 0))) === OK) and
+          (page(app, f.orgJuror, gallery(f.round, 0)).select("#juror-menu").size === 1)
       }
     }
 
-    "give staff the organisers' bar in their own gallery, opened from the juror menu" in {
+    "give an organizer who judges the round their own gallery, without the organisers' bar" in {
       testDbApp { app =>
         val f = fixture()
-        val href = page(app, f.orgJuror, gallery(f.round, 0)).select("#juror-menu a.dropdown-item").asScala
-          .map(_.attr("href")).find(_.startsWith(gallery(f.round, f.orgJuror.getId))).get
-        val own = page(app, f.orgJuror, href)
-        (own.select("nav").hasClass("wlx-nav-results") must beTrue) and
-          (NavMenus.current(own, "juror-menu").map(_.name) === Some("Org Juror")) and
-          // their two unrated files, counted; the Comments menu and their order (by their rating)
-          (counts(own) === Seq("All" -> Some(2), "Unrated" -> Some(2), "Selected" -> Some(0), "Rejected" -> Some(0))) and
-          (NavMenus.button(own, "votes-menu") === Some("Votes: All 2 · 2 unrated")) and
-          (own.select("#comments-menu").size === 1) and
-          (own.select(".wlx-nav-order a.dropdown-item").asScala.map(_.text.trim).toList must contain("By my rating")) and
-          (own.select(".wlx-nav-filters > li").size must be_>=(4))
+        val own = page(app, f.orgJuror, gallery(f.round, f.orgJuror.getId))
+        (own.select("#juror-menu").size === 0) and (own.select("#menu-my-votes").size === 0) and
+          (own.select("#gallery img[data-pageId]").size === 2)
       }
     }
 

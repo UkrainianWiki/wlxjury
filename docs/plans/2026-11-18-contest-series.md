@@ -2,7 +2,8 @@
 
 **Status:** CY-1 built on `stack/209-series-cy1` (V109; 2026-11-20); CY-0, the reuse dry-run
 report, built on `stack/212-series-cy0-report` (no migration; its production-copy numbers in §4.7);
-the rest is plan. The first
+CY-2, series admins, built on `feature/series-cy2-admins` (V112; 2026-11-24; without the series
+admins' creation path and CA6's disabled grantees, which ship with CY-3, §3.2); the rest is plan. The first
 batch, CA8 and the second batch are decided (2026-11-18). **Refined by the maintainer on
 2026-11-20:** a national contest may host rounds of several other countries (R4, §4.1); CY-1's
 inline reuse check reads every round's signals for it (§3.2). **Every decision is taken:** CA24 and,
@@ -382,7 +383,11 @@ All of this is logged in `contest_change`.
 - nothing can be created in it;
 - its contests stay live and show under "Other contests";
 - it is excluded from `seriesContests` and from COI's series branch (specs);
-- un-retiring asks root to re-confirm each grant.
+- un-retiring asks root to re-confirm each grant (the maintainer, 2026-11-24): the grants come back
+  "to confirm" (`series_admin.confirm_needed_at`), giving no access and no protection until root
+  confirms each; `granted_by` chains are kept; a grant whose granter is still to confirm is refused
+  until the granter is confirmed (a revoked granter doesn't block it); an unconfirmed grant can be
+  revoked. Built in CY-2.
 
 **Retired contests:**
 
@@ -421,7 +426,7 @@ All of this is logged in `contest_change`.
 
 - **With CY-3:** root's and the contest Admins' paths, and the people picker.
 - **With whichever of CY-2 and CY-3 lands second** (they need both CY-3's form and CY-2's
-  `series_admin`, the next free number at its merge, V111 now):
+  `series_admin`, V112 on CY-2's branch):
   - creation by series admins;
   - CA6's disabled grantees in the people picker.
 
@@ -723,6 +728,50 @@ from the start year on that were older than the grant, logged, with a notice to 
 **COI:** `CoiMembers.forContest` gains a branch for the live series admins of the contest's live
 series. Specs cover a series admin with no real row, and a retired series.
 
+**Design note (the security review of #140, CY-2):**
+
+- **CA7 is per account.** A series admin who holds a Juror row in contest C has no derived role or
+  account reach in C, but may still add or invite another account in their reach and grant it
+  "Series admin": that account then has derived Admin in C. A determined series admin can so reach
+  a contest where they judge. Accepted (series admins are trusted per series, CA19); the
+  mitigation is root's 24-hour view per series and the 30-day notices of grants series admins
+  added on `/admin/series`, and root's chained revoke.
+- **Protection outlasts access.** An unrevoked grant protects its holder whether it is live,
+  waiting for root's confirmation or of a retired series (protection only restricts others); only
+  a live grant gives access. The role writes stay as above (the maintainer, 2026-11-24, rather
+  than the review's "only root changes a protected account's roles"): in the series' contests no
+  one but root makes it a Juror or removes or lowers its Admin row; elsewhere its Juror and
+  Organizer rows change as any member's.
+- **A juror of an open round sees only their own votes in it** (the maintainer's conflict-of-interest
+  rule, 2026-11-24, limited the same day to open rounds), whatever their contest role: a contest
+  Admin or Organizer, a series admin by a derived or real role, root. Open: `Round.openCond`
+  (active, being created or reviewed, or paused by a freeze while open); once the round is closed
+  (stopped, finalized, cancelled) its results are visible as to any admin, so the round form and the
+  round review page, which read a closed previous round, need no rule (the form shows no count of
+  the previous round's results). A juror of the round: a `round_user` row, active or stopped, or
+  votes of their own in it; the round menu opens such a round on the viewer's own votes. One check, `GalleryService.othersVotesVisible`, guards every place that shows
+  other jurors' votes (the galleries as another juror or all, by rate, file list, CSV, comments
+  report, the large view, a monument's files, the round's authors with votes, the statistics'
+  selections and totals, the organisers' bar); each juror's progress counts stay. With CA7 this
+  closes most of a juror-admin's view of their own round; the sock route above stays as accepted.
+- **A juror-admin's stop, start or close of their own round is recorded** (the maintainer's choice
+  (i) of 2026-11-24, F1 of the conflict-of-interest review): the open rule above lets a juror-admin
+  stop their round to see its results, start it again, or close it by creating the next round from
+  it. Each such change of the round's open state (`Round.openCond`) by an account that judges the
+  round (`User.roundsJuredIn`, any role, root included) writes a `contest_change` row in the same
+  transaction (`RoundJurorChanges`; kinds `round_juror_stopped`, `round_juror_reopened`,
+  `round_juror_closed`, V112 widening V109's CHECK; detail `round`, `number`, and for a close
+  `byRound`, `byRoundNumber`) and, after the commit, a WARN `juror_round_change` line on
+  `security.authz` with ids only. Written at `Round.setActiveGuarded` (the rounds list's and the
+  conflicts page's Start/Stop) and at a creation's completion (`RoundDistributionHandler.complete`,
+  the job's `createdBy` as the actor). The round's statistics list the entries with who and when
+  to those who see its organiser view (`othersVotesVisible`); root's contest change log shows them;
+  "Undo batch" ignores them (`ContestChangeJdbc.latestOf` reads the contest's own kinds only).
+  Considered and not chosen: (ii) a line from `round.status_changed_by`, which keeps only the latest
+  change and has no close by creation. F2: `SeriesReachGuardSpec` pins each query of every juror's
+  votes together outside `RoundList` (`getRoundStat`, `roundUserStat`, `imageCountsByRate`,
+  `AuthorStats.ofRound`, `byRoundAndImageWithJury`, `RoundImageQuery.of`) to its listed callers.
+
 **Visible to the contest:**
 
 - **The users page** shows "Series admins: …": the names, with no edit control for anyone but
@@ -770,14 +819,16 @@ series. Specs cover a series admin with no real row, and a retired series.
   D-1b's migration hasn't merged before CY-1, CY-1 either waits for it (it depends on D-1a anyway)
   or takes its number and D-1b renumbers.
 - **The numbers below:** CY-1's V109 is fixed (no other branch had it, 2026-11-20). CY-2 and
-  CY-4 take the next free number at their merge: V111 and V112 now that D-1b has V110, one lower
+  CY-4 take the next free number at their merge. On 2026-11-24 CY-4 (#124, draft) holds V111 on its
+  branch and CY-2 V112; whichever merges second renumbers to above master's top first. Earlier: V111
+  and V112 once D-1b had V110, one lower
   each if CY-2 or CY-4 merges before D-1b and D-1b renumbers instead.
 
 | | PR | Content |
 |---|---|---|
 | V109 `Series` | CY-1 | Table `series`. On `contest_jury`: `series_id` (FK RESTRICT), `created_at TIMESTAMP(3) NULL` (no `ON UPDATE`), `created_by`, `retired_at`, `retired_by`, the generated `live_series_id` and `UNIQUE (live_series_id, year)`. Table `contest_change(id, contest_id, series_id, actor_id, kind, batch_id, detail JSON, comment, created_at)`, kinds `created`, `identity`, `series_assigned`, `series_unassigned`, `series_changed`, `split_out`, `split_in`, `split_undone`, `retired`, `unretired` (CA8, decided) |
-| V111 `Series_admin` (next free at merge) | CY-2 | Table `series_admin` with `admin_from_year` (NOT NULL, CA20), `live_grant_series_id` and its unique key. `account_change.field` adds `series_admin_granted`, `series_admin_revoked` and `series_admin_from_year` (keeping V106's and V107's) |
-| V112 `Contest_split` (next free at merge) | CY-4 | `contest_split` and `contest_split_item` |
+| V112 `Series_admin` (next free at merge; V112 on its branch) | CY-2 | Table `series_admin` with `admin_from_year` (NOT NULL, CA20), `live_grant_series_id` and its unique key. `account_change.field` adds `series_admin_granted`, `series_admin_revoked` and `series_admin_from_year` (keeping V106's and V107's) |
+| V111 `Contest_split` (next free at merge; V111 on #124's branch) | CY-4 | `contest_split` and `contest_split_item` |
 
 Each migration is rerunnable and has a FlywayUpgradeSpec case.
 
@@ -1301,9 +1352,9 @@ Everyone else with a contest in the series sees only their own contests' rows.
 | **CY-0** | The reuse report; Q0–Q4 tuning. Built on `stack/212-series-cy0-report` (§4.3, numbers in §4.7) | D-1a, D-1b | — | M (3–4 days) |
 | **CY-1** | Series table and key, derived previous, `contest_change` with batches, retired contests and series, `/admin/series`, proposals with bulk confirm, affected-grants list and batch undo, **the inline reuse check** (with every round's signals, R4), the menu grouped by series, the `/contests` filter, docs. Built on `stack/209-series-cy1` | D-1a | V109 | M–L (6–7 days) |
 | Ops after CY-1 | **Production assignment:** Q0 and Q5 on the copy, then root's bulk confirmation on production, in batches | CY-1 | — | 1 day |
-| **CY-2** | Series admins: `series_admin` with its live-grant key, CA19 adds with the grantee rules, root-only re-grant, **the chained revoke (required) with three-level specs**, root's 24-hour grants view, join and retirement hooks, `seriesAccountContests` in the account rules (CA17), `withSeries(user, currentContestId)`, `derivedRoles`, `contestPermission` real-only with the `derived = true` opt-in and `inContestReal`, CA20 derivation from `admin_from_year` with its computed default, bounds and root's later edit (logged), every action classified, `isProtectedTarget` replacing the 26 target checks, COI, the users-page line, the change-log view, the menu entry and landing, the grant UI with the start year and the contest list, guard specs, negatives; its own security review. Series admins' creation path and CA6's disabled grantees ship with whichever of CY-2 and CY-3 lands second | CY-1 | next free at merge (V111 now) | L (14–16 days) |
+| **CY-2** | Series admins: `series_admin` with its live-grant key, CA19 adds with the grantee rules, root-only re-grant, **the chained revoke (required) with three-level specs**, root's 24-hour grants view, join and retirement hooks, `seriesAccountContests` in the account rules (CA17), `withSeries(user, currentContestId)`, `derivedRoles`, `contestPermission` real-only with the `derived = true` opt-in and `inContestReal`, CA20 derivation from `admin_from_year` with its computed default, bounds and root's later edit (logged), every action classified, `isProtectedTarget` replacing the 26 target checks, COI, the users-page line, the change-log view, the menu entry and landing, the grant UI with the start year and the contest list, guard specs, negatives; its own security review. Series admins' creation path and CA6's disabled grantees ship with whichever of CY-2 and CY-3 lands second. **Built on `feature/series-cy2-admins`** (2026-11-24): CY-2 lands first, so those two wait for CY-3 | CY-1 | next free at merge (V112 on its branch) | L (14–16 days) |
 | **CY-3** | Creating contests: the series page, the next-year path (CA4), settings, the people picker, root's notices, the H1/import links. Creation by series admins (CA16) and CA6's disabled grantees ship with whichever of CY-2 and CY-3 lands second | CY-1 | — | M (5–6 days) |
-| **CY-4** | Split, Undo, redirects, runbook; R4's per-cluster targets, memberships in the target (CA11, CA23), COI and regions from the target (§4.1); root's page and a job (CA13), Undo plus a dump (CA12), source links kept (CA10). **Decided** (CA9, 2026-11-20) on CY-0's numbers | CY-0, CY-1 | next free at merge (V112 now) | L (9–11 days) |
+| **CY-4** | Split, Undo, redirects, runbook; R4's per-cluster targets, memberships in the target (CA11, CA23), COI and regions from the target (§4.1); root's page and a job (CA13), Undo plus a dump (CA12), source links kept (CA10). **Decided** (CA9, 2026-11-20) on CY-0's numbers | CY-0, CY-1 | next free at merge (V111 on #124's branch) | L (9–11 days) |
 | **CY-5** | The production split run | CY-4 | — | ops, 1–2 days |
 
 **Order:**

@@ -32,7 +32,7 @@ class LargeViewController @Inject() (
 
   /** A round's file in the large view; never cached, as it shows votes ([[noStore]]). */
   def large(asUserId: Long, pageId: Long, region: String = "all", roundId: Long): EssentialAction =
-    noStore(withAuth() { sessionUser => implicit request =>
+    noStore(withAuth(rolePermission(Secured.ViewerRoles, derived = true)) { sessionUser => implicit request =>
       val maybeRound =
         if (roundId == 0) JurorContests.firstOpenRound(sessionUser)
         else Round.findById(roundId)
@@ -42,7 +42,7 @@ class LargeViewController @Inject() (
     })
 
   def largeCurrentUser(pageId: Long, region: String = "all"): EssentialAction =
-    noStore(withAuth() { sessionUser => implicit request =>
+    noStore(withAuth(rolePermission(Secured.ViewerRoles, derived = true)) { sessionUser => implicit request =>
       // as round 0 in [[large]]: the juror's open round, in another of their contests if need be
       val maybeRound = JurorContests.firstOpenRound(sessionUser)
       val user = maybeRound.fold(sessionUser)(r => Secured.inContest(sessionUser, r.contestId))
@@ -182,7 +182,8 @@ class LargeViewController @Inject() (
       else viewed.withRound(viewed.round.copy(criteriaCount = roundCriteria.size, criterionIds = roundCriteria.map(_.id)))
     val round = list.round
 
-    val votes = if (user.canViewOrgInfo(round)) {
+    // every juror's vote on the file: not for a juror of the round (the conflict-of-interest rule)
+    val votes = if (GalleryService.othersVotesVisible(user, round)) {
       VoteJdbc.byRoundAndImageWithJury(round.getId, pageId)
     } else Seq.empty
 

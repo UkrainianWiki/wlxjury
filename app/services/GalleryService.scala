@@ -25,12 +25,13 @@ class GalleryService {
     *
     * Their own votes, always. Anyone else's, or all together, only for those who may see
     * the round's organiser info ([[User.canViewOrgInfo]]: root, the contest's admins and
-    * organizers, never a juror), and only of a juror of the round
-    * ([[User.isRoundJuror]]), as the galleries' juror menu lists them.
+    * organizers, never a juror) and are not a juror of the round themselves
+    * ([[GalleryService.othersVotesVisible]], the conflict-of-interest rule), and only of a juror
+    * of the round ([[User.isRoundJuror]]), as the galleries' juror menu lists them.
     */
   def viewAs(user: User, round: Round, asUserId: Long): GalleryService.ViewAs =
     if (user.id.contains(asUserId)) GalleryService.ViewAs.Allowed
-    else if (!user.canViewOrgInfo(round)) GalleryService.ViewAs.OtherUsersVotes
+    else if (!GalleryService.othersVotesVisible(user, round)) GalleryService.ViewAs.OtherUsersVotes
     else if (asUserId == 0 || User.isRoundJuror(round.getId, asUserId)) GalleryService.ViewAs.Allowed
     else GalleryService.ViewAs.NotRoundJuror
 
@@ -226,4 +227,29 @@ object GalleryService {
 
   /** The denial reason of [[ViewAs.OtherUsersVotes]] ([[controllers.Secured.Denial]]). */
   val OtherUsersVotesReason = "other_users_votes"
+
+  /** Whether `user` may see other jurors' votes in `round` (one juror's, all together, their
+    * ratings, rankings and per-juror counts of them): those who may see the round's organiser info
+    * ([[User.canViewOrgInfo]]), unless they are a juror of the round themselves while it is open
+    * (the maintainer's conflict-of-interest rule of 2026-11-24, open rounds only by the decision of
+    * the same day): a juror of an open round sees only their own votes in it, whatever their
+    * contest role (an admin or organizer, a series admin's derived role, root); once the round is
+    * closed they see its results as any admin. Open: [[Round.openCond]], active, being created or
+    * reviewed (distributing), or paused by a freeze while open; closed: anything else (stopped,
+    * finalized, cancelled). A juror of the round: [[User.isRoundJuror]], a round_user row, active
+    * or stopped, or votes of their own in it. The one check of every place that shows other
+    * jurors' votes (a guard spec lists them).
+    */
+  def othersVotesVisible(user: User, round: Round): Boolean =
+    user.canViewOrgInfo(round) && ownVotesOnlyRounds(user, Seq(round)).isEmpty
+
+  /** Of `rounds`, those where `user` sees only their own votes ([[othersVotesVisible]]): the open
+    * rounds they are a juror of. In two queries at most, for a menu of rounds (the galleries' round
+    * menu opens these on the viewer's own votes).
+    */
+  def ownVotesOnlyRounds(user: User, rounds: Seq[Round]): Set[Long] =
+    user.id.fold(Set.empty[Long]) { id =>
+      val open = Round.openIds(rounds.flatMap(_.id))
+      if (open.isEmpty) Set.empty else User.roundsJuredIn(id, open.toSeq)
+    }
 }

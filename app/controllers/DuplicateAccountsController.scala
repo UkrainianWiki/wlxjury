@@ -21,7 +21,7 @@ class DuplicateAccountsController @Inject()(cc: ControllerComponents, blocking: 
 
   /** The contest's report: the groups with an account in it (a member, or worked in it). */
   def report(contestId: Long): EssentialAction =
-    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
+    withAuthOn(blocking)(accountAdminPermission(Some(contestId))) { user => implicit request =>
       ContestJuryJdbc.findById(contestId).fold[Result](
         NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))
       ) { contest =>
@@ -47,7 +47,7 @@ class DuplicateAccountsController @Inject()(cc: ControllerComponents, blocking: 
     // the builder first in the body (RouteAuthSpec reads it): root for the full report, the
     // contest's admins (and root) for a contest's
     withAuthOn(blocking)(contestId.fold[Secured.DescribedPermission](rolePermission(Set(User.ROOT_ROLE)))(c =>
-      contestPermission(User.ADMIN_ROLES, Some(c)))) { user => implicit request =>
+      accountAdminPermission(Some(c)))) { user => implicit request =>
       val back = contestId.fold(routes.DuplicateAccountsController.all())(routes.DuplicateAccountsController.report)
       val form = request.body.asFormUrlEncoded.getOrElse(Map.empty)
       val accounts = form.getOrElse("account", Nil).map(_.trim.toLongOption)

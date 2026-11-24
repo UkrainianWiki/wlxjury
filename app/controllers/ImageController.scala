@@ -37,7 +37,7 @@ class ImageController @Inject() (
   /** Shows contest images view
     */
   def images(contestId: Long): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
+    withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId), derived = true)) { user => implicit request =>
       withContest(user, contestId) { contest =>
         val sourceImageNum = getNumberOfImages(contest)
         val dbImagesNum = ImageJdbc.countByContest(contest)
@@ -58,7 +58,7 @@ class ImageController @Inject() (
     * `{"warning": null}`; no Commons call.
     */
   def sourceIdentity(contestId: Long, source: String): EssentialAction =
-    withAuthJson(contestPermission(User.ADMIN_ROLES, Some(contestId))) { _ => implicit request =>
+    withAuthJson(contestPermission(User.ADMIN_ROLES, Some(contestId), derived = true)) { _ => implicit request =>
       ContestJuryJdbc.findById(contestId).fold[Result](NotFound(Json.obj("error" -> "not_found"))) { contest =>
         val warning = ContestHealth.sourceWarning(contest, source.take(ImageController.MaxSourceLength))
           .map(check => ImageController.identityWarningText(contest, check)(messagesApi.preferred(request)))
@@ -95,7 +95,7 @@ class ImageController @Inject() (
     * are read as before, without a check. On the blocking pool: the check waits for Commons.
     */
   def importImages(contestId: Long): EssentialAction =
-    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, Some(contestId), derived = true)) { user => implicit request =>
       withContest(user, contestId) { contest =>
         // the typed source's identity warning (DG10): shown again with the form, never a refusal
         def page(form: Form[(String, String, String)], check: Option[ImageController.SourceCheck] = None) =
@@ -189,14 +189,14 @@ class ImageController @Inject() (
     * to the files page at its cache section ([[ImageController.ImageCacheSection]]).
     */
   def startImageCache(contestId: Long): EssentialAction =
-    withAuthForm(contestPermission(User.ADMIN_ROLES, Some(contestId))) { _ => implicit request =>
+    withAuthForm(contestPermission(User.ADMIN_ROLES, Some(contestId), derived = true)) { _ => implicit request =>
       localImageCacheService.startDownload(contestId)
       if (Secured.isScriptRequest(request)) NoContent
       else Redirect(routes.ImageController.images(contestId).url + "#" + ImageController.ImageCacheSection)
     }
 
   def imageCacheStatus(contestId: Long): EssentialAction =
-    withAuthJson(contestPermission(User.ADMIN_ROLES, Some(contestId))) { _ => _ =>
+    withAuthJson(contestPermission(User.ADMIN_ROLES, Some(contestId), derived = true)) { _ => _ =>
       Ok(Json.toJson(localImageCacheService.progress(contestId)))
     }
 
@@ -206,7 +206,7 @@ class ImageController @Inject() (
 
   /** [[startImageCache]] for a round's images, from its round form. */
   def startRoundImageCache(id: Long, rid: Long): EssentialAction =
-    withAuthForm(contestPermission(User.ADMIN_ROLES, Some(id))) { user => implicit request =>
+    withAuthForm(contestPermission(User.ADMIN_ROLES, Some(id), derived = true)) { user => implicit request =>
       val script = Secured.isScriptRequest(request)
       if (!inContest(id, rid))
         if (script) NotFound(Json.obj("error" -> "round_not_found"))
@@ -219,7 +219,7 @@ class ImageController @Inject() (
     }
 
   def roundImageCacheStatus(id: Long, rid: Long): EssentialAction =
-    withAuthJson(contestPermission(User.ADMIN_ROLES, Some(id))) { _ => _ =>
+    withAuthJson(contestPermission(User.ADMIN_ROLES, Some(id), derived = true)) { _ => _ =>
       if (!inContest(id, rid)) NotFound(Json.obj("error" -> "round_not_found"))
       else Ok(Json.toJson(localImageCacheService.progressForRound(rid)))
     }

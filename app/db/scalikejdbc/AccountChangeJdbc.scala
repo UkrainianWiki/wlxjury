@@ -55,10 +55,30 @@ object AccountChangeJdbc {
     * each naming the other in its comment.
     */
   val AccountRetired = "account_retired"
+  /** A grant of "Series admin" (contest series plan §3.3, V112): on the grantee, by root or a series
+    * admin of the series; old_value the computed default start year, new_value the chosen one,
+    * comment `series #<id>` ([[seriesComment]]).
+    */
+  val SeriesAdminGranted = "series_admin_granted"
+  /** A grant revoked (root only): old_value the start year, comment `series #<id>`. */
+  val SeriesAdminRevoked = "series_admin_revoked"
+  /** A grant's start year changed (root only): old and new values, comment `series #<id>`. */
+  val SeriesAdminFromYear = "series_admin_from_year"
 
-  /** The fields the check allows (V96's, V106's `account_joined` and V107's `account_retired`). */
+  /** Root confirmed a grant waiting since its series was un-retired: old_value the start year. */
+  val SeriesAdminConfirmed = "series_admin_confirmed"
+
+  /** The series fields, whose rows carry their series in the comment ([[seriesComment]]). */
+  val SeriesFields: Seq[String] = Seq(SeriesAdminGranted, SeriesAdminRevoked, SeriesAdminFromYear, SeriesAdminConfirmed)
+
+  /** The comment of a series field's row: `series #<id>`, which the contest's change log matches. */
+  def seriesComment(seriesId: Long): String = s"series #$seriesId"
+
+  /** The fields the check allows (V96's, V106's `account_joined`, V107's `account_retired` and
+    * V112's series fields).
+    */
   val Fields: Seq[String] = Seq(Email, Password, Role, Name, WikiAccount, Root, AccountCreated, Invitation,
-    InvitationCancelled, PasswordLink, ShareLink, SessionsEnded, AccountJoined, AccountRetired)
+    InvitationCancelled, PasswordLink, ShareLink, SessionsEnded, AccountJoined, AccountRetired) ++ SeriesFields
 
   /** The longest old or new value, and comment, the columns take: longer ones are cut. */
   val ValueMaxLength = 255
@@ -120,13 +140,23 @@ object AccountChangeJdbc {
           WHERE user_id = $userId AND (${contestId.isEmpty} OR contest_id <=> $contestId)
           ORDER BY created_at DESC, id DESC LIMIT $limit""".map(extract).list.apply()
 
-  /** The contest's entries, the newest first: a page of `limit` after `offset`. */
-  def findByContest(contestId: Long, limit: Int, offset: Int)(implicit
+  /** The contest's entries, the newest first: a page of `limit` after `offset`. With `seriesId`
+    * (the contest's series), the series' grants, revocations and start-year changes too (contest
+    * series plan §3.3, "Visible to the contest").
+    */
+  def findByContest(contestId: Long, limit: Int, offset: Int, seriesId: Option[Long] = None)(implicit
       session: DBSession = AutoSession
   ): Seq[AccountChange] =
-    sql"""SELECT $columns FROM account_change WHERE contest_id = $contestId
+    sql"""SELECT $columns FROM account_change WHERE ${ofContest(contestId, seriesId)}
           ORDER BY created_at DESC, id DESC LIMIT $limit OFFSET $offset""".map(extract).list.apply()
 
-  def countByContest(contestId: Long)(implicit session: DBSession = AutoSession): Long =
-    sql"SELECT COUNT(*) FROM account_change WHERE contest_id = $contestId".map(_.long(1)).single.apply().getOrElse(0L)
+  def countByContest(contestId: Long, seriesId: Option[Long] = None)(implicit session: DBSession = AutoSession): Long =
+    sql"SELECT COUNT(*) FROM account_change WHERE ${ofContest(contestId, seriesId)}".map(_.long(1)).single.apply()
+      .getOrElse(0L)
+
+  private def ofContest(contestId: Long, seriesId: Option[Long]): SQLSyntax =
+    seriesId.fold(sqls"contest_id = $contestId") { s =>
+      sqls"""(contest_id = $contestId OR (contest_id IS NULL AND field IN ($SeriesFields)
+              AND (BINARY comment = ${seriesComment(s)} OR BINARY comment LIKE ${seriesComment(s) + "; %"})))"""
+    }
 }

@@ -84,7 +84,8 @@ object IdentityLinker {
       case None =>
         val byEmail   = emailUsers(profile)
         val byAccount = accountUsers(profile)
-        val choosable = byAccount.filterNot(_.isRoot)
+        // a protected account (root, a series admin: contest series plan §3.3) is never linked here
+        val choosable = byAccount.filterNot(User.isProtectedTarget(_))
         if (byAccount.size > 1 && choosable.nonEmpty) Left(LinkError.Choose(choosable))
         else (byAccount ++ byEmail).distinctBy(_.id) match {
           case Seq() if profile.emailNotAuthoritative => Left(LinkError.EmailNotAuthoritative)
@@ -140,13 +141,13 @@ object IdentityLinker {
     * sign-in (a never-linked placeholder, M1), never root.
     */
   def choosableDirectly(user: User): Boolean =
-    !user.isRoot && wikiPlaceholder(user) && !hadWikimediaIdentity(user)
+    !User.isProtectedTarget(user) && wikiPlaceholder(user) && !hadWikimediaIdentity(user)
 
   /** Links the identity to the account chosen (directly, or after a proof of control) and marks
     * its wiki account, the identity's username, verified.
     */
   def linkChosen(user: User, profile: ExternalProfile): Either[LinkError, User] =
-    if (user.isRoot || !sameWikiAccount(user, profile)) Left(LinkError.NoAccount)
+    if (User.isProtectedTarget(user) || !sameWikiAccount(user, profile)) Left(LinkError.NoAccount)
     else
       link(user.getId, profile).map { _ =>
         if (!user.wikiAccountVerified) user.wikiAccount.foreach(User.verifyWikiAccount(user.getId, _))
