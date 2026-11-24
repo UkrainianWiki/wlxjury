@@ -261,6 +261,14 @@ object SeriesAdminJdbc {
       sql"""SELECT DISTINCT sa.user_id FROM series_admin sa
             WHERE sa.user_id IN (${userIds.distinct}) AND ${heldGrantCondition(sqls"sa")}""".map(_.long(1)).list.apply().toSet
 
+  /** Whether the account holds an unrevoked grant ([[heldGrantCondition]], live or not) on the
+    * contest's series ([[User.seriesProtected]], the role writes' rule).
+    */
+  def holdsGrantOnContest(userId: Long, contestId: Long)(implicit session: DBSession = AutoSession): Boolean =
+    sql"""SELECT EXISTS(SELECT 1 FROM series_admin sa JOIN contest_jury c ON c.series_id = sa.series_id
+          WHERE sa.user_id = $userId AND c.id = $contestId AND ${heldGrantCondition(sqls"sa")})"""
+      .map(_.boolean(1)).single.apply().getOrElse(false)
+
   /** Whether the account (or its history) was changed in ways that could hand it to someone else
     * since the grant began waiting for confirmation, or since its series was last retired before
     * that (the security review of #140, M1): an email, password, wiki account, root, join or

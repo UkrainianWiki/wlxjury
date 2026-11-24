@@ -1088,6 +1088,14 @@ object User extends CRUDMapper[User] {
     accounts.filter(a => a.isRoot || a.hasRole(ROOT_ROLE)).flatMap(_.id).toSet ++
       SeriesAdminJdbc.withHeldGrant(accounts.flatMap(_.id))
 
+  /** Whether `accountId` holds an unrevoked grant (live or not) on the contest's series: then no
+    * one but root adds it as a Juror there, or removes or downgrades its Admin row (the role
+    * writes, contest series plan §3.3; protection counts a grant that may come back, as
+    * [[isProtectedTarget]]).
+    */
+  def seriesProtected(accountId: Long, contestId: Long)(implicit session: DBSession = autoSession): Boolean =
+    SeriesAdminJdbc.holdsGrantOnContest(accountId, contestId)
+
   /** The account's row, locked until the transaction ends. */
   def lockRow(id: Long)(implicit session: DBSession): Option[User] =
     sql"SELECT ${u.result.*} FROM ${User as u} WHERE ${u.id} = $id FOR UPDATE".map(User(u.resultName)).single.apply()
