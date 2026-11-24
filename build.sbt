@@ -341,6 +341,10 @@ libraryDependencies ++= Seq(
   ),
   "com.softwaremill.sttp.tapir" %% "tapir-json-play" % TapirVersion,
   "com.softwaremill.sttp.tapir" %% "tapir-swagger-ui-bundle" % TapirVersion,
+  // GraphQL (graphql.GraphQLController at POST /api/graphql, docs/plans/2026-11-24-graphql-sangria.md):
+  // the core only, without sangria-derivation's macros; JSON through graphql.PlayJsonMarshalling,
+  // not sangria-play-json, which brings the old com.typesafe.play play-json beside Play 3's
+  "org.sangria-graphql" %% "sangria-core" % "4.1.0",
   guice,
   filters,
   specs2 % Test,

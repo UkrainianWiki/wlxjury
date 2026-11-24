@@ -17,6 +17,7 @@ Merged to master after the 26.11.14 build.
 **Features**
 
 - Read-only API tokens that work only from the server itself (#121).
+- GraphQL API for the tool's new screens: the caller, their contests and rounds (#154).
 - Health and recent-activity API endpoints for support, plus a diagnostics command-line tool (#121).
 - Contest series: one contest per year tied together (#120).
 - Root's Series page: create, rename and retire series.

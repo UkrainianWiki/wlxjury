@@ -31,7 +31,12 @@ class CsrfErrorHandler @Inject() (val messagesApi: MessagesApi) extends CSRF.Err
     logger.warn(s"csrf_failure ref=$reference method=${request.method} path=${Secured.logPath(request.path)} " +
       s"signedIn=${user.isDefined} ${Secured.accountFields(request, user)} message=${Secured.logValue(msg)}")
     Future.successful(
-      if (ApiFailure.isApiRequest(request))
+      if (request.path == CsrfErrorHandler.GraphQLPath)
+        // the GraphQL endpoint's clients read `errors` (graphql.GraphQLController); the REST fields too
+        Forbidden(Json.obj("error" -> "csrf", "reference" -> reference, "hint" -> CsrfErrorHandler.ApiHint,
+          "errors" -> Json.arr(Json.obj("message" -> "csrf",
+            "extensions" -> Json.obj("code" -> "CSRF", "reference" -> reference)))))
+      else if (ApiFailure.isApiRequest(request))
         Forbidden(Json.obj("error" -> "csrf", "reference" -> reference, "hint" -> CsrfErrorHandler.ApiHint))
       else if (Secured.isScriptRequest(request)) Forbidden(Json.obj("error" -> "csrf", "reference" -> reference))
       // the sign-in form posted again by a signed-in user (a stale sign-in tab, a reload or Back
@@ -53,6 +58,9 @@ class CsrfErrorHandler @Inject() (val messagesApi: MessagesApi) extends CSRF.Err
 }
 
 object CsrfErrorHandler {
+
+  /** The GraphQL endpoint ([[graphql.GraphQLController]]), whose refusal also has GraphQL's `errors`. */
+  val GraphQLPath = "/api/graphql"
 
   /** The password sign-in's POST ([[controllers.LoginController.auth]]). */
   def isSignInPost(request: RequestHeader): Boolean =

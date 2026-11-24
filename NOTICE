@@ -84,7 +84,9 @@ GPL-3.0-or-later work as GPL-3.0 allows. The ones with other terms:
   Option chosen: EDL-1.0. jakarta.activation 1.2.1: EDL-1.0.
 - MIT: chronoscala, ficus, odelay, scallop, progressbar, sysout-over-slf4j, checker-qual,
   enumeratum, jsoup, slf4j (api and jul-to-slf4j), cats (core and kernel), jawn-parser.
-- Apache-2.0: retry, scala-csv, jsr305, jcip-annotations (stephenc repackaging).
+- Apache-2.0: retry, scala-csv, jsr305, jcip-annotations (stephenc repackaging), Sangria (sangria-core,
+  -parser and -ast 4.1.0, -marshalling-api 1.0.8, -streaming-api 1.0.3, macro-visit 0.2.0) and
+  parboiled2 2.5.1.
 - BSD-3-Clause: paranamer, jline, TwelveMonkeys ImageIO, ASM.
 - aopalliance 1.0: public domain. reactive-streams 1.0.4: MIT-0.
 - scalawiki (core, wlx, http-extensions): Apache-2.0, by the same maintainer.
