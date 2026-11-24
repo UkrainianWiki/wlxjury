@@ -228,7 +228,7 @@ class RoundCountsSpec extends Specification with TestDb with BeforeAll with Befo
         (counts(r, 1L) === Counts(2, 1, 1, 0, 1)) and (entries(r) must beEmpty) and (RoundCounts.isClean(r) must beTrue)
     }
 
-    "wait for a round being distributed, but count its files marked by votes" in {
+    "wait for a round being distributed, keeping the files marked by votes for its end" in {
       implicit val contest: ContestJury = createContests(10).head
       val (r, Seq(j1)) = round(Map(1L -> Seq(0), 2L -> Seq(0)))
       DB.autoCommit(implicit s => sql"UPDATE round SET distributing = 1 WHERE id = $r".update())
@@ -237,7 +237,7 @@ class RoundCountsSpec extends Specification with TestDb with BeforeAll with Befo
       val whileDistributing = (gen(r), counts(r, 1L), counts(r, 2L), entries(r))
       DB.autoCommit(implicit s => sql"UPDATE round SET distributing = 0 WHERE id = $r".update())
       recompute.untilClean()
-      (summary.skipped === 1) and (whileDistributing === ((2L -> 0L, Counts(1, 1, 1, 0, 1), Counts.Zero, Nil))) and
+      (summary.skipped === 2) and (whileDistributing === ((2L -> 0L, Counts.Zero, Counts.Zero, Seq(1L)))) and
         (counts(r, 2L) === Counts(1, 0, 0, 0, 0)) and (RoundCounts.isClean(r) must beTrue)
     }
 

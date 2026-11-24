@@ -16,7 +16,10 @@ import scala.util.control.NonFatal
   * moved (bulk writes; after the deploy, every round), open rounds first. A tick stops starting
   * windows once its `budget` is spent; a recount left part-way goes on at the next tick from
   * where it stopped (kept here: after a restart it starts again, which is only work). A round
-  * being distributed is recounted once its distribution has ended.
+  * being distributed is recounted once its distribution has ended. A round another transaction
+  * holds (a job step) is not waited for: the window asks for its row `NOWAIT`, skips the round
+  * for this tick (INFO `round_counts skipped=busy`; a busy round spends none of the budget) and
+  * leaves its marks.
   *
   * '''The one assumption: READ COMMITTED.''' A window reads the votes plainly after locking its
   * rows and dirty entries; only at READ COMMITTED does that read see every vote it waited for (at
@@ -53,8 +56,17 @@ class RoundCountsRecompute(settings: RoundCountsRecompute.Settings = RoundCounts
         var more = true
         while (more && timeLeft) guarded {
           val w = window(implicit s => RoundCounts.fileWindow(roundId, settings.window))
-          summary = summary.add(w, full = false)
-          more = w.next.isDefined
+          w.skipped match {
+            case Some(RoundCounts.Busy) =>
+              summary = summary.copy(busy = summary.busy + 1)
+              more = false
+            case Some(RoundCounts.InDistribution) =>
+              summary = summary.copy(skipped = summary.skipped + 1)
+              more = false
+            case None =>
+              summary = summary.add(w, full = false)
+              more = w.next.isDefined
+          }
         } { more = false }
       }
 
@@ -80,6 +92,10 @@ class RoundCountsRecompute(settings: RoundCountsRecompute.Settings = RoundCounts
                   summary = summary.copy(roundsRecounted = summary.roundsRecounted + 1)
                   more = false
               }
+            case RecountStep.Busy =>
+              // held by another transaction: the recount stays where it was, for a later tick
+              summary = summary.copy(busy = summary.busy + 1)
+              more = false
             case RecountStep.Distributing =>
               recounts.remove(roundId)
               summary = summary.copy(skipped = summary.skipped + 1)
@@ -95,6 +111,7 @@ class RoundCountsRecompute(settings: RoundCountsRecompute.Settings = RoundCounts
         logger.warn(s"round_counts_skipped reason=isolation level=${e.level}")
         summary = summary.copy(refusedIsolation = Some(e.level))
     }
+    if (summary.busy > 0) logger.info(s"round_counts skipped=busy windows=${summary.busy}")
     if (summary.changed > 0 || summary.roundsRecounted > 0)
       logger.info(s"round_counts windows=${summary.windows} files=${summary.files} changed=${summary.changed} " +
         s"cleared=${summary.cleared} recounted=${summary.roundsRecounted} skipped=${summary.skipped}")
@@ -132,11 +149,12 @@ object RoundCountsRecompute {
   final class NotReadCommitted(val level: String) extends RuntimeException(s"isolation $level, not READ-COMMITTED")
 
   /** What a tick did: windows run, files read, counts changed, dirty entries cleared, full
-    * recounts finished, rounds left for their distribution, and the isolation level that stopped
+    * recounts finished, rounds left for their distribution or for another transaction holding them
+    * (`busy`), and the isolation level that stopped
     * it, if one did.
     */
   final case class Summary(windows: Int = 0, files: Int = 0, changed: Int = 0, cleared: Int = 0,
-      roundsRecounted: Int = 0, skipped: Int = 0, refusedIsolation: Option[String] = None) {
+      roundsRecounted: Int = 0, skipped: Int = 0, busy: Int = 0, refusedIsolation: Option[String] = None) {
     private[counts] def add(w: RoundCounts.Window, full: Boolean): Summary =
       copy(windows = windows + 1, files = files + w.files, changed = changed + w.changed, cleared = cleared + w.cleared)
   }
