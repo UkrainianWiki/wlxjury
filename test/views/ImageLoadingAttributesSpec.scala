@@ -10,7 +10,7 @@ import play.api.test.{FakeRequest, PlaySpecification}
 import scala.jdk.CollectionConverters._
 
 /** Image loading (the Modern Web Guidance guide optimize-image-priority): the thumbnails of the
-  * by-rate gallery and the large view's strip load lazily and decode off the main thread, each
+  * by-rate gallery (after its first row) and the large view's strip load lazily and decode off the main thread, each
   * with its displayed size as width and height; the large view's main photo loads first
   * (fetchpriority) and never lazily. The tiles of the juror gallery and the contest files are
   * made by Unite Gallery's script, so they have none of these in the markup. No database.
@@ -60,7 +60,7 @@ class ImageLoadingAttributesSpec extends PlaySpecification {
       implicit val request: RequestHeader = FakeRequest("GET", "/byrate/round/1/user/1/page/1").withCSRFToken
       implicit val flash: Flash = Flash()
       implicit val messages: play.api.i18n.Messages = LargeViewRenders.messages(request.asInstanceOf[play.api.mvc.Request[_]])
-      val files = (0 until 3).map { i =>
+      val files = (0 until 6).map { i =>
         ImageWithRating(
           Image(pageId = 201L + i, title = s"File:Image $i.jpg",
             url = Some(s"https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_$i.jpg"), width = 4000, height = 3000),
@@ -69,7 +69,11 @@ class ImageLoadingAttributesSpec extends PlaySpecification {
       val html = contentAsString(views.html.galleryByRate(juror, RoundList(ratedRound, juror.getId, view = GalleryView.ByRate),
         files, Pager(1, files.size), Nil, None, new RateDistribution(Map.empty)))
       // a 4:3 file in the 300 x 250 box is 300 x 225
-      lazyAndSized(Jsoup.parse(html).select("div.thumb img.cropped").asScala.toSeq, 300, 225)
+      // the first row (4) is the likely largest paint: eager, but sized and decoded off the main thread
+      val imgs = Jsoup.parse(html).select("div.thumb img.cropped").asScala.toSeq
+      (imgs.take(4).map(_.hasAttr("loading")) must_== Seq.fill(4)(false)) and
+        forall(imgs.take(4))(i => (i.attr("decoding") must_== "async") and (i.attr("width") must_== "300") and (i.attr("height") must_== "225")) and
+        lazyAndSized(imgs.drop(4), 300, 225)
     }
   }
 

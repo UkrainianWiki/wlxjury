@@ -132,7 +132,7 @@
                             <a href="@list.largeUrl(file.pageId)" >
                             @* an image's or a video's thumbnail; a video's with its mark *@
                             @* loading/decoding: the page lists many thumbnails; the box is fixed, width/height keep the image's own size from jumping *@
-                            <img class="cropped" loading="lazy" decoding="async" alt="@if(file.image.isVideo) {@Messages("video"): }@file.title"
+                            <img class="cropped"@if(index >= 4) { loading="lazy"} decoding="async" alt="@if(file.image.isVideo) {@Messages("video"): }@file.title"
                             @for((width, height) <- Global.thumbBox(file.image, Global.gallerySizeX, Global.gallerySizeY)) {width="@width" height="@height"}
                             src="@Global.resizeTo(file.image, Global.gallerySizeX, Global.gallerySizeY)"
                             srcset="@Global.srcSet(file.image, Global.gallerySizeX, Global.gallerySizeY)">
