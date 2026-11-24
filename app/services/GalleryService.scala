@@ -230,13 +230,26 @@ object GalleryService {
 
   /** Whether `user` may see other jurors' votes in `round` (one juror's, all together, their
     * ratings, rankings and per-juror counts of them): those who may see the round's organiser info
-    * ([[User.canViewOrgInfo]]), unless they are a juror of the round themselves (the maintainer's
-    * conflict-of-interest rule of 2026-11-24): a juror of a round sees only their own votes in it,
-    * whatever their contest role (an admin or organizer, a series admin's derived role, root). A
-    * juror of the round: [[User.isRoundJuror]], a round_user row, active or stopped, or votes of
-    * their own in it. The one check of every place that shows other jurors' votes (a guard spec
-    * lists them).
+    * ([[User.canViewOrgInfo]]), unless they are a juror of the round themselves while it is open
+    * (the maintainer's conflict-of-interest rule of 2026-11-24, open rounds only by the decision of
+    * the same day): a juror of an open round sees only their own votes in it, whatever their
+    * contest role (an admin or organizer, a series admin's derived role, root); once the round is
+    * closed they see its results as any admin. Open: [[Round.openCond]], active, being created or
+    * reviewed (distributing), or paused by a freeze while open; closed: anything else (stopped,
+    * finalized, cancelled). A juror of the round: [[User.isRoundJuror]], a round_user row, active
+    * or stopped, or votes of their own in it. The one check of every place that shows other
+    * jurors' votes (a guard spec lists them).
     */
   def othersVotesVisible(user: User, round: Round): Boolean =
-    user.canViewOrgInfo(round) && !user.id.exists(id => User.isRoundJuror(round.getId, id))
+    user.canViewOrgInfo(round) && ownVotesOnlyRounds(user, Seq(round)).isEmpty
+
+  /** Of `rounds`, those where `user` sees only their own votes ([[othersVotesVisible]]): the open
+    * rounds they are a juror of. In two queries at most, for a menu of rounds (the galleries' round
+    * menu opens these on the viewer's own votes).
+    */
+  def ownVotesOnlyRounds(user: User, rounds: Seq[Round]): Set[Long] =
+    user.id.fold(Set.empty[Long]) { id =>
+      val open = Round.openIds(rounds.flatMap(_.id))
+      if (open.isEmpty) Set.empty else User.roundsJuredIn(id, open.toSeq)
+    }
 }

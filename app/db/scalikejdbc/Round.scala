@@ -726,6 +726,14 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     sqls"""($table.active = 1 OR $table.distributing = 1
             OR ($table.freeze_count > 0 AND $table.active_before_freeze = 1))"""
 
+  /** Of `ids`, the rounds open now ([[openCond]]: active, being created or reviewed, or paused by a
+    * freeze while open), a plain read in one query: the conflict-of-interest rule's
+    * ([[services.GalleryService.othersVotesVisible]]).
+    */
+  def openIds(ids: Seq[Long])(implicit session: DBSession = AutoSession): Set[Long] =
+    if (ids.isEmpty) Set.empty
+    else sql"SELECT id FROM round WHERE id IN (${ids.distinct}) AND ${openCond(sqls"round")}".map(_.long(1)).list().toSet
+
   /** Whether the round is open ([[openCond]]), read as committed and locked for update. */
   def isOpen(id: Long)(implicit session: DBSession): Boolean = {
     val open = sql"SELECT ${openCond(sqls"round")} FROM round WHERE id = $id FOR UPDATE"
