@@ -241,7 +241,7 @@ Still open: which operations a future write scope for tokens should allow (Q3 as
   `Secured.checked` with `ContestPermission(ACCESS_ROLES, contest, derived = true)` (listed in
   `security.SeriesReachGuardSpec`), the opt-in the round and gallery pages use: derived Admin from the
   grant's start year, derived Organizer below it (CA20), a real Juror row winning (CA7). `contests` adds
-  the contests the grants reach (`Secured.seriesReachOf`). Tokens get no series reach (contest series
+  the contests the grants reach (`Secured.seriesContestIds`). Tokens get no series reach (contest series
   plan §3.3). The conflict-of-interest rule is exposed per round as `othersVotesVisible`
   (`GalleryService.othersVotesVisibleIn`, the same rule as `othersVotesVisible`); the vote fields of
   slices 3-4 must apply it.

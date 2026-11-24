@@ -36,7 +36,7 @@ class GraphQLApiSpec extends PlaySpecification with PlayTestDb {
 
   /** The series admins' fixture (`seriesSetUp` in "a series admin"). */
   private case class SeriesFixture(seriesAdmin: User, otherAdmin: User, nobody: User, grantId: Long,
-      old: Long, prev: Long, now: Long, b: Long, coiNow: Long, stoppedNow: Long, freeNow: Long,
+      old: Long, prev: Long, now: Long, b: Long, coiNow: Long, closedNow: Long, stoppedJurorNow: Long, freeNow: Long,
       mineInPrev: Long, othersInPrev: Long, inOld: Long, inB: Long)
 
   /** Contests 10, 20 and 30 (retired); the accounts above; rounds: in 10 one the juror judges, one
@@ -673,8 +673,9 @@ class GraphQLApiSpec extends PlaySpecification with PlayTestDb {
       * contest, this year). `seriesAdmin` holds A's grant from last year on (the default): derived
       * Admin in prev and now, derived Organizer in old; but a real Juror row in prev (CA7: the series
       * doesn't apply there). `otherAdmin` holds B's grant. `nobody` is in no contest. Rounds: in now,
-      * an open one `seriesAdmin` judges (conflict of interest), a stopped one they judge, an open one
-      * of nobody; in prev an open one they judge and one of nobody; one in old and one in B.
+      * an open one `seriesAdmin` judges (conflict of interest), a closed one they judge, an open one
+      * where they are a stopped juror, an open one of nobody; in prev an open one they judge and one of
+      * nobody; one in old and one in B.
       */
     def seriesSetUp(): SeriesFixture = {
       val thisYear = java.time.Year.now().getValue
@@ -704,14 +705,15 @@ class GraphQLApiSpec extends PlaySpecification with PlayTestDb {
       val otherAdmin = account("otheradmin")
       grant(otherAdmin, bSeries, b)
       val nobody = account("nobody")
-      def round(contestId: Long, number: Long, jurors: Seq[User], active: Boolean = true) = {
+      def round(contestId: Long, number: Long, jurors: Seq[User], active: Boolean = true, jurorActive: Boolean = true) = {
         val r = Round.create(Round(None, number, Some(s"round $number"), contestId, active = active))
-        r.addUsers(jurors.map(j => RoundUser(r.getId, j.getId, "jury", active = true)))
+        r.addUsers(jurors.map(j => RoundUser(r.getId, j.getId, "jury", active = jurorActive)))
         r.getId
       }
       SeriesFixture(seriesAdmin, otherAdmin, nobody, grantId, old, prev, now, b,
-        coiNow = round(now, 1, Seq(seriesAdmin)), stoppedNow = round(now, 2, Seq(seriesAdmin), active = false),
-        freeNow = round(now, 3, Nil), mineInPrev = round(prev, 1, Seq(seriesAdmin)), othersInPrev = round(prev, 2, Nil),
+        coiNow = round(now, 1, Seq(seriesAdmin)), closedNow = round(now, 2, Seq(seriesAdmin), active = false),
+        stoppedJurorNow = round(now, 4, Seq(seriesAdmin), jurorActive = false), freeNow = round(now, 3, Nil),
+        mineInPrev = round(prev, 1, Seq(seriesAdmin)), othersInPrev = round(prev, 2, Nil),
         inOld = round(old, 1, Nil), inB = round(b, 1, Nil))
     }
 
@@ -742,9 +744,11 @@ class GraphQLApiSpec extends PlaySpecification with PlayTestDb {
         val f = seriesSetUp()
         rolesOf(asSession(app, f.seriesAdmin, f.now, contestsQuery)) ===
           Seq(f.now -> Seq("ADMIN"), f.prev -> Seq("JURY"), f.old -> Seq("ORGANIZER"))
-        // derived Admin: every round; own votes only in the open round they judge (conflict of interest)
+        // derived Admin: every round; own votes only in the open rounds they judge (conflict of interest),
+        // their juror row stopped or not; STOPPED where it is
         rounds(asSession(app, f.seriesAdmin, f.now, roundsQuery(f.now))) === Map(
-          f.coiNow -> (Some("ACTIVE") -> false), f.stoppedNow -> (Some("ACTIVE") -> true), f.freeNow -> (None -> true))
+          f.coiNow -> (Some("ACTIVE") -> false), f.closedNow -> (Some("ACTIVE") -> true),
+          f.stoppedJurorNow -> (Some("STOPPED") -> false), f.freeNow -> (None -> true))
         // CA7: a juror in prev, the series ignored: their round only, own votes only
         rounds(asSession(app, f.seriesAdmin, f.now, roundsQuery(f.prev))) === Map(f.mineInPrev -> (Some("ACTIVE") -> false))
         // derived Organizer (below the start year): every round, read-only roles

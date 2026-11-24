@@ -877,6 +877,12 @@ object Secured {
   /** What the user's series grants give in the contests they reach (a session's), by contest id. */
   def seriesReachOf(user: User): Seq[db.scalikejdbc.SeriesContest] = user.seriesContests
 
+  /** The ids of the contests the user's series grants reach (a session's; none for a token's user):
+    * the contests GraphQL's `contests` lists beside the real memberships
+    * (`graphql.GraphQLContext.seriesContestIds`), each then judged by a derived-role permission.
+    */
+  def seriesContestIds(user: User): Seq[Long] = user.seriesContests.map(_.contestId)
+
   /** `result`, with `switchedTo`'s contest as the session's current one if it is not
     * `sessionUser`'s and the request is a page the browser opened ([[isPageRequest]]).
     */

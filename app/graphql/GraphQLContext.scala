@@ -60,7 +60,7 @@ final case class GraphQLContext(caller: ApiAuth.Caller, request: RequestHeader, 
   /** The contests the caller's series grants reach (a session's only: a token's user has none), with
     * the derived role there; [[asMemberOf]] judges each.
     */
-  def seriesContestIds: Seq[Long] = Secured.seriesReachOf(user).map(_.contestId)
+  def seriesContestIds: Seq[Long] = Secured.seriesContestIds(user)
 
   /** A contest the caller may not see, as a missing one ([[GraphQLError.notFound]]). The request's
     * first denial is logged on `security.authz` with the reference the error carries; a later one

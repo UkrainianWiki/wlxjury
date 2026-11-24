@@ -8,8 +8,8 @@ import org.specs2.mutable.Specification
   *    `LoginResults`: never for an API token (`ApiTokenService`) or root's edit form
   *    (`UserController.editableUser`), which keep `Secured.inCurrentContest`, raw;
   *  - the session's series reach (`seriesContests`, `derivedRoles`, `seriesGranted`, and what reads
-  *    them) is read only by `Secured`, `JurorContests` and the series controller (through Secured's
-  *    helpers), `User` defining it;
+  *    them) is read only by `Secured`, `JurorContests`, the series controller and GraphQL's context
+  *    (the last two through Secured's helpers: `seriesReachOf`, `seriesContestIds`), `User` defining it;
   *  - `seriesAccountContests`, the account rules' only input from the series (CA17), is read only by
   *    those rules;
   *  - every action that opts in to derived roles (`derived = true`) or to account reach
@@ -187,13 +187,16 @@ class SeriesReachGuardSpec extends Specification {
     }
   }
 
-  /** The places that show other jurors' votes of a round, each behind
-    * `GalleryService.othersVotesVisible` (the conflict-of-interest rule, the maintainer's decision of
+  /** The places that show other jurors' votes of a round, or tell whether they may, each behind
+    * `GalleryService.othersVotesVisible` or its batch form `othersVotesVisibleIn` (the conflict-of-interest rule, the maintainer's decision of
     * 2026-11-24: a juror of a round sees only their own votes in it while it is open, whatever their role).
     */
   private val OthersVotesSites: Map[String, (Int, String)] = Map(
-    "app/services/GalleryService.scala" -> (2, "the definition; viewAs: every gallery view (gallery, by rate, file list, " +
+    "app/services/GalleryService.scala" -> (4, "the definitions (othersVotesVisible delegating to its batch form " +
+      "othersVotesVisibleIn: one rule); viewAs: every gallery view (gallery, by rate, file list, " +
       "CSV, comments report and its CSV, the JSON endpoints) and the large view as another juror or all (0)"),
+    "app/graphql/GraphQLSchema.scala" -> (1, "GraphQL's Round.othersVotesVisible flag (no votes shown yet; the vote " +
+      "fields of later slices must apply the rule)"),
     "app/controllers/LargeViewController.scala" -> (1, "the large view's every-juror votes panel (juryStat)"),
     "app/controllers/MonumentController.scala" -> (1, "a monument's files in a round: own votes only"),
     "app/controllers/AuthorsController.scala" -> (1, "a round's authors with every juror's votes"),
@@ -237,7 +240,7 @@ class SeriesReachGuardSpec extends Specification {
 
   "the conflict-of-interest rule" should {
     "guard every place that shows other jurors' votes" in {
-      counts("""othersVotesVisible\(""".r) === OthersVotesSites.view.mapValues(_._1).toMap
+      counts("""othersVotesVisible(In)?\(""".r) === OthersVotesSites.view.mapValues(_._1).toMap
     }
 
     "keep the queries of every juror's votes together to their listed callers, each still found there" in {

@@ -243,8 +243,9 @@ that takes a series grant's derived role, as the round pages do, never a contest
 query as a permission; root bypasses), `graphql.QueryLimits`. The router (`api.ApiRouter`) mounts
 only Tapir's endpoints and `api.CallerRoutes` groups, such as GraphQL's, whose handlers take the
 caller: `ApiRouter.guarded` resolves it (`ApiAuth.caller`) before the handler runs and answers the
-group's 401 without one, so a new non-Tapir route can't be mounted unauthenticated
-(`api.ApiRouterGuardSpec`). A resolver loads the resource first, then
+group's 401 without one. `api.ApiRouterGuardSpec` is a tripwire for a route added around it (another
+kind of dependency of the router, another composition of its routes, a non-Tapir route in
+`Api.routes`, another `conf/routes` entry under `/api`), not a proof: a new route is still reviewed. A resolver loads the resource first, then
 judges the caller in its contest; a contest the caller may not see is logged on `security.authz`
 (`resource=contest:<id>`) with the reference the `NOT_FOUND` error carries. Tests:
 `graphql.GraphQLApiSpec` (through the router and filters) and `graphql.GraphQLSchemaSpec`.

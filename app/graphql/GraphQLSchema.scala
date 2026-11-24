@@ -34,13 +34,17 @@ object GraphQLSchema {
 
   /** What a contest's rounds share, read once for all of them and only if a field asks for it: the
     * rounds the viewer is a juror of, those where they are stopped, and those where they see other
-    * jurors' votes.
+    * jurors' votes. `jurorRounds`: those of `rounds` already known to be the viewer's as a juror
+    * ([[visibleRounds]] read them); the rest are read if asked.
     */
-  final class RoundsOf(ctx: GraphQLContext, viewer: User, rounds: Seq[Round]) {
-    private def ids = rounds.flatMap(_.id)
+  final class RoundsOf(ctx: GraphQLContext, viewer: User, rounds: Seq[Round], jurorRounds: Set[Long]) {
 
     /** The rounds the viewer is a juror of ([[User.roundsJuredIn]]: votes in it, or a round_user row). */
-    lazy val juredIn: Set[Long] = { ctx.checkDeadline(); User.roundsJuredIn(viewer.getId, ids) }
+    lazy val juredIn: Set[Long] = {
+      val unknown = rounds.flatMap(_.id).filterNot(jurorRounds)
+      if (unknown.isEmpty) jurorRounds
+      else { ctx.checkDeadline(); jurorRounds ++ User.roundsJuredIn(viewer.getId, unknown) }
+    }
 
     /** Of [[juredIn]], those where the viewer's round_user row is stopped ([[RoundUser.stoppedIn]]). */
     lazy val stopped: Set[Long] = { ctx.checkDeadline(); RoundUser.stoppedIn(viewer.getId, juredIn.toSeq) }
@@ -97,7 +101,7 @@ object GraphQLSchema {
         open.filter(r => mine.contains(r.getId))
       }
     val visible = (staff ++ juror).sortBy(_.getId)
-    val of = new RoundsOf(ctx, viewer, visible)
+    val of = new RoundsOf(ctx, viewer, visible, juror.flatMap(_.id).toSet)
     visible.map(RoundView(_, of))
   }
 
