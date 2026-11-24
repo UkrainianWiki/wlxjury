@@ -1073,26 +1073,22 @@ object User extends CRUDMapper[User] {
   def findAllLive()(implicit session: DBSession = autoSession): Seq[User] =
     findAllBy(isNotDeleted)
 
-  /** The account's row, locked until the transaction ends. */
-  /** Whether `account` is a protected target (contest series plan §3.3): root, or a live grant of
-    * "Series admin" on a live series. Only root edits, links, invites, retires or joins it; non-root
+  /** Whether `account` is a protected target (contest series plan §3.3): root, or a holder of an
+    * unrevoked grant of "Series admin", live or not (waiting for root's confirmation, its series
+    * retired: a grant that could come back protects its holder meanwhile; the security review of
+    * #140, M1). Only root edits, links, invites, retires or joins it, or changes its roles; non-root
     * actors never act on it (one's own account aside). On write paths, read under the account's row
     * lock ([[lockRow]]).
     */
   def isProtectedTarget(account: User)(implicit session: DBSession = autoSession): Boolean =
-    account.isRoot || account.hasRole(ROOT_ROLE) || account.id.exists(SeriesAdminJdbc.hasLiveGrant(_))
+    account.isRoot || account.hasRole(ROOT_ROLE) || account.id.exists(SeriesAdminJdbc.hasHeldGrant(_))
 
   /** Those of `accounts` that are protected targets ([[isProtectedTarget]]), by id, in one query. */
   def protectedTargets(accounts: Seq[User])(implicit session: DBSession = autoSession): Set[Long] =
     accounts.filter(a => a.isRoot || a.hasRole(ROOT_ROLE)).flatMap(_.id).toSet ++
-      SeriesAdminJdbc.withLiveGrant(accounts.flatMap(_.id))
+      SeriesAdminJdbc.withHeldGrant(accounts.flatMap(_.id))
 
-  /** Whether `accountId` holds a live grant on the contest's live series: then no one but root adds
-    * it as a Juror there, or removes or downgrades its Admin row (the role writes, §3.3).
-    */
-  def seriesProtected(accountId: Long, contestId: Long)(implicit session: DBSession = autoSession): Boolean =
-    SeriesAdminJdbc.holdsGrantOnContest(accountId, contestId)
-
+  /** The account's row, locked until the transaction ends. */
   def lockRow(id: Long)(implicit session: DBSession): Option[User] =
     sql"SELECT ${u.result.*} FROM ${User as u} WHERE ${u.id} = $id FOR UPDATE".map(User(u.resultName)).single.apply()
 

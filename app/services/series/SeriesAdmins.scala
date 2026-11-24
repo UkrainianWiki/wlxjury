@@ -65,17 +65,35 @@ object SeriesAdmins {
           WHERE uc.user_id = $accountId AND c.series_id = $seriesId AND c.retired_at IS NULL
             AND BINARY uc.role IN (${User.ACCESS_ROLES.toSeq}))""".map(_.boolean(1)).single.apply().getOrElse(false)
 
+  /** The series' contests a series admin's grant reaches for the account rules (CA17): from their
+    * start year on, not where they hold a Juror row.
+    */
+  private def reachIn(actor: User, seriesId: Long)(implicit session: DBSession): Set[Long] = {
+    val inSeries = ContestSeries.contestsOf(seriesId).filterNot(_.retired).flatMap(_.id).toSet
+    SeriesAdminJdbc.seriesAccountContests(actor.getId).intersect(inSeries)
+  }
+
+  /** Whether `accountId` is an active real member of one of `contestIds`. */
+  private def isMemberOf(accountId: Long, contestIds: Set[Long])(implicit session: DBSession): Boolean =
+    contestIds.nonEmpty &&
+      sql"""SELECT EXISTS(SELECT 1 FROM user_contest uc WHERE uc.user_id = $accountId AND uc.contest_id IN (${contestIds.toSeq})
+            AND BINARY uc.role IN (${User.ACCESS_ROLES.toSeq}))""".map(_.boolean(1)).single.apply().getOrElse(false)
+
   /** The accounts `actor` may pick on the series page's "Add a series admin": the active real members
-    * of the series' live contests, but deleted and root accounts, the actor and the series' series
-    * admins (the grant checks each again).
+    * of the series' live contests (for a series admin, of the contests their grant reaches: L5 of
+    * the security review of #140), but deleted accounts, protected ones (root, series admins, a
+    * grant waiting) and the actor (the grant checks each again).
     */
   def candidates(actor: User, seriesId: Long)(implicit session: DBSession = AutoSession): Seq[User] = {
-    val ids = sql"""SELECT DISTINCT uc.user_id FROM user_contest uc JOIN contest_jury c ON c.id = uc.contest_id
-                    WHERE c.series_id = $seriesId AND c.retired_at IS NULL
-                      AND BINARY uc.role IN (${User.ACCESS_ROLES.toSeq})""".map(_.long(1)).list.apply()
-    val granted = SeriesAdminJdbc.liveBySeries(seriesId).map(_.userId).toSet
-    User.findByIds(ids).filter(u => u.deletedAt.isEmpty && !isRoot(u) && !actor.id.contains(u.getId) && !granted(u.getId))
-      .sortBy(u => (u.fullname.toLowerCase(java.util.Locale.ROOT), u.getId))
+    val contests = if (isRoot(actor)) ContestSeries.contestsOf(seriesId).filterNot(_.retired).flatMap(_.id).toSet
+      else reachIn(actor, seriesId)
+    val ids = if (contests.isEmpty) Nil
+      else sql"""SELECT DISTINCT uc.user_id FROM user_contest uc
+                 WHERE uc.contest_id IN (${contests.toSeq}) AND BINARY uc.role IN (${User.ACCESS_ROLES.toSeq})"""
+        .map(_.long(1)).list.apply()
+    val users = User.findByIds(ids).filter(u => u.deletedAt.isEmpty && !actor.id.contains(u.getId))
+    val shielded = User.protectedTargets(users)
+    users.filterNot(u => shielded(u.getId)).sortBy(u => (u.fullname.toLowerCase(java.util.Locale.ROOT), u.getId))
   }
 
   /** Why `actor` may not grant `account` on the series now, if so (the grant's own checks). */
@@ -88,9 +106,14 @@ object SeriesAdmins {
       case Some(a) if a.deletedAt.nonEmpty        => Some("series.admin.refused.account")
       case Some(a) if isRoot(a)                   => Some("series.admin.refused.root")
       case Some(a) if actor.id.contains(a.getId)  => Some("series.admin.refused.self")
+      // a protected account (another series' admin, one with a grant waiting): root's to grant (L4)
+      case Some(a) if !isRoot(actor) && User.isProtectedTarget(a) => Some("series.admin.refused.protected")
       case Some(a) if AccountJoinJdbc.retiring(Seq(a.getId)).nonEmpty => Some("series.admin.refused.retiring")
       case Some(a) if SeriesAdminJdbc.unrevoked(a.getId, series.id).nonEmpty => Some("series.admin.refused.existing")
       case Some(a) if !isMember(a.getId, series.id) => Some("series.admin.refused.not.member")
+      // a series admin picks only among the members of the contests their grant reaches (L5)
+      case Some(a) if !isRoot(actor) && !isMemberOf(a.getId, reachIn(actor, series.id)) =>
+        Some("series.admin.refused.not.member")
       case Some(a) if !isRoot(actor) && SeriesAdminJdbc.lastRevokedByRoot(a.getId, series.id) =>
         Some("series.admin.refused.root.revoked")
       case Some(_) => None
@@ -159,7 +182,10 @@ object SeriesAdmins {
     AccountChangeLog.record(actor, g.userId, None, AccountChangeJdbc.SeriesAdminRevoked,
       oldValue = Some(g.adminFromYear.toString),
       comment = Some(AccountChangeJdbc.seriesComment(g.seriesId) + note.fold("")("; " + _)))
-    log.info(s"series_admin_revoked account=${g.userId} series=${g.seriesId} grantId=${g.id} by=${actor.getId} $fields")
+    // the links it made in the series' contests stop working with it (the security review of #140, L2)
+    val links = SeriesAdminJdbc.revokeLinksIn(g.userId, g.seriesId)
+    log.info(s"series_admin_revoked account=${g.userId} series=${g.seriesId} grantId=${g.id} by=${actor.getId} " +
+      s"linksRevoked=$links $fields")
   }
 
   /** Root changes the grant's start year (CA20; root only, any year up to next year). Takes effect on
@@ -202,7 +228,10 @@ object SeriesAdmins {
   def onJoin(actor: User, keptId: Long, joinedId: Long)(implicit session: DBSession): (Int, Int) = {
     val joined = SeriesAdminJdbc.unrevokedOf(joinedId)
     val kept = SeriesAdminJdbc.unrevokedOf(keptId).map(_.seriesId).toSet
-    val (clash, move) = joined.partition(g => kept(g.seriesId))
+    val liveSeries = SeriesJdbc.findByIds(joined.map(_.seriesId)).filter(_.live).map(_.id).toSet
+    // only a live grant moves: one waiting for root's confirmation or of a retired series is revoked,
+    // so that a join never revives a grant onto another account (the security review of #140, M1)
+    val (clash, move) = joined.partition(g => kept(g.seriesId) || !g.active || !liveSeries(g.seriesId))
     SeriesAdminJdbc.revoke(clash.map(_.id), actor.getId, byRoot = isRoot(actor))
     clash.foreach(g => logRevoked(actor, g, s"reason=account_join kept=$keptId", Some(s"#$keptId")))
     move.foreach { g =>
@@ -214,6 +243,8 @@ object SeriesAdmins {
         s"from_year=${g.adminFromYear} by=${actor.getId}")
     }
     SeriesAdminJdbc.regrantedBy(joinedId, keptId)
+    // the joined account's revoked grants follow too: root's revocations stay root's (L3)
+    SeriesAdminJdbc.moveRevokedTo(joinedId, keptId)
     (move.size, clash.size)
   }
 
@@ -260,6 +291,9 @@ object SeriesAdmins {
             case Some(g) if !g.toConfirm               => Left("series.admin.refused.confirmed")
             case Some(_) if !series.exists(_.live)     => Left("series.admin.refused.retired")
             case Some(_) if !account.exists(_.deletedAt.isEmpty) => Left("series.admin.refused.account")
+            // the account changed hands meanwhile, perhaps: root revokes and grants again if it is the
+            // same person (the security review of #140, M1)
+            case Some(g) if SeriesAdminJdbc.accountChangedWhileWaiting(g.id) => Left("series.admin.refused.account.changed")
             case Some(g) if SeriesAdminJdbc.findBySeries(g.seriesId)
                 .exists(o => o.userId == g.grantedBy && o.toConfirm) => Left("series.admin.refused.granter.unconfirmed")
             case Some(g) =>

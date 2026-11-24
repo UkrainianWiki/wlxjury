@@ -89,12 +89,11 @@ object AccountJoinRequestJdbc {
       .map(rs => (rs.string(1), rs.long(2), rs.long(3))).list.apply()
   }
 
-  /** Whether the account `id` holds a live series grant (a protected target, contest series plan
-    * §3.3): `EXISTS (…)` on its id column.
+  /** Whether the account `id` holds an unrevoked series grant, live or not (a protected target,
+    * contest series plan §3.3; [[SeriesAdminJdbc.heldGrantCondition]]): `EXISTS (…)` on its id column.
     */
   private[scalikejdbc] def liveGrant(id: SQLSyntax): SQLSyntax =
-    sqls"""EXISTS (SELECT 1 FROM series_admin sa JOIN series s ON s.id = sa.series_id AND s.retired_at IS NULL
-                   WHERE sa.user_id = $id AND ${SeriesAdminJdbc.liveGrantCondition(sqls"sa")})"""
+    sqls"""EXISTS (SELECT 1 FROM series_admin sa WHERE sa.user_id = $id AND ${SeriesAdminJdbc.heldGrantCondition(sqls"sa")})"""
 
   /** The accounts' users rows, locked until the transaction ends, in ascending id (the account
     * join plan's lock order: `users` before `user_contest` and everything else).

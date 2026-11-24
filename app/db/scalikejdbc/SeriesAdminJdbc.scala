@@ -240,25 +240,66 @@ object SeriesAdminJdbc {
   def seriesAccountContests(userId: Long)(implicit session: DBSession = AutoSession): Set[Long] =
     seriesContests(userId).filter(_.admin).map(_.contestId).toSet
 
-  /** Whether the account holds a live grant (on a live series): with root, a protected target
-    * ([[User.isProtectedTarget]]).
+  /** A grant its holder keeps until root revokes it (`alias`, a `series_admin` alias): not revoked,
+    * whether it counts now or not (waiting for root's confirmation, its series retired). Protection
+    * reads this (the security review of #140, M1): a grant that could come back must not leave its
+    * holder open to takeover meanwhile. Access reads [[liveGrantCondition]].
     */
-  def hasLiveGrant(userId: Long)(implicit session: DBSession = AutoSession): Boolean =
-    sql"""SELECT EXISTS(SELECT 1 FROM series_admin sa $liveJoin WHERE sa.user_id = $userId)"""
+  def heldGrantCondition(alias: SQLSyntax): SQLSyntax = sqls"$alias.revoked_at IS NULL"
+
+  /** Whether the account holds an unrevoked grant, live or not ([[heldGrantCondition]]): with root, a
+    * protected target ([[User.isProtectedTarget]]).
+    */
+  def hasHeldGrant(userId: Long)(implicit session: DBSession = AutoSession): Boolean =
+    sql"""SELECT EXISTS(SELECT 1 FROM series_admin sa WHERE sa.user_id = $userId AND ${heldGrantCondition(sqls"sa")})"""
       .map(_.boolean(1)).single.apply().getOrElse(false)
 
-  /** Those of the accounts that hold a live grant, in one query. */
-  def withLiveGrant(userIds: Seq[Long])(implicit session: DBSession = AutoSession): Set[Long] =
+  /** Those of the accounts that hold an unrevoked grant ([[hasHeldGrant]]), in one query. */
+  def withHeldGrant(userIds: Seq[Long])(implicit session: DBSession = AutoSession): Set[Long] =
     if (userIds.isEmpty) Set.empty
     else
-      sql"""SELECT DISTINCT sa.user_id FROM series_admin sa $liveJoin
-            WHERE sa.user_id IN (${userIds.distinct})""".map(_.long(1)).list.apply().toSet
+      sql"""SELECT DISTINCT sa.user_id FROM series_admin sa
+            WHERE sa.user_id IN (${userIds.distinct}) AND ${heldGrantCondition(sqls"sa")}""".map(_.long(1)).list.apply().toSet
 
-  /** Whether the account holds a live grant on the contest's live series ([[User.seriesProtected]]). */
-  def holdsGrantOnContest(userId: Long, contestId: Long)(implicit session: DBSession = AutoSession): Boolean =
-    sql"""SELECT EXISTS(SELECT 1 FROM series_admin sa $liveJoin JOIN contest_jury c ON c.series_id = sa.series_id
-          WHERE sa.user_id = $userId AND c.id = $contestId)"""
+  /** Whether the account (or its history) was changed in ways that could hand it to someone else
+    * since the grant began waiting for confirmation, or since its series was last retired before
+    * that (the security review of #140, M1): an email, password, wiki account, root, join or
+    * retirement row in the account change log, a password or share link, an identity linked, or
+    * the email verified or set by an admin. Root's confirmation is refused then.
+    */
+  def accountChangedWhileWaiting(grantId: Long)(implicit session: DBSession = AutoSession): Boolean = {
+    val fields = Seq(AccountChangeJdbc.Email, AccountChangeJdbc.Password, AccountChangeJdbc.WikiAccount,
+      AccountChangeJdbc.Root, AccountChangeJdbc.AccountJoined, AccountChangeJdbc.AccountRetired,
+      AccountChangeJdbc.PasswordLink, AccountChangeJdbc.ShareLink)
+    sql"""SELECT EXISTS(SELECT 1 FROM account_change ac WHERE ac.user_id = x.user_id AND ac.field IN ($fields)
+                          AND ac.created_at >= x.since)
+              OR EXISTS(SELECT 1 FROM user_identity i WHERE i.user_id = x.user_id AND i.created_at >= x.since)
+              OR EXISTS(SELECT 1 FROM users u WHERE u.id = x.user_id
+                          AND (u.email_verified_at >= x.since OR u.email_set_by_admin_at >= x.since))
+          FROM (SELECT sa.user_id,
+                       COALESCE((SELECT MAX(cc.created_at) FROM contest_change cc
+                                 WHERE cc.series_id = sa.series_id AND cc.contest_id IS NULL AND cc.kind = 'retired'
+                                   AND cc.created_at <= sa.confirm_needed_at), sa.confirm_needed_at) AS since
+                FROM series_admin sa WHERE sa.id = $grantId AND sa.confirm_needed_at IS NOT NULL) x"""
       .map(_.boolean(1)).single.apply().getOrElse(false)
+  }
+
+  /** Revokes the unused set-password links (invitations, password and share links) `createdBy` made
+    * in the series' contests (the security review of #140, L2: a revoked series admin's links stop
+    * working); the number revoked.
+    */
+  def revokeLinksIn(createdBy: Long, seriesId: Long)(implicit session: DBSession): Int =
+    sql"""UPDATE account_token t JOIN contest_jury c ON c.id = t.contest_id
+          SET t.revoked_at = NOW(3)
+          WHERE t.created_by = $createdBy AND c.series_id = $seriesId AND t.used_at IS NULL AND t.revoked_at IS NULL"""
+      .update.apply()
+
+  /** The joined account's revoked grants move to the kept account (a join): their history, root's
+    * revocations included, follows it, so a grant root revoked is root's to give again to the kept
+    * account too (the security review of #140, L3).
+    */
+  def moveRevokedTo(fromUserId: Long, toUserId: Long)(implicit session: DBSession): Int =
+    sql"UPDATE series_admin SET user_id = $toUserId WHERE user_id = $fromUserId AND revoked_at IS NOT NULL".update.apply()
 
   /** The live series admins of the contest's live series (the users page's "Series admins" line). */
   def liveForContest(contestId: Long)(implicit session: DBSession = AutoSession): Seq[SeriesGrant] =
