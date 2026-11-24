@@ -155,8 +155,10 @@ test.describe('a page left while it loads', { tag: '@S-04' }, () => {
     await page.goto(gallery, { waitUntil: 'commit' });
     await isReached;
     // the head's scripts before it run (jQuery, then Bootstrap where it isn't deferred)
-    // no timeout of its own: the test's (slow) one bounds it, so a slow engine isn't a failure
-    await page.waitForFunction(() => !!window.jQuery, null, { timeout: 0 });
+    // a bound well above a slow engine's load, below the test's (slow) timeout: a failure names jQuery.
+    // Polled by interval, not the default per-frame: the held script keeps the first frame from
+    // rendering, so a frame-driven wait can stall although jQuery has run (seen in Chromium, 2026-11-24)
+    await page.waitForFunction(() => !!window.jQuery, null, { timeout: 45_000, polling: 100 });
     await page.waitForTimeout(300);
     await page.unroute(SCRIPT, { behavior: 'ignoreErrors' });
     const leaving = page.goto(gallery);
