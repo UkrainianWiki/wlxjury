@@ -153,7 +153,20 @@ object RoundCounts {
   /** What a window did: files read, counts changed, dirty entries cleared, and the page id to
     * continue a full recount after (None: done).
     */
-  final case class Window(files: Int, changed: Int, cleared: Int, next: Option[Long])
+  final case class Window(files: Int, changed: Int, cleared: Int, next: Option[Long],
+      skipped: Option[Skip] = None)
+
+  /** Why a window did nothing: the round is held by another transaction ([[Busy]]) or being
+    * distributed ([[InDistribution]]). Its marks stay for a later window.
+    */
+  sealed trait Skip
+  case object Busy extends Skip
+  case object InDistribution extends Skip
+
+  /** MariaDB's error for a `NOWAIT` lock that is not free (1205, the lock wait timeout error);
+    * MySQL's own is 3572, accepted too.
+    */
+  private val NoWaitErrors = Set(1205, 3572)
 
   /** A window of the round's full recount. */
   sealed trait RecountStep
@@ -172,17 +185,43 @@ object RoundCounts {
 
     /** The round no longer exists. */
     case object Gone extends RecountStep
+
+    /** Not now: another transaction holds the round (a job step, say); the recount asked for
+      * the lock without waiting and goes on at a later tick.
+      */
+    case object Busy extends RecountStep
   }
 
-  /** Locks the round for update (recorded, [[RoundWrites]]): its generation, the generation of
-    * its last recount and whether it is being created; None if it is gone.
+  /** What [[lockRound]] found. */
+  private sealed trait Locked
+  private case object LockBusy extends Locked
+  private case object LockGone extends Locked
+  private final case class LockHeld(gen: Long, done: Long, distributing: Boolean) extends Locked
+
+  /** Locks the round for update (recorded, [[RoundWrites]]) without waiting (`NOWAIT`): its
+    * generation, the generation of its last recount and whether it is being created. A round
+    * another transaction holds is [[LockBusy]] (only this statement's error 1205/3572 is read
+    * so, and the statement alone is rolled back: the transaction goes on, holding nothing).
     */
-  private def lockRound(roundId: Long)(implicit session: DBSession): Option[(Long, Long, Boolean)] = {
-    val row = sql"SELECT counts_gen, counts_gen_done, distributing FROM round WHERE id = $roundId FOR UPDATE"
-      .map(rs => (rs.long(1), rs.long(2), rs.booleanOpt(3).getOrElse(false))).single()
-    row.foreach(_ => RoundWrites.recordRounds(Seq(roundId)))
-    row
-  }
+  private def lockRound(roundId: Long)(implicit session: DBSession): Locked =
+    try {
+      val row = sql"SELECT counts_gen, counts_gen_done, distributing FROM round WHERE id = $roundId FOR UPDATE NOWAIT"
+        .map(rs => LockHeld(rs.long(1), rs.long(2), rs.booleanOpt(3).getOrElse(false))).single()
+      row.foreach(_ => RoundWrites.recordRounds(Seq(roundId)))
+      row.getOrElse(LockGone)
+    } catch {
+      case e: java.sql.SQLException if NoWaitErrors.contains(e.getErrorCode) => LockBusy
+    }
+
+  /** A plain read before locking: the round is being created, or its distribution job is queued
+    * or running. Cheap and racy; the check under the lock stays authoritative.
+    */
+  private def inDistribution(roundId: Long, distribution: Option[String])(implicit session: DBSession): Boolean =
+    sql"SELECT distributing FROM round WHERE id = $roundId".map(_.booleanOpt(1).getOrElse(false)).single().getOrElse(false) ||
+      distribution.exists(key => distributionActive(key))
+
+  private def distributionActive(key: String)(implicit session: DBSession): Boolean =
+    sql"SELECT 1 FROM job WHERE active_dedupe_key = $key".map(_ => ()).single().isDefined
 
   /** The files' counts over their `vote` rows, read plainly (the latest committed at READ
     * COMMITTED) from `vote_round_page_rate_idx`: `cond` on alias `v` narrows the round's votes
@@ -225,14 +264,22 @@ object RoundCounts {
     else sql"DELETE FROM round_image_dirty WHERE round_id = $roundId AND page_id IN ($pageIds)".update()
 
   /** One window of the round's files marked dirty by votes, the lowest page ids first, in the
-    * caller's transaction (steps 1–5 above). A round that no longer exists loses its entries.
+    * caller's transaction (steps 1–5 above). A round that no longer exists loses its entries; a
+    * round another transaction holds, or one being distributed (`distribution`: the dedupe key
+    * of its job), is skipped with its entries kept (`skipped`).
     */
-  def fileWindow(roundId: Long, limit: Int = DefaultWindow)(implicit session: DBSession): Window =
-    lockRound(roundId) match {
-      case None =>
+  def fileWindow(roundId: Long, limit: Int = DefaultWindow, distribution: Option[String] = None)(implicit
+      session: DBSession
+  ): Window =
+    if (inDistribution(roundId, distribution)) Window(0, 0, 0, None, Some(InDistribution))
+    else lockRound(roundId) match {
+      case LockBusy => Window(0, 0, 0, None, Some(Busy))
+      case LockGone =>
         // entries of a round deleted since (no foreign key): nothing to count
         Window(0, 0, sql"DELETE FROM round_image_dirty WHERE round_id = $roundId".update(), None)
-      case Some(_) =>
+      case LockHeld(_, _, distributing) if distributing || distribution.exists(distributionActive) =>
+        Window(0, 0, 0, None, Some(InDistribution)) // authoritative, under the lock
+      case _: LockHeld =>
         // which entries: a plain read under the round's lock (only this recompute deletes
         // entries, and it holds the round); a vote's entry added after it waits for the next one
         val candidates = sql"""SELECT page_id FROM round_image_dirty WHERE round_id = $roundId
@@ -264,14 +311,14 @@ object RoundCounts {
     */
   def roundWindow(roundId: Long, gen: Option[Long], after: Option[Long], distribution: String,
       limit: Int = DefaultWindow)(implicit session: DBSession): RecountStep =
-    lockRound(roundId) match {
-      case None => RecountStep.Gone
-      case Some((current, done, distributing)) =>
+    if (inDistribution(roundId, Some(distribution))) RecountStep.Distributing
+    else lockRound(roundId) match {
+      case LockBusy => RecountStep.Busy
+      case LockGone => RecountStep.Gone
+      case LockHeld(current, done, distributing) =>
         // a plain read under the round's lock: a distribution is queued, and ends, under it
-        def distributionActive =
-          sql"SELECT 1 FROM job WHERE active_dedupe_key = $distribution".map(_ => ()).single().isDefined
         if (gen.isEmpty && done >= current) RecountStep.Clean
-        else if (distributing || distributionActive) RecountStep.Distributing
+        else if (distributing || distributionActive(distribution)) RecountStep.Distributing
         else {
           val from = gen.getOrElse(current)
           val start = after.getOrElse(Long.MinValue)

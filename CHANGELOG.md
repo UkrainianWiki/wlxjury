@@ -38,6 +38,7 @@ Merged to master after the 26.11.14 build.
 
 **Fixes**
 
+- Background count refresh no longer waits behind long jobs.
 - Contests page no longer shows an unused round number.
 - API: `currentRound` removed from the contest JSON (it was always null).
 - Old juror assignments with no status are treated as stopped, votes included (#119).

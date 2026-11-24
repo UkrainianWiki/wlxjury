@@ -157,6 +157,77 @@ class RoundCountsLockSpec extends Specification with TestDb with BeforeAll with 
     }
   }
 
+  /** Holds the round's row FOR UPDATE in a transaction of its own until `release`. */
+  private def holdRound(r: Long)(implicit ec: ExecutionContext): (Future[Unit], CountDownLatch) = {
+    val held = new CountDownLatch(1)
+    val release = new CountDownLatch(1)
+    val holder = Future(DB.localTx { implicit s =>
+      sql"SELECT id FROM round WHERE id = $r FOR UPDATE".map(_.long(1)).single()
+      held.countDown()
+      release.await(30, TimeUnit.SECONDS)
+      ()
+    })
+    held.await(30, TimeUnit.SECONDS) must beTrue
+    (holder, release)
+  }
+
+  "the recompute, meeting a round another transaction holds," should {
+    "skip it at once, keeping its marks, and count them once it is free" in withPool() { implicit ec =>
+      implicit val contest: ContestJury = createContests(10).head
+      val (r, Seq(j1)) = setUp(1)
+      VoteJdbc.rate(1L, j1.getId, r, 1) // the file's entry, committed
+      val (holder, release) = holdRound(r)
+      val started = System.nanoTime()
+      val busy = recompute.untilClean()
+      val tookMs = (System.nanoTime() - started) / 1000000
+      val kept = (entries(r), RoundCounts.of(r, 1L))
+      release.countDown()
+      Await.result(holder, 30.seconds)
+      val free = recompute.untilClean()
+      (tookMs must beLessThan(1000L)) and (busy.busy === 1) and (busy.windows === 0) and
+        (kept === ((Seq(1L), Some(Counts(1, 0, 0, 0, 0))))) and
+        (free.busy === 0) and (entries(r) must beEmpty) and (RoundCounts.of(r, 1L) === Some(Counts(1, 1, 1, 0, 1))) and
+        (RoundImageInvariants.violations(r) must beEmpty)
+    }
+
+    "skip its full recount, which goes on once the round is free" in withPool() { implicit ec =>
+      implicit val contest: ContestJury = createContests(10).head
+      val (r, Seq(_)) = setUp(1)
+      DB.localTx { implicit s => RoundWrites.lock(Seq(r)); RoundCounts.markRounds(Seq(r)) }
+      val (holder, release) = holdRound(r)
+      val started = System.nanoTime()
+      val busy = recompute.untilClean()
+      val tookMs = (System.nanoTime() - started) / 1000000
+      val dirtyWhileHeld = !RoundCounts.isClean(r)
+      release.countDown()
+      Await.result(holder, 30.seconds)
+      val free = recompute.untilClean()
+      (tookMs must beLessThan(1000L)) and (busy.busy === 1) and (busy.roundsRecounted === 0) and dirtyWhileHeld and
+        (free.roundsRecounted === 1) and (RoundCounts.isClean(r) must beTrue)
+    }
+  }
+
+  "a file window" should {
+    "skip a round being created or distributed, keeping its marks" in {
+      implicit val contest: ContestJury = createContests(10).head
+      val (r, Seq(j1)) = setUp(1)
+      VoteJdbc.rate(1L, j1.getId, r, 1)
+      val key = RoundDistributionHandler.dedupeKey(r)
+      def window() = WriteTx.write(implicit s => RoundCounts.fileWindow(r, 10, Some(key)))
+      DB.autoCommit(implicit s => sql"UPDATE round SET distributing = 1 WHERE id = $r".update())
+      val creating = window()
+      DB.autoCommit(implicit s => sql"UPDATE round SET distributing = 0 WHERE id = $r".update())
+      DB.autoCommit(implicit s => sql"""INSERT INTO job (kind, contest_id, subject_type, subject_id, dedupe_key, status, params, state)
+        VALUES ('round_distribution', ${contest.getId}, 'round', $r, $key, 'running', '{"mode": "distribute"}', '{}')""".update())
+      val queued = window()
+      DB.autoCommit(implicit s => sql"UPDATE job SET status = 'done' WHERE dedupe_key = $key".update())
+      val ended = window()
+      (creating.skipped === Some(RoundCounts.InDistribution)) and (queued.skipped === Some(RoundCounts.InDistribution)) and
+        (ended.skipped must beNone) and (ended.cleared === 1) and (entries(r) must beEmpty) and
+        (RoundCounts.of(r, 1L) === Some(Counts(1, 1, 1, 0, 1)))
+    }
+  }
+
   /** Server deadlocks so far (the status counter, global). */
   private def deadlocks(): Long =
     DB.readOnly(implicit s => sql"SHOW GLOBAL STATUS LIKE 'Innodb_deadlocks'".map(_.long(2)).single()).getOrElse(0L)
