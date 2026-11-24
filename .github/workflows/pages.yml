@@ -150,7 +150,7 @@ jobs:
         run: |
           mkdir -p target/coverage-download
           if gh run download "$RUN" --pattern 'coverage-html-attempt-*' --dir target/coverage-download; then
-            dir=$(ls -d target/coverage-download/coverage-html-attempt-* 2>/dev/null | sort -t- -k4 -n | tail -n 1)
+            dir=$(ls -d target/coverage-download/coverage-html-attempt-* 2>/dev/null | sort -V | tail -n 1)
             if [ -n "$dir" ] && [ -f "$dir/index.html" ]; then
               echo "dir=$dir" >> "$GITHUB_OUTPUT"
             fi

@@ -584,7 +584,8 @@ accumulate until `target/browser-test/` is deleted.
 - **CI:** the `report` job merges each engine's latest attempt and uploads
   `allure-report-attempt-<n>` (14 days). **Pages:** `pages.yml` (master pushes only) rebuilds the
   report from the engines' results after `scripts/allure-public-filter.py` has deleted every
-  attachment but the failure screenshots (traces, videos, logs), checks it with
+  attachment but the failure screenshots (traces, videos, logs), drops the stack traces, cuts
+  failure messages to their first line, removes the `host` label, checks it with
   `allure-offline.mjs`, and publishes it with the Scala coverage HTML and an index page. Test
   names, steps and screenshots are public there; the fixture's data is synthetic or public Commons
   data (plan [`2026-11-04-story-coverage.md`](../plans/2026-11-04-story-coverage.md) §4.5).

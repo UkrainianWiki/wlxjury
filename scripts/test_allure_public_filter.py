@@ -30,6 +30,27 @@ class AllurePublicFilterTest(unittest.TestCase):
             self.assertEqual(out["attachments"], [])
             self.assertEqual([a["source"] for a in out["steps"][0]["attachments"]], ["c-attachment.png"])
 
+    def test_traces_are_dropped_messages_cut_to_one_line_and_host_label_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            result = {"name": "t", "statusMessage": "expected 1\nreceived 2\n/work/path", "statusTrace": "at a.js:1",
+                      "statusDetails": {"message": "first\nsecond", "trace": "stack"},
+                      "labels": [{"name": "host", "value": "runner-1"}, {"name": "story", "value": "J-01"}],
+                      "steps": [{"statusMessage": "a\nb", "statusTrace": "t", "steps": [{"statusTrace": "deep"}]}]}
+            (d / "r-result.json").write_text(json.dumps(result))
+            (d / "c-container.json").write_text(json.dumps({"statusTrace": "x", "statusMessage": "m\nn"}))
+            mod.filter_results(d)
+            out = json.loads((d / "r-result.json").read_text())
+            self.assertNotIn("statusTrace", out)
+            self.assertEqual(out["statusMessage"], "expected 1")
+            self.assertEqual(out["statusDetails"], {"message": "first"})
+            self.assertEqual([l["name"] for l in out["labels"]], ["story"])
+            self.assertEqual(out["steps"][0]["statusMessage"], "a")
+            self.assertNotIn("statusTrace", out["steps"][0])
+            self.assertNotIn("statusTrace", out["steps"][0]["steps"][0])
+            c = json.loads((d / "c-container.json").read_text())
+            self.assertEqual(c, {"statusMessage": "m"})
+
     def test_no_results_is_a_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(mod.main(["x", tmp]), 1)
