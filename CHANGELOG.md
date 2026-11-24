@@ -34,6 +34,9 @@ Merged to master after the 26.11.14 build.
 - Series admins (#140): root grants them, a series admin can add more, and an un-retired series asks root to confirm them again.
 - Revoking a series admin also revokes the links they made.
 - A juror of an open round sees only their own votes in it, whatever their contest role.
+- Contest split (#124): root plans which clusters of rounds of a reused contest move into contests of their own series and year.
+- A split runs as a background job with a page showing what it did, and Undo.
+- Old links to a moved round redirect to the contest it is in now.
 
 **Fixes**
 
@@ -47,7 +50,7 @@ Merged to master after the 26.11.14 build.
 
 **Operations**
 
-- Migrations: V108, V109, V110, V112.
+- Migrations: V108, V109, V110, V112, V113.
 - Rolling back past V110: revoke the read-only API tokens first.
 - Script for maintaining the local image cache (#132).
 

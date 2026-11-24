@@ -422,3 +422,76 @@ grantId=`, `series_admin_moved account= from= series= grantId= from_year= by=`.
   real rows listed above that root doesn't want kept.
 - **Migration back-out:** V112's rollback is in its last comment (every grant and its log rows are
   lost; an older binary reads no grant, so series admins lose their series access with it).
+
+**9.6 Splitting reused contests (CY-4, the plan's CY-5 run).** Root's reuse report
+(`/admin/contests/reuse`; **Scan every contest** first) lists the reused contests; a contest's
+**Plan the split** confirms its moves, and a `contest_split` job runs them (each move: pause the
+ticked active rounds and create the target, link the matching files in chunks, give the roles,
+move the rounds; each step one transaction, every change a `contest_split_item` row). The run:
+
+1. **A snapshot before the first production split** (CA12) and before each batch, taken while the
+   app keeps running (docs/deployment.md, "A snapshot"):
+
+```bash
+sudo wlxjury-release snapshot
+```
+
+   Enter the operation id it prints in the confirmation's **Dump operation id**
+   (`contest_split.dump_ref`). **Production must be all InnoDB** for it (V55.1 converted the tables; a
+   table made by hand since may not be): `snapshot` checks and refuses otherwise. To see first, read-only
+   (`wlxjury-diag` has no SQL; any read-only client of the database), the tables of another engine:
+   `SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND
+   TABLE_TYPE = 'BASE TABLE' AND ENGINE <> 'InnoDB'`. If any is listed, don't split online: convert it
+   in a deployment (a migration), or take the backup with the next deployment (`deploy --backup`,
+   under maintenance) and split right after it.
+2. **On a production copy first:** confirm the same plans there and read each split's page (the
+   moves, files linked, roles given and skipped, edges cut, the jurors listed as losing access).
+3. **On production, in batches** of a few contests, the quietest hours first: a ticked active round
+   stays paused from the move's first step to its last (the file links of a large cluster take
+   longest), so its jurors can't vote meanwhile. After each split read its page and the source's
+   and targets' Rounds pages, and check the source's report and health over ssh (§5.5; here the
+   first contest, 466):
+
+```bash
+wlxjury-diag reuse 466
+```
+
+   The moved clusters are gone from it, the targets are listed on the split's page. `round.admin`
+   has `contest_split_confirmed`, `contest_split_moved` and `contest_created how=split` lines.
+4. **Fill each new target:** it has only the moved rounds' files of its own identity and no source;
+   on its Images page import its own Commons source ("Category:Images from Wiki Loves Earth 2021 in
+   Nepal" for WLE Nepal's 2021) so "Distribute new files" and the contest's file list are complete.
+5. **A failed split** (its page says why: a round started again, being created, joined to a moved
+   cluster, a series or year taken meanwhile) has resumed the rounds it paused. Fix the cause and
+   **Retry** (it pauses them again and resumes the step), or **Cancel** it and **Undo** what it did.
+   No other split of the contest is confirmed meanwhile.
+6. **Undo** (the split's page; done or cancelled splits) moves the rounds back with their numbers
+   (the next free one if taken), comments, jobs, the cut `exclude_rounds` edges and the source's
+   current round; removes the Juror and Organizer roles it gave if unused, and the Admin roles only
+   with a target it retires; retires a target it created unless it is in use (rounds, comments,
+   jobs or members of its own, or changed since: kept, listed); takes an existing target it put into
+   a series out again. The file links stay. It is refused while a target round draws on a moved one,
+   once a moved round moved on, while a moved round is being created, distributed, frozen or has a
+   job, and while a moved round has jurors who aren't members of the source (named: add them to the
+   source or take them off the round first).
+7. **Back-out:** Undo, split by split, the newest first. The snapshot's restore (O1) only if Undo
+   can't: it replaces the whole database with the snapshot and loses every write since (votes
+   included), which go to a rescue dump first; it asks to type `RESTORE`, puts the site under
+   maintenance and ends with the `reopen` to run. For the newest snapshot, its exact command is the
+   "to back out to the snapshot …" line of:
+
+```bash
+sudo wlxjury-release status --verbose
+```
+
+   Paste the command at the end of that line. For an older snapshot, the split's page shows its
+   dump operation id: the command is the same with that id in place of the newest one's.
+
+   V113's rollback is in its last comment (the split records are lost: undo first what may need
+   undoing); a pre-V113 binary runs on the V113 schema.
+8. **Once the splits are settled** (no Undo or back-out expected), let the retention rules drop the
+   older snapshots (they count with the deployments' dumps, the newest kept):
+
+```bash
+sudo wlxjury-release prune
+```

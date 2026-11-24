@@ -1,0 +1,116 @@
+@(
+        user: db.scalikejdbc.User,
+        split: db.scalikejdbc.ContestSplitRow,
+        plan: Option[services.series.ContestSplit.Plan],
+        items: Seq[db.scalikejdbc.ContestSplitItem],
+        job: Option[services.jobs.Job],
+        undoRefusal: Option[(String, Seq[String])],
+        people: Map[Long, String],
+        contests: Map[Long, org.intracer.wmua.ContestJury]
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@import db.scalikejdbc.ContestSplitJdbc.Kind
+@* A split of a reused contest (contest series plan §4.4–§4.5, CY-4; ContestSplitController.split):
+   its job (progress, Cancel, Retry), per move what it changed (the target, the rounds moved, the
+   files linked, the memberships given and those skipped, the exclude_rounds edges cut, the
+   comments and jobs that followed), and Undo, or why Undo is refused now *@
+@contestName(id: Long) = @{ contests.get(id).fold(s"#$id")(c => s"${c.fullName} #$id") }
+@person(id: Option[Long]) = @{ id.flatMap(people.get).filter(_.nonEmpty).getOrElse(id.fold("")(i => s"#$i")) }
+@ids(v: play.api.libs.json.JsObject, f: String) = @{ (v \ f).asOpt[Seq[Long]].getOrElse(Nil) }
+@mainAdmin("split.page.title", user, user.getId) {
+    <nav aria-label="@Messages("series.breadcrumb")"><ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="@routes.ReuseReportController.list()">@Messages("reuse.title")</a></li>
+        <li class="breadcrumb-item"><a href="@routes.ContestSplitController.confirmPage(split.contestId)">@contestName(split.contestId)</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@Messages("split.name", split.id.toString)</li>
+    </ol></nav>
+    <h1 class="h3">@Messages("split.name", split.id.toString) <span class="text-body-secondary">@contestName(split.contestId)</span>
+        @if(split.undone) {<span class="badge text-bg-secondary align-middle" id="split-undone">@Messages("split.undone")</span>}</h1>
+    @for(m <- flash.get("success")) {<div class="alert alert-success" role="status" id="split-flash">@m</div>}
+    @for(m <- flash.get("error")) {<div class="alert alert-warning" role="alert" id="split-flash">@m</div>}
+
+    <dl class="row" id="split-facts">
+        <dt class="col-sm-3">@Messages("split.job")</dt>
+        <dd class="col-sm-9" id="split-job">@job match { case Some(j) => {@snippets.jobStatus(j, req.uri)} case None => {—} }</dd>
+        <dt class="col-sm-3">@Messages("split.by")</dt>
+        <dd class="col-sm-9">@person(Some(split.createdBy))</dd>
+        <dt class="col-sm-3">@Messages("split.dump")</dt>
+        <dd class="col-sm-9" id="split-dump-ref">@split.dumpRef.getOrElse("—")</dd>
+    </dl>
+
+    @for(p <- plan.toSeq; m <- p.moves) {
+        @defining(items.filter(_.moveIndex == m.index)) { its =>
+        <section class="card mb-3 split-move" id="split-move-@m.index" aria-labelledby="split-move-@m.index-title">
+            <div class="card-header">
+                <h2 class="h5 mb-0" id="split-move-@m.index-title">@Messages("split.move", m.index, m.identity)</h2>
+            </div>
+            <div class="card-body small">
+                <dl class="row mb-2">
+                    <dt class="col-sm-3">@Messages("split.target")</dt>
+                    <dd class="col-sm-9 split-target-contest">@its.find(i => i.kind == Kind.Contest || i.kind == Kind.ContestExisting) match {
+                        case Some(i) => {<a href="@routes.RoundController.rounds(i.subjectId)">@contestName(i.subjectId.getOrElse(0L))</a>
+                            @if(i.kind == Kind.Contest) {<span class="badge text-bg-info">@Messages("split.target.created")</span>}}
+                        case None => {@Messages("split.target.pending", m.seriesName, m.year.toString)}
+                    }</dd>
+                    <dt class="col-sm-3">@Messages("series")</dt>
+                    <dd class="col-sm-9">@m.seriesName@if(its.exists(_.kind == Kind.Series)) { <span class="badge text-bg-info">@Messages("split.series.created")</span>}</dd>
+                    <dt class="col-sm-3">@Messages("split.rounds")</dt>
+                    <dd class="col-sm-9 split-moved-rounds">@if(its.exists(_.kind == Kind.Round)) {@{its.filter(_.kind == Kind.Round).map(i =>
+                        s"${i.subjectId.getOrElse(0L)} (${(i.oldValue \ "number").asOpt[Long].getOrElse(0L)} → ${(i.newValue \ "number").asOpt[Long].getOrElse(0L)})").mkString(", ")}} else {@Messages("split.rounds.pending", m.rounds.mkString(", "))}</dd>
+                    @for(i <- its.find(_.kind == Kind.Files)) {
+                        <dt class="col-sm-3">@Messages("split.files")</dt>
+                        <dd class="col-sm-9 split-files">@Messages("split.files.linked", (i.newValue \ "linked").asOpt[Long].getOrElse(0L))</dd>
+                    }
+                    @if(its.exists(i => i.kind == Kind.Comments || i.kind == Kind.Jobs)) {
+                        <dt class="col-sm-3">@Messages("split.followed")</dt>
+                        <dd class="col-sm-9">@Messages("split.followed.text",
+                            its.find(_.kind == Kind.Comments).flatMap(i => (i.newValue \ "count").asOpt[Int]).getOrElse(0),
+                            its.find(_.kind == Kind.Jobs).flatMap(i => (i.newValue \ "count").asOpt[Int]).getOrElse(0))</dd>
+                    }
+                    @if(its.exists(_.kind == Kind.Paused)) {
+                        <dt class="col-sm-3">@Messages("split.paused")</dt>
+                        <dd class="col-sm-9 split-paused">@its.filter(_.kind == Kind.Paused).flatMap(_.subjectId).mkString(", ")</dd>
+                    }
+                    @defining(its.filter(i => i.kind == Kind.Round || i.kind == Kind.ExcludeCut).flatMap(i =>
+                        ids(i.oldValue, "exclude").filterNot(ids(i.newValue, "exclude").toSet).map(x => s"${i.subjectId.getOrElse(0L)} → $x"))) { cut =>
+                        @if(cut.nonEmpty) {
+                            <dt class="col-sm-3">@Messages("split.cut")</dt>
+                            <dd class="col-sm-9 split-cut">@cut.mkString(", ")</dd>
+                        }
+                    }
+                </dl>
+                @if(its.exists(_.kind == Kind.Membership)) {
+                    <h3 class="h6">@Messages("split.members")</h3>
+                    <ul class="ps-3 split-members">
+                        @for(i <- its.filter(_.kind == Kind.Membership)) {
+                            <li data-account="@i.subjectId.getOrElse(0L)">@person(i.subjectId) · @Messages("role." + (i.newValue \ "role").asOpt[String].getOrElse(""))</li>
+                        }
+                    </ul>
+                }
+                @if(its.exists(_.kind == Kind.Skipped)) {
+                    <h3 class="h6">@Messages("split.skipped")</h3>
+                    <ul class="ps-3 split-skipped">
+                        @for(i <- its.filter(_.kind == Kind.Skipped)) {
+                            <li data-account="@i.subjectId.getOrElse(0L)" data-reason="@{(i.newValue \ "reason").asOpt[String].getOrElse("")}">@person(i.subjectId) · @Messages("role." + (i.newValue \ "role").asOpt[String].getOrElse("")) · @Messages("split.skip." + (i.newValue \ "reason").asOpt[String].getOrElse(""))</li>
+                        }
+                    </ul>
+                }
+            </div>
+        </section>
+        }
+    }
+
+    <h2 class="h4 mt-4">@Messages("split.undo")</h2>
+    @if(split.undone) {
+        <p id="split-undo-done">@Messages("split.undo.was")</p>
+    } else {
+        @undoRefusal match {
+            case Some((key, args)) => {<p class="text-body-secondary" id="split-undo-refused">@Messages(key, args: _*)</p>}
+            case None => {
+                <p id="split-undo-help">@Messages("split.undo.help")</p>
+                <form method="post" action="@routes.ContestSplitController.undo(split.id)" data-submit-once="true" id="split-undo-form">
+                    @csrfField()
+                    <button type="submit" class="btn btn-outline-danger">@Messages("split.undo.submit")</button>
+                </form>
+            }
+        }
+    }
+}

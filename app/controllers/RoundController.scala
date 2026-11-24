@@ -72,7 +72,9 @@ class RoundController @Inject() (
               // the Status, Type and Order menus' choices (unknown values: the default)
               RoundsFilter.fromRequest(request),
               // open rounds nobody can vote in (no active juror): a warning icon (DG10)
-              RoundUser.openWithoutActiveJuror(rounds)
+              RoundUser.openWithoutActiveJuror(rounds),
+              // rounds split out of the contest or into it (contest series plan §4.6, CY-4)
+              services.series.ContestSplit.notes(contestId)
             )
           )
         }
@@ -88,6 +90,10 @@ class RoundController @Inject() (
   def editRound(roundId: Option[Long], contestId: Long, topImages: Option[Int]): EssentialAction =
     withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, Some(contestId), derived = true)) { user => implicit request =>
       val rounds = Round.findByContest(contestId)
+      // a round a split moved out of this contest: its form in the contest it is in now (§4.6)
+      val moved = roundId.filterNot(id => rounds.exists(_.id.contains(id)))
+        .flatMap(id => db.scalikejdbc.ContestSplitJdbc.movedRound(id, contestId))
+      if (moved.isDefined) Redirect(routes.RoundController.editRound(roundId, moved.get, topImages)) else {
 
       // From the permission-checked contest's rounds: a round of another contest gets
       // the new-round form, not its settings.
@@ -121,6 +127,7 @@ class RoundController @Inject() (
           submitToken = Option.when(withTopImages.id.isEmpty)(RoundController.newSubmitToken()),
           storedCriteria = withTopImages.id.map(_ => withTopImages.criterionIds))
       )
+      }
     }
 
   /** Renders the create/edit round page for `round` with the given (possibly

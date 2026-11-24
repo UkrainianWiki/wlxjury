@@ -171,7 +171,28 @@ usage: wlxjury-release [--config FILE] COMMAND
   restore OPERATION --accept-data-loss [--yes]
                                           after traffic resumed: always named
   prune [--dry-run]
+  snapshot                                a dump while the app runs, for restore NAME --accept-data-loss
 ```
+
+**A snapshot** (`sudo wlxjury-release snapshot`) dumps the database while the app keeps running, for a
+change made through the app that may need backing out (the contest series' split, CY-5): under the
+lock, refused while maintenance is on or any operation is open, of the running release only (ready, the
+database at its schema, no failed migration), at the app's endpoint (`check_endpoint`), with free space
+for the reserve and the database's size. A dump while the app writes is consistent only with
+`--single-transaction`, which covers only InnoDB tables: with any other engine it refuses and says to
+convert the table or back up under maintenance (`deploy --backup`). The dump has the deployments' format
+(`--databases --add-drop-database`, its checksum) in a complete operation folder,
+`/var/backups/wlxjury/UTC_TIMESTAMP-snapshot-BUILD`, whose record names the running release as both
+previous and candidate, `kind=snapshot`, its schema and the server's port; it is written into a hidden
+folder first, so a failed snapshot leaves no operation; one left by a killed snapshot (a power cut) is
+removed by the next snapshot and by `prune`, as an unfinished unpack is. Its milestones (`ready`, `traffic-may-resume`,
+`backup-complete`, `complete`) make it what a reopened deployment is to `restore`: backing it out is
+`sudo wlxjury-release restore NAME --accept-data-loss`, named, typing `RESTORE`, under maintenance, with
+a rescue dump of the writes since, then `reopen NAME`; the confirmation, the restore's last lines and
+`status --verbose`'s back-out line name the snapshot and when it was taken (`taken` in its record),
+and the restore records the writers running at that moment, which `reopen` starts again. Its dump is pruned as the deployments' are; a
+later snapshot never stops a deployment from being backed out, nor takes the place of the operation that
+deployed the current release in the retention rules.
 
 **The hash** proves that the ZIP on the server is the one that was built and reviewed, so it comes
 by another channel than the upload (the build's message), never from a file next to the ZIP.
@@ -713,8 +734,8 @@ The restore image is self-contained: Ubuntu 22.04's MariaDB 10.6 (`--build-arg U
 10.11), OpenJDK 17, Python 3 (3.8 is the oldest supported), `curl`, `unzip` and `monit`.
 `test_release_script` runs `wlxjury-release.sh` unmodified against a real MariaDB, with stand-ins
 only for systemd and Apache; its test names list what it covers (deploy and reopen, skipped backups,
-the last-line rule, restore confirmation, deploying a restored release again, refusals, background
-jobs, stale operations, `status`, the hash, interrupted migrations and imports, rescue dumps, the
-image cache folder, pruning). `MonitCheckTest` covers `conf/monit/wlxjury-check`. The tests use
-synthetic data: they don't certify real backups, disk capacity, Apache coverage or outage time,
-which stay rehearsal gates.
+the last-line rule, restore confirmation, deploying a restored release again, refusals, snapshots,
+background jobs, stale operations, `status`, the hash, interrupted migrations and imports, rescue
+dumps, the image cache folder, pruning). `MonitCheckTest` covers `conf/monit/wlxjury-check`. The
+tests use synthetic data: they don't certify real backups, disk capacity, Apache coverage or outage
+time, which stay rehearsal gates.

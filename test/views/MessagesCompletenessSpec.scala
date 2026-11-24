@@ -126,7 +126,10 @@ class MessagesCompletenessSpec extends Specification {
     "reuse.action." -> services.series.ReuseReport.Action.All,                      // series/reuseReport, reuseContest
     "reuse.disagree." -> services.series.ReuseReport.DisagreementParts,             // series/reuseContest
     "reuse.signal." -> services.series.ReuseReport.SignalCodes,                     // series/reuseContest
-    "reuse.skip." -> services.series.ReuseReport.SkipReasons                        // series/reuseContest
+    "reuse.skip." -> services.series.ReuseReport.SkipReasons,                       // series/reuseContest
+    "split.mode." -> services.series.ContestSplit.Keys.Modes,                        // series/splitConfirm
+    "split.skip." -> services.series.ContestSplit.Keys.SkipReasons,                  // series/splitPage
+    "split.losing." -> services.series.ContestSplit.Keys.LosingReasons               // series/splitConfirm
   )
 
   /** Keys looked up from a value rather than a literal. */
@@ -160,7 +163,9 @@ class MessagesCompletenessSpec extends Specification {
     services.GalleryService.RoundState.All.map("round.state.title." + _.reason), // roundState.scala.html's title
     Seq("no.round.yet.closed"),                                                  // noRoundYet.scala.html's title
     db.scalikejdbc.ApiTokenScope.All.flatMap(s =>
-      Seq(s"api.token.scope.${s.value}", s"api.token.scope.short.${s.value}")) // apiTokens, apiTokenScope
+      Seq(s"api.token.scope.${s.value}", s"api.token.scope.short.${s.value}")), // apiTokens, apiTokenScope
+    services.series.ContestSplit.Keys.Refusals,  // ContestSplitController's flash, splitPage's Undo refusal
+    services.series.ContestSplit.Keys.JobErrors  // ContestSplitHandler's failures (JobError.message)
   ).flatten
 
   /** Texts in a key's place that are shown as they are, not keys, each with its reason. */

@@ -240,7 +240,11 @@ object ReuseReport {
       buckets: Buckets,
       target: Option[Target],
       jurors: Seq[Juror],
-      runners: Seq[Runner]
+      runners: Seq[Runner],
+      /** The categories of the cluster's files that name its identity (its matching bucket): what a
+        * split links into the target's own category (CY-4, §4.4 step 2).
+        */
+      matching: Seq[Long] = Nil
   ) {
     def roundIds: Seq[Long] = rounds.map(_.id)
     def activeRounds: Seq[Long] = rounds.filter(_.active).map(_.id)
@@ -389,7 +393,7 @@ object ReuseReport {
         targetOf(contest, identity, allContests, allSeries)).flatten
       val s5 = sources.filter(s => matches(ContestIdentity.parse(s), identity))
       val signals = Signals(s1, named.take(MaxNamed), many, s3, s4, s5, s5r, s6)
-      Cluster(index, lines, identity, kind, action, mixed, empty, disagreements, signals, buckets, target, Nil, Nil)
+      Cluster(index, lines, identity, kind, action, mixed, empty, disagreements, signals, buckets, target, Nil, Nil, matchIds)
     }
 
     // the people: jurors, and those who ran the rounds
@@ -414,6 +418,20 @@ object ReuseReport {
     val unused = unusedInSource(moving.flatMap(_.roundIds), withPeople.filterNot(_.action == Action.Move).flatMap(_.roundIds))
     Report(contest, host, national, signs, withPeople, !eras.isEmpty, unused)
   }
+
+  /** The categories of the rounds' files that name `identity` (the matching bucket, §4.1), the
+    * contest's own category (`own`) aside: what a split links into the target when root chose another
+    * identity for a cluster than the report's (CY-4).
+    */
+  def matchingCategories(roundIds: Seq[Long], own: Option[Long], identity: ContestIdentity, catalog: Catalog)(implicit
+      session: DBSession): Seq[Long] = {
+    val counts = categoryCounts(roundIds, own)
+    classify(ContestReuse.categoryIdentities(counts.keys.toSeq, Some(catalog.contests)), identity)._1
+  }
+
+  /** The target of an identity, as the report proposes one (CY-4: root's other choice for a cluster). */
+  def targetFor(host: ContestJury, identity: ContestIdentity, catalog: Catalog): Option[Target] =
+    targetOf(host, identity, catalog.contests, catalog.series.filter(_.live))
 
   /** How many identities of a cluster's files the report lists. */
   val MaxNamed = 6

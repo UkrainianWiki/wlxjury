@@ -16,7 +16,8 @@
         authorNormalizeJob: Option[services.jobs.Job] = None,
         leftFrozen: Map[Long, Int] = Map.empty,
         filter: controllers.RoundsFilter = controllers.RoundsFilter.Default,
-        noActiveJuror: Set[Long] = Set.empty
+        noActiveJuror: Set[Long] = Set.empty,
+        splitNotes: Seq[services.series.ContestSplit.Note] = Nil
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @* The rounds the Status and Type menus keep, in the Order menu's order (RoundsFilter; the
@@ -48,6 +49,15 @@
             @* a round started with no active juror: done, with a warning (DG10) *@
             @flash.get(controllers.RoundController.WarningFlash).map { msg =>
                 <div class="alert alert-warning" role="status" id="flash-warning">@msg</div>
+            }
+
+            @* rounds a split moved out of this contest or into it (contest series plan §4.6, CY-4) *@
+            @for(n <- splitNotes) {
+                <div class="alert alert-secondary split-note" role="status" data-split="@n.splitId" data-out="@n.out">
+                    @if(n.out) {@Messages("split.note.out", n.rounds, n.otherName)} else {@Messages("split.note.in", n.rounds, n.otherName)}
+                    @if(n.other > 0) {<a href="@routes.RoundController.rounds(Some(n.other))">@Messages("split.note.link")</a>}
+                    @if(n.running) {<strong>@Messages("split.note.running")</strong>}
+                </div>
             }
 
             @if(rounds.nonEmpty && shown.isEmpty) {

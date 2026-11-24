@@ -182,6 +182,11 @@ GET         /admin/rounds/newfiles                                              
 GET         /admin/contests/reuse                                                   @controllers.ReuseReportController.list()
 POST        /admin/contests/reuse/scan                                              @controllers.ReuseReportController.scan()
 GET         /admin/contests/:id/reuse                                               @controllers.ReuseReportController.contest(id: Long)
+# splitting a reused contest (root; contest series plan §4.4-§4.6, CY-4): the confirmation, a split, its Undo
+GET         /admin/contests/:id/split                                               @controllers.ContestSplitController.confirmPage(id: Long)
+POST        /admin/contests/:id/split                                               @controllers.ContestSplitController.confirm(id: Long)
+GET         /admin/splits/:id                                                       @controllers.ContestSplitController.split(id: Long)
+POST        /admin/splits/:id/undo                                                  @controllers.ContestSplitController.undo(id: Long)
 # a contest's health report (support diagnostics plan, D-1a): its admins and root only
 GET         /admin/contests/:id/health                                              @controllers.ContestHealthController.page(id: Long)
 # Contest series (root; contest series plan, CY-1)
