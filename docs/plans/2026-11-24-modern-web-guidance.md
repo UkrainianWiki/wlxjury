@@ -1,7 +1,7 @@
 # Modern Web Guidance: review and dashboard
 
-Status: plan for the maintainer's decision (2026-11-24). Nothing is installed or changed in the
-app by this PR. Request: "adopt https://github.com/googlechrome/modern-web-guidance review and
+Status: plan with the maintainer's decisions recorded (2026-11-24). Nothing is installed or
+changed in the app by this PR. Request: "adopt https://github.com/googlechrome/modern-web-guidance review and
 dashboard".
 
 ## 1. What the repository is
@@ -111,10 +111,10 @@ Options, in order of fit:
   Pages, one site. Blocked by the undecided Pages question (browser.yml comment). The upstream
   Eval Dashboard is not something to adopt: it reports on their evals.
 
-Recommendation: A now, then B as a manual workflow, then C only if F1 to F4 are taken up (C is
-how their effect would be shown), and D only with the Pages decision. "Dashboard" in the request
-is therefore answered as: link the upstream Eval Dashboard from the checklist as background
-reading, and host our own results beside the Allure report if and when Pages is enabled.
+Decision (2026-11-24): A now, B later (advisory scan), C not chosen (no budgets), D not chosen
+as a separate dashboard; GitHub Pages is enabled for reports such as Allure (section 5, Q7).
+"Dashboard" in the request is therefore answered as: link the upstream Eval Dashboard from the
+checklist as background reading, and publish our own reports (Allure) on Pages.
 
 Steps and effort (hours of work for one person or agent, not elapsed time):
 
@@ -122,11 +122,11 @@ Steps and effort (hours of work for one person or agent, not elapsed time):
 |---|---|---|
 | 1 | Run `legacy-scan` over `public/`, `app/views` and the CSS with telemetry off, in a throw-away checkout; triage with its rubric; add real findings to section 3 or to docs/ui/practices.md §9 as U-numbers | 2 h |
 | 2 | `docs/ui/review-checklist.md` (new, short, in the format of the other review checklists; front-end items only, so it does not duplicate docs/performance/review-checklist.md, which stays server-side and gets one pointer line to it): the guidance areas of section 2 that apply, the 109/115 floor, "retrieve the guide before changing a template, script or CSS", and a PR note "Modern Web Guidance: IDs applied or none"; link it from docs/README.md and CLAUDE.md's practices list | 2 h |
-| 3 | Add the skill to the agents' setup (a project-scoped plugin entry or an install note in CONTRIBUTING.md or DEV.md) with `DISABLE_TELEMETRY=1`; a committed `.mwgrc` that keeps origin trials and volatile features off | 1 h |
-| 4 | Fix F1 to F3 in one PR (`loading`, `decoding`, dimensions, `fetchpriority`) with a view spec for the attributes and a browser-test check that the first images load; verify the Unite Gallery path first | 4 h |
-| 5 | Optional B: `.github/workflows/web-guidance-scan.yml`, `workflow_dispatch` plus a monthly schedule, pinned Node 22 and a pinned CLI version (not `@latest`), `contents: read`, report as an artifact | 3 h |
-| 6 | Optional C: vitals on the fixture (LCP, CLS, event timing on three pages), budgets recorded and not enforced for a month, then decided | 3 days |
-| 7 | Optional D: Pages for Allure plus the above, after the Pages decision | 1 day |
+| 3 | Add the skill to the agents' setup (a project-level install for both Claude Code and Codex, with the CLI version pinned (Q2, Q3) and `DISABLE_TELEMETRY=1`; a committed `.mwgrc` that keeps origin trials and volatile features off | 1 h |
+| 4 | Fix F1 to F3 in one PR, which also delivers step S1 of docs/plans/2026-11-24-large-view-strip.md (PR #141: lazy images in the large view's strip), so S1 is done by it (`loading`, `decoding`, dimensions, `fetchpriority`) with a view spec for the attributes and a browser-test check that the first images load; verify the Unite Gallery path first | 4 h |
+| 5 | Later, B: `.github/workflows/web-guidance-scan.yml`, `workflow_dispatch` plus a monthly schedule, pinned Node 22 and a pinned CLI version (not `@latest`), `contents: read`, report as an artifact | 3 h |
+| 6 | Not chosen, C: vitals on the fixture (LCP, CLS, event timing on three pages), budgets recorded and not enforced for a month, then decided | 3 days |
+| 7 | Not chosen as a separate dashboard, D: Pages for Allure plus the above, after the Pages decision | 1 day |
 
 Costs: A and B add no required CI time; C adds about 1 to 2 minutes to one browser job if run
 there, or a job of its own. Maintenance: A needs the checklist kept to what we use (about an
@@ -143,27 +143,23 @@ effects or votes.
 
 Out of scope: any change to the app, the CSP, the supported-browser floor, or required checks.
 
-## 5. Open questions for the maintainer
+## 5. Decisions (2026-11-24)
 
-- **Q1. What did "review and dashboard" mean?** The repository has neither a review of a project
-  nor a dashboard of a project's results (section 1); the dashboard is their eval dashboard.
-  Is the goal (a) agents write better front-end code (option A), (b) a recurring audit of our
-  own pages (B and C), or (c) a published page of our own results (D)? The plan recommends A,
-  then B.
-- **Q2. Which agents should have the skill?** Claude Code and Codex are used here. A
-  project-scoped plugin entry changes what every contributor's agent runs; a per-user install
-  does not.
-- **Q3. May agents run `npx modern-web-guidance@latest` (downloaded, executed code, network
-  access)?** If yes, allowlist `npx -y modern-web-guidance@latest *` only, as the skill advises;
-  if not, install once and pin the version.
-- **Q4. Back/forward cache versus `no-store` (F5).** Keep the documented decision, or test
-  whether a refresh-on-`pageshow` design now avoids the flash of old votes?
-- **Q5. Take F1 to F3 now?** They are small and the most likely to be felt on a large contest,
-  but they touch the gallery templates, which a branch already working in the gallery may also
-  touch.
-- **Q6. Performance budgets (option C).** Do you want measured LCP, CLS and INP on the fixture,
-  and if so on which pages and with what failure policy (advisory first)?
-- **Q7. Pages.** Is GitHub Pages for the Allure and any new reports decided yet? It gates
-  option D.
-- **Q8. Attribution.** If a guide's text or code is copied into our docs, CC-BY 4.0 needs a
-  credit line: copy nothing, or accept a credit in NOTICE?
+- **Q1. What "review and dashboard" meant: option A now, B later.** An agent skill plus
+  docs/ui/review-checklist.md now, with F1 to F3 fixed (Q5). Option B (the advisory
+  `legacy-scan` workflow) comes later, not as a PR gate.
+- **Q2. Which agents: both, at project level.** Claude Code and Codex get a project-level
+  install, with telemetry off (`DISABLE_TELEMETRY=1`).
+- **Q3. Running the CLI: pin a version.** No `@latest`; the CLI version is pinned and updates
+  are deliberate and reviewed. The allowlist then names the pinned `npx` command only.
+- **Q4. Back/forward cache: keep `no-store`.** F5 stays as documented; no bfcache change.
+- **Q5. F1 to F3: now, in one PR.** The same PR also does the large view strip's lazy images
+  (step S1 of docs/plans/2026-11-24-large-view-strip.md, PR #141), so S1 is done by this PR.
+- **Q6. Performance budgets: none.** Option C is not chosen.
+- **Q7. Pages: yes.** GitHub Pages is enabled for reports (Allure and similar). Option D is
+  still not chosen as a separate dashboard.
+- **Q8. Attribution: credit in NOTICE.** Whenever guide text or code is copied, NOTICE carries
+  the credit and a source link (CC-BY 4.0).
+
+Still open: nothing from the original questions. The run of `legacy-scan` (step 1) is not part
+of this decision list; step 1 of section 4 remains the first adoption step for option B.
