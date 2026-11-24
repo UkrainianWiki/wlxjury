@@ -1,0 +1,105 @@
+@(
+        user: db.scalikejdbc.User,
+        series: db.scalikejdbc.Series,
+        contests: Seq[org.intracer.wmua.ContestJury],
+        admins: Map[Long, Seq[db.scalikejdbc.User]],
+        grants: Seq[db.scalikejdbc.SeriesGrant],
+        names: Map[Long, String],
+        reach: Map[Long, String],
+        real: Map[Long, String],
+        mayGrant: Boolean,
+        candidates: Seq[db.scalikejdbc.User]
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@* The series page (contest series plan §5.2; CY-2, SeriesController.seriesHome) for root and the
+   series' admins: its live contests, the newest year first, with the viewer's role in each (real,
+   else derived by their grant: Admin from its start year on, Organizer below it, CA20) and a
+   button to switch to it (a POST with the CSRF token); its series admins with who added each, when
+   and their start year; "Add a series admin" (CA19), which picks a member of the series' contests
+   and goes on to the grant page with the start year. CY-3 adds "Create a contest". Names are
+   escaped by Twirl *@
+@roleName(role: String) = @{ Messages("role." + role) }
+
+@mainAdmin("series.page.title", user, user.getId) {
+    <h1 class="h3" id="series-home-heading">@Messages("series.of", series.name)
+        @if(series.retired) {<span class="badge text-bg-secondary align-middle">@Messages("series.retired")</span>}</h1>
+    <p class="text-body-secondary" id="series-home-help">@Messages("series.page.help")</p>
+    @outcome()
+    @if(user.isRoot || user.hasRole(db.scalikejdbc.User.ROOT_ROLE)) {
+        <p><a href="@routes.SeriesController.series(series.id)" id="series-home-manage">@Messages("series.page.manage")</a></p>
+    }
+
+    <h2 class="h4">@Messages("series.contests")</h2>
+    @if(contests.isEmpty) {
+        <p class="text-body-secondary" id="series-home-contests-none">@Messages("series.contests.none")</p>
+    } else {
+        <div class="table-responsive">
+        <table class="table table-striped table-sm" id="series-home-contests">
+            <caption class="visually-hidden">@Messages("series.contests")</caption>
+            <thead>
+                <tr>
+                    <th scope="col">@Messages("year")</th>
+                    <th scope="col">@Messages("contest")</th>
+                    <th scope="col">@Messages("series.page.admins")</th>
+                    <th scope="col">@Messages("series.page.your.role")</th>
+                    <th scope="col"><span class="visually-hidden">@Messages("contest.switch")</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @for(c <- contests) {
+                    <tr class="series-home-contest" data-contest="@c.getId">
+                        <td>@c.year</td>
+                        <td>@c.fullName <span class="text-body-secondary">#@c.getId</span></td>
+                        <td>@admins.getOrElse(c.getId, Nil).map(_.fullname).mkString(", ")</td>
+                        <td class="series-home-role">@real.get(c.getId) match {
+                            case Some(role) => {@roleName(role)}
+                            case None => {@reach.get(c.getId) match {
+                                case Some(role) => {@Messages("series.page.derived", roleName(role))}
+                                case None => {—}
+                            }}
+                        }</td>
+                        <td>
+                            @if(real.contains(c.getId) || reach.contains(c.getId)) {
+                                <form method="post" action="@routes.UserController.switchContest(c.getId)" class="d-inline">
+                                    @csrfField()
+                                    <button type="submit" class="btn btn-sm btn-outline-primary" aria-label="@Messages("series.page.open.of", c.fullName)">@Messages("series.page.open")</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+
+    <h2 class="h4 mt-4" id="series-home-admins-heading">@Messages("series.admins")</h2>
+    @if(grants.isEmpty) {
+        <p class="text-body-secondary" id="series-home-admins-none">@Messages("series.admins.none")</p>
+    } else {
+        <ul id="series-home-admins">
+            @for(g <- grants) {
+                <li class="series-home-admin" data-grant="@g.id">@names.getOrElse(g.userId, s"#${g.userId}") ·
+                    @Messages("series.admin.from.year", g.adminFromYear) ·
+                    @Messages("series.admin.added.by", names.getOrElse(g.grantedBy, s"#${g.grantedBy}"), views.LinkTimes.utc(g.grantedAt))</li>
+            }
+        </ul>
+    }
+
+    @if(mayGrant) {
+        <h2 class="h4 mt-4" id="series-home-add-heading">@Messages("series.admin.add")</h2>
+        <p class="text-body-secondary" id="series-home-add-help">@Messages("series.admin.add.help")</p>
+        @if(candidates.isEmpty) {
+            <p class="text-body-secondary" id="series-home-add-none">@Messages("series.admin.add.none")</p>
+        } else {
+            <form method="get" action="@routes.SeriesController.grantPage(series.id)" id="series-home-add" class="row g-2 align-items-end" aria-labelledby="series-home-add-heading">
+                <div class="col-md-6">
+                    <label class="form-label" for="series-home-add-account">@Messages("series.admin.add.account")</label>
+                    <select class="form-select" id="series-home-add-account" name="account" required>
+                        @for(c <- candidates) {<option value="@c.getId">@c.fullname @c.wikiAccount.fold("")(w => s"(User:$w)") #@c.getId</option>}
+                    </select>
+                </div>
+                <div class="col-md-2"><button type="submit" class="btn btn-primary">@Messages("series.admin.add.next")</button></div>
+            </form>
+        }
+    }
+}

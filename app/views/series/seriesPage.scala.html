@@ -4,12 +4,19 @@
         contests: Seq[org.intracer.wmua.ContestJury],
         previous: Map[Long, org.intracer.wmua.ContestJury],
         changes: Seq[db.scalikejdbc.ContestChange],
-        names: Map[Long, String]
+        names: Map[Long, String],
+        grants: Seq[(db.scalikejdbc.SeriesGrant, Int)],
+        revoked: Seq[db.scalikejdbc.SeriesGrant],
+        defaults: Map[Long, Int],
+        thisYear: Int
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 @* Root's page of one series (contest series plan §5.3; SeriesController.series): rename, retire
    or un-retire it; its contests by year, the newest first, each with the previous year's contest
    (derived: the live contest of the series with the next lower year) and a link to its series
-   page; the series' change log. CY-3 adds the series page for its admins (§5.2) *@
+   page; the series' change log. Its series admins (CY-2, §5.3): the live grants as a tree along
+   granted_by (who added whom), each with its start year (root's edit, with the recomputed default,
+   CA20) and Revoke, optionally with the grants its account added (the chained revoke, CA22); the
+   revoked grants. Root adds series admins on the series page (§5.2) *@
 @mainAdmin("series.title", user, user.getId) {
     <nav aria-label="@Messages("series.breadcrumb")"><ol class="breadcrumb">
         <li class="breadcrumb-item"><a href="@routes.SeriesController.list()">@Messages("series.title")</a></li>
@@ -54,6 +61,62 @@
         </div>
     }
     <p class="text-body-secondary small">@Messages("series.contests.assign.help")</p>
+
+    <h2 class="h4 mt-4" id="series-admins-heading">@Messages("series.admins")</h2>
+    <p><a href="@routes.SeriesController.seriesHome(series.id)" id="series-admins-page">@Messages("series.admins.page")</a></p>
+    @if(grants.isEmpty) {
+        <p class="text-body-secondary" id="series-admins-none">@Messages("series.admins.none")</p>
+    } else {
+        <div class="table-responsive">
+        <table class="table table-sm align-middle" id="series-admins">
+            <caption class="visually-hidden">@Messages("series.admins")</caption>
+            <thead>
+                <tr>
+                    <th scope="col">@Messages("series.admin")</th>
+                    <th scope="col">@Messages("series.admin.added.by.column")</th>
+                    <th scope="col">@Messages("series.admin.start.year")</th>
+                    <th scope="col">@Messages("series.admin.revoke")</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for((g, depth) <- grants) {
+                    <tr class="series-admin" data-grant="@g.id" data-depth="@depth">
+                        <td><span class="ms-@math.min(depth * 3, 5)">@if(depth > 0) {↳ }@names.getOrElse(g.userId, s"#${g.userId}")</span> <span class="text-body-secondary">#@g.userId</span></td>
+                        <td>@names.getOrElse(g.grantedBy, s"#${g.grantedBy}") · <span class="text-nowrap">@views.LinkTimes.utc(g.grantedAt)</span></td>
+                        <td>
+                            <form method="post" action="@routes.SeriesController.setGrantFromYear(g.id)" class="d-flex gap-1 align-items-center series-admin-year" data-submit-once="true">
+                                @csrfField()
+                                <label class="visually-hidden" for="series-admin-year-@g.id">@Messages("series.admin.start.year.of", names.getOrElse(g.userId, s"#${g.userId}"))</label>
+                                <input type="number" class="form-control form-control-sm w-auto" id="series-admin-year-@g.id" name="fromYear" value="@g.adminFromYear" min="@services.series.SeriesAdmins.EarliestYear" max="@(thisYear + 1)" required>
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">@Messages("series.admin.start.year.save")</button>
+                            </form>
+                            @for(d <- defaults.get(g.id)) {<div class="form-text">@Messages("series.admin.default.now", d)</div>}
+                        </td>
+                        <td>
+                            <form method="post" action="@routes.SeriesController.revokeGrant(g.id)" class="series-admin-revoke" data-submit-once="true">
+                                @csrfField()
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="chain" value="true" id="series-admin-chain-@g.id">
+                                    <label class="form-check-label small" for="series-admin-chain-@g.id">@Messages("series.admin.revoke.chain")</label>
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-outline-danger" aria-label="@Messages("series.admin.revoke.of", names.getOrElse(g.userId, s"#${g.userId}"))">@Messages("series.admin.revoke")</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+    @if(revoked.nonEmpty) {
+        <h3 class="h5">@Messages("series.admins.revoked")</h3>
+        <ul id="series-admins-revoked" class="small">
+            @for(g <- revoked) {
+                <li data-grant="@g.id">@names.getOrElse(g.userId, s"#${g.userId}") · @Messages("series.admin.from.year", g.adminFromYear) ·
+                    @Messages("series.admin.revoked.by", g.revokedBy.map(b => names.getOrElse(b, s"#$b")).getOrElse("—"), g.revokedAt.map(views.LinkTimes.utc).getOrElse(""))</li>
+            }
+        </ul>
+    }
 
     <h2 class="h4 mt-4" id="series-rename-heading">@Messages("series.rename")</h2>
     <form method="post" action="@routes.SeriesController.rename(series.id)" id="series-rename" class="row g-2 align-items-end" data-submit-once="true" aria-labelledby="series-rename-heading">
