@@ -1,0 +1,14 @@
+browser 156.0.8078.4 headed variant B
+page N +282ms requestWillBeSent рква,_Нижня_Будаківка_01.jpg type Image initiator parser loaderId E4ECBB
+page N +283ms requestWillBeSent рква,_Нижня_Будаківка_03.jpg type Image initiator parser loaderId E4ECBB
+page N +362ms responseReceived рква,_Нижня_Будаківка_01.jpg status 200 fromDiskCache false fromPrefetchCache false encodedDataLength 249
+page N +363ms loadingFinished рква,_Нижня_Будаківка_01.jpg encodedDataLength 256205
+page N +365ms responseReceived рква,_Нижня_Будаківка_03.jpg status 200 fromDiskCache false fromPrefetchCache false encodedDataLength 249
+page N +366ms loadingFinished рква,_Нижня_Будаківка_03.jpg encodedDataLength 256205
+page N loaded; waiting 3 s for the prefetch
+page N has preload link / meta: {"link":true,"meta":false}
+after vote +3610ms requestWillBeSent рква,_Нижня_Будаківка_01.jpg type Image initiator parser loaderId 5D3095
+after vote +3611ms responseReceived рква,_Нижня_Будаківка_01.jpg status 200 fromDiskCache false fromPrefetchCache false encodedDataLength 249
+after vote +3611ms loadingFinished рква,_Нижня_Будаківка_01.jpg encodedDataLength 256205
+next page main image resource entry: [["img",256256,4]]
+stub requests in all: 6

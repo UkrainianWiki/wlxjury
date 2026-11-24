@@ -1,8 +1,8 @@
 diff --git a/app/views/large/large.scala.html b/app/views/large/large.scala.html
-index f1c237f5..595f007d 100644
+index f1c237f5..7475dcd0 100644
 --- a/app/views/large/large.scala.html
 +++ b/app/views/large/large.scala.html
-@@ -24,6 +24,10 @@
+@@ -24,6 +24,13 @@
      @defining(round.perCriterion(hood.file.starRate(round)) / round.starUnits) { score =>
      @defining(!user.roles.contains("jury") || !round.active || user.getId != list.asUserId) { readOnly =>
      @main_large(user, list, readOnly = readOnly, hood = hood) {
@@ -10,10 +10,13 @@ index f1c237f5..595f007d 100644
 +        @if(request.cookies.get("lvp").exists(_.value == "1")) { @for(next <- hood.following.headOption.filter(_.image.isImage)) { @defining(Global.largeImage(next.image)) { nl =>
 +            <link rel="preload" as="image" href="@nl.src" imagesrcset="@nl.srcset" @nl.sizes.map { sizes => imagesizes="@sizes" }>
 +        } } }
++        @if(request.cookies.get("lvp").exists(_.value == "2")) { @for(next <- hood.following.headOption.filter(_.image.isImage)) { @defining(Global.largeImage(next.image)) { nl =>
++            <meta name="lv-next" content="@nl.src" data-srcset="@nl.srcset" @nl.sizes.map { sizes => data-sizes="@sizes" }>
++        } } }
          @defining(hood.file.image) { image =>
          <div class="container-fluid large-view h-100">
              <div class="row h-100">
-@@ -74,7 +78,7 @@
+@@ -74,7 +81,7 @@
                          @fullSizeUrl(image, round)
                          @juryStat(votes, list, jurorCriteria)
                      }
@@ -22,7 +25,7 @@ index f1c237f5..595f007d 100644
                      @* the sections' stored states, before the column is painted (large-sections.js): the one
                         inline script besides the layout's theme script. Chrome paints frames before
                         DOMContentLoaded (scripts/ui_checks.py saw them), so a restore then would show the
-@@ -121,3 +125,4 @@
+@@ -121,3 +128,4 @@
      }
      }
      }

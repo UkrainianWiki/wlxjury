@@ -24,14 +24,19 @@ decide without it (section 1).
    HTML has been parsed, at about 210 ms, and takes 95 ms), painted at 340 ms. With no delay 113 of
    the 182 ms are the two requests' server time (POST 62 ms, GET 51 ms, of which 42 ms queries and 4
    ms rendering).
-2. **A script that prefetches the next file's main image saves the image's wait**: 330 -> 238 ms at
-   80 ms (-90 ms, faster in 10 of 10 votes, both rounds), 651 -> 286 ms at 80 ms and 8 Mbit/s (-364 ms,
-   10 of 10; rated -375 ms). It is a `new Image()` with the preload's `src`, `srcset` and `sizes`, run
-   from a script file when the page is parsed; the votes were cast 1.8 s (3 s on 8 Mbit/s) after the
-   page appeared, longer than the prefetch takes. **A `<link rel="preload" as="image">` for the same
-   file does nothing** (+0 to +7 ms): in this Chromium build the preloaded response was not reused by
-   the next page (the main image was fetched again in 10 of 10 votes; the script's was taken from the
-   cache in 10 of 10).
+2. **A script that prefetches the next file's main image saves the image's wait.** With the prefetch
+   finished (dwell 1.8-3 s): 330 -> 238 ms at 80 ms (-90 ms, faster in 10 of 10 votes, both rounds),
+   651 -> 286 ms at 80 ms and 8 Mbit/s (-364 ms, 10 of 10; rated -375 ms). **It survives keyboard-speed
+   voting**: with the vote cast 0, 300, 600 or 1000 ms after the page had painted, the saving at 80 ms
+   stays -84 to -103 ms and at 8 Mbit/s -347 to -369 ms (section 3.3), because the prefetch starts at
+   DOMContentLoaded, while the page's own image is still loading. The script is a `new Image()` with
+   the next file's `src`, `srcset` and `sizes`, run from a script file when the page is parsed; it
+   saves the same with and without a `<link>` for the same file (variant S, script only: -99 to -101
+   ms at 80 ms, -345 to -354 ms at 8 Mbit/s). **A `<link rel="preload" as="image">` alone does
+   nothing** (-12 to +15 ms): the Chrome DevTools Protocol log shows the preload issued and finished on
+   the page, and the next page's request for the same URL going to the network again (section 3.4);
+   not reused in headless Chromium 156.0.8078.4 (nor in a headed run of the same build); the cause was
+   not established.
 3. **The thumbnail strip (off or lazy) made no measurable difference** in the clean runs (-17 to +11
    ms, inside the 20-40 ms spread of A), also on 8 Mbit/s. Limit: the fixture's thumbnails are 1.2 KB
    each, real ones 5-10 KB, so the strip's cost is under-measured (section 5).
@@ -45,9 +50,9 @@ decide without it (section 1).
    About half the server time of a gallery page is the two region/rate count queries (14-25 ms each
    on the fixture's 38 000-file rounds, 15-25 times larger per juror than real ones), repeated on
    every page turn although they do not change. The region menu is already a separate lazy request
-   (26-32 ms).
+   (26-35 ms).
 6. **Round statistics is the slow page on the server**: 264-269 ms binary and 103 ms rated at 80 ms
-   (258-405 ms binary across three runs: the machine's noise), all count
+   (258-405 ms binary across the three runs of this branch's session: the machine's noise), all count
    queries over `vote`; 83 KB of HTML of which 82-85 % differs between two pages. Contest health is
    111 ms, the rounds list 13 ms.
 7. **Recommendation:** no framework for the large view. Add the script prefetch of the next main
@@ -88,18 +93,20 @@ ms, and each statement's count and time), on for every run; it is not the per-st
 fixture server's start command got these three properties in a local patch
 ([`variants-and-timing.patch`](data/large-view-timing/scripts/variants-and-timing.patch)).
 
-Chromium 1248 through Playwright 1.64.1, headless, 1366x768, one juror signed in, HTTP cache on.
+Chromium 156.0.8078.4 (Playwright 1.64.1's build 1248), headless, 1366x768, one juror signed in, HTTP cache on.
 Network conditions by the DevTools protocol (`Network.emulateNetworkConditions`): latency 0 or 80 ms
 (a minimum added to each request; "RTT" below), bandwidth unlimited or 1 000 000 byte/s (8 Mbit/s).
 
 **Production-like serving.** Every run in the tables goes through a local TLS reverse proxy
 (`h2proxy.mjs`) that speaks HTTP/2 to Chromium, as Apache does in production, and answers `/assets/`
 and `/webjars/` with `Cache-Control: public, max-age=31536000, immutable`. Why: production serves its
-digest-named files so (a `curl -I` of a digest-named style file under `/assets/` and of a `/webjars/`
-file on the production site returned exactly that header, checked by the reviewer of this document,
-not repeated here), while the fixture server serves plain names and answers every request with
+digest-named files so. On 2026-11-24 the project's coordinating agent ran `curl -I` on the production
+site (`jury.wlm.org.ua`) for `/assets/stylesheets/vendor/codex/<md5>-codex-tokens.css`,
+`/assets/stylesheets/<md5>-codex-theme.css` and `/webjars/jquery/3.7.1/jquery.min.js`: each returned
+`Cache-Control: public, max-age=31536000, immutable`, with the digest as its ETag. That check was not
+repeated by the author of this document. The fixture server serves plain names and answers every request with
 `Cache-Control: no-cache` and a 304 revalidation (checked here with `scripts/cachecheck.mjs`: a second
-and third large view fetched all 14 files over the network (a 304 each); behind the proxy's header all 14 came
+and third large view fetched all 14 files over the network; behind the proxy's header all 14 came
 from the cache). In the first set of runs that revalidation was a third round trip of about 200 ms
 (HTTP/2) to 290 ms (HTTP/1.1) in every page load: **a test-server artefact, not production's
 behaviour**, and the reason the first set was replaced.
@@ -122,10 +129,12 @@ in the rated one); the vote paths come from the page's `#large-keys` element (pa
 | E | the strip's `<img>` get `loading="lazy"` (set 1 only) |
 | F | B, plus a script that starts `new Image()` with the link's `src`, `srcset`, `sizes` when the page is parsed (set 2 only; injected by the harness for the test) |
 | G | F and C (set 2 only) |
+| S | the script prefetch only: the server renders the next file's `src`, `srcset` and `sizes` in a `<meta name="lv-next">` instead of a `<link>`, and the harness's script reads it (set 4 only) |
 
 The server-side parts are a cookie read by the templates (a local patch, in the data folder). **Set 1**
-is A B C D E, **set 2** A B F C G; the profile order within a set was, per round (binary first, then
-rated): set 1 RTT 0, RTT 80, RTT 80 with 8 Mbit/s; set 2 RTT 80, RTT 80 with 8 Mbit/s.
+is A B C D E, **set 2** A B F C G, **set 3** A and F with a dwell of 0, 300, 600 and 1000 ms, **set 4** A B F S; the profile order within a set was, per round (binary first, then
+rated): set 1 RTT 0, RTT 80, RTT 80 with 8 Mbit/s; set 2 and set 4 RTT 80, RTT 80 with 8 Mbit/s; set 3 RTT 80
+by dwell 300, 600, 1000, then 0, and RTT 80 with 8 Mbit/s the same (the dwell 0 cells last).
 
 ### 2.4 Pairing, and what was wrong with the first set
 
@@ -133,9 +142,12 @@ After 4 warm-up votes, 10 blocks of one measured vote per variant, the order rev
 block; deltas are within a block ("faster in k of 10"). **Each measured vote is preceded by an unmeasured
 neutral vote**: the neutral vote's destination page is the page the measured vote leaves, and it carries
 only that measured vote's preload (so the preload has been fetched when the vote starts), no strip
-change. The measured vote's own destination page carries no preload. Dwell before every vote: set 1
-1500 ms (RTT 0), 1800 ms (RTT 80), 3000 ms (8 Mbit/s); set 2 1800 and 3000 ms; always longer than the
-slow link's prefetch (256 KB at 1 MB/s is 260 ms plus latency).
+change. The measured vote's own destination page carries no preload. Dwell is the wait between the moment a page has painted its main image and become interactive, and the
+key press: set 1 1500 ms (RTT 0), 1800 ms (RTT 80), 3000 ms (8 Mbit/s); sets 2 and 4 1800 and 3000 ms (longer
+than the slow link's prefetch: 256 KB at 1 MB/s is 260 ms plus latency); set 3 0-1000 ms. The prefetch
+itself starts at DOMContentLoaded, before the page's image has painted, so dwell 0 is not "no time": it
+is the time the page's own image took to arrive (95 ms at 80 ms, about 370 ms at 8 Mbit/s) plus the
+harness's few ms.
 
 The first set (removed from the repository) set the next vote's preload cookie on the current vote, so
 the page measured under A or C also downloaded the next file's 256 KB in parallel with its own image
@@ -154,7 +166,8 @@ server's are in [`data/large-view-timing/`](data/large-view-timing/).
 
 ## 3. The large view
 
-### 3.1 Keypress to next main image painted (ms)
+### 3.1 Keypress to next main image painted (ms), prefetch finished (dwell 1.8-3 s)
+
 
 Binary / rated round. A is the median wait of the variant A votes; other cells are the **median paired
 delta against A in the same block** (negative = faster); full ranges, "faster in k of 10" and the
@@ -169,8 +182,8 @@ cache columns are in the appendix.
 | RTT 80, 8 Mbit/s, set 2 | 651 / 657 | +7 / +2 | -7 / -17 | - | - | **-364 / -375** | -350 / -378 |
 
 A's own spread within a cell is 20-45 ms (min-max in the appendix); the two sets' A differ by 10 ms at
-80 ms (340 against 330), which is the run-to-run noise. The "interactive" time (keys bound) is 148-161
-(RTT 0), 217-228 (RTT 80) and 257-270 (8 Mbit/s) in every variant: the prefetch does not delay it.
+80 ms (340 against 330), which is the run-to-run noise. The "interactive" time (keys bound) is 154-161
+(RTT 0), 217-228 (RTT 80) and 262-270 (8 Mbit/s) in every variant: the prefetch does not delay it.
 
 ### 3.2 Where today's wait goes (variant A, binary round, medians, ms from the keypress)
 
@@ -188,7 +201,7 @@ A's own spread within a cell is 20-45 ms (min-max in the appendix); the two sets
 | **main image painted** | **182** | **340** | **652** |
 
 Server side of the page GET, median: 48-51 ms total, 4 ms rendering the template, 42-46 ms in 8-12
-queries. Paint follows the image's last byte by 29-39 ms. The rated round is the same within 10 ms
+queries. Paint follows the image's last byte by 17-40 ms. The rated round is the same within 10 ms
 except its vote POST (48-59 ms) and 16 instead of 13 style and script files; its painted times are 174,
 344 and 645 ms.
 
@@ -205,6 +218,60 @@ What the table says, in production terms:
   save about one latency plus the redirect hop (about 90 ms at 80 ms of latency, 25 ms with none), an
   estimate; no spike was run.
 
+### 3.3 The script alone, and fast voters
+
+**S against F and B** (set 4, dwell 1.8 s at 80 ms, 3 s at 8 Mbit/s; median paired delta against A, binary / rated):
+
+| Profile | A | B link only | F link + script | S script only |
+|---|---|---|---|---|
+| RTT 80 | 343 / 346 | -3 / +7 | **-107 / -95** | **-101 / -99** |
+| RTT 80, 8 Mbit/s | 645 / 707 | +15 / -12 | **-369 / -360** | **-345 / -354** |
+
+S is as good as F: the `<link>` adds nothing. The rated 8 Mbit/s cell and the rated 80 ms cell contain
+slow outliers (A up to 1030 ms, B up to 1309 ms: the machine, kept in the data), so its medians are
+less steady than the others. The main image came from the cache in 10 of 10 S and F votes and 0 of 10 B
+votes (here, "from the cache" is inferred: the main image's Resource Timing entry is absent, or has
+transferSize 0; absent is the case for F and S, see section 5).
+
+**Fast voters** (set 3, F against A, median paired delta; the dwell is from the page painted and
+interactive to the key press, and F's prefetch has run since DOMContentLoaded, before that):
+
+| Dwell | RTT 80, binary | RTT 80, rated | 8 Mbit/s, binary | 8 Mbit/s, rated |
+|---|---|---|---|---|
+| 1800-3000 ms (sets 2 and 4) | -90 to -107 | -88 to -95 | -364 to -369 | -360 to -375 |
+| 1000 ms | 334 -> 241 (-95) | 330 -> 240 (-89) | 651 -> 289 (-363) | 649 -> 284 (-361) |
+| 600 ms | 331 -> 230 (-103) | 342 -> 248 (-91) | 645 -> 285 (-364) | 641 -> 281 (-360) |
+| 300 ms | 324 -> 229 (-95) | 326 -> 243 (-84) | 650 -> 288 (-358) | 650 -> 282 (-369) |
+| 0 ms | 343 -> 262 (-89) | 361 -> 264 (-90) | 646 -> 302 (-347) | 670 -> 308 (-367) |
+
+Faster than A in 10 of 10 votes in every cell. **All of F's saving survives keyboard-speed voting** in
+this setup. Why: the page's own image takes 95 ms (80 ms) to about 370 ms (8 Mbit/s) to arrive, and the
+prefetch runs alongside it, so the next image is there when the page paints; at 0 ms dwell F is 13-24 ms
+less good than at 1000 ms (262 against 241 at 80 ms), the rest of the benefit holds. Limit: the
+prefetch of the neutral page competes with that page's own image, and that wait is not measured
+(neutral votes are discarded), see section 5.
+
+### 3.4 Why the link preload was not reused (Chrome DevTools Protocol log)
+
+One vote under each of B, F and S, headless Chromium 156.0.8078.4, plus B in a headed run of the same
+build (`scripts/cdplog.mjs`, logs in `data/large-view-timing/cdp-log-*.txt`): `Network.requestWillBeSent`,
+`requestServedFromCache`, `responseReceived`, `loadingFinished` for the stub host.
+
+| Variant | On the page the vote leaves | On the next page |
+|---|---|---|
+| B (link only), headless | the preload for file _01 is issued (type Image, initiator `parser`) at +358 ms and finished (256 205 bytes) at +393 ms, together with the page's own image | the page's request for _01 goes to the network again (no `requestServedFromCache`; `encodedDataLength` 256 205 again); Resource Timing: transferSize 256 256 |
+| B (link only), headed | the same: issued by the parser, finished | the same: refetched, transferSize 256 256 |
+| F (link + script) | the link's request and the `Image()`'s one share one request; finished at +215 ms | `requestServedFromCache` for _01, `loadingFinished` with 0 bytes; the page's main image entry is the link's (initiatorType `link`, transferSize 0) |
+| S (script only, meta) | the `Image()` request issued and finished (+162 to +167 ms) | `requestServedFromCache`, 0 bytes; the entry is an `img` with transferSize 0 |
+
+So the preload **was** issued and completed with the right URL and the stub's cacheable headers; the
+next page's request nevertheless did not find it. In F and S, where a script made an `Image` request for
+the same URL, it did. The log does not say why. Consistent with Chromium keeping a preload nothing on
+the page consumed only in a document-scoped preload cache and discarding it at navigation, while an
+image request that "uses" it commits it to the memory/HTTP cache: a hypothesis, not shown by this log.
+It is an observation of Chromium 156.0.8078.4 on Windows only; other browsers and versions were not
+tested.
+
 ## 4. Galleries and statistics pages
 
 Navigation to the page (full load) over HTTP/2 with cached files, medians of 8 loads after one warm-up
@@ -218,7 +285,7 @@ slower for the heavier ones; the appendix has both).
 | Juror gallery, binary: page turn | 44 | 20 | 78 (58) | 179 | 140 |
 | Juror gallery, binary: filter "unrated" (an empty result) | 18 | 3 | 48 (34) | 96 | 131 |
 | Juror gallery, binary: region change | 60 | 40 | 64 (52) | 165 | 153 |
-| Region menu, JSON fragment (already lazy) | 4 | - | 26 (19) | 52 | 105 |
+| Region menu, JSON fragment (already lazy) | 4 | - | 32 (19) | 52 | 105 |
 | Juror by-rate, rated: page turn | 69 | 27 | 95 (80) | 197 | 155 |
 | Juror by-rate, rated: region change | 69 | 30 | 71 (58) | 155 | 143 |
 | Juror gallery, rated: filter "rated" | 70 | 5 | 70 (51) | 177 | 144 |
@@ -288,16 +355,25 @@ Full per-page lists are in the appendix.
 - **Image bytes.** The main image was 256 KB (a 1280 px thumbnail is often 150-400 KB), thumbnails
   1.2 KB (the stub's placeholder; real ones 5-10 KB), so **the strip's effect is under-measured**: five
   real thumbnails are 25-50 KB against the main image's 250 KB, 10-20 % of the bytes.
-- **The prefetch's votes came after a dwell of 1.8-3 s.** A juror who votes within 200-300 ms of the
-  page appearing gets less (the prefetch of 256 KB at 8 Mbit/s takes 260 ms plus latency); one more
-  256 KB is downloaded per file whether or not the juror stays on it.
-- **The link preload's failure is an observation of this Chromium build** (1248, headless), confirmed
-  once by hand (the second page's main image transferred in full after a preload, from the cache after
-  the script's `Image`); not a statement about other browsers.
+- **What the prefetch costs was not measured.** It competes with the current page's own images for
+  bandwidth (the prefetched page's wait is that of the neutral votes, which are discarded: on 8 Mbit/s the
+  page's own 256 KB image and the 256 KB prefetch share the link, so the page itself paints later than
+  without a prefetch; it did not show in the measured vote, which is the next one); a 1:1 prefetch of
+  the next file wastes 150-400 KB per file when the juror leaves the page or votes out of order; and
+  the next file's main image of a real, cold Wikimedia file may need a longer dwell than the stub's
+  immediately served copy (a thumbnail not yet rendered at Wikimedia takes seconds).
+- **"From the cache" for F and S is inferred**, not observed as a transferSize 0: the next page's main
+  image has no Resource Timing entry of its own in those votes (`main == null` in the data), or an entry
+  of the prefetch's with transferSize 0 (section 3.4 has one observed example of each, from the CDP
+  log); a measured vote counts as "from the cache" in the appendix when the entry is absent or its
+  transferSize is 0.
+- **The link preload's failure is an observation of this Chromium build** (156.0.8078.4, headless, and
+  one headed run), shown by the CDP log of section 3.4; the cause is not established, and other
+  browsers were not tested.
 - **"Painted" is `decode()` plus two animation frames**, not a hardware frame; headless Chromium. The same
   method for all variants.
-- **The asset header evidence is the reviewer's** (`curl -I` on the production site); the test setup
-  adds the header at its proxy. If production's Apache adds a different or no-cache header to any file
+- **The asset header evidence is the coordinating agent's `curl -I` of three files on the production
+  site (section 2.2), not repeated here**; the test setup adds the header at its proxy. If production's Apache adds a different or no-cache header to any file
   the large view loads, the third round trip of the first set returns.
 
 ## 6. Recommendation
@@ -307,8 +383,12 @@ Full per-page lists are in the appendix.
 1. Add a script file next to `large-keys.js` that, when the page is parsed, starts the browser's fetch
    of the next file's main image (the same URL the next page will choose; the server renders it as the
    `data-` attributes the preload link had, or the link itself, which the script reads). Measured:
-   -90 ms at 80 ms, -364 ms at 80 ms and 8 Mbit/s. It must be a script `new Image()`; a `<link
-   rel=preload>` alone did nothing here. CSP: a file under `/assets/`, no inline script.
+   -90 ms at 80 ms, -364 ms at 80 ms and 8 Mbit/s. It must be a script `new Image()` (variant S, script only, saved as
+   much as F with a link); a `<link rel=preload>` alone was not reused by the next page in headless
+   Chromium 156.0.8078.4 (the preload was issued and finished, the next page refetched; section 3.4),
+   so it did nothing here. All of the saving survived votes 0-1000 ms after the page painted
+   (section 3.3). CSP: a file under `/assets/`, no inline script. Mind the costs of section 5: the
+   next file's image downloaded whether or not the juror stays.
 2. Leave the strip alone; if it is changed, re-measure with real thumbnails (5-10 KB each).
 3. Server time is the floor with no latency: the vote POST (about 60 ms) and the next page's queries
    (42-46 ms for a juror's own next file) are 113 of 182 ms. Fewer queries on the large view's page is a
@@ -337,7 +417,7 @@ Local patch, committed as [`variants-and-timing.patch`](data/large-view-timing/s
 `browser-test/fixture-server.mjs`'s sbt command (`-Dgatling.timing=true`,
 `-Dgatling.timingFile=...`, `-Dscalikejdbc.global.loggingSQLAndTime.enabled=false`), and the variant
 cookies in `large/large.scala.html` (`lvs`: `C` strip off, `L` lazy; `lvp=1`: preload link for
-`hood.following.headOption`'s image) and `large/thumbsBar.scala.html` (`loading="lazy"`). The
+`hood.following.headOption`'s image; `lvp=2`: a `<meta name="lv-next">` with the same `src`, `srcset`, `sizes`) and `large/thumbsBar.scala.html` (`loading="lazy"`). The
 script prefetch (F) is the harness's init script (`lvj` cookie), not an application change.
 
 ```
@@ -349,7 +429,7 @@ cd docs/performance/data/large-view-timing/scripts
 SERVER_JSON=../../../../../target/ui-shots/server.json PW_DIR=../../../../../browser-test \
 TIMING_LOG=../../../../../target/lvbench-timing.jsonl H2=1 IMMUTABLE=1 BPS=1000000 \
 ROUND=binary RTT=80 N=10 WARM=4 DWELL=3000 VARIANTS=A,B,F,C,G OUT=lv3-binary-rtt80-8mbit.json node lv-bench.mjs
-SERVER_JSON=... H2=1 IMMUTABLE=1 SCENARIOS=scenarios.json RTT=80 REPS=8 OUT=pages-rtt80.json node page-bench.mjs
+SERVER_JSON=../../../../../target/ui-shots/server.json PW_DIR=../../../../../browser-test \nTIMING_LOG=../../../../../target/lvbench-timing.jsonl H2=1 IMMUTABLE=1 \nSCENARIOS=scenarios.json RTT=80 REPS=8 OUT=pages-rtt80.json node page-bench.mjs
 python analyze.py ..                # the appendix's tables from the JSON files
 ```
 
@@ -363,56 +443,104 @@ the server's, its statements cut to 160 characters).
 
 | round | link | variant | median | min-max | paired delta vs A (median, range) | faster than A in | interactive median | main image from cache | CSS/JS from cache |
 |---|---|---|---|---|---|---|---|---|---|
-| binary | RTT 0 (h2, set 1) | A | 182 | 163-199 | - | - | 161 | 0 of 10 | 13 of 13 |
-| binary | RTT 0 (h2, set 1) | B | 181 | 168-205 | -0 (-17..+23) | 5 of 10 | 158 | 0 of 10 | 13 of 13 |
-| binary | RTT 0 (h2, set 1) | C | 178 | 168-201 | -0 (-18..+18) | 5 of 10 | 155 | 0 of 10 | 13 of 13 |
-| binary | RTT 0 (h2, set 1) | D | 178 | 170-193 | -6 (-17..+18) | 7 of 10 | 156 | 0 of 10 | 13 of 13 |
-| binary | RTT 0 (h2, set 1) | E | 176 | 163-190 | -7 (-23..+14) | 6 of 10 | 154 | 0 of 10 | 13 of 13 |
-| binary | RTT 80, 8 Mbit/s (h2, set 1) | A | 652 | 644-685 | - | - | 269 | 0 of 10 | 13 of 13 |
-| binary | RTT 80, 8 Mbit/s (h2, set 1) | B | 665 | 633-675 | +5 (-20..+26) | 3 of 10 | 269 | 0 of 10 | 13 of 13 |
-| binary | RTT 80, 8 Mbit/s (h2, set 1) | C | 644 | 622-654 | -14 (-47..+10) | 9 of 10 | 257 | 0 of 10 | 13 of 13 |
-| binary | RTT 80, 8 Mbit/s (h2, set 1) | D | 636 | 619-664 | -17 (-56..+12) | 8 of 10 | 260 | 0 of 10 | 13 of 13 |
-| binary | RTT 80, 8 Mbit/s (h2, set 1) | E | 646 | 614-703 | -3 (-46..+19) | 5 of 10 | 267 | 0 of 10 | 13 of 13 |
-| binary | RTT 80 (h2, set 1) | A | 340 | 313-359 | - | - | 228 | 0 of 10 | 13 of 13 |
-| binary | RTT 80 (h2, set 1) | B | 336 | 324-350 | -1 (-20..+34) | 6 of 10 | 226 | 0 of 10 | 13 of 13 |
-| binary | RTT 80 (h2, set 1) | C | 341 | 328-395 | +1 (-28..+60) | 4 of 10 | 220 | 0 of 10 | 13 of 13 |
-| binary | RTT 80 (h2, set 1) | D | 337 | 321-357 | -1 (-18..+25) | 5 of 10 | 217 | 0 of 10 | 13 of 13 |
-| binary | RTT 80 (h2, set 1) | E | 341 | 326-361 | -0 (-15..+33) | 6 of 10 | 221 | 0 of 10 | 13 of 13 |
-| rated | RTT 0 (h2, set 1) | A | 174 | 160-181 | - | - | 151 | 0 of 10 | 16 of 16 |
-| rated | RTT 0 (h2, set 1) | B | 171 | 160-194 | -0 (-19..+26) | 5 of 10 | 154 | 0 of 10 | 16 of 16 |
-| rated | RTT 0 (h2, set 1) | C | 173 | 158-242 | -2 (-12..+81) | 6 of 10 | 151 | 0 of 10 | 16 of 16 |
-| rated | RTT 0 (h2, set 1) | D | 173 | 159-189 | -0 (-15..+13) | 5 of 10 | 152 | 0 of 10 | 16 of 16 |
-| rated | RTT 0 (h2, set 1) | E | 167 | 156-206 | -4 (-20..+45) | 6 of 10 | 148 | 0 of 10 | 16 of 16 |
-| rated | RTT 80, 8 Mbit/s (h2, set 1) | A | 645 | 618-714 | - | - | 262 | 0 of 10 | 16 of 16 |
-| rated | RTT 80, 8 Mbit/s (h2, set 1) | B | 654 | 621-669 | +8 (-45..+23) | 3 of 10 | 269 | 0 of 10 | 16 of 16 |
-| rated | RTT 80, 8 Mbit/s (h2, set 1) | C | 646 | 601-664 | -14 (-67..+28) | 6 of 10 | 268 | 0 of 10 | 16 of 16 |
-| rated | RTT 80, 8 Mbit/s (h2, set 1) | D | 640 | 620-654 | -9 (-89..+18) | 7 of 10 | 262 | 0 of 10 | 16 of 16 |
-| rated | RTT 80, 8 Mbit/s (h2, set 1) | E | 642 | 602-674 | -15 (-52..+36) | 6 of 10 | 263 | 0 of 10 | 16 of 16 |
-| rated | RTT 80 (h2, set 1) | A | 344 | 325-354 | - | - | 224 | 0 of 10 | 16 of 16 |
-| rated | RTT 80 (h2, set 1) | B | 334 | 320-351 | -6 (-27..+24) | 8 of 10 | 224 | 0 of 10 | 16 of 16 |
-| rated | RTT 80 (h2, set 1) | C | 340 | 323-352 | +3 (-24..+22) | 4 of 10 | 220 | 0 of 10 | 16 of 16 |
-| rated | RTT 80 (h2, set 1) | D | 339 | 323-347 | -2 (-28..+20) | 8 of 10 | 217 | 0 of 10 | 16 of 16 |
-| rated | RTT 80 (h2, set 1) | E | 343 | 327-359 | -0 (-27..+32) | 5 of 10 | 219 | 0 of 10 | 16 of 16 |
-| binary | RTT 80, 8 Mbit/s (h2, set 2) | A | 651 | 619-684 | - | - | 266 | 0 of 10 | 13 of 13 |
-| binary | RTT 80, 8 Mbit/s (h2, set 2) | B | 645 | 609-667 | +7 (-57..+26) | 4 of 10 | 263 | 0 of 10 | 13 of 13 |
-| binary | RTT 80, 8 Mbit/s (h2, set 2) | F | 286 | 275-312 | -364 (-390..-306) | 10 of 10 | 267 | 10 of 10 | 13 of 13 |
-| binary | RTT 80, 8 Mbit/s (h2, set 2) | C | 642 | 626-654 | -7 (-51..+12) | 6 of 10 | 264 | 0 of 10 | 13 of 13 |
-| binary | RTT 80, 8 Mbit/s (h2, set 2) | G | 295 | 269-336 | -350 (-390..-320) | 10 of 10 | 267 | 10 of 10 | 13 of 13 |
-| binary | RTT 80 (h2, set 2) | A | 330 | 319-354 | - | - | 217 | 0 of 10 | 13 of 13 |
-| binary | RTT 80 (h2, set 2) | B | 335 | 320-362 | -0 (-14..+39) | 5 of 10 | 221 | 0 of 10 | 13 of 13 |
-| binary | RTT 80 (h2, set 2) | F | 238 | 224-258 | -90 (-129..-65) | 10 of 10 | 220 | 10 of 10 | 13 of 13 |
-| binary | RTT 80 (h2, set 2) | C | 336 | 325-360 | +8 (-4..+25) | 4 of 10 | 217 | 0 of 10 | 13 of 13 |
-| binary | RTT 80 (h2, set 2) | G | 246 | 226-253 | -88 (-121..-71) | 10 of 10 | 219 | 10 of 10 | 13 of 13 |
-| rated | RTT 80, 8 Mbit/s (h2, set 2) | A | 657 | 599-693 | - | - | 268 | 0 of 10 | 16 of 16 |
-| rated | RTT 80, 8 Mbit/s (h2, set 2) | B | 659 | 634-692 | +2 (-50..+90) | 5 of 10 | 270 | 0 of 10 | 16 of 16 |
-| rated | RTT 80, 8 Mbit/s (h2, set 2) | F | 292 | 271-332 | -375 (-408..-267) | 10 of 10 | 269 | 10 of 10 | 16 of 16 |
-| rated | RTT 80, 8 Mbit/s (h2, set 2) | C | 634 | 603-659 | -17 (-81..+35) | 7 of 10 | 262 | 0 of 10 | 16 of 16 |
-| rated | RTT 80, 8 Mbit/s (h2, set 2) | G | 290 | 262-297 | -378 (-407..-309) | 10 of 10 | 263 | 10 of 10 | 16 of 16 |
-| rated | RTT 80 (h2, set 2) | A | 333 | 311-386 | - | - | 222 | 0 of 10 | 16 of 16 |
-| rated | RTT 80 (h2, set 2) | B | 332 | 320-356 | -1 (-45..+28) | 6 of 10 | 224 | 0 of 10 | 16 of 16 |
-| rated | RTT 80 (h2, set 2) | F | 246 | 223-257 | -88 (-134..-67) | 10 of 10 | 224 | 10 of 10 | 16 of 16 |
-| rated | RTT 80 (h2, set 2) | C | 345 | 329-357 | +11 (-38..+37) | 2 of 10 | 222 | 0 of 10 | 16 of 16 |
-| rated | RTT 80 (h2, set 2) | G | 244 | 222-251 | -86 (-165..-72) | 10 of 10 | 218 | 10 of 10 | 16 of 16 |
+| binary | RTT 0, dwell 1500 ms (set 1, h2) | A | 182 | 163-199 | - | - | 161 | 0 of 10 | 13 of 13 |
+| binary | RTT 0, dwell 1500 ms (set 1, h2) | B | 181 | 168-205 | -0 (-17..+23) | 5 of 10 | 158 | 0 of 10 | 13 of 13 |
+| binary | RTT 0, dwell 1500 ms (set 1, h2) | C | 178 | 168-201 | -0 (-18..+18) | 5 of 10 | 155 | 0 of 10 | 13 of 13 |
+| binary | RTT 0, dwell 1500 ms (set 1, h2) | D | 178 | 170-193 | -6 (-17..+18) | 7 of 10 | 156 | 0 of 10 | 13 of 13 |
+| binary | RTT 0, dwell 1500 ms (set 1, h2) | E | 176 | 163-190 | -7 (-23..+14) | 6 of 10 | 154 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 3000 ms (set 1, h2) | A | 652 | 644-685 | - | - | 269 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 3000 ms (set 1, h2) | B | 665 | 633-675 | +5 (-20..+26) | 3 of 10 | 269 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 3000 ms (set 1, h2) | C | 644 | 622-654 | -14 (-47..+10) | 9 of 10 | 257 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 3000 ms (set 1, h2) | D | 636 | 619-664 | -17 (-56..+12) | 8 of 10 | 260 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 3000 ms (set 1, h2) | E | 646 | 614-703 | -3 (-46..+19) | 5 of 10 | 267 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 1800 ms (set 1, h2) | A | 340 | 313-359 | - | - | 228 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 1800 ms (set 1, h2) | B | 336 | 324-350 | -1 (-20..+34) | 6 of 10 | 226 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 1800 ms (set 1, h2) | C | 341 | 328-395 | +1 (-28..+60) | 4 of 10 | 220 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 1800 ms (set 1, h2) | D | 337 | 321-357 | -1 (-18..+25) | 5 of 10 | 217 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 1800 ms (set 1, h2) | E | 341 | 326-361 | -0 (-15..+33) | 6 of 10 | 221 | 0 of 10 | 13 of 13 |
+| rated | RTT 0, dwell 1500 ms (set 1, h2) | A | 174 | 160-181 | - | - | 151 | 0 of 10 | 16 of 16 |
+| rated | RTT 0, dwell 1500 ms (set 1, h2) | B | 171 | 160-194 | -0 (-19..+26) | 5 of 10 | 154 | 0 of 10 | 16 of 16 |
+| rated | RTT 0, dwell 1500 ms (set 1, h2) | C | 173 | 158-242 | -2 (-12..+81) | 6 of 10 | 151 | 0 of 10 | 16 of 16 |
+| rated | RTT 0, dwell 1500 ms (set 1, h2) | D | 173 | 159-189 | -0 (-15..+13) | 5 of 10 | 152 | 0 of 10 | 16 of 16 |
+| rated | RTT 0, dwell 1500 ms (set 1, h2) | E | 167 | 156-206 | -4 (-20..+45) | 6 of 10 | 148 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 3000 ms (set 1, h2) | A | 645 | 618-714 | - | - | 262 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 3000 ms (set 1, h2) | B | 654 | 621-669 | +8 (-45..+23) | 3 of 10 | 269 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 3000 ms (set 1, h2) | C | 646 | 601-664 | -14 (-67..+28) | 6 of 10 | 268 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 3000 ms (set 1, h2) | D | 640 | 620-654 | -9 (-89..+18) | 7 of 10 | 262 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 3000 ms (set 1, h2) | E | 642 | 602-674 | -15 (-52..+36) | 6 of 10 | 263 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 1800 ms (set 1, h2) | A | 344 | 325-354 | - | - | 224 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 1800 ms (set 1, h2) | B | 334 | 320-351 | -6 (-27..+24) | 8 of 10 | 224 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 1800 ms (set 1, h2) | C | 340 | 323-352 | +3 (-24..+22) | 4 of 10 | 220 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 1800 ms (set 1, h2) | D | 339 | 323-347 | -2 (-28..+20) | 8 of 10 | 217 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 1800 ms (set 1, h2) | E | 343 | 327-359 | -0 (-27..+32) | 5 of 10 | 219 | 0 of 10 | 16 of 16 |
+| binary | RTT 80, 8 Mbit/s, dwell 3000 ms (set 2, h2) | A | 651 | 619-684 | - | - | 266 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 3000 ms (set 2, h2) | B | 645 | 609-667 | +7 (-57..+26) | 4 of 10 | 263 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 3000 ms (set 2, h2) | F | 286 | 275-312 | -364 (-390..-306) | 10 of 10 | 267 | 10 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 3000 ms (set 2, h2) | C | 642 | 626-654 | -7 (-51..+12) | 6 of 10 | 264 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 3000 ms (set 2, h2) | G | 295 | 269-336 | -350 (-390..-320) | 10 of 10 | 267 | 10 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 1800 ms (set 2, h2) | A | 330 | 319-354 | - | - | 217 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 1800 ms (set 2, h2) | B | 335 | 320-362 | -0 (-14..+39) | 5 of 10 | 221 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 1800 ms (set 2, h2) | F | 238 | 224-258 | -90 (-129..-65) | 10 of 10 | 220 | 10 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 1800 ms (set 2, h2) | C | 336 | 325-360 | +8 (-4..+25) | 4 of 10 | 217 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 1800 ms (set 2, h2) | G | 246 | 226-253 | -88 (-121..-71) | 10 of 10 | 219 | 10 of 10 | 13 of 13 |
+| rated | RTT 80, 8 Mbit/s, dwell 3000 ms (set 2, h2) | A | 657 | 599-693 | - | - | 268 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 3000 ms (set 2, h2) | B | 659 | 634-692 | +2 (-50..+90) | 5 of 10 | 270 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 3000 ms (set 2, h2) | F | 292 | 271-332 | -375 (-408..-267) | 10 of 10 | 269 | 10 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 3000 ms (set 2, h2) | C | 634 | 603-659 | -17 (-81..+35) | 7 of 10 | 262 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 3000 ms (set 2, h2) | G | 290 | 262-297 | -378 (-407..-309) | 10 of 10 | 263 | 10 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 1800 ms (set 2, h2) | A | 333 | 311-386 | - | - | 222 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 1800 ms (set 2, h2) | B | 332 | 320-356 | -1 (-45..+28) | 6 of 10 | 224 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 1800 ms (set 2, h2) | F | 246 | 223-257 | -88 (-134..-67) | 10 of 10 | 224 | 10 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 1800 ms (set 2, h2) | C | 345 | 329-357 | +11 (-38..+37) | 2 of 10 | 222 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 1800 ms (set 2, h2) | G | 244 | 222-251 | -86 (-165..-72) | 10 of 10 | 218 | 10 of 10 | 16 of 16 |
+| binary | RTT 80, 8 Mbit/s, dwell 0 ms (set 3, h2) | A | 646 | 618-675 | - | - | 276 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 0 ms (set 3, h2) | F | 302 | 286-327 | -347 (-383..-311) | 10 of 10 | 286 | 10 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 1000 ms (set 3, h2) | A | 651 | 626-680 | - | - | 267 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 1000 ms (set 3, h2) | F | 289 | 280-299 | -363 (-399..-331) | 10 of 10 | 265 | 10 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 300 ms (set 3, h2) | A | 650 | 625-680 | - | - | 264 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 300 ms (set 3, h2) | F | 288 | 271-304 | -358 (-409..-333) | 10 of 10 | 266 | 10 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 600 ms (set 3, h2) | A | 645 | 626-684 | - | - | 261 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 600 ms (set 3, h2) | F | 285 | 265-308 | -364 (-401..-329) | 10 of 10 | 260 | 10 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 0 ms (set 3, h2) | A | 343 | 320-368 | - | - | 239 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 0 ms (set 3, h2) | F | 262 | 228-273 | -89 (-101..-64) | 10 of 10 | 246 | 10 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 1000 ms (set 3, h2) | A | 334 | 305-348 | - | - | 221 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 1000 ms (set 3, h2) | F | 241 | 222-258 | -95 (-111..-65) | 10 of 10 | 224 | 10 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 300 ms (set 3, h2) | A | 324 | 305-337 | - | - | 215 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 300 ms (set 3, h2) | F | 229 | 207-245 | -95 (-111..-75) | 10 of 10 | 219 | 10 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 600 ms (set 3, h2) | A | 331 | 312-357 | - | - | 221 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 600 ms (set 3, h2) | F | 230 | 225-252 | -103 (-120..-80) | 10 of 10 | 221 | 10 of 10 | 13 of 13 |
+| rated | RTT 80, 8 Mbit/s, dwell 0 ms (set 3, h2) | A | 670 | 641-728 | - | - | 292 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 0 ms (set 3, h2) | F | 308 | 278-312 | -367 (-416..-336) | 10 of 10 | 283 | 10 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 1000 ms (set 3, h2) | A | 649 | 636-674 | - | - | 265 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 1000 ms (set 3, h2) | F | 284 | 268-294 | -361 (-399..-354) | 10 of 10 | 269 | 10 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 300 ms (set 3, h2) | A | 650 | 632-694 | - | - | 264 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 300 ms (set 3, h2) | F | 282 | 269-310 | -369 (-408..-325) | 10 of 10 | 271 | 10 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 600 ms (set 3, h2) | A | 641 | 631-673 | - | - | 267 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 600 ms (set 3, h2) | F | 281 | 276-294 | -360 (-393..-345) | 10 of 10 | 269 | 10 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 0 ms (set 3, h2) | A | 361 | 328-428 | - | - | 254 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 0 ms (set 3, h2) | F | 264 | 241-319 | -90 (-162..-72) | 10 of 10 | 243 | 10 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 1000 ms (set 3, h2) | A | 330 | 314-362 | - | - | 223 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 1000 ms (set 3, h2) | F | 240 | 222-250 | -89 (-131..-72) | 10 of 10 | 218 | 10 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 300 ms (set 3, h2) | A | 326 | 306-352 | - | - | 217 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 300 ms (set 3, h2) | F | 243 | 222-252 | -84 (-115..-77) | 10 of 10 | 220 | 10 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 600 ms (set 3, h2) | A | 342 | 303-383 | - | - | 224 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 600 ms (set 3, h2) | F | 248 | 222-255 | -91 (-132..-63) | 10 of 10 | 228 | 10 of 10 | 16 of 16 |
+| binary | RTT 80, 8 Mbit/s, dwell 3000 ms (set 4, h2) | A | 645 | 612-714 | - | - | 269 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 3000 ms (set 4, h2) | B | 654 | 628-702 | +15 (-72..+57) | 3 of 10 | 273 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 3000 ms (set 4, h2) | F | 282 | 272-312 | -369 (-421..-309) | 10 of 10 | 265 | 10 of 10 | 13 of 13 |
+| binary | RTT 80, 8 Mbit/s, dwell 3000 ms (set 4, h2) | S | 293 | 252-338 | -345 (-445..-298) | 10 of 10 | 271 | 10 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 1800 ms (set 4, h2) | A | 343 | 306-361 | - | - | 218 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 1800 ms (set 4, h2) | B | 341 | 308-405 | -3 (-27..+61) | 6 of 10 | 224 | 0 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 1800 ms (set 4, h2) | F | 239 | 223-266 | -107 (-125..-41) | 10 of 10 | 220 | 10 of 10 | 13 of 13 |
+| binary | RTT 80, dwell 1800 ms (set 4, h2) | S | 241 | 227-253 | -101 (-123..-64) | 10 of 10 | 220 | 10 of 10 | 13 of 13 |
+| rated | RTT 80, 8 Mbit/s, dwell 3000 ms (set 4, h2) | A | 707 | 641-1030 | - | - | 316 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 3000 ms (set 4, h2) | B | 697 | 649-1309 | -12 (-164..+568) | 6 of 10 | 310 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 3000 ms (set 4, h2) | F | 349 | 283-789 | -360 (-534..+145) | 9 of 10 | 330 | 10 of 10 | 16 of 16 |
+| rated | RTT 80, 8 Mbit/s, dwell 3000 ms (set 4, h2) | S | 379 | 293-617 | -354 (-724..-123) | 10 of 10 | 365 | 10 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 1800 ms (set 4, h2) | A | 346 | 329-1029 | - | - | 234 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 1800 ms (set 4, h2) | B | 359 | 332-1228 | +7 (-12..+199) | 3 of 10 | 235 | 0 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 1800 ms (set 4, h2) | F | 248 | 230-702 | -95 (-326..+9) | 9 of 10 | 227 | 10 of 10 | 16 of 16 |
+| rated | RTT 80, dwell 1800 ms (set 4, h2) | S | 254 | 226-761 | -99 (-268..-21) | 10 of 10 | 232 | 10 of 10 | 16 of 16 |
 
 ### Large view breakdown, variant A, medians (ms from keypress)
 
@@ -424,10 +552,6 @@ the server's, its statements cut to 160 characters).
 | rated | rtt0 | 1 | 64 | 49 | 0 | 118 | 129 | 146 | 133 | 3 | 5 | 139 | 174 | 59 | 46 | 3 | 42 |
 | rated | rtt80-8mbit | 1 | 116 | 51 | 69 | 240 | 244 | 258 | 617 | 364 | 5 | 349 | 645 | 51 | 48 | 4 | 39 |
 | rated | rtt80 | 1 | 92 | 50 | 46 | 193 | 205 | 220 | 306 | 98 | 5 | 302 | 344 | 48 | 47 | 3 | 44 |
-| binary | rtt80-8mbit | 1 | 120 | 52 | 65 | 245 | 247 | 261 | 620 | 367 | 5 | 358 | 651 | 58 | 49 | 3 | 40 |
-| binary | rtt80 | 1 | 86 | 50 | 46 | 186 | 196 | 212 | 297 | 95 | 5 | 296 | 330 | 60 | 47 | 3 | 37 |
-| rated | rtt80-8mbit | 2 | 119 | 55 | 61 | 244 | 248 | 264 | 618 | 362 | 5 | 359 | 657 | 52 | 52 | 3 | 46 |
-| rated | rtt80 | 2 | 91 | 49 | 46 | 193 | 203 | 218 | 301 | 96 | 5 | 301 | 333 | 50 | 46 | 3 | 42 |
 
 ### Gallery and statistics pages
 

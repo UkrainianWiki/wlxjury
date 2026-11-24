@@ -15,7 +15,7 @@ const ROUND = E.ROUND || 'binary', RTT = Number(E.RTT || 0), N = Number(E.N || 1
 const VARIANTS = (E.VARIANTS || 'A,B,C,D').split(',');
 // [strip cookie, preload cookie]: strip '' (as today), C (off), L (loading=lazy); preload 1
 // third: also start the preload from script (new Image(), via lvj cookie and the init script): F = B + script, G = D + script
-const DEF = { A: ['', 0, 0], B: ['', 1, 0], C: ['C', 0, 0], D: ['C', 1, 0], E: ['L', 0, 0], F: ['', 1, 1], G: ['C', 1, 1] };
+const DEF = { A: ['', 0, 0], B: ['', 1, 0], C: ['C', 0, 0], D: ['C', 1, 0], E: ['L', 0, 0], F: ['', 1, 1], G: ['C', 1, 1], S: ['', 2, 1] };
 const roundId = ROUND === 'binary' ? server.roundBinaryId : server.roundRatingId;
 const juror = server.jurors[Number(E.JUROR || 0)];
 const startPage = ROUND === 'binary' ? server.pageId : server.ratedPageId;
@@ -27,8 +27,11 @@ const INIT = () => {
   document.addEventListener('DOMContentLoaded', () => {
     if (!/(^|; )lvj=1/.test(document.cookie)) return;
     const l = document.querySelector('link[rel=preload][as=image]');
-    if (!l) return;
-    const i = new Image(); i.sizes = l.getAttribute('imagesizes') || ''; i.srcset = l.getAttribute('imagesrcset') || ''; i.src = l.href;
+    const m = document.querySelector('meta[name=lv-next]');
+    if (!l && !m) return;
+    const i = new Image();
+    if (l) { i.sizes = l.getAttribute('imagesizes') || ''; i.srcset = l.getAttribute('imagesrcset') || ''; i.src = l.href; }
+    else { i.sizes = m.dataset.sizes || ''; i.srcset = m.dataset.srcset || ''; i.src = m.content; }
   });
   const now = () => performance.timeOrigin + performance.now();
   addEventListener('keydown', () => { try { sessionStorage.setItem('lv_t0', String(now())); } catch (e) {} }, true);

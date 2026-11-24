@@ -13,10 +13,11 @@ def lv(path):
 out.append("## Large view: keypress to next file's main image painted (ms)\n")
 out.append("| round | link | variant | median | min-max | paired delta vs A (median, range) | faster than A in | interactive median | main image from cache | CSS/JS from cache |")
 out.append("|---|---|---|---|---|---|---|---|---|---|")
-for p in sorted(glob.glob(D + '/lv2-*.json')) + sorted(glob.glob(D + '/lv3-*.json')):
+for p in sorted(glob.glob(D + '/lv[2345]-*.json')):
     m, rows, V, blocks = lv(p)
     prof = os.path.basename(p)[4:-5].split('-', 1)[1]
-    link = {'rtt0': 'RTT 0', 'rtt80': 'RTT 80', 'rtt80-8mbit': 'RTT 80, 8 Mbit/s'}[prof] + (' (h2, set 1)' if os.path.basename(p).startswith('lv2') else ' (h2, set 2)')
+    SETS = {'lv2': 'set 1', 'lv3': 'set 2', 'lv4': 'set 3', 'lv5': 'set 4'}
+    link = f"RTT {m['rtt']}" + (', 8 Mbit/s' if m.get('bps') else '') + f", dwell {m['dwell']} ms ({SETS[os.path.basename(p)[:3]]}, h2)"
     for v in V:
         rr = [r for r in rows if r['variant'] == v]
         t = [r['total_painted'] for r in rr]
@@ -33,7 +34,7 @@ for p in sorted(glob.glob(D + '/lv2-*.json')) + sorted(glob.glob(D + '/lv3-*.jso
 out.append("\n## Large view breakdown, variant A, medians (ms from keypress)\n")
 out.append("| round | link | keypress to form submit | vote POST + redirect | next page request to first byte | HTML download | HTML end | CSS/JS end | DOMContentLoaded | main image: response end | main image: duration | strip: images | strip: last image end | painted | server POST total | server GET total | server GET render | server GET queries |")
 out.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
-for p in sorted(glob.glob(D + '/lv2-*.json')) + sorted(glob.glob(D + '/lv3-*.json')):
+for p in sorted(glob.glob(D + '/lv2-*.json')):
     m, rows, V, blocks = lv(p)
     prof = os.path.basename(p)[4:-5].split('-', 1)[1]
     rr = [r for r in rows if r['variant'] == 'A']
