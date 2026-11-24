@@ -252,19 +252,16 @@ is deleted when a release replaces it. *Why:* production can't take the untested
 between its release and master for one fix, and a fix made on master first can't be lost by the
 next release. *Example:* 26.11.13.1, on `release/26.11.13.1` from `release/26.11.13`.
 
-**7.3 The changelog** (`CHANGELOG.md`) is a **development changelog** (decided 2026-11-03):
-each release has **Features** (what organizers and jurors notice) and **Development** (the
-important engineering changes: frameworks, database and migrations, tests and CI, deployment
-tooling). It leaves out unmerged work, hosting and server details (hosts, server paths,
-accounts, infrastructure), and trivial refactors. "Unreleased (developed, not yet deployed)"
-comes first. Deployed releases are dated from their migrations (production's
-`flyway_schema_history.installed_on`, the first migration a deploy applied; a change without a
-migration is "deployed by" the next deploy that contained it, or dated from a deploy record);
-earlier releases by their development period (first to last commit) or their git tag. A batch
-adds its line under Unreleased in the same PR; a deploy moves the block under its release heading
-(§7.4) with its date. PR numbers are GitHub's (the stacked series #184–#395, then PRs to
-master). *Why:* the changelog shows how the project
-developed, without what changes with the hosting or what no reader needs.
+**7.3 The changelog** (`CHANGELOG.md`) lists each change in one short user-facing line (decided
+2026-11-24; [CONTRIBUTING.md](../../CONTRIBUTING.md), "Changelog entries"). Each release has
+**Features**, **Fixes**, **Security** and **Operations** groups as needed, with its migrations on one
+line; implementation detail stays in the PRs and the git history. It leaves out unmerged work,
+hosting and server details, refactors, tests-only, docs-only and CI changes. "Unreleased
+(developed, not yet deployed)" comes first. Deployed releases are dated from their migrations
+(production's `flyway_schema_history.installed_on`, the first migration a deploy applied; a change
+without a migration is dated from a deploy record); earlier releases by their development period
+or git tag. A batch adds its line under Unreleased in the same PR; a deploy moves the block under
+its release heading (§7.4) with its date. Cite only this repository's PRs, as `(#123)`.
 
 **7.4 Calendar versions** (decided 2026-11-03). A release is named `YY.MM` for the month it
 ships (`26.11`), with `.N` for an extra deploy in the same month (`26.11.1`, `26.11.2`). Between

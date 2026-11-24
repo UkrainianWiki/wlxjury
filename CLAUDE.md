@@ -57,6 +57,10 @@ python scripts/agent-check.py --lock -- java -Xmx512m -Dfile.encoding=UTF-8 -jar
 python scripts/agent-check.py --lock --timeout 1800 -- java -Xmx512m -Dfile.encoding=UTF-8 -jar 'C:/Program Files (x86)/sbt/bin/sbt-launch.jar' 'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8")' 'test'
 ```
 
+### Changelog entries as an agent
+
+A changelog entry is one short user-facing line per change (a few words, no implementation details); see [CONTRIBUTING.md](CONTRIBUTING.md), "Changelog entries".
+
 ### Front-end work as an agent
 
 Work on a template, a script or CSS consults the Modern Web Guidance skill first: `.claude/skills/modern-web-guidance` (Claude Code) and `.agents/skills/modern-web-guidance` (Codex), one pinned copy (CLI `modern-web-guidance@1.0.2`, never `@latest`; telemetry off with `DISABLE_TELEMETRY=1` in `.claude/settings.json` and `.codex/config.toml`). Apply a guide only inside the browser floor or with its fallback, review with [ui/review-checklist.md](docs/ui/review-checklist.md), and end the PR with the skill's "Modern Web Guidance" note. Copied guide text or code is credited with a source link and a NOTICE entry; updating the skill is deliberate (the checklist's "Updating the skill").
