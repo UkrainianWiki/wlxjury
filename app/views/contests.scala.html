@@ -194,7 +194,7 @@
                             </a>
                             }
                         </td>
-                        <td>@contest.currentRound
+                        <td>
                             @defining(Messages("contest.rounds.edit", contest.fullName)) { label =>
                             <a class="btn btn-outline-secondary btn-sm" href="@routes.RoundController.rounds(contest.id)" title="@label" aria-label="@label">
                                 <i class="bi bi-pencil-square" aria-hidden="true"></i>

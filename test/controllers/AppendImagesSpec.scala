@@ -36,7 +36,6 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       country = "Ukraine",
       images = images,
       categoryId = None,
-      currentRound = None,
       monumentIdTemplate = monumentIdTemplate
     )
 

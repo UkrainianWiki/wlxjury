@@ -70,6 +70,9 @@ curl -H "Authorization: Bearer $WLXJURY_TOKEN" -H "Content-Type: application/jso
      -X PUT --data @contest.json https://jury.wle.org.ua/api/contests
 ```
 
+The contest JSON has no `currentRound` field (removed; it was always null). A body that still
+sends it is accepted and the key is ignored.
+
 ## Errors
 
 Errors are JSON, with a fixed code and never the request's text:
