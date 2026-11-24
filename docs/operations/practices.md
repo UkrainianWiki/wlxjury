@@ -158,6 +158,12 @@ database (`--databases --add-drop-database --lock-tables`) into the operation fo
 release without new migrations records `backup-skipped`. The server's own database-backup timer
 is paused during an operation (deployment.json).
 
+**3.1a The server's nightly timer dumps without locks once every table is InnoDB.** Its dump uses
+`--lock-tables` whenever the database has a non-InnoDB table, which read-locked all of wlxjury's tables for about
+40 s a night until V113 converted the last seven (unused legacy tables). After that release, the backup
+log's line "dumping database wlxjury" must not say "non-InnoDB"; if it does, list the culprit with the
+query in V113's header. A new table must be InnoDB (the default).
+
 **3.2 A restore is checked before it deletes anything:** checksum and gzip integrity, the
 database's identity, free space, and after writes resumed a fresh `before-restore-*` rescue dump
 (deployment.md, "Deploying a release").

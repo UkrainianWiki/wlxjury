@@ -52,7 +52,8 @@ Merged to master after the 26.11.14 build.
 
 **Operations**
 
-- Migrations: V108, V109, V110, V112.
+- Migrations: V108, V109, V110, V112, V113.
+- Nightly backup no longer locks the database's tables (legacy tables converted to InnoDB).
 - Rolling back past V110: revoke the read-only API tokens first.
 - Script for maintaining the local image cache (#132).
 

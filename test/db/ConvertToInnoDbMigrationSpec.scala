@@ -406,4 +406,61 @@ class ConvertToInnoDbMigrationSpec extends Specification with BeforeAll with Aft
       }
     }
   }
+
+  private val v113 = "V113__Legacy_tables_to_InnoDB.sql"
+
+  private val legacyTables = Seq("selection_backup", "museum", "user_contest_legacy", "rounds_test", "schema_version",
+    "play_evolutions", "monuments_all")
+
+  "V113 (the legacy tables the app doesn't use)" should {
+
+    "convert the seven MyISAM tables to InnoDB, keeping their rows, and be a no-op on a rerun" in {
+      Using.resource(emptyDb("legacy_myisam")) { c =>
+        run(c, legacyTables.map(t => s"CREATE TABLE $t (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, note VARCHAR(100) " +
+          ") ENGINE = MyISAM DEFAULT CHARSET = utf8mb3") ++
+          legacyTables.filterNot(_ == "monuments_all").map(t => s"INSERT INTO $t (note) VALUES ('Київ'), ('b')") ++
+          Seq("CREATE TABLE other_myisam (id INT) ENGINE = MyISAM"))
+        tableStatus(c).filter(t => legacyTables.contains(t._1)).values.map(_._1).toSet === Set("MyISAM")
+
+        run(c, script(v113))
+        val status = tableStatus(c)
+        legacyTables.map(t => t -> status(t)._1).filterNot(_._2 == "InnoDB") must beEmpty
+        legacyTables.map(t => t -> status(t)._2).filterNot(_._2 == "Dynamic") must beEmpty
+        // the character set is kept; the rows too
+        legacyTables.map(t => t -> status(t)._3).filterNot(_._2 == "utf8mb3_general_ci") must beEmpty
+        rows(c, "SELECT note FROM selection_backup ORDER BY id")(_.getString(1)) === List("Київ", "b")
+        legacyTables.filterNot(_ == "monuments_all").map(t => rows(c, s"SELECT COUNT(*) FROM $t")(_.getInt(1)).head) ===
+          List.fill(6)(2)
+        rows(c, "SELECT COUNT(*) FROM monuments_all")(_.getInt(1)) === List(0)
+        // a table that isn't one of the seven is left alone
+        status("other_myisam")._1 === "MyISAM"
+
+        val before = tableStatus(c)
+        Thread.sleep(1100) // CREATE_TIME has a resolution of one second
+        run(c, script(v113))
+        tableStatus(c) === before
+      }
+    }
+
+    "run without error on a database that has none of the tables" in {
+      Using.resource(emptyDb("legacy_none")) { c =>
+        run(c, script(v113))
+        tableStatus(c).keySet.intersect(legacyTables.toSet) must beEmpty
+      }
+    }
+
+    "convert the MyISAM selection_backup and user_contest_legacy of production's schema, in the chain" in {
+      Using.resource(prodLikeDb("legacy_prod")) { c =>
+        afterV53.foreach(m => run(c, script(m)))
+        afterV53 must contain(v113)
+        val status = tableStatus(c)
+        status("selection_backup")._1 === "InnoDB"
+        status("user_contest_legacy")._1 === "InnoDB"
+        rows(c, "SELECT COUNT(*) FROM selection_backup")(_.getInt(1)) === List(1)
+        rows(c, "SELECT COUNT(*) FROM user_contest_legacy")(_.getInt(1)) === List(4)
+        rows(c, "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() " +
+          "AND TABLE_TYPE = 'BASE TABLE' AND ENGINE <> 'InnoDB'")(_.getString(1)) must beEmpty
+      }
+    }
+  }
 }
