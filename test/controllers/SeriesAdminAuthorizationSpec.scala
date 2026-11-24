@@ -92,7 +92,11 @@ class SeriesAdminAuthorizationSpec extends PlaySpecification with PlayTestDb {
           (gets.map(p => status(send(GET, p, Some(f.sa), None))).distinct === Seq(OK)) and
           (status(grant(Some(f.sa))) === SEE_OTHER) and
           (SeriesAdminJdbc.liveGrant(f.candidate.getId, f.s).map(_.grantedBy) must beSome(f.sa.getId)) and
-          (status(send(GET, s"/series/999999", Some(f.root), None)) === NOT_FOUND)
+          (status(send(GET, s"/series/999999", Some(f.root), None)) === NOT_FOUND) and
+          // the grant page names no account outside the series to a series admin
+          (status(send(GET, s"/series/${f.s}/admins/new?account=${f.saT.getId}", Some(f.sa), None)) === NOT_FOUND) and
+          (status(send(GET, s"/series/${f.s}/admins/new?account=${f.root.getId}", Some(f.sa), None)) === NOT_FOUND) and
+          (status(send(GET, s"/series/${f.s}/admins/new?account=${f.saT.getId}", Some(f.root), None)) === OK)
       }
     }
 
@@ -217,6 +221,24 @@ class SeriesAdminAuthorizationSpec extends PlaySpecification with PlayTestDb {
         (accepted must beRight) and (refused must beRight) and
           (UserContestJdbc.find(first.getId, f.cNow.getId).map(_.role) must beSome(User.JURY_ROLE)) and
           (UserContestJdbc.find(second.getId, f.cNow.getId) must beNone)
+      }
+    }
+  }
+
+  "the role writes' series rule" should {
+
+    "refuse a non-root actor making a series admin a Juror or lowering their Admin row in the series' contests, not elsewhere" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        UserContestJdbc.createMembership(f.sa.getId, f.cLast.getId, "admin")
+        UserContestJdbc.createMembership(f.sa.getId, f.tNow.getId, "organizer")
+        val inLast = User.findInContest(f.sa.getId, f.cLast.getId).get
+        val inT = User.findInContest(f.sa.getId, f.tNow.getId).get
+        (UserController.seriesRoleWriteAllowed(f.admin, inLast, User.JURY_ROLE) must beFalse) and
+          (UserController.seriesRoleWriteAllowed(f.admin, inLast, "organizer") must beFalse) and
+          (UserController.seriesRoleWriteAllowed(f.admin, inLast, User.ADMIN_ROLE) must beTrue) and
+          (UserController.seriesRoleWriteAllowed(f.saT, inT, User.JURY_ROLE) must beTrue) and
+          (UserController.seriesRoleWriteAllowed(f.root, inLast, User.JURY_ROLE) must beTrue)
       }
     }
   }

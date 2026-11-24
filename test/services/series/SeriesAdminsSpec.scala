@@ -91,7 +91,12 @@ class SeriesAdminsSpec extends Specification with TestDb with BeforeAll with Bef
       (SeriesAdmins.grant(r, s, b.getId, None, None) === Left("series.admin.refused.retired")) and
         (SeriesAdminJdbc.liveByUser(a.getId) must beEmpty) and
         (SeriesAdminJdbc.seriesContests(a.getId) must beEmpty) and
-        (User.isProtectedTarget(a) must beFalse)
+        (User.isProtectedTarget(a) must beFalse) and {
+          // un-retired, its old grants don't come back by themselves: root grants again (§3.1)
+          ContestSeries.unretireSeries(s, r.getId, None) must beRight
+          (SeriesAdminJdbc.liveByUser(a.getId) must beEmpty) and
+            (SeriesAdmins.grant(r, s, a.getId, None, None) must beRight)
+        }
     }
 
     "be granted again after root revoked it by root only" in {

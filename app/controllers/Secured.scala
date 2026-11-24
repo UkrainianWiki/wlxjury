@@ -515,12 +515,13 @@ object Secured {
     def denial: Denial = Denial(round.map(_.contestId), Some(s"round:$roundId"), User.VoterRoles)
   }
 
-  /** Any of `permissions` (the denial names the first's): an own page or an Admin's
+  /** Any of `permissions` (the denial: the first's, with every one's roles): an own page or an Admin's
     * ([[UserController.editUser]]).
     */
   final case class AnyOf(permissions: Seq[DescribedPermission]) extends DescribedPermission {
     def apply(user: User): Boolean = permissions.exists(_(user))
-    def denial: Denial = permissions.headOption.fold(Denial.empty)(_.denial)
+    def denial: Denial = permissions.headOption.fold(Denial.empty)(first =>
+      first.denial.copy(requiredRoles = permissions.flatMap(_.denial.requiredRoles).toSet))
     override def optsIn: Boolean = permissions.exists(_.optsIn)
   }
 

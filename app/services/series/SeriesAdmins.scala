@@ -224,6 +224,22 @@ object SeriesAdmins {
     grants.size
   }
 
+  /** A series un-retired by root (in its transaction, under the series' lock): the grants left from
+    * before its retirement, which gave nothing while it was retired, are revoked rather than coming
+    * back by themselves; root grants again those it confirms (§3.1, "un-retiring asks root to
+    * re-confirm each grant"; a grant root revoked is root's to give again). The number revoked.
+    */
+  def onSeriesUnretired(actorId: Long, seriesId: Long)(implicit session: DBSession): Int = {
+    val grants = SeriesAdminJdbc.findBySeries(seriesId).filterNot(_.revoked)
+    SeriesAdminJdbc.revoke(grants.map(_.id), actorId, byRoot = true)
+    grants.foreach { g =>
+      AccountChangeJdbc.create(g.userId, actorId, None, AccountChangeJdbc.SeriesAdminRevoked,
+        oldValue = Some(g.adminFromYear.toString), comment = Some(AccountChangeJdbc.seriesComment(seriesId) + "; unretired"))
+      log.info(s"series_admin_revoked account=${g.userId} series=$seriesId grantId=${g.id} by=$actorId reason=series_unretired")
+    }
+    grants.size
+  }
+
   // ── what a grant gives, for the grant page ─────────────────────────────────
 
   /** One of the series' live contests as a grant starting in a year gives it (CA20): derived Admin

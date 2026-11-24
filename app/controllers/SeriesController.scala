@@ -203,7 +203,10 @@ class SeriesController @Inject() (cc: ControllerComponents, blocking: BlockingEx
     withAuth(Secured.SeriesPermission(id)) { user => implicit request =>
       SeriesJdbc.findById(id).fold(seriesNotFound(user)) { s =>
         val thisYear = java.time.Year.now().getValue
-        account.flatMap(User.findById).filter(_.deletedAt.isEmpty) match {
+        // a series admin sees only the series' members (whom they may pick); any other id, as one no
+        // account has, is not found: the page names no account outside the series
+        account.flatMap(User.findById).filter(_.deletedAt.isEmpty)
+          .filter(a => isRoot(user) || SeriesAdmins.isMember(a.getId, id) && !User.isProtectedTarget(a)) match {
           case None => NotFound(views.html.errorPage(Some(user), "error.title", "error.user.not.found"))
           case Some(grantee) =>
             val (from, to) = SeriesAdmins.bounds(user, id, thisYear).getOrElse(thisYear - 1 -> (thisYear + 1))
@@ -229,6 +232,11 @@ class SeriesController @Inject() (cc: ControllerComponents, blocking: BlockingEx
           SeriesAdmins.grant(user, id, account, year, field(request, "comment")) match {
             case Left("series.admin.refused.not.admin") =>
               onUnAuthorized(user, request, Secured.SeriesPermission(id).denial)
+            // to a series admin, an account outside the series reads as a non-member whatever it is
+            // (deleted, root, being joined): no other account's state shows
+            case Left("series.admin.refused.account" | "series.admin.refused.root" | "series.admin.refused.retiring")
+                if !isRoot(user) =>
+              Redirect(routes.SeriesController.seriesHome(id)).flashing(ErrorFlash -> "series.admin.refused.not.member")
             case Left(key) => Redirect(routes.SeriesController.seriesHome(id)).flashing(ErrorFlash -> key)
             case Right(_)  => Redirect(routes.SeriesController.seriesHome(id)).flashing(DoneFlash -> "series.admin.granted")
           }
