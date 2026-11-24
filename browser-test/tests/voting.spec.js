@@ -832,9 +832,10 @@ test.describe('the large view\'s comments link', () => {
     let serve;
     let held;
     let requested;
-    // the large image (the view's only file from the upload host), served when the test says
+    // the large image (the view's first file from the upload host; the next file's, which
+    // large-next-image.js loads once the page is up, comes after it), served when the test says
     await page.route((u) => u.hostname === 'upload.wikimedia.org', async (route) => {
-      requested = route.request().url();
+      requested ??= route.request().url();
       const body = await held;
       await route.fulfill({ status: 200, contentType: 'image/png', body }).catch(() => {});
     });
