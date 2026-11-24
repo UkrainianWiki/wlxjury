@@ -1,0 +1,1039 @@
+{
+ "meta": {
+  "immutable": true,
+  "h2": true,
+  "bps": null,
+  "round": "rated",
+  "rtt": 80,
+  "n": 10,
+  "warm": 4,
+  "dwell": 600,
+  "variants": [
+   "A",
+   "F"
+  ],
+  "roundId": 2
+ },
+ "rows": [
+  {
+   "i": 5,
+   "variant": "A",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "6",
+   "votePath": "/large/round/2/pageid/175884015/select/6?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/176996744?sort=file",
+   "total_painted": 383.10009765625,
+   "total_interactive": 262.900146484375,
+   "key_to_navstart": 1.2001953125,
+   "redirect": 84.40000009536743,
+   "page_ttfb": 60.200000047683716,
+   "page_dl": 38.700000047683716,
+   "html_end_from_t0": 187.2001953125,
+   "resources_end_from_t0": 223.2001953125,
+   "dcl_from_t0": 255.900146484375,
+   "dcl_minus_resources": 32.699951171875,
+   "load_from_t0": 335.000244140625,
+   "fcp_from_t0": 269.2001953125,
+   "main": {
+    "start": 228.60009765625,
+    "ttfb": 6.599999904632568,
+    "end": 325.30029296875,
+    "dur": 96.69999980926514,
+    "transfer": 256256,
+    "cached": false,
+    "bytes": 255956
+   },
+   "paint_after_image_end": 57.7998046875,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 4340,
+    "end_from_t0": 323.2001953125
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 377.2001953125,
+   "t0_epoch": 1795508708515.9,
+   "server_post": {
+    "total": 78.81,
+    "work": 76.72,
+    "query": 58
+   },
+   "server_get": {
+    "total": 57.23,
+    "work": 57.04,
+    "render": 3.99,
+    "query": 40
+   }
+  },
+  {
+   "i": 7,
+   "variant": "F",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "8",
+   "votePath": "/large/round/2/pageid/176825317/select/8?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/176825328?sort=file",
+   "total_painted": 251.400146484375,
+   "total_interactive": 227.199951171875,
+   "key_to_navstart": 2.800048828125,
+   "redirect": 94.29999995231628,
+   "page_ttfb": 50,
+   "page_dl": 44.5,
+   "html_end_from_t0": 196.60009765625,
+   "resources_end_from_t0": 207.5,
+   "dcl_from_t0": 222.900146484375,
+   "dcl_minus_resources": 15.400146484375,
+   "load_from_t0": 318.900146484375,
+   "fcp_from_t0": 238.800048828125,
+   "main": null,
+   "paint_after_image_end": null,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 4140,
+    "end_from_t0": 317.900146484375
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 238.800048828125,
+   "t0_epoch": 1795508710502.5,
+   "server_post": {
+    "total": 54.36,
+    "work": 52.23,
+    "query": 40
+   },
+   "server_get": {
+    "total": 47.05,
+    "work": 46.91,
+    "render": 3.79,
+    "query": 49
+   }
+  },
+  {
+   "i": 9,
+   "variant": "F",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "1",
+   "votePath": "/large/round/2/pageid/176825330/select/1?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/176825336?sort=file",
+   "total_painted": 253.900146484375,
+   "total_interactive": 229.7001953125,
+   "key_to_navstart": 3.60009765625,
+   "redirect": 97.79999995231628,
+   "page_ttfb": 51.299999952316284,
+   "page_dl": 46.09999990463257,
+   "html_end_from_t0": 201.400146484375,
+   "resources_end_from_t0": 210.300048828125,
+   "dcl_from_t0": 225.10009765625,
+   "dcl_minus_resources": 14.800048828125,
+   "load_from_t0": 304.2001953125,
+   "fcp_from_t0": 239.60009765625,
+   "main": null,
+   "paint_after_image_end": null,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 4140,
+    "end_from_t0": 303.5
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 239.60009765625,
+   "t0_epoch": 1795508712466.4,
+   "server_post": {
+    "total": 48.71,
+    "work": 47.09,
+    "query": 37
+   },
+   "server_get": {
+    "total": 48.32,
+    "work": 48.18,
+    "render": 4.25,
+    "query": 50
+   }
+  },
+  {
+   "i": 11,
+   "variant": "A",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "3",
+   "votePath": "/large/round/2/pageid/176825341/select/3?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/176825342?sort=file",
+   "total_painted": 342.7998046875,
+   "total_interactive": 222.39990234375,
+   "key_to_navstart": 1.39990234375,
+   "redirect": 88.20000004768372,
+   "page_ttfb": 48.09999990463257,
+   "page_dl": 47.90000009536743,
+   "html_end_from_t0": 189.5,
+   "resources_end_from_t0": 199.7998046875,
+   "dcl_from_t0": 217.7998046875,
+   "dcl_minus_resources": 18,
+   "load_from_t0": 313,
+   "fcp_from_t0": 233.39990234375,
+   "main": {
+    "start": 201.39990234375,
+    "ttfb": 2.4000000953674316,
+    "end": 310.7998046875,
+    "dur": 109.40000009536743,
+    "transfer": 256256,
+    "cached": false,
+    "bytes": 255956
+   },
+   "paint_after_image_end": 32,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 4340,
+    "end_from_t0": 310.099853515625
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 321.39990234375,
+   "t0_epoch": 1795508714377.3,
+   "server_post": {
+    "total": 53.98,
+    "work": 51.71,
+    "query": 45
+   },
+   "server_get": {
+    "total": 45.09,
+    "work": 44.92,
+    "render": 3.76,
+    "query": 40
+   }
+  },
+  {
+   "i": 13,
+   "variant": "A",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "5",
+   "votePath": "/large/round/2/pageid/176825347/select/5?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/176823849?sort=file",
+   "total_painted": 344.300048828125,
+   "total_interactive": 219.2001953125,
+   "key_to_navstart": 1.10009765625,
+   "redirect": 90.29999995231628,
+   "page_ttfb": 73.39999985694885,
+   "page_dl": 20.800000190734863,
+   "html_end_from_t0": 187.800048828125,
+   "resources_end_from_t0": 198.10009765625,
+   "dcl_from_t0": 215.300048828125,
+   "dcl_minus_resources": 17.199951171875,
+   "load_from_t0": 317.5,
+   "fcp_from_t0": 229.10009765625,
+   "main": {
+    "start": 198.800048828125,
+    "ttfb": 2.3999998569488525,
+    "end": 312.10009765625,
+    "dur": 113.29999995231628,
+    "transfer": 256256,
+    "cached": false,
+    "bytes": 255956
+   },
+   "paint_after_image_end": 32.199951171875,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 4356,
+    "end_from_t0": 309.300048828125
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 341.10009765625,
+   "t0_epoch": 1795508716276.7,
+   "server_post": {
+    "total": 68.37,
+    "work": 66.93,
+    "query": 54
+   },
+   "server_get": {
+    "total": 70.01,
+    "work": 69.82,
+    "render": 5.53,
+    "query": 63
+   }
+  },
+  {
+   "i": 15,
+   "variant": "F",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "7",
+   "votePath": "/large/round/2/pageid/176823879/select/7?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/176823885?sort=file",
+   "total_painted": 238,
+   "total_interactive": 226.199951171875,
+   "key_to_navstart": 3.89990234375,
+   "redirect": 94.89999985694885,
+   "page_ttfb": 51.5,
+   "page_dl": 42.5,
+   "html_end_from_t0": 197.599853515625,
+   "resources_end_from_t0": 207.099853515625,
+   "dcl_from_t0": 222.2998046875,
+   "dcl_minus_resources": 15.199951171875,
+   "load_from_t0": 306.099853515625,
+   "fcp_from_t0": 235.89990234375,
+   "main": null,
+   "paint_after_image_end": null,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 4156,
+    "end_from_t0": 305.099853515625
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 235.89990234375,
+   "t0_epoch": 1795508718248.5,
+   "server_post": {
+    "total": 50.5,
+    "work": 48.55,
+    "query": 38
+   },
+   "server_get": {
+    "total": 48.53,
+    "work": 48.35,
+    "render": 3.58,
+    "query": 34
+   }
+  },
+  {
+   "i": 17,
+   "variant": "F",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "9",
+   "votePath": "/large/round/2/pageid/176823891/select/9?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/176823893?sort=file",
+   "total_painted": 237.2001953125,
+   "total_interactive": 228.400146484375,
+   "key_to_navstart": 3.900146484375,
+   "redirect": 94.79999995231628,
+   "page_ttfb": 52.5,
+   "page_dl": 42.89999985694885,
+   "html_end_from_t0": 199.000244140625,
+   "resources_end_from_t0": 208.900146484375,
+   "dcl_from_t0": 224.400146484375,
+   "dcl_minus_resources": 15.5,
+   "load_from_t0": 304.300048828125,
+   "fcp_from_t0": 235.900146484375,
+   "main": null,
+   "paint_after_image_end": null,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 4140,
+    "end_from_t0": 303.10009765625
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 235.900146484375,
+   "t0_epoch": 1795508720149.7998,
+   "server_post": {
+    "total": 54.65,
+    "work": 52.5,
+    "query": 39
+   },
+   "server_get": {
+    "total": 49.45,
+    "work": 49.32,
+    "render": 4.03,
+    "query": 35
+   }
+  },
+  {
+   "i": 19,
+   "variant": "A",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "2",
+   "votePath": "/large/round/2/pageid/176823899/select/2?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/176823904?sort=file",
+   "total_painted": 303.300048828125,
+   "total_interactive": 210.300048828125,
+   "key_to_navstart": 1.300048828125,
+   "redirect": 82,
+   "page_ttfb": 59.89999985694885,
+   "page_dl": 34.80000019073486,
+   "html_end_from_t0": 180.800048828125,
+   "resources_end_from_t0": 191.400146484375,
+   "dcl_from_t0": 206.199951171875,
+   "dcl_minus_resources": 14.7998046875,
+   "load_from_t0": 284,
+   "fcp_from_t0": 217.300048828125,
+   "main": {
+    "start": 192.199951171875,
+    "ttfb": 2.299999952316284,
+    "end": 281.10009765625,
+    "dur": 88.90000009536743,
+    "transfer": 256256,
+    "cached": false,
+    "bytes": 255956
+   },
+   "paint_after_image_end": 22.199951171875,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 3740,
+    "end_from_t0": 280.800048828125
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 301.300048828125,
+   "t0_epoch": 1795508722049.7,
+   "server_post": {
+    "total": 59.45,
+    "work": 57.67,
+    "query": 48
+   },
+   "server_get": {
+    "total": 55.86,
+    "work": 55.68,
+    "render": 3.57,
+    "query": 47
+   }
+  },
+  {
+   "i": 21,
+   "variant": "A",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "4",
+   "votePath": "/large/round/2/pageid/176823906/select/4?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/176823908?sort=file",
+   "total_painted": 346.699951171875,
+   "total_interactive": 223.699951171875,
+   "key_to_navstart": 0.800048828125,
+   "redirect": 95.09999990463257,
+   "page_ttfb": 50.10000014305115,
+   "page_dl": 45.799999952316284,
+   "html_end_from_t0": 193.900146484375,
+   "resources_end_from_t0": 204.60009765625,
+   "dcl_from_t0": 220,
+   "dcl_minus_resources": 15.39990234375,
+   "load_from_t0": 316.199951171875,
+   "fcp_from_t0": 232.800048828125,
+   "main": {
+    "start": 205.5,
+    "ttfb": 2.299999952316284,
+    "end": 314,
+    "dur": 108.5,
+    "transfer": 256256,
+    "cached": false,
+    "bytes": 255956
+   },
+   "paint_after_image_end": 32.699951171875,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 3740,
+    "end_from_t0": 312.699951171875
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 324.800048828125,
+   "t0_epoch": 1795508723956.3,
+   "server_post": {
+    "total": 50.01,
+    "work": 48.63,
+    "query": 39
+   },
+   "server_get": {
+    "total": 47.2,
+    "work": 47.03,
+    "render": 3.68,
+    "query": 43
+   }
+  },
+  {
+   "i": 23,
+   "variant": "F",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "6",
+   "votePath": "/large/round/2/pageid/176823909/select/6?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/176823119?sort=file",
+   "total_painted": 233.10009765625,
+   "total_interactive": 221.300048828125,
+   "key_to_navstart": 1.10009765625,
+   "redirect": 94.59999990463257,
+   "page_ttfb": 49.89999985694885,
+   "page_dl": 45.700000047683716,
+   "html_end_from_t0": 193.900146484375,
+   "resources_end_from_t0": 202.900146484375,
+   "dcl_from_t0": 217.300048828125,
+   "dcl_minus_resources": 14.39990234375,
+   "load_from_t0": 315.400146484375,
+   "fcp_from_t0": 233.10009765625,
+   "main": null,
+   "paint_after_image_end": null,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 3740,
+    "end_from_t0": 314.5
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 233.10009765625,
+   "t0_epoch": 1795508725887.5,
+   "server_post": {
+    "total": 55.41,
+    "work": 53.58,
+    "query": 45
+   },
+   "server_get": {
+    "total": 46.94,
+    "work": 46.8,
+    "render": 3.82,
+    "query": 48
+   }
+  },
+  {
+   "i": 25,
+   "variant": "F",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "8",
+   "votePath": "/large/round/2/pageid/176823121/select/8?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/176823123?sort=file",
+   "total_painted": 247.10009765625,
+   "total_interactive": 232.89990234375,
+   "key_to_navstart": 1,
+   "redirect": 93.79999995231628,
+   "page_ttfb": 60.700000047683716,
+   "page_dl": 35.299999952316284,
+   "html_end_from_t0": 193.10009765625,
+   "resources_end_from_t0": 206.39990234375,
+   "dcl_from_t0": 226.60009765625,
+   "dcl_minus_resources": 20.2001953125,
+   "load_from_t0": 316,
+   "fcp_from_t0": 237,
+   "main": null,
+   "paint_after_image_end": null,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 3692,
+    "end_from_t0": 313.39990234375
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 237,
+   "t0_epoch": 1795508727805.5,
+   "server_post": {
+    "total": 58.04,
+    "work": 56.61,
+    "query": 47
+   },
+   "server_get": {
+    "total": 57.12,
+    "work": 56.92,
+    "render": 5.5,
+    "query": 55
+   }
+  },
+  {
+   "i": 27,
+   "variant": "A",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "1",
+   "votePath": "/large/round/2/pageid/176823135/select/1?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/176823139?sort=file",
+   "total_painted": 340.7001953125,
+   "total_interactive": 231.800048828125,
+   "key_to_navstart": 2.60009765625,
+   "redirect": 100,
+   "page_ttfb": 54.19999980926514,
+   "page_dl": 40.90000009536743,
+   "html_end_from_t0": 202,
+   "resources_end_from_t0": 213.400146484375,
+   "dcl_from_t0": 227.900146484375,
+   "dcl_minus_resources": 14.5,
+   "load_from_t0": 308,
+   "fcp_from_t0": 238.60009765625,
+   "main": {
+    "start": 214.10009765625,
+    "ttfb": 2.200000047683716,
+    "end": 306.10009765625,
+    "dur": 92,
+    "transfer": 256256,
+    "cached": false,
+    "bytes": 255956
+   },
+   "paint_after_image_end": 34.60009765625,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 3932,
+    "end_from_t0": 305.300048828125
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 318.60009765625,
+   "t0_epoch": 1795508729779.5,
+   "server_post": {
+    "total": 53.62,
+    "work": 51.36,
+    "query": 40
+   },
+   "server_get": {
+    "total": 51.25,
+    "work": 51.1,
+    "render": 4.84,
+    "query": 46
+   }
+  },
+  {
+   "i": 29,
+   "variant": "A",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "3",
+   "votePath": "/large/round/2/pageid/176823166/select/3?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/177468712?sort=file",
+   "total_painted": 327.300048828125,
+   "total_interactive": 220.800048828125,
+   "key_to_navstart": 1.199951171875,
+   "redirect": 90.89999985694885,
+   "page_ttfb": 53.5,
+   "page_dl": 41.700000047683716,
+   "html_end_from_t0": 189.89990234375,
+   "resources_end_from_t0": 200.099853515625,
+   "dcl_from_t0": 216.599853515625,
+   "dcl_minus_resources": 16.5,
+   "load_from_t0": 294.099853515625,
+   "fcp_from_t0": 229.199951171875,
+   "main": {
+    "start": 200.89990234375,
+    "ttfb": 2.5,
+    "end": 292.199951171875,
+    "dur": 91.29999995231628,
+    "transfer": 256256,
+    "cached": false,
+    "bytes": 255956
+   },
+   "paint_after_image_end": 35.10009765625,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 4220,
+    "end_from_t0": 290.300048828125
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 317.199951171875,
+   "t0_epoch": 1795508731759.4001,
+   "server_post": {
+    "total": 46.77,
+    "work": 45.17,
+    "query": 34
+   },
+   "server_get": {
+    "total": 50.41,
+    "work": 50.25,
+    "render": 5.44,
+    "query": 37
+   }
+  },
+  {
+   "i": 31,
+   "variant": "F",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "5",
+   "votePath": "/large/round/2/pageid/177162985/select/5?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/177162990?sort=file",
+   "total_painted": 255.300048828125,
+   "total_interactive": 228.10009765625,
+   "key_to_navstart": 4,
+   "redirect": 95.80000019073486,
+   "page_ttfb": 49.89999985694885,
+   "page_dl": 46.700000047683716,
+   "html_end_from_t0": 201.10009765625,
+   "resources_end_from_t0": 210.60009765625,
+   "dcl_from_t0": 224.300048828125,
+   "dcl_minus_resources": 13.699951171875,
+   "load_from_t0": 305.300048828125,
+   "fcp_from_t0": 236,
+   "main": null,
+   "paint_after_image_end": null,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 4380,
+    "end_from_t0": 304.60009765625
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 236,
+   "t0_epoch": 1795508733680.5,
+   "server_post": {
+    "total": 51.99,
+    "work": 49.88,
+    "query": 39
+   },
+   "server_get": {
+    "total": 47.03,
+    "work": 46.89,
+    "render": 3.42,
+    "query": 35
+   }
+  },
+  {
+   "i": 33,
+   "variant": "F",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "7",
+   "votePath": "/large/round/2/pageid/177162991/select/7?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/177162994?sort=file",
+   "total_painted": 254.2998046875,
+   "total_interactive": 229.89990234375,
+   "key_to_navstart": 4.099853515625,
+   "redirect": 95.79999995231628,
+   "page_ttfb": 51.89999985694885,
+   "page_dl": 43.80000019073486,
+   "html_end_from_t0": 200.099853515625,
+   "resources_end_from_t0": 210.599853515625,
+   "dcl_from_t0": 225.39990234375,
+   "dcl_minus_resources": 14.800048828125,
+   "load_from_t0": 320.599853515625,
+   "fcp_from_t0": 240.099853515625,
+   "main": null,
+   "paint_after_image_end": null,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 4540,
+    "end_from_t0": 319.7998046875
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 240.099853515625,
+   "t0_epoch": 1795508735614.8,
+   "server_post": {
+    "total": 56.16,
+    "work": 53.98,
+    "query": 29
+   },
+   "server_get": {
+    "total": 48.82,
+    "work": 48.68,
+    "render": 3.83,
+    "query": 34
+   }
+  },
+  {
+   "i": 35,
+   "variant": "A",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "9",
+   "votePath": "/large/round/2/pageid/177162995/select/9?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/177163240?sort=file",
+   "total_painted": 337.60009765625,
+   "total_interactive": 228.2001953125,
+   "key_to_navstart": 5.2001953125,
+   "redirect": 95.5,
+   "page_ttfb": 52.700000047683716,
+   "page_dl": 43.09999990463257,
+   "html_end_from_t0": 198.60009765625,
+   "resources_end_from_t0": 208.7001953125,
+   "dcl_from_t0": 224.400146484375,
+   "dcl_minus_resources": 15.699951171875,
+   "load_from_t0": 305.10009765625,
+   "fcp_from_t0": 237.2001953125,
+   "main": {
+    "start": 209.30029296875,
+    "ttfb": 2.1000001430511475,
+    "end": 303.60009765625,
+    "dur": 94.29999995231628,
+    "transfer": 256256,
+    "cached": false,
+    "bytes": 255956
+   },
+   "paint_after_image_end": 34,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 4540,
+    "end_from_t0": 302.80029296875
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 313.2001953125,
+   "t0_epoch": 1795508737531.5999,
+   "server_post": {
+    "total": 47.24,
+    "work": 45.77,
+    "query": 36
+   },
+   "server_get": {
+    "total": 49.43,
+    "work": 49.28,
+    "render": 4.14,
+    "query": 51
+   }
+  },
+  {
+   "i": 37,
+   "variant": "A",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "2",
+   "votePath": "/large/round/2/pageid/177163242/select/2?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/177163246?sort=file",
+   "total_painted": 312.7998046875,
+   "total_interactive": 224.7998046875,
+   "key_to_navstart": 0.89990234375,
+   "redirect": 94.20000004768372,
+   "page_ttfb": 51.200000047683716,
+   "page_dl": 44.89999985694885,
+   "html_end_from_t0": 193.2998046875,
+   "resources_end_from_t0": 204.7998046875,
+   "dcl_from_t0": 220.599853515625,
+   "dcl_minus_resources": 15.800048828125,
+   "load_from_t0": 291.5,
+   "fcp_from_t0": 232.89990234375,
+   "main": {
+    "start": 205.7998046875,
+    "ttfb": 2.3000001907348633,
+    "end": 289.39990234375,
+    "dur": 83.60000014305115,
+    "transfer": 256256,
+    "cached": false,
+    "bytes": 255956
+   },
+   "paint_after_image_end": 23.39990234375,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 4380,
+    "end_from_t0": 288.7998046875
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 296.89990234375,
+   "t0_epoch": 1795508739455.9001,
+   "server_post": {
+    "total": 47.83,
+    "work": 46.37,
+    "query": 34
+   },
+   "server_get": {
+    "total": 48.07,
+    "work": 47.91,
+    "render": 4.2,
+    "query": 45
+   }
+  },
+  {
+   "i": 39,
+   "variant": "F",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "4",
+   "votePath": "/large/round/2/pageid/177163250/select/4?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/177163449?sort=file",
+   "total_painted": 249.599853515625,
+   "total_interactive": 229.39990234375,
+   "key_to_navstart": 5.099853515625,
+   "redirect": 93.90000009536743,
+   "page_ttfb": 52,
+   "page_dl": 43.700000047683716,
+   "html_end_from_t0": 198.199951171875,
+   "resources_end_from_t0": 209.599853515625,
+   "dcl_from_t0": 225.199951171875,
+   "dcl_minus_resources": 15.60009765625,
+   "load_from_t0": 314.699951171875,
+   "fcp_from_t0": 241.099853515625,
+   "main": null,
+   "paint_after_image_end": null,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 4080,
+    "end_from_t0": 313.7998046875
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 241.099853515625,
+   "t0_epoch": 1795508741352.8,
+   "server_post": {
+    "total": 49.35,
+    "work": 47.34,
+    "query": 38
+   },
+   "server_get": {
+    "total": 48.44,
+    "work": 48.3,
+    "render": 3.26,
+    "query": 37
+   }
+  },
+  {
+   "i": 41,
+   "variant": "F",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "6",
+   "votePath": "/large/round/2/pageid/177163451/select/6?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/177163455?sort=file",
+   "total_painted": 222.2998046875,
+   "total_interactive": 210.5,
+   "key_to_navstart": 0.89990234375,
+   "redirect": 84.60000014305115,
+   "page_ttfb": 51.299999952316284,
+   "page_dl": 44.5,
+   "html_end_from_t0": 183.5,
+   "resources_end_from_t0": 193.7998046875,
+   "dcl_from_t0": 206.699951171875,
+   "dcl_minus_resources": 12.900146484375,
+   "load_from_t0": 288.599853515625,
+   "fcp_from_t0": 220.89990234375,
+   "main": null,
+   "paint_after_image_end": null,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 4100,
+    "end_from_t0": 287.599853515625
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 220.89990234375,
+   "t0_epoch": 1795508743264.8,
+   "server_post": {
+    "total": 46.53,
+    "work": 45.09,
+    "query": 31
+   },
+   "server_get": {
+    "total": 48.46,
+    "work": 48.33,
+    "render": 3.78,
+    "query": 48
+   }
+  },
+  {
+   "i": 43,
+   "variant": "A",
+   "warm": false,
+   "round": "rated",
+   "rtt": 80,
+   "key": "8",
+   "votePath": "/large/round/2/pageid/177163457/select/8?sort=file",
+   "toUrl": "https://localhost:56260/large/round/2/user/1/pageid/177163458?sort=file",
+   "total_painted": 347.399658203125,
+   "total_interactive": 225.69970703125,
+   "key_to_navstart": 0.999755859375,
+   "redirect": 92.79999995231628,
+   "page_ttfb": 52.700000047683716,
+   "page_dl": 41.90000009536743,
+   "html_end_from_t0": 190.69970703125,
+   "resources_end_from_t0": 203.099853515625,
+   "dcl_from_t0": 220.599853515625,
+   "dcl_minus_resources": 17.5,
+   "load_from_t0": 316.599853515625,
+   "fcp_from_t0": 232.999755859375,
+   "main": {
+    "start": 204.19970703125,
+    "ttfb": 2.1999998092651367,
+    "end": 314.7998046875,
+    "dur": 110.59999990463257,
+    "transfer": 256256,
+    "cached": false,
+    "bytes": 255956
+   },
+   "paint_after_image_end": 32.599853515625,
+   "thumbs": {
+    "n": 5,
+    "imgs_in_dom": 5,
+    "bytes": 4100,
+    "end_from_t0": 313.599853515625
+   },
+   "files": {
+    "n": 16,
+    "cached": 16
+   },
+   "lcp_from_t0": 324.999755859375,
+   "t0_epoch": 1795508745155.2002,
+   "server_post": {
+    "total": 57.55,
+    "work": 55.75,
+    "query": 43
+   },
+   "server_get": {
+    "total": 49.66,
+    "work": 49.47,
+    "render": 3.58,
+    "query": 39
+   }
+  }
+ ]
+}

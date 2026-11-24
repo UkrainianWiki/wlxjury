@@ -1,0 +1,86 @@
+[
+ {
+  "name": "juror gallery, binary: page turn",
+  "role": "juror",
+  "to": "/gallery/round/1/user/1/page/2?sort=file",
+  "from": "/gallery/round/1/user/1/page/1?sort=file"
+ },
+ {
+  "name": "juror gallery, binary: filter unrated",
+  "role": "juror",
+  "to": "/gallery/round/1/user/1/page/1?filter=unrated&sort=file",
+  "from": "/gallery/round/1/user/1/page/1?sort=file"
+ },
+ {
+  "name": "juror gallery, binary: region change",
+  "role": "juror",
+  "to": "/gallery/round/1/user/1/region/05/page/1?sort=file",
+  "from": "/gallery/round/1/user/1/page/1?sort=file"
+ },
+ {
+  "name": "juror regions menu fragment, binary",
+  "role": "juror",
+  "to": "/regions/round/1/user/1/region/all?sort=file",
+  "from": null
+ },
+ {
+  "name": "juror by-rate, rated: page turn",
+  "role": "juror",
+  "to": "/byrate/round/2/user/1/page/2?sort=rate",
+  "from": "/byrate/round/2/user/1/page/1?sort=rate"
+ },
+ {
+  "name": "juror by-rate, rated: region change",
+  "role": "juror",
+  "to": "/byrate/round/2/user/1/region/05/page/1?sort=rate",
+  "from": "/byrate/round/2/user/1/page/1?sort=rate"
+ },
+ {
+  "name": "juror gallery, rated: filter rated",
+  "role": "juror",
+  "to": "/gallery/round/2/user/1/page/1?filter=rated&sort=file",
+  "from": "/gallery/round/2/user/1/page/1?sort=file"
+ },
+ {
+  "name": "juror regions menu fragment, rated",
+  "role": "juror",
+  "to": "/regions/round/2/user/1/region/all?sort=rate",
+  "from": null
+ },
+ {
+  "name": "organizer round statistics, binary",
+  "role": "organizer",
+  "to": "/roundstat/1",
+  "from": "/admin/rounds?contestId=1"
+ },
+ {
+  "name": "organizer round statistics, rated",
+  "role": "organizer",
+  "to": "/roundstat/2",
+  "from": "/admin/rounds?contestId=1"
+ },
+ {
+  "name": "organizer roundstat table fragment",
+  "role": "organizer",
+  "to": "/roundstat/1/table",
+  "from": null
+ },
+ {
+  "name": "organizer roundstat counts fragment",
+  "role": "organizer",
+  "to": "/roundstat/1/counts",
+  "from": null
+ },
+ {
+  "name": "organizer rounds list",
+  "role": "organizer",
+  "to": "/admin/rounds?contestId=1",
+  "from": "/roundstat/1"
+ },
+ {
+  "name": "organizer contest health",
+  "role": "organizer",
+  "to": "/admin/contests/1/health",
+  "from": "/admin/rounds?contestId=1"
+ }
+]
