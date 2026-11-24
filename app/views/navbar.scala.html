@@ -48,13 +48,16 @@
 @roundMenu(l: RoundList) = {
     @defining(if (l.asUserId == 0 || l.asUserId == user.getId) Set.empty[Long]
               else User.roundsJuredIn(l.asUserId, rounds.flatMap(_.id))) { jurorRounds =>
+    @* the open rounds the viewer judges open on their own votes (the conflict-of-interest rule) *@
+    @defining(if (l.asUserId == user.getId) Set.empty[Long] else services.GalleryService.ownVotesOnlyRounds(user, rounds)) { ownOnly =>
     @(new UiSelectionDto[Long](
         (roundId: Long) => Call("GET", rounds.find(_.getId == roundId).fold("#")(r =>
-            l.inRound(r, user.getId, jurorRounds.contains(r.getId)).pageUrl(1))),
+            l.inRound(r, user.getId, jurorRounds.contains(r.getId), ownOnly.contains(r.getId)).pageUrl(1))),
         l.roundId,
         rounds.map(r => (r.getId, SelectionItem(r.description, localized = false,
             itemClass = if (r.active) "wlx-round-item" else "wlx-round-item wlx-round-inactive", before = snippets.roundIcon(r), after = snippets.roundSpoken(r))))
     ).toDropDown(truncate = true, menuClass = "wlx-round-menu", id = Some("round-menu")))
+    }
     }
 }
 

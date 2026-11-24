@@ -87,7 +87,8 @@
            its header's number of comments in this round (its default scope), and all the
            contest's comments on the round's files when there are more; a 0 is plain text *@
         @if(user.canViewOrgInfo(round)) {
-            @defining(RoundList(round, 0).withView(GalleryView.Comments)) { report =>
+            @* a juror of the open round: their own list's report (the conflict-of-interest rule) *@
+            @defining(RoundList(round, if (services.GalleryService.othersVotesVisible(user, round)) 0 else user.getId).withView(GalleryView.Comments)) { report =>
             <p id="round-comments-link">@snippets.textLink(report.pageUrl(1),
                 if (comments.roundComments > 0) Messages("comments.report.link") else Messages("comments.report.link.none"),
                 comments.roundComments != 0, Some("chat-left-text"), Option.when(comments.roundComments > 0)(comments.roundComments.toLong))@if(comments.allComments > comments.roundComments) { · @snippets.textLink(report.withScope(CommentScope.AllRounds).pageUrl(1), Messages("comments.report.link.all"), number = Some(comments.allComments.toLong))}</p>
