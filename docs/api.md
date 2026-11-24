@@ -183,10 +183,10 @@ curl -H "Authorization: Bearer $WLXJURY_TOKEN" -H "Content-Type: application/jso
 
 **Errors.** GraphQL's `errors` array; each has a message key (never request or exception text),
 `extensions.code` (`UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `BAD_INPUT`, `INTERNAL_ERROR`,
-`CSRF`) and, for `NOT_FOUND`, a denial, a CSRF refusal or a server error, `extensions.reference`,
+`CSRF`, `TOO_MANY_REQUESTS`) and, for `NOT_FOUND`, a denial, a CSRF refusal or a server error, `extensions.reference`,
 which finds the log line. HTTP 401 (no credentials), 403 (a token's mutation, a read-only token, a
-CSRF refusal), 400 (a body that isn't one request object), 405 and 415 also carry the REST API's
-`error` field; 413 has that field only; the rest are 200 with `errors`. A query that breaks a rule of the language or the schema is `invalid_query` with the
+CSRF refusal), 400 (a body that isn't one request object), 405, 415 and 429 also carry the REST
+API's `error` field; 413 has that field only; the rest are 200 with `errors`. A query that breaks a rule of the language or the schema is `invalid_query` with the
 rule's name (`extensions.rule`, e.g. `UndefinedField`) and its locations.
 
 **Limits** (`wlxjury.graphql` in `conf/application.conf`), checked before anything runs: a body of
@@ -194,10 +194,14 @@ at most 64 KB (413); brackets nested at most 64 deep, checked before the query i
 (`query_too_deep`); fields nested at most 8 deep (`query_too_deep`; introspection at most 15, its
 type lists nested at most twice: `introspection_too_deep`); at most 30 aliases
 (`too_many_aliases`) and 1,000 selections (fields, fragment spreads, inline fragments), fragments
-counted where spread (`query_too_large`); a complexity budget of 5,000, each field 1 and a list times its page size
+counted where spread (`query_too_large`); every fragment used (`unused_fragment`), named once
+(`duplicate_fragment`), and nothing but operations and fragments (`non_executable_definition`); a complexity budget of 5,000, each field 1 and a list times its page size
 (`contests` its limit, a contest's `rounds` 20: `query_too_complex`). Everything after reading the
 body runs on the blocking pool and is answered within 20 seconds (`timeout`); a run past that stops
-at its next database read, and one that waited for a thread past it does nothing.
+at its next database read, and one that waited for a thread past it does nothing. An account has
+at most 2 runs at once, its tokens' and sessions' together (429 `too_many_requests`): the blocking
+pool is shared with the galleries and the statistics. A request with many denied fields writes one
+denial line, with a second line counting the rest.
 
 **No explorer in production.** GraphiQL is for development and tests only (decision Q5); it is not
 served by the app in this slice. Use the SDL, or introspection from a signed-in session.
