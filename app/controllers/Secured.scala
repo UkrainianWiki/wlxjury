@@ -524,6 +524,14 @@ object Secured {
     override def optsIn: Boolean = permissions.exists(_.optsIn)
   }
 
+  /** A series admin of any live series (a session's): the start page, which sends them to their
+    * series page ([[seriesLanding]]). Its denial names no role: [[AnyOf]] puts another first.
+    */
+  case object AnySeries extends DescribedPermission {
+    def apply(user: User): Boolean = user.seriesGranted.nonEmpty
+    def denial: Denial = Denial.empty
+  }
+
   object AnyOf {
     def apply(first: DescribedPermission, others: DescribedPermission*): AnyOf = AnyOf(first +: others)
   }

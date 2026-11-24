@@ -142,22 +142,23 @@ object SeriesAdminJdbc {
   def setFromYear(id: Long, year: Int)(implicit session: DBSession): Int =
     sql"UPDATE series_admin SET admin_from_year = $year WHERE id = $id AND revoked_at IS NULL".update.apply()
 
-  /** The unrevoked grants of the series that `userId` added, then those they added, to any depth
-    * (CA22: the chained revoke along `granted_by`), in the order found; `userId`'s own not among
-    * them. Read `FOR UPDATE` (the caller holds the series' lock).
+  /** The unrevoked grants of the series that `userId` added, then those their accounts added, to
+    * any depth (CA22: the chained revoke along `granted_by`), in the order found; `userId`'s own not
+    * among them. The walk goes through revoked grants too (a branch whose middle root revoked
+    * earlier is still the top's), and reaches each account once. Read `FOR UPDATE` (the caller holds
+    * the series' lock).
     */
   def chainOf(seriesId: Long, userId: Long)(implicit session: DBSession): Seq[SeriesGrant] = {
-    val unrevoked = sql"""SELECT $columns FROM series_admin sa
-                          WHERE sa.series_id = $seriesId AND sa.revoked_at IS NULL ORDER BY sa.id FOR UPDATE"""
+    val all = sql"""SELECT $columns FROM series_admin sa WHERE sa.series_id = $seriesId ORDER BY sa.id FOR UPDATE"""
       .map(extract).list.apply()
-    val byGranter = unrevoked.groupBy(_.grantedBy)
+    val byGranter = all.groupBy(_.grantedBy)
     @annotation.tailrec
     def walk(frontier: Seq[Long], seen: Set[Long], found: Vector[SeriesGrant]): Vector[SeriesGrant] =
       if (frontier.isEmpty) found
       else {
-        val next = frontier.flatMap(byGranter.getOrElse(_, Nil)).filterNot(g => seen(g.userId) || g.userId == userId)
-          .distinctBy(_.id)
-        walk(next.map(_.userId), seen ++ next.map(_.userId), found ++ next)
+        val next = frontier.flatMap(byGranter.getOrElse(_, Nil)).filterNot(g => seen(g.userId)).distinctBy(_.id)
+        val accounts = next.map(_.userId).distinct
+        walk(accounts, seen ++ accounts, found ++ next.filterNot(_.revoked))
       }
     walk(Seq(userId), Set(userId), Vector.empty)
   }
