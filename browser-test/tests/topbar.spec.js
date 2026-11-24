@@ -90,7 +90,9 @@ test.describe('the sticky top bar on a desktop', () => {
       let moved = false;
       for (let i = 0; i < 12 && !moved; i++) {
         await page.keyboard.press('Shift+Tab');
-        moved = await page.evaluate((y) => window.scrollY < y - 20, start);
+        // two frames after the key: the scroll it caused has landed on the main thread
+        moved = await page.evaluate((y) => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(
+          () => done(window.scrollY < y - 20)))), start);
       }
       expect(moved, 'Shift+Tab reached a file above the window').toBe(true);
       await expect.poll(() => page.evaluate((sel) => {

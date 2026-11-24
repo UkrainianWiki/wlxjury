@@ -140,6 +140,7 @@ test.describe('a page left while it loads', { tag: '@S-04' }, () => {
   test.use({ role: 'juror' });
 
   test('throws no page error', async ({ page, fixture }) => {
+    test.slow(); // the held script keeps the page loading; slow engines take longer to reach it
     // a script after Bootstrap's in the gallery's <head>, held until the page is left
     let reached, release;
     const isReached = new Promise((r) => { reached = r; });
@@ -154,7 +155,8 @@ test.describe('a page left while it loads', { tag: '@S-04' }, () => {
     await page.goto(gallery, { waitUntil: 'commit' });
     await isReached;
     // the head's scripts before it run (jQuery, then Bootstrap where it isn't deferred)
-    await page.waitForFunction(() => !!window.jQuery);
+    // no timeout of its own: the test's (slow) one bounds it, so a slow engine isn't a failure
+    await page.waitForFunction(() => !!window.jQuery, null, { timeout: 0 });
     await page.waitForTimeout(300);
     await page.unroute(SCRIPT, { behavior: 'ignoreErrors' });
     const leaving = page.goto(gallery);
