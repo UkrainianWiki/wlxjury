@@ -264,6 +264,12 @@ class ApiSpec extends PlaySpecification with PlayTestDb with JsonFormat {
           Seq(bearer(token)))
         status(updated) === OK
         ContestJuryJdbc.findById(20).map(_.name) === Some("renamed")
+
+        // a body from before `currentRound` was removed still updates, with the other fields as sent
+        val stale = Json.toJson(ContestJury(Some(20), "stale", 2026, "Ukraine", images = None)).as[play.api.libs.json.JsObject] +
+          ("currentRound" -> play.api.libs.json.JsNull)
+        status(send(app, Req(PUT, "/api/contests", Some(stale)), Seq(bearer(token)))) === OK
+        ContestJuryJdbc.findById(20).map(c => (c.name, c.year, c.country)) === Some(("stale", 2026, "Ukraine"))
       }
     }
   }
