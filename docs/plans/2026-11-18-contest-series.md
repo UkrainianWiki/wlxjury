@@ -728,6 +728,20 @@ from the start year on that were older than the grant, logged, with a notice to 
 **COI:** `CoiMembers.forContest` gains a branch for the live series admins of the contest's live
 series. Specs cover a series admin with no real row, and a retired series.
 
+**Design note (the security review of #140, CY-2):**
+
+- **CA7 is per account.** A series admin who holds a Juror row in contest C has no derived role or
+  account reach in C, but may still add or invite another account in their reach and grant it
+  "Series admin": that account then has derived Admin in C. A determined series admin can so reach
+  a contest where they judge. Accepted (series admins are trusted per series, CA19); the
+  mitigation is root's 24-hour view per series and the 30-day notices of grants series admins
+  added on `/admin/series`, and root's chained revoke.
+- **Protection outlasts access.** An unrevoked grant protects its holder whether it is live,
+  waiting for root's confirmation or of a retired series (protection only restricts others); only
+  a live grant gives access. A protected account's roles are root's to change in every contest
+  (stricter than the role-write rule above, which let Admins of unrelated contests change its
+  Juror or Organizer rows).
+
 **Visible to the contest:**
 
 - **The users page** shows "Series admins: …": the names, with no edit control for anyone but

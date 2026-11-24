@@ -82,7 +82,10 @@ is listed below.
   series page comes with CY-3. Un-retiring a series brings its series admins back **to confirm**,
   with no access until root confirms each (the maintainer's decision of 2026-11-24). A denial page
   names a series admin's series and their role there; moving a contest lists the series admins it
-  gives or takes it from.
+  gives or takes it from. After the security review: an account with any unrevoked grant (waiting
+  or of a retired series too) stays protected and its roles are root's to change; a revoke also
+  revokes the links that series admin made in the series' contests; root's Confirm is refused if the
+  account changed hands meanwhile.
 - **A sticky top bar** (the maintainer's decision of 2026-11-23, replacing the trial of a bar
   that hid while scrolling down; developed 2026-11-23, `fix/sticky-topbar`): on the galleries, the
   by-rate gallery, the file list, the comments report, the contest files, the Rounds, round

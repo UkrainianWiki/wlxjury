@@ -703,7 +703,8 @@ removes them. Each grant has a **start year**:
   but change nothing;
 - where a series admin is a **Juror**, the series doesn't apply: they stay a Juror there;
 - a series admin can't act on root accounts, other series admins, or people who also belong to a
-  contest the series admin doesn't administer.
+  contest the series admin doesn't administer; only root changes a series admin's roles or
+  account, in any contest.
 
 A series admin's contest menu has one entry per series, **Series: Wiki Loves Monuments in Nepal
 (Series admin)**, leading to the **series page**: its contests by year, with your role in each and
@@ -711,7 +712,8 @@ an **Open** button that makes it your current contest, and its series admins wit
 when and their start year. A series admin with no contest role of their own lands there when
 signing in.
 
-**Add a series admin** on the series page: pick a member of the series' contests, then check the
+**Add a series admin** on the series page: pick a member of the contests where you are an Admin as
+series admin (root: of any of the series' contests), then check the
 start year and the list of contests showing what the grant gives in each (**Show for this year**
 shows it for another year). The start year is filled in from the person's own history: the
 earliest year they were an Admin of a contest of the series, but at most last year; with none,
