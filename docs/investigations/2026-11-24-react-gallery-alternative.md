@@ -331,9 +331,8 @@ of 2-4 contexts.
 8. **Lightbox: keep "no lightbox"** (Q2 of #129 stands); option C1 is not pursued.
 9. **Juror slice order: the same answer as #135's Q8.** Admin and organizer screens first; the juror
    slices (#135 slices 3-4) after #129 and the vote-rule extraction.
-10. **Parked branches: close `react` and `react-custom-filter`** (and the other parked react branch,
-    `104-port-gallery-to-react`, if the maintainer wants it included; the decision named "the parked
-    react branches") when the first screen's PR merges, keeping the skeleton pieces named in section 4.
+10. **Parked branches: close all three** (`react`, `react-custom-filter` and `104-port-gallery-to-react`)
+    when the first screen's PR merges, keeping the skeleton pieces named in section 4.
 
 Still open: whether no-JS is a firm requirement if the gallery later goes React (it decides whether the
 prerender spike of section 7 comes first); to be asked when the gallery is revisited.
