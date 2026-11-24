@@ -20,7 +20,8 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
   `RoundList`, a viewed juror and votes. `contestFile.scala.html` (contest files and
   `RoundReviewController`) takes `StoredFile` and `ContestFilesView`: no juror, no votes, no
   monument list. So "Same monument" and "My recent votes" exist only in the round's large view; in
-  contest files the setting **falls back to Next files** (Off still means Off there).
+  contest files those two options are not offered (the setting reads as Next files there; Off still
+  means Off).
 - **How many:** `Neighbourhood.Following = 5` files after the current one in the juror's own
   list order (`Neighbourhood.following`). Not the files before it. None at the list's end.
 - **Sizes:** `Global.thumbSizeX x thumbSizeY` = 150 x 120 with a `srcset` (`Global.srcSet`); a
@@ -69,7 +70,7 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
 - **Which files:** this round's files with `monument_id` = the file's monument, under the
   viewer's list rules: `list.withMonument(Some(id))` already exists (`RoundList.monumentLine`
   builds the list filtered by the monument for the info card's link). The strip is that list's
-  first N (cap 8) without the current file, in the list's order. Reusing `RoundList` keeps every
+  first 5 without the current file, in the list's order. Reusing `RoundList` keeps every
   rule: round membership, region, the `distributing` flag, `mayViewRound`, and the viewed juror's
   votes only.
 - **Link target:** a strip link opens the file in the juror's **current list** (`list.largeUrl`),
@@ -79,11 +80,10 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
   already (as the gallery tile has); shown as the tiles' rate chip (stars, or a yes/no mark;
   none when unrated).
 - **No monument id** (empty or blank, `RoundList.validMonument` fails; every WLE file; any
-  contest without monuments): the option **falls back to Next files** for that file, with a small
-  caption, so the strip never goes blank while the setting is "Same monument". The same when the
-  monument has no other file in the round.
+  contest without monuments) **or no sibling** in the round: an **empty section with a note**
+  (decided, Q6), no fallback to Next files, so Same monument needs no fallback rows.
 - **Cost:** `monumentLine` already counts the monument's files for the info card (one count, a
-  second only when that is 1). The strip adds one `LIMIT 9` read of the same list. Index: the
+  second only when that is 1). The strip adds one `LIMIT 6` read of the same list. Index: the
   juror gallery index with `monument_id` (`vote_jury_round_ratedesc_mon_page_idx` on 10.8+,
   `vote_jury_round_rate_mon_page_idx` on 10.6: `jury_id, round_id, rate, monument_id, page_id,
   voted_at`, V48/V85/V99); `vote_round_monument_id_idx` covers the round plus monument side
@@ -97,37 +97,39 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
 
 ### My recent votes
 
-- **Which:** this juror's last N = 8 votes in this round, by `voted_at DESC` (V97), without the
+- **Which:** this juror's last 5 votes in this round, by `voted_at DESC` (V97), without the
   current file, each with its rate. This is the "Newest votes first" order
-  (`ListOrder` `latest-vote`: `UnratedLast`, then `VoteTime` descending). Alone, `LIMIT 9` would
-  list unrated files when the juror has fewer than 8 votes, so the strip combines it with
+  (`ListOrder` `latest-vote`: `UnratedLast`, then `VoteTime` descending). Alone, `LIMIT 6` would
+  list unrated files when the juror has fewer than 5 votes, so the strip combines it with
   `VoteFilter.Rated` (on a binary round, any vote) and ignores the page's own filter and order.
   The query and index are those V99 built for that order (V99 note, gallery page 1: 82 -> 26 ms
-  on 3.35M votes; usually single-digit ms), here a `LIMIT 9` first page.
+  on 3.35M votes; usually single-digit ms), here a `LIMIT 6` first page.
 - **Click:** to that file's large view in the same list context (`list.largeUrl`) so the juror can
   change the vote with the stars. Where the list's filter is "unrated only" the link goes to the
   file in the unfiltered list (`withFilter(All)`), as `voteMoved`'s link does.
 - **Round open or closed:** a closed round is read-only for jurors (`navigationButtons`
   `readOnly`): the strip still lists the votes as a record and the links open the read-only file.
   It is shown only where the page itself is (`mayViewRound`).
-- **Privacy:** the query is `jury_id` = the viewed juror, set by `viewAs`, never by a request
-  parameter. An organizer viewing one juror sees that juror's recent votes; with `asUserId == 0`
-  the option shows nothing (a note to choose a juror) or falls back to Next files. A juror never
-  sees other jurors' votes.
+- **Who gets it (decided, Q8):** only a **juror of the round, in their own view**. Admins and
+  organizers (also in the all-jurors view, `asUserId == 0`, and when viewing as another juror) do
+  not get the option at all: it is absent from their menu, not shown empty with a note. A juror
+  with no vote yet sees an empty section with a note.
+- **Privacy:** the query is `jury_id` = the signed-in juror, never a request parameter, so a juror
+  never sees other jurors' votes.
 
 ## 3. Per option summary
 
 | | Next files | Same monument | My recent votes | Off |
 |---|---|---|---|---|
-| Extra SQL | +3 rows (in the window query) + comment counts | its `LIMIT 9` monument-list read + 3 rows and comment counts for the fallback | its `LIMIT 9` vote-time read + 3 rows and comment counts for the fallback | none |
+| Extra SQL | +3 rows (in the window query) + comment counts | its `LIMIT 6` monument-list read, no fallback rows | its `LIMIT 6` vote-time read, no fallback rows | none |
 | Index | list order index | gallery index with `monument_id` | gallery index with `voted_at` (V99) | none |
 | Caching | none needed | none | none | none |
-| Images | 5 | up to 8 | up to 8 | 0 |
+| Images | 5 | up to 5 | up to 5 | 0 |
 | Keyboard | none | a key to jump to the next file of the monument (later, not now) | none | none |
 | No script | plain links | plain links | plain links | n/a |
 | Rate shown | no (today) | the viewed juror's | the viewed juror's | n/a |
 
-- **Mobile:** the side column stacks below the file on a phone, and up to 8 thumbnails cost data.
+- **Mobile:** the side column stacks below the file on a phone, and up to 5 thumbnails cost data.
   On a narrow screen the section stays collapsed and the images get `loading="lazy"`, so a closed
   section loads nothing. Whether to hide the strip on phones outright is open question 7.
 - **Gallery tiles plan:** G-1a moves the strip to `stripSrcSet` (250/330 px sources) under the
@@ -152,10 +154,7 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
   session toggle:** it is forgotten on sign-out. The per-browser open/closed state
   (large-sections.js) stays and is orthogonal: the option decides what, the section state
   whether it is open.
-- **Contest-level default** by admins: a nullable `strip_default` on the contest (WLM admins may
-  pick `monument`), used while the account has no value; the account's value wins. One column and a
-  field on the contest form; worth adding only after the per-account choice is in use (open
-  question 4).
+- **No contest-level default** (decided, Q4): per account only.
 - **Default (recommended): Off**, the section header still present with a one-click "Show next
   files". Reasons: the strip's value is doubtful by the maintainer's own account, it is the only
   part of the large view that loads five images a juror may never see, and the next-image prefetch
@@ -169,13 +168,12 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
 |---|---|---|
 | S1 | `loading="lazy"`, `decoding="async"` and `width`/`height` on the strip's images in both templates. This is the strip's part of F1 of the modern web guidance plan (#134, which cites `contestFile.scala.html:91`); **whichever PR lands first does it** and the other drops it (proposal: #134's F1 PR) | 1 h |
 | S2 | Account column, `User` field, the header menu and its POST (CSRF, denial paths) | 0.5 day |
-| S3 | One strip function for an option, used by both templates; Next files = today's `following`. `RoundList.around`'s 6-row widening, `hood.following` and `commentCounts` are read for Next, and for Monument and Recent always (simplest: +3 rows, noise), since both fall back to Next (no monument id, no sibling, `asUserId == 0`, contest files); only Off skips them, so "Off: no extra SQL" holds | 0.5-1 day |
-| S4 | Same monument via `withMonument`, rate chips, the fallback | 0.5 day |
+| S3 | One strip function for an option, used by both templates; Next files = today's `following`. `RoundList.around`'s 6-row widening, `hood.following` and `commentCounts` are read only for Next (Monument and Recent have no fallback, so Off, Monument and Recent skip them) | 0.5-1 day |
+| S4 | Same monument via `withMonument`, rate chips, the empty-with-note section | 0.5 day |
 | S5 | My recent votes via the `latest-vote` order, closed-round and `asUserId == 0` rules | 0.5 day |
 | S6 | Message keys, one snippet for both templates, a browser test of the section | 0.5 day |
-| S7 | Contest-level default (optional, later) | 0.5 day |
 
-About 3-4 days without S7. S1 can ship alone, first.
+About 3-4 days. S1 can ship alone, first.
 
 **Tests**
 - Per option for a juror: Next equals today's `Neighbourhood.following`; monument: only this
@@ -184,10 +182,10 @@ About 3-4 days without S7. S1 can ship alone, first.
 - **Negative authorization:** two jurors vote on the same monument's files in one round: juror A's
   "recent" and "same monument" never show juror B's rates or files B alone voted on; an organizer
   viewing A sees A's, not B's; a viewed user who is not a juror of the round gives 404;
-  `asUserId == 0` shows no per-juror rate (recent: empty or fallback); a juror passing another
+  `asUserId == 0` shows no per-juror rate (recent: the option is absent for organizers and in the all-jurors view); a juror passing another
   `asUserId` gets what `GalleryService.viewAs` decides today; a file of another round is never
   listed; a round still `distributing` lists nothing for jurors.
-- No monument id and WLE fall back to Next; a monument with one file likewise.
+- No monument id, WLE, and a monument with one file give the empty section with its note; "recent" is not offered to admins and organizers (in any view), and a juror's own view lists only their votes.
 - The setting's POST refuses a bad value and a missing CSRF token, tested with the filter on
   (`CsrfTestApp.withCsrfApp`); it changes only the caller's own account.
 - An organizer viewing a user who is not a round juror gets 404 in every option.
@@ -197,8 +195,8 @@ About 3-4 days without S7. S1 can ship alone, first.
 
 **Message keys (en, ru, uk, fr)**, listed in the PR for the maintainer's review of ru/uk and a
 French speaker's of fr: `large.strip.title`, `large.strip.option.off`, `large.strip.option.next`,
-`large.strip.option.monument`, `large.strip.option.recent`, `large.strip.fallback.next` (no
-monument), `large.strip.recent.pick.juror` (all-jurors view), `large.strip.empty`,
+`large.strip.option.monument`, `large.strip.option.recent`, `large.strip.monument.none` (no
+monument id or no sibling), `large.strip.recent.none`, `large.strip.empty`,
 `large.strip.change`; `large.next.files` stays as the Next label.
 
 ## 6. The prefetch of the next file's main image (separate, keep)
@@ -216,19 +214,26 @@ approach investigation's **mock prototype** (not the real page) ran the vote and
 measurement (`docs/performance/2026-11-24-large-view-timing.md`, in progress; link here once it
 exists). Its own PR.
 
-## 7. Open questions for the maintainer
+## 7. Decisions of the maintainer (2026-11-24) and open questions
 
-1. **Default:** Off, or Next files, pending the strip's measured cost (section 4)?
-2. **Options:** is Off / Next / Same monument / My recent votes the right set? Drop one? "Same
-   author" stays an idea (organizers only)?
-3. **Count:** 5 for Next and 8 for the others: right?
-4. **Where:** per account (recommended) plus an admin default per contest, or per account only?
-5. **Cost check:** `EXPLAIN` the two new statements on the production copy before building, as for
-   V99 and V100?
-6. **Same monument fallback:** fall back to Next files when the file has no monument or no
-   sibling, or show an empty section with a note?
-7. **Phones:** hide the strip below a width, or keep it closed and lazy?
-8. **All-jurors view (`asUserId == 0`):** recent votes empty (planned), or the latest votes of
-   anyone (organizers only)?
-9. **Closed rounds:** list recent votes read-only (planned), or hide the option?
-10. **Prefetch** (section 6): its own PR, ahead of this one?
+Decided:
+- **Q2:** all four options (Off, Next, Same monument, My recent votes).
+- **Q3:** 5 thumbnails for all options.
+- **Q4:** per account only (no contest-level default; S7 dropped).
+- **Q5:** `EXPLAIN` on the production copy first.
+- **Q6:** Same monument with no monument id or no sibling: an empty section with a note, no
+  fallback to Next.
+- **Q7:** phones: keep the strip, closed and lazy.
+- **Q8 (changed):** My recent votes is offered only to jurors of the round in their own view;
+  admins and organizers never get the option (not empty with a note).
+- **Q9:** closed rounds: the recent list is read-only.
+- **Conflict of interest (CY-2, #140):** a juror of a round sees only their own votes there,
+  whatever their role; the strip must respect it: Same monument shows only the viewer's own
+  ratings in rounds they judge (the viewer is then the viewed juror, as `viewAs` returns).
+
+Provisional, to be re-confirmed after the clean timing (#142, being re-measured after a confound
+was found: the preload gain is about 0 when measured cleanly; strip off or lazy still helps on
+slow links; production already caches CSS and JS for a year):
+- **Q1:** default Off.
+- **Q10:** the cheap speed-ups first (lazy attributes S1, the prefetch as its own PR); the
+  prefetch's worth in particular depends on the clean measurement.
