@@ -222,6 +222,13 @@ class SeriesReachGuardSpec extends Specification {
       "a round's authors with every juror's votes: refused to a juror of the open round"),
     ("""\bbyRoundAndImageWithJury\(""", Set("app/db/scalikejdbc/VoteJdbc.scala", "app/controllers/LargeViewController.scala"),
       "a file's every juror's votes: the large view's panel, behind the rule"),
+    ("""\bCriteriaRate\.averages\(""", Set("app/controllers/Csv.scala", "app/controllers/LargeViewController.scala",
+      "app/org/intracer/wmua/CriteriaResults.scala"),
+      "a file's criteria averages of every juror (no juror given): the CSV (all-jurors list, behind viewAs), the large view " +
+        "(behind viewAs) and CriteriaResults.of (a gallery's tabs, behind viewAs); a new page needs the rule, not canViewOrgInfo alone"),
+    ("""\bImageJdbc\.rateDistribution\(""", Set("app/controllers/GalleryController.scala", "app/services/GalleryService.scala"),
+      "a round's files per rate of a juror, every juror's with asUserId 0: the gallery's tabs (asUserId from viewAs) and " +
+        "GalleryService.rateDistribution; a new page needs the rule, not canViewOrgInfo alone"),
     ("""RoundImageQuery\.of\(""", Set("app/controllers/RoundList.scala"),
       "a list's files with round_image's sums: RoundList only")
   )
