@@ -16,13 +16,20 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
   in the side column, under the file-info section. Per file one `gallerybox` with a link to that
   file's large view, a comment chip (`CommentJdbc.countsByRoom`, one grouped query) and a video
   mark. No rate, no title text (title in `alt`/`title`).
+- **Two templates, two data sets:** only `large.scala.html` (the round's large view) has a
+  `RoundList`, a viewed juror and votes. `contestFile.scala.html` (contest files and
+  `RoundReviewController`) takes `StoredFile` and `ContestFilesView`: no juror, no votes, no
+  monument list. So "Same monument" and "My recent votes" exist only in the round's large view; in
+  contest files the setting **falls back to Next files** (Off still means Off there).
 - **How many:** `Neighbourhood.Following = 5` files after the current one in the juror's own
   list order (`Neighbourhood.following`). Not the files before it. None at the list's end.
 - **Sizes:** `Global.thumbSizeX x thumbSizeY` = 150 x 120 with a `srcset` (`Global.srcSet`); a
   deleted file uses `cachedSrcSet`. `data-failed-mark="thumb"` hides a failed one (large-view.js).
 - **Lazy?** No (finding F1 of the modern web guidance plan: the strip's `<img>` has no
   `loading="lazy"`). Worse, the section is collapsed by default, but a collapsed section is
-  `display: none` and an `<img>` in a hidden box is still fetched: **every large view loads five
+  `display: none` and an `<img>` in a hidden box is still fetched (with `loading="lazy"`, Chrome
+  and Firefox are expected not to load images in a `display: none` box; that is reasoning about
+  the engines, **not tested here**): **every large view loads five
   thumbnails the juror usually never opens**. The open/closed state is kept per viewer by
   large-sections.js, so a juror who opened it gets it open on every file.
 - **Query cost:** no query of its own. `RoundList.around` already reads a window of
@@ -31,8 +38,8 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
   (`ahead` holds the rows beyond the window, only for the strip). So the strip costs about **3 more
   rows in a statement that already runs, plus one `countsByRoom` statement**, plus 5 image
   requests (the real cost, in the browser and on the image cache side). A large view step is tens
-  of ms (V99/V100 notes: 243 -> 80 -> 43 ms in the worst case), so 3 rows are noise next to the
-  page's other statements. A real-app timing is being measured separately; this plan only uses it
+  of ms (V99 note: 243 -> 80 ms in the worst case on production's copy; V100 note, separately:
+  197 -> 43 ms), so 3 rows are noise next to the page's other statements. A real-app timing is being measured separately; this plan only uses it
   to choose the default (section 4).
 - **Dependencies:** none for keyboard or navigation. Keys and buttons use `data-key-*` on
   `navigationButtons` and the 5-file `files` window (`Neighbourhood.next`, `index`), not the strip.
@@ -48,7 +55,7 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
 
 | Option | Shows | Value |
 |---|---|---|
-| **Off** | nothing; no section, no images | the fastest page; most jurors never open it |
+| **Off** | the section header only (it holds the menu, with "Show next files"); no thumbnails, no images | the fastest page; most jurors never open it |
 | **Next files** (today) | the 5 following files of the list | a look ahead; mostly redundant with the keys and the prefetch |
 | **Same monument** | the other files of this file's monument in the round, each with the juror's own rate | WLM: compare shots of one place, spot near-duplicates, rate consistently |
 | **My recent votes** | the juror's last N votes in this round, newest first, each with its rate | revisit and change a vote without leaving the page |
@@ -56,6 +63,9 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
 
 ### Same monument
 
+- **Filter and order:** the strip does **not** inherit the page's filter. It uses
+  `withFilter(VoteFilter.All)` on the monument list (an "unrated only" or "rate 3" tab would
+  otherwise give an empty or odd strip), in the list's own order (file order by default).
 - **Which files:** this round's files with `monument_id` = the file's monument, under the
   viewer's list rules: `list.withMonument(Some(id))` already exists (`RoundList.monumentLine`
   builds the list filtered by the monument for the info card's link). The strip is that list's
@@ -85,10 +95,12 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
 ### My recent votes
 
 - **Which:** this juror's last N = 8 votes in this round, by `voted_at DESC` (V97), without the
-  current file, each with its rate. This is the existing "Newest votes first" order
-  (`ListOrder` `latest-vote`) with only rated files, so **reuse that order**: the query and the
-  index are the ones V99 built for it (page 1 82 -> 26 ms on the worst case of 33k votes in
-  one round, usually single-digit ms), here a `LIMIT 9` first page.
+  current file, each with its rate. This is the "Newest votes first" order
+  (`ListOrder` `latest-vote`: `UnratedLast`, then `VoteTime` descending). Alone, `LIMIT 9` would
+  list unrated files when the juror has fewer than 8 votes, so the strip combines it with
+  `VoteFilter.Rated` (on a binary round, any vote) and ignores the page's own filter and order.
+  The query and index are those V99 built for that order (V99 note, gallery page 1: 82 -> 26 ms
+  on 3.35M votes; usually single-digit ms), here a `LIMIT 9` first page.
 - **Click:** to that file's large view in the same list context (`list.largeUrl`) so the juror can
   change the vote with the stars. Where the list's filter is "unrated only" the link goes to the
   file in the unfiltered list (`withFilter(All)`), as `voteMoved`'s link does.
@@ -104,7 +116,7 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
 
 | | Next files | Same monument | My recent votes | Off |
 |---|---|---|---|---|
-| Extra SQL | +3 rows (already in the window query) + comment counts | one `LIMIT 9` of the monument list | one `LIMIT 9` of the vote-time order | none |
+| Extra SQL | +3 rows (in the window query) + comment counts, only when Next is chosen | one `LIMIT 9` of the monument list | one `LIMIT 9` of the vote-time order | none |
 | Index | list order index | gallery index with `monument_id` | gallery index with `voted_at` (V99) | none |
 | Caching | none needed | none | none | none |
 | Images | 5 | up to 8 | up to 8 | 0 |
@@ -115,20 +127,23 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
 - **Mobile:** the side column stacks below the file on a phone, and up to 8 thumbnails cost data.
   On a narrow screen the section stays collapsed and the images get `loading="lazy"`, so a closed
   section loads nothing. Whether to hide the strip on phones outright is open question 7.
-- **Gallery tiles plan:** the strip keeps the tiles' size scheme (that plan's G-1a lists "the
-  large view's thumbnail bar per scheme"), so 150 x 120 stays and the paced prefetch at
-  distribution covers it. No new size; the window-size cookie does not affect the strip (its
+- **Gallery tiles plan:** G-1a moves the strip to `stripSrcSet` (250/330 px sources) under the
+  standard scheme: the displayed 150 x 120 box stays and only the srcset moves after G-1a. Until
+  then it is today's `srcSet`. No new displayed size; the window-size cookie does not affect the strip (its
   count is fixed). The new options may reuse the tile snippet with the rate chip once the own
   tiles exist; until then they use `thumbsBar`'s markup plus the existing rate chips.
 - **htmx (if adopted):** the strip is a self-contained section, so a fragment (`hx-get` on first
-  open) fits: a closed strip costs nothing. Not needed for a first version: `loading="lazy"` gets
+  open) fits: a closed strip costs nothing. It needs no `hx-on`, `js:` values or trigger
+  filters, so it is compatible with the CSP rule of the UI approach investigation. Not needed for a first version: `loading="lazy"` gets
   most of that without script.
 
 ## 4. Where the choice lives, and the default
 
 - **Per account** (recommended): one column, like #129's coarse screen profile (values `off`,
   `next`, `monument`, `recent`; a migration at the next free number). It follows the juror across
-  contests and devices. Changed from a small menu in the strip's section header (a POST with the
+  contests and devices. The setting is the **viewer's own**; the data is the viewed juror's (an
+  organizer viewing as juror X uses the organizer's setting with X's data). Any signed-in role may
+  POST it, for their own account only. Changed from a small menu in the strip's section header (a POST with the
   CSRF token, like contest switching), where the juror sees it.
 - **Not per round:** it would differ in every round for no reason a juror can see. **Not only a
   session toggle:** it is forgotten on sign-out. The per-browser open/closed state
@@ -149,15 +164,15 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
 
 | # | Step | Effort |
 |---|---|---|
-| S1 | `loading="lazy"`, `decoding="async"` and `width`/`height` on the strip's images in both templates (the strip part of F1): a closed section loads nothing | 1 h |
+| S1 | `loading="lazy"`, `decoding="async"` and `width`/`height` on the strip's images in both templates. This is the strip's part of F1 of the modern web guidance plan (#134, which cites `contestFile.scala.html:91`); **whichever PR lands first does it** and the other drops it (proposal: #134's F1 PR) | 1 h |
 | S2 | Account column, `User` field, the header menu and its POST (CSRF, denial paths) | 0.5 day |
-| S3 | One strip function for an option, used by both templates; Next files = today's `following` | 0.5 day |
+| S3 | One strip function for an option, used by both templates; Next files = today's `following`. `RoundList.around`'s 6-row widening, `hood.following` and `commentCounts` become conditional on Next (otherwise "Off: no extra SQL" is false) | 0.5-1 day |
 | S4 | Same monument via `withMonument`, rate chips, the fallback | 0.5 day |
 | S5 | My recent votes via the `latest-vote` order, closed-round and `asUserId == 0` rules | 0.5 day |
 | S6 | Message keys, one snippet for both templates, a browser test of the section | 0.5 day |
 | S7 | Contest-level default (optional, later) | 0.5 day |
 
-About 3 days without S7. S1 can ship alone, first.
+About 3-4 days without S7. S1 can ship alone, first.
 
 **Tests**
 - Per option for a juror: Next equals today's `Neighbourhood.following`; monument: only this
@@ -170,7 +185,9 @@ About 3 days without S7. S1 can ship alone, first.
   `asUserId` gets what `GalleryService.viewAs` decides today; a file of another round is never
   listed; a round still `distributing` lists nothing for jurors.
 - No monument id and WLE fall back to Next; a monument with one file likewise.
-- The setting's POST refuses a bad value and a missing CSRF token.
+- The setting's POST refuses a bad value and a missing CSRF token, tested with the filter on
+  (`CsrfTestApp.withCsrfApp`); it changes only the caller's own account.
+- An organizer viewing a user who is not a round juror gets 404 in every option.
 - A template spec for the lazy attributes; `LargeViewFixturesSpec` and `LargeViewSideSpec`
   updated, since the side column changes.
 - An `EXPLAIN` of the two new statements on a production-sized copy, recorded in the PR.
@@ -184,14 +201,17 @@ monument), `large.strip.recent.pick.juror` (all-jurors view), `large.strip.empty
 ## 6. The prefetch of the next file's main image (separate, keep)
 
 Nothing prefetches the next file's large image today (the only `new Image()` is in the Unite
-Gallery plugin). A `<link rel="prefetch">` (or a hidden low-priority `<img>`) for
-`Neighbourhood.next`'s large image makes the next vote's page paint without waiting for the
-image. It is independent of the strip (the strip is thumbnails; this is the one large image the
-keys open next). Rules: only the file the vote or the down key goes to, a path under the gallery
-plan's size scheme (the profile's large size, so it hits the cached file and creates no new
-size), none when the next file is a video, none where the viewer cannot vote. About 0.5 day with a
-view spec for the tag; the UI approach investigation's prototype saw the vote about twice as fast
-with it. Its own PR.
+Gallery plugin). The main image is served from Wikimedia directly with a `srcset`/`sizes` and a
+proxy fallback (`large.scala.html`, kept by the tiles plan section 3.5), so the prefetch must ask
+for the same candidate the page will pick: `<link rel="preload" as="image" imagesrcset=... imagesizes=...>`
+(or an `Image()` with the same `srcset` and `sizes`), built from `Global.largeImage(next)` for
+`Neighbourhood.next`. A plain `href` prefetch could fetch a different size and be wasted. It is
+independent of the strip. Rules: only the file the vote or down key goes to, none when it is a
+video, none where the viewer cannot vote. About 0.5 day with a view spec for the tag. The UI
+approach investigation's **mock prototype** (not the real page) ran the vote and the move in about
+95 ms with the next image prefetched; the real gain is to be taken from the real-app timing
+measurement (`docs/performance/2026-11-24-large-view-timing.md`, in progress; link here once it
+exists). Its own PR.
 
 ## 7. Open questions for the maintainer
 
