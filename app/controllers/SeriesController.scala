@@ -65,19 +65,8 @@ class SeriesController @Inject() (cc: ControllerComponents, blocking: BlockingEx
         }
     }
 
-  /** Grants as a tree along `granted_by` (root's view, §5.3): each live grant with its depth, those
-    * added by root (or by an account with no live grant on the series) at depth 0, each followed by
-    * the grants its account added.
-    */
-  def grantTree(grants: Seq[SeriesGrant]): Seq[(SeriesGrant, Int)] = {
-    val live = grants.filterNot(_.revoked)
-    val holders = live.map(_.userId).toSet
-    val byGranter = live.groupBy(_.grantedBy)
-    def below(g: SeriesGrant, depth: Int, seen: Set[Long]): Seq[(SeriesGrant, Int)] =
-      (g, depth) +: byGranter.getOrElse(g.userId, Nil).filterNot(c => seen(c.userId))
-        .flatMap(c => below(c, depth + 1, seen + c.userId))
-    live.filterNot(g => holders(g.grantedBy) && g.grantedBy != g.userId).flatMap(g => below(g, 0, Set(g.userId)))
-  }
+  /** [[SeriesController.grantTree]]. */
+  def grantTree(grants: Seq[SeriesGrant]): Seq[(SeriesGrant, Int)] = SeriesController.grantTree(grants)
 
   // ── /admin/series ─────────────────────────────────────────────────────────
 
@@ -234,7 +223,8 @@ class SeriesController @Inject() (cc: ControllerComponents, blocking: BlockingEx
               onUnAuthorized(user, request, Secured.SeriesPermission(id).denial)
             // to a series admin, an account outside the series reads as a non-member whatever it is
             // (deleted, root, being joined): no other account's state shows
-            case Left("series.admin.refused.account" | "series.admin.refused.root" | "series.admin.refused.retiring")
+            case Left("series.admin.refused.account" | "series.admin.refused.root" | "series.admin.refused.retiring" |
+                "series.admin.refused.protected")
                 if !isRoot(user) =>
               Redirect(routes.SeriesController.seriesHome(id)).flashing(ErrorFlash -> "series.admin.refused.not.member")
             case Left(key) => Redirect(routes.SeriesController.seriesHome(id)).flashing(ErrorFlash -> key)
@@ -406,6 +396,27 @@ class SeriesController @Inject() (cc: ControllerComponents, blocking: BlockingEx
 }
 
 object SeriesController {
+
+  /** Grants as a tree along `granted_by` (root's view, §5.3): each unrevoked grant (live or waiting
+    * for confirmation) with its depth, those added by root (or by an account with no unrevoked grant
+    * on the series) at depth 0, each followed by the grants its account added. Every grant is shown
+    * once: one only a `granted_by` cycle reaches (a root join with a clash can make one: A added B,
+    * B added C, A joined into C; the security review of #140, L1) starts a tree of its own at depth 0.
+    */
+  def grantTree(grants: Seq[SeriesGrant]): Seq[(SeriesGrant, Int)] = {
+    val live = grants.filterNot(_.revoked).sortBy(_.id)
+    val holders = live.map(_.userId).toSet
+    val byGranter = live.groupBy(_.grantedBy)
+    val shown = scala.collection.mutable.LinkedHashMap.empty[Long, (SeriesGrant, Int)]
+    def below(g: SeriesGrant, depth: Int): Unit =
+      if (!shown.contains(g.id)) {
+        shown(g.id) = g -> depth
+        byGranter.getOrElse(g.userId, Nil).filterNot(c => c.userId == g.userId).foreach(below(_, depth + 1))
+      }
+    live.filterNot(g => holders(g.grantedBy) && g.grantedBy != g.userId).foreach(below(_, 0))
+    live.foreach(below(_, 0))
+    shown.values.toSeq
+  }
 
   /** A series admin a move of a contest changes, with the role the grant gives there. */
   final case class MovedGrant(name: String, role: String, realAdmin: Boolean)
