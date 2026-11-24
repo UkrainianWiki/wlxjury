@@ -582,9 +582,12 @@ accumulate until `target/browser-test/` is deleted.
   neither sent to `trace.playwright.dev` nor viewable in the report. Download it (or the
   `browser-failures-<engine>-attempt-<n>` artifact) and open it with `npx playwright show-trace`.
 - **CI:** the `report` job merges each engine's latest attempt and uploads
-  `allure-report-attempt-<n>` (14 days). **An artifact only:** GitHub Pages would publish test
-  names, steps and failure screenshots, and is not decided
-  (plan [`2026-11-04-story-coverage.md`](../plans/2026-11-04-story-coverage.md) §4.5).
+  `allure-report-attempt-<n>` (14 days). **Pages:** `pages.yml` (master pushes only) rebuilds the
+  report from the engines' results after `scripts/allure-public-filter.py` has deleted every
+  attachment but the failure screenshots (traces, videos, logs), checks it with
+  `allure-offline.mjs`, and publishes it with the Scala coverage HTML and an index page. Test
+  names, steps and screenshots are public there; the fixture's data is synthetic or public Commons
+  data (plan [`2026-11-04-story-coverage.md`](../plans/2026-11-04-story-coverage.md) §4.5).
 - **History:** a JSONL file (`historyPath`, the last 30 runs by `historyLimit`) in the Actions
   cache, appended only on pushes to the branches `browser.yml` runs on push, so a PR's report shows
   trends against its base without adding to them. A cache unused for seven days is evicted: the
