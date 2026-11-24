@@ -22,12 +22,12 @@ class CriteriaController @Inject() (cc: ControllerComponents) extends Secured(cc
   import CriteriaController.addForm
 
   def list(contestId: Option[Long] = None): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, contestId)) { user => implicit request =>
+    withAuth(contestPermission(User.ADMIN_ROLES, contestId, derived = true)) { user => implicit request =>
       Ok(views.html.criteriaCatalogue(user, CriterionJdbc.all(), addForm, contestId.orElse(user.currentContest)))
     }
 
   def add(contestId: Option[Long] = None): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, contestId)) { user => implicit request =>
+    withAuth(contestPermission(User.ADMIN_ROLES, contestId, derived = true)) { user => implicit request =>
       val pageContest = contestId.orElse(user.currentContest)
       val catalogue = CriterionJdbc.all()
       def refused(form: Form[String]) =

@@ -34,7 +34,8 @@ object CoiMembers {
   def detailLabel(detail: String)(implicit messages: play.api.i18n.Messages): String = {
     val at = detail.lastIndexOf(" — ")
     val role = if (at < 0) "" else detail.substring(at + 3)
-    if (User.COI_ROLES.contains(role) || role == User.ROOT_ROLE) Member(0L, detail.substring(0, at), role).label
+    if (User.COI_ROLES.contains(role) || role == User.ROOT_ROLE || role == SeriesAdminRole)
+      Member(0L, detail.substring(0, at), role).label
     else detail
   }
 
@@ -53,25 +54,36 @@ object CoiMembers {
     }
   }
 
+  /** The role code of a series admin's files (contest series plan §3.3, "COI"): `series_admin`. */
+  val SeriesAdminRole = "series_admin"
+
   /** The contest's conflict-of-interest people by normalized wiki account: one query of its
-    * members in [[User.COI_ROLES]] and the root users, not deleted, with a wiki account. A
-    * root user who is also a member is reported with their contest role.
+    * members in [[User.COI_ROLES]], the live series admins of its live series (contest series plan
+    * §3.3: a series admin with no real row counts; none of a retired series or a revoked grant)
+    * and the root users, not deleted, with a wiki account. A series admin or root user who is also
+    * a member is reported with their contest role, a root user who is a series admin as such.
     */
   def forContest(contestId: Long)(implicit session: DBSession = AutoSession): Map[String, Member] = {
     val roles = User.COI_ROLES.toSeq.sorted
     val rows =
-      sql"""SELECT u.id, u.wiki_account, uc.role, 0 AS root FROM user_contest uc JOIN users u ON u.id = uc.user_id
+      sql"""SELECT u.id, u.wiki_account, uc.role, 0 AS coi_rank FROM user_contest uc JOIN users u ON u.id = uc.user_id
             WHERE uc.contest_id = $contestId AND uc.role IN ($roles)
               AND u.deleted_at IS NULL AND u.wiki_account IS NOT NULL AND u.wiki_account <> ''
             UNION ALL
-            SELECT u.id, u.wiki_account, ${User.ROOT_ROLE}, 1 AS root FROM users u
+            SELECT u.id, u.wiki_account, $SeriesAdminRole, 1 AS coi_rank FROM contest_jury c
+              JOIN series s ON s.id = c.series_id AND s.retired_at IS NULL
+              JOIN series_admin sa ON sa.series_id = s.id AND sa.revoked_at IS NULL
+              JOIN users u ON u.id = sa.user_id
+            WHERE c.id = $contestId AND u.deleted_at IS NULL AND u.wiki_account IS NOT NULL AND u.wiki_account <> ''
+            UNION ALL
+            SELECT u.id, u.wiki_account, ${User.ROOT_ROLE}, 2 AS coi_rank FROM users u
             WHERE u.is_root AND u.deleted_at IS NULL AND u.wiki_account IS NOT NULL AND u.wiki_account <> ''"""
-        .map(rs => (Member(rs.long(1), rs.string(2).trim, rs.string(3)), rs.int(4) == 1))
+        .map(rs => (Member(rs.long(1), rs.string(2).trim, rs.string(3)), rs.int(4)))
         .list()
     rows
       .filter { case (m, _) => normalize(m.account).nonEmpty }
-      // the contest role first, then by user id: one person per account
-      .sortBy { case (m, root) => (root, m.userId) }
+      // the contest role first, then a series admin, then root, then by user id: one person per account
+      .sortBy { case (m, rank) => (rank, m.userId) }
       .foldLeft(Map.empty[String, Member]) { case (acc, (m, _)) =>
         val key = normalize(m.account)
         if (acc.contains(key)) acc else acc + (key -> m)

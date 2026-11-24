@@ -137,7 +137,8 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
       messages: Messages, linkHost: LinkHost = LinkHost.None): SearchAdded = {
     if (!User.mayAssignRoles(creator, Set(role))) throw new RoleNotAssignable
     val creatorRoot = creator.isRoot || creator.hasRole(User.ROOT_ROLE)
-    def gone(a: User) = a.deletedAt.nonEmpty || (!creatorRoot && (a.isRoot || a.hasRole(User.ROOT_ROLE)))
+    // a protected account (root, a series admin: contest series plan §3.3) is root's only
+    def gone(a: User) = a.deletedAt.nonEmpty || (!creatorRoot && User.isProtectedTarget(a))
     val account = User.findById(accountId).filterNot(gone).getOrElse(throw new AccountNotFound)
     val cId = contest.getId
     val added = addExisting(creator, account, byEmail = true, Some(contest), contest.id, role, sendInvitation,
@@ -169,7 +170,7 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     */
   def wikiMatches(creator: User, name: String): Seq[User] = {
     val creatorRoot = creator.isRoot || creator.hasRole(User.ROOT_ROLE)
-    User.findByAccount(name).filter(a => a.deletedAt.isEmpty && (creatorRoot || !(a.isRoot || a.hasRole(User.ROOT_ROLE))))
+    User.findByAccount(name).filter(a => a.deletedAt.isEmpty && (creatorRoot || !User.isProtectedTarget(a)))
   }
 
   /** The add row's add by a wiki account that names accounts whose wiki account is unverified

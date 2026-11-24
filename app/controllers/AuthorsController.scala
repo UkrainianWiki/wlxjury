@@ -27,7 +27,7 @@ class AuthorsController @Inject() (
     with I18nSupport {
 
   def list(contestId: Long, round: Option[Long], sort: Option[String]): EssentialAction =
-    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId))) {
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId), derived = true)) {
       user => implicit request =>
         val contest = ContestJuryJdbc.findById(contestId)
         val rounds = contest.fold(Seq.empty[Round])(_ => Round.findByContest(contestId))

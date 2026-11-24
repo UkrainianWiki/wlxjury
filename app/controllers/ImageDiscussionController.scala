@@ -40,7 +40,7 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
                  region: String = "all",
                  round: Option[Long],
                  contestId: Option[Long],
-                 asUserId: Option[Long] = None): EssentialAction = withAuth() {
+                 asUserId: Option[Long] = None): EssentialAction = withAuth(rolePermission(Secured.ViewerRoles, derived = true)) {
     sessionUser => implicit request =>
       val requested = round.flatMap(Round.findById)
       val commenterRoles = User.ADMIN_ROLES ++ User.JURY_ROLES ++ User.ORG_COM_ROLES

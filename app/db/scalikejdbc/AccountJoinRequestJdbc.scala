@@ -63,7 +63,8 @@ object AccountJoinRequestJdbc {
     * report to group by the normalised name.
     */
   def wikiAccounts(withRoot: Boolean)(implicit session: DBSession = AutoSession): Seq[(Long, String)] = {
-    val rootShown = if (withRoot) sqls"TRUE" else sqls"is_root = FALSE"
+    // root's only, as root accounts: the series admins (contest series plan §3.3, protected targets)
+    val rootShown = if (withRoot) sqls"TRUE" else sqls"is_root = FALSE AND NOT ${AccountJoinRequestJdbc.liveGrant(sqls"users.id")}"
     sql"""SELECT id, wiki_account FROM users
           WHERE deleted_at IS NULL AND wiki_account IS NOT NULL AND TRIM(wiki_account) <> '' AND $rootShown"""
       .map(rs => rs.long(1) -> rs.string(2)).list.apply()
@@ -76,7 +77,10 @@ object AccountJoinRequestJdbc {
     * accounts only; root accounts only if `withRoot`.
     */
   def sharedVerifiedEmails(withRoot: Boolean)(implicit session: DBSession = AutoSession): Seq[(String, Long, Long)] = {
-    val rootShown = if (withRoot) sqls"TRUE" else sqls"a.is_root = FALSE AND b.is_root = FALSE"
+    val rootShown =
+      if (withRoot) sqls"TRUE"
+      else sqls"""a.is_root = FALSE AND b.is_root = FALSE AND NOT ${AccountJoinRequestJdbc.liveGrant(sqls"a.id")}
+                  AND NOT ${AccountJoinRequestJdbc.liveGrant(sqls"b.id")}"""
     sql"""SELECT a.email, a.id, b.id FROM users a
           JOIN user_identity i ON i.email = a.email AND i.unlinked_at IS NULL AND i.user_id <> a.id
           JOIN users b ON b.id = i.user_id
@@ -84,6 +88,13 @@ object AccountJoinRequestJdbc {
             AND b.deleted_at IS NULL AND $rootShown"""
       .map(rs => (rs.string(1), rs.long(2), rs.long(3))).list.apply()
   }
+
+  /** Whether the account `id` holds a live series grant (a protected target, contest series plan
+    * §3.3): `EXISTS (…)` on its id column.
+    */
+  private[scalikejdbc] def liveGrant(id: SQLSyntax): SQLSyntax =
+    sqls"""EXISTS (SELECT 1 FROM series_admin sa JOIN series s ON s.id = sa.series_id AND s.retired_at IS NULL
+                   WHERE sa.user_id = $id AND sa.revoked_at IS NULL)"""
 
   /** The accounts' users rows, locked until the transaction ends, in ascending id (the account
     * join plan's lock order: `users` before `user_contest` and everything else).

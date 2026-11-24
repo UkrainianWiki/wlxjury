@@ -29,7 +29,7 @@ class AddFromContestController @Inject()(cc: ControllerComponents, userService: 
     * of [[AddFromContest.RoleFilters]], if given).
     */
   def page(contestId: Option[Long] = None, from: Option[Long] = None, role: Option[String] = None): EssentialAction =
-    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, contestId)) { user => implicit request =>
+    withAuthOn(blocking)(accountAdminPermission(contestId)) { user => implicit request =>
       contestId.orElse(user.contestId).flatMap(ContestJuryJdbc.findById) match {
         case None => NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))
         case Some(contest) =>
@@ -51,7 +51,7 @@ class AddFromContestController @Inject()(cc: ControllerComponents, userService: 
     * nothing ticked: back to this page, which says so.
     */
   def add(contestId: Option[Long] = None): EssentialAction =
-    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, contestId)) { user => implicit request =>
+    withAuthOn(blocking)(accountAdminPermission(contestId)) { user => implicit request =>
       def badRequest = BadRequest(views.html.errorPage(Some(user), "error.title", "error.bad.request"))
       contestId.orElse(user.contestId).flatMap(ContestJuryJdbc.findById) match {
         case None => NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))

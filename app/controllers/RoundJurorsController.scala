@@ -29,7 +29,7 @@ class RoundJurorsController @Inject() (
   import RoundRebalanceService._
 
   def addPage(id: Long, juror: Option[Long]): EssentialAction =
-    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { sessionUser => implicit request =>
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { sessionUser => implicit request =>
       withAdminRound(sessionUser, id) { (user, round) =>
         // the donors ticked, once the page's form was sent ("picked"); else the default (D1)
         val donors = Option.when(request.queryString.contains("picked"))(
@@ -43,7 +43,7 @@ class RoundJurorsController @Inject() (
     * figures. To the rounds list, whose job column shows its progress.
     */
   def add(id: Long): EssentialAction =
-    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { sessionUser => implicit request =>
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { sessionUser => implicit request =>
       withAdminRound(sessionUser, id) { (user, round) =>
         val messages = messagesApi.preferred(request)
         addForm.bindFromRequest().fold(
@@ -81,7 +81,7 @@ class RoundJurorsController @Inject() (
     * the 404 page.
     */
   def reassignPage(id: Long, juror: Long): EssentialAction =
-    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { sessionUser => implicit request =>
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { sessionUser => implicit request =>
       withAdminRound(sessionUser, id) { (user, round) =>
         val receivers = Option.when(request.queryString.contains("picked"))(
           request.queryString.getOrElse("receiver", Nil).flatMap(_.toLongOption))
@@ -96,7 +96,7 @@ class RoundJurorsController @Inject() (
     * figures. To the rounds list, whose job column shows its progress.
     */
   def reassign(id: Long): EssentialAction =
-    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { sessionUser => implicit request =>
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { sessionUser => implicit request =>
       withAdminRound(sessionUser, id) { (user, round) =>
         val messages = messagesApi.preferred(request)
         reassignForm.bindFromRequest().fold(

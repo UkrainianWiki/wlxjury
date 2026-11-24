@@ -38,7 +38,7 @@ class RoundController @Inject() (
     * @return
     */
   def rounds(contestIdParam: Option[Long] = None): EssentialAction =
-    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, contestIdParam)) { user => implicit request =>
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, contestIdParam, derived = true)) { user => implicit request =>
       val roundsView =
         for (
           contestId <- contestIdParam.orElse(user.currentContest);
@@ -86,7 +86,7 @@ class RoundController @Inject() (
     * @return
     */
   def editRound(roundId: Option[Long], contestId: Long, topImages: Option[Int]): EssentialAction =
-    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, Some(contestId), derived = true)) { user => implicit request =>
       val rounds = Round.findByContest(contestId)
 
       // From the permission-checked contest's rounds: a round of another contest gets
@@ -253,7 +253,7 @@ class RoundController @Inject() (
     * "jurors" panel, loaded when the panel is opened.
     */
   def roundStatTable(roundId: Long): EssentialAction =
-    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
       withAdminRound(user, roundId, NotFound(""), request) { round =>
         Ok(views.html.roundStatTable(user, round, roundsService.getRoundStat(roundId, round)))
       }
@@ -298,7 +298,7 @@ class RoundController @Inject() (
   }
 
   def saveRound(): EssentialAction =
-    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
       editRoundForm
         .bindFromRequest()
         .fold(
@@ -557,7 +557,7 @@ class RoundController @Inject() (
     * with `returnTo=conflicts` (the round's conflicts page's "Stop the round"), to that page
     * with a message. `returnTo` is a fixed word, never a path.
     */
-  def setRound(): EssentialAction = withAuth(rolePermission(User.ADMIN_ROLES)) {
+  def setRound(): EssentialAction = withAuth(rolePermission(User.ADMIN_ROLES, derived = true)) {
     user => implicit request =>
       selectRoundForm
         .bindFromRequest()
@@ -593,7 +593,7 @@ class RoundController @Inject() (
     * or the last active juror of an open round stopped (nobody can vote in it).
     */
   def setRoundUser(): EssentialAction =
-    withAuth(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
+    withAuth(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
       setRoundUserForm
         .bindFromRequest()
         .fold(
@@ -627,7 +627,7 @@ class RoundController @Inject() (
 
   /** Sets the images source of `contestIdParam`, else of the user's current contest. */
   def setImages(contestIdParam: Option[Long] = None): EssentialAction =
-    withAuth(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
+    withAuth(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
       contestIdParam.orElse(user.currentContest) match {
         case None => Redirect(routes.ContestController.list())
         case contestId if !contestPermission(User.ADMIN_ROLES, contestId)(user) =>
@@ -651,7 +651,7 @@ class RoundController @Inject() (
   // the round statistics are organizer views (User.canViewOrgInfo): never a juror's, who gets
   // the 403 page naming the roles at once
   def currentRoundStat(contestId: Option[Long] = None): EssentialAction =
-    withAuth(rolePermission(Set(User.ADMIN_ROLE, "root") ++ User.ORG_COM_ROLES)) {
+    withAuth(rolePermission(Set(User.ADMIN_ROLE, "root") ++ User.ORG_COM_ROLES, derived = true)) {
       sessionUser => implicit request =>
         // the asked-for contest's rounds are checked as a member of it, if an active one
         val user = contestId.fold(sessionUser)(Secured.inContest(sessionUser, _))
@@ -710,7 +710,7 @@ class RoundController @Inject() (
     }
 
   def roundStat(roundId: Long): EssentialAction =
-    withAuthOn(blocking)(rolePermission(Set(User.ADMIN_ROLE, "root") ++ User.ORG_COM_ROLES)) {
+    withAuthOn(blocking)(rolePermission(Set(User.ADMIN_ROLE, "root") ++ User.ORG_COM_ROLES, derived = true)) {
       sessionUser => implicit request =>
         Round
           .findById(roundId)
@@ -744,7 +744,7 @@ class RoundController @Inject() (
     * round: JSON 404.
     */
   def roundStatCounts(roundId: Long): EssentialAction =
-    withAuthJsonOn(blocking)() { sessionUser => implicit request =>
+    withAuthJsonOn(blocking)(rolePermission(Secured.ViewerRoles, derived = true)) { sessionUser => implicit request =>
       Round.findById(roundId).fold[Result](NotFound(Json.obj("error" -> "round_not_found"))) { round =>
         val user = Secured.inContest(sessionUser, round.contestId)
         if (!RoundStatLinks.mayView(user, round))
