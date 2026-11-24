@@ -3,7 +3,7 @@
 The jury tool serves a small REST API under `/api` (Tapir, `app/api/Api.scala`). Swagger UI
 and the OpenAPI document are public at `/api/docs` (`/api/docs/docs.yaml`); they hold no data.
 
-So far the API has the contest endpoints, for root only, as the contest pages are, and two
+So far the API has the contest endpoints, for root only, as the contest pages are, and
 read-only diagnostics endpoints (support diagnostics plan, D-1b) that the `wlxjury-diag` tool
 reads ([operations §5.5](operations/practices.md)):
 
@@ -15,6 +15,10 @@ reads ([operations §5.5](operations/practices.md)):
 | `PUT` | `/api/contests` | root | update the contest of the body's `id` |
 | `GET` | `/api/contests/{id}/health` | root and the contest's admins | the contest's health report, as its health page shows it |
 | `GET` | `/api/diagnostics/recent?hours=24` | root | every contest's jobs and round status changes of the last `hours` (1 to 720, 24 by default), the worst first, and the jobs of no contest |
+| `GET` | `/api/diagnostics/reuse` | root | the reuse dry-run report: the latest scan job's progress and the latest finished scan's totals and reported contests, as root's reuse page shows them |
+| `GET` | `/api/diagnostics/reuse/{id}` | root | one contest's reuse report: its clusters, read now against the latest finished scan's eras |
+
+All `GET` endpoints above, the contests' reads included, are open to read-only, server-only tokens (`ApiAuth.Endpoints`); `POST` and `PUT` are not.
 
 **The health report** (`/api/contests/{id}/health`) has the contest (`id`, `name`, `year`,
 `country`, `retired`), its `outcome` (`pass`, `info`, `warn`, `fail`: the worst check's), `files`,
@@ -30,8 +34,8 @@ log's denials are `wlxjury-diag`'s to add.
 
 ## Signing in
 
-- **A personal API token**, for command-line tools: `Authorization: Bearer wlxj_...`. Create
-  one on your profile page (your name in the navbar, then "API tokens"), with a name and an
+- **A personal API token**, for command-line tools: `Authorization: Bearer wlxj_...`. Root creates
+  one on their own profile page (their name in the navbar, then "API tokens"; other roles have no such card), with a name and an
   expiry of 30 days, 90 days, a year or never. The token is shown once, right after you
   create it: copy it then. Revoke it there when you no longer need it, or if it may have
   leaked. You can have at most 20 usable (not revoked, not expired) tokens. A token acts as
