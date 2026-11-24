@@ -43,7 +43,20 @@ case class User(
       */
     wikiAccountVerifiedAt: Option[ZonedDateTime] = None,
     /** users.auth_version (V77): a session signed in with another version is refused. */
-    authVersion: Int = 0
+    authVersion: Int = 0,
+    /** The contests the account's live series grants reach, with the derived role in each (contest
+      * series plan §3.3, CA20): set for a session only ([[controllers.Secured.withSeries]]), never for
+      * an API token or root's edit form. Kept apart from [[roles]] and [[userContests]], which stay
+      * real; read only by `Secured`, `JurorContests` and the series controller (a guard spec).
+      */
+    seriesContests: Seq[SeriesContest] = Nil,
+    /** The live series the account is a series admin of (the session's, as [[seriesContests]]). */
+    seriesGranted: Seq[Long] = Nil,
+    /** Set by a permission that opts in to derived roles (`derived = true`,
+      * [[controllers.Secured.withDerivedRoles]]): [[roles]] then hold the merged role in the current
+      * contest, and `Secured.inContest` merges it in the contest it moves to.
+      */
+    derivedOptIn: Boolean = false
 ) extends HasId
     with Ordered[User] {
 
@@ -91,8 +104,23 @@ case class User(
   def inContest(membership: UserContest): User =
     copy(
       contestId = Some(membership.contestId),
-      roles = roles -- contestRoles ++ (membership.roles & User.ContestRoles)
+      roles = roles -- contestRoles ++ (membership.roles & User.ContestRoles) ++ optedInRoles(membership.contestId)
     )
+
+  /** This user in a contest their series grants reach but no real membership opens: no real role
+    * there, and the derived one only if [[derivedOptIn]] (`Secured.inContest`).
+    */
+  def inSeriesContest(contestId: Long): User =
+    copy(contestId = Some(contestId), roles = roles -- contestRoles ++ optedInRoles(contestId))
+
+  /** The derived role in the contest if [[derivedOptIn]], else none. */
+  private def optedInRoles(contestId: Long): Set[String] =
+    if (derivedOptIn) derivedRoles.getOrElse(contestId, Set.empty) else Set.empty
+
+  /** The role the account's series grants give it in the contest (Admin or Organizer; none outside
+    * them), apart from its real roles. Read only by `Secured` (a guard spec).
+    */
+  def derivedRoles: Map[Long, Set[String]] = seriesContests.map(sc => sc.contestId -> Set(sc.role)).toMap
 
   def hasRole(role: String): Boolean = roles.contains(role)
 
@@ -1046,6 +1074,25 @@ object User extends CRUDMapper[User] {
     findAllBy(isNotDeleted)
 
   /** The account's row, locked until the transaction ends. */
+  /** Whether `account` is a protected target (contest series plan §3.3): root, or a live grant of
+    * "Series admin" on a live series. Only root edits, links, invites, retires or joins it; non-root
+    * actors never act on it (one's own account aside). On write paths, read under the account's row
+    * lock ([[lockRow]]).
+    */
+  def isProtectedTarget(account: User)(implicit session: DBSession = autoSession): Boolean =
+    account.isRoot || account.hasRole(ROOT_ROLE) || account.id.exists(SeriesAdminJdbc.hasLiveGrant(_))
+
+  /** Those of `accounts` that are protected targets ([[isProtectedTarget]]), by id, in one query. */
+  def protectedTargets(accounts: Seq[User])(implicit session: DBSession = autoSession): Set[Long] =
+    accounts.filter(a => a.isRoot || a.hasRole(ROOT_ROLE)).flatMap(_.id).toSet ++
+      SeriesAdminJdbc.withLiveGrant(accounts.flatMap(_.id))
+
+  /** Whether `accountId` holds a live grant on the contest's live series: then no one but root adds
+    * it as a Juror there, or removes or downgrades its Admin row (the role writes, §3.3).
+    */
+  def seriesProtected(accountId: Long, contestId: Long)(implicit session: DBSession = autoSession): Boolean =
+    SeriesAdminJdbc.holdsGrantOnContest(accountId, contestId)
+
   def lockRow(id: Long)(implicit session: DBSession): Option[User] =
     sql"SELECT ${u.result.*} FROM ${User as u} WHERE ${u.id} = $id FOR UPDATE".map(User(u.resultName)).single.apply()
 
