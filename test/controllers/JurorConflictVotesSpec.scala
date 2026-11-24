@@ -124,5 +124,41 @@ class JurorConflictVotesSpec extends PlaySpecification with PlayTestDb {
           (status(get(app, f.root, s"/contest/$c/authors?round=${f.round.getId}")) === OK)
       }
     }
+
+    "see the round's results as any admin once it is closed; a paused or reviewed round counts as open" in {
+      testDbApp { app =>
+        val f = fixture()
+        val page = f.images.head.pageId
+        def set(sql: String) = scalikejdbc.DB.autoCommit(implicit s => scalikejdbc.SQL(sql).update())
+        // paused by a freeze while open: still open
+        set(s"UPDATE round SET active = 0, freeze_count = 1, active_before_freeze = 1 WHERE id = ${f.round.getId}")
+        val paused = views(app, f.adminJ, f.round, 0L, page, FORBIDDEN)
+        // being reviewed (distributing): open too
+        set(s"UPDATE round SET freeze_count = 0, active_before_freeze = 0, distributing = 1 WHERE id = ${f.round.getId}")
+        val reviewed = status(get(app, f.adminJ, s"/roundstat/${f.round.getId}")) === OK and
+          (status(get(app, f.adminJ, s"/contest/${f.round.contestId}/authors?round=${f.round.getId}")) === FORBIDDEN)
+        // closed (stopped): results for all
+        set(s"UPDATE round SET distributing = 0 WHERE id = ${f.round.getId}")
+        paused and reviewed and
+          forall(Seq(f.adminJ, f.orgJ, f.seriesJ, f.rootJ)) { viewer =>
+            views(app, viewer, f.round, f.juror2.getId, page, OK) and views(app, viewer, f.round, 0L, page, OK)
+          } and
+          (status(get(app, f.adminJ, s"/contest/${f.round.contestId}/authors?round=${f.round.getId}")) === OK) and
+          (Jsoup.parse(contentAsString(get(app, f.adminJ, s"/roundstat/${f.round.getId}")))
+            .select("td.juror-selected").eachText().asScala.count(_ == "—") === 0)
+      }
+    }
+
+    "open a round they judge on their own votes from the round menu of an all-jurors list" in {
+      testDbApp { app =>
+        val f = fixture()
+        def roundLink(viewer: User) =
+          Jsoup.parse(contentAsString(get(app, viewer, s"/gallery/round/${f.other.getId}/user/0/page/1")))
+            .select("#round-menu .dropdown-item").asScala.map(_.attr("href")).find(_.contains(s"/round/${f.round.getId}/"))
+        (roundLink(f.adminJ).exists(_.startsWith(s"/gallery/round/${f.round.getId}/user/${f.adminJ.getId}/")) must beTrue) and
+          (roundLink(f.root).exists(_.startsWith(s"/gallery/round/${f.round.getId}/user/0/")) must beTrue) and
+          (roundLink(f.adminJ).exists(href => status(get(app, f.adminJ, href)) == OK) must beTrue)
+      }
+    }
   }
 }

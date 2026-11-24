@@ -86,12 +86,14 @@ is listed below.
   or of a retired series too) stays protected; a revoke also
   revokes the links that series admin made in the series' contests; root's Confirm is refused if the
   account changed hands meanwhile.
-- **A juror of a round sees only their own votes in it** (the maintainer's conflict-of-interest rule of
-  2026-11-24), whatever their contest role: an admin, organizer, series admin or root who also
+- **A juror of an open round sees only their own votes in it** (the maintainer's conflict-of-interest
+  rule of 2026-11-24; open: active, paused, or being created or reviewed; once the round is closed
+  its results are visible as before), whatever their contest role: an admin, organizer, series admin or root who also
   judges a round can't open another juror's votes there or all the jurors' together (galleries by
   juror or by rate, the file list, CSV, the large view's votes of every juror, a monument's files,
   the round's authors with votes); the round's statistics keep each juror's progress but not the
-  others' selections or the totals by vote. In rounds they don't judge nothing changes.
+  others' selections or the totals by vote; the round menu opens such a round on their own votes.
+  In rounds they don't judge nothing changes.
 - **A sticky top bar** (the maintainer's decision of 2026-11-23, replacing the trial of a bar
   that hid while scrolling down; developed 2026-11-23, `fix/sticky-topbar`): on the galleries, the
   by-rate gallery, the file list, the comments report, the contest files, the Rounds, round

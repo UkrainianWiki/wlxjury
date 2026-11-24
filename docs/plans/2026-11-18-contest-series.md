@@ -742,10 +742,14 @@ series. Specs cover a series admin with no real row, and a retired series.
   than the review's "only root changes a protected account's roles"): in the series' contests no
   one but root makes it a Juror or removes or lowers its Admin row; elsewhere its Juror and
   Organizer rows change as any member's.
-- **A juror of a round sees only their own votes in it** (the maintainer's conflict-of-interest rule,
-  2026-11-24), whatever their contest role: a contest Admin or Organizer, a series admin by a
-  derived or real role, root. A juror of the round: a `round_user` row, active or stopped, or votes
-  of their own in it. One check, `GalleryService.othersVotesVisible`, guards every place that shows
+- **A juror of an open round sees only their own votes in it** (the maintainer's conflict-of-interest
+  rule, 2026-11-24, limited the same day to open rounds), whatever their contest role: a contest
+  Admin or Organizer, a series admin by a derived or real role, root. Open: `Round.openCond`
+  (active, being created or reviewed, or paused by a freeze while open); once the round is closed
+  (stopped, finalized, cancelled) its results are visible as to any admin, so the round form and the
+  round review page, which read a closed previous round, need no rule (the form shows no count of
+  the previous round's results). A juror of the round: a `round_user` row, active or stopped, or
+  votes of their own in it; the round menu opens such a round on the viewer's own votes. One check, `GalleryService.othersVotesVisible`, guards every place that shows
   other jurors' votes (the galleries as another juror or all, by rate, file list, CSV, comments
   report, the large view, a monument's files, the round's authors with votes, the statistics'
   selections and totals, the organisers' bar); each juror's progress counts stay. With CA7 this

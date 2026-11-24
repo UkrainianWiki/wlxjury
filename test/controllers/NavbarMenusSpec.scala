@@ -279,14 +279,18 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "refuse an organizer who judges the round all the jurors' votes in it (the conflict-of-interest rule)" in {
+    "refuse an organizer who judges the open round all the jurors' votes in it, not once it is closed" in {
       testDbApp { app =>
         val f = fixture()
-        // the maintainer's decision of 2026-11-24: a juror of a round sees only their own votes in it,
-        // whatever their role; the organisers' bar and its juror menu are not theirs there
-        (status(get(app, f.orgJuror, gallery(f.round, 0))) === FORBIDDEN) and
+        // the maintainer's decisions of 2026-11-24: a juror of an open round sees only their own votes
+        // in it, whatever their role; the organisers' bar and its juror menu are not theirs there.
+        // Once the round is closed they see its results as any organizer
+        val open = (status(get(app, f.orgJuror, gallery(f.round, 0))) === FORBIDDEN) and
           (status(get(app, f.orgJuror, gallery(f.round, f.quiet.getId))) === FORBIDDEN) and
           (status(get(app, f.organizer, gallery(f.round, 0))) === OK)
+        scalikejdbc.DB.autoCommit(implicit s => scalikejdbc.SQL(s"UPDATE round SET active = 0 WHERE id = ${f.round.getId}").update())
+        open and (status(get(app, f.orgJuror, gallery(f.round, 0))) === OK) and
+          (page(app, f.orgJuror, gallery(f.round, 0)).select("#juror-menu").size === 1)
       }
     }
 

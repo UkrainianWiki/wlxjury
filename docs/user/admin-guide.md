@@ -1312,12 +1312,14 @@ distribution is done. When a round is stopped it disappears from the jurors' vie
 it are refused ("This round is closed for voting"). Votes are kept, and the round comes back
 when you start it again. A juror with no round open sees **No round configured yet**.
 
-A **juror of a round** sees only their own votes in it, whatever their role in the contest: an
-Admin, an Organizer, a series admin or root who is also a juror of a round can't open another
-juror's votes there, nor all the jurors' votes together (by rate, the file list, the CSV, the large
-view's votes of every juror, the round's authors with votes); on the round's **Statistics** they
-see each juror's progress (files, unrated, rated) but not the others' selections or rejections
-nor the totals by vote. In rounds they don't judge they see every juror's votes as usual.
+While a round is **open** (active, paused, or being created or reviewed), a **juror of it** sees
+only their own votes in it, whatever their role in the contest: an Admin, an Organizer, a series
+admin or root who is also a juror of the round can't open another juror's votes there, nor all the
+jurors' votes together (by rate, the file list, the CSV, the large view's votes of every juror, the
+round's authors with votes); on the round's **Statistics** they see each juror's progress (files,
+unrated, rated) but not the others' selections or rejections nor the totals by vote, and the round
+menu opens the round on their own votes. Once the round is **closed** (stopped or finished) they
+see its results like any admin. In rounds they don't judge nothing changes.
 
 Jurors see their own votes only, and never the files' authors: the author's name and links, the
 contest files page's author filter and the authors list are for admins, organizers and root

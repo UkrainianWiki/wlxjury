@@ -187,7 +187,7 @@ class SeriesReachGuardSpec extends Specification {
 
   /** The places that show other jurors' votes of a round, each behind
     * `GalleryService.othersVotesVisible` (the conflict-of-interest rule, the maintainer's decision of
-    * 2026-11-24: a juror of a round sees only their own votes in it, whatever their role).
+    * 2026-11-24: a juror of a round sees only their own votes in it while it is open, whatever their role).
     */
   private val OthersVotesSites: Map[String, (Int, String)] = Map(
     "app/services/GalleryService.scala" -> (2, "the definition; viewAs: every gallery view (gallery, by rate, file list, " +
@@ -196,7 +196,8 @@ class SeriesReachGuardSpec extends Specification {
     "app/controllers/MonumentController.scala" -> (1, "a monument's files in a round: own votes only"),
     "app/controllers/AuthorsController.scala" -> (1, "a round's authors with every juror's votes"),
     "app/views/roundStatTable.scala.html" -> (1, "the statistics: other jurors' selections, rejections, lists, totals"),
-    "app/views/navbar.scala.html" -> (1, "the organisers' bar: the juror menu and all the jurors' views")
+    "app/views/navbar.scala.html" -> (1, "the organisers' bar: the juror menu and all the jurors' views"),
+    "app/views/roundStat.scala.html" -> (1, "the statistics' comments report link: the viewer's own list in an open round they judge")
   )
 
   "the conflict-of-interest rule" should {
