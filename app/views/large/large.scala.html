@@ -86,6 +86,7 @@
                <div id="mainContent" class="col large-main h-100">
 
                     @voteMoved(list)
+                    @nextImage(hood.following.headOption.map(_.image))
 
                     <a href="https://commons.wikimedia.org/wiki/@hood.file.title" target="_blank" rel="noopener">
                         @if(image.isImage) {
