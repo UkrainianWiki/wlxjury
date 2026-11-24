@@ -56,6 +56,12 @@ object ContestReuse {
   /** The contest's first and last round ids, more than the threshold apart. */
   final case class RoundSpan(first: Long, last: Long) extends Sign
 
+  /** The latest finished reuse scan (the dry-run report, CY-0, [[ReuseScanHandler]]) proposes moving its
+    * clusters, leaving some as history, or root's choice (`verdict`, [[ReuseReport.Verdict]]): §3.5's
+    * "or, later, by the CY-0 report". Added by the proposals, never by [[checkAll]].
+    */
+  final case class Report(jobId: Long, verdict: String) extends Sign
+
   /** A sign's kind as the proposals' left-out list names it (`series.reuse.kind.*`). */
   def kindKey(sign: Sign): String = "series.reuse.kind." + (sign match {
     case _: OtherSource    => "source"
@@ -63,9 +69,10 @@ object ContestReuse {
     case _: RoundFiles     => "round.files"
     case _: RoundCountries => "round.countries"
     case _: RoundSpan      => "span"
+    case _: Report         => "report"
   })
 
-  val Kinds: Seq[String] = Seq("source", "round.source", "round.files", "round.countries", "span")
+  val Kinds: Seq[String] = Seq("source", "round.source", "round.files", "round.countries", "span", "report")
 
   /** The thresholds (`series.reuse.*`). */
   final case class Settings(roundIdSpan: Int = 150, foreignShare: Double = 0.02, foreignMin: Int = 5)
@@ -82,14 +89,16 @@ object ContestReuse {
   }
 
   /** The signs for one contest: none if it shows no reuse. */
-  def check(contest: ContestJury, settings: Settings)(implicit session: DBSession): Seq[Sign] =
-    checkAll(Seq(contest), settings).getOrElse(contest.getId, Nil)
+  def check(contest: ContestJury, settings: Settings, known: Option[Seq[ContestJury]] = None)(implicit
+      session: DBSession): Seq[Sign] =
+    checkAll(Seq(contest), settings, known = known).getOrElse(contest.getId, Nil)
 
   /** The signs of each contest that shows any (contests that show none are left out). Without
     * `files`, the rounds' files are not read (the contests page's badge over many contests).
+    * `known`: every contest, if the caller has them already (the reuse report's catalog), else read.
     */
-  def checkAll(contests: Seq[ContestJury], settings: Settings = Settings(), files: Boolean = true)(implicit
-      session: DBSession = AutoSession): Map[Long, Seq[Sign]] = {
+  def checkAll(contests: Seq[ContestJury], settings: Settings = Settings(), files: Boolean = true,
+      known: Option[Seq[ContestJury]] = None)(implicit session: DBSession = AutoSession): Map[Long, Seq[Sign]] = {
     val ids = contests.flatMap(_.id).distinct
     if (ids.isEmpty) Map.empty
     else {
@@ -99,7 +108,7 @@ object ContestReuse {
       val read = if (files) roots.map(_.id) else Nil
       val byRound = roundFiles(read)
       val sizes = roundSizes(read)
-      val identities = categoryIdentities(byRound.values.flatMap(_.keys).toSeq.distinct)
+      val identities = categoryIdentities(byRound.values.flatMap(_.keys).toSeq.distinct, known)
       contests.flatMap { contest =>
         val id = contest.getId
         val own = rounds.filter(_.contestId == id)
@@ -142,7 +151,7 @@ object ContestReuse {
   }
 
   /** The sources of the contests' file imports (jobs since V60), by contest. */
-  private def importSources(contestIds: Seq[Long])(implicit session: DBSession): Map[Long, Seq[String]] =
+  private[series] def importSources(contestIds: Seq[Long])(implicit session: DBSession): Map[Long, Seq[String]] =
     sql"""SELECT contest_id, JSON_VALUE(params, '$$.source') FROM job
           WHERE contest_id IN ($contestIds) AND kind = ${ImageImportHandler.Kind}
             AND JSON_VALUE(params, '$$.mode') = ${ImageImportHandler.Mode.Import}"""
@@ -188,12 +197,16 @@ object ContestReuse {
 
   /** The identity each category names: another contest's whose category it is, else its title's
     * ("Category:Images from Wiki Loves Earth 2020 in Armenia"); categories naming none are left out.
+    * The contests of `known` if given, else read.
     */
-  private def categoryIdentities(categoryIds: Seq[Long])(implicit session: DBSession): Map[Long, ContestIdentity] =
+  private[series] def categoryIdentities(categoryIds: Seq[Long], known: Option[Seq[ContestJury]] = None)(implicit
+      session: DBSession): Map[Long, ContestIdentity] =
     if (categoryIds.isEmpty) Map.empty
     else {
-      val byContest = db.scalikejdbc.ContestJuryJdbc
-        .findAllBy(sqls.in(db.scalikejdbc.ContestJuryJdbc.defaultAlias.categoryId, categoryIds))
+      val owners = known.fold[Seq[ContestJury]](db.scalikejdbc.ContestJuryJdbc
+        .findAllBy(sqls.in(db.scalikejdbc.ContestJuryJdbc.defaultAlias.categoryId, categoryIds)))(
+        _.filter(_.categoryId.exists(categoryIds.toSet)))
+      val byContest = owners
         .flatMap(c => c.categoryId.map(_ -> ContestIdentity.parse(ContestIdentity.describe(c)))).toMap
       val byTitle = sql"SELECT id, title FROM category WHERE id IN ($categoryIds)"
         .map(rs => rs.long(1) -> ContestIdentity.parse(rs.string(2))).list.apply()

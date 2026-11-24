@@ -283,5 +283,101 @@ class ContestTest(unittest.TestCase):
         self.assertEqual(len(err.getvalue().splitlines()), 1)
 
 
+
+def summary(id_, verdict="move", moves=1, active=(), r4=False, name="Wiki Loves Earth", year=2020, country="Nepal"):
+    return {"contestId": id_, "name": name, "year": year, "country": country, "retired": False, "seriesId": None,
+            "verdict": verdict, "rounds": 9, "clusters": 3, "kinds": {"own": 1, "r1": 1, "r4": 1},
+            "actions": {"stay": 1, "move": moves, "choose": 1}, "mixed": 0, "empty": 0, "moves": moves,
+            "r4Host": r4, "activeToMove": list(active), "signs": ["round.source"], "filesToLink": 20, "jurorsToAdd": 1,
+            "onlyMovedJurors": 0, "unusedInSource": 20, "rowsToMove": 3}
+
+
+REUSE = {
+    "scan": {"jobId": 900, "status": "done", "phase": "scan", "done": 286, "total": 286,
+             "createdAt": "2026-11-20T10:00:00Z", "finishedAt": "2026-11-20T10:02:00Z"},
+    "resultsOf": 900,
+    "totals": {"scanned": 286, "clean": 270, "verdicts": {"choose": 1, "move": 2}, "r4Hosts": 1,
+               "kinds": {"own": 3, "r1": 3, "r4": 3}, "actions": {"stay": 3, "move": 3, "choose": 3}, "mixed": 0,
+               "empty": 0, "moves": 3, "activeToMove": 1, "filesToLink": 60, "jurorsToAdd": 3, "onlyMovedJurors": 0,
+               "unusedInSource": 60, "rowsToMove": 9},
+    "contests": [summary(535, moves=1, name="Wiki Loves Earth\x1b[2J", year=2022, country="Philippines"),
+                 summary(466, verdict="choose", moves=2, active=[1900], r4=True)],
+}
+
+CLUSTER = {"index": 2, "identity": "Wiki Loves Earth 2026 in Bhutan", "kind": "r4", "action": "move", "mixed": False,
+           "empty": False, "disagreements": [], "activeRounds": [1900],
+           "target": {"seriesId": None, "seriesName": "Wiki Loves Earth in Bhutan", "seriesType": "wle", "place": "bt",
+                      "year": 2026, "contests": []},
+           "buckets": {"matching": 965, "foreign": 0, "unclassified": 0},
+           "signals": {"s1Year": 2026, "s2": [{"identity": "Wiki Loves Earth 2026 in Bhutan", "files": 965}],
+                       "s2ManyCountries": False, "s3Year": 2026, "s4From": None, "s4To": None, "s5": [],
+                       "s5r": [{"round": 1900, "source": "Category:Images from Wiki Loves Earth 2026 in Bhutan",
+                                "identity": "Wiki Loves Earth 2026 in Bhutan"}], "s6": []},
+           "jurors": {"total": 1, "toAdd": 1, "deleted": 0, "protectedAccounts": 0, "conflict": 0, "already": 0,
+                      "notHostMembers": 0, "inOtherClusters": 0},
+           "runners": {"total": 1, "hostAdmins": 1}, "votes": 0, "comments": 0, "jobs": 1,
+           "rounds": [{"id": 1900, "number": 48, "status": "active", "active": True, "category": None, "files": 965,
+                       "jurors": 1, "votes": 0, "comments": 0, "jobs": 1}]}
+
+REUSE_CONTEST = {"contest": contest(466, "Wiki Loves Earth", 2020, "Nepal"), "verdict": "choose",
+                 "identity": "Wiki Loves Earth 2020 in Nepal", "national": True, "r4Host": True, "signs": ["round.source"],
+                 "eras": True, "moves": 8, "jurorsToAdd": 3, "onlyMovedJurors": 1, "unusedInSource": 7000,
+                 "clusters": [dict(CLUSTER, index=1, identity="Wiki Loves Earth 2020 in Nepal", kind="own", action="stay",
+                                   target=None, activeRounds=[]),
+                              CLUSTER,
+                              dict(CLUSTER, index=3, action="choose", disagreements=["s2:country"], activeRounds=[])]}
+
+
+class ReuseTest(unittest.TestCase):
+    def test_no_scan_points_to_roots_page(self):
+        lines = diag.reuse_lines({"scan": None, "totals": None, "contests": []})
+        self.assertIn("/admin/contests/reuse", lines[0])
+        self.assertEqual(lines[-1], "wlxjury-diag reuse")
+
+    def test_the_totals_then_the_most_demanding_contests_cleaned_and_the_first_as_next(self):
+        lines = diag.reuse_lines(REUSE)
+        self.assertEqual(lines[0], "Reuse scan #900: done, pass 2 of 2 (reports), 286 of 286 contests, "
+                                   "finished 2026-11-20T10:02:00Z")
+        self.assertEqual(lines[1], "286 contests scanned, 270 with nothing to report; choose 1, move 2")
+        self.assertIn("3 moves, 1 R4 hosts, 1 active rounds to move", lines[3])
+        self.assertTrue(lines[4].startswith("CHOOSE 466 Wiki Loves Earth 2020 Nepal: 3 clusters (move 2, choose 1, stay 1), "
+                                            "2 moves, active 1900 [R4 host]"))
+        self.assertTrue(lines[5].startswith("MOVE   535 Wiki Loves Earth [2J 2022 Philippines"))
+        self.assertFalse(any("\x1b" in line for line in lines))
+        self.assertEqual(lines[-1], "wlxjury-diag reuse 466")
+
+    def test_a_running_scan_shows_its_progress_and_the_last_finished_scans_results(self):
+        running = dict(REUSE, scan=dict(REUSE["scan"], jobId=901, status="running", phase="eras", done=12,
+                                        finishedAt=None))
+        lines = diag.reuse_lines(running)
+        self.assertEqual(lines[0], "Reuse scan #901: running, pass 1 of 2 (eras), 12 of 286 contests")
+        self.assertEqual(lines[1], "The results below are scan #900's, the latest finished.")
+        self.assertEqual(lines[-1], "wlxjury-diag reuse 466")
+        first = dict(running, resultsOf=None, totals=None, contests=[])
+        self.assertEqual(diag.reuse_lines(first)[-2:], ["No finished scan yet: the totals come with the first.",
+                                                       "wlxjury-diag reuse"])
+
+    def test_a_contests_clusters_then_the_verbose_command(self):
+        lines = diag.reuse_contest_lines(REUSE_CONTEST)
+        self.assertEqual(lines[0], "Contest 466: Wiki Loves Earth 2020 Nepal: CHOOSE, 3 clusters, 8 moves, 3 jurors to add, "
+                                   "7000 files left to moved rounds only [R4 host]")
+        self.assertEqual(lines[2], "   2 rounds 1900 (1): MOVE r4 Wiki Loves Earth 2026 in Bhutan -> Wiki Loves Earth in Bhutan "
+                                   "2026 (a new contest); files 965/0/0, jurors 1 [active 1900]")
+        self.assertIn("[disagree s2:country]", lines[3])
+        self.assertEqual(lines[-1], "wlxjury-diag reuse 466 --verbose")
+        verbose = diag.reuse_contest_lines(REUSE_CONTEST, verbose=True)
+        self.assertTrue(any("S5r 1900: Category:Images from Wiki Loves Earth 2026 in Bhutan" in line for line in verbose))
+        self.assertTrue(any("jurors: 1 to add, 0 deleted" in line for line in verbose))
+        self.assertEqual(verbose[-1], "wlxjury-diag contest 466")
+
+    def test_the_command_reads_the_scan_or_the_contest(self):
+        api = FakeApi({"diagnostics/reuse": REUSE, "diagnostics/reuse/466": REUSE_CONTEST})
+        with redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(diag.main(["reuse"], api=api), 0)
+            self.assertEqual(diag.main(["reuse", "466", "--verbose"], api=api), 0)
+        self.assertEqual(api.calls, [("diagnostics/reuse", None), ("diagnostics/reuse/466", None)])
+        self.assertIn("wlxjury-diag contest 466", out.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

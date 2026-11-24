@@ -1,0 +1,112 @@
+@(
+        user: db.scalikejdbc.User,
+        scan: Option[services.jobs.Job],
+        done: Option[services.jobs.Job],
+        state: Option[services.series.ReuseScanState],
+        series: Map[Long, String]
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@import services.series.ReuseReport.{Action, Kind, Verdict}
+@* Root's reuse dry-run report (contest series plan §4.3, CY-0; ReuseReportController.list): the
+   latest scan's progress (`scan`), and the latest finished scan's (`done`, its `state`) totals and
+   the contests it reports, each linked to its own report; "Scan every contest" queues the scan.
+   Nothing here moves a round *@
+@verdictClass(v: String) = @{ v match {
+    case Verdict.Choose => "text-bg-warning"
+    case Verdict.Move => "text-bg-primary"
+    case Verdict.Leave => "text-bg-secondary"
+    case _ => "text-bg-light"
+} }
+@mainAdmin("reuse.title", user, user.getId) {
+    <nav aria-label="@Messages("series.breadcrumb")"><ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="@routes.ContestController.list()">@Messages("contests")</a></li>
+        <li class="breadcrumb-item"><a href="@routes.SeriesController.list()">@Messages("series.title")</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@Messages("reuse.title")</li>
+    </ol></nav>
+    <h1 class="h3">@Messages("reuse.title")</h1>
+    <p class="text-body-secondary" id="reuse-help">@Messages("reuse.help")</p>
+    @for(m <- flash.get("success")) {<div class="alert alert-success" role="status" id="reuse-flash">@m</div>}
+    @for(m <- flash.get("error")) {<div class="alert alert-warning" role="alert" id="reuse-flash">@m</div>}
+
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3" id="reuse-scan">
+        <form method="post" action="@routes.ReuseReportController.scan()" data-submit-once="true">
+            @csrfField()
+            <button type="submit" class="btn btn-primary" id="reuse-scan-button"><i class="bi bi-search" aria-hidden="true"></i> @Messages("reuse.scan")</button>
+        </form>
+        <span class="text-body-secondary" id="reuse-scan-status">@scan match {
+            case None => {@Messages("reuse.scan.none")}
+            case Some(job) => {@defining(services.series.ReuseScanHandler.pass(services.series.ReuseScanHandler.stateOf(job))) { p =>
+                @Messages("reuse.scan.status", job.id.toString, Messages("health.job.status." + job.status), p._1, p._2, p._3)}
+                @for(at <- job.finishedAt) { · @Messages("reuse.scan.finished", services.diagnostics.ContestHealth.time(at))}
+                <a href="@routes.JobController.status(job.id)">@Messages("reuse.scan.job")</a>}
+        }</span>
+        @for(d <- done; if !scan.exists(_.id == d.id)) {
+            <span class="text-body-secondary" id="reuse-scan-results">@Messages("reuse.scan.results", d.id.toString, d.finishedAt.map(services.diagnostics.ContestHealth.time).getOrElse(""))</span>
+        }
+    </div>
+
+    @for(st <- state; if st.scanned > 0) {
+        @defining(st.contests) { reported =>
+        @defining(reported.flatMap(_.kinds.toSeq).groupMapReduce(_._1)(_._2)(_ + _)) { kinds =>
+        @defining(reported.flatMap(_.actions.toSeq).groupMapReduce(_._1)(_._2)(_ + _)) { actions =>
+        <h2 class="h4">@Messages("reuse.totals")</h2>
+        <div class="table-responsive"><table class="table table-sm w-auto" id="reuse-totals">
+            <tbody>
+                <tr><th scope="row">@Messages("reuse.totals.scanned")</th><td data-total="scanned">@st.scanned</td></tr>
+                <tr><th scope="row">@Messages("reuse.totals.clean")</th><td data-total="clean">@st.clean</td></tr>
+                @for(v <- Verdict.All.filterNot(_ == Verdict.Clean)) {
+                    <tr><th scope="row">@Messages("reuse.totals.verdict", Messages("reuse.verdict." + v))</th><td data-total="verdict-@v">@reported.count(_.verdict == v)</td></tr>
+                }
+                <tr><th scope="row">@Messages("reuse.totals.r4hosts")</th><td data-total="r4hosts">@reported.count(_.r4Host)</td></tr>
+                <tr><th scope="row">@Messages("reuse.totals.clusters")</th><td>
+                    @for(k <- Kind.All; n <- kinds.get(k)) {<span class="me-3" data-total="kind-@k">@Messages("reuse.kind." + k): @n</span>}
+                </td></tr>
+                <tr><th scope="row">@Messages("reuse.totals.actions")</th><td>
+                    @for(a <- Action.All; n <- actions.get(a)) {<span class="me-3" data-total="action-@a">@Messages("reuse.action." + a): @n</span>}
+                </td></tr>
+                <tr><th scope="row">@Messages("reuse.totals.flags")</th><td>
+                    <span class="me-3" data-total="mixed">@Messages("reuse.flag.mixed"): @reported.map(_.mixed).sum</span>
+                    <span class="me-3" data-total="empty">@Messages("reuse.flag.empty"): @reported.map(_.empty).sum</span>
+                </td></tr>
+                <tr><th scope="row">@Messages("reuse.totals.moves")</th><td data-total="moves">@reported.map(_.moves).sum</td></tr>
+                <tr><th scope="row">@Messages("reuse.totals.active")</th><td data-total="active">@reported.map(_.activeToMove.size).sum</td></tr>
+                <tr><th scope="row">@Messages("reuse.totals.files")</th><td data-total="files">@reported.map(_.filesToLink).sum</td></tr>
+                <tr><th scope="row">@Messages("reuse.totals.jurors")</th><td data-total="jurors">@reported.map(_.jurorsToAdd).sum</td></tr>
+                <tr><th scope="row">@Messages("reuse.totals.unused")</th><td data-total="unused">@reported.map(_.unusedInSource).sum</td></tr>
+                <tr><th scope="row">@Messages("reuse.totals.rows")</th><td data-total="rows">@reported.map(_.rowsToMove).sum</td></tr>
+            </tbody>
+        </table></div>
+
+        <h2 class="h4 mt-4">@Messages("reuse.contests")</h2>
+        @if(reported.isEmpty) {
+            <p id="reuse-contests-none">@Messages("reuse.contests.none")</p>
+        } else {
+            <div class="table-responsive"><table class="table table-sm table-hover align-middle" id="reuse-contests">
+                <thead><tr>
+                    <th scope="col">@Messages("reuse.col.contest")</th>
+                    <th scope="col">@Messages("series")</th>
+                    <th scope="col">@Messages("reuse.col.verdict")</th>
+                    <th scope="col">@Messages("reuse.col.clusters")</th>
+                    <th scope="col">@Messages("reuse.col.moves")</th>
+                    <th scope="col">@Messages("reuse.col.signs")</th>
+                </tr></thead>
+                <tbody>
+                @for(c <- reported.sortBy(c => (Verdict.All.indexOf(c.verdict), -c.moves, c.contestId))) {
+                    <tr class="reuse-contest" data-contest="@c.contestId" data-verdict="@c.verdict">
+                        <td><a href="@routes.ReuseReportController.contest(c.contestId)">@c.name @c.year @c.country</a>
+                            <span class="text-body-secondary">#@c.contestId</span>
+                            @if(c.retired) {<span class="badge text-bg-secondary">@Messages("contest.retired")</span>}
+                            @if(c.r4Host) {<span class="badge text-bg-info">@Messages("reuse.r4host")</span>}</td>
+                        <td>@c.seriesId.flatMap(series.get).getOrElse("—")</td>
+                        <td><span class="badge @verdictClass(c.verdict)">@Messages("reuse.verdict." + c.verdict)</span></td>
+                        <td>@c.clusters
+                            <span class="text-body-secondary small">(@{Action.All.flatMap(a => c.actions.get(a).map(n => s"${Messages("reuse.action." + a)} $n")).mkString(", ")})</span></td>
+                        <td>@c.moves@if(c.activeToMove.nonEmpty) { <span class="badge text-bg-danger" title="@Messages("reuse.active.help")">@Messages("reuse.active", c.activeToMove.mkString(", "))</span>}</td>
+                        <td class="small">@{c.signs.map(k => Messages("series.reuse.kind." + k)).mkString(", ")}</td>
+                    </tr>
+                }
+                </tbody>
+            </table></div>
+        }
+        }}}
+    }
+}

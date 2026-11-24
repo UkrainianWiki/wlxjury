@@ -1,0 +1,125 @@
+@(
+        user: db.scalikejdbc.User,
+        report: services.series.ReuseReport.Report,
+        series: Map[Long, String]
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@import services.series.ReuseReport.{Action, Kind}
+@* One contest's reuse dry-run report (contest series plan §4.1–§4.3, CY-0;
+   ReuseReportController.contest): its clusters, each with its rounds, signals, proposed identity
+   and target, buckets, jurors and the people who ran it, and the proposed action. It moves nothing *@
+@contest = @{ report.contest }
+@actionClass(a: String) = @{ a match {
+    case Action.Choose => "text-bg-warning"
+    case Action.Move => "text-bg-primary"
+    case Action.Leave => "text-bg-secondary"
+    case _ => "text-bg-light"
+} }
+@role(r: Option[String]) = @{ r.fold(Messages("reuse.member.none"))(x => Messages("role." + x)) }
+@mainAdmin("reuse.contest.title", user, user.getId) {
+    <nav aria-label="@Messages("series.breadcrumb")"><ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="@routes.ContestController.list()">@Messages("contests")</a></li>
+        <li class="breadcrumb-item"><a href="@routes.ReuseReportController.list()">@Messages("reuse.title")</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@contest.fullName</li>
+    </ol></nav>
+    <h1 class="h3">@Messages("reuse.contest.title") <span class="text-body-secondary">@contest.fullName #@contest.getId</span>
+        @if(contest.retired) {<span class="badge text-bg-secondary align-middle">@Messages("contest.retired")</span>}</h1>
+    <p class="text-body-secondary" id="reuse-contest-help">@Messages("reuse.contest.help")</p>
+
+    <dl class="row" id="reuse-contest-facts">
+        <dt class="col-sm-3">@Messages("reuse.col.verdict")</dt>
+        <dd class="col-sm-9" id="reuse-contest-verdict" data-verdict="@report.verdict">@Messages("reuse.verdict." + report.verdict)
+            @if(report.r4Host) {<span class="badge text-bg-info">@Messages("reuse.r4host")</span>}</dd>
+        <dt class="col-sm-3">@Messages("reuse.identity")</dt>
+        <dd class="col-sm-9">@report.identity.describe@if(!report.national) { (@Messages("reuse.international"))}</dd>
+        <dt class="col-sm-3">@Messages("series")</dt>
+        <dd class="col-sm-9">@contest.seriesId.flatMap(series.get).getOrElse("—")
+            <a class="ms-2" href="@routes.SeriesController.contestPage(contest.getId)">@Messages("series.contest.title")</a></dd>
+        <dt class="col-sm-3">@Messages("reuse.summary")</dt>
+        <dd class="col-sm-9" id="reuse-contest-summary">@Messages("reuse.summary.text", report.clusters.size, report.moveCount, report.jurorsToAdd, report.onlyMovedJurors, report.unusedInSource)</dd>
+    </dl>
+    @if(!report.eras) {<p class="alert alert-info" id="reuse-no-eras">@Messages("reuse.eras.none")</p>}
+
+    <h2 class="h4">@Messages("series.reuse")</h2>
+    @if(report.signs.isEmpty) {
+        <p id="contest-reuse-none">@Messages("series.reuse.none")</p>
+    } else {
+        @reuseSigns(report.signs, "contest-reuse")
+    }
+
+    <h2 class="h4 mt-4">@Messages("reuse.clusters")</h2>
+    @for(c <- report.clusters) {
+        <section class="card mb-3 reuse-cluster" id="reuse-cluster-@c.index" data-action="@c.action" data-kind="@c.kind" aria-labelledby="reuse-cluster-@c.index-title">
+            <div class="card-header d-flex flex-wrap gap-2 align-items-center">
+                <h3 class="h5 mb-0" id="reuse-cluster-@c.index-title">@if(c.roundIds.size == 1) {@Messages("reuse.cluster.one", c.index, c.roundIds.head.toString)} else {@Messages("reuse.cluster", c.index, c.roundIds.head.toString, c.roundIds.last.toString)}</h3>
+                <span class="badge @actionClass(c.action)">@Messages("reuse.action." + c.action)</span>
+                <span class="badge text-bg-light border">@Messages("reuse.kind." + c.kind)</span>
+                @if(c.mixed) {<span class="badge text-bg-warning">@Messages("reuse.flag.mixed")</span>}
+                @if(c.empty) {<span class="badge text-bg-secondary">@Messages("reuse.flag.empty")</span>}
+                @if(c.activeRounds.nonEmpty) {<span class="badge text-bg-danger" title="@Messages("reuse.active.help")">@Messages("reuse.active", c.activeRounds.mkString(", "))</span>}
+            </div>
+            <div class="card-body">
+                <dl class="row mb-2">
+                    <dt class="col-sm-3">@Messages("reuse.identity")</dt>
+                    <dd class="col-sm-9 reuse-identity">@c.identity.describe</dd>
+                    @for(t <- c.target) {
+                        <dt class="col-sm-3">@Messages("reuse.target")</dt>
+                        <dd class="col-sm-9 reuse-target">@t.seriesId match {
+                            case Some(id) => {<a href="@routes.SeriesController.series(id)">@t.seriesName</a>}
+                            case None => {@Messages("reuse.target.new.series", t.seriesName)}
+                        }, @t.year
+                        @if(t.contests.isEmpty) { · @Messages("reuse.target.new.contest")} else { · @Messages("reuse.target.contests")
+                            @for(id <- t.contests) {<a href="@routes.SeriesController.contestPage(id)">#@id</a> }}</dd>
+                    }
+                    @if(c.disagreements.nonEmpty) {
+                        <dt class="col-sm-3">@Messages("reuse.disagree")</dt>
+                        <dd class="col-sm-9 reuse-disagreements">@{c.disagreements.map(d => Messages("reuse.disagree." + d.part, Messages("reuse.signal." + d.signal))).mkString("; ")}</dd>
+                    }
+                    <dt class="col-sm-3">@Messages("reuse.buckets")</dt>
+                    <dd class="col-sm-9 reuse-buckets">@Messages("reuse.buckets.text", c.buckets.matching, c.buckets.foreign, c.buckets.unclassified)</dd>
+                    <dt class="col-sm-3">@Messages("reuse.counts")</dt>
+                    <dd class="col-sm-9">@Messages("reuse.counts.text", c.rounds.size, c.jurors.size, c.votes, c.comments, c.jobs)</dd>
+                </dl>
+
+                <h4 class="h6">@Messages("reuse.signals")</h4>
+                <ul class="small reuse-signals">
+                    <li>@Messages("reuse.signal.s5r"): @if(c.signals.s5r.isEmpty) {—} else {@{c.signals.s5r.map { case (r, source, _) => s"$r: $source" }.mkString("; ")}}</li>
+                    <li>@Messages("reuse.signal.s2"): @if(c.signals.s2.isEmpty) {—} else {@{c.signals.s2.map { case (id, n) => s"${id.describe} ($n)" }.mkString("; ")}}@if(c.signals.s2ManyCountries) { · @Messages("reuse.signal.s2.many")}</li>
+                    <li>@Messages("reuse.signal.s1"): @c.signals.s1Year.fold("—")(_.toString)</li>
+                    <li>@Messages("reuse.signal.s3"): @c.signals.s3Year.fold("—")(_.toString)</li>
+                    <li>@Messages("reuse.signal.s4"): @{c.signals.s4Years.fold("—") { case (a, b) => if (a == b) a.toString else s"$a–$b" }}</li>
+                    <li>@Messages("reuse.signal.s5"): @if(c.signals.s5.isEmpty) {—} else {@c.signals.s5.mkString("; ")}</li>
+                    <li>@Messages("reuse.signal.s6"): @if(c.signals.s6.isEmpty) {—} else {@{c.signals.s6.map { case (i, n) => Messages("reuse.signal.s6.shared", n, i) }.mkString("; ")}}</li>
+                </ul>
+
+                <div class="table-responsive"><table class="table table-sm small mb-2 reuse-rounds">
+                    <thead><tr>
+                        <th scope="col">@Messages("reuse.col.round")</th><th scope="col">@Messages("reuse.col.name")</th>
+                        <th scope="col">@Messages("reuse.col.status")</th><th scope="col">@Messages("reuse.col.category")</th>
+                        <th scope="col" class="text-end">@Messages("reuse.col.files")</th><th scope="col" class="text-end">@Messages("reuse.col.jurors")</th>
+                        <th scope="col" class="text-end">@Messages("reuse.col.votes")</th><th scope="col" class="text-end">@Messages("reuse.col.comments")</th>
+                    </tr></thead>
+                    <tbody>
+                    @for(r <- c.rounds) {
+                        <tr data-round="@r.id"><td><a href="@routes.RoundController.editRound(Some(r.id), contest.getId)">@r.id</a> <span class="text-body-secondary">(@r.number)</span></td>
+                            <td>@r.name.getOrElse("")</td><td>@Messages("health.status." + r.status)</td><td>@r.category.getOrElse("")</td>
+                            <td class="text-end">@r.files</td><td class="text-end">@r.jurors</td><td class="text-end">@r.votes</td><td class="text-end">@r.comments</td></tr>
+                    }
+                    </tbody>
+                </table></div>
+
+                @if(c.jurors.nonEmpty) {
+                    <h4 class="h6">@Messages("reuse.jurors")</h4>
+                    <ul class="small reuse-jurors">
+                        @for(j <- c.jurors) {
+                            <li data-skip="@j.skip.getOrElse("")">@j.name · @Messages("reuse.member.host", role(j.hostRole))@if(j.otherClusters.nonEmpty) { · @Messages("reuse.member.other", j.otherClusters.mkString(", "))}@for(t <- j.targetRole) { · @Messages("reuse.member.target", Messages("role." + t))}@for(s <- j.skip) { · <strong>@Messages("reuse.skip." + s)</strong>}</li>
+                        }
+                    </ul>
+                }
+                @if(c.runners.nonEmpty) {
+                    <h4 class="h6">@Messages("reuse.runners")</h4>
+                    <p class="small reuse-runners">@{c.runners.map(r => s"${r.name} (${role(r.hostRole)}${if (r.root) ", " + Messages("role.root") else ""})").mkString("; ")}</p>
+                }
+            </div>
+        </section>
+    }
+}

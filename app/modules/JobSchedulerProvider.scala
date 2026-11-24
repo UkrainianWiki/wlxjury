@@ -29,12 +29,13 @@ class JobSchedulerProvider @Inject() (
     roundImageCheck: RoundImageCheckHandler,
     authorNormalize: AuthorNormalizeHandler,
     roundRebalance: RoundRebalanceHandler,
-    accountJoin: services.AccountJoinHandler
+    accountJoin: services.AccountJoinHandler,
+    reuseScan: services.series.ReuseScanHandler
 ) extends Provider[JobScheduler] {
 
   lazy val get: JobScheduler = {
     val scheduler = new JobScheduler(Seq(roundDistribution, imageImport, monumentLists, roundImageCheck, authorNormalize,
-      roundRebalance, accountJoin), JobScheduler.Settings.from(config))
+      roundRebalance, accountJoin, reuseScan), JobScheduler.Settings.from(config))
     scheduler.start()
     lifecycle.addStopHook(() => Future.successful(scheduler.stop()))
     scheduler

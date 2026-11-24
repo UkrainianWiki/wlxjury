@@ -9,7 +9,6 @@
         names: Map[Long, String],
         liveRound: Option[String]
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
-@import services.series.ContestReuse
 @* Root's page of a contest's series and status (contest series plan §3.1, §3.5; SeriesController
    .contestPage): its series and previous year's contest; assign it, move it or take it out of its
    series (the live series of its type and country listed first); retire or un-retire it; the
@@ -42,19 +41,10 @@
     @if(reuse.isEmpty) {
         <p id="contest-reuse-none">@Messages("series.reuse.none")</p>
     } else {
-        <ul id="contest-reuse">
-            @for(sign <- reuse) {
-                <li class="contest-reuse-sign">@sign match {
-                    case ContestReuse.OtherSource(source, named) => {@Messages("series.reuse.source", source, named.describe)}
-                    case ContestReuse.RoundSource(round, source, named) => {@Messages("series.reuse.round.source", round.toString, source, named.describe)}
-                    case ContestReuse.RoundFiles(round, named, files, of) => {@Messages("series.reuse.round.files", round.toString, files, of, named.describe)}
-                    case ContestReuse.RoundCountries(countries) => {@Messages("series.reuse.round.countries", countries.mkString(", "))}
-                    case ContestReuse.RoundSpan(first, last) => {@Messages("series.reuse.span", first.toString, last.toString)}
-                }</li>
-            }
-        </ul>
+        @reuseSigns(reuse, "contest-reuse")
         <p class="text-body-secondary small">@Messages("series.reuse.help")</p>
     }
+    <p><a href="@routes.ReuseReportController.contest(contest.getId)" id="contest-reuse-report-link">@Messages("reuse.contest.link")</a></p>
 
     <h2 class="h4 mt-4" id="contest-series-set-heading">@Messages(if (current.isEmpty) "series.contest.assign" else "series.contest.move")</h2>
     <form method="post" action="@routes.SeriesController.setContestSeries(contest.getId)" id="contest-series-set" class="row g-2 align-items-end" data-submit-once="true" aria-labelledby="contest-series-set-heading">

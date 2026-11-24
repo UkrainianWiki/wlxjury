@@ -22,7 +22,8 @@ class ApiEndpointScopeSpec extends PlaySpecification with PlayTestDb {
         val openToReadOnly = endpoints.filter(e => e.info.name.exists(ApiAuth.LocalReadEndpoints.contains))
         openToReadOnly must haveSize(ApiAuth.LocalReadEndpoints.size)
         openToReadOnly.filterNot(_.method.contains(Method.GET)).flatMap(_.info.name) must beEmpty
-        ApiAuth.LocalReadEndpoints === Set("listContests", "getContest", "contestHealth", "recentActivity")
+        ApiAuth.LocalReadEndpoints === Set("listContests", "getContest", "contestHealth", "recentActivity",
+          "reuseReport", "reuseContest")
       }
     }
   }

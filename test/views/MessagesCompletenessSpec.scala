@@ -119,7 +119,13 @@ class MessagesCompletenessSpec extends Specification {
     "health.job.status." -> Seq("queued", "running", "done", "failed", "cancelled"), // contestHealth.scala.html
     "health.status." -> db.scalikejdbc.Round.Status.All,                            // contestHealth.scala.html
     "series.assign.left." -> services.series.SeriesProposals.Reasons,               // series/seriesProposals.scala.html
-    "series.reuse.kind." -> services.series.ContestReuse.Kinds                      // ContestReuse.kindKey
+    "series.reuse.kind." -> services.series.ContestReuse.Kinds,                     // ContestReuse.kindKey
+    "reuse.verdict." -> services.series.ReuseReport.Verdict.All,                    // series/reuseReport, reuseContest
+    "reuse.kind." -> services.series.ReuseReport.Kind.All,                          // series/reuseReport, reuseContest
+    "reuse.action." -> services.series.ReuseReport.Action.All,                      // series/reuseReport, reuseContest
+    "reuse.disagree." -> services.series.ReuseReport.DisagreementParts,             // series/reuseContest
+    "reuse.signal." -> services.series.ReuseReport.SignalCodes,                     // series/reuseContest
+    "reuse.skip." -> services.series.ReuseReport.SkipReasons                        // series/reuseContest
   )
 
   /** Keys looked up from a value rather than a literal. */

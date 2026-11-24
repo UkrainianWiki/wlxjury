@@ -1,0 +1,16 @@
+@(reuse: Seq[services.series.ContestReuse.Sign], id: String)(implicit messages: Messages)
+@import services.series.ContestReuse
+@* The inline reuse check's signs of a contest (contest series plan §3.2), as a list: the contest's
+   series page and its reuse report show them *@
+<ul id="@id">
+    @for(sign <- reuse) {
+        <li class="contest-reuse-sign">@sign match {
+            case ContestReuse.OtherSource(source, named) => {@Messages("series.reuse.source", source, named.describe)}
+            case ContestReuse.RoundSource(round, source, named) => {@Messages("series.reuse.round.source", round.toString, source, named.describe)}
+            case ContestReuse.RoundFiles(round, named, files, of) => {@Messages("series.reuse.round.files", round.toString, files, of, named.describe)}
+            case ContestReuse.RoundCountries(countries) => {@Messages("series.reuse.round.countries", countries.mkString(", "))}
+            case ContestReuse.RoundSpan(first, last) => {@Messages("series.reuse.span", first.toString, last.toString)}
+            case ContestReuse.Report(job, verdict) => {@Messages("series.reuse.report", job.toString, Messages("reuse.verdict." + verdict))}
+        }</li>
+    }
+</ul>

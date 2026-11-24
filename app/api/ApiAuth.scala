@@ -41,6 +41,8 @@ object ApiAuth extends Logging {
     "getContest"     -> true,
     "contestHealth"  -> true,
     "recentActivity" -> true,
+    "reuseReport"    -> true,
+    "reuseContest"   -> true,
     "createContest"  -> false,
     "updateContest"  -> false
   )
