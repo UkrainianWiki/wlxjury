@@ -12,7 +12,11 @@ Deploy dates come from production's migration history, as described at the end.
 
 ## Unreleased (on master, not yet deployed)
 
-Merged to master after the 26.11.14 build.
+Nothing merged to master after the 26.11.15 build yet.
+
+## 26.11.15 (built 2026-11-24, deploy pending)
+
+Built from master after `26.11.14`; it migrates the database, so the deploy takes a backup.
 
 **Features**
 
@@ -38,6 +42,7 @@ Merged to master after the 26.11.14 build.
 
 **Fixes**
 
+- Thumbnails load as you scroll, and pages no longer jump while they load (#150).
 - Background count refresh no longer waits behind long jobs.
 - Contests page no longer shows an unused round number.
 - API: `currentRound` removed from the contest JSON (it was always null).
@@ -76,7 +81,6 @@ Built from `26.11.13.1`; no migration.
 
 **Fixes**
 
-- Thumbnails load as you scroll, and pages no longer jump while they load (#150).
 - A started round's criteria can no longer be changed.
 - Round statistics no longer break on a juror with no status.
 - First keys typed in a saved category or import source are no longer lost.
