@@ -105,8 +105,9 @@ change the decision; estimate the runtime before a matrix (bench/README lists ea
 **2.2 Paired and interleaved.** A and B in one warmed JVM on the same inputs, order alternating
 (A, B, B, A per block, or AB/BA pairs), every pair's results compared for equality (B10 added
 that: a wrong count had been timed unnoticed). *Examples:* `RegionCountPairedBenchmark`,
-`RoundImageBenchmark`; `WritePathReadBenchmark` (15 interleaved pairs after 2 warm-ups) is on
-`ukwikidev/write-path-investigation` only.
+`RoundImageBenchmark`; `WritePathReadBenchmark` (15 interleaved pairs after 2 warm-ups) is kept in the
+private archive only (commit `6628fd07` on the archived write-path investigation branch): it was written
+for the schema before the round counts (V89) and the dropped single-column indexes (V100).
 
 **2.3 Same settings for both, like with like.** SQL debug logging off
 (`-Dscalikejdbc.global.loggingSQLAndTime.enabled=false`), recorded for both variants; the same
@@ -214,17 +215,14 @@ the tests keep 1 MB so an oversized batch fails there first, `DistributeImagesBa
 sizes of db §5.5–§5.6; a new pool, dispatcher or worker count is checked against that budget, and
 MariaDB's `max_connections` (151) must allow the app's pool.
 
-**4.6 MariaDB memory.** Production: a 128 MiB buffer pool. The recommendation is 256 MiB
-(`bench/cnf/recommended-60-wlxjury.cnf`, updated 2026-10-11 after the background-distribution
-comparison; `docs/deployment.md` says the same): on fresh full-data suites 128M → 256M cut
-concurrent buffer-pool reads 9,843 → 49 and raised MariaDB's peak sampled RSS 268 → 392 MiB,
-everything else as production. There is no 512M measurement on that release; the earlier
-512 MiB recommendation (reads 8,660 → 24 on an older release) is in the history record. The
-Gatling fixture's container uses 512 MiB, a separate choice (§1.2); the test server
-(`SharedTestDb.forTests`) 128 MiB on a tmpfs data directory (`size=1g`, so a runaway spec fails
-with "table is full" instead of filling the Docker VM), 48 MiB redo log, no doublewrite, flush at
-commit off: fast, not durable, never a benchmark. Keep production's durable flushing
-(`innodb_flush_log_at_trx_commit=1`).
+**4.6 MariaDB memory.** Production: a 128 MiB buffer pool; recommended 256 MiB
+(`bench/cnf/recommended-60-wlxjury.cnf`: concurrent buffer-pool reads 9,843 → 49, MariaDB peak
+sampled RSS 268 → 392 MiB, everything else as production; the measurements are in
+[history/2026-10-07-prod-like-benchmark.md](../history/2026-10-07-prod-like-benchmark.md)). The
+Gatling fixture's container: 512 MiB (§1.2). The test server (`SharedTestDb.forTests`): 128 MiB on
+a tmpfs data directory (`size=1g`, so a runaway spec fails with "table is full" instead of filling
+the Docker VM), 48 MiB redo log, no doublewrite, flush at commit off: fast, not durable, never a benchmark. Keep
+production's durable flushing (`innodb_flush_log_at_trx_commit=1`).
 
 **4.7 Native memory.** `MALLOC_ARENA_MAX=2` and `-XX:MaxDirectMemorySize=128m` bound what the heap
 setting doesn't (glibc arenas, Netty buffers); `-XX:NativeMemoryTracking=summary` on the bench

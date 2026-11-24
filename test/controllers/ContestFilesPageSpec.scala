@@ -135,8 +135,8 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         addFiles(f.contest, (3L to 18L).map(id => image(id, s"File$id")))
         val (_, page) = get(s"/contest/${f.contest.getId}/files", f.admin)
 
-        // the reappearing top bar (a trial, main.css wlx-topbar-reappears, topbar.js)
-        page must contain("""<body class="gallery wlx-topbar-reappears">""")
+        // the sticky top bar (main.css wlx-topbar-sticky, topbar.js)
+        page must contain("""<body class="gallery wlx-topbar-sticky">""")
         page must contain("javascripts/topbar.js")
         page must contain("""<div id="gallery" class="gallery mw-gallery-traditional" style="display:none;" data-jury="false" data-binary="false">""")
         // the tiles, which gallery-init.js starts: no votes on them, and no tile-votes.js
@@ -516,7 +516,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         val (code, page) = get(s"/contest/${f.contest.getId}/files/3", f.organizer)
 
         code === OK
-        // the large view: no reappearing top bar (it has no navbar)
+        // the large view: no sticky top bar (it has no navbar)
         page must contain("""<body class="gallery h-100">""")
         page must not contain "javascripts/topbar.js"
         page must contain("""id="large_image"""")
