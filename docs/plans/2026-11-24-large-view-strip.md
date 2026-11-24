@@ -72,9 +72,12 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
   first 5 without the current file, in the list's order. Reusing `RoundList` keeps every
   rule: round membership, region, the `distributing` flag, `mayViewRound`, and the viewed juror's
   votes only.
-- **Link target:** a strip link opens the file in the juror's **current list** (`list.largeUrl`),
-  not the monument-filtered list: simpler, and Back and the next/previous keys stay consistent
-  with the list the juror was in.
+- **Link target:** a strip link opens the file in the **monument-filtered list**,
+  `list.withMonument(Some(id)).withFilter(All).largeUrl(file)`, the same list the strip's own
+  query reads. A sibling may not be in the juror's current list (another region or filter), and
+  `showRound` would redirect such a file to the list's first page; in the monument list it is
+  always found, and Back, next and previous then walk the monument's files. The strip only ever
+  shows files of the viewed juror's own list in this round, never files not assigned to them.
 - **The juror's rate on each:** the list's rows are `ImageWithRating` with the viewed juror's vote
   already (as the gallery tile has); shown as the tiles' rate chip (stars, or a yes/no mark;
   none when unrated).
@@ -87,7 +90,7 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
   `vote_jury_round_rate_mon_page_idx` on 10.6: `jury_id, round_id, rate, monument_id, page_id,
   voted_at`, V48/V85/V99); `vote_round_monument_id_idx` covers the round plus monument side
   (V82 rename, kept by V100) and `images` has V33's monument index. Needs an `EXPLAIN` on a
-  production-sized copy before building (open question 5); expected a few ms, none when off.
+  production-sized copy before building (EXPLAIN first, decided, Q5); expected a few ms, none when off.
 - **Authorization:** only through `RoundList` for the viewed juror (`viewAs`): a juror gets their
   own rates; an organizer viewing juror X gets X's (only a juror of the round,
   `User.isRoundJuror`, else 404 as now); `asUserId == 0` shows the files without a per-juror
@@ -130,7 +133,7 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
 
 - **Mobile:** the side column stacks below the file on a phone, and up to 5 thumbnails cost data.
   On a narrow screen the section stays collapsed and the images get `loading="lazy"`, so a closed
-  section loads nothing. Whether to hide the strip on phones outright is open question 7.
+  section loads nothing.
 - **Gallery tiles plan:** G-1a moves the strip to `stripSrcSet` (250/330 px sources) under the
   standard scheme: the displayed 150 x 120 box stays and only the srcset moves after G-1a. Until
   then it is today's `srcSet`. No new displayed size; the window-size cookie does not affect the strip (its
@@ -143,7 +146,7 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
 
 ## 4. Where the choice lives, and the default
 
-- **Per account** (recommended): one column, like #129's coarse screen profile (values `off`,
+- **Per account**: one column, like #129's coarse screen profile (values `off`,
   `next`, `monument`, `recent`; a migration at the next free number). It follows the juror across
   contests and devices. The setting is the **viewer's own**; the data is the viewed juror's (an
   organizer viewing as juror X uses the organizer's setting with X's data). Any signed-in role may
@@ -184,6 +187,7 @@ About 3-4 days, after the F1 to F3 PR and the prefetch PR.
   `asUserId == 0` shows no per-juror rate (recent: the option is absent for organizers and in the all-jurors view); a juror passing another
   `asUserId` gets what `GalleryService.viewAs` decides today; a file of another round is never
   listed; a round still `distributing` lists nothing for jurors.
+- A sibling outside the current filter or region opens in the monument list (no redirect to the list's first page); a sibling the viewed juror does not have is never listed.
 - No monument id, WLE, and a monument with one file give the empty section with its note; "recent" is not offered to admins and organizers (in any view), and a juror's own view lists only their votes.
 - The setting's POST refuses a bad value and a missing CSRF token, tested with the filter on
   (`CsrfTestApp.withCsrfApp`); it changes only the caller's own account.
@@ -214,7 +218,7 @@ clean timing (`docs/performance/2026-11-24-large-view-timing.md`, PR #142) measu
 at -84 to -103 ms at 80 ms latency and -347 to -369 ms at 8 Mbit/s per vote step.
 
 
-## 7. Decisions of the maintainer (2026-11-24) and open questions
+## 7. Decisions (2026-11-24)
 
 Decided:
 - **Q2:** all four options (Off, Next, Same monument, My recent votes).
