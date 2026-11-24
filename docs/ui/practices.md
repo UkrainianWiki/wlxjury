@@ -113,7 +113,7 @@ page shows none (a gallery, the large view) (`HeadingsViewSpec`).
 reads its paths from `#large-keys`' `data-vote-key-*` and `data-key-*`: Space/Del to select or
 reject, digits to rate; Up/Down, Page Up/Down, Home/End and Esc to move); each vote posts to a
 path on this host, never an `http://` URL. *Why:* `Call.absoluteURL` behind the HTTPS proxy
-redirected the POST to a GET and lost the vote (`views.LargeViewControllerSpec` guards it). Back after a vote shows the stored vote (pages are `no-store`; `ui_checks.py`).
+redirected the POST to a GET and lost the vote (`views.LargeViewControllerSpec` guards it). Back after a vote shows the stored vote (pages are `no-store`; `ui_checks.py`). Decision (the maintainer, 2026-11-24): keep `no-store`; the back/forward cache stays off for the vote pages.
 
 ## 5. The screenshot harness
 
