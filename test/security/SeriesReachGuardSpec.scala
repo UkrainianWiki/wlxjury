@@ -115,7 +115,9 @@ class SeriesReachGuardSpec extends Specification {
       (counts("""\bseriesAccountContests\b""".r).keySet -- Set(
         "app/db/scalikejdbc/SeriesAdminJdbc.scala", "app/controllers/Secured.scala", "app/controllers/UserController.scala",
         "app/services/AccountSearch.scala", "app/services/ShareLinkService.scala", "app/services/AccountTokenService.scala",
-        "app/services/AccountJoin.scala")) must beEmpty
+        "app/services/AccountJoin.scala",
+        // a series admin grants only members of the contests their grant reaches (review of #140, L5)
+        "app/services/series/SeriesAdmins.scala")) must beEmpty
     }
   }
 
@@ -131,23 +133,49 @@ class SeriesReachGuardSpec extends Specification {
   "a grant waiting for root's confirmation" should {
 
     /** The writes and lookups of unrevoked grants in SeriesAdminJdbc, which may read `revoked_at IS
-      * NULL` alone: the live condition's definition, the key's row (`unrevoked`), revoke, markToConfirm,
-      * confirm, setFromYear, a join's `unrevokedOf` and `moveTo`. Every read of live grants goes
-      * through `liveGrantCondition` (in `liveJoin`).
+      * NULL` alone: the two conditions' definitions, the key's row (`unrevoked`), revoke,
+      * markToConfirm, confirm, setFromYear, a join's `unrevokedOf` and `moveTo`, and the links a revoke
+      * revokes (`revokeLinksIn`, on account_token).
       */
-    val UnrevokedSites = 8
+    val UnrevokedSites = 10
 
-    "count exactly as a revoked one: every read of live grants takes liveGrantCondition" in {
-      val sql = counts("""(?:FROM|JOIN)\s+series_admin\b""".r).keySet
-      val condition = counts("""liveGrantCondition\(""".r)
+    /** SeriesAdminJdbc's readers of live grants (access: through `liveJoin`, whose condition is
+      * `liveGrantCondition`) and of held grants (protection: `heldGrantCondition`).
+      */
+    val LiveReaders = Seq("liveBySeries", "liveInSeries", "liveByUser", "seriesContests", "liveForContest")
+    val HeldReaders = Seq("hasHeldGrant", "withHeldGrant")
+
+    /** The SQL literals (triple-quoted) of `text` that name the `series_admin` table, any case. */
+    def queries(text: String): Seq[String] =
+      "(?s)\"\"\"(.*?)\"\"\"".r.findAllMatchIn(text).map(_.group(1))
+        .filter(q => "(?i)\\b(?:from|join|update)\\s+series_admin\\b".r.findFirstIn(q).nonEmpty).toSeq
+
+    /** Each `def` of SeriesAdminJdbc with its body (up to the next `def`). */
+    def methods(text: String): Map[String, String] =
+      "(?s)\\bdef (\\w+)(.*?)(?=\\n\\s*(?:/\\*\\*|def |private |val |\\}\\s*$))".r.findAllMatchIn(text)
+        .map(m => m.group(1) -> m.group(2)).toMap
+
+    "count exactly as a revoked one for access: every query reading grants elsewhere takes a shared condition" in {
+      val sql = counts("""(?i)(?:from|join)\s+series_admin\b""".r).keySet
+      val others = SourceScan.files("app", ".scala").filter(f => sql(f.path.replaceFirst("^.*?(app/)", "$1")) &&
+        !f.path.endsWith("SeriesAdminJdbc.scala"))
       (sql === Set("app/db/scalikejdbc/SeriesAdminJdbc.scala", "app/db/scalikejdbc/CoiMembers.scala",
         "app/db/scalikejdbc/AccountJoinRequestJdbc.scala")) and
-        // the other readers use the shared condition, never a bare revoked_at test
-        (condition.keySet === sql) and
-        (counts("""sa\.revoked_at IS NULL""".r).keySet -- Set("app/db/scalikejdbc/SeriesAdminJdbc.scala") must beEmpty) and
-        (counts("""revoked_at IS NULL""".r).get("app/db/scalikejdbc/SeriesAdminJdbc.scala") must beSome(UnrevokedSites)) and
-        (SourceScan.files("app/db/scalikejdbc", ".scala").find(_.path.endsWith("SeriesAdminJdbc.scala")).exists(s =>
-          """private val liveJoin\s*=\s*sqls\"\"\"[^"]*liveGrantCondition""".r.findFirstIn(s.text).nonEmpty) must beTrue)
+        // per query: COI reads access (live grants), join proposals read protection (held grants)
+        forall(others.flatMap(f => queries(f.text).map(f.path -> _))) { case (file, q) =>
+          (file -> ("(liveGrantCondition|heldGrantCondition)\\(".r.findFirstIn(q).nonEmpty)) === (file -> true)
+        } and
+        (counts("""(?i)sa\.revoked_at\s+IS\s+NULL""".r).keySet -- Set("app/db/scalikejdbc/SeriesAdminJdbc.scala") must beEmpty) and
+        (counts("""(?i)revoked_at\s+IS\s+NULL""".r).get("app/db/scalikejdbc/SeriesAdminJdbc.scala") must beSome(UnrevokedSites))
+    }
+
+    "read live grants in SeriesAdminJdbc through liveJoin, and held grants through heldGrantCondition" in {
+      val text = SourceScan.files("app/db/scalikejdbc", ".scala").find(_.path.endsWith("SeriesAdminJdbc.scala")).map(_.text)
+        .getOrElse("")
+      val defs = methods(text)
+      ("(?s)private val liveJoin\\s*=\\s*sqls[^\\n]*\\n?[^\\n]*liveGrantCondition".r.findFirstIn(text) must beSome) and
+        forall(LiveReaders)(m => (m -> defs.get(m).exists(_.contains("$liveJoin"))) === (m -> true)) and
+        forall(HeldReaders)(m => (m -> defs.get(m).exists(_.contains("heldGrantCondition("))) === (m -> true))
     }
   }
 

@@ -95,7 +95,8 @@ class SeriesAdminsSpec extends Specification with TestDb with BeforeAll with Bef
       (SeriesAdmins.grant(r, s, b.getId, None, None) === Left("series.admin.refused.retired")) and
         (SeriesAdminJdbc.liveByUser(a.getId) must beEmpty) and
         (SeriesAdminJdbc.seriesContests(a.getId) must beEmpty) and
-        (User.isProtectedTarget(a) must beFalse)
+        // a grant that may come back still protects its holder (the security review of #140, M1)
+        (User.isProtectedTarget(a) must beTrue)
     }
 
     "come back to confirm when its series is un-retired: nothing until root confirms it, the granter first" in {
@@ -113,7 +114,8 @@ class SeriesAdminsSpec extends Specification with TestDb with BeforeAll with Bef
       (waiting.map(_.toConfirm) === Seq(true, true, true)) and
         (SeriesAdminJdbc.liveBySeries(s) must beEmpty) and (SeriesAdminJdbc.liveForContest(c26.getId) must beEmpty) and
         (SeriesAdminJdbc.seriesContests(a.getId) must beEmpty) and (SeriesAdminJdbc.seriesAccountContests(a.getId) must beEmpty) and
-        (User.isProtectedTarget(a) must beFalse) and (User.seriesProtected(a.getId, c26.getId) must beFalse) and
+        // access none, protection kept (M1)
+        (User.isProtectedTarget(a) must beTrue) and
         (CoiMembers.forContest(c26.getId).get("Admin A") must beNone) and
         (SeriesAdmins.grant(a, s, d.getId, None, None) === Left("series.admin.refused.not.admin")) and
         (SeriesAdmins.grant(r, s, a.getId, None, None) === Left("series.admin.refused.existing")) and
@@ -280,12 +282,99 @@ class SeriesAdminsSpec extends Specification with TestDb with BeforeAll with Bef
       UserContestJdbc.delete(a.getId, c26.getId) // no real row in the contest any more
       val coi = CoiMembers.forContest(c26.getId)
       val protectedNow = User.isProtectedTarget(a)
-      val seriesProtected = User.seriesProtected(a.getId, c26.getId) -> User.seriesProtected(a.getId, other.getId)
       ContestSeries.retireSeries(s, r.getId, None) must beRight
       (coi.get("Series Admin A").map(_.role) must beSome(CoiMembers.SeriesAdminRole)) and
-        (protectedNow must beTrue) and (seriesProtected === (true -> false)) and
+        (protectedNow must beTrue) and
         (CoiMembers.forContest(c26.getId).get("Series Admin A") must beNone) and
-        (User.isProtectedTarget(a) must beFalse)
+        (User.isProtectedTarget(a) must beTrue) and {
+          SeriesAdmins.revoke(r, grantIdOf(a, s), chain = false) must beRight
+          User.isProtectedTarget(a) must beFalse
+        }
+    }
+  }
+
+  "the security review of #140" should {
+
+    "refuse root's confirmation once the account changed while its grant waited (M1)" in {
+      val r = root
+      val (s, Seq(c26)) = seriesWith(r, thisYear)
+      val a = member("a", c26)
+      SeriesAdmins.grant(r, s, a.getId, None, None) must beRight
+      ContestSeries.retireSeries(s, r.getId, None) must beRight
+      AccountChangeJdbc.create(a.getId, r.getId, None, AccountChangeJdbc.Email, Some("old@example.org"), Some("new@example.org"))
+      ContestSeries.unretireSeries(s, r.getId, None) must beRight
+      (SeriesAdmins.confirm(r, grantIdOf(a, s)) === Left("series.admin.refused.account.changed")) and
+        (SeriesAdminJdbc.liveBySeries(s) must beEmpty)
+    }
+
+    "revoke, not move, a joined account's grant that waits or whose series is retired (M1)" in {
+      val r = root
+      val (s, Seq(c26)) = seriesWith(r, thisYear)
+      val (t, Seq(d26)) = seriesWith(r, thisYear)
+      val kept = member("kept", c26)
+      val joined = member("joined", c26)
+      join(joined, d26, "organizer")
+      SeriesAdmins.grant(r, s, joined.getId, None, None) must beRight
+      SeriesAdmins.grant(r, t, joined.getId, None, None) must beRight
+      ContestSeries.retireSeries(s, r.getId, None) must beRight
+      ContestSeries.unretireSeries(s, r.getId, None) must beRight // s's grant waits
+      ContestSeries.retireSeries(t, r.getId, None) must beRight   // t retired
+      val (moved, revoked) = DB.localTx(implicit tx => SeriesAdmins.onJoin(r, kept.getId, joined.getId))
+      ((moved, revoked) === ((0, 2))) and
+        (SeriesAdminJdbc.findBySeries(s).filter(g => g.userId == kept.getId && !g.revoked) must beEmpty) and
+        (SeriesAdminJdbc.findBySeries(t).filter(g => g.userId == kept.getId && !g.revoked) must beEmpty)
+    }
+
+    "keep root's revocation across a join: only root grants the kept account again (L3)" in {
+      val r = root
+      val (s, Seq(c26)) = seriesWith(r, thisYear)
+      val (a, x, k) = (member("a", c26), member("x", c26), member("k", c26))
+      SeriesAdmins.grant(r, s, a.getId, None, None) must beRight
+      SeriesAdmins.grant(r, s, x.getId, None, None) must beRight
+      SeriesAdmins.revoke(r, grantIdOf(x, s), chain = false) must beRight
+      DB.localTx(implicit tx => SeriesAdmins.onJoin(r, k.getId, x.getId))
+      (SeriesAdmins.grant(a, s, k.getId, None, None) === Left("series.admin.refused.root.revoked")) and
+        (SeriesAdmins.grant(r, s, k.getId, None, None) must beRight)
+    }
+
+    "refuse a series admin granting a protected account; root may (L4)" in {
+      val r = root
+      val (s, Seq(c26)) = seriesWith(r, thisYear)
+      val (t, Seq(d26)) = seriesWith(r, thisYear)
+      val a = member("a", c26)
+      val other = member("other", d26)
+      join(other, c26, "jury")
+      SeriesAdmins.grant(r, s, a.getId, None, None) must beRight
+      SeriesAdmins.grant(r, t, other.getId, None, None) must beRight
+      (SeriesAdmins.grant(a, s, other.getId, None, None) === Left("series.admin.refused.protected")) and
+        (SeriesAdmins.grant(r, s, other.getId, None, None) must beRight)
+    }
+
+    "list as candidates only members of the contests the granter reaches, never protected accounts (L5)" in {
+      val r = root
+      val (s, Seq(c19, cLast, cNow)) = seriesWith(r, 2019, thisYear - 1, thisYear)
+      val (t, Seq(d26)) = seriesWith(r, thisYear)
+      val a = member("a", cNow)
+      val old = member("old", c19)
+      val inJuryContest = member("inJury", cLast)
+      val reached = member("reached", cNow)
+      val otherAdmin = member("otherAdmin", d26)
+      join(otherAdmin, cNow, "organizer")
+      SeriesAdmins.grant(r, s, a.getId, Some(thisYear - 1), None) must beRight
+      SeriesAdmins.grant(r, t, otherAdmin.getId, None, None) must beRight
+      join(a, cLast, "jury") // CA7: cLast is out of a's reach
+      (SeriesAdmins.candidates(a, s).map(_.getId).toSet === Set(reached.getId)) and
+        (SeriesAdmins.grant(a, s, old.getId, None, None) === Left("series.admin.refused.not.member")) and
+        (SeriesAdmins.grant(a, s, inJuryContest.getId, None, None) === Left("series.admin.refused.not.member")) and
+        (SeriesAdmins.candidates(r, s).map(_.getId).toSet === Set(old.getId, inJuryContest.getId, reached.getId))
+    }
+
+    "show every grant once in root's tree, a granted_by cycle's too (L1)" in {
+      def g(id: Long, user: Long, by: Long) =
+        db.scalikejdbc.SeriesGrant(id, 1L, user, 2025, by, java.time.Instant.EPOCH, None, None, revokedByRoot = false, None)
+      // A (user 10, by root 1) added B (11), B added C (12); a join of A into C left B and C adding each other
+      val tree = controllers.SeriesController.grantTree(Seq(g(1, 11, 12), g(2, 12, 11), g(3, 13, 1)))
+      (tree.map(_._1.id).sorted === Seq(1L, 2L, 3L)) and (tree.count(_._2 == 0) === 2)
     }
   }
 

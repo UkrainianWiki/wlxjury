@@ -206,21 +206,26 @@ class SeriesAdminAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "accept an invitation issued under a grant, and refuse its role once the grant is revoked" in {
+    "accept an invitation issued under a grant, give no role once the grant gives nothing, and revoke it with the grant" in {
       testDbApp { implicit app =>
         val f = fixture()
         def invitee(name: String) = User.create(User(name, s"$name${System.nanoTime()}@example.org", None))
-        val (first, second) = (invitee("First"), invitee("Second"))
-        val (_, t1) = AccountTokenService.create(first.getId, AccountTokenJdbc.Invitation, first.email, f.cNow.id,
-          Some(User.JURY_ROLE), f.sa.id)
-        val (_, t2) = AccountTokenService.create(second.getId, AccountTokenJdbc.Invitation, second.email, f.cNow.id,
-          Some(User.JURY_ROLE), f.sa.id)
+        val (first, second, third) = (invitee("First"), invitee("Second"), invitee("Third"))
+        def invite(u: User) = AccountTokenService.create(u.getId, AccountTokenJdbc.Invitation, u.email, f.cNow.id,
+          Some(User.JURY_ROLE), f.sa.id)._2
+        val (t1, t2, t3) = (invite(first), invite(second), invite(third))
         val accepted = AccountTokenService.acceptPasswordLink(t1, services.PasswordHasher.default.hash("secret-1"))
-        SeriesAdmins.revoke(f.root, SeriesAdminJdbc.liveGrant(f.sa.getId, f.s).get.id, chain = false) must beRight
-        val refused = AccountTokenService.acceptPasswordLink(t2, services.PasswordHasher.default.hash("secret-2"))
-        (accepted must beRight) and (refused must beRight) and
+        // the series retired: the grant gives nothing, so the inviter may no longer give the role (mayGrant)
+        ContestSeries.retireSeries(f.s, f.root.getId, None) must beRight
+        val noRole = AccountTokenService.acceptPasswordLink(t2, services.PasswordHasher.default.hash("secret-2"))
+        // revoked: the links it made in the series' contests stop working (the security review of #140, L2)
+        SeriesAdmins.revoke(f.root, SeriesAdminJdbc.findBySeries(f.s).find(_.userId == f.sa.getId).get.id,
+          chain = false) must beRight
+        val dead = AccountTokenService.acceptPasswordLink(t3, services.PasswordHasher.default.hash("secret-3"))
+        (accepted must beRight) and (noRole must beRight) and (dead must beLeft) and
           (UserContestJdbc.find(first.getId, f.cNow.getId).map(_.role) must beSome(User.JURY_ROLE)) and
-          (UserContestJdbc.find(second.getId, f.cNow.getId) must beNone)
+          (UserContestJdbc.find(second.getId, f.cNow.getId) must beNone) and
+          (UserContestJdbc.find(third.getId, f.cNow.getId) must beNone)
       }
     }
   }
@@ -269,18 +274,41 @@ class SeriesAdminAuthorizationSpec extends PlaySpecification with PlayTestDb {
 
   "the role writes' series rule" should {
 
-    "refuse a non-root actor making a series admin a Juror or lowering their Admin row in the series' contests, not elsewhere" in {
+    "leave a protected account's roles to root, in every contest, its grant waiting too (M2, M1)" in {
       testDbApp { implicit app =>
         val f = fixture()
         UserContestJdbc.createMembership(f.sa.getId, f.cLast.getId, "admin")
         UserContestJdbc.createMembership(f.sa.getId, f.tNow.getId, "organizer")
         val inLast = User.findInContest(f.sa.getId, f.cLast.getId).get
         val inT = User.findInContest(f.sa.getId, f.tNow.getId).get
-        (UserController.seriesRoleWriteAllowed(f.admin, inLast, User.JURY_ROLE) must beFalse) and
-          (UserController.seriesRoleWriteAllowed(f.admin, inLast, "organizer") must beFalse) and
-          (UserController.seriesRoleWriteAllowed(f.admin, inLast, User.ADMIN_ROLE) must beTrue) and
-          (UserController.seriesRoleWriteAllowed(f.saT, inT, User.JURY_ROLE) must beTrue) and
-          (UserController.seriesRoleWriteAllowed(f.root, inLast, User.JURY_ROLE) must beTrue)
+        val plain = User.findInContest(f.juror.getId, f.cNow.getId).get
+        val writes = (UserController.protectedRoleWriteAllowed(f.admin, inLast) must beFalse) and
+          (UserController.protectedRoleWriteAllowed(f.saT, inT) must beFalse) and
+          (UserController.protectedRoleWriteAllowed(f.admin, plain) must beTrue) and
+          (UserController.protectedRoleWriteAllowed(f.root, inLast) must beTrue)
+        // a grant waiting for root's confirmation protects too: no email change by a contest admin
+        ContestSeries.retireSeries(f.s, f.root.getId, None) must beRight
+        ContestSeries.unretireSeries(f.s, f.root.getId, None) must beRight
+        val c = new UserController(app.injector.instanceOf[play.api.mvc.ControllerComponents],
+          app.injector.instanceOf[services.UserService], app.injector.instanceOf[modules.BlockingExecutionContext])
+        writes and (UserController.protectedRoleWriteAllowed(f.admin, inLast) must beFalse) and
+          (c.canEditAccount(Secured.inCurrentContest(User.findById(f.admin.getId).get, Some(f.cNow.getId.toString)), f.sa) must beFalse)
+      }
+    }
+  }
+
+  "a revoked series admin's links" should {
+
+    "stop working: the password and share links they made in the series' contests are revoked (L2)" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val (linkId, _) = AccountTokenService.create(f.juror.getId, AccountTokenJdbc.PasswordReset, f.juror.email, f.cNow.id,
+          None, f.sa.id, shared = true)
+        val (elsewhereId, _) = AccountTokenService.create(f.juror.getId, AccountTokenJdbc.PasswordReset, f.juror.email,
+          f.tNow.id, None, f.sa.id, shared = true)
+        SeriesAdmins.revoke(f.root, SeriesAdminJdbc.liveGrant(f.sa.getId, f.s).get.id, chain = true) must beRight
+        val live = AccountTokenJdbc.findByUser(f.juror.getId).map(t => t.id -> t.live).toMap
+        (live.get(linkId) must beSome(false)) and (live.get(elsewhereId) must beSome(true))
       }
     }
   }
