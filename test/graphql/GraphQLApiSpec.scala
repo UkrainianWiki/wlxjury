@@ -200,6 +200,12 @@ class GraphQLApiSpec extends PlaySpecification with PlayTestDb {
         val text = route(app, FakeRequest(POST, "/api/graphql").withSession(signedIn(rootEmail): _*)
           .withTextBody(Json.obj("query" -> meQuery).toString)).get
         status(text) === UNSUPPORTED_MEDIA_TYPE
+        forall(Seq("application/graphql", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x")) { ct =>
+          val result = route(app, FakeRequest(POST, "/api/graphql").withSession(signedIn(rootEmail): _*)
+            .withHeaders(CONTENT_TYPE -> ct).withBody(org.apache.pekko.util.ByteString(meQuery))).get
+          status(result) === UNSUPPORTED_MEDIA_TYPE
+          codes(result) === Seq("BAD_INPUT")
+        }
 
         val oversized = postJson(app, Json.obj("query" -> ("{ me { id } }" + " " * 70000)), session = signedIn(rootEmail))
         status(oversized) === REQUEST_ENTITY_TOO_LARGE
@@ -329,6 +335,33 @@ class GraphQLApiSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "hide a deleted round from everyone, and keep listing a round to its juror whose own row is stopped" in {
+      testDbApp { app =>
+        val r = setUp()
+        DB.autoCommit(implicit s => sql"UPDATE round SET deleted_at = NOW() WHERE id = ${r.others10}".update.apply())
+        roundIds(ask(app, organizerEmail, "10")) === Seq(r.open10, r.distributing10)
+        roundIds(ask(app, rootEmail, "10")) === Seq(r.open10, r.distributing10)
+        // the gallery's round menu lists it too (User.roundsJuredIn: a round_user row, active or not)
+        DB.autoCommit(implicit s =>
+          sql"UPDATE round_user SET active = FALSE WHERE round_id = ${r.open10} AND user_id = ${userId(jurorEmail)}".update.apply())
+        roundIds(ask(app, jurorEmail, "10")) === Seq(r.open10)
+      }
+    }
+
+    "log one denial line per request, however many fields are denied, all carrying its reference" in {
+      testDbApp { app =>
+        setUp()
+        val (result, lines) = withAuthzLog(done(gql(app,
+          "{ a: contest(id: 20) { id } b: contest(id: 20) { id } c: contest(id: 30) { id } }", as = Some(jurorEmail))))
+        codes(result) === Seq("NOT_FOUND", "NOT_FOUND", "NOT_FOUND")
+        val references = errors(result).map(e => (e \ "extensions" \ "reference").as[String]).distinct
+        references must haveSize(1)
+        lines.filter(_.contains("authorization_denied ")) must haveSize(1)
+        lines.filter(_.contains("authorization_denied_repeated")) === Seq(s"WARN authorization_denied_repeated ref=${references.head} " +
+          "more=2 resource=\"api:graphql\" auth=session")
+      }
+    }
+
     "judge each contest in its own role, two contests in one request" in {
       testDbApp { app =>
         val r = setUp()
@@ -451,6 +484,15 @@ class GraphQLApiSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "refuse an unused fragment bomb before validation" in {
+      testDbApp { app =>
+        setUp()
+        val unused = (0 until 40).map(i => s"fragment F$i on Query { ...F${i + 1} ...F${i + 1} }").mkString(" ") +
+          " fragment F40 on Query { me { id } } query { me { id } }"
+        messages(gql(app, unused, as = Some(jurorEmail))) === Seq("unused_fragment")
+      }
+    }
+
     "refuse a fragment bomb of spreads only, and count a limit given as a variable" in {
       testDbApp { app =>
         setUp()
@@ -556,6 +598,97 @@ class GraphQLApiSpec extends PlaySpecification with PlayTestDb {
         val result = postJson(app, Json.obj("query" -> meQuery), Seq(HOST -> "evil.example.com", bearer(tokenOf(rootEmail))))
         status(result) === BAD_REQUEST
         (json(result) \ "error").as[String] === "bad_request"
+      }
+    }
+  }
+
+  "a series admin" should {
+    "get no contest or round through a series grant alone (no derived role in slice 1)" in {
+      testDbApp { app =>
+        createContests(10)
+        val root = User.create(User("Root", rootEmail, None, isRoot = true))
+        val thisYear = java.time.Year.now().getValue
+        val series = services.series.ContestSeries.createSeriesTx("Nepal", Some("wlm"), Some("Nepal"), None, root.getId)
+          .toOption.get
+        val contests = Seq(thisYear - 1, thisYear).map { year =>
+          val c = db.scalikejdbc.ContestJuryJdbc.create(None, "Wiki Loves Monuments", year, "Nepal")
+          services.series.ContestSeries.setSeries(c.getId, Some(series), root.getId, None)
+          c.getId
+        }
+        val now = contests.last
+        val admin = User.create(User("Series admin", "series@example.com", None, Set("organizer"), Some("hash"), Some(now)))
+        services.series.SeriesAdmins.grant(root, series, admin.getId, None, None) must beRight
+        UserContestJdbc.delete(admin.getId, now)
+        Round.create(Round(None, 1, Some("r"), now, active = true))
+
+        def asSeriesAdmin(query: String) =
+          postJson(app, Json.obj("query" -> query), session = Seq(Secured.UserName -> admin.email,
+            Secured.CurrentContestId -> now.toString))
+        contestIds(asSeriesAdmin("{ contests { items { id } } }")) === Nil
+        forall(contests) { id =>
+          val result = asSeriesAdmin(s"{ contest(id: $id) { id rounds { id } } }")
+          (json(result) \ "data" \ "contest").get === JsNull
+          codes(result) === Seq("NOT_FOUND")
+        }
+        ((json(asSeriesAdmin(meQuery)) \ "data" \ "me") \ "email").get === JsNull
+      }
+    }
+  }
+
+  "the per-account limit of runs" should {
+    "answer 429 while the account has its runs in flight, a token's and a session's together" in {
+      testDbApp { app =>
+        setUp()
+        val controller = app.injector.instanceOf[GraphQLController]
+        val juror = userId(jurorEmail)
+        controller.inFlight.tryAcquire(juror) must beTrue
+        controller.inFlight.tryAcquire(juror) must beTrue
+        try {
+          val session = gql(app, meQuery, as = Some(jurorEmail))
+          status(session) === TOO_MANY_REQUESTS
+          (json(session) \ "error").as[String] === "too_many_requests"
+          codes(session) === Seq("TOO_MANY_REQUESTS")
+          status(gql(app, meQuery, headers = Seq(bearer(tokenOf(jurorEmail))))) === TOO_MANY_REQUESTS
+          status(gql(app, meQuery, as = Some(organizerEmail))) === OK // another account
+        } finally {
+          controller.inFlight.release(juror)
+          controller.inFlight.release(juror)
+        }
+        status(gql(app, meQuery, as = Some(jurorEmail))) === OK
+        controller.inFlight.inFlight(juror) === 0
+      }
+    }
+  }
+
+  "the endpoint's timeout" should {
+    implicit val cfg: Map[String, String] = Map("wlxjury.graphql.timeout" -> "1 second")
+
+    "answer a run held up past it with a referenced timeout, the run's slot freed when it ends" in {
+      db.scalikejdbc.SharedTestDb.init()
+      db.scalikejdbc.SharedTestDb.truncateAll()
+      testDbApp { app =>
+        setUp()
+        val token = tokenOf(rootEmail)
+        val controller = app.injector.instanceOf[GraphQLController]
+        controller.settings.timeout === 1.second
+        // another connection holds the round table: the run's read of the rounds waits for it
+        val lock = scalikejdbc.ConnectionPool.borrow()
+        val held = try {
+          lock.createStatement().execute("LOCK TABLES round WRITE")
+          val result = gql(app, "{ contest(id: 10) { rounds { id } } }", headers = Seq(bearer(token)))
+          status(result) === OK
+          messages(result) === Seq("timeout")
+          (errors(result).head \ "extensions" \ "reference").as[String] must beMatching("[0-9a-f]{8}")
+          controller.inFlight.inFlight(userId(rootEmail)) === 1
+        } finally {
+          lock.createStatement().execute("UNLOCK TABLES")
+          lock.close()
+        }
+        val deadline = 15.seconds.fromNow
+        while (controller.inFlight.inFlight(userId(rootEmail)) > 0 && deadline.hasTimeLeft()) Thread.sleep(50)
+        controller.inFlight.inFlight(userId(rootEmail)) === 0
+        roundIds(gql(app, "{ contest(id: 10) { rounds { id } } }", headers = Seq(bearer(token)))) must haveSize(3)
+        held
       }
     }
   }

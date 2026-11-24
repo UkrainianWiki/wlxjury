@@ -29,7 +29,8 @@ final case class GraphQLSettings(
     maxBodyBytes: Long,
     limits: QueryLimits.Limits,
     maxComplexity: Double,
-    timeout: FiniteDuration
+    timeout: FiniteDuration,
+    maxInFlightPerCaller: Int
 )
 
 object GraphQLSettings {
@@ -41,7 +42,8 @@ object GraphQLSettings {
     maxBodyBytes = 65536,
     limits = QueryLimits.Limits(maxDepth = 8, maxIntrospectionDepth = 15, maxAliases = 30, maxFields = 1000),
     maxComplexity = 5000,
-    timeout = FiniteDuration(20, "seconds")
+    timeout = FiniteDuration(20, "seconds"),
+    maxInFlightPerCaller = 2
   )
 
   def apply(configuration: Configuration): GraphQLSettings = {
@@ -56,7 +58,8 @@ object GraphQLSettings {
         maxFields = c.getOptional[Int]("maxFields").getOrElse(d.limits.maxFields)
       ),
       maxComplexity = c.getOptional[Double]("maxComplexity").getOrElse(d.maxComplexity),
-      timeout = c.getOptional[FiniteDuration]("timeout").getOrElse(d.timeout)
+      timeout = c.getOptional[FiniteDuration]("timeout").getOrElse(d.timeout),
+      maxInFlightPerCaller = c.getOptional[Int]("maxInFlightPerCaller").getOrElse(d.maxInFlightPerCaller)
     )
   }
 }
@@ -108,7 +111,13 @@ class GraphQLController @Inject() (
       Accumulator.done(failure(Results.MethodNotAllowed, "method_not_allowed", "method_not_allowed", Code.BadInput)
         .withHeaders("Allow" -> "POST"))
     else
-      Accumulator.flatten(blockingFuture(authorize(request)).map {
+      Accumulator.flatten(blockingFuture(authorize(request)).recover {
+        // the credentials couldn't be read (the database): a referenced server error, as GraphQL's
+        case NonFatal(e) =>
+          val reference = Secured.newReference()
+          logger.error(s"graphql_auth_error ref=$reference", e)
+          Left(failure(Results.InternalServerError, "server_error", "internal_error", Code.InternalError, Some(reference)))
+      }.map {
         case Left(result) => Accumulator.done(result)
         case Right(caller) =>
           if (!request.contentType.exists(_.equalsIgnoreCase("application/json")))
@@ -137,19 +146,31 @@ class GraphQLController @Inject() (
         }
     }
 
+  /** At most `maxInFlightPerCaller` runs per account at once ([[InFlightLimiter]]): the blocking
+    * pool is shared with the galleries and the statistics, so one caller can't fill it.
+    */
+  val inFlight = new InFlightLimiter(settings.maxInFlightPerCaller)
+
   /** Steps 4 to 6: the body read here; the rest on the blocking pool, within the timeout. */
   private def handle(caller: ApiAuth.Caller, request: RequestHeader, body: ByteString): Future[Result] =
     parseBody(body) match {
       case Left(key) => Future.successful(failure(Results.BadRequest, "bad_request", key, Code.BadInput))
       case Right(graphQLRequest) =>
-        val ctx = GraphQLContext(caller, request, settings.timeout.fromNow)
-        val work = blockingFuture {
-          // a task that waited for a thread past the deadline: its caller has had the timeout
-          if (ctx.deadline.isOverdue()) Future.successful(timedOut(ctx)) else process(ctx, graphQLRequest)
-        }.flatten.recover {
-          case NonFatal(e) => internalError(e)
+        val account = caller.user.getId
+        if (!inFlight.tryAcquire(account))
+          Future.successful(failure(Results.TooManyRequests, "too_many_requests", "too_many_requests", Code.TooManyRequests))
+        else {
+          val ctx = GraphQLContext(caller, request, settings.timeout.fromNow)
+          val work = blockingFuture {
+            // a task that waited for a thread past the deadline: its caller has had the timeout
+            if (ctx.deadline.isOverdue()) Future.successful(timedOut(ctx)) else process(ctx, graphQLRequest)
+          }.flatten.recover {
+            case NonFatal(e) => internalError(e)
+          }
+          // the slot is freed when the run ends, not when its caller gets the timeout
+          work.onComplete(_ => inFlight.release(account))
+          withTimeout(work, settings.timeout).recover { case _: TimeoutException => timedOut(ctx) }
         }
-        withTimeout(work, settings.timeout).recover { case _: TimeoutException => timedOut(ctx) }
     }
 
   /** The document: its nesting before parsing, the parse, one operation, a token's mutation refused,
@@ -202,10 +223,13 @@ class GraphQLController @Inject() (
           queryReducers = List(QueryReducer.rejectComplexQueries[GraphQLContext](settings.maxComplexity,
             (_, _) => TooComplex))
         )(blocking, JsonResultMarshaller, JsonInputUnmarshaller, ExecutionScheme.Default)
-          .map(json => Results.Ok(json))
+          .map { json =>
+            ctx.logRepeatedDenials()
+            Results.Ok(json)
+          }
           .recover {
             case e: QueryReducingError if e.cause == TooComplex => errorsOnly(error("query_too_complex", Code.BadInput))
-            case e: WithViolations                              => errorsOnly(e.violations.map(violationError): _*)
+            case e: WithViolations                              => errorsOnly(e.violations.take(MaxViolations).map(violationError): _*)
             case _: QueryAnalysisError                          => errorsOnly(error("invalid_query", Code.BadInput))
           }
     }
@@ -352,4 +376,28 @@ object GraphQLController {
     HandledException(message,
       Map("code" -> m.scalarNode(code, "String", Set.empty)) ++
         reference.map(r => "reference" -> m.scalarNode(r, "String", Set.empty)))
+}
+
+/** How many GraphQL runs each account has at once, at most `max` (`wlxjury.graphql.maxInFlightPerCaller`):
+  * a token and a session of the same account count together. A run holds its slot until it ends,
+  * past its caller's timeout too.
+  */
+final class InFlightLimiter(max: Int) {
+  private val running = new java.util.concurrent.ConcurrentHashMap[Long, Integer]()
+
+  /** Takes a slot for the account, if it has one free. */
+  def tryAcquire(account: Long): Boolean = {
+    var taken = false
+    running.compute(account, (_, n) => {
+      val now = if (n == null) 0 else n.intValue
+      if (now < max) { taken = true; Integer.valueOf(now + 1) } else n
+    })
+    taken
+  }
+
+  def release(account: Long): Unit =
+    running.computeIfPresent(account, (_, n) => if (n.intValue <= 1) null else Integer.valueOf(n.intValue - 1))
+
+  /** The account's runs now (for tests). */
+  def inFlight(account: Long): Int = Option(running.get(account)).fold(0)(_.intValue)
 }

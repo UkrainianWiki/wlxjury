@@ -22,7 +22,17 @@ final case class GraphQLContext(caller: ApiAuth.Caller, request: RequestHeader, 
     * each resolver that reads the database calls it first.
     */
   def checkDeadline(): Unit =
-    if (deadline.isOverdue()) throw GraphQLError("timeout", GraphQLError.Code.InternalError)
+    if (deadline.isOverdue()) {
+      val reference = Secured.newReference()
+      GraphQLContext.logger.info(s"graphql_deadline ref=$reference ${Secured.accountFields(request, Some(user))}")
+      throw GraphQLError("timeout", GraphQLError.Code.InternalError, Some(reference))
+    }
+
+  /** The request's first denial's reference, and how many more followed: one `security.authz` line
+    * per request, however many fields are denied ([[contestDenied]], [[logRepeatedDenials]]).
+    */
+  private val firstDenial = new java.util.concurrent.atomic.AtomicReference[String](null)
+  private val moreDenials = new java.util.concurrent.atomic.AtomicInteger(0)
 
   /** The caller is root (a caller check, not a target's: `User.isProtectedTarget` is for targets). */
   def callerIsRoot: Boolean = user.hasRole(User.ROOT_ROLE)
@@ -42,14 +52,38 @@ final case class GraphQLContext(caller: ApiAuth.Caller, request: RequestHeader, 
     else Option.when(there.contestId.contains(contestId) && there.contestRoles.exists(User.ACCESS_ROLES))(there)
   }
 
-  /** A contest the caller may not see, as a missing one ([[GraphQLError.notFound]]), logged as a
-    * denial on `security.authz` with the reference the error carries.
+  /** A contest the caller may not see, as a missing one ([[GraphQLError.notFound]]). The request's
+    * first denial is logged on `security.authz` with the reference the error carries; a later one
+    * carries the same reference and is counted ([[logRepeatedDenials]]), so that one query with many
+    * aliases writes one line, not one per field.
     */
-  def contestDenied(contest: ContestJury): GraphQLError = {
-    val reference = Secured.logDenial(user, request,
-      Secured.Denial.contest(contest.id, User.ACCESS_ROLES), caller.via.logFields)
-    GraphQLError.notFound(reference)
+  def contestDenied(contest: ContestJury): GraphQLError =
+    Option(firstDenial.get) match {
+      case Some(reference) =>
+        moreDenials.incrementAndGet()
+        GraphQLError.notFound(reference)
+      case None =>
+        val reference = Secured.logDenial(user, request,
+          Secured.Denial.contest(contest.id, User.ACCESS_ROLES), caller.via.logFields)
+        if (firstDenial.compareAndSet(null, reference)) GraphQLError.notFound(reference)
+        else {
+          moreDenials.incrementAndGet()
+          GraphQLError.notFound(firstDenial.get)
+        }
+    }
+
+  /** After the run: the denials after the first, counted on the first's line's logger. */
+  def logRepeatedDenials(): Unit = {
+    val more = moreDenials.get
+    if (more > 0)
+      GraphQLContext.authzLogger.warn(s"authorization_denied_repeated ref=${firstDenial.get} more=$more " +
+        s"resource=${Secured.logValue("api:graphql")} ${caller.via.logFields.map { case (k, v) => s"$k=$v" }.mkString(" ")}")
   }
+}
+
+object GraphQLContext {
+  private val logger = Logger("graphql")
+  private val authzLogger = Logger("security.authz")
 }
 
 /** An error a resolver or the endpoint answers with: a message key (never request or exception
@@ -67,6 +101,7 @@ object GraphQLError {
     val NotFound = "NOT_FOUND"
     val BadInput = "BAD_INPUT"
     val InternalError = "INTERNAL_ERROR"
+    val TooManyRequests = "TOO_MANY_REQUESTS"
   }
 
   private val logger = Logger("graphql")

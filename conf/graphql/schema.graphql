@@ -90,7 +90,7 @@ type Round {
   inReview: Boolean!
   kind: RoundKind!
 
-  "A rated round's highest number of stars; null otherwise."
+  "A rated round's highest number of stars a juror can give (a half-star 1-7 round draws 3); null otherwise."
   maxStars: Int
 
   "Whether a rated round takes half stars."

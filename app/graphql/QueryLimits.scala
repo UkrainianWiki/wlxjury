@@ -15,7 +15,10 @@ import sangria.ast
   *  - `maxAliases`: aliased fields;
   *  - `maxFields`: selections (fields, fragment spreads and inline fragments), each fragment
   *    counted again where it is spread, so that fragments spreading each other many times (a
-  *    "fragment bomb", with or without fields) stop the walk early.
+  *    "fragment bomb", with or without fields) stop the walk early;
+  *  - every definition is walked: only operations and fragments (`non_executable_definition`),
+  *    each fragment name once (`duplicate_fragment`) and each fragment spread from the operation
+  *    (`unused_fragment`), so that nothing reaches Sangria's validation unchecked.
   *
   * Before the document is parsed, [[nestingExceeds]] refuses brackets nested deeper than
   * [[MaxNesting]]: Sangria's parser recurses with no limit of its own, and a stack overflow is a
@@ -80,6 +83,8 @@ object QueryLimits {
 
     final class Stop(val key: String) extends RuntimeException(key, null, false, false)
 
+    val reached = scala.collection.mutable.Set.empty[String]
+
     def walk(selections: Vector[ast.Selection], depth: Int, intro: Option[(Int, Int)], visiting: Set[String]): Unit =
       selections.foreach { selection =>
         fields += 1
@@ -105,19 +110,27 @@ object QueryLimits {
         case i: ast.InlineFragment => walk(i.selections, depth, intro, visiting)
         case s: ast.FragmentSpread =>
           // a cycle is Sangria's validation error (NoFragmentCycles); here it only ends the walk
+          reached += s.name
           if (!visiting.contains(s.name))
             fragments.get(s.name).foreach(d => walk(d.selections, depth, intro, visiting + s.name))
         }
       }
 
-    try {
-      document.definitions.foreach {
-        case op: ast.OperationDefinition => walk(op.selections, 0, None, Set.empty)
-        case _                           => ()
+    val fragmentNames = document.definitions.collect { case f: ast.FragmentDefinition => f.name }
+    if (document.definitions.exists {
+          case _: ast.OperationDefinition | _: ast.FragmentDefinition => false
+          case _                                                      => true
+        }) Some("non_executable_definition")
+    else if (fragmentNames.distinct.sizeIs != fragmentNames.size) Some("duplicate_fragment")
+    else
+      try {
+        document.definitions.foreach {
+          case op: ast.OperationDefinition => walk(op.selections, 0, None, Set.empty)
+          case _                           => ()
+        }
+        if (fragmentNames.exists(n => !reached.contains(n))) Some("unused_fragment") else None
+      } catch {
+        case stop: Stop => Some(stop.key)
       }
-      None
-    } catch {
-      case stop: Stop => Some(stop.key)
-    }
   }
 }

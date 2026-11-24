@@ -58,6 +58,7 @@ object GraphQLSchema {
       if (others.isEmpty || !viewer.hasAnyRole(User.VoterRoles)) Nil
       else {
         val open = others.filterNot(_.distributing)
+        ctx.checkDeadline()
         val mine = User.roundsJuredIn(viewer.getId, open.flatMap(_.id))
         open.filter(r => mine.contains(r.getId))
       }
@@ -155,8 +156,9 @@ object GraphQLSchema {
       Field("inReview", BooleanType, Some("Filled and waiting for its admins' review before its jurors see it."),
         resolve = _.value.inReview),
       Field("kind", RoundKindType, resolve = c => kindOf(c.value)),
-      Field("maxStars", OptionType(IntType), Some("A rated round's highest number of stars; null otherwise."),
-        resolve = c => Option.when(c.value.isRated)(c.value.rates.maxRate)),
+      Field("maxStars", OptionType(IntType),
+        Some("A rated round's highest number of stars a juror can give (a half-star 1-7 round draws 3); null otherwise."),
+        resolve = c => Option.when(c.value.isRated)(c.value.maxRate / c.value.starUnits)),
       Field("halfStars", BooleanType, Some("Whether a rated round takes half stars."),
         resolve = c => c.value.isRated && c.value.starUnits == 2),
       Field("hasCriteria", BooleanType, Some("Whether a rated round is voted on per criterion."),

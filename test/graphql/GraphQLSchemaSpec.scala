@@ -64,6 +64,17 @@ class GraphQLSchemaSpec extends Specification {
       }
     }
 
+    "account for every definition: no unused or duplicate fragment, nothing but operations and fragments" in {
+      val unusedBomb = (0 until 40).map(i => s"fragment F$i on Query { ...F${i + 1} ...F${i + 1} }").mkString(" ") +
+        " fragment F40 on Query { me { id } } query { me { id } }"
+      check(unusedBomb) === Some("unused_fragment")
+      check("fragment F on Query { me { id } } query { me { id } }") === Some("unused_fragment")
+      check("fragment F on Query { me { id } } fragment F on Query { me { isRoot } } query { ...F }") ===
+        Some("duplicate_fragment")
+      check("type T { a: Int } query { me { id } }") === Some("non_executable_definition")
+      check("fragment F on Query { me { id } } query { ...F }") must beNone
+    }
+
     "refuse brackets nested deeper than MaxNesting before parsing, outside strings and comments" in {
       QueryLimits.nestingExceeds("{a" * 30000, QueryLimits.MaxNesting) must beTrue
       QueryLimits.nestingExceeds("{ contest(id: " + "[" * 30000 + ") { id } }", QueryLimits.MaxNesting) must beTrue
@@ -89,6 +100,24 @@ class GraphQLSchemaSpec extends Specification {
     "be the release config's (conf/application.conf), the defaults a config without them gets" in {
       GraphQLSettings(play.api.Configuration(security.ProductionFilters.release)) === GraphQLSettings.Default
       GraphQLSettings(play.api.Configuration.empty) === GraphQLSettings.Default
+    }
+  }
+
+  "the per-account limit of runs" should {
+    "give each account at most max slots, freed as runs end" in {
+      val limiter = new InFlightLimiter(2)
+      limiter.tryAcquire(1) must beTrue
+      limiter.tryAcquire(1) must beTrue
+      limiter.tryAcquire(1) must beFalse
+      limiter.tryAcquire(2) must beTrue // another account
+      limiter.release(1)
+      limiter.inFlight(1) === 1
+      limiter.tryAcquire(1) must beTrue
+      limiter.release(1)
+      limiter.release(1)
+      limiter.inFlight(1) === 0
+      limiter.release(1) // more releases than slots: no negative count
+      limiter.inFlight(1) === 0
     }
   }
 
