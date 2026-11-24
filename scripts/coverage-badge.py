@@ -5,7 +5,7 @@
     python3 scripts/coverage-badge.py static LABEL VALUE COLOR OUT.svg
 
 `coverage` reads the statement rate of a scoverage.xml (a percentage) and writes
-"coverage NN%", coloured by threshold: under 50 red, 50 orange, 70 yellow, 80 yellow-green,
+"coverage NN%", coloured by threshold of the rounded percent shown (94.99 is 95%, bright green): under 50 red, 50 orange, 70 yellow, 80 yellow-green,
 90 green, 95 bright green. Exit code 1 if the XML has no readable rate, so no wrong badge is
 published.
 """
@@ -61,7 +61,7 @@ def main(argv):
             pct = statement_rate(argv[2])
             if not 0 <= pct <= 100:
                 raise ValueError(pct)
-            svg = badge("coverage", format_pct(pct), color_for(pct))
+            svg = badge("coverage", format_pct(pct), color_for(int(pct + 0.5)))
             out = argv[3]
         elif len(argv) == 6 and argv[1] == "static":
             svg, out = badge(argv[2], argv[3], argv[4]), argv[5]

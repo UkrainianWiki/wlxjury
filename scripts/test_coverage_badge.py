@@ -22,6 +22,15 @@ class CoverageBadgeTest(unittest.TestCase):
                            (50, "#fe7d37"), (49.9, mod.RED), (0, mod.RED)]:
             self.assertEqual(mod.color_for(pct), color, pct)
 
+    def test_colour_follows_the_rounded_percent_shown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            (d / "s.xml").write_text('<scoverage statement-rate="94.99"/>')
+            self.assertEqual(mod.main(["x", "coverage", str(d / "s.xml"), str(d / "o.svg")]), 0)
+            text = (d / "o.svg").read_text()
+            self.assertIn("95%", text)
+            self.assertIn("#4c1", text)
+
     def test_svg_is_well_formed_and_escapes(self):
         svg = mod.badge("a<b", "1&2", "#4c1")
         root = ET.fromstring(svg)
