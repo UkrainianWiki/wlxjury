@@ -1,0 +1,131 @@
+"How the caller signed in to the API."
+enum AuthMethod {
+  "The browser's session (a page of the tool)."
+  SESSION
+
+  "A personal API token: queries only."
+  TOKEN
+}
+
+"A photo contest."
+type Contest {
+  id: ID!
+  name: String!
+  year: Int!
+  country: String!
+
+  "Retired: its members have no access (only root sees such a contest)."
+  retired: Boolean!
+
+  "The caller's roles in this contest (none for root without a membership)."
+  viewerRoles: [ContestRole!]!
+
+  "Its rounds the caller may see: all for root and its admins and organizers; for a juror, the rounds they judge, once distributed."
+  rounds: [Round!]!
+}
+
+"A page of the caller's contests."
+type ContestPage {
+  "How many contests the caller may see."
+  totalCount: Int!
+  offset: Int!
+
+  "The page size applied (the limit asked, clamped to 1..200)."
+  limit: Int!
+  items: [Contest!]!
+}
+
+"A role in a contest that gives access to it."
+enum ContestRole {
+  ADMIN
+  ORGANIZER
+  JURY
+}
+
+"The caller."
+type Me {
+  id: ID!
+  fullname: String!
+
+  "Only for root and for the Admins of a contest the account is a member of; null for anyone else."
+  email: String
+  isRoot: Boolean!
+
+  "The session's current contest; for a token, the account's latest contest."
+  currentContestId: ID
+  authMethod: AuthMethod!
+}
+
+type Query {
+  "The caller."
+  me: Me!
+
+  "The contests the caller may see, the latest year first: root's all, anyone else's those they have a role in."
+  contests(
+    "How many contests to skip."
+    offset: Int = 0,
+
+    "The page size, at most 200."
+    limit: Int = 100): ContestPage!
+
+  "One contest the caller may see; null with a NOT_FOUND error for any other."
+  contest(id: ID!): Contest
+}
+
+"A judging round of a contest."
+type Round {
+  id: ID!
+
+  "Its number in the contest."
+  number: Int!
+
+  "Its name, if it has one."
+  name: String
+
+  "Its name, or its number if it has none."
+  title: String!
+  status: RoundStatus!
+
+  "Filled and waiting for its admins' review before its jurors see it."
+  inReview: Boolean!
+  kind: RoundKind!
+
+  "A rated round's highest number of stars; null otherwise."
+  maxStars: Int
+
+  "Whether a rated round takes half stars."
+  halfStars: Boolean!
+
+  "Whether a rated round is voted on per criterion."
+  hasCriteria: Boolean!
+}
+
+"How jurors vote in a round."
+enum RoundKind {
+  "Yes or no."
+  BINARY
+
+  "Stars, 1 to maxStars."
+  RATED
+
+  "No votes, comments only."
+  COMMENTS_ONLY
+}
+
+"A round's lifecycle state."
+enum RoundStatus {
+  "Being created: its files are being distributed."
+  DRAFT
+
+  "Not open to its jurors: stopped, finished, or filled and in review."
+  PAUSED
+
+  "Open to its jurors."
+  ACTIVE
+
+  "Finalized."
+  FINALIZED
+
+  "Its creation was cancelled."
+  CANCELLED
+}

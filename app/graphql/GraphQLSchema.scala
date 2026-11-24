@@ -66,7 +66,7 @@ object GraphQLSchema {
   /** The contests the caller may see, in the order the list gives them: the latest year first. */
   def visibleContests(ctx: GraphQLContext): Seq[ContestView] = {
     val contests =
-      if (ctx.isRoot) ContestJuryJdbc.findAll()
+      if (ctx.callerIsRoot) ContestJuryJdbc.findAll()
       else {
         val ids = ctx.user.userContests.filter(m => m.opens && m.roles.exists(User.ACCESS_ROLES)).map(_.contestId)
         controllers.Secured.contestsByIds(ids).filterNot(_.retired)
@@ -84,7 +84,7 @@ object GraphQLSchema {
       case None => throw GraphQLError.missing("contest")
       case Some(contest) =>
         ctx.asMemberOf(contest.getId)
-          .filter(_ => ctx.isRoot || !contest.retired)
+          .filter(_ => ctx.callerIsRoot || !contest.retired)
           .map(ContestView(contest, _))
           .getOrElse(throw ctx.contestDenied(contest))
     }

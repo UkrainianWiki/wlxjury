@@ -137,3 +137,88 @@ Errors are JSON, with a fixed code and never the request's text:
   (`ApiAuth.bearerWithoutSession`).
 - **Tests.** A FakeRequest's cookies are an attribute (`withCookies`); a `Cookie` header alone is
   not read as cookies. `api.ApiSpec` covers the API's own authentication.
+
+## GraphQL
+
+`POST /api/graphql` serves a GraphQL API for the tool's own React screens (the GraphQL plan,
+`docs/plans/2026-11-24-graphql-sangria.md`; Sangria). It sits beside the REST endpoints, under the
+same `/api` router, so it takes the same callers, the same `Host` check and the same CSRF rule.
+The schema is the checked-in SDL, [`conf/graphql/schema.graphql`](../conf/graphql/schema.graphql):
+the contract the UI is written against. So far (slice 1) it has queries only:
+
+| Query | Who sees what |
+|---|---|
+| `me` | the caller: id, name, whether root, the session's current contest, `authMethod` (`SESSION` or `TOKEN`); `email` only for root and for the Admins of a contest the account is a member of (null for anyone else, the caller's own email included) |
+| `contests(offset, limit)` | root: every contest, retired ones too; anyone else: the contests where they hold an access role (juror, organizer, admin) in a contest not retired. The latest year first; `limit` 100 by default, clamped to 1..200; `totalCount`, and each contest's `viewerRoles` |
+| `contest(id)` | one of those contests, else null with a `NOT_FOUND` error: the same answer for a missing contest and for one the caller is not in (the second is logged as a denial) |
+| a contest's `rounds` | all its rounds for root and its admins and organizers; for a juror, the rounds they are a juror of, once distributed (a round being created or in review is not listed) |
+
+No vote, count or juror data yet; those come with the round and gallery slices, under the
+own-votes rules.
+
+**Calling it.** A JSON body `{"query": "...", "operationName": ..., "variables": {...}}` with
+`Content-Type: application/json`; one operation per request (an array body, a batch, is 400, and a
+document with two operations is refused). GET and other methods are 405: queries are POSTs.
+
+- **From a page of the tool** (the session cookie): every request needs the `Csrf-Token` header,
+  queries too (they are POSTs; the CSRF filter checks every session POST). The island's mount
+  element carries `data-csrf-token`, as the gallery does for votes; the client sends it on every
+  request. A refused token is the REST API's 403 `{"error": "csrf"}`.
+- **With a personal API token** (`Authorization: Bearer wlxj_...`, no session cookie, no CSRF token):
+  **queries only**. A mutation or subscription from a token is 403 and logged
+  (`reason=token_query_only`) until tokens get a write scope. A read-only, server-only token is
+  refused (`reason=token_read_only`), as on the REST API's writes. When a token and a session
+  cookie come together, the token decides, as on REST, and the query-only rule holds: a cookie
+  never adds to a token's rights (and the cookie makes the CSRF token required).
+- **Signed out**: 401, introspection included. A signed-in caller may introspect (the schema is
+  not secret).
+
+```bash
+curl -H "Authorization: Bearer $WLXJURY_TOKEN" -H "Content-Type: application/json" \
+     --data '{"query": "{ me { fullname } contests { totalCount items { id name year } } }"}' \
+     https://jury.wle.org.ua/api/graphql
+```
+
+**Errors.** GraphQL's `errors` array; each has a message key (never request or exception text),
+`extensions.code` (`UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `BAD_INPUT`, `INTERNAL_ERROR`) and,
+for `NOT_FOUND`, a denial or a server error, `extensions.reference`, which finds the log line. HTTP
+401 (no credentials), 403 (a token's mutation, a read-only token), 400 (a body that isn't one
+request object), 405, 413 and 415 also carry the REST API's `error` field; the rest are 200 with
+`errors`. A query that breaks a rule of the language or the schema is `invalid_query` with the
+rule's name (`extensions.rule`, e.g. `UndefinedField`) and its locations.
+
+**Limits** (`wlxjury.graphql` in `conf/application.conf`), checked before anything runs: a body of
+at most 64 KB (413); fields nested at most 8 deep (`query_too_deep`; introspection at most 15, its
+type lists nested at most twice: `introspection_too_deep`); at most 30 aliases
+(`too_many_aliases`) and 1,000 field selections, fragments counted where spread
+(`query_too_large`); a complexity budget of 5,000, each field 1 and a list times its page size
+(`contests` its limit, a contest's `rounds` 20: `query_too_complex`). The run is on the blocking
+pool, answered within 20 seconds (`timeout`).
+
+**No explorer in production.** GraphiQL is for development and tests only (decision Q5); it is not
+served by the app in this slice. Use the SDL, or introspection from a signed-in session.
+
+**For the UI developer.**
+
+- Types: `graphql-codegen` (typescript, typescript-operations, typed-document-node) from the SDL
+  and the screens' `.graphql` documents; its config is
+  [`conf/graphql/codegen.yml`](../conf/graphql/codegen.yml), run in `ui/` (created by the React
+  islands' platform step, which adds the packages). Generated files are not committed. The
+  recommended client is urql.
+- A schema change is a change to `GraphQLSchema` and to the SDL file in the same commit:
+  `sbt "Test/runMain graphql.RenderSchema"` rewrites the file, and `graphql.GraphQLSchemaSpec`
+  fails while the two differ.
+- A dev database with sign-in accounts: the browser tests' fixture server
+  (`node browser-test/fixture-server.mjs start`, testing practices §10) runs the app with the
+  production filters, CSRF on, on the Gatling fixture database (about 38,000 files, 20 jurors, a
+  binary and a rated round). Its `target/ui-shots/server.json` lists the accounts to sign in with:
+  jurors, the contest's admin (`organizer@gatling.test`), an account with the organizer role, and
+  root.
+
+**For developers.** `graphql.GraphQLController` (the HTTP part and the checks, in order),
+`graphql.GraphQLSchema` (types and resolvers), `graphql.GraphQLContext` (the caller and
+`asMemberOf`: the caller judged in the resource's contest, never a contest id taken from the query
+as a permission; root bypasses), `graphql.QueryLimits`. A resolver loads the resource first, then
+judges the caller in its contest; a contest the caller may not see is logged on `security.authz`
+(`resource=contest:<id>`) with the reference the `NOT_FOUND` error carries. Tests:
+`graphql.GraphQLApiSpec` (through the router and filters) and `graphql.GraphQLSchemaSpec`.

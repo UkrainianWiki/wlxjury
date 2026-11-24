@@ -1,0 +1,29 @@
+# graphql-codegen's config for the React islands' TypeScript (docs/api.md, "GraphQL"; the GraphQL
+# plan §6 and the React investigation §3.2). `ui/` is created by that investigation's platform step,
+# which adds the packages (@graphql-codegen/cli, typescript, typescript-operations,
+# typed-document-node) to ui/package.json and runs it there, in its build and in CI:
+#
+#   cd ui && npx graphql-codegen --config ../conf/graphql/codegen.yml
+#
+# Paths are relative to ui/. The schema is the checked-in SDL, the contract the server's
+# graphql.GraphQLSchemaSpec keeps equal to the served schema. The output is generated, never committed
+# (ui/.gitignore). No package is installed in this repository by this file.
+overwrite: true
+schema: ../conf/graphql/schema.graphql
+documents:
+  - src/**/*.graphql
+ignoreNoDocuments: true
+generates:
+  src/generated/graphql.ts:
+    plugins:
+      - typescript
+      - typescript-operations
+      - typed-document-node
+    config:
+      # ids are strings on the wire (GraphQL's ID)
+      scalars:
+        ID: string
+      strictScalars: true
+      enumsAsTypes: true
+      useTypeImports: true
+      avoidOptionals: true

@@ -32,18 +32,30 @@ final case class GraphQLSettings(
 )
 
 object GraphQLSettings {
+
+  /** The release's values, as `conf/application.conf` sets them; a config without `wlxjury.graphql`
+    * (the tests', `test/resources/application.conf`) gets these.
+    */
+  val Default: GraphQLSettings = GraphQLSettings(
+    maxBodyBytes = 65536,
+    limits = QueryLimits.Limits(maxDepth = 8, maxIntrospectionDepth = 15, maxAliases = 30, maxFields = 1000),
+    maxComplexity = 5000,
+    timeout = FiniteDuration(20, "seconds")
+  )
+
   def apply(configuration: Configuration): GraphQLSettings = {
-    val c = configuration.get[Configuration]("wlxjury.graphql")
+    val c = configuration.getOptional[Configuration]("wlxjury.graphql").getOrElse(Configuration.empty)
+    val d = Default
     GraphQLSettings(
-      maxBodyBytes = c.get[Long]("maxBodyBytes"),
+      maxBodyBytes = c.getOptional[Long]("maxBodyBytes").getOrElse(d.maxBodyBytes),
       limits = QueryLimits.Limits(
-        maxDepth = c.get[Int]("maxDepth"),
-        maxIntrospectionDepth = c.get[Int]("maxIntrospectionDepth"),
-        maxAliases = c.get[Int]("maxAliases"),
-        maxFields = c.get[Int]("maxFields")
+        maxDepth = c.getOptional[Int]("maxDepth").getOrElse(d.limits.maxDepth),
+        maxIntrospectionDepth = c.getOptional[Int]("maxIntrospectionDepth").getOrElse(d.limits.maxIntrospectionDepth),
+        maxAliases = c.getOptional[Int]("maxAliases").getOrElse(d.limits.maxAliases),
+        maxFields = c.getOptional[Int]("maxFields").getOrElse(d.limits.maxFields)
       ),
-      maxComplexity = c.get[Double]("maxComplexity"),
-      timeout = c.get[FiniteDuration]("timeout")
+      maxComplexity = c.getOptional[Double]("maxComplexity").getOrElse(d.maxComplexity),
+      timeout = c.getOptional[FiniteDuration]("timeout").getOrElse(d.timeout)
     )
   }
 }
@@ -172,7 +184,7 @@ class GraphQLController @Inject() (
             case e: QueryReducingError if e.cause == TooComplex => errorsOnly(error("query_too_complex", Code.BadInput))
             case e: WithViolations => errorsOnly(e.violations.map(violationError): _*)
             case _: QueryAnalysisError => errorsOnly(error("invalid_query", Code.BadInput))
-            case e: Throwable =>
+            case scala.util.control.NonFatal(e) =>
               val reference = Secured.newReference()
               logger.error(s"graphql_error ref=$reference", e)
               errorsOnly(error("internal_error", Code.InternalError, reference = Some(reference)))

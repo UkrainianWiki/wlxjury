@@ -16,7 +16,8 @@ final case class GraphQLContext(caller: ApiAuth.Caller, request: RequestHeader) 
 
   def user: User = caller.user
 
-  def isRoot: Boolean = user.hasRole(User.ROOT_ROLE)
+  /** The caller is root (a caller check, not a target's: `User.isProtectedTarget` is for targets). */
+  def callerIsRoot: Boolean = user.hasRole(User.ROOT_ROLE)
 
   /** The caller as a member of the contest (`Secured.inContest`: an active membership of a contest
     * that is not retired), with their role there; root in any contest. None when they have no
@@ -24,12 +25,14 @@ final case class GraphQLContext(caller: ApiAuth.Caller, request: RequestHeader) 
     * retired contest, or (a session's) only a contest series grant's reach, whose derived role
     * counts only in an action that opts in to it (none here; contest series plan §3.3).
     */
-  def asMemberOf(contestId: Long): Option[User] =
-    if (isRoot) Some(user.copy(contestId = Some(contestId)))
-    else {
-      val there = Secured.inContest(user, contestId)
-      Option.when(there.contestId.contains(contestId) && there.contestRoles.exists(User.ACCESS_ROLES))(there)
-    }
+  def asMemberOf(contestId: Long): Option[User] = {
+    val there = Secured.inContest(user, contestId)
+    if (callerIsRoot)
+      // root needs no membership; without one there, no contest role either (not the current contest's)
+      Some(if (there.contestId.contains(contestId)) there
+           else user.copy(contestId = Some(contestId), roles = user.roles -- user.contestRoles))
+    else Option.when(there.contestId.contains(contestId) && there.contestRoles.exists(User.ACCESS_ROLES))(there)
+  }
 
   /** A contest the caller may not see, as a missing one ([[GraphQLError.notFound]]), logged as a
     * denial on `security.authz` with the reference the error carries.
