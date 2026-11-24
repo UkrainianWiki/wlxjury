@@ -6,6 +6,14 @@ enforces it and the known exceptions. Reviewers apply [review-checklist.md](revi
 the status of each security item is in [register.md](register.md). This document replaces the
 "Practices" and "Standards" of `incident-prevention-guidelines.md` (2026-04; deleted, at `98a8a79e`).
 
+**Where things are.** The rules: this file, with the guard specs (`testOnly security.*`). The
+review checklist, with the release gate: [review-checklist.md](review-checklist.md). The status of
+every security item: [register.md](register.md). Past reviews and their evidence:
+[docs/history/](../history/README.md) (the 2026-11-02 re-review; the earlier reviews are in git,
+listed there). Authentication, authorization, CSRF and error handling in the app: `CLAUDE.md`,
+"Authentication and authorization"; host names and secure cookies in production:
+[deployment.md](../deployment.md).
+
 **Guards** are specs in `test/security/` (`testOnly security.*`; most scan the sources and need
 no database, `SignedOutSpec` starts the test app) and the named specs elsewhere. "Planned: G<n>"
 names a guard not built yet; [§21](#21-guards) lists every guard, built and planned.

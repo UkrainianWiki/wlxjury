@@ -171,11 +171,14 @@ jobs:
           if [ "$HAVE_ALLURE" = true ]; then
             mkdir -p "$site/allure"
             cp -R target/browser-test/allure-report/. "$site/allure/"
+            python3 -B scripts/coverage-badge.py static "browser tests" "Allure report" "#2b7bb9" "$site/allure.svg"
             links="$links<li><a href=\"allure/\">Browser tests (Allure report)</a>: commit <code>${BROWSER_SHA:0:12}</code>, three engines, failure screenshots only</li>"
           fi
           if [ -n "$COVERAGE_DIR" ]; then
             mkdir -p "$site/coverage"
             cp -R "$COVERAGE_DIR"/. "$site/coverage/"
+            # the badge of the README, from the real statement rate, before the XML is dropped
+            python3 -B scripts/coverage-badge.py coverage "$site/coverage/scoverage.xml" "$site/coverage.svg"               || echo "::warning::no coverage badge"
             find "$site/coverage" -name '*.xml' -delete
             links="$links<li><a href=\"coverage/\">Scala test coverage (scoverage HTML)</a>: commit <code>${COVERAGE_SHA:0:12}</code></li>"
           fi
