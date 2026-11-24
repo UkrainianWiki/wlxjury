@@ -10,7 +10,6 @@
         editRoundForm: Form[controllers.EditRound],
         editImagesForm: Form[Option[String]],
         selectRoundForm: Form[SelectRound],
-        round: Option[Round],
         contest: ContestJury,
         imageCheckJob: Option[services.jobs.Job] = None,
         authorNormalizeJob: Option[services.jobs.Job] = None,
@@ -27,7 +26,7 @@
 @filterFields = {@for((name, value) <- filter.params) {<input type="hidden" name="@name" value="@value">}}
 
     @mainAdmin("rounds", adminUser, adminUser.getId,
-        rounds = rounds, selectedRound = round, contestId = contest.id,
+        rounds = rounds, selectedRound = None, contestId = contest.id,
         roundFilter = Some(controllers.RoundsFilterBar(filter, roundsUrl, rounds)), stickyBar = true) {
         <div class="row" >
             <h1 class="h3">@Messages("contest") @contest.fullName</h1>

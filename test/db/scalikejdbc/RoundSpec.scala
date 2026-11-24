@@ -58,7 +58,6 @@ class RoundSpec extends Specification with BeforeAll {
         Some(created.copy(createdAt = createdAt))
       roundDao.activeRounds(contestId).map(_.copy(createdAt = createdAt)) ===
         Seq(created.copy(createdAt = createdAt))
-      contestDao.findById(contestId).get.currentRound === None
     }
   }
 }

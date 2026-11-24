@@ -23,7 +23,6 @@ object ContestJuryJdbc extends CRUDMapper[ContestJury] {
     country = rs.string(c.country),
     images = rs.stringOpt(c.images),
     categoryId = rs.longOpt(c.categoryId),
-    currentRound = rs.longOpt(c.currentRound),
     monumentIdTemplate = rs.stringOpt(c.monumentIdTemplate),
     greeting = Greeting(
       rs.stringOpt(c.column("greeting")),
@@ -52,10 +51,6 @@ object ContestJuryJdbc extends CRUDMapper[ContestJury] {
         "use_greeting" -> greeting.use
       )
 
-  def setCurrentRound(id: Long, round: Option[Long]): Int =
-    updateById(id)
-      .withAttributes("currentRound" -> round)
-
   def create(
       id: Option[Long],
       name: String,
@@ -63,7 +58,6 @@ object ContestJuryJdbc extends CRUDMapper[ContestJury] {
       country: String,
       images: Option[String] = None,
       categoryId: Option[Long] = None,
-      currentRound: Option[Long] = None,
       monumentIdTemplate: Option[String] = None,
       campaign: Option[String] = None
   )(implicit session: DBSession = AutoSession): ContestJury = {
@@ -77,7 +71,6 @@ object ContestJuryJdbc extends CRUDMapper[ContestJury] {
           column.country -> country,
           column.images -> images,
           column.categoryId -> categoryId,
-          column.currentRound -> currentRound,
           column.monumentIdTemplate -> monumentIdTemplate,
           column.campaign -> campaign
         )
@@ -90,7 +83,6 @@ object ContestJuryJdbc extends CRUDMapper[ContestJury] {
       country = country,
       images = images,
       categoryId = categoryId,
-      currentRound = currentRound,
       monumentIdTemplate = monumentIdTemplate,
       greeting = Greeting(None, use = true),
       campaign = campaign
@@ -106,7 +98,6 @@ object ContestJuryJdbc extends CRUDMapper[ContestJury] {
         c.year,
         c.country,
         c.images,
-        c.currentRound,
         c.monumentIdTemplate,
         c.campaign
       )
@@ -120,7 +111,6 @@ object ContestJuryJdbc extends CRUDMapper[ContestJury] {
           column.year -> sqls.?,
           column.country -> sqls.?,
           column.images -> sqls.?,
-          column.currentRound -> sqls.?,
           column.monumentIdTemplate -> sqls.?,
           column.campaign -> sqls.?
         )

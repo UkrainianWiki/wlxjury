@@ -2,6 +2,7 @@ package db.scalikejdbc
 
 import org.intracer.wmua.ContestJury
 import munit.FunSuite
+import scalikejdbc._
 
 class ContestSpec extends FunSuite with AutoRollbackMunitDb {
 
@@ -19,8 +20,7 @@ class ContestSpec extends FunSuite with AutoRollbackMunitDb {
         year = 2015,
         country = "Ukraine",
         images = images,
-        categoryId = None,
-        currentRound = None
+        categoryId = None
       )
 
     assertEquals(contest.name, "WLE")
@@ -31,6 +31,24 @@ class ContestSpec extends FunSuite with AutoRollbackMunitDb {
     assertEquals(contestDao.findById(contest.getId), Some(contest))
 
     assertEquals(contestDao.findAll(), List(contest))
+  }
+
+  dbTest("a contest's JSON and writes carry no current round (the contest's open rounds are the Round queries')") { implicit session =>
+    val contest = contestDao.create(id = None, name = "WLE", year = 2015, country = "Ukraine")
+    val round = roundDao.create(
+      Round(None, 1, Some("Round 1"), contest.getId, Set("jury"), 3, Round.ratesById(10), active = true, createdAt = TestDb.now)
+    )
+    // an open round does not set the contest's field (nothing writes it); the round is found by the contest
+    assertEquals(
+      sql"select count(*) from contest_jury where id = ${contest.getId} and current_round = ${round.getId}"
+        .map(_.int(1)).single.apply(),
+      Some(0)
+    )
+    assertEquals(roundDao.activeRounds(contest.getId).map(_.id), Seq(round.id))
+    assertEquals(
+      (new api.JsonFormat {}).contestFormat.writes(contest).as[play.api.libs.json.JsObject].keys.contains("currentRound"),
+      false
+    )
   }
 
   dbTest("create contests") { implicit session =>

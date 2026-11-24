@@ -37,6 +37,7 @@ Merged to master after the 26.11.14 build.
 
 **Fixes**
 
+- Contests page no longer shows an unused round number.
 - Old juror assignments with no status are treated as stopped, votes included (#119).
 - Roles on conflict-of-interest pages are shown in the user's language.
 - Top-bar menus stay inside a phone's screen.

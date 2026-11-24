@@ -70,7 +70,6 @@ class ContestService @Inject() (val commons: MwBot) {
         contest.country,
         contest.images,
         contest.categoryId,
-        contest.currentRound,
         contest.monumentIdTemplate,
         contest.campaign
       )
