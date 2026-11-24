@@ -33,14 +33,15 @@ this code base.
 **Short answers.**
 
 1. **Montage's API is small but not a contract.** The Vue SPA calls 33 backend endpoints under
-   `/v1/` (of 87 route definitions), plus `/login` and `/logout`, plus three Commons API queries made
-   from the browser. Every response is wrapped in `{status, errors, data, user}`. There is no
+   `/v1/` (of 76 API routes there; 83 with the UI app's pages), plus `/login` and `/logout`, plus three Commons API queries made
+   from the browser. Every JSON response is wrapped in `{status, errors, data, user}` (plus `timings`);
+   CSV downloads bypass it. There is no
    OpenAPI, no versioning beyond `/v1/`, a partly stale hand-written `M:montage/docs/api.md`, no
    tokens, no CSRF tokens. Sign-in is Wikimedia OAuth 2.0 and a signed cookie, nothing else. The
    rules live in the backend's DAOs (`M:montage/rdb.py`, 3807 lines); the SPA is presentation.
 2. **The models map well at the core and diverge at the edges.** Contest ↔ campaign, round ↔
    round, `round_image` ↔ `round_entries`, vote rows as tasks ↔ `votes`, yes/no ↔ binary,
-   `round.status` names (WLX copied Montage's in V105), quorum ↔ `distribution`, series ↔ series:
+   `round.status` names (WLX's V105 has Montage's four plus `draft`), quorum ↔ `distribution`, series ↔ series:
    equivalent or close. Montage's 5-star rating is a subset of WLX's 1–N scales. **Ranking rounds
    (Schulze) are missing in WLX**; so are finalize, the final report, directions and deadline,
    quorum change, faves and the CSV/sheet import (all in the parity plan). WLX's criteria, 3–20 star
@@ -54,8 +55,7 @@ this code base.
    ones (import timeouts on the replicas, out-of-memory on big rounds, no background jobs, a few
    500s), but only after WLX had built the same features. The ranking and finalize issues would
    come back as open design questions. The frontend issues would stay as they are. Several of the
-   backend bugs filed on 2026-10-31 already have open Montage PRs (#677, #678, #679, #683, #684,
-   #686, #630/#631) (section 3).
+   backend bugs already have open Montage PRs (#672, #677, #678, #679, #683, #684 for the 2026-10-31 batch; #630/#631 for background imports, #621/#622) (section 3).
 4. **Options.** (A) A facade that runs Montage's unmodified SPA on WLX data: not possible
    unmodified. WLX requires a CSRF token on every POST and runs long work as background jobs.
    Montage's sign-in, identities (Wikimedia usernames created on demand) and "one open round per
@@ -114,7 +114,7 @@ touches their users or their UI.
   inside the request (Montage PRs #630/#631 for a worker are open). Deployed on Toolforge (Build
   Service, ToolsDB MariaDB; Commons wiki replicas for imports) at montage.toolforge.org.
 - **Envelope:** every JSON response is `{"status": "success"|"failure"|"exception", "errors": [...],
-  "data": ..., "user": {...}}` (`MessageMiddleware`, `M:montage/mw/__init__.py:28-100`). Errors are
+  "data": ..., "user": {...}, "timings": {...}}`; prebuilt responses such as the CSV downloads bypass it (`MessageMiddleware`, `M:montage/mw/__init__.py:28-100`). Errors are
   exception classes with HTTP 400/403/404 (`InvalidAction`, `PermissionDenied`, `DoesNotExist`,
   `M:montage/utils.py:49-63`); import-check errors add `error_type`, `reason_code`, `reason_params`
   for translated messages (`M:montage/utils.py:66-112`). Query string and JSON body are merged into
@@ -124,8 +124,9 @@ touches their users or their UI.
   id) and writes `userid`/`username` into an HMAC-signed, HttpOnly cookie; `GET /logout` clears it
   (`M:montage/public_endpoints.py:167-280`). No passwords, no tokens, no server-side sessions.
   Superusers may act as anyone with `?su_to=<username>` (`M:montage/mw/__init__.py:151-162`).
-- **CSRF:** none (no token; state changes are JSON POSTs, and the protection relies on browsers'
-  SameSite defaults and the JSON content type). CORS only in `dev`.
+- **CSRF:** none (no token; state changes are JSON POSTs, and the session cookie is set without a
+  SameSite attribute, so the protection is the browser's default Lax; the body is parsed as JSON
+  whatever its content type, `M:montage/mw/__init__.py:44-53`, `M:montage/app.py:145-149`). CORS only in `dev`.
 - **SPA side:** axios with `baseURL = VITE_API_ENDPOINT + '/v1/'` and `withCredentials`
   (`M:frontend/src/services/api.js`); `VITE_API_ENDPOINT` is empty in production (same origin) and a
   build-time setting, so the SPA can be built for another host or path prefix. Sign-in and sign-out
@@ -214,8 +215,8 @@ published reports, series, entry info, Commons lookup utilities, health
   of completed votes is at or above a threshold (`:2084-2108`, `M:montage/admin_endpoints.py:704-759`).
   The campaign ends with a ranking round, then finalize builds the report (`:2559-2627`).
 - **Exports:** results CSV (`filename, average, <juror>…`, `tbv` for "to be voted"), entries CSV
-  (`img_id, img_name, mime, width, height, uploader, timestamp, file_id, source_method,
-  source_params`), reviews JSON, report JSON/HTML. **Import:** a Commons category (direct members, via
+  (`img_id, img_name, img_major_mime, img_minor_mime, img_width, img_height, img_user,
+  img_user_text, img_timestamp, file_id, source_method, source_params`, `M:montage/rdb.py:1273-1284`), reviews JSON, report JSON/HTML. **Import:** a Commons category (direct members, via
   the replicas), a CSV/Google Sheet/gist URL or a pasted list (a `filename` or `img_name` column,
   optional `file_id`, other columns ignored, or one name per line), or the previous round.
   There is no whole-campaign export or import.
@@ -238,10 +239,10 @@ Legend: **=** equivalent; **≈** adaptable (a facade or exchange can translate,
 
 | Montage | WLX Jury | Verdict | Notes |
 |---|---|---|---|
-| `series` (name, url, status; API/CLI only, no admins) | `series` (V109, CY-1, on master) with contest type and country; series admins (CY-2, V112, built on a branch, not yet on master) | ≈ / **MT –** for series admins | Close in shape; WLX's series admins and the start-year rule have no Montage equivalent |
+| `series` (name, url, status; API/CLI only, no admins) | `series` (V109, CY-1, on master) with contest type and country; series admins (CY-2, V112, #140) | ≈ / **MT –** for series admins | Close in shape; WLX's series admins and the start-year rule have no Montage equivalent |
 | campaign | contest (`ContestJury`: name, country, year, images source, monument-id template, campaign code) | ≈ | Montage's open/close dates are an upload window (WLX –, parity #3); WLX's country/year/campaign/monument template are MT – |
 | campaign status active/finalized/cancelled, archive | contest `retired` | ≈ | No contest finalize in WLX |
-| round (name, vote method, quorum, status, config) | `round` (number, name, `rates`, `distribution`, `status` V105, filters) | ≈ | Status names are the same (draft/paused/active/finalized/cancelled); WLX writes no `finalized` yet (parity #9). Montage allows one open round per campaign; WLX allows several at once |
+| round (name, vote method, quorum, status, config) | `round` (number, name, `rates`, `distribution`, `status` V105, filters) | ≈ | Montage's statuses are paused/active/finalized/cancelled; WLX has the same four plus `draft`; WLX writes no `finalized` yet (parity #9). Montage allows one open round per campaign; WLX allows several at once |
 | `directions`, `description`, `deadline_date` | – | **WLX –** | parity #10 |
 | yesno (0/1) | binary (`rates` −1/0/+1: rejected/unrated/selected) | = | 1.0 ↔ +1, 0.0 ↔ −1, open task ↔ 0 |
 | rating (5 stars as 0–1) | rated 1–N, N = 3..20, half stars, ✗ mark (−1), score rule per round | ≈ (Montage is a subset) | Only a 1–5 round without half stars, ✗ or criteria fits Montage's `rating` |
@@ -262,7 +263,7 @@ Legend: **=** equivalent; **≈** adaptable (a facade or exchange can translate,
 | finalize campaign, report, publish | – | **WLX –** | parity #21 |
 | results CSV, entries CSV, reviews JSON | results CSV (rank, file, overall, per juror; formula guard), comments CSV | ≈ | Entries export with provenance partial (parity #22) |
 | maintainer (code list) | root (`users.is_root`) | ≈ | |
-| organizer (global: create campaigns) | root; series admins create contests of their series (CY-3) | ≈ | |
+| organizer (global: create campaigns) | root (series admins creating contests of their series is planned, CY-3, not built) | ≈ | |
 | coordinator (per campaign, full write) | Admin (per contest, `user_contest`) | = | |
 | – | Organizer (per contest, read-only: statistics, all jurors' votes) | **MT –** | Montage has no read-only role |
 | juror (per round) | Juror (per contest role) + `round_user` (per round, active flag) | ≈ | Pre-screener role and pre-screening rounds (multi-role plan) **MT –** |
@@ -273,7 +274,7 @@ Legend: **=** equivalent; **≈** adaptable (a facade or exchange can translate,
 | round stats map (entries, tasks, open %, DQ, uploaders, MIME) | Round statistics, contest health page, round warnings | ≈ (WLX richer for organizers) | parity #8 |
 | – | background jobs (leases, cancel, retry), image proxy and cache, deleted/renamed file tracking, region bar, video, large view with filmstrip | **MT –** | |
 | public reports, entry info, Commons utils | – (no public pages) | **WLX –** | |
-| 28 locales via translatewiki.net | 4 languages | (UI, not API) | |
+| 27 locales via translatewiki.net | 4 languages | (UI, not API) | |
 
 ## 3. "Montage errors that come from the backend"
 
@@ -287,8 +288,8 @@ are approximate: some issues fit two groups.
 | Feature requests | 80 | #123 image discussion; #97, #30 moved and deleted files; #33 go back; #96, #61 enter many jurors; #100, #36, #59 manual DQ and its list; #74 no self-reviews; #46 import into a running round; #43 import provenance; #29 final report; #567 video; #579 merge rounds; #291 notify jurors | **No, though WLX has many of them** (comments, file tracking, galleries, bulk juror import, CoI, adding files, video, multi-source rounds). An unmodified SPA would not show them |
 | Infrastructure, process | 10 | #599, #569 deploy script; #470 CI depends on Toolforge; #300 migrations; #233 config | Not applicable |
 
-Several backend issues filed on 2026-10-31 already have open Montage PRs (#677, #678, #679, #683,
-#684, #672, #686; background imports #630/#631). The cheapest way to fix Montage's backend errors is
+Several backend issues already have open Montage PRs (#672, #677, #678, #679, #683, #684 for the 2026-10-31 batch; #630/#631 for background imports, #621/#622); #686 fixes the stale `index.html`
+(#643), a frontend-delivery issue. The cheapest way to fix Montage's backend errors is
 to help land those, not to replace the backend.
 
 ## 4. Options
@@ -299,8 +300,8 @@ Two different things:
 
 - **Same capabilities in both tools.** WLX gets ranking, finalize and report, directions, deadline,
   quorum change, faves, CSV import and the date rule; Montage gets nothing from WLX unless its
-  maintainers build it. This is the parity plan; it is about half done on rounds (4 of 25 rows
-  closed and 12 partly closed on 2026-11-20); its open rows are sized S or M there, apart from
+  maintainers build it. This is the parity plan; on rounds 4 of its 25 rows are closed, 12
+  partly closed, 8 open and 1 not needed (2026-11-20); its open rows are sized S or M there, apart from
   ranking with the report (L).
 - **The same contract.** Every Montage endpoint behaves as in Montage, including its error envelope,
   its synchronous activation and import check, and its defaults. It adds a compatibility layer and
@@ -343,7 +344,8 @@ Commons images in `img-src`).
    handling are bypassed.
 
 **Feasible subset:** juror voting in yes/no rounds and in 1–5 star rounds without half stars, ✗ or
-criteria (endpoints 1, 25–33). It also needs a CSRF patch to the SPA, the facade hiding every other
+criteria (endpoints 1, 25–33, plus 2–3, which every landing page calls and which would answer
+empty lists). It also needs a CSRF patch to the SPA, the facade hiding every other
 round, and jurors who have a wiki username in WLX. Skip needs a small store. Faves need a table
 (WLX –) or a no-op. **Estimate: 12–20 days**, then about 1–3 days of upkeep per Montage release that
 touches the juror API. **The coordinator surface:** first ranking with the report (parity #20–21),
@@ -517,4 +519,4 @@ partial write, because a Montage edit form round-trips only the fields it knows.
 7. **Hide or read-only:** for any Montage-shaped view, should WLX-only rounds be hidden (recommended)
    or listed read-only?
 8. **Help Montage's backend instead?** Is it worth offering reviews or patches for Montage's open
-   backend PRs (#677, #678, #679, #683, #684, #630/#631), as the cheaper way to "fix Montage errors"?
+   backend PRs (#672, #677, #678, #679, #683, #684, #630/#631), as the cheaper way to "fix Montage errors"?
