@@ -2,7 +2,8 @@
 
 **Status:** CY-1 built on `stack/209-series-cy1` (V109; 2026-11-20); CY-0, the reuse dry-run
 report, built on `stack/212-series-cy0-report` (no migration; its production-copy numbers in §4.7);
-the rest is plan. The first
+CY-2, series admins, built on `feature/series-cy2-admins` (V112; 2026-11-24; without the series
+admins' creation path and CA6's disabled grantees, which ship with CY-3, §3.2); the rest is plan. The first
 batch, CA8 and the second batch are decided (2026-11-18). **Refined by the maintainer on
 2026-11-20:** a national contest may host rounds of several other countries (R4, §4.1); CY-1's
 inline reuse check reads every round's signals for it (§3.2). **Every decision is taken:** CA24 and,
@@ -421,7 +422,7 @@ All of this is logged in `contest_change`.
 
 - **With CY-3:** root's and the contest Admins' paths, and the people picker.
 - **With whichever of CY-2 and CY-3 lands second** (they need both CY-3's form and CY-2's
-  `series_admin`, the next free number at its merge, V111 now):
+  `series_admin`, V112 on CY-2's branch):
   - creation by series admins;
   - CA6's disabled grantees in the people picker.
 
@@ -770,14 +771,16 @@ series. Specs cover a series admin with no real row, and a retired series.
   D-1b's migration hasn't merged before CY-1, CY-1 either waits for it (it depends on D-1a anyway)
   or takes its number and D-1b renumbers.
 - **The numbers below:** CY-1's V109 is fixed (no other branch had it, 2026-11-20). CY-2 and
-  CY-4 take the next free number at their merge: V111 and V112 now that D-1b has V110, one lower
+  CY-4 take the next free number at their merge. On 2026-11-24 CY-4 (#124, draft) holds V111 on its
+  branch and CY-2 V112; whichever merges second renumbers to above master's top first. Earlier: V111
+  and V112 once D-1b had V110, one lower
   each if CY-2 or CY-4 merges before D-1b and D-1b renumbers instead.
 
 | | PR | Content |
 |---|---|---|
 | V109 `Series` | CY-1 | Table `series`. On `contest_jury`: `series_id` (FK RESTRICT), `created_at TIMESTAMP(3) NULL` (no `ON UPDATE`), `created_by`, `retired_at`, `retired_by`, the generated `live_series_id` and `UNIQUE (live_series_id, year)`. Table `contest_change(id, contest_id, series_id, actor_id, kind, batch_id, detail JSON, comment, created_at)`, kinds `created`, `identity`, `series_assigned`, `series_unassigned`, `series_changed`, `split_out`, `split_in`, `split_undone`, `retired`, `unretired` (CA8, decided) |
-| V111 `Series_admin` (next free at merge) | CY-2 | Table `series_admin` with `admin_from_year` (NOT NULL, CA20), `live_grant_series_id` and its unique key. `account_change.field` adds `series_admin_granted`, `series_admin_revoked` and `series_admin_from_year` (keeping V106's and V107's) |
-| V112 `Contest_split` (next free at merge) | CY-4 | `contest_split` and `contest_split_item` |
+| V112 `Series_admin` (next free at merge; V112 on its branch) | CY-2 | Table `series_admin` with `admin_from_year` (NOT NULL, CA20), `live_grant_series_id` and its unique key. `account_change.field` adds `series_admin_granted`, `series_admin_revoked` and `series_admin_from_year` (keeping V106's and V107's) |
+| V111 `Contest_split` (next free at merge; V111 on #124's branch) | CY-4 | `contest_split` and `contest_split_item` |
 
 Each migration is rerunnable and has a FlywayUpgradeSpec case.
 
@@ -1301,9 +1304,9 @@ Everyone else with a contest in the series sees only their own contests' rows.
 | **CY-0** | The reuse report; Q0–Q4 tuning. Built on `stack/212-series-cy0-report` (§4.3, numbers in §4.7) | D-1a, D-1b | — | M (3–4 days) |
 | **CY-1** | Series table and key, derived previous, `contest_change` with batches, retired contests and series, `/admin/series`, proposals with bulk confirm, affected-grants list and batch undo, **the inline reuse check** (with every round's signals, R4), the menu grouped by series, the `/contests` filter, docs. Built on `stack/209-series-cy1` | D-1a | V109 | M–L (6–7 days) |
 | Ops after CY-1 | **Production assignment:** Q0 and Q5 on the copy, then root's bulk confirmation on production, in batches | CY-1 | — | 1 day |
-| **CY-2** | Series admins: `series_admin` with its live-grant key, CA19 adds with the grantee rules, root-only re-grant, **the chained revoke (required) with three-level specs**, root's 24-hour grants view, join and retirement hooks, `seriesAccountContests` in the account rules (CA17), `withSeries(user, currentContestId)`, `derivedRoles`, `contestPermission` real-only with the `derived = true` opt-in and `inContestReal`, CA20 derivation from `admin_from_year` with its computed default, bounds and root's later edit (logged), every action classified, `isProtectedTarget` replacing the 26 target checks, COI, the users-page line, the change-log view, the menu entry and landing, the grant UI with the start year and the contest list, guard specs, negatives; its own security review. Series admins' creation path and CA6's disabled grantees ship with whichever of CY-2 and CY-3 lands second | CY-1 | next free at merge (V111 now) | L (14–16 days) |
+| **CY-2** | Series admins: `series_admin` with its live-grant key, CA19 adds with the grantee rules, root-only re-grant, **the chained revoke (required) with three-level specs**, root's 24-hour grants view, join and retirement hooks, `seriesAccountContests` in the account rules (CA17), `withSeries(user, currentContestId)`, `derivedRoles`, `contestPermission` real-only with the `derived = true` opt-in and `inContestReal`, CA20 derivation from `admin_from_year` with its computed default, bounds and root's later edit (logged), every action classified, `isProtectedTarget` replacing the 26 target checks, COI, the users-page line, the change-log view, the menu entry and landing, the grant UI with the start year and the contest list, guard specs, negatives; its own security review. Series admins' creation path and CA6's disabled grantees ship with whichever of CY-2 and CY-3 lands second. **Built on `feature/series-cy2-admins`** (2026-11-24): CY-2 lands first, so those two wait for CY-3 | CY-1 | next free at merge (V112 on its branch) | L (14–16 days) |
 | **CY-3** | Creating contests: the series page, the next-year path (CA4), settings, the people picker, root's notices, the H1/import links. Creation by series admins (CA16) and CA6's disabled grantees ship with whichever of CY-2 and CY-3 lands second | CY-1 | — | M (5–6 days) |
-| **CY-4** | Split, Undo, redirects, runbook; R4's per-cluster targets, memberships in the target (CA11, CA23), COI and regions from the target (§4.1); root's page and a job (CA13), Undo plus a dump (CA12), source links kept (CA10). **Decided** (CA9, 2026-11-20) on CY-0's numbers | CY-0, CY-1 | next free at merge (V112 now) | L (9–11 days) |
+| **CY-4** | Split, Undo, redirects, runbook; R4's per-cluster targets, memberships in the target (CA11, CA23), COI and regions from the target (§4.1); root's page and a job (CA13), Undo plus a dump (CA12), source links kept (CA10). **Decided** (CA9, 2026-11-20) on CY-0's numbers | CY-0, CY-1 | next free at merge (V111 on #124's branch) | L (9–11 days) |
 | **CY-5** | The production split run | CY-4 | — | ops, 1–2 days |
 
 **Order:**

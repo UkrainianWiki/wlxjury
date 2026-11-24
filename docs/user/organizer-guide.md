@@ -40,7 +40,10 @@ it. The contest menu at the top of the page shows which contest you are in.
 Monuments in Nepal". The contest menu lists your contests under their series' names: this year's
 and last year's contest of each series, then **Earlier years** and **Other contests** (those in
 no series). Each year is still its own contest, with its own role for you. A contest the tool's
-administrators retired is no longer in the menu. See [Series](admin-guide.md#a-series).
+administrators retired is no longer in the menu. See [Series](admin-guide.md#a-series). A
+**series admin** looks after a whole series: an Admin of its contests from their start year on,
+an Organizer in older ones; the contest's **Users** page names them (see [Series
+admins](admin-guide.md#a-series-admins)).
 
 <a id="o-start"></a>
 ## Where to start

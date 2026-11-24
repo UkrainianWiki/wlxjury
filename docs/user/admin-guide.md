@@ -689,6 +689,39 @@ Today only root creates series and puts contests into them (see [What only root 
 do](#a-root)). Contests of a series show under its name in the contest menu. Contests in no
 series work as before.
 
+<a id="a-series-admins"></a>
+#### Series admins
+
+A **series admin** looks after a whole series, not one contest. Root makes someone a series admin
+of a series; a series admin may add more series admins of their own series, but only root
+removes them. Each grant has a **start year**:
+
+- in the series' contests of the start year and later, a series admin is an **Admin**, whether the
+  contest existed before the grant or not: rounds, settings, files, people, invitations and links,
+  as a contest Admin can;
+- in older contests of the series, a series admin is an **Organizer**: they see everything there
+  but change nothing;
+- where a series admin is a **Juror**, the series doesn't apply: they stay a Juror there;
+- a series admin can't act on root accounts, other series admins, or people who also belong to a
+  contest the series admin doesn't administer.
+
+A series admin's contest menu has one entry per series, **Series: Wiki Loves Monuments in Nepal
+(Series admin)**, leading to the **series page**: its contests by year, with your role in each and
+an **Open** button that makes it your current contest, and its series admins with who added each,
+when and their start year. A series admin with no contest role of their own lands there when
+signing in.
+
+**Add a series admin** on the series page: pick a member of the series' contests, then check the
+start year and the list of contests showing what the grant gives in each (**Show for this year**
+shows it for another year). The start year is filled in from the person's own history: the
+earliest year they were an Admin of a contest of the series, but at most last year; with none,
+last year. A series admin may choose from their own start year up to next year; root may choose
+any year. Only root changes a start year later. Root sees each addition on its **Series** page.
+
+On a contest's **Users** page, **Series admins:** names the series admins of its series; only
+root manages them. The contest's **Account changes** list each grant, revocation and start-year
+change of its series. Creating a contest from the series page comes with a later update.
+
 <a id="a-more-than-one-admin"></a>
 ### Several admins
 
@@ -1324,6 +1357,13 @@ stopped.
 - Create contests, and import them from a Commons list, on **Contests**, and change a contest's
   settings there. A contest added there records who added it and when (the **Created** column).
   Adding a contest with the name, year and country of an existing one is allowed, with a warning.
+- Manage **series admins** ([Series admins](#a-series-admins)): on a series' page under **Series**,
+  its series admins as a tree of who added whom, each with **Revoke** (tick **Also revoke the grants
+  this admin added** to remove the whole branch) and its **start year** (change it; the default as
+  it would be computed now is shown under it, useful after joining accounts); add a series admin on
+  the series page (**Add series admins on the series page**). **Series** lists, per series, the
+  series admins added in the last 24 hours, and on top those that series admins added in the last
+  30 days. A grant root revoked can be given again by root only.
 - Manage **series** on **Series** (the **Manage series** link beside the **Series** menu on **Contests**):
   - **create** a series with its name, type (`wlm`, `wle`, or the word after "Wiki Loves" in
     lower case, such as `folklore`; empty for any type), country and campaign; **rename** it
