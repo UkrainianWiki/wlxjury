@@ -59,7 +59,7 @@ object QueryLimits {
         if (c == '{' || c == '[' || c == '(') {
           depth += 1
           if (depth > max) exceeded = true
-        } else if (c == '}' || c == ']' || c == ')') depth -= 1
+        } else if (c == '}' || c == ']' || c == ')') depth = math.max(0, depth - 1) // closers never give credit
         i += 1
       }
     }
