@@ -1,6 +1,6 @@
 # GraphQL (Sangria) branch: verification and update plan
 
-Status: verification done, implementation not started. Date: 2026-11-24.
+Status: verification done, implementation not started; the maintainer's decisions are recorded in section 7. Date: 2026-11-24.
 
 ## 1. Purpose and what the branches are
 
@@ -94,7 +94,10 @@ Port onto a fresh branch from master, taking only what is worth keeping; do not 
    `GalleryService.viewerRounds` / `mayViewRound` / `viewAs`. A juror sees only their own votes; others' (or
    `userId` 0 for all jurors) only with `User.canViewOrgInfo`, and only of a juror of the round
    (`User.isRoundJuror`), else not found. `users` lists only members of the caller's contests and shows email
-   only to admins and root of that contest. Rounds still `distributing` are hidden from jurors.
+   only to root and to Admins of a contest the listed user is a member of (decision, Q6). Rounds still `distributing` are hidden from jurors.
+   A coming rule (CY-2, #140): a juror of a round sees only their own votes in that round whatever their role;
+   the vote and round-image resolvers must apply it, so an organizer or admin who is also a juror of the round
+   gets only their own votes there.
 6. Denials: one GraphQL denial path builds a `Secured.Denial` (contest, resource, required roles, reason), logs
    it on `security.authz`, and returns its reference in the error `extensions.reference`. Errors carry message
    keys only, never exception text; an internal error gets a logged reference as in `ErrorHandler`.
@@ -102,10 +105,9 @@ Port onto a fresh branch from master, taking only what is worth keeping; do not 
    multiplied by `pageSize`); introspection only for authenticated callers; page size capped (for example 200);
    a per-request timeout (for example 20 s) with resolvers on the blocking JDBC pool (as `withAuthJsonOn`), not
    the default dispatcher; one operation per request, no batching.
-8. Explorer: none in production. If wanted, a root-only `GET /api/graphql/explorer` with same-origin assets and
-   no third-party CDN.
-9. Subscriptions: not in the first PR. They need WebSocket authentication and a visibility check per event, and
-   must stop when a token is revoked or a membership ends.
+8. Explorer: GraphiQL in dev and test only, not in production (decision, Q5).
+9. Subscriptions: none now; added when a screen needs one. They would need WebSocket authentication and a
+   visibility check per event, and must stop when a token is revoked or a membership ends.
 10. Mutations (second PR): each calls the service the UI uses (`RoundService`, `ContestService`, votes through
     the gallery's path, so jobs, counts, `distributing` and audit stay right), with the permission of the
     matching controller action, CSRF for session callers, write-scoped tokens only.
@@ -130,7 +132,10 @@ Negative authorization (each must also log one `security.authz` WARN carrying th
   secret), and the test pins which of the two the plan chose.
 - batching: an array body, or several operations in one document, is rejected; `GET /api/graphql` does not
   execute anything (405).
-- an organizer sees no emails or admin-only fields while the contest's admin does.
+- an organizer sees no emails or admin-only fields while the contest's admin does; a contest Admin sees the email
+  of members of their contest only, not of other users.
+- a juror of a round who is also an organizer or admin sees only their own votes in that round, through
+  `roundImages` and the vote fields (CY-2, #140).
 - token and session in the same request: the token wins, no escalation (a read-only caller with an admin cookie
   stays query-only).
 - one user with different roles in two contests, querying both in one request: each field is judged in its own
@@ -183,11 +188,9 @@ the session cookie; the main write path is session plus CSRF, and tokens stay qu
   images GraphQL reuses #129's keyset continuation rules (the full sort key plus the page id as tie-break, per
   ordering), one cursor design for both. Page size is capped (200). Offset is kept only for small lists
   (contests, rounds, users).
-- Explorer (GraphiQL): enabled in dev and test; in production root only, same-origin assets, no CDN. Recommendation:
-  dev and test only at first, and root-only in production later if support needs it, because every production
-  explorer is one more page to review.
-- Subscriptions: not in the first step; polling the round progress query every few seconds is enough until a
-  screen needs push.
+- Explorer (GraphiQL): enabled in dev and test only, not in production (decided).
+- Subscriptions: none now; polling the round progress query every few seconds is enough until a screen needs
+  push, and a subscription is added then.
 
 Slices (each a PR; "slice 1" and so on are what #136 should cite). Authorization design (section 4) and negative
 tests (section 5) apply to every slice. Days include review.
@@ -196,10 +199,10 @@ tests (section 5) apply to every slice. Days include review.
 |---|---|---|---|
 | 1 | Foundation and first screens: Play action `POST /api/graphql`, auth, limits, denial logging, SDL file plus the schema-matches-SDL test, codegen config, a section in `docs/api.md`, fixture sign-in; queries `me`, `contests`, `contest(id)` with rounds | #136's first screen, the root contests grid | 3-4 |
 | 2 | `roundStat` (round statistics, juror stats) and `round(id)` | #136's second screen, organizer round statistics | 1-1.5 |
-| 3 | After the gallery decision (#129): `roundImages` (keyset connection, the viewer's own vote, through `viewerRounds` / `viewAs`), `image(roundId, pageId)` | the juror gallery and large view | 2 |
+| 3 | After #129 and the vote-rule extraction: `roundImages` (keyset connection, the viewer's own vote, through `viewerRounds` / `viewAs`), `image(roundId, pageId)` | the juror gallery and large view | 2 |
 | 4 | Mutation `vote(roundId, pageId, rate, criterion?)`, after its rules are extracted into a service (below) | juror voting | 3 |
-| 5 | Comments, users, monuments; series fields once #119-#124 are in | organizer and admin screens | 2 |
-| 6 | Organizer and admin mutations through the services; subscriptions only if a screen needs them | later | open |
+| 5 | Comments, users, monuments; series fields once #119-#124 are in. Admin and organizer screens come first, so this slice may move ahead of 3-4 | organizer and admin screens | 2 |
+| 6 | Organizer and admin mutations through the services (no `createRound` in the first slices); subscriptions only when a screen needs one | later | open |
 
 The UI developer can start against the SDL after about 2 days of slice 1. Slices 1 and 2 are about 4-5.5 days.
 
@@ -212,22 +215,22 @@ two paths cannot drift. The mutation has the optional `criterion` argument. Nega
 round, stopped juror, a rate the round does not accept, criteria mismatch, an organizer voting (403), another
 contest's round, no CSRF header, a token caller. This is why slice 4 is 3 days and not 1.
 
-## 7. Open questions for the maintainer
+## 7. Decisions (2026-11-24)
 
-- Q1. Answered by the maintainer: GraphQL sits beside the REST `/api`; REST stays for tokens and scripts.
-- Q2. The React `ui/` of the `react` branch is not taken from here: #136 creates `ui/` in its platform step
-  (React islands on Twirl pages, see its sections 3 and 4). This plan only supplies the SDL, the endpoint and the
-  codegen config. Is that split right?
-- Q3. Tokens can write over REST today and a read-only scope is only planned (D-1b). Agree that GraphQL tokens
-  are query-only until a write scope exists, and which operations that scope should later allow?
-- Q4. Is Sangria fixed as the library? Caliban (ZIO) exists only on the old `graphql` branch and Tapir has no
-  GraphQL. I recommend Sangria: no ZIO runtime, plain Futures like the rest of the app.
-- Q5. Answered: the first client is a browser React UI on the same origin with the session cookie. Still open:
-  explorer in production (recommended: dev and test only for now), and whether any screen needs subscriptions.
-- Q6. Is `Vote` the right public name (the branch used `Selection`), and may emails appear in the `User` type
-  for contest admins?
-- Q7. Should round creation over GraphQL exist at all, given job-based distribution (a mutation would only
-  enqueue and return the job)?
-- Q8. Should the juror-facing slice (round images and vote, slices 3-4) come before or after the admin and
-  organizer screens (slices 1-2, 5)? The order above follows #136's first two screens and waits for the gallery
-  decision (#129).
+- Q1. GraphQL sits beside the REST `/api`; REST stays for tokens and scripts.
+- Q2. Split as planned: #135 supplies the server, the SDL, the endpoint and the codegen config; #136 creates
+  `ui/`.
+- Q3. Token callers are query-only: mutations and subscriptions from a token get 403 and are logged until a
+  write scope exists.
+- Q4. Sangria is the library.
+- Q5. First client: a browser React UI on the same origin with the session cookie. The explorer (GraphiQL) is for
+  dev and test only, not production. No subscriptions now; one is added when a screen needs it.
+- Q6. The public type name is `Vote`. `User.email` resolves only for root and for Admins of a contest the user is
+  a member of.
+- Q7. No `createRound` mutation in the first slices (a later one would only enqueue the distribution job).
+- Q8. Admin and organizer screens first (slices 1, 2, 5); the juror slices 3-4 come after #129 and the
+  vote-rule extraction.
+- CY-2 (#140), a rule coming: a juror of a round sees only their own votes in that round whatever their role.
+  The vote and round-image resolvers apply it (section 4, item 5; negative test in section 5).
+
+Still open: which operations a future write scope for tokens should allow (Q3 asked it; not answered).
