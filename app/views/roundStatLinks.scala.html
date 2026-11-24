@@ -1,7 +1,9 @@
 @import db.scalikejdbc.User
 @import db.scalikejdbc.Round
 @import org.intracer.wmua.Vote
-@(round: Round, user: User, rate: Int, byUserRateCount: Map[Long, Map[Int, Int]])(implicit messages: Messages)
+@(round: Round, user: User, rate: Int, byUserRateCount: Map[Long, Map[Int, Int]], links: Boolean = true)(implicit messages: Messages)
+@* `links`: the juror's lists, false for a viewer who is a juror of the round and sees only their own
+   votes there (GalleryService.othersVotesVisible): the count alone *@
     @* a binary round's votes of `rate`; a rated round's rated (any vote, a ✗ included: the
        juror's progress) for a `rate` above 0, else its unrated *@
     @defining(byUserRateCount.getOrElse(user.getId, Map.empty).toSeq.collect({
@@ -12,7 +14,10 @@
                     !round.isBinary && Vote.isUnrated(rate) && Vote.isUnrated(x)
         => y
     }).sum) { count =>
-        @if(count != 0) {
+        @if(count != 0 && !links) {
+        <span class="wlx-links-count-n">@count</span>
+        }
+        @if(count != 0 && links) {
         <span class="wlx-links-count">
         <span class="btn-group">
             @if(round.isBinary || rate == 0) {

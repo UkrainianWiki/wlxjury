@@ -19,15 +19,17 @@ class AccountChangeController @Inject()(cc: ControllerComponents) extends Secure
     * page past the last shows the last). A contest that doesn't exist (for root) is not found.
     */
   def changes(contestId: Long, page: Int = 1): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
+    withAuth(accountAdminPermission(Some(contestId))) { user => implicit request =>
       ContestJuryJdbc.findById(contestId).fold[Result](
         NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))
       ) { contest =>
         val size = AccountChangeLog.PageSize
-        val total = AccountChangeJdbc.countByContest(contestId)
+        // and the contest's series' grants, revocations and start-year changes (contest series plan §3.3)
+        val series = contest.seriesId
+        val total = AccountChangeJdbc.countByContest(contestId, series)
         val pages = math.max(1L, (total + size - 1) / size).toInt
         val shown = math.min(math.max(page, 1), pages)
-        val rows = AccountChangeLog.rows(AccountChangeJdbc.findByContest(contestId, size, (shown - 1) * size))
+        val rows = AccountChangeLog.rows(AccountChangeJdbc.findByContest(contestId, size, (shown - 1) * size, series))
         // email addresses: never kept by a cache
         Ok(views.html.accountChanges(user, contest, contestId, rows, shown, pages)).withHeaders(CACHE_CONTROL -> "no-store")
       }

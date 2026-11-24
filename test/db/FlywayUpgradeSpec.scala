@@ -973,6 +973,80 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+  /** V112's rollback SQL after reopen (the script's last comment): the series fields' log rows, the
+    * rounds' juror entries and the grants go, the CHECKs as V107 and V109 left them.
+    */
+  private val v112Rollback = Seq(
+    "DELETE FROM account_change WHERE field IN ('series_admin_granted', 'series_admin_revoked', 'series_admin_from_year', " +
+      "'series_admin_confirmed')",
+    "DELETE FROM contest_change WHERE kind IN ('round_juror_stopped', 'round_juror_reopened', 'round_juror_closed')",
+    "ALTER TABLE contest_change DROP CONSTRAINT IF EXISTS contest_change_kind_chk, " +
+      "DROP CONSTRAINT IF EXISTS contest_change_detail_chk, DROP CONSTRAINT IF EXISTS contest_change_subject_chk, " +
+      "ADD CONSTRAINT contest_change_kind_chk CHECK (kind IN ('created', 'identity', 'series_assigned', 'series_unassigned', " +
+      "'series_changed', 'split_out', 'split_in', 'split_undone', 'retired', 'unretired')), " +
+      "ADD CONSTRAINT contest_change_detail_chk CHECK (detail IS NULL OR JSON_VALID(detail)), " +
+      "ADD CONSTRAINT contest_change_subject_chk CHECK (contest_id IS NOT NULL OR series_id IS NOT NULL)",
+    "ALTER TABLE account_change DROP CONSTRAINT IF EXISTS account_change_field_chk, ADD CONSTRAINT account_change_field_chk " +
+      "CHECK (BINARY field IN ('email', 'password', 'role', 'name', 'wiki_account', 'root', 'account_created', 'invitation', " +
+      "'invitation_cancelled', 'password_link', 'share_link', 'sessions_ended', 'account_joined', 'account_retired'))",
+    "DROP TABLE IF EXISTS series_admin",
+    "DELETE FROM flyway_schema_history WHERE version = '112'")
+
+  "V112's series admins" should {
+    "run after V110 (V111 held by CY-4), keep one live grant per account and series, take the series fields and the " +
+      "rounds' juror kinds, rerun, roll back" in {
+      emptyDb("fw_v112_prev")
+      flyway("fw_v112_prev", production.copy(target = Some("110"))).migrate()
+      emptyDb("fw_v112")
+      flyway("fw_v112", production.copy(target = Some("110"))).migrate().success must beTrue
+      Using.resource(connect("fw_v112"))(c => run(c, Seq(
+        "INSERT INTO users (id, fullname, email) VALUES (1, 'A', 'a@example.com'), (2, 'B', 'b@example.com')",
+        "INSERT INTO series (id, name) VALUES (1, 'Wiki Loves Monuments in Nepal')",
+        "INSERT INTO account_change (user_id, actor_id, field) VALUES (1, 2, 'account_retired')")))
+      flyway("fw_v112", production.copy(target = Some("112"))).migrate().success must beTrue
+      val once = schema("fw_v112")
+      def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+      def refused(sql: String): Boolean = Using.resource(connect("fw_v112"))(c => scala.util.Try(run(c, Seq(sql))).isFailure)
+      def grant(user: Int) =
+        s"INSERT INTO series_admin (series_id, user_id, admin_from_year, granted_by) VALUES (1, $user, 2025, 2)"
+      val firstTaken = !refused(grant(1))
+      // a second live grant of the account on the series: the key; once revoked, a new one fits
+      val secondRefused = refused(grant(1))
+      Using.resource(connect("fw_v112"))(c => run(c, Seq("UPDATE series_admin SET revoked_at = NOW(3) WHERE user_id = 1")))
+      val regranted = !refused(grant(1))
+      val fields = Seq("series_admin_granted", "series_admin_revoked", "series_admin_from_year", "series_admin_confirmed")
+        .map(f => !refused(s"INSERT INTO account_change (user_id, actor_id, field, comment) VALUES (1, 2, '$f', 'series #1')"))
+      val kinds = Seq("round_juror_stopped", "round_juror_reopened", "round_juror_closed", "series_assigned")
+        .map(k => !refused(s"INSERT INTO contest_change (series_id, actor_id, kind, detail) VALUES (1, 2, '$k', '{\"round\":1}')"))
+      (history("fw_v112").map(_.split(" \\| ")(1)) === upTo("112")) and
+        (history("fw_v112").map(_.split(" \\| ")(1)) must not(contain("111"))) and
+        (firstTaken must beTrue) and (secondRefused must beTrue) and (regranted must beTrue) and
+        (fields === Seq(true, true, true, true)) and
+        // V109's kinds kept; the new ones in this case only
+        (kinds === Seq(true, true, true, true)) and
+        (refused("INSERT INTO contest_change (series_id, actor_id, kind) VALUES (1, 2, 'Round_juror_stopped')") must beTrue) and
+        // V107's field kept; another value, or another case, refused
+        (refused("INSERT INTO account_change (user_id, actor_id, field) VALUES (1, 2, 'account_retired')") must beFalse) and
+        (refused("INSERT INTO account_change (user_id, actor_id, field) VALUES (1, 2, 'Series_admin_granted')") must beTrue) and
+        // a series with grants can't be deleted
+        (refused("DELETE FROM series WHERE id = 1") must beTrue) and {
+          Using.resource(connect("fw_v112"))(c => run(c, Seq(
+            "DELETE FROM account_change WHERE field LIKE 'series_admin%'", "DELETE FROM series_admin",
+            "ALTER TABLE series_admin AUTO_INCREMENT = 1", "DELETE FROM contest_change",
+            "ALTER TABLE contest_change AUTO_INCREMENT = 1")))
+          val reset = schema("fw_v112")
+          Using.resource(connect("fw_v112"))(c => run(c, statements("V112__Series_admin.sql")))
+          schema("fw_v112") === reset
+        } and {
+          Using.resource(connect("fw_v112"))(c => run(c, v112Rollback))
+          (history("fw_v112").map(_.split(" \\| ")(1)) === upTo("110")) and
+            (tablesOnly(schema("fw_v112")) === tablesOnly(schema("fw_v112_prev"))) and
+            (flyway("fw_v112", production.copy(target = Some("112"))).migrate().success must beTrue) and
+            (tablesOnly(schema("fw_v112")) === tablesOnly(once))
+        }
+    }
+  }
+
   /** V96's rollback SQL after reopen (CHANGELOG, the account change log): the live unsent
     * invitations revoked first, since an older release would show one as mailed; the log dropped.
     */

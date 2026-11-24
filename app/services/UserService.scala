@@ -137,7 +137,8 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
       messages: Messages, linkHost: LinkHost = LinkHost.None): SearchAdded = {
     if (!User.mayAssignRoles(creator, Set(role))) throw new RoleNotAssignable
     val creatorRoot = creator.isRoot || creator.hasRole(User.ROOT_ROLE)
-    def gone(a: User) = a.deletedAt.nonEmpty || (!creatorRoot && (a.isRoot || a.hasRole(User.ROOT_ROLE)))
+    // a protected account (root, a series admin: contest series plan §3.3) is root's only
+    def gone(a: User) = a.deletedAt.nonEmpty || (!creatorRoot && User.isProtectedTarget(a))
     val account = User.findById(accountId).filterNot(gone).getOrElse(throw new AccountNotFound)
     val cId = contest.getId
     val added = addExisting(creator, account, byEmail = true, Some(contest), contest.id, role, sendInvitation,
@@ -169,7 +170,7 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     */
   def wikiMatches(creator: User, name: String): Seq[User] = {
     val creatorRoot = creator.isRoot || creator.hasRole(User.ROOT_ROLE)
-    User.findByAccount(name).filter(a => a.deletedAt.isEmpty && (creatorRoot || !(a.isRoot || a.hasRole(User.ROOT_ROLE))))
+    User.findByAccount(name).filter(a => a.deletedAt.isEmpty && (creatorRoot || !User.isProtectedTarget(a)))
   }
 
   /** The add row's add by a wiki account that names accounts whose wiki account is unverified
@@ -269,6 +270,10 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
             // an account an account join holds (J-2, kept or retiring) joins no contest meanwhile:
             // read under its row lock, which the join's start takes too
             if (row.nonEmpty && db.scalikejdbc.AccountJoinJdbc.joining(Seq(account.getId)).nonEmpty) throw new InJoinRefused
+            // a series admin of the contest's series is made a Juror there by root only (contest
+            // series plan §3.3, the role writes): read under the account's row lock
+            if (row.nonEmpty && role == User.JURY_ROLE && !creator.hasRole(User.ROOT_ROLE) &&
+              User.seriesProtected(account.getId, cId)) throw new RoleNotAssignable
             if (row.isEmpty) None
             else Some(row.filter(mayJoin).map { locked =>
               val added = UserContestJdbc.createMembership(locked.getId, cId, role)
@@ -466,9 +471,12 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     * concerned: nobody's account is taken.
     */
   def invitationRefused(creator: User, account: User): Boolean =
-    !(creator.isRoot || creator.hasRole(User.ROOT_ROLE)) && User.emailSetByAdmin(account.getId) &&
-      (account.password.nonEmpty || UserIdentityJdbc.everLinked(account.getId)) &&
-      ShareLinkService.handOverRefusal(creator, account).nonEmpty
+    !(creator.isRoot || creator.hasRole(User.ROOT_ROLE)) && (
+      // a protected account (a series admin: contest series plan §3.3) is invited by root only
+      User.isProtectedTarget(account) ||
+        User.emailSetByAdmin(account.getId) &&
+          (account.password.nonEmpty || UserIdentityJdbc.everLinked(account.getId)) &&
+          ShareLinkService.handOverRefusal(creator, account).nonEmpty)
 
   /** Sends the member (or a pending invitee) of the contest a new invitation: the role of a
     * pending one carried over. Whether the mail went out.

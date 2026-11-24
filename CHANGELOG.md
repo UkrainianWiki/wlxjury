@@ -31,6 +31,9 @@ Merged to master after the 26.11.14 build.
 - Root's contest reuse report shows which contests hold rounds of other contests (#123).
 - Large view loads the next file's photo ahead of time (#146).
 - Category names pasted with [[ ]] are accepted (#139).
+- Series admins (#140): root grants them, a series admin can add more, and an un-retired series asks root to confirm them again.
+- Revoking a series admin also revokes the links they made.
+- A juror of an open round sees only their own votes in it, whatever their contest role.
 
 **Fixes**
 
@@ -38,9 +41,13 @@ Merged to master after the 26.11.14 build.
 - Roles on conflict-of-interest pages are shown in the user's language.
 - Top-bar menus stay inside a phone's screen.
 
+**Security**
+
+- A juror stopping, reopening or closing their own round is logged and shown on round statistics.
+
 **Operations**
 
-- Migrations: V108, V109, V110.
+- Migrations: V108, V109, V110, V112.
 - Rolling back past V110: revoke the read-only API tokens first.
 - Script for maintaining the local image cache (#132).
 

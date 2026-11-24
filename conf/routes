@@ -198,6 +198,14 @@ GET         /admin/contests/:id/series                                          
 POST        /admin/contests/:id/series                                              @controllers.SeriesController.setContestSeries(id: Long)
 POST        /admin/contests/:id/retire                                              @controllers.SeriesController.retireContest(id: Long)
 POST        /admin/contests/:id/unretire                                            @controllers.SeriesController.unretireContest(id: Long)
+# Series admins (contest series plan §3.3, CY-2): the series page and "Add a series admin" (root and
+# the series' admins); root's revoke (with the chained revoke) and start-year change
+POST        /admin/series/grants/:id/revoke                                         @controllers.SeriesController.revokeGrant(id: Long)
+POST        /admin/series/grants/:id/from-year                                      @controllers.SeriesController.setGrantFromYear(id: Long)
+POST        /admin/series/grants/:id/confirm                                        @controllers.SeriesController.confirmGrant(id: Long)
+GET         /series/:id                                                             @controllers.SeriesController.seriesHome(id: Long)
+GET         /series/:id/admins/new                                                  @controllers.SeriesController.grantPage(id: Long, account: Option[Long] ?= None, fromYear: Option[Int] ?= None)
+POST        /series/:id/admins                                                      @controllers.SeriesController.grant(id: Long)
 GET         /admin/jobs/:id                                                         @controllers.JobController.status(id: Long)
 POST        /admin/jobs/:id/cancel                                                  @controllers.JobController.cancel(id: Long)
 POST        /admin/jobs/:id/retry                                                   @controllers.JobController.retry(id: Long)

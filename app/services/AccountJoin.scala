@@ -150,7 +150,9 @@ object AccountJoin {
       if (AccountSearch.isRoot(fresh)) None
       // the actor's reach: admin memberships of contests not retired (UserContest.opens)
       else Some(UserContestJdbc.findByUser(fresh.getId).filter(m => m.opens && m.role == User.ADMIN_ROLE)
-        .map(_.contestId).toSet)
+        .map(_.contestId).toSet ++
+        // and the contests the actor's live series grants reach (CA17)
+        db.scalikejdbc.SeriesAdminJdbc.seriesAccountContests(fresh.getId))
     }
 
   /** The contests each account is a member of, worked in ([[User.contestsWorkedInBy]]), or has a
@@ -180,7 +182,8 @@ object AccountJoin {
         // member's roles to an account the admin knows nothing about, past the email path's rule
         accounts.forall { a =>
           val in = contests.getOrElse(a.getId, Set.empty)
-          !AccountSearch.isRoot(a) && in.nonEmpty && in.forall(adminOf.contains)
+          // a protected account (root, a series admin: contest series plan §3.3) is root's to join
+          !User.isProtectedTarget(a) && in.nonEmpty && in.forall(adminOf.contains)
         }
     }
 

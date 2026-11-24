@@ -373,3 +373,52 @@ its year: move or retire that one first). A retired series keeps its contests li
 
 **9.4 Back-out.** V109's rollback is in its last comment (the series assignments and the log are
 lost); a pre-V109 binary runs on the V109 schema.
+
+**9.5 Series admins (CY-2, V112).** A grant is a row of `series_admin` (one live grant per account
+and series: `live_grant_series_id`); each grant, revocation and start-year change is an
+`account_change` row on the grantee (`series_admin_granted` with the computed default start year in
+`old_value` and the chosen one in `new_value`, `series_admin_revoked`, `series_admin_from_year` with
+old and new values; comment `series #<id>`, after a join `series #<id>; #<other account>`) and an
+INFO line on `security.roles`: `series_admin_granted account= series= from_year= default_year= by=
+root= grantId=`, `series_admin_revoked account= series= grantId= by=` with `chain= top=` or
+`reason=account_join|account_retired`, `series_admin_from_year account= series= old= new= by=
+grantId=`, `series_admin_moved account= from= series= grantId= from_year= by=`.
+
+- **Grant:** root or a series admin of the series, on the series page (`/series/<id>`, **Add a
+  series admin**). Only an active member of one of the series' live contests; never a root account,
+  a deleted or retiring account, oneself, or an existing grantee. Root sees each grant a series
+  admin added on `/admin/series` (the notices on top, and each series' last 24 hours).
+- **Revoke:** root only, on the series' root page (`/admin/series/<id>`); **Also revoke the grants
+  this admin added** follows `granted_by` to any depth in one transaction under the series' lock.
+  A grant root revoked is granted again by root only. A revocation takes effect on the grantee's
+  next request (series reach is read per request).
+- **Start year:** root changes it on the same page; it takes effect on the next request, account
+  reach included (lowering it widens reach to older contests' members); it doesn't cascade to the
+  grants that admin added (the tree lists them). The recomputed default is shown under it.
+- **Joins and retirement:** joining accounts moves the joined account's grants to the kept one with
+  their start years (a clash on one series keeps the kept account's grant and revokes the other),
+  and the grants it added count as added by the kept one; retiring an account revokes its grants.
+- **Un-retiring a series** (the maintainer's decision of 2026-11-24): its unrevoked grants come back
+  with `confirm_needed_at` set (`series_admin_to_confirm ... reason=series_unretired`): no access and
+  no protection, as a revoked grant, until root presses **Confirm** on the series' root page
+  (`series_admin_confirmed` in `account_change` and on `security.roles`). Their `granted_by` chains
+  are kept; a grant whose granter is still to confirm is refused until the granter is confirmed (a
+  revoked granter doesn't block it). An unconfirmed grant can be revoked as any.
+- **Protection** (the security review of #140): an account with any unrevoked grant, live or waiting
+  for confirmation or of a retired series, is protected: only root edits, links, invites, retires or
+  joins it, and in the series' contests only root makes it a Juror or removes or lowers its Admin
+  role (plan §3.3, kept by the maintainer). A join moves only live grants (it revokes waiting
+  ones and those of a retired series) and carries the joined account's revoked grants to the kept
+  one, so a grant root revoked stays root's to give again. Root's **Confirm** is refused if the
+  account's email, password, wiki account, root flag, joins, links or sign-in identities changed
+  since the grant began waiting (or since the series was last retired before that): revoke it and
+  grant again if it is the same person.
+- **What a revoke leaves:** it revokes the unused invitations, password and share links the account
+  made in the series' contests. It doesn't touch real rows: a real Admin (or other) row the series
+  admin holds in a contest stays (root removes it on the users page), and so do the accounts and
+  memberships the series admin added while the grant lived, and the contests' settings and rounds
+  they changed (read the contests' account change logs and round logs).
+- **Pilot back-out:** revoke the grant (with the chain if the pilot added others), then remove any
+  real rows listed above that root doesn't want kept.
+- **Migration back-out:** V112's rollback is in its last comment (every grant and its log rows are
+  lost; an older binary reads no grant, so series admins lose their series access with it).

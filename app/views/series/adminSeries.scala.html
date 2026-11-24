@@ -5,11 +5,15 @@
         batches: Seq[db.scalikejdbc.ContestChangeJdbc.Batch],
         names: Map[Long, String],
         contestTypes: Seq[services.series.SeriesIdentity.SeriesType],
-        unassigned: Int
+        unassigned: Int,
+        recentGrants: Map[Long, Seq[db.scalikejdbc.SeriesGrant]],
+        bySeriesAdmins: Seq[db.scalikejdbc.SeriesGrant]
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 @* Root's series page (contest series plan §5.3, CY-1; SeriesController.list): the series with
    their contests' years, a form to create one, the proposals' link, and the latest bulk
-   assignments with Undo. Names typed by root are escaped by Twirl *@
+   assignments with Undo. Names typed by root are escaped by Twirl. CY-2: each series' grants of
+   the last 24 hours with who added them (CA22), and root's notices of the grants series admins
+   added (CA19) *@
 @typeName(code: Option[String]) = @{ code.map(services.series.SeriesIdentity.typeOfCode(_).name).getOrElse("") }
 
 @mainAdmin("series.title", user, user.getId) {
@@ -25,6 +29,21 @@
         <span class="text-body-secondary ms-2" id="series-unassigned">@Messages("series.unassigned.count", unassigned)</span>
     </p>
 
+    @if(bySeriesAdmins.nonEmpty) {
+        <div class="alert alert-info" role="status" id="series-grant-notices">
+            <h2 class="h6">@Messages("series.admin.notices", controllers.SeriesController.NoticeDays)</h2>
+            <ul class="mb-0">
+                @for(g <- bySeriesAdmins) {
+                    <li class="series-grant-notice" data-grant="@g.id">@Messages("series.admin.notice",
+                        names.getOrElse(g.grantedBy, s"#${g.grantedBy}"), names.getOrElse(g.userId, s"#${g.userId}"),
+                        series.find(_.id == g.seriesId).map(_.name).getOrElse(s"#${g.seriesId}"), views.LinkTimes.utc(g.grantedAt))
+                        @if(g.revoked) {<span class="badge text-bg-secondary">@Messages("series.admin.revoked.badge")</span>}
+                        <a href="@routes.SeriesController.series(g.seriesId)">@Messages("series.admin.notice.open")</a></li>
+                }
+            </ul>
+        </div>
+    }
+
     <h2 class="h4 mt-4">@Messages("series.list")</h2>
     @if(series.isEmpty) {
         <p class="text-body-secondary" id="series-none">@Messages("series.none")</p>
@@ -38,6 +57,7 @@
                     <th scope="col">@Messages("series.type")</th>
                     <th scope="col">@Messages("country")</th>
                     <th scope="col">@Messages("series.contests")</th>
+                    <th scope="col">@Messages("series.admin.recent", controllers.SeriesController.RecentGrantHours)</th>
                     <th scope="col">@Messages("series.status")</th>
                 </tr>
             </thead>
@@ -49,6 +69,10 @@
                         <td>@typeName(s.contestType)</td>
                         <td>@s.country.getOrElse("")</td>
                         <td>@contests.filterNot(_.retired).map(_.year).distinct.sorted.reverse.mkString(", ")</td>
+                        <td class="series-recent-grants small">@for(g <- recentGrants.getOrElse(s.id, Nil)) {
+                            <div data-grant="@g.id">@Messages("series.admin.recent.entry", names.getOrElse(g.userId, s"#${g.userId}"),
+                                names.getOrElse(g.grantedBy, s"#${g.grantedBy}"))@if(g.revoked) { <span class="badge text-bg-secondary">@Messages("series.admin.revoked.badge")</span>}</div>
+                        }</td>
                         <td>@if(s.retired) {<span class="badge text-bg-secondary">@Messages("series.retired")</span>} else {@Messages("series.live")}</td>
                     </tr>
                     }

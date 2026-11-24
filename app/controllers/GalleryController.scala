@@ -115,7 +115,7 @@ class GalleryController @Inject() (
     listGeneric(Some(GalleryView.CommentsCsv), asUserId, Left(1), region, roundId)
 
   def listCurrent(page: Int = 1, region: String = "all"): EssentialAction =
-    withAuth() { user => implicit request =>
+    withAuth(rolePermission(Secured.ViewerRoles, derived = true)) { user => implicit request =>
       Redirect(routes.GalleryController.list(user.getId, page, region, 0).url, request.queryString)
     }
 
@@ -129,7 +129,7 @@ class GalleryController @Inject() (
       at: Either[Int, Long],
       region: String = "all",
       roundId: Long = 0
-  ): EssentialAction = noStore(withAuthOn(blocking)() { sessionUser => implicit request =>
+  ): EssentialAction = noStore(withAuthOn(blocking)(rolePermission(Secured.ViewerRoles, derived = true)) { sessionUser => implicit request =>
     val maybeRound =
       if (roundId == 0) JurorContests.firstOpenRound(sessionUser)
       else Round.findById(roundId)
@@ -386,7 +386,7 @@ class GalleryController @Inject() (
     * session's contest.
     */
   def countries(asUserId: Long, region: String, roundId: Long): EssentialAction =
-    withAuthJsonOn(blocking)() { sessionUser => implicit request =>
+    withAuthJsonOn(blocking)(rolePermission(Secured.ViewerRoles, derived = true)) { sessionUser => implicit request =>
       import play.api.libs.json.Json
       Round.findById(roundId).fold[Result](NotFound(Json.obj("error" -> "round_not_found"))) { round =>
         val user = Secured.inContest(sessionUser, round.contestId)
@@ -438,7 +438,7 @@ class GalleryController @Inject() (
     * it, whose votes); sent by script, it never switches the session's contest.
     */
   def regions(asUserId: Long, region: String, roundId: Long): EssentialAction =
-    withAuthJsonOn(blocking)() { sessionUser => implicit request =>
+    withAuthJsonOn(blocking)(rolePermission(Secured.ViewerRoles, derived = true)) { sessionUser => implicit request =>
       import play.api.libs.json.Json
       Round.findById(roundId).fold[Result](NotFound(Json.obj("error" -> "round_not_found"))) { round =>
         val user = Secured.inContest(sessionUser, round.contestId)
@@ -584,7 +584,7 @@ class GalleryController @Inject() (
   def contestFiles(contestId: Long, page: Int, deleted: Boolean, round: Option[Long], region: String,
       country: Option[String], coi: Boolean = false, author: Option[String] = None,
       monument: Option[String] = None): EssentialAction =
-    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId))) { user => implicit request =>
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId), derived = true)) { user => implicit request =>
       contestFilesView(user, contestId, deleted, round, region, country, coi, author, monument).fold(notFoundPage(user, _), { listed =>
         // all the category's files' counts (cached), which also give their number
         val all = categoryCountsOf(listed)
@@ -622,7 +622,7 @@ class GalleryController @Inject() (
   def contestFileRegions(contestId: Long, deleted: Boolean, round: Option[Long], region: String,
       country: Option[String], coi: Boolean = false, author: Option[String] = None,
       monument: Option[String] = None): EssentialAction =
-    withAuthJsonOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId))) { user => implicit request =>
+    withAuthJsonOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId), derived = true)) { user => implicit request =>
       contestFilesView(user, contestId, deleted, round, region, country, coi, author, monument).fold(notFoundJson, { view =>
         val messages: play.api.i18n.Messages = messagesApi.preferred(request)
         val regions =
@@ -638,7 +638,7 @@ class GalleryController @Inject() (
     */
   def contestFileCountries(contestId: Long, deleted: Boolean, round: Option[Long], region: String,
       country: Option[String], author: Option[String] = None, monument: Option[String] = None): EssentialAction =
-    withAuthJsonOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId))) { user => implicit request =>
+    withAuthJsonOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId), derived = true)) { user => implicit request =>
       contestFilesView(user, contestId, deleted, round, region, country, author = author, monument = monument)
         .fold(notFoundJson, { view =>
         val messages: play.api.i18n.Messages = messagesApi.preferred(request)
@@ -679,7 +679,7 @@ class GalleryController @Inject() (
   def contestFileLarge(contestId: Long, pageId: Long, deleted: Boolean, round: Option[Long], region: String,
       country: Option[String], coi: Boolean = false, author: Option[String] = None,
       monument: Option[String] = None): EssentialAction =
-    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId))) { user => implicit request =>
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId), derived = true)) { user => implicit request =>
       contestFilesView(user, contestId, deleted, round, region, country, coi, author, monument).fold(notFoundPage(user, _), { view =>
         // two files before it and five in all to move among, as a round's large view has them,
         // and on to the last one its strip of following files shows
@@ -748,7 +748,7 @@ class GalleryController @Inject() (
     NotFound(play.api.libs.json.Json.obj("error" -> messageKey.stripPrefix("error.").replace('.', '_')))
 
   def thumbnailUrls(contestId: Long, roundId: Option[Long]): EssentialAction =
-    withAuth(contestPermission(Set(User.ADMIN_ROLE), Some(contestId))) { user => implicit request =>
+    withAuth(contestPermission(Set(User.ADMIN_ROLE), Some(contestId), derived = true)) { user => implicit request =>
       // the permission is the contest's, so the round must be one of its: never another's
       val contest = ContestJuryJdbc.findById(contestId)
       val roundInContest = roundId.forall(id => Round.findById(id).exists(_.contestId == contestId))

@@ -45,7 +45,7 @@ class UserController @Inject()(cc: ControllerComponents,
     * @return List of users in admin view
     */
   def users(contestIdParam: Option[Long] = None): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, contestIdParam)) {
+    withAuth(accountAdminPermission(contestIdParam)) {
       user => implicit request =>
         (for (contestId <- contestIdParam.orElse(user.currentContest);
               contest <- ContestJuryJdbc.findById(contestId)) yield {
@@ -71,7 +71,12 @@ class UserController @Inject()(cc: ControllerComponents,
                              accounts = accounts,
                              shareable = shareable,
                              wikimediaSignIn = oauthSettings.wikimediaConfigured,
-                             commonsLinks = commonsLinks))
+                             commonsLinks = commonsLinks,
+                             seriesAdmins = {
+                               val grants = db.scalikejdbc.SeriesAdminJdbc.liveForContest(contestId)
+                               val names = services.series.SeriesAdmins.names(grants.map(_.userId))
+                               grants.map(g => names.getOrElse(g.userId, s"#${g.userId}"))
+                             }))
         }).getOrElse(Redirect(routes.LoginController.index)) // TODO message
     }
 
@@ -82,7 +87,7 @@ class UserController @Inject()(cc: ControllerComponents,
     * JSON 401; anyone else, an organizer, a juror or an inactive member included, the JSON denial.
     */
   def searchAccounts(contestIdParam: Option[Long] = None): EssentialAction =
-    withAuthJsonOn(blocking)(contestPermission(User.ADMIN_ROLES, contestIdParam)) { user => implicit request =>
+    withAuthJsonOn(blocking)(accountAdminPermission(contestIdParam)) { user => implicit request =>
       val noStore = CACHE_CONTROL -> "no-store"
       contestIdParam.orElse(user.contestId).flatMap(ContestJuryJdbc.findById).flatMap(c => c.id.map(c -> _)) match {
         case None => NotFound(play.api.libs.json.Json.obj("error" -> "contest_not_found")).withHeaders(noStore)
@@ -125,7 +130,7 @@ class UserController @Inject()(cc: ControllerComponents,
     * "Tell its owner by email" is ticked (unticked by default); the page says which.
     */
   def addExistingAccount(contestIdParam: Option[Long] = None): EssentialAction =
-    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, contestIdParam)) { user => implicit request =>
+    withAuthOn(blocking)(accountAdminPermission(contestIdParam)) { user => implicit request =>
       contestIdParam.orElse(user.contestId).flatMap(ContestJuryJdbc.findById) match {
         case None => NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))
         case Some(contest) =>
@@ -208,7 +213,7 @@ class UserController @Inject()(cc: ControllerComponents,
     * may not create, that it signs in with a link from root.
     */
   def confirmWikiAccount(contestIdParam: Option[Long] = None): EssentialAction =
-    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, contestIdParam)) { user => implicit request =>
+    withAuthOn(blocking)(accountAdminPermission(contestIdParam)) { user => implicit request =>
       contestIdParam.orElse(user.contestId).flatMap(ContestJuryJdbc.findById) match {
         case None => NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))
         case Some(contest) =>
@@ -342,8 +347,10 @@ class UserController @Inject()(cc: ControllerComponents,
     * email.
     */
   def canEditAccount(currentUser: User, other: User): Boolean =
-    currentUser.hasRole(User.ROOT_ROLE) || currentUser.id == other.id || !other.hasRole(User.ROOT_ROLE) && {
-      val adminOf = currentUser.userContests.filter(_.roles.contains(User.ADMIN_ROLE)).map(_.contestId).toSet
+    currentUser.hasRole(User.ROOT_ROLE) || currentUser.id == other.id || !User.isProtectedTarget(other) && {
+      // the actor's real Admin rows, and the contests their live series grants reach (CA17)
+      val adminOf = currentUser.userContests.filter(_.roles.contains(User.ADMIN_ROLE)).map(_.contestId).toSet ++
+        db.scalikejdbc.SeriesAdminJdbc.seriesAccountContests(currentUser.getId)
       val contests = UserContestJdbc.findByUser(other.getId).map(_.contestId) ++
         User.contestsWorkedIn(other.getId)
       contests.forall(adminOf.contains)
@@ -357,8 +364,8 @@ class UserController @Inject()(cc: ControllerComponents,
     * @return edit user form view
     */
   def editUser(userId: Long, contestId: Option[Long] = None, returnTo: Option[String] = None): EssentialAction =
-    withAuth(rolePermission(
-      Set(User.ADMIN_ROLE, User.ROOT_ROLE, s"USER_ID_$userId"))) {
+    withAuth(Secured.AnyOf(rolePermission(Set(User.ROOT_ROLE, s"USER_ID_$userId")),
+      accountAdminPermission(None))) {
       user => implicit request =>
         editableUser(user, userId, contestId).fold(Redirect(routes.LoginController.index)) { editedUser =>
           // returnTo: the page the profile was opened from (the navbar's link), read again by
@@ -398,7 +405,8 @@ class UserController @Inject()(cc: ControllerComponents,
     * admin of.
     */
   private def passwordLinksShown(user: User, accountId: Long): Seq[db.scalikejdbc.AccountToken] = {
-    val adminOf = user.userContests.filter(_.role == User.ADMIN_ROLE).map(_.contestId).toSet
+    val adminOf = user.userContests.filter(_.role == User.ADMIN_ROLE).map(_.contestId).toSet ++
+      db.scalikejdbc.SeriesAdminJdbc.seriesAccountContests(user.getId)
     AccountTokenJdbc.findByUser(accountId)
       .filter(t => AccountTokenJdbc.SetsPassword.contains(t.purpose))
       .filter(t => user.hasRole(User.ROOT_ROLE) || t.purpose == AccountTokenJdbc.PasswordReset ||
@@ -507,7 +515,10 @@ class UserController @Inject()(cc: ControllerComponents,
     *
     * @return list of users
     */
-  def saveUser(): EssentialAction = withAuthOn(blocking)() { user => implicit request => // may hash a password
+  // the merged role of a series admin (contest series plan §3.3): the body runs the account rules
+  // (canEditAccount, mayEditAccountNow: real rows plus seriesAccountContests) and the role writes'
+  // series rule, so derived Admin there is account reach (CA17)
+  def saveUser(): EssentialAction = withAuthOn(blocking)(rolePermission(Secured.ViewerRoles, derived = true)) { user => implicit request => // may hash a password
     def formErrors(formWithErrors: Form[User]): Result =
       if (formWithErrors("id").value.contains(user.getId.toString))
         ownProfile(BadRequest, user, userForm = Some(formWithErrors))
@@ -723,6 +734,7 @@ class UserController @Inject()(cc: ControllerComponents,
       .filter(r => User.isContestRole(r) && user.hasAnyRole(User.ADMIN_ROLES))
       .filter(_ => user.hasRole(User.ROOT_ROLE) || !editedUser.hasRole(User.ROOT_ROLE))
       .filterNot(r => editedUser.contestRole.contains(r))
+      .filter(r => UserController.seriesRoleWriteAllowed(user, editedUser, r))
     val roleNeedsInvitation =
       newRole.exists(User.ACCESS_ROLES.contains) && editedUser.contestId.isDefined && !editedUser.mayTakeAccessRole
     // a role change, root's made or taken included: decided on the account before the save, so
@@ -802,7 +814,8 @@ class UserController @Inject()(cc: ControllerComponents,
       }
       // a save refused inside its transaction: the address's, or the account no longer the editor's
       def refusedInside(key: String): Result =
-        refused(if (key == "user.in.other.contests" || key == "account.retired.meanwhile") None else Some("email"), key,
+        refused(if (key == "user.in.other.contests" || key == "account.retired.meanwhile" ||
+          key == "series.admin.protected.role") None else Some("email"), key,
           emailWas = Option.when(key == "user.email.changed.meanwhile")(
             User.findById(userId).map(_.emailLo).getOrElse("")))
       val save: Option[String] => Result = {
@@ -893,6 +906,7 @@ class UserController @Inject()(cc: ControllerComponents,
       if user.hasRole(User.ROOT_ROLE) || !editedUser.hasRole(User.ROOT_ROLE)
       contestId <- editedUser.contestId
       if !editedUser.contestRole.contains(role)
+      if UserController.seriesRoleWriteAllowed(user, editedUser, role)
     } yield (role, contestId)
 
     val written: Either[String, (Option[UserService.EmailChanged], Int)] =
@@ -907,6 +921,9 @@ class UserController @Inject()(cc: ControllerComponents,
         // which the join's start takes too)
         if (newRole.nonEmpty && db.scalikejdbc.AccountJoinJdbc.joining(Seq(userId)).nonEmpty)
           throw new UserController.Refused("account.join.in.progress")
+        // the series rule again, under the account's row lock (a grant committed meanwhile)
+        if (newRole.exists { case (role, _) => !UserController.seriesRoleWriteAllowed(user, editedUser, role) })
+          throw new UserController.Refused("series.admin.protected.role")
         var emailChange = Option.empty[UserService.EmailChanged]
         var wikiUnlinked = 0
         if (mayEdit) {
@@ -984,7 +1001,8 @@ class UserController @Inject()(cc: ControllerComponents,
     // the account can't take directly (O2, kept unsent otherwise, to send or share from the users
     // page), else one to sign in with, for a member with an access role who has no password
     // to use (or an unverified address)
-    def invitable(u: User) = !own && u.emailLo.nonEmpty && !u.isRoot && u.contestRole.exists(User.ACCESS_ROLES.contains) &&
+    def invitable(u: User) = !own && u.emailLo.nonEmpty && !u.isRoot &&
+      (user.hasRole(User.ROOT_ROLE) || !User.isProtectedTarget(u)) && u.contestRole.exists(User.ACCESS_ROLES.contains) &&
       !(u.emailVerified && u.hasUsablePassword) && !userService.invitationRefused(user, u)
     def outcome(sent: Boolean) = Messages(if (sent) "invitation.sent" else "invitation.not.sent")
     // the account retired (A-4) after this save committed: no invitation, said rather than a 404
@@ -1119,7 +1137,7 @@ class UserController @Inject()(cc: ControllerComponents,
   }
 
   def showImportUsers(contestIdParam: Option[Long]): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, contestIdParam)) {
+    withAuth(accountAdminPermission(contestIdParam)) {
       user => implicit request =>
         withContestId(user, contestIdParam) { contestId =>
           // after an import that didn't add every line (post/redirect/get): its result, once
@@ -1142,7 +1160,7 @@ class UserController @Inject()(cc: ControllerComponents,
 
   def importUsers(contestIdParam: Option[Long] = None): EssentialAction =
     // a database round trip or more per line: off Play's default dispatcher
-    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, contestIdParam)) {
+    withAuthOn(blocking)(accountAdminPermission(contestIdParam)) {
       user => implicit request => withContestId(user, contestIdParam) { contestId =>
         importUsersForm
           .bindFromRequest()
@@ -1208,7 +1226,7 @@ class UserController @Inject()(cc: ControllerComponents,
 
   def editGreeting(contestIdParam: Option[Long],
                    substituteJurors: Boolean = true): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, contestIdParam)) {
+    withAuth(contestPermission(User.ADMIN_ROLES, contestIdParam, derived = true)) {
       user => implicit request =>
         (for (contestId <- contestIdParam.orElse(user.currentContest);
               contest <- ContestJuryJdbc.findById(contestId)) yield {
@@ -1245,7 +1263,7 @@ class UserController @Inject()(cc: ControllerComponents,
     }
 
   def saveGreeting(contestIdParam: Option[Long] = None): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, contestIdParam)) {
+    withAuth(contestPermission(User.ADMIN_ROLES, contestIdParam, derived = true)) {
       user => implicit request => withContestId(user, contestIdParam) { contestId =>
         greetingTemplateForm
           .bindFromRequest()
@@ -1315,8 +1333,10 @@ class UserController @Inject()(cc: ControllerComponents,
   /** Makes `contestId`, one of the user's contests, the session's current contest: a POST
     * with the CSRF token (the navbar's contest menu), never a link another site could open.
     */
-  def switchContest(contestId: Long): EssentialAction = withAuth() { user => request =>
-    if (user.userContests.exists(m => m.contestId == contestId && m.opens)) {
+  def switchContest(contestId: Long): EssentialAction = withAuth(_ => true) { user => request =>
+    // a real membership that opens the contest, or a contest the user's series grants reach
+    // (contest series plan §3.3, Secured.maySwitchTo)
+    if (Secured.maySwitchTo(user, contestId)) {
       val newSession = request.session + (Secured.CurrentContestId -> contestId.toString)
       Redirect(routes.LoginController.index).withSession(newSession)
     } else {
@@ -1376,7 +1396,7 @@ class UserController @Inject()(cc: ControllerComponents,
     * (root too). Nothing to cancel is not found.
     */
   def cancelInvitation(id: Long, contestId: Long): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
+    withAuth(accountAdminPermission(Some(contestId))) { user => implicit request =>
       val cancelled = scalikejdbc.DB.localTx { implicit session =>
         // the account's row first, then its links: the order of a link's acceptance and of
         // UserService.invite (the log entry's foreign key would take the row after the links)
@@ -1399,7 +1419,7 @@ class UserController @Inject()(cc: ControllerComponents,
     * one without an email. A person not in the contest, or invited into it, is not found.
     */
   def reinvite(id: Long, contestId: Long): EssentialAction =
-    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
+    withAuthOn(blocking)(accountAdminPermission(Some(contestId))) { user => implicit request =>
       val inContest = User.findInContest(id, contestId).orElse {
         val pending = AccountTokenJdbc.findByUser(id)
           .exists(t => t.live && t.purpose == AccountTokenJdbc.Invitation && t.contestId.contains(contestId))
@@ -1411,7 +1431,9 @@ class UserController @Inject()(cc: ControllerComponents,
           // nor one with a usable password: a retired legacy one (P8) needs the invitation to set one
           // nor one that would hand an account with a password to an address an admin set, unless
           // this admin may hand it a set-password link ([[UserService.invitationRefused]])
-          if (account.isRoot || account.emailVerified && account.hasUsablePassword || account.emailLo.isEmpty ||
+          // a protected account (a series admin, contest series plan §3.3) is invited by root only
+          if (account.isRoot || !user.hasRole(User.ROOT_ROLE) && User.isProtectedTarget(account) ||
+              account.emailVerified && account.hasUsablePassword || account.emailLo.isEmpty ||
               userService.invitationRefused(user, account)) {
             BadRequest(views.html.errorPage(Some(user), "error.title", "invitation.not.possible"))
           } else {
@@ -1431,7 +1453,7 @@ class UserController @Inject()(cc: ControllerComponents,
     * switching the session's.
     */
   def shareInvitation(id: Long, contestId: Long): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
+    withAuth(accountAdminPermission(Some(contestId))) { user => implicit request =>
       shareLink(user, id, AccountTokenJdbc.Invitation, Some(contestId))
     }
 
@@ -1440,7 +1462,7 @@ class UserController @Inject()(cc: ControllerComponents,
     * their current contest; root in `contestId` if given, else in none.
     */
   def sharePasswordLink(id: Long, contestId: Option[Long] = None): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, contestId)) { user => implicit request =>
+    withAuth(accountAdminPermission(contestId)) { user => implicit request =>
       val inContest = if (user.hasRole(User.ROOT_ROLE)) contestId else contestId.orElse(user.contestId)
       shareLink(user, id, AccountTokenJdbc.PasswordReset, inContest)
     }
@@ -1607,10 +1629,26 @@ object UserController {
     * account is in or worked in, never a root account.
     */
   def mayEditAccountNow(actor: User, account: User)(implicit session: scalikejdbc.DBSession): Boolean =
-    actor.hasRole(User.ROOT_ROLE) || actor.id == account.id || !account.isRoot && {
-      val adminOf = UserContestJdbc.findByUser(actor.getId).filter(_.role == User.ADMIN_ROLE).map(_.contestId).toSet
+    actor.hasRole(User.ROOT_ROLE) || actor.id == account.id || !User.isProtectedTarget(account) && {
+      // real Admin rows, and the contests the actor's live series grants reach (CA17)
+      val adminOf = UserContestJdbc.findByUser(actor.getId).filter(_.role == User.ADMIN_ROLE).map(_.contestId).toSet ++
+        db.scalikejdbc.SeriesAdminJdbc.seriesAccountContests(actor.getId)
       (UserContestJdbc.findByUser(account.getId).map(_.contestId) ++ User.contestsWorkedIn(account.getId))
         .forall(adminOf.contains)
+    }
+
+  /** Whether a role write of `role` for `account` in the contest the edit form shows is allowed by
+    * the series rule (contest series plan §3.3, "The role writes"; the maintainer kept it on
+    * 2026-11-24 rather than the security review's root-only rule): when the account holds an
+    * unrevoked grant on the contest's series, no one but root adds it as a Juror there, or removes
+    * or downgrades its Admin row. Elsewhere its roles change as any member's. Checked before the
+    * save and again under the account's row lock ([[updateAccount]]).
+    */
+  def seriesRoleWriteAllowed(actor: User, account: User, role: String)(implicit
+      session: scalikejdbc.DBSession = scalikejdbc.AutoSession): Boolean =
+    actor.hasRole(User.ROOT_ROLE) || account.contestId.forall { contestId =>
+      val touches = role == User.JURY_ROLE || account.contestRole.contains(User.ADMIN_ROLE) && role != User.ADMIN_ROLE
+      !touches || !User.seriesProtected(account.getId, contestId)
     }
 
   /** The users page lists the live invitations into the contest and those of the last 30 days. */

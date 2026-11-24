@@ -136,7 +136,7 @@ object DuplicateAccounts {
     AccountSearch.administered(actor) match {
       case None => true
       case Some(adminOf) =>
-        accounts.forall(a => !a.isRoot && contests.getOrElse(a.getId, Set.empty).forall(adminOf.contains))
+        accounts.forall(a => !User.isProtectedTarget(a) && contests.getOrElse(a.getId, Set.empty).forall(adminOf.contains))
     }
 
   /** The report `actor` sees: for `contestId`, the groups with an account that is a member of it

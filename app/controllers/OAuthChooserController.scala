@@ -47,7 +47,7 @@ class OAuthChooserController @Inject() (
     Future {
       choice(request.session, flow).fold(refused("oauth.choose.expired")) { c =>
         noStore(Ok(views.html.oauthChoose(flow, c.options.flatMap { case (option, id) =>
-          User.findById(id).filter(u => u.deletedAt.isEmpty && !u.isRoot).map(u => entry(option, u))
+          User.findById(id).filter(u => u.deletedAt.isEmpty && !User.isProtectedTarget(u)).map(u => entry(option, u))
         })))
       }
     }(blocking)
@@ -64,7 +64,7 @@ class OAuthChooserController @Inject() (
       (for {
         c    <- choice(request.session, flow)
         id   <- c.options.collectFirst { case (o, id) if o == form.getOrElse("option", "") => id }
-        user <- User.findById(id).filter(u => u.deletedAt.isEmpty && !u.isRoot)
+        user <- User.findById(id).filter(u => u.deletedAt.isEmpty && !User.isProtectedTarget(u))
       } yield (c, user)).fold(refused("oauth.choose.expired")) { case (c, user) =>
         form.getOrElse("proof", "") match {
           // F1: an account without a login name of its own can't be signed in to: nothing is linked
@@ -116,7 +116,7 @@ class OAuthChooserController @Inject() (
       val pending = request.session.get(Flow).flatMap(choice(request.session, _))
       pending.fold(linkPage(refused("oauth.choose.expired"))) { c =>
         AccountTokenService.useChooseLink(token) match {
-          case Right(user) if c.options.exists(_._2 == user.getId) && !user.isRoot => linkPage(linkAndSignIn(c, user))
+          case Right(user) if c.options.exists(_._2 == user.getId) && !User.isProtectedTarget(user) => linkPage(linkAndSignIn(c, user))
           case Right(user) =>
             authLog.warn(s"oauth_choose_proof_failed accountId=${user.getId} proof=mail reason=not_this_choice")
             linkPage(refused("oauth.choose.expired"))

@@ -23,19 +23,39 @@ object JurorContests {
     */
   def switcherEntries(user: User): Seq[(UserContest, ContestJury)] = {
     val memberships = user.userContests.filter(_.opens)
-    if (memberships.size <= 1) Nil
+    // a series admin's menu also lists their series ([[seriesEntries]]): one real contest is then
+    // an entry too, to switch back to
+    val least = if (user.seriesGranted.nonEmpty) 1 else 2
+    if (memberships.size < least) Nil
     else {
       val current = (m: UserContest) => user.contestId.contains(m.contestId)
       val toCheck = memberships.filter(m => jurorOnly(m) && !current(m)).map(_.contestId)
       val open = Round.contestsWithOpenRound(user.getId, toCheck)
       val listed = memberships.filter(m => current(m) || !jurorOnly(m) || open(m.contestId))
-      if (listed.size <= 1) Nil
+      if (listed.size < least) Nil
       else {
         val contests = ContestJuryJdbc.findAllBy(sqls.in(ContestJuryJdbc.defaultAlias.id, listed.map(_.contestId)))
         listed.flatMap(m => contests.find(_.id.contains(m.contestId)).map(m -> _))
       }
     }
   }
+
+  /** The contest menu's series entries (contest series plan §3.3, §5.1): one per live series the user
+    * is a series admin of, "Series: <name> (Series admin)", linking to its series page; its
+    * contests are never listed flat. A session's only (Secured.withSeries); one query.
+    */
+  def seriesEntries(user: User): Seq[db.scalikejdbc.Series] =
+    if (user.seriesGranted.isEmpty) Nil
+    else db.scalikejdbc.SeriesJdbc.findByIds(user.seriesGranted).filter(_.live)
+      .sortBy(_.name.toLowerCase(java.util.Locale.ROOT))
+
+  /** The contest the session is in through a series grant only (no real membership opens it), with
+    * the derived role there: the menu's button names it.
+    */
+  def seriesCurrent(user: User): Option[(ContestJury, String)] =
+    user.contestId.filterNot(c => user.userContests.exists(m => m.contestId == c && m.opens))
+      .flatMap(c => user.seriesContests.find(_.contestId == c))
+      .flatMap(sc => ContestJuryJdbc.findById(sc.contestId).map(_ -> sc.role))
 
   /** A heading of the contest menu and its entries: a series' (`Series: <name>`), "Earlier years"
     * or "Other contests"; no heading for a menu with no live series.

@@ -733,8 +733,11 @@ final case class RoundList(
     * by the latest comment, its default): a juror's order by vote time isn't one of its, and a
     * named binary order would be remembered as chosen.
     */
-  def inRound(round: Round, viewerId: Long, jurorOfRound: Boolean): RoundList =
-    if (asUserId == 0 || asUserId == viewerId || jurorOfRound) withRound(round)
+  def inRound(round: Round, viewerId: Long, jurorOfRound: Boolean, ownOnly: Boolean = false): RoundList =
+    // a round the viewer judges while it is open (`ownOnly`, the conflict-of-interest rule,
+    // GalleryService.ownVotesOnlyRounds): their own votes there, as their own gallery opens
+    if (ownOnly && asUserId != viewerId) withRound(round).withViewer(viewerId).withOrder(ListOrder.FileOrder)
+    else if (asUserId == 0 || asUserId == viewerId || jurorOfRound) withRound(round)
     else withRound(round).withViewer(0).withOrder(if (view.comments) ListOrder.LatestComment else ListOrder.ByRate)
 
   /** The list's query string: its view (`module`, for a large view's way back), filter, the
