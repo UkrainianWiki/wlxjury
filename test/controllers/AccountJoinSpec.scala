@@ -615,6 +615,21 @@ class AccountJoinSpec extends PlaySpecification with PlayTestDb with AccountTest
       }
     }
 
+    "leave the joined account's API tokens unusable once the join is done" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val root = person("Root", "root@example.com", None, root = true)
+        val k = person("K", "k@example.org", Some(10))
+        val j = person("J", "j@example.org", Some(10))
+        val joinedToken = services.ApiTokenService.create(j.getId, "j", None)
+        services.ApiTokenService.authenticate(joinedToken).map(_._2.getId) must beSome(j.getId)
+        startedJob(serviceStart(new TestJoin(new RecordingMail), root, Some(10), k, j)._1).status === JobStatus.Done
+        AccountJoinJdbc.joining(Seq(j.getId)) must beEmpty
+        services.ApiTokenService.authenticate(joinedToken) must beNone
+        ApiTokenJdbc.findByHash(services.ApiTokenService.hash(joinedToken)).get.revoked must beTrue
+      }
+    }
+
     "refuse adding either account to a round while its step runs" in {
       testDbApp { implicit app =>
         val contest = createContests(10).head

@@ -92,7 +92,7 @@ Errors are JSON, with a fixed code and never the request's text:
 - Tokens are stored as their SHA-256 only (`api_token`, migration V75), with a prefix
   (`wlxj_` and 6 characters) that names them in the profile list and in log lines.
 - A refused token is logged as `api_token_refused reason=… tokenId=…`, never its value
-  (logger `services.ApiTokenService`): a revoked or expired token, or one of a deleted user,
+  (logger `services.ApiTokenService`): a revoked or expired token, or one of a deleted user or an account an account join is retiring,
   at WARN (a revoked token still in use is a sign it leaked); an unknown one at INFO with its
   prefix (`services.ApiTokenService` is at INFO in `conf/logback.xml` and in production's
   `conf/logback-production.xml`, which ships in the release); a malformed token or another

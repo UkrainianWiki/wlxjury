@@ -62,10 +62,11 @@ object ApiTokenService extends Logging {
 
   /** The token's record and its user, in their latest contest ([[Secured.inCurrentContest]],
     * as a session without a current contest), if the token is usable: well-formed, known,
-    * neither revoked nor expired, of a scope this binary knows, and its user not deleted. Records
+    * neither revoked nor expired, of a scope this binary knows, and its user neither deleted nor
+    * retired by an account join in progress (any scope). Records
     * the use; what the scope allows is [[api.ApiAuth]]'s check. A refused token
     * is logged with its id (an unknown one with its prefix), never its value. A revoked or
-    * expired token, or one of a deleted user, at WARN: it takes a real token's hash, so random
+    * expired token, or one of a deleted or retiring user, at WARN: it takes a real token's hash, so random
     * input can't flood it, and a revoked token still in use is the clearest sign of a leak.
     * An unknown one at INFO, and a malformed one, checked before any lookup, at DEBUG, so
     * that a client sending garbage neither floods the log nor queries the database.
@@ -84,6 +85,11 @@ object ApiTokenService extends Logging {
         case Some(found) =>
           User.findById(found.userId).filter(_.deletedAt.isEmpty) match {
             case None => refused(info = false, "user_missing", s"tokenId=${found.id}")
+            // an account an account join retires (J-2): its tokens are revoked with the join's
+            // start, and a token that still exists (created before the start's lock) is refused as
+            // the session path refuses the account (LoginResults.signedIn, Secured)
+            case Some(user) if db.scalikejdbc.AccountJoinJdbc.retiring(user.id.toSeq).nonEmpty =>
+              refused(info = false, "account_retiring", s"tokenId=${found.id}")
             case Some(user) =>
               ApiTokenJdbc.touch(found.id)
               Some(found -> Secured.inCurrentContest(user, None))

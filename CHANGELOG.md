@@ -47,6 +47,7 @@ Merged to master after the 26.11.14 build.
 **Security**
 
 - A juror stopping, reopening or closing their own round is logged and shown on round statistics.
+- API tokens of an account being retired by an account join are refused.
 
 **Operations**
 
