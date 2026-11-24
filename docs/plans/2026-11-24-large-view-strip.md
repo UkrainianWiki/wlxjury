@@ -40,8 +40,7 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
   rows in a statement that already runs, plus one `countsByRoom` statement**, plus 5 image
   requests (the real cost, in the browser and on the image cache side). A large view step is tens
   of ms (V99 note: 243 -> 80 ms in the worst case on production's copy; V100 note, separately:
-  197 -> 43 ms), so 3 rows are noise next to the page's other statements. A real-app timing is being measured separately; this plan only uses it
-  to choose the default (section 4).
+  197 -> 43 ms), so 3 rows are noise next to the page's other statements. The clean timing (`docs/performance/2026-11-24-large-view-timing.md`, PR #142) measured the strip at 0 to 17 ms with under-sized test thumbnails.
 - **Dependencies:** none for keyboard or navigation. Keys and buttons use `data-key-*` on
   `navigationButtons` and the 5-file `files` window (`Neighbourhood.next`, `index`), not the strip.
   The strip is plain links, so it works without script. Only `large-sections.js` (state) and the
@@ -155,25 +154,25 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
   (large-sections.js) stays and is orthogonal: the option decides what, the section state
   whether it is open.
 - **No contest-level default** (decided, Q4): per account only.
-- **Default (recommended): Off**, the section header still present with a one-click "Show next
-  files". Reasons: the strip's value is doubtful by the maintainer's own account, it is the only
-  part of the large view that loads five images a juror may never see, and the next-image prefetch
-  (section 6) covers its speed benefit. **This depends on the separate real-app timing:** if the
-  strip's cost is a few ms and its images cost nothing noticeable, Next files stays the default
-  for continuity and the work is only the switch; if it costs visibly, Off.
+- **Default (decided, Q1): Next files, collapsed.** With lazy images (the F1 to F3 PR, #134) a
+  collapsed section loads nothing, so the default costs nothing; jurors can choose Off, Same
+  monument or My recent votes. The clean timing (`docs/performance/2026-11-24-large-view-timing.md`,
+  PR #142) measured the strip at 0 to 17 ms, with under-sized test thumbnails, so the real cost of
+  a full-size strip is probably somewhat higher; that is why it ships collapsed and lazy.
+
 
 ## 5. Steps, effort, tests
 
 | # | Step | Effort |
 |---|---|---|
-| S1 | `loading="lazy"`, `decoding="async"` and `width`/`height` on the strip's images in both templates. This is the strip's part of F1 of the modern web guidance plan (#134, which cites `contestFile.scala.html:91`); **whichever PR lands first does it** and the other drops it (proposal: #134's F1 PR) | 1 h |
+| S1 | *(Not in this plan's PR.)* The strip's lazy attributes (`loading="lazy"`, `decoding="async"`, `width`/`height`) come with the F1 to F3 PR (#134, decided); this plan builds on them | 0 |
 | S2 | Account column, `User` field, the header menu and its POST (CSRF, denial paths) | 0.5 day |
 | S3 | One strip function for an option, used by both templates; Next files = today's `following`. `RoundList.around`'s 6-row widening, `hood.following` and `commentCounts` are read only for Next (Monument and Recent have no fallback, so Off, Monument and Recent skip them) | 0.5-1 day |
 | S4 | Same monument via `withMonument`, rate chips, the empty-with-note section | 0.5 day |
 | S5 | My recent votes via the `latest-vote` order, closed-round and `asUserId == 0` rules | 0.5 day |
 | S6 | Message keys, one snippet for both templates, a browser test of the section | 0.5 day |
 
-About 3-4 days. S1 can ship alone, first.
+About 3-4 days, after the F1 to F3 PR and the prefetch PR.
 
 **Tests**
 - Per option for a juror: Next equals today's `Neighbourhood.following`; monument: only this
@@ -199,20 +198,21 @@ French speaker's of fr: `large.strip.title`, `large.strip.option.off`, `large.st
 monument id or no sibling), `large.strip.recent.none`, `large.strip.empty`,
 `large.strip.change`; `large.next.files` stays as the Next label.
 
-## 6. The prefetch of the next file's main image (separate, keep)
+## 6. The prefetch of the next file's main image (separate, goes first)
 
 Nothing prefetches the next file's large image today (the only `new Image()` is in the Unite
-Gallery plugin). The main image is served from Wikimedia directly with a `srcset`/`sizes` and a
-proxy fallback (`large.scala.html`, kept by the tiles plan section 3.5), so the prefetch must ask
-for the same candidate the page will pick: `<link rel="preload" as="image" imagesrcset=... imagesizes=...>`
-(or an `Image()` with the same `srcset` and `sizes`), built from `Global.largeImage(next)` for
-`Neighbourhood.next`. A plain `href` prefetch could fetch a different size and be wasted. It is
+Gallery plugin). **Decided (Q10): it goes first, as its own PR, done by script**: a small script
+creates an `Image()` with the same `src`, `srcset` and `sizes` as the page's main image (the
+values from a `<meta>` or a data attribute rendered from `Global.largeImage(next)` for
+`Neighbourhood.next`), so the browser fetches the candidate the page will pick (the main image is
+served from Wikimedia directly with a `srcset`/`sizes` and a proxy fallback, `large.scala.html`,
+kept by the tiles plan section 3.5). The server-side `<link rel="preload" as="image">` was
+measured useless in Chromium 156 (the preloaded image was not reused), so it is not used. It is
 independent of the strip. Rules: only the file the vote or down key goes to, none when it is a
-video, none where the viewer cannot vote. About 0.5 day with a view spec for the tag. The UI
-approach investigation's **mock prototype** (not the real page) ran the vote and the move in about
-95 ms with the next image prefetched; the real gain is to be taken from the real-app timing
-measurement (`docs/performance/2026-11-24-large-view-timing.md`, in progress; link here once it
-exists). Its own PR.
+video, none where the viewer cannot vote. About 0.5 day with a spec for the data attribute. The
+clean timing (`docs/performance/2026-11-24-large-view-timing.md`, PR #142) measured the prefetch
+at -84 to -103 ms at 80 ms latency and -347 to -369 ms at 8 Mbit/s per vote step.
+
 
 ## 7. Decisions of the maintainer (2026-11-24) and open questions
 
@@ -231,9 +231,8 @@ Decided:
   whatever their role; the strip must respect it: Same monument shows only the viewer's own
   ratings in rounds they judge (the viewer is then the viewed juror, as `viewAs` returns).
 
-Provisional, to be re-confirmed after the clean timing (#142, being re-measured after a confound
-was found: the preload gain is about 0 when measured cleanly; strip off or lazy still helps on
-slow links; production already caches CSS and JS for a year):
-- **Q1:** default Off.
-- **Q10:** the cheap speed-ups first (lazy attributes S1, the prefetch as its own PR); the
-  prefetch's worth in particular depends on the clean measurement.
+Re-decided on the clean timing (#142, 2026-11-24):
+- **Q1:** default **Next files, collapsed** (replaces the earlier proposal of Off): lazy images
+  make a collapsed strip cost nothing.
+- **Q10:** the next-file main-image prefetch goes first, as its own PR, by script (section 6); the
+  strip's lazy images come with the F1 to F3 PR (#134), so S1 is not in this PR.
