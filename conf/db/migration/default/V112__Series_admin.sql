@@ -13,7 +13,10 @@
 --    at last year, else last year), editable by the granter within their bounds, later by root only.
 --    granted_by: who added it (root or a series admin of the series); the chained revoke follows
 --    it. revoked_by_root: a grant root revoked may be granted again by root only. A live grant:
---    revoked_at NULL, its series live and its account not deleted. The generated
+--    revoked_at NULL and confirm_needed_at NULL, its series live and its account not deleted.
+--    confirm_needed_at (the maintainer's decision of 2026-11-24): set on the series' unrevoked grants
+--    when root un-retires it; such a grant gives no access and no protection, exactly as a revoked
+--    one, until root confirms it (back to NULL); its granted_by chain is kept. The generated
 --    live_grant_series_id is series_id while the grant is not revoked, and UNIQUE (user_id,
 --    live_grant_series_id) keeps one live grant per account and series (as contest_jury's
 --    live_series_id, V109). The grant goes with its series only if the series goes (RESTRICT: a
@@ -23,7 +26,8 @@
 --  * account_change's field CHECK (V96, widened by V106 and V107, whose values it keeps) gains
 --    series_admin_granted (old_value: the computed default start year, new_value: the chosen one),
 --    series_admin_revoked (old_value: the start year) and series_admin_from_year (old and new
---    values), each with the comment "series #<id>".
+--    values) and series_admin_confirmed (root's confirmation; old_value the start year), each with the
+--    comment "series #<id>".
 --
 -- Rerunnable: CREATE TABLE IF NOT EXISTS; the CHECK dropped if there and added again. The new table
 -- is empty; the CHECK copies account_change (production: a few hundred rows, milliseconds; writes
@@ -41,6 +45,7 @@ CREATE TABLE IF NOT EXISTS series_admin (
   revoked_at           TIMESTAMP(3)    NULL DEFAULT NULL,
   revoked_by_root      BOOLEAN         NOT NULL DEFAULT FALSE,
   comment              VARCHAR(500)    NULL DEFAULT NULL,
+  confirm_needed_at    TIMESTAMP(3)    NULL DEFAULT NULL,
   live_grant_series_id BIGINT UNSIGNED AS (IF(revoked_at IS NULL, series_id, NULL)) PERSISTENT,
   PRIMARY KEY (id),
   UNIQUE KEY series_admin_live_grant_uidx (user_id, live_grant_series_id),
@@ -56,14 +61,15 @@ ALTER TABLE account_change DROP CONSTRAINT IF EXISTS account_change_field_chk,
     CHECK (BINARY field IN ('email', 'password', 'role', 'name', 'wiki_account', 'root', 'account_created',
                             'invitation', 'invitation_cancelled', 'password_link', 'share_link', 'sessions_ended',
                             'account_joined', 'account_retired', 'series_admin_granted', 'series_admin_revoked',
-                            'series_admin_from_year'));
+                            'series_admin_from_year', 'series_admin_confirmed'));
 
 -- A pre-V112 binary runs on this schema: it never names series_admin (no series admin has any
 -- access there) and writes none of the new fields; it shows their log rows by message keys it lacks.
 -- Undo, after reopen (every grant and its log rows are lost; revoke the grants first if the
 -- accounts' sessions should end their series access before the older binary starts, which happens
 -- anyway: the older binary reads no grant):
---   DELETE FROM account_change WHERE field IN ('series_admin_granted', 'series_admin_revoked', 'series_admin_from_year');
+--   DELETE FROM account_change WHERE field IN ('series_admin_granted', 'series_admin_revoked', 'series_admin_from_year',
+--     'series_admin_confirmed');
 --   ALTER TABLE account_change DROP CONSTRAINT IF EXISTS account_change_field_chk,
 --     ADD CONSTRAINT account_change_field_chk CHECK (BINARY field IN ('email', 'password', 'role',
 --     'name', 'wiki_account', 'root', 'account_created', 'invitation', 'invitation_cancelled',

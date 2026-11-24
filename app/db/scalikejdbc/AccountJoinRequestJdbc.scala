@@ -94,7 +94,7 @@ object AccountJoinRequestJdbc {
     */
   private[scalikejdbc] def liveGrant(id: SQLSyntax): SQLSyntax =
     sqls"""EXISTS (SELECT 1 FROM series_admin sa JOIN series s ON s.id = sa.series_id AND s.retired_at IS NULL
-                   WHERE sa.user_id = $id AND sa.revoked_at IS NULL)"""
+                   WHERE sa.user_id = $id AND ${SeriesAdminJdbc.liveGrantCondition(sqls"sa")})"""
 
   /** The accounts' users rows, locked until the transaction ends, in ascending id (the account
     * join plan's lock order: `users` before `user_contest` and everything else).

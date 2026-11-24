@@ -202,6 +202,7 @@ POST        /admin/contests/:id/unretire                                        
 # the series' admins); root's revoke (with the chained revoke) and start-year change
 POST        /admin/series/grants/:id/revoke                                         @controllers.SeriesController.revokeGrant(id: Long)
 POST        /admin/series/grants/:id/from-year                                      @controllers.SeriesController.setGrantFromYear(id: Long)
+POST        /admin/series/grants/:id/confirm                                        @controllers.SeriesController.confirmGrant(id: Long)
 GET         /series/:id                                                             @controllers.SeriesController.seriesHome(id: Long)
 GET         /series/:id/admins/new                                                  @controllers.SeriesController.grantPage(id: Long, account: Option[Long] ?= None, fromYear: Option[Int] ?= None)
 POST        /series/:id/admins                                                      @controllers.SeriesController.grant(id: Long)

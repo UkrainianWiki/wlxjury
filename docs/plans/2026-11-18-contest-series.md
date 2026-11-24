@@ -383,7 +383,11 @@ All of this is logged in `contest_change`.
 - nothing can be created in it;
 - its contests stay live and show under "Other contests";
 - it is excluded from `seriesContests` and from COI's series branch (specs);
-- un-retiring asks root to re-confirm each grant.
+- un-retiring asks root to re-confirm each grant (the maintainer, 2026-11-24): the grants come back
+  "to confirm" (`series_admin.confirm_needed_at`), giving no access and no protection until root
+  confirms each; `granted_by` chains are kept; a grant whose granter is still to confirm is refused
+  until the granter is confirmed (a revoked granter doesn't block it); an unconfirmed grant can be
+  revoked. Built in CY-2.
 
 **Retired contests:**
 

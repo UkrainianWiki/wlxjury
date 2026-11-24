@@ -977,7 +977,8 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     * the grants go, the CHECK as V107 left it.
     */
   private val v112Rollback = Seq(
-    "DELETE FROM account_change WHERE field IN ('series_admin_granted', 'series_admin_revoked', 'series_admin_from_year')",
+    "DELETE FROM account_change WHERE field IN ('series_admin_granted', 'series_admin_revoked', 'series_admin_from_year', " +
+      "'series_admin_confirmed')",
     "ALTER TABLE account_change DROP CONSTRAINT IF EXISTS account_change_field_chk, ADD CONSTRAINT account_change_field_chk " +
       "CHECK (BINARY field IN ('email', 'password', 'role', 'name', 'wiki_account', 'root', 'account_created', 'invitation', " +
       "'invitation_cancelled', 'password_link', 'share_link', 'sessions_ended', 'account_joined', 'account_retired'))",
@@ -1005,12 +1006,12 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
       val secondRefused = refused(grant(1))
       Using.resource(connect("fw_v112"))(c => run(c, Seq("UPDATE series_admin SET revoked_at = NOW(3) WHERE user_id = 1")))
       val regranted = !refused(grant(1))
-      val fields = Seq("series_admin_granted", "series_admin_revoked", "series_admin_from_year")
+      val fields = Seq("series_admin_granted", "series_admin_revoked", "series_admin_from_year", "series_admin_confirmed")
         .map(f => !refused(s"INSERT INTO account_change (user_id, actor_id, field, comment) VALUES (1, 2, '$f', 'series #1')"))
       (history("fw_v112").map(_.split(" \\| ")(1)) === upTo("112")) and
         (history("fw_v112").map(_.split(" \\| ")(1)) must not(contain("111"))) and
         (firstTaken must beTrue) and (secondRefused must beTrue) and (regranted must beTrue) and
-        (fields === Seq(true, true, true)) and
+        (fields === Seq(true, true, true, true)) and
         // V107's field kept; another value, or another case, refused
         (refused("INSERT INTO account_change (user_id, actor_id, field) VALUES (1, 2, 'account_retired')") must beFalse) and
         (refused("INSERT INTO account_change (user_id, actor_id, field) VALUES (1, 2, 'Series_admin_granted')") must beTrue) and

@@ -344,8 +344,46 @@ class SeriesController @Inject() (cc: ControllerComponents, blocking: BlockingEx
       val reuse = scalikejdbc.DB.readOnly(implicit s => ContestReuse.check(contest, reuseSettings))
       Ok(views.html.series.contestSeries(user, contest, all, ContestSeries.previous(contest),
         all.filter(s => s.live && !SeriesIdentity.mismatch(s, contest)).map(_.id).toSet, reuse, changes, names,
-        ContestSeries.liveRoundRefusal(contestId)))
+        ContestSeries.liveRoundRefusal(contestId), movedGrants(contest, all)))
         .withHeaders(CACHE_CONTROL -> "no-store")
+    }
+  }
+
+  /** The series admins a move of the contest changes (§3.5, "Moving a contest between series"):
+    * per live series with live grants, each grant's account with what it gives in this contest
+    * (derived Admin with account reach from its start year on, Organizer below it, CA17, CA20),
+    * whether the account holds a real Admin row here (root keeps or removes it), none where it
+    * holds a Juror row (CA7). The contest's own series' admins lose it by a move or unassignment;
+    * another series' gain it by a move there. One query for the grants, one for the members.
+    */
+  def movedGrants(contest: org.intracer.wmua.ContestJury, all: Seq[db.scalikejdbc.Series]): Seq[SeriesController.Moved] = {
+    val live = all.filter(_.live).map(s => s.id -> s).toMap
+    val grants = SeriesAdminJdbc.liveInSeries(live.keys.toSeq)
+    if (grants.isEmpty) Nil
+    else {
+      val roles = db.scalikejdbc.UserContestJdbc.findByContest(contest.getId).map(m => m.userId -> m.role).toMap
+      val names = SeriesAdmins.names(grants.map(_.userId))
+      grants.groupBy(_.seriesId).toSeq.flatMap { case (seriesId, gs) =>
+        live.get(seriesId).map { s =>
+          SeriesController.Moved(s, gain = !contest.seriesId.contains(seriesId),
+            gs.filterNot(g => roles.get(g.userId).contains(User.JURY_ROLE)).map { g =>
+              SeriesController.MovedGrant(names.getOrElse(g.userId, s"#${g.userId}"),
+                if (contest.year >= g.adminFromYear) User.ADMIN_ROLE else "organizer",
+                realAdmin = roles.get(g.userId).contains(User.ADMIN_ROLE))
+            })
+        }
+      }.filter(_.grants.nonEmpty).sortBy(m => (m.gain, m.series.name.toLowerCase(java.util.Locale.ROOT)))
+    }
+  }
+
+  /** Root confirms a grant waiting since its series was un-retired (a POST with the CSRF token; root
+    * only): [[SeriesAdmins.confirm]].
+    */
+  def confirmGrant(grantId: Long): EssentialAction = withAuth(root) { user => implicit request =>
+    SeriesAdminJdbc.findById(grantId).fold[Result](
+      NotFound(views.html.errorPage(Some(user), "error.title", "series.admin.not.found"))
+    ) { g =>
+      outcome(routes.SeriesController.series(g.seriesId), SeriesAdmins.confirm(user, grantId), "series.admin.confirmed")
     }
   }
 
@@ -368,6 +406,12 @@ class SeriesController @Inject() (cc: ControllerComponents, blocking: BlockingEx
 }
 
 object SeriesController {
+
+  /** A series admin a move of a contest changes, with the role the grant gives there. */
+  final case class MovedGrant(name: String, role: String, realAdmin: Boolean)
+
+  /** A series whose admins lose (`gain` false: the contest's own) or gain the contest by a move. */
+  final case class Moved(series: db.scalikejdbc.Series, gain: Boolean, grants: Seq[MovedGrant])
 
   /** Root's view of each series' grants: those of the last 24 hours (CA22). */
   val RecentGrantHours = 24

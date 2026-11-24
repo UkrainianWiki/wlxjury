@@ -22,9 +22,20 @@ final case class SeriesGrant(
     revokedBy: Option[Long],
     revokedAt: Option[Instant],
     revokedByRoot: Boolean,
-    comment: Option[String]
+    comment: Option[String],
+    confirmNeededAt: Option[Instant] = None
 ) {
   def revoked: Boolean = revokedAt.isDefined
+
+  /** Waiting for root's confirmation since its series was un-retired (the maintainer's decision of
+    * 2026-11-24): no access and no protection, as a revoked grant, until root confirms it.
+    */
+  def toConfirm: Boolean = confirmNeededAt.isDefined && !revoked
+
+  /** Neither revoked nor waiting for confirmation (live if its series is live and its account not
+    * deleted too).
+    */
+  def active: Boolean = !revoked && confirmNeededAt.isEmpty
 }
 
 /** What a live grant gives its account in one contest of its series (the session's reach,
@@ -45,7 +56,8 @@ object SeriesAdminJdbc {
 
   private val columns =
     sqls"""sa.id, sa.series_id, sa.user_id, sa.admin_from_year, sa.granted_by, ${DbTime.epoch("sa.granted_at")},
-           sa.revoked_by, ${DbTime.epoch("sa.revoked_at")}, sa.revoked_by_root, sa.comment"""
+           sa.revoked_by, ${DbTime.epoch("sa.revoked_at")}, sa.revoked_by_root, sa.comment,
+           ${DbTime.epoch("sa.confirm_needed_at")}"""
 
   private def extract(rs: WrappedResultSet): SeriesGrant =
     SeriesGrant(
@@ -58,12 +70,20 @@ object SeriesAdminJdbc {
       revokedBy = rs.longOpt("revoked_by"),
       revokedAt = DbTime.instantOpt(rs, "sa.revoked_at"),
       revokedByRoot = rs.boolean("revoked_by_root"),
-      comment = rs.stringOpt("comment")
+      comment = rs.stringOpt("comment"),
+      confirmNeededAt = DbTime.instantOpt(rs, "sa.confirm_needed_at")
     )
 
-  /** A live grant: not revoked, its series live, its account not deleted. */
+  /** A grant that counts (`alias`, a `series_admin` alias): neither revoked nor waiting for root's
+    * confirmation. The one condition every read of live grants uses, here and in [[CoiMembers]] and
+    * [[AccountJoinRequestJdbc]] (a guard spec): an unconfirmed grant is exactly as a revoked one.
+    */
+  def liveGrantCondition(alias: SQLSyntax): SQLSyntax =
+    sqls"$alias.revoked_at IS NULL AND $alias.confirm_needed_at IS NULL"
+
+  /** A live grant: [[liveGrantCondition]], its series live, its account not deleted. */
   private val liveJoin =
-    sqls"""JOIN series s ON s.id = sa.series_id AND s.retired_at IS NULL
+    sqls"""JOIN series s ON s.id = sa.series_id AND s.retired_at IS NULL AND ${liveGrantCondition(sqls"sa")}
            JOIN users u ON u.id = sa.user_id AND u.deleted_at IS NULL"""
 
   def findById(id: Long)(implicit session: DBSession = AutoSession): Option[SeriesGrant] =
@@ -77,13 +97,20 @@ object SeriesAdminJdbc {
   /** The live grants of the series (its series admins), the oldest first. None of a retired series. */
   def liveBySeries(seriesId: Long)(implicit session: DBSession = AutoSession): Seq[SeriesGrant] =
     sql"""SELECT $columns FROM series_admin sa $liveJoin
-          WHERE sa.series_id = $seriesId AND sa.revoked_at IS NULL ORDER BY sa.granted_at, sa.id"""
+          WHERE sa.series_id = $seriesId ORDER BY sa.granted_at, sa.id"""
       .map(extract).list.apply()
+
+  /** The live grants of the series, in one query (a move's confirmation, §3.5). */
+  def liveInSeries(seriesIds: Seq[Long])(implicit session: DBSession = AutoSession): Seq[SeriesGrant] =
+    if (seriesIds.isEmpty) Nil
+    else
+      sql"""SELECT $columns FROM series_admin sa $liveJoin
+            WHERE sa.series_id IN (${seriesIds.distinct}) ORDER BY sa.granted_at, sa.id""".map(extract).list.apply()
 
   /** The account's live grants, one per series at most (the key). */
   def liveByUser(userId: Long)(implicit session: DBSession = AutoSession): Seq[SeriesGrant] =
     sql"""SELECT $columns FROM series_admin sa $liveJoin
-          WHERE sa.user_id = $userId AND sa.revoked_at IS NULL ORDER BY sa.series_id"""
+          WHERE sa.user_id = $userId ORDER BY sa.series_id"""
       .map(extract).list.apply()
 
   /** The account's live grant on the series, if any. */
@@ -139,6 +166,16 @@ object SeriesAdminJdbc {
       sql"""UPDATE series_admin SET revoked_at = NOW(3), revoked_by = $by, revoked_by_root = $byRoot
             WHERE id IN (${ids.distinct}) AND revoked_at IS NULL""".update.apply()
 
+  /** The series' unrevoked grants now wait for root's confirmation (its un-retirement); the number. */
+  def markToConfirm(seriesId: Long)(implicit session: DBSession): Int =
+    sql"""UPDATE series_admin SET confirm_needed_at = NOW(3)
+          WHERE series_id = $seriesId AND revoked_at IS NULL AND confirm_needed_at IS NULL""".update.apply()
+
+  /** Root confirms the grant: it counts again. */
+  def confirm(id: Long)(implicit session: DBSession): Int =
+    sql"""UPDATE series_admin SET confirm_needed_at = NULL
+          WHERE id = $id AND revoked_at IS NULL AND confirm_needed_at IS NOT NULL""".update.apply()
+
   def setFromYear(id: Long, year: Int)(implicit session: DBSession): Int =
     sql"UPDATE series_admin SET admin_from_year = $year WHERE id = $id AND revoked_at IS NULL".update.apply()
 
@@ -185,7 +222,7 @@ object SeriesAdminJdbc {
     sql"""SELECT c.id, c.series_id, c.year, c.year >= sa.admin_from_year
           FROM series_admin sa $liveJoin
           JOIN contest_jury c ON c.series_id = sa.series_id AND c.retired_at IS NULL
-          WHERE sa.user_id = $userId AND sa.revoked_at IS NULL
+          WHERE sa.user_id = $userId
             AND NOT EXISTS (SELECT 1 FROM user_contest uc WHERE uc.user_id = sa.user_id AND uc.contest_id = c.id
                               AND BINARY uc.role = ${User.JURY_ROLE})
           ORDER BY c.year DESC, c.id DESC"""
@@ -207,7 +244,7 @@ object SeriesAdminJdbc {
     * ([[User.isProtectedTarget]]).
     */
   def hasLiveGrant(userId: Long)(implicit session: DBSession = AutoSession): Boolean =
-    sql"""SELECT EXISTS(SELECT 1 FROM series_admin sa $liveJoin WHERE sa.user_id = $userId AND sa.revoked_at IS NULL)"""
+    sql"""SELECT EXISTS(SELECT 1 FROM series_admin sa $liveJoin WHERE sa.user_id = $userId)"""
       .map(_.boolean(1)).single.apply().getOrElse(false)
 
   /** Those of the accounts that hold a live grant, in one query. */
@@ -215,18 +252,18 @@ object SeriesAdminJdbc {
     if (userIds.isEmpty) Set.empty
     else
       sql"""SELECT DISTINCT sa.user_id FROM series_admin sa $liveJoin
-            WHERE sa.user_id IN (${userIds.distinct}) AND sa.revoked_at IS NULL""".map(_.long(1)).list.apply().toSet
+            WHERE sa.user_id IN (${userIds.distinct})""".map(_.long(1)).list.apply().toSet
 
   /** Whether the account holds a live grant on the contest's live series ([[User.seriesProtected]]). */
   def holdsGrantOnContest(userId: Long, contestId: Long)(implicit session: DBSession = AutoSession): Boolean =
     sql"""SELECT EXISTS(SELECT 1 FROM series_admin sa $liveJoin JOIN contest_jury c ON c.series_id = sa.series_id
-          WHERE sa.user_id = $userId AND c.id = $contestId AND sa.revoked_at IS NULL)"""
+          WHERE sa.user_id = $userId AND c.id = $contestId)"""
       .map(_.boolean(1)).single.apply().getOrElse(false)
 
   /** The live series admins of the contest's live series (the users page's "Series admins" line). */
   def liveForContest(contestId: Long)(implicit session: DBSession = AutoSession): Seq[SeriesGrant] =
     sql"""SELECT $columns FROM series_admin sa $liveJoin JOIN contest_jury c ON c.series_id = sa.series_id
-          WHERE c.id = $contestId AND sa.revoked_at IS NULL ORDER BY sa.granted_at, sa.id"""
+          WHERE c.id = $contestId ORDER BY sa.granted_at, sa.id"""
       .map(extract).list.apply()
 
   /** The joined account's unrevoked grants, locked (a join, J-2). */

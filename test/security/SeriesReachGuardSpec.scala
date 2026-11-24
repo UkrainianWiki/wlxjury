@@ -128,6 +128,29 @@ class SeriesReachGuardSpec extends Specification {
     }
   }
 
+  "a grant waiting for root's confirmation" should {
+
+    /** The writes and lookups of unrevoked grants in SeriesAdminJdbc, which may read `revoked_at IS
+      * NULL` alone: the live condition's definition, the key's row (`unrevoked`), revoke, markToConfirm,
+      * confirm, setFromYear, a join's `unrevokedOf` and `moveTo`. Every read of live grants goes
+      * through `liveGrantCondition` (in `liveJoin`).
+      */
+    val UnrevokedSites = 8
+
+    "count exactly as a revoked one: every read of live grants takes liveGrantCondition" in {
+      val sql = counts("""(?:FROM|JOIN)\s+series_admin\b""".r).keySet
+      val condition = counts("""liveGrantCondition\(""".r)
+      (sql === Set("app/db/scalikejdbc/SeriesAdminJdbc.scala", "app/db/scalikejdbc/CoiMembers.scala",
+        "app/db/scalikejdbc/AccountJoinRequestJdbc.scala")) and
+        // the other readers use the shared condition, never a bare revoked_at test
+        (condition.keySet === sql) and
+        (counts("""sa\.revoked_at IS NULL""".r).keySet -- Set("app/db/scalikejdbc/SeriesAdminJdbc.scala") must beEmpty) and
+        (counts("""revoked_at IS NULL""".r).get("app/db/scalikejdbc/SeriesAdminJdbc.scala") must beSome(UnrevokedSites)) and
+        (SourceScan.files("app/db/scalikejdbc", ".scala").find(_.path.endsWith("SeriesAdminJdbc.scala")).exists(s =>
+          """private val liveJoin\s*=\s*sqls\"\"\"[^"]*liveGrantCondition""".r.findFirstIn(s.text).nonEmpty) must beTrue)
+    }
+  }
+
   "target root checks" should {
     "be User.isProtectedTarget: the isRoot and is_root sites left are the listed ones" in {
       counts("""\.isRoot\b|\bis_root\b""".r) === RootSites.view.mapValues(_._1).toMap

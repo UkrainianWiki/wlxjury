@@ -7,13 +7,15 @@
         reuse: Seq[services.series.ContestReuse.Sign],
         changes: Seq[db.scalikejdbc.ContestChange],
         names: Map[Long, String],
-        liveRound: Option[String]
+        liveRound: Option[String],
+        moved: Seq[controllers.SeriesController.Moved] = Nil
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 @* Root's page of a contest's series and status (contest series plan §3.1, §3.5; SeriesController
    .contestPage): its series and previous year's contest; assign it, move it or take it out of its
    series (the live series of its type and country listed first); retire or un-retire it; the
-   inline reuse check's signs; its change log. CY-2 lists here the series admins a move gives or
-   takes reach *@
+   inline reuse check's signs; its change log. The series admins a move gives or takes reach (CY-2,
+   §3.5): the contest's own series' lose it, another series' gain it, each with the role the grant
+   gives here and whether they hold a real Admin row here *@
 @current = @{ contest.seriesId.flatMap(id => allSeries.find(_.id == id)) }
 @mainAdmin("series.contest.title", user, user.getId) {
     <nav aria-label="@Messages("series.breadcrumb")"><ol class="breadcrumb">
@@ -67,6 +69,18 @@
         <div class="col-md-2"><button type="submit" class="btn btn-primary">@Messages("series.contest.save")</button></div>
     </form>
     <p class="text-body-secondary small mt-1">@Messages("series.contest.move.help")</p>
+    @if(moved.nonEmpty) {
+        <div id="contest-series-moved" class="small">
+            <h3 class="h6">@Messages("series.contest.moved.heading")</h3>
+            <ul>
+                @for(m <- moved) {
+                    <li class="contest-series-moved" data-series="@m.series.id" data-gain="@m.gain">@Messages(if (m.gain) "series.contest.moved.gain" else "series.contest.moved.lose", m.series.name):
+                        @m.grants.map(g => Messages("series.contest.moved.grant", g.name, Messages("role." + g.role)) +
+                          (if (g.realAdmin) " " + Messages("series.contest.moved.real.admin") else "")).mkString(", ")</li>
+                }
+            </ul>
+        </div>
+    }
 
     <h2 class="h4 mt-4" id="contest-retire-heading">@Messages(if (contest.retired) "contest.unretire" else "contest.retire")</h2>
     <p class="text-body-secondary">@Messages(if (contest.retired) "contest.unretire.help" else "contest.retire.help")</p>

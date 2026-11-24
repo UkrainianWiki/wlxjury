@@ -81,6 +81,7 @@ object SeriesAdmins {
   /** Why `actor` may not grant `account` on the series now, if so (the grant's own checks). */
   private def refusal(actor: User, series: Series, account: Option[User])(implicit session: DBSession): Option[Refusal] =
     if (series.retired) Some("series.admin.refused.retired")
+    // a series admin's own grant must count: not revoked, not waiting for root's confirmation
     else if (!isRoot(actor) && SeriesAdminJdbc.liveGrant(actor.getId, series.id).isEmpty) Some("series.admin.refused.not.admin")
     else account match {
       case None                                   => Some("series.admin.refused.account")
@@ -224,21 +225,53 @@ object SeriesAdmins {
     grants.size
   }
 
-  /** A series un-retired by root (in its transaction, under the series' lock): the grants left from
-    * before its retirement, which gave nothing while it was retired, are revoked rather than coming
-    * back by themselves; root grants again those it confirms (§3.1, "un-retiring asks root to
-    * re-confirm each grant"; a grant root revoked is root's to give again). The number revoked.
+  /** A series un-retired by root (in its transaction, under the series' lock): its unrevoked grants
+    * come back waiting for root's confirmation (§3.1, "un-retiring asks root to re-confirm each
+    * grant"; the maintainer's decision of 2026-11-24): no access and no protection until root
+    * confirms each ([[confirm]]); their `granted_by` chains are kept. The number waiting.
     */
   def onSeriesUnretired(actorId: Long, seriesId: Long)(implicit session: DBSession): Int = {
-    val grants = SeriesAdminJdbc.findBySeries(seriesId).filterNot(_.revoked)
-    SeriesAdminJdbc.revoke(grants.map(_.id), actorId, byRoot = true)
-    grants.foreach { g =>
-      AccountChangeJdbc.create(g.userId, actorId, None, AccountChangeJdbc.SeriesAdminRevoked,
-        oldValue = Some(g.adminFromYear.toString), comment = Some(AccountChangeJdbc.seriesComment(seriesId) + "; unretired"))
-      log.info(s"series_admin_revoked account=${g.userId} series=$seriesId grantId=${g.id} by=$actorId reason=series_unretired")
-    }
+    val grants = SeriesAdminJdbc.findBySeries(seriesId).filter(_.active)
+    SeriesAdminJdbc.markToConfirm(seriesId)
+    grants.foreach(g => log.info(s"series_admin_to_confirm account=${g.userId} series=$seriesId grantId=${g.id} " +
+      s"by=$actorId reason=series_unretired"))
     grants.size
   }
+
+  /** Root confirms a grant waiting since its series was un-retired: it counts again, its start year
+    * as it was. Only root, only while the series is live and the account not deleted. A grant added
+    * by a series admin whose own grant on the series is still waiting is refused
+    * (`series.admin.refused.granter.unconfirmed`): root confirms the granter first, so a branch never
+    * comes back below an unconfirmed top. A granter whose grant was revoked doesn't block it: a
+    * revoke without the chain keeps the grants that admin added (§3.3), as before the retirement.
+    * Logged (`series_admin_confirmed`).
+    */
+  def confirm(actor: User, grantId: Long): Either[Refusal, SeriesGrant] =
+    if (!isRoot(actor)) Left("series.admin.refused.root.only")
+    else DB.localTx { implicit s =>
+      SeriesAdminJdbc.findById(grantId) match {
+        case None => Left("series.admin.not.found")
+        case Some(found) =>
+          val series = SeriesJdbc.lock(found.seriesId)
+          val account = User.lockRow(found.userId)
+          SeriesAdminJdbc.findById(grantId) match {
+            case None                                  => Left("series.admin.not.found")
+            case Some(g) if g.revoked                  => Left("series.admin.refused.revoked")
+            case Some(g) if !g.toConfirm               => Left("series.admin.refused.confirmed")
+            case Some(_) if !series.exists(_.live)     => Left("series.admin.refused.retired")
+            case Some(_) if !account.exists(_.deletedAt.isEmpty) => Left("series.admin.refused.account")
+            case Some(g) if SeriesAdminJdbc.findBySeries(g.seriesId)
+                .exists(o => o.userId == g.grantedBy && o.toConfirm) => Left("series.admin.refused.granter.unconfirmed")
+            case Some(g) =>
+              SeriesAdminJdbc.confirm(g.id)
+              AccountChangeLog.record(actor, g.userId, None, AccountChangeJdbc.SeriesAdminConfirmed,
+                oldValue = Some(g.adminFromYear.toString), comment = Some(AccountChangeJdbc.seriesComment(g.seriesId)))
+              log.info(s"series_admin_confirmed account=${g.userId} series=${g.seriesId} grantId=${g.id} " +
+                s"from_year=${g.adminFromYear} by=${actor.getId}")
+              Right(g)
+          }
+      }
+    }
 
   // ── what a grant gives, for the grant page ─────────────────────────────────
 

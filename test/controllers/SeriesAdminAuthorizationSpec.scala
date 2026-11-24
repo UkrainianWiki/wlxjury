@@ -225,6 +225,48 @@ class SeriesAdminAuthorizationSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  "a grant back from the series' retirement" should {
+
+    "give nothing until root confirms it, root only, with the CSRF form on root's page" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        ContestSeries.retireSeries(f.s, f.root.getId, None) must beRight
+        ContestSeries.unretireSeries(f.s, f.root.getId, None) must beRight
+        val g = SeriesAdminJdbc.findBySeries(f.s).find(_.userId == f.sa.getId).get
+        val rootPage = Jsoup.parse(contentAsString(send(GET, s"/admin/series/${f.s}", Some(f.root), None)))
+        (g.toConfirm must beTrue) and
+          (rootPage.select(s"form[action=/admin/series/grants/${g.id}/confirm] input[name=csrfToken]").size === 1) and
+          (status(send(GET, s"/series/${f.s}", Some(f.sa), None)) === FORBIDDEN) and
+          (status(send(GET, s"/admin/rounds?contestId=${f.cNow.getId}", Some(f.sa), Some(f.cNow.getId))) === FORBIDDEN) and
+          (status(send(POST, s"/admin/series/grants/${g.id}/confirm", Some(f.sa), None)) === FORBIDDEN) and
+          (status(send(POST, s"/admin/series/grants/${g.id}/confirm", Some(f.admin), Some(f.cNow.getId))) === FORBIDDEN) and
+          (status(send(POST, s"/admin/series/grants/${g.id}/confirm", None, None)) must be_!=(OK)) and
+          (SeriesAdminJdbc.findById(g.id).exists(_.toConfirm) must beTrue) and
+          (status(send(POST, s"/admin/series/grants/${g.id}/confirm", Some(f.root), None)) === SEE_OTHER) and
+          (status(send(GET, s"/admin/rounds?contestId=${f.cNow.getId}", Some(f.sa), Some(f.cNow.getId))) === OK) and
+          (status(send(POST, s"/admin/series/grants/999999/confirm", Some(f.root), None)) === NOT_FOUND)
+      }
+    }
+  }
+
+  "the denial page and a move's confirmation" should {
+
+    "name a series admin's series with the role the grant gives there, and list the series admins a move changes" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val denied = send(GET, s"/admin/rounds?contestId=${f.cOld.getId}", Some(f.sa), Some(f.cOld.getId))
+        val own = Jsoup.parse(contentAsString(send(GET, s"/admin/contests/${f.cNow.getId}/series", Some(f.root), None)))
+        val other = Jsoup.parse(contentAsString(send(GET, s"/admin/contests/${f.tNow.getId}/series", Some(f.root), None)))
+        (status(denied) === FORBIDDEN) and
+          (Jsoup.parse(contentAsString(denied)).select(".access-denied-series").text() must
+            contain("As series admin of Nepal, your role here is: Organizer")) and
+          (own.select(s".contest-series-moved[data-series=${f.s}][data-gain=false]").text() must contain("SeriesAdminS (Admin)")) and
+          (own.select(s".contest-series-moved[data-series=${f.t}][data-gain=true]").text() must contain("SeriesAdminT")) and
+          (other.select(s".contest-series-moved[data-series=${f.s}][data-gain=true]").text() must contain("SeriesAdminS (Admin)"))
+      }
+    }
+  }
+
   "the role writes' series rule" should {
 
     "refuse a non-root actor making a series admin a Juror or lowering their Admin row in the series' contests, not elsewhere" in {

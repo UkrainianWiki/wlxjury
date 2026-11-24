@@ -46,6 +46,10 @@ class SeriesAdminsSpec extends Specification with TestDb with BeforeAll with Bef
 
   private def grantId(user: User, seriesId: Long): Long = SeriesAdminJdbc.liveGrant(user.getId, seriesId).get.id
 
+  /** The account's unrevoked grant on the series, live or waiting for confirmation. */
+  private def grantIdOf(user: User, seriesId: Long): Long =
+    SeriesAdminJdbc.findBySeries(seriesId).filter(g => g.userId == user.getId && !g.revoked).map(_.id).head
+
   "a grant" should {
 
     "be root's or a series admin's of the series, to an active member, never to a non-member, deleted, root, self or existing grantee" in {
@@ -91,12 +95,40 @@ class SeriesAdminsSpec extends Specification with TestDb with BeforeAll with Bef
       (SeriesAdmins.grant(r, s, b.getId, None, None) === Left("series.admin.refused.retired")) and
         (SeriesAdminJdbc.liveByUser(a.getId) must beEmpty) and
         (SeriesAdminJdbc.seriesContests(a.getId) must beEmpty) and
-        (User.isProtectedTarget(a) must beFalse) and {
-          // un-retired, its old grants don't come back by themselves: root grants again (§3.1)
-          ContestSeries.unretireSeries(s, r.getId, None) must beRight
-          (SeriesAdminJdbc.liveByUser(a.getId) must beEmpty) and
-            (SeriesAdmins.grant(r, s, a.getId, None, None) must beRight)
-        }
+        (User.isProtectedTarget(a) must beFalse)
+    }
+
+    "come back to confirm when its series is un-retired: nothing until root confirms it, the granter first" in {
+      val r = root
+      val (s, Seq(c26)) = seriesWith(r, thisYear)
+      val (a, b, c, d) = (member("a", c26, wiki = Some("Admin A")), member("b", c26), member("c", c26), member("d", c26))
+      SeriesAdmins.grant(r, s, a.getId, None, None) must beRight
+      SeriesAdmins.grant(a, s, b.getId, None, None) must beRight
+      SeriesAdmins.grant(r, s, c.getId, None, None) must beRight
+      UserContestJdbc.delete(a.getId, c26.getId)
+      ContestSeries.retireSeries(s, r.getId, None) must beRight
+      ContestSeries.unretireSeries(s, r.getId, None) must beRight
+      val waiting = SeriesAdminJdbc.findBySeries(s)
+      // an unconfirmed grant is exactly as a revoked one: no reach, no protection, no COI, no adding
+      (waiting.map(_.toConfirm) === Seq(true, true, true)) and
+        (SeriesAdminJdbc.liveBySeries(s) must beEmpty) and (SeriesAdminJdbc.liveForContest(c26.getId) must beEmpty) and
+        (SeriesAdminJdbc.seriesContests(a.getId) must beEmpty) and (SeriesAdminJdbc.seriesAccountContests(a.getId) must beEmpty) and
+        (User.isProtectedTarget(a) must beFalse) and (User.seriesProtected(a.getId, c26.getId) must beFalse) and
+        (CoiMembers.forContest(c26.getId).get("Admin A") must beNone) and
+        (SeriesAdmins.grant(a, s, d.getId, None, None) === Left("series.admin.refused.not.admin")) and
+        (SeriesAdmins.grant(r, s, a.getId, None, None) === Left("series.admin.refused.existing")) and
+        // root only; b's granter a still waits: refused, nothing revived
+        (SeriesAdmins.confirm(a, grantIdOf(b, s)) === Left("series.admin.refused.root.only")) and
+        (SeriesAdmins.confirm(r, grantIdOf(b, s)) === Left("series.admin.refused.granter.unconfirmed")) and
+        (SeriesAdmins.confirm(r, grantIdOf(a, s)) must beRight) and
+        (SeriesAdminJdbc.seriesAccountContests(a.getId) === Set(c26.getId)) and (User.isProtectedTarget(a) must beTrue) and
+        (SeriesAdminJdbc.liveBySeries(s).map(_.userId) === Seq(a.getId)) and
+        (SeriesAdmins.confirm(r, grantIdOf(a, s)) === Left("series.admin.refused.confirmed")) and
+        (SeriesAdmins.confirm(r, grantIdOf(b, s)) must beRight) and
+        // an unconfirmed grant is revoked as any
+        (SeriesAdmins.revoke(r, grantIdOf(c, s), chain = false).map(_.map(_.userId)) === Right(Seq(c.getId))) and
+        (SeriesAdminJdbc.liveBySeries(s).map(_.userId).toSet === Set(a.getId, b.getId)) and
+        (AccountChangeJdbc.findByUser(a.getId, None, 10).map(_.field) must contain(AccountChangeJdbc.SeriesAdminConfirmed))
     }
 
     "be granted again after root revoked it by root only" in {

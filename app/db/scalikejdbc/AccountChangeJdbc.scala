@@ -65,8 +65,11 @@ object AccountChangeJdbc {
   /** A grant's start year changed (root only): old and new values, comment `series #<id>`. */
   val SeriesAdminFromYear = "series_admin_from_year"
 
+  /** Root confirmed a grant waiting since its series was un-retired: old_value the start year. */
+  val SeriesAdminConfirmed = "series_admin_confirmed"
+
   /** The series fields, whose rows carry their series in the comment ([[seriesComment]]). */
-  val SeriesFields: Seq[String] = Seq(SeriesAdminGranted, SeriesAdminRevoked, SeriesAdminFromYear)
+  val SeriesFields: Seq[String] = Seq(SeriesAdminGranted, SeriesAdminRevoked, SeriesAdminFromYear, SeriesAdminConfirmed)
 
   /** The comment of a series field's row: `series #<id>`, which the contest's change log matches. */
   def seriesComment(seriesId: Long): String = s"series #$seriesId"

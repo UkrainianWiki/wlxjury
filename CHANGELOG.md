@@ -79,7 +79,10 @@ is listed below.
   and those series admins added. Root and series admins are protected accounts: no one else edits,
   links, invites, retires or joins them. A contest's **Users** page names its series admins, its
   **Account changes** list the series' grants, and COI counts them. Creating a contest from the
-  series page comes with CY-3.
+  series page comes with CY-3. Un-retiring a series brings its series admins back **to confirm**,
+  with no access until root confirms each (the maintainer's decision of 2026-11-24). A denial page
+  names a series admin's series and their role there; moving a contest lists the series admins it
+  gives or takes it from.
 - **A sticky top bar** (the maintainer's decision of 2026-11-23, replacing the trial of a bar
   that hid while scrolling down; developed 2026-11-23, `fix/sticky-topbar`): on the galleries, the
   by-rate gallery, the file list, the comments report, the contest files, the Rounds, round
@@ -228,7 +231,8 @@ is listed below.
   renumbers above master's top): table `series_admin` (one live grant per account and series by
   the generated `live_grant_series_id`, `admin_from_year`, `granted_by`, `revoked_by_root`; the
   series RESTRICT, the account CASCADE) and `account_change`'s CHECK widened by
-  `series_admin_granted`, `series_admin_revoked`, `series_admin_from_year` (V106's and V107's
+  `series_admin_granted`, `series_admin_revoked`, `series_admin_from_year`, `series_admin_confirmed`
+  (`series_admin.confirm_needed_at` marks a grant to confirm after an un-retirement; V106's and V107's
   values kept); rerunnable; a pre-V112 binary reads no grant; the undo is in the script's last
   comment (FlywayUpgradeSpec "V112's series admins"). Guard specs (`security.SeriesReachGuardSpec`)
   hold the session's series reach to `Secured`, the derived-role and account-reach opt-ins to their

@@ -81,7 +81,16 @@
             <tbody>
                 @for((g, depth) <- grants) {
                     <tr class="series-admin" data-grant="@g.id" data-depth="@depth">
-                        <td><span class="ms-@math.min(depth * 3, 5)">@if(depth > 0) {↳ }@names.getOrElse(g.userId, s"#${g.userId}")</span> <span class="text-body-secondary">#@g.userId</span></td>
+                        <td><span class="ms-@math.min(depth * 3, 5)">@if(depth > 0) {↳ }@names.getOrElse(g.userId, s"#${g.userId}")</span> <span class="text-body-secondary">#@g.userId</span>
+                            @if(g.toConfirm) {
+                                @* back from the series' retirement: nothing until root confirms it *@
+                                <span class="badge text-bg-warning series-admin-to-confirm">@Messages("series.admin.to.confirm")</span>
+                                <form method="post" action="@routes.SeriesController.confirmGrant(g.id)" class="d-inline series-admin-confirm" data-submit-once="true">
+                                    @csrfField()
+                                    <button type="submit" class="btn btn-sm btn-outline-primary" aria-label="@Messages("series.admin.confirm.of", names.getOrElse(g.userId, s"#${g.userId}"))">@Messages("series.admin.confirm")</button>
+                                </form>
+                            }
+                        </td>
                         <td>@names.getOrElse(g.grantedBy, s"#${g.grantedBy}") · <span class="text-nowrap">@views.LinkTimes.utc(g.grantedAt)</span></td>
                         <td>
                             <form method="post" action="@routes.SeriesController.setGrantFromYear(g.id)" class="d-flex gap-1 align-items-center series-admin-year" data-submit-once="true">

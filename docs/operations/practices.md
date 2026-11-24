@@ -398,6 +398,12 @@ grantId=`, `series_admin_moved account= from= series= grantId= from_year= by=`.
 - **Joins and retirement:** joining accounts moves the joined account's grants to the kept one with
   their start years (a clash on one series keeps the kept account's grant and revokes the other),
   and the grants it added count as added by the kept one; retiring an account revokes its grants.
+- **Un-retiring a series** (the maintainer's decision of 2026-11-24): its unrevoked grants come back
+  with `confirm_needed_at` set (`series_admin_to_confirm ... reason=series_unretired`): no access and
+  no protection, as a revoked grant, until root presses **Confirm** on the series' root page
+  (`series_admin_confirmed` in `account_change` and on `security.roles`). Their `granted_by` chains
+  are kept; a grant whose granter is still to confirm is refused until the granter is confirmed (a
+  revoked granter doesn't block it). An unconfirmed grant can be revoked as any.
 - **Pilot back-out:** revoke the grant (with the chain if the pilot added others).
 - **Migration back-out:** V112's rollback is in its last comment (every grant and its log rows are
   lost; an older binary reads no grant, so series admins lose their series access with it).

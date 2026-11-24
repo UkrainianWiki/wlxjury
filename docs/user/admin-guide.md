@@ -1363,7 +1363,9 @@ stopped.
   it would be computed now is shown under it, useful after joining accounts); add a series admin on
   the series page (**Add series admins on the series page**). **Series** lists, per series, the
   series admins added in the last 24 hours, and on top those that series admins added in the last
-  30 days. A grant root revoked can be given again by root only.
+  30 days. A grant root revoked can be given again by root only. When root un-retires a series,
+  its series admins come back marked **to confirm**: they have no access until root presses
+  **Confirm** beside each (one added by a series admin who is still to confirm waits for them).
 - Manage **series** on **Series** (the **Manage series** link beside the **Series** menu on **Contests**):
   - **create** a series with its name, type (`wlm`, `wle`, or the word after "Wiki Loves" in
     lower case, such as `folklore`; empty for any type), country and campaign; **rename** it

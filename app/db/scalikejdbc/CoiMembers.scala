@@ -72,7 +72,7 @@ object CoiMembers {
             UNION ALL
             SELECT u.id, u.wiki_account, $SeriesAdminRole, 1 AS coi_rank FROM contest_jury c
               JOIN series s ON s.id = c.series_id AND s.retired_at IS NULL
-              JOIN series_admin sa ON sa.series_id = s.id AND sa.revoked_at IS NULL
+              JOIN series_admin sa ON sa.series_id = s.id AND ${SeriesAdminJdbc.liveGrantCondition(sqls"sa")}
               JOIN users u ON u.id = sa.user_id
             WHERE c.id = $contestId AND u.deleted_at IS NULL AND u.wiki_account IS NOT NULL AND u.wiki_account <> ''
             UNION ALL

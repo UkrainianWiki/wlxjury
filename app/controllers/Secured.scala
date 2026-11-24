@@ -68,7 +68,10 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
         reference,
         Secured.referenceTime(),
         notice,
-        back.flatMap(url => Secured.safeLocalPath(Some(url)))
+        back.flatMap(url => Secured.safeLocalPath(Some(url))),
+        // a series admin's series, named (a help, not the page: none on a database error)
+        Secured.orOnFailure[Seq[(String, Option[String])]]("denial_series_unavailable", user, reference, Nil)(
+          Secured.seriesDenial(user, denial))
       )(request.flash, messages, request)
     )
   }
@@ -855,6 +858,18 @@ object Secured {
     if (user.seriesGranted.isEmpty) None
     else user.contestId.flatMap(c => user.seriesContests.find(_.contestId == c)).map(_.seriesId)
       .orElse(user.seriesGranted.headOption)
+
+  /** What a denial page says of a series admin's series (contest series plan §3.3, "deniedRoles names
+    * the series"): each live series granted by name, with the derived role the grant gives in the
+    * denied resource's contest if that contest is one of the series'. None for anyone else.
+    */
+  def seriesDenial(user: User, denial: Denial): Seq[(String, Option[String])] =
+    if (user.seriesGranted.isEmpty) Nil
+    else {
+      val inTarget = denial.contestId.flatMap(c => user.seriesContests.find(_.contestId == c))
+      db.scalikejdbc.SeriesJdbc.findByIds(user.seriesGranted).filter(_.live).sortBy(_.name)
+        .map(s => s.name -> inTarget.filter(_.seriesId == s.id).map(_.role))
+    }
 
   /** The series the user is a series admin of (a session's, [[withSeries]]). */
   def seriesGrantedTo(user: User): Seq[Long] = user.seriesGranted

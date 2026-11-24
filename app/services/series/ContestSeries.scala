@@ -169,7 +169,7 @@ object ContestSeries {
         case Some(se) if SeriesJdbc.liveByName(se.name).isDefined => Left("series.name.taken")
         case Some(_) => nameTaken {
           SeriesJdbc.setRetired(seriesId, None)
-          // its grants don't come back by themselves: root grants again those it confirms (§3.1)
+          // its grants come back waiting for root's confirmation, giving nothing until then (§3.1)
           SeriesAdmins.onSeriesUnretired(actorId, seriesId)
           ContestChangeJdbc.create(None, Some(seriesId), actorId, ContestChangeJdbc.Unretired, comment = comment)
           log.info(s"series_unretired seriesId=$seriesId by=$actorId")
