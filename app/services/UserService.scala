@@ -270,10 +270,10 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
             // an account an account join holds (J-2, kept or retiring) joins no contest meanwhile:
             // read under its row lock, which the join's start takes too
             if (row.nonEmpty && db.scalikejdbc.AccountJoinJdbc.joining(Seq(account.getId)).nonEmpty) throw new InJoinRefused
-            // a series admin of the contest's series is made a Juror there by root only (contest
-            // series plan §3.3, the role writes): read under the account's row lock
-            if (row.nonEmpty && role == User.JURY_ROLE && !creator.hasRole(User.ROOT_ROLE) &&
-              User.seriesProtected(account.getId, cId)) throw new RoleNotAssignable
+            // a series admin's roles are root's to set, in every contest (contest series plan §3.3,
+            // the role writes; the security review of #140, M2): read under the account's row lock
+            if (row.nonEmpty && !creator.hasRole(User.ROOT_ROLE) &&
+              db.scalikejdbc.SeriesAdminJdbc.hasHeldGrant(account.getId)) throw new RoleNotAssignable
             if (row.isEmpty) None
             else Some(row.filter(mayJoin).map { locked =>
               val added = UserContestJdbc.createMembership(locked.getId, cId, role)

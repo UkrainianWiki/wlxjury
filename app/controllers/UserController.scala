@@ -734,7 +734,7 @@ class UserController @Inject()(cc: ControllerComponents,
       .filter(r => User.isContestRole(r) && user.hasAnyRole(User.ADMIN_ROLES))
       .filter(_ => user.hasRole(User.ROOT_ROLE) || !editedUser.hasRole(User.ROOT_ROLE))
       .filterNot(r => editedUser.contestRole.contains(r))
-      .filter(r => UserController.seriesRoleWriteAllowed(user, editedUser, r))
+      .filter(_ => UserController.protectedRoleWriteAllowed(user, editedUser))
     val roleNeedsInvitation =
       newRole.exists(User.ACCESS_ROLES.contains) && editedUser.contestId.isDefined && !editedUser.mayTakeAccessRole
     // a role change, root's made or taken included: decided on the account before the save, so
@@ -906,7 +906,7 @@ class UserController @Inject()(cc: ControllerComponents,
       if user.hasRole(User.ROOT_ROLE) || !editedUser.hasRole(User.ROOT_ROLE)
       contestId <- editedUser.contestId
       if !editedUser.contestRole.contains(role)
-      if UserController.seriesRoleWriteAllowed(user, editedUser, role)
+      if UserController.protectedRoleWriteAllowed(user, editedUser)
     } yield (role, contestId)
 
     val written: Either[String, (Option[UserService.EmailChanged], Int)] =
@@ -921,8 +921,8 @@ class UserController @Inject()(cc: ControllerComponents,
         // which the join's start takes too)
         if (newRole.nonEmpty && db.scalikejdbc.AccountJoinJdbc.joining(Seq(userId)).nonEmpty)
           throw new UserController.Refused("account.join.in.progress")
-        // the series rule again, under the account's row lock (a grant committed meanwhile)
-        if (newRole.exists { case (role, _) => !UserController.seriesRoleWriteAllowed(user, editedUser, role) })
+        // the protected-account rule again, under the account's row lock (a grant committed meanwhile)
+        if (newRole.nonEmpty && !UserController.protectedRoleWriteAllowed(user, editedUser))
           throw new UserController.Refused("series.admin.protected.role")
         var emailChange = Option.empty[UserService.EmailChanged]
         var wikiUnlinked = 0
@@ -1637,18 +1637,16 @@ object UserController {
         .forall(adminOf.contains)
     }
 
-  /** Whether a role write of `role` for `account` in the contest the edit form shows is allowed by
-    * the series rule (contest series plan §3.3, "The role writes"): when the account holds a live
-    * grant on the contest's live series, no one but root adds it as a Juror there, or removes or
-    * downgrades its Admin row. Elsewhere its roles change as any member's. Checked before the save
-    * and again under the account's row lock ([[updateAccount]]).
+  /** Whether `actor` may change `account`'s role (contest series plan §3.3, "The role writes", made
+    * stricter by the security review of #140, M2): root, or anyone for an account that is not a
+    * protected target ([[User.isProtectedTarget]]: root, or a holder of an unrevoked series grant).
+    * A protected account's roles are root's to change in every contest, so that no peer series admin
+    * or contest admin undoes CA7 (a Juror row) or gives it real Admin rows that would outlive root's
+    * revoke. Checked before the save and again under the account's row lock ([[updateAccount]]).
     */
-  def seriesRoleWriteAllowed(actor: User, account: User, role: String)(implicit
+  def protectedRoleWriteAllowed(actor: User, account: User)(implicit
       session: scalikejdbc.DBSession = scalikejdbc.AutoSession): Boolean =
-    actor.hasRole(User.ROOT_ROLE) || account.contestId.forall { contestId =>
-      val touches = role == User.JURY_ROLE || account.contestRole.contains(User.ADMIN_ROLE) && role != User.ADMIN_ROLE
-      !touches || !User.seriesProtected(account.getId, contestId)
-    }
+    actor.hasRole(User.ROOT_ROLE) || !User.isProtectedTarget(account)
 
   /** The users page lists the live invitations into the contest and those of the last 30 days. */
   val InvitationsShownDays = 30
