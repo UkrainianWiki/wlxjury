@@ -11,7 +11,7 @@ region improvements).
 Production today: one VPS shared with Apache/WordPress; the app with `-Xmx1g
 -XX:MaxDirectMemorySize=128m -XX:G1PeriodicGCInterval=60000 -XX:+ExitOnOutOfMemoryError`,
 `MALLOC_ARENA_MAX=2` (`/etc/default/wlxjury`, mirrored in `bench/server/default-wlxjury`);
-MariaDB with a 128 MiB buffer pool. Real rounds are 15–25× smaller per juror than the Gatling
+MariaDB with a 256 MiB buffer pool. Real rounds are 15–25× smaller per juror than the Gatling
 fixture's.
 
 ## Contents
@@ -215,7 +215,7 @@ the tests keep 1 MB so an oversized batch fails there first, `DistributeImagesBa
 sizes of db §5.5–§5.6; a new pool, dispatcher or worker count is checked against that budget, and
 MariaDB's `max_connections` (151) must allow the app's pool.
 
-**4.6 MariaDB memory.** Production: a 128 MiB buffer pool; recommended 256 MiB
+**4.6 MariaDB memory.** Production: a 256 MiB buffer pool (applied 2026-11-24)
 (`bench/cnf/recommended-60-wlxjury.cnf`: concurrent buffer-pool reads 9,843 → 49, MariaDB peak
 sampled RSS 268 → 392 MiB, everything else as production; the measurements are in
 [history/2026-10-07-prod-like-benchmark.md](../history/2026-10-07-prod-like-benchmark.md)). The
