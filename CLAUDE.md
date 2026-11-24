@@ -152,7 +152,7 @@ Session-based auth via the Play session cookie (the user name, the account's id 
 
 ### REST API and Commons
 
-- **REST API:** Tapir endpoints in `app/api/Api.scala`, served under `/api` through Play's filters; Swagger UI at `/api/docs`; a personal Bearer token or the session, with the `Secured` permissions ([api.md](docs/api.md)).
+- **REST API:** Tapir endpoints in `app/api/Api.scala`, served under `/api` by `api.ApiRouter` through Play's filters (allowed hosts included); Swagger UI at `/api/docs`. `api.ApiAuth` takes a personal Bearer token (root creates them; a read-only, server-only scope exists) or the session, with the `Secured` permissions; a session's write needs the CSRF header, a Bearer request without a session cookie skips CSRF ([api.md](docs/api.md), secure-coding §9 and §11).
 - **Wikimedia Commons:** `scalawiki-core` and `scalawiki-wlx`, published locally from the commit in `project/scalawiki.sha`, provide the Commons API client (`MwBot`); bots are anonymous except production's optional bot password ([integrations](docs/integrations/practices.md) §1–§2).
 
 ## Where the details are
