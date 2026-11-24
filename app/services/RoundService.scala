@@ -648,7 +648,7 @@ class RoundService @Inject() (
     RoundStat(jurors, round, rounds, byUserCount, byUserRateCount, total, totalByRate, deletedFiles, deletedCounted)
   }
 
-  /** Starts or stops a round (and stops `prevRoundIds`). A frozen round takes the change
+  /** Starts or stops a round (and stops `prevRoundIds`, logged for `by` like the round's own change, RoundJurorChanges). A frozen round takes the change
     * when its distribution ends; a round still being created can't be started.
     *
     * @return false if the round can't be started: it is still being distributed
@@ -658,7 +658,7 @@ class RoundService @Inject() (
       s"Setting current round ${if (prevRoundIds.nonEmpty) s"from ${prevRoundIds.mkString(", ")}" else ""} to ${round.getId}"
     )
 
-    prevRoundIds.foreach(rId => Round.setActiveGuarded(rId, active = false))
+    prevRoundIds.foreach(rId => Round.setActiveGuarded(rId, active = false, by))
     Round.setActiveGuarded(round.getId, active = round.active, by)
   }
 }

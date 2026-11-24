@@ -108,6 +108,23 @@ class RoundJurorChangesSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "be logged when a juror stops a previous round through setCurrentRound, and not for an admin who doesn't judge it" in {
+      testDbApp { _ =>
+        val f = fixture()
+        val service = TestRoundServices.roundService()
+        val other = roundDao.create(Round(None, 2, Some("R2"), contestId = f.contest.getId, rates = Round.binaryRound, active = false))
+        val (_, logs) = LogCapture("security.authz")(service.setCurrentRound(Seq(f.round.getId), other, f.adminJ.id))
+        val stopped = roundDao.findById(f.round.getId).map(_.active)
+        Round.setActive(f.round.getId, active = true)
+        val (_, otherLogs) = LogCapture("security.authz")(service.setCurrentRound(Seq(f.round.getId), other, f.admin.id))
+        (stopped === Some(false)) and
+          (entries(f).map(e => (e.kind, e.actorId)) === Seq((ContestChangeJdbc.RoundJurorStopped, f.adminJ.getId))) and
+          (logs("security.authz") === Seq(line(ContestChangeJdbc.RoundJurorStopped, f.adminJ, f))) and
+          (roundDao.findById(f.round.getId).map(_.active) === Some(false)) and
+          (otherLogs("security.authz") must beEmpty)
+      }
+    }
+
     "show on the round's statistics with who, to those who see its organiser view only" in {
       testDbApp { app =>
         val f = fixture()
