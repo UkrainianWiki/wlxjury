@@ -163,10 +163,6 @@ object RoundCounts {
   case object Busy extends Skip
   case object InDistribution extends Skip
 
-  /** MariaDB's error for a `NOWAIT` lock that is not free (1205, the lock wait timeout error);
-    * MySQL's own is 3572, accepted too.
-    */
-  private val NoWaitErrors = Set(1205, 3572)
 
   /** A window of the round's full recount. */
   sealed trait RecountStep
@@ -200,17 +196,20 @@ object RoundCounts {
 
   /** Locks the round for update (recorded, [[RoundWrites]]) without waiting (`NOWAIT`): its
     * generation, the generation of its last recount and whether it is being created. A round
-    * another transaction holds is [[LockBusy]] (only this statement's error 1205/3572 is read
+    * another transaction holds is [[LockBusy]] (only this statement's lock wait timeout error, 1205, is read
     * so, and the statement alone is rolled back: the transaction goes on, holding nothing).
     */
   private def lockRound(roundId: Long)(implicit session: DBSession): Locked =
     try {
+      // MariaDB answers a held row with 1205 (the lock wait timeout error); the failure is expected,
+      // so it is tagged and SqlLogging logs it at DEBUG
       val row = sql"SELECT counts_gen, counts_gen_done, distributing FROM round WHERE id = $roundId FOR UPDATE NOWAIT"
+        .tags(SqlLogging.ExpectedFailureTag)
         .map(rs => LockHeld(rs.long(1), rs.long(2), rs.booleanOpt(3).getOrElse(false))).single()
       row.foreach(_ => RoundWrites.recordRounds(Seq(roundId)))
       row.getOrElse(LockGone)
     } catch {
-      case e: java.sql.SQLException if NoWaitErrors.contains(e.getErrorCode) => LockBusy
+      case e: Throwable if DbErrors.isLockWaitTimeout(e) => LockBusy
     }
 
   /** A plain read before locking: the round is being created, or its distribution job is queued
@@ -265,19 +264,18 @@ object RoundCounts {
 
   /** One window of the round's files marked dirty by votes, the lowest page ids first, in the
     * caller's transaction (steps 1–5 above). A round that no longer exists loses its entries; a
-    * round another transaction holds, or one being distributed (`distribution`: the dedupe key
-    * of its job), is skipped with its entries kept (`skipped`).
+    * round another transaction holds, or one being created (`distributing`), is skipped with its
+    * entries kept (`skipped`). A distribution job on a live round does not stop it: jurors vote
+    * meanwhile.
     */
-  def fileWindow(roundId: Long, limit: Int = DefaultWindow, distribution: Option[String] = None)(implicit
-      session: DBSession
-  ): Window =
-    if (inDistribution(roundId, distribution)) Window(0, 0, 0, None, Some(InDistribution))
+  def fileWindow(roundId: Long, limit: Int = DefaultWindow)(implicit session: DBSession): Window =
+    if (inDistribution(roundId, None)) Window(0, 0, 0, None, Some(InDistribution))
     else lockRound(roundId) match {
       case LockBusy => Window(0, 0, 0, None, Some(Busy))
       case LockGone =>
         // entries of a round deleted since (no foreign key): nothing to count
         Window(0, 0, sql"DELETE FROM round_image_dirty WHERE round_id = $roundId".update(), None)
-      case LockHeld(_, _, distributing) if distributing || distribution.exists(distributionActive) =>
+      case LockHeld(_, _, true) =>
         Window(0, 0, 0, None, Some(InDistribution)) // authoritative, under the lock
       case _: LockHeld =>
         // which entries: a plain read under the round's lock (only this recompute deletes

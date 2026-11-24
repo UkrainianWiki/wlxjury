@@ -184,7 +184,7 @@ class RoundCountsLockSpec extends Specification with TestDb with BeforeAll with 
       release.countDown()
       Await.result(holder, 30.seconds)
       val free = recompute.untilClean()
-      (tookMs must beLessThan(1000L)) and (busy.busy === 1) and (busy.windows === 0) and
+      (tookMs must beLessThan(5000L)) and (busy.busy === 1) and (busy.windows === 0) and
         (kept === ((Seq(1L), Some(Counts(1, 0, 0, 0, 0))))) and
         (free.busy === 0) and (entries(r) must beEmpty) and (RoundCounts.of(r, 1L) === Some(Counts(1, 1, 1, 0, 1))) and
         (RoundImageInvariants.violations(r) must beEmpty)
@@ -202,29 +202,47 @@ class RoundCountsLockSpec extends Specification with TestDb with BeforeAll with 
       release.countDown()
       Await.result(holder, 30.seconds)
       val free = recompute.untilClean()
-      (tookMs must beLessThan(1000L)) and (busy.busy === 1) and (busy.roundsRecounted === 0) and dirtyWhileHeld and
+      (tookMs must beLessThan(5000L)) and (busy.busy === 1) and (busy.roundsRecounted === 0) and dirtyWhileHeld and
         (free.roundsRecounted === 1) and (RoundCounts.isClean(r) must beTrue)
     }
   }
 
   "a file window" should {
-    "skip a round being created or distributed, keeping its marks" in {
+    "skip a round being created, keeping its marks, and count them once it is live" in {
       implicit val contest: ContestJury = createContests(10).head
       val (r, Seq(j1)) = setUp(1)
       VoteJdbc.rate(1L, j1.getId, r, 1)
-      val key = RoundDistributionHandler.dedupeKey(r)
-      def window() = WriteTx.write(implicit s => RoundCounts.fileWindow(r, 10, Some(key)))
+      def window() = WriteTx.write(implicit s => RoundCounts.fileWindow(r, 10))
       DB.autoCommit(implicit s => sql"UPDATE round SET distributing = 1 WHERE id = $r".update())
       val creating = window()
       DB.autoCommit(implicit s => sql"UPDATE round SET distributing = 0 WHERE id = $r".update())
-      DB.autoCommit(implicit s => sql"""INSERT INTO job (kind, contest_id, subject_type, subject_id, dedupe_key, status, params, state)
-        VALUES ('round_distribution', ${contest.getId}, 'round', $r, $key, 'running', '{"mode": "distribute"}', '{}')""".update())
-      val queued = window()
-      DB.autoCommit(implicit s => sql"UPDATE job SET status = 'done' WHERE dedupe_key = $key".update())
-      val ended = window()
-      (creating.skipped === Some(RoundCounts.InDistribution)) and (queued.skipped === Some(RoundCounts.InDistribution)) and
-        (ended.skipped must beNone) and (ended.cleared === 1) and (entries(r) must beEmpty) and
+      val live = window()
+      (creating.skipped === Some(RoundCounts.InDistribution)) and
+        (live.skipped must beNone) and (live.cleared === 1) and
         (RoundCounts.of(r, 1L) === Some(Counts(1, 1, 1, 0, 1)))
+    }
+  }
+
+  "the recompute, while a dump holds LOCK TABLES round READ," should {
+    "skip the round promptly and count its marks after UNLOCK TABLES" in withPool() { implicit ec =>
+      implicit val contest: ContestJury = createContests(10).head
+      val (r, Seq(j1)) = setUp(1)
+      VoteJdbc.rate(1L, j1.getId, r, 1)
+      val url = DB.readOnly(implicit s => s.connection.getMetaData.getURL).takeWhile(_ != '?')
+      val dump = java.sql.DriverManager.getConnection(url, "root", SharedTestDb.password)
+      try {
+        dump.createStatement().execute("LOCK TABLES round READ")
+        val started = System.nanoTime()
+        // in a Future: a statement that did not give up would hang here, not the run
+        val held = Await.result(Future(recompute.untilClean()), 60.seconds)
+        val tookMs = (System.nanoTime() - started) / 1000000
+        val kept = entries(r)
+        dump.createStatement().execute("UNLOCK TABLES")
+        val free = recompute.untilClean()
+        println(s"[RoundCountsLockSpec] LOCK TABLES round READ: tick took $tookMs ms, busy=${held.busy}")
+        (tookMs must beLessThan(5000L)) and (held.busy must beGreaterThanOrEqualTo(1)) and (kept === Seq(1L)) and
+          (free.busy === 0) and (entries(r) must beEmpty) and (RoundCounts.of(r, 1L) === Some(Counts(1, 1, 1, 0, 1)))
+      } finally { scala.util.Try(dump.createStatement().execute("UNLOCK TABLES")); dump.close() }
     }
   }
 

@@ -55,8 +55,7 @@ class RoundCountsRecompute(settings: RoundCountsRecompute.Settings = RoundCounts
       marked.foreach { roundId =>
         var more = true
         while (more && timeLeft) guarded {
-          val w = window(implicit s =>
-            RoundCounts.fileWindow(roundId, settings.window, Some(RoundDistributionHandler.dedupeKey(roundId))))
+          val w = window(implicit s => RoundCounts.fileWindow(roundId, settings.window))
           w.skipped match {
             case Some(RoundCounts.Busy) =>
               summary = summary.copy(busy = summary.busy + 1)
@@ -112,7 +111,7 @@ class RoundCountsRecompute(settings: RoundCountsRecompute.Settings = RoundCounts
         logger.warn(s"round_counts_skipped reason=isolation level=${e.level}")
         summary = summary.copy(refusedIsolation = Some(e.level))
     }
-    if (summary.busy > 0) logger.info(s"round_counts skipped=busy rounds=${summary.busy}")
+    if (summary.busy > 0) logger.info(s"round_counts skipped=busy windows=${summary.busy}")
     if (summary.changed > 0 || summary.roundsRecounted > 0)
       logger.info(s"round_counts windows=${summary.windows} files=${summary.files} changed=${summary.changed} " +
         s"cleared=${summary.cleared} recounted=${summary.roundsRecounted} skipped=${summary.skipped}")

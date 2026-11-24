@@ -76,6 +76,33 @@ class SqlLoggingSpec extends Specification with BeforeAll {
     }
   }
 
+  "a statement tagged as expecting a lock failure" should {
+    def lockedRow(tag: Boolean): Seq[ILoggingEvent] = {
+      DB.autoCommit { implicit s =>
+        sql"CREATE TABLE IF NOT EXISTS sql_logging_lock_t (id INT PRIMARY KEY)".execute.apply()
+        sql"INSERT IGNORE INTO sql_logging_lock_t (id) VALUES (1)".update.apply()
+      }
+      val url = DB.readOnly(implicit s => s.connection.getMetaData.getURL).takeWhile(_ != '?')
+      val holder = java.sql.DriverManager.getConnection(url, "root", SharedTestDb.password)
+      try {
+        holder.setAutoCommit(false)
+        holder.createStatement().execute("SELECT id FROM sql_logging_lock_t WHERE id = 1 FOR UPDATE")
+        logged(DB.localTx { implicit s =>
+          val q = sql"SELECT id FROM sql_logging_lock_t WHERE id = 1 FOR UPDATE NOWAIT"
+          (if (tag) q.tags(SqlLogging.ExpectedFailureTag) else q).map(_.long(1)).list.apply()
+        })
+      } finally {
+        holder.rollback(); holder.close()
+        DB.autoCommit(implicit s => sql"DROP TABLE IF EXISTS sql_logging_lock_t".execute.apply())
+      }
+    }
+    "not be logged at ERROR for a lock wait timeout, but the same statement untagged is" in {
+      val tagged = lockedRow(tag = true).filter(e => e.getLoggerName == SqlLogging.LoggerName && e.getLevel == Level.ERROR)
+      val untagged = lockedRow(tag = false).filter(e => e.getLoggerName == SqlLogging.LoggerName && e.getLevel == Level.ERROR)
+      (tagged must beEmpty) and (untagged.map(_.getFormattedMessage) must contain(contain("code 1205")))
+    }
+  }
+
   "a statement's template" should {
     "lose quoted literals and line breaks" in {
       SqlLogging.template("SELECT *\n  FROM users WHERE email = 'a@b.c' AND name = 'O''Brien' AND id = ?") ===

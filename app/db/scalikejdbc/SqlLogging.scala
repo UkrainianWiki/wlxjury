@@ -25,6 +25,12 @@ object SqlLogging {
   val SlowMillisKey = "wlxjury.sql.slowStatementMillis"
   val DefaultSlowMillis = 1000L
 
+  /** Tag (`SQL.tags`) of a statement whose lock wait timeout (1205) is expected, such as a
+    * `FOR UPDATE NOWAIT` that finds its row held: logged at DEBUG, not ERROR. Any other failure
+    * of it is still an ERROR.
+    */
+  val ExpectedFailureTag = "expected-lock-failure"
+
   private val logger: Logger = LoggerFactory.getLogger(LoggerName)
 
   @volatile private var slowMillis: Long = DefaultSlowMillis
@@ -45,7 +51,11 @@ object SqlLogging {
       if (millis >= slowMillis) logger.warn(s"Slow SQL statement ($millis ms): ${template(statement)}")
 
   private val failed: (String, scala.collection.Seq[Any], Throwable, scala.collection.Seq[String]) => Unit =
-    (statement, _, e, _) => logger.error(s"SQL statement failed (${describe(e)}): ${template(statement)}")
+    (statement, _, e, tags) => {
+      val line = s"SQL statement failed (${describe(e)}): ${template(statement)}"
+      if (tags.contains(ExpectedFailureTag) && DbErrors.isLockWaitTimeout(e)) logger.debug(line)
+      else logger.error(line)
+    }
 
   /** The statement on one line, its quoted literals (if a fragment was built with
     * `createUnsafely`) as `'?'`; bound values are `?` already. A literal ends at a quote that is
