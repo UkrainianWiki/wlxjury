@@ -44,6 +44,16 @@ Vendored front-end files (public/)
   their headers; the licence text is licenses/GPL-2.0.txt. See docs/vendor/codex.md.
 
 
+Development files in the repository (not in the release)
+--------------------------------------------------------
+- Modern Web Guidance 1.0.2, SKILL.md (.claude/skills/modern-web-guidance/ and
+  .agents/skills/modern-web-guidance/): Apache-2.0, Copyright Google LLC and contributors,
+  from https://github.com/GoogleChrome/modern-web-guidance (tag v1.0.2), changed only to pin the
+  CLI version and to add a project note. Its guide text is CC-BY 4.0 (author: the Modern Web
+  Guidance contributors); none is copied. Rule: when a guide's text or code is copied, credit it
+  with a source link where it is copied and add an entry here (docs/ui/review-checklist.md).
+
+
 WebJars served by the app
 -------------------------
 - Bootstrap 5.3.8: MIT (the WebJar POM says Apache-2.0 in error).

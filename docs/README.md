@@ -17,7 +17,7 @@ follow these yet" list for triage where one exists):
 | [workflow/](workflow/) | [practices.md](workflow/practices.md) | — | branches, PRs, reviews, commits, releases, agent runs |
 | [operations/](operations/) | [practices.md](operations/practices.md) | — | logging, readiness, backups, deploys, monitoring |
 | [integrations/](integrations/) | [practices.md](integrations/practices.md) | — | Wikimedia API, scalawiki, OAuth providers |
-| [ui/](ui/) | [practices.md](ui/practices.md) | — | templates, scripts, messages, themes, accessibility |
+| [ui/](ui/) | [practices.md](ui/practices.md) | [review-checklist.md](ui/review-checklist.md) | templates, scripts, messages, themes, accessibility |
 | [dependencies/](dependencies/) | [practices.md](dependencies/practices.md) | — | adding or updating a library, action, image or tool |
 
 **References** (how a part works today): [api.md](api.md) (REST API), [deployment.md](deployment.md)

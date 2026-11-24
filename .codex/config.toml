@@ -4,3 +4,8 @@ tool_output_token_limit = 2000
 
 [agents]
 default_subagent_reasoning_effort = "medium"
+
+# Modern Web Guidance (docs/ui/review-checklist.md): its CLI sends anonymous usage data unless this
+# is set. The skill is .agents/skills/modern-web-guidance; its SKILL.md pins the CLI version.
+[shell_environment_policy]
+set = { DISABLE_TELEMETRY = "1" }
