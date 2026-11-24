@@ -13,7 +13,7 @@ import play.twirl.api.Html
 import services.RoundService
 import services.distribution.{RoundDistributionHandler, RoundFreezes, RoundImageCheckHandler, RoundRebalanceHandler,
   RoundRebalanceService}
-import services.imports.{FileTitles, ImportSource}
+import services.imports.{FileTitles, ImportSource, WikiTitle}
 import services.jobs.JobJdbc
 
 import javax.inject.Inject
@@ -633,13 +633,18 @@ class RoundController @Inject() (
         case contestId if !contestPermission(User.ADMIN_ROLES, contestId)(user) =>
           onUnAuthorized(user, request, Secured.Denial.contest(contestId, User.ADMIN_ROLES))
         case contestId =>
-          val imagesSource: Option[String] = imagesForm.bindFromRequest().get
-          for (contest <- contestId.flatMap(ContestJuryJdbc.findById)) {
-            // the source only: the contest's files stay those of its imports
-            ContestJuryJdbc.setImagesSource(contest.getId, imagesSource, contest.categoryId)
-          }
-
-          Redirect(routes.RoundController.rounds(contestId))
+          imagesForm.bindFromRequest().fold(
+            // a source that is no title is refused, not saved (nor a 500)
+            _ => Redirect(routes.RoundController.rounds(contestId))
+              .flashing("error" -> messagesApi.preferred(request)(WikiTitle.InvalidKey)),
+            imagesSource => {
+              for (contest <- contestId.flatMap(ContestJuryJdbc.findById)) {
+                // the source only: the contest's files stay those of its imports
+                ContestJuryJdbc.setImagesSource(contest.getId, imagesSource, contest.categoryId)
+              }
+              Redirect(routes.RoundController.rounds(contestId))
+            }
+          )
       }
     }
 
@@ -777,7 +782,7 @@ class RoundController @Inject() (
   ////        Ok(views.html.galleryByRate(user, round, imagesByRate))
   //  })
 
-  val imagesForm = Form("images" -> optional(text))
+  val imagesForm = Form("images" -> services.imports.WikiTitle.optionalMapping)
 
   val selectRoundForm = Form(
     mapping(
