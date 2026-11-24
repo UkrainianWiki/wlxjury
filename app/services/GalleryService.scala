@@ -25,12 +25,13 @@ class GalleryService {
     *
     * Their own votes, always. Anyone else's, or all together, only for those who may see
     * the round's organiser info ([[User.canViewOrgInfo]]: root, the contest's admins and
-    * organizers, never a juror), and only of a juror of the round
-    * ([[User.isRoundJuror]]), as the galleries' juror menu lists them.
+    * organizers, never a juror) and are not a juror of the round themselves
+    * ([[GalleryService.othersVotesVisible]], the conflict-of-interest rule), and only of a juror
+    * of the round ([[User.isRoundJuror]]), as the galleries' juror menu lists them.
     */
   def viewAs(user: User, round: Round, asUserId: Long): GalleryService.ViewAs =
     if (user.id.contains(asUserId)) GalleryService.ViewAs.Allowed
-    else if (!user.canViewOrgInfo(round)) GalleryService.ViewAs.OtherUsersVotes
+    else if (!GalleryService.othersVotesVisible(user, round)) GalleryService.ViewAs.OtherUsersVotes
     else if (asUserId == 0 || User.isRoundJuror(round.getId, asUserId)) GalleryService.ViewAs.Allowed
     else GalleryService.ViewAs.NotRoundJuror
 
@@ -226,4 +227,16 @@ object GalleryService {
 
   /** The denial reason of [[ViewAs.OtherUsersVotes]] ([[controllers.Secured.Denial]]). */
   val OtherUsersVotesReason = "other_users_votes"
+
+  /** Whether `user` may see other jurors' votes in `round` (one juror's, all together, their
+    * ratings, rankings and per-juror counts of them): those who may see the round's organiser info
+    * ([[User.canViewOrgInfo]]), unless they are a juror of the round themselves (the maintainer's
+    * conflict-of-interest rule of 2026-11-24): a juror of a round sees only their own votes in it,
+    * whatever their contest role (an admin or organizer, a series admin's derived role, root). A
+    * juror of the round: [[User.isRoundJuror]], a round_user row, active or stopped, or votes of
+    * their own in it. The one check of every place that shows other jurors' votes (a guard spec
+    * lists them).
+    */
+  def othersVotesVisible(user: User, round: Round): Boolean =
+    user.canViewOrgInfo(round) && !user.id.exists(id => User.isRoundJuror(round.getId, id))
 }

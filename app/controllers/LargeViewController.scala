@@ -182,7 +182,8 @@ class LargeViewController @Inject() (
       else viewed.withRound(viewed.round.copy(criteriaCount = roundCriteria.size, criterionIds = roundCriteria.map(_.id)))
     val round = list.round
 
-    val votes = if (user.canViewOrgInfo(round)) {
+    // every juror's vote on the file: not for a juror of the round (the conflict-of-interest rule)
+    val votes = if (GalleryService.othersVotesVisible(user, round)) {
       VoteJdbc.byRoundAndImageWithJury(round.getId, pageId)
     } else Seq.empty
 

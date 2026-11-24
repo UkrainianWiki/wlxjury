@@ -330,7 +330,8 @@
    on a round's list (another juror's votes, all of them, or their own files, which the juror menu
    opens: "My votes" waits for multi-role, staff don't vote); not on the round's statistics, whose
    page has no list *@
-@staffBar(round: Round) = @{ user.canViewOrgInfo(round) && !jurorBar(round) && (list.isDefined || user.getId != asUserId) }
+@staffBar(round: Round) = @{ user.canViewOrgInfo(round) && !jurorBar(round) && (list.isDefined || user.getId != asUserId) &&
+    services.GalleryService.othersVotesVisible(user, round) }
 
 @* The pages the viewer may open (the Pages menu): contests and all users (root; all users outside
    a contest), the contest's files, its users and rounds (admins), and the statistics (those who

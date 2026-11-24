@@ -85,7 +85,8 @@ object MonumentController {
       val files = Option.when(member.canViewContestFiles(cid))(
         contest.categoryId.map(ImageJdbc.categoryMonumentFiles(_, monumentId).size)).flatten
       val inRound = round.filter(galleryService.mayViewRound(member, _)).map { r =>
-        val own = !member.canViewOrgInfo(r)
+        // a juror of the round sees only their own votes (the conflict-of-interest rule)
+        val own = !GalleryService.othersVotesVisible(member, r)
         val list = (if (own) RoundList.landing(r, member) else RoundList(r, 0)).withMonument(Some(monumentId))
         MonumentPage.InRound(r, ImageJdbc.roundMonumentFileCount(r.getId, monumentId, Option.when(own)(member.getId)),
           own, list.pageUrl(1))
