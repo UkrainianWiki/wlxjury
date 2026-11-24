@@ -86,7 +86,8 @@ final case class ImportPage(
     countries: Seq[(Long, String)] = Nil,
     byCountry: Option[Boolean] = None,
     notInCountries: Int = 0,
-    textless: Set[Long] = Set.empty
+    textless: Set[Long] = Set.empty,
+    refusedSource: Boolean = false
 )
 
 /** Imports a contest's files from Commons in the background, as a [[Job]] of kind
@@ -208,7 +209,14 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
       )
     } else {
       val src = ImportSource(p.source)
-      val listed = source.listFiles(src, st.cursor, stepSize)
+      // a source that is no title (a stored one, or a pasted list's): the job fails with its reason
+      val listed =
+        try source.listFiles(src, st.cursor, stepSize)
+        catch {
+          case e: org.scalawiki.dto.MwException if e.code == "invalidtitle" =>
+            return ImportPage(listed = 0, images = Nil, monumentIds = Nil, missingTitles = Nil,
+              nextCursor = st.cursor, nextIndex = st.index, last = true, total = None, refusedSource = true)
+        }
       val pages = listed.pageIds.grouped(idsPerRequest).flatMap(source.files(_, info = !monumentIds, text = text)).toSeq
       val ofPage = !monumentIds && src.isInstanceOf[ImportSource.PageFiles]
       // the files' countries: of a page, and of any source of a contest of many countries
@@ -297,6 +305,8 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
 
   def write(job: Job, page: ImportPage, ctx: StepContext): StepResult = {
     implicit val session: DBSession = ctx.session
+    if (page.refusedSource)
+      return StepResult.Failed(JobError(WikiTitle.InvalidKey), job.state, JobScheduler.progressOf(job))
     val p = paramsOf(job)
     val st = stateOf(job)
     val written =

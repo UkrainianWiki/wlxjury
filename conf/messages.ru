@@ -1565,6 +1565,7 @@ health.job.status.done = выполнено
 health.job.status.failed = ошибка
 health.job.status.cancelled = отменено
 import.source.identity.warn = Это конкурс {0}, а источник называет {1}. Импортированные файлы добавляются к файлам, которые уже есть в конкурсе. Для нового конкурса или нового года попросите администраторов инструмента создать новый конкурс. Импортировать всё равно можно.
+error.wiki.title.invalid = Это не допустимое название страницы или категории Викисклада. Используйте название вида Category:Images from Wiki Loves Earth 2020 in Brazil; символы # < > [ ] | и фигурные скобки недопустимы.
 
 # Contest series (contest series plan, CY-1)
 series = Серия

@@ -141,7 +141,7 @@ class ContestController @Inject() (
       "name" -> nonEmptyText,
       "year" -> number,
       "country" -> nonEmptyText,
-      "images" -> optional(text),
+      "images" -> services.imports.WikiTitle.optionalMapping,
       "currentRound" -> optional(longNumber),
       "monumentIdTemplate" -> optional(text),
       "greetingText" -> optional(text),

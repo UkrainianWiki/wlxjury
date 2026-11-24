@@ -53,7 +53,7 @@ object CategoryRule {
   import CategoryOperation._
 
   def fromStored(first: Option[String], second: Option[String], clause: Option[String]): CategoryRule = {
-    def clean(value: Option[String]) = value.map(_.trim).filter(_.nonEmpty)
+    def clean(value: Option[String]) = value.map(services.imports.WikiTitle.normalize).filter(_.nonEmpty)
     val a = clean(first)
     val b = clean(second)
     clause match {
