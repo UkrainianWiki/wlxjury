@@ -21,6 +21,7 @@ import sangria.validation.{AstNodeLocation, QueryValidator, Violation}
 import javax.inject.{Inject, Singleton}
 import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.{ExecutionContext, Future, TimeoutException}
+import scala.util.control.NonFatal
 import scala.util.{Failure, Success, Try}
 
 /** The GraphQL endpoint's limits (`wlxjury.graphql` in `conf/application.conf`). */
@@ -75,10 +76,12 @@ object GraphQLSettings {
   *     400; a document with more than one operation is refused (no batching);
   *  5. a token caller's mutation or subscription: 403, logged on `security.authz` (tokens are
   *     queries only until a write scope exists, decision Q3);
-  *  6. the document's shape ([[QueryLimits]]), Sangria's validation, then the run, on the blocking
-  *     pool, with the complexity budget and a timeout.
+  *  6. on the blocking pool, all within the timeout (a task that starts past it does nothing): the
+  *     document's nesting before it is parsed, its shape ([[QueryLimits]]), Sangria's validation,
+  *     then the run, with the complexity budget; the resolvers check the deadline too.
   *
-  * Introspection needs a caller (step 2), so it is refused signed out. Errors are GraphQL's
+  * Introspection needs a caller (step 2), so it is refused signed out (in production a POST with
+  * neither the session cookie nor a Bearer token gets the CSRF filter's 403 first). Errors are GraphQL's
   * `errors` with a message key (never request or exception text), `extensions.code` and, for a
   * denial or a server error, `extensions.reference`; the HTTP failures (401, 403, 400, 405) also
   * carry the REST API's `error` field ([[ApiFailure]]).
@@ -114,7 +117,7 @@ class GraphQLController @Inject() (
           else
             parsers.byteString(settings.maxBodyBytes)(request).mapFuture {
               case Left(tooLarge) => Future.successful(tooLarge)
-              case Right(body)    => handle(GraphQLContext(caller, request), body)
+              case Right(body)    => handle(caller, request, body)
             }
       })
   }
@@ -134,40 +137,60 @@ class GraphQLController @Inject() (
         }
     }
 
-  /** Steps 4 to 6. */
-  private def handle(ctx: GraphQLContext, body: ByteString): Future[Result] =
+  /** Steps 4 to 6: the body read here; the rest on the blocking pool, within the timeout. */
+  private def handle(caller: ApiAuth.Caller, request: RequestHeader, body: ByteString): Future[Result] =
     parseBody(body) match {
       case Left(key) => Future.successful(failure(Results.BadRequest, "bad_request", key, Code.BadInput))
-      case Right(GraphQLRequest(query, operationName, variables)) =>
-        QueryParser.parse(query) match {
-          case Failure(e: SyntaxError) =>
-            val position = e.originalError.position
-            Future.successful(errorsOnly(error("query_syntax", Code.BadInput, locations = Seq(position.line -> position.column))))
-          case Failure(_) => Future.successful(errorsOnly(error("query_syntax", Code.BadInput)))
-          case Success(document) =>
-            val operations = document.definitions.collect { case op: ast.OperationDefinition => op }
-            if (operations.sizeIs > 1) Future.successful(errorsOnly(error("one_operation_only", Code.BadInput)))
-            else if (operations.isEmpty) Future.successful(errorsOnly(error("no_operation", Code.BadInput)))
-            else if (operations.head.operationType != ast.OperationType.Query && isToken(ctx.caller)) {
-              val reference = Secured.logDenial(ctx.user, ctx.request,
-                Secured.Denial(resource = Some(s"api:$Endpoint"), reason = Some("token_query_only")),
-                ctx.caller.via.logFields)
-              Future.successful(forbidden(reference))
-            } else
-              QueryLimits.check(document, settings.limits) match {
-                case Some(key) => Future.successful(errorsOnly(error(key, Code.BadInput)))
-                case None      => run(ctx, document, operationName, variables)
-              }
+      case Right(graphQLRequest) =>
+        val ctx = GraphQLContext(caller, request, settings.timeout.fromNow)
+        val work = blockingFuture {
+          // a task that waited for a thread past the deadline: its caller has had the timeout
+          if (ctx.deadline.isOverdue()) Future.successful(timedOut(ctx)) else process(ctx, graphQLRequest)
+        }.flatten.recover {
+          case NonFatal(e) => internalError(e)
         }
+        withTimeout(work, settings.timeout).recover { case _: TimeoutException => timedOut(ctx) }
     }
 
-  /** Validation and the run, on the blocking pool, within the timeout. */
-  private def run(ctx: GraphQLContext, document: ast.Document, operationName: Option[String],
-                  variables: JsObject): Future[Result] = {
-    val execution = blockingFuture {
-      val violations = QueryValidator.default.validateQuery(GraphQLSchema.schema, document, Some(MaxViolations))
-      if (violations.nonEmpty) Future.successful(errorsOnly(violations.map(violationError): _*))
-      else
+  /** The document: its nesting before parsing, the parse, one operation, a token's mutation refused,
+    * the limits, Sangria's validation, then the run with the complexity budget.
+    */
+  private def process(ctx: GraphQLContext, graphQLRequest: GraphQLRequest): Future[Result] = {
+    val GraphQLRequest(query, operationName, variables) = graphQLRequest
+    val checked: Either[Result, ast.Document] =
+      try {
+        if (QueryLimits.nestingExceeds(query, QueryLimits.MaxNesting)) Left(errorsOnly(error("query_too_deep", Code.BadInput)))
+        else
+          QueryParser.parse(query) match {
+            case Failure(e: SyntaxError) =>
+              val position = e.originalError.position
+              Left(errorsOnly(error("query_syntax", Code.BadInput, locations = Seq(position.line -> position.column))))
+            case Failure(_) => Left(errorsOnly(error("query_syntax", Code.BadInput)))
+            case Success(document) =>
+              val operations = document.definitions.collect { case op: ast.OperationDefinition => op }
+              if (operations.sizeIs > 1) Left(errorsOnly(error("one_operation_only", Code.BadInput)))
+              else if (operations.isEmpty) Left(errorsOnly(error("no_operation", Code.BadInput)))
+              else if (operations.head.operationType != ast.OperationType.Query && isToken(ctx.caller)) {
+                val reference = Secured.logDenial(ctx.user, ctx.request,
+                  Secured.Denial(resource = Some(s"api:$Endpoint"), reason = Some("token_query_only")),
+                  ctx.caller.via.logFields)
+                Left(forbidden(reference))
+              } else
+                QueryLimits.check(document, settings.limits) match {
+                  case Some(key) => Left(errorsOnly(error(key, Code.BadInput)))
+                  case None =>
+                    val violations = QueryValidator.default.validateQuery(GraphQLSchema.schema, document, Some(MaxViolations))
+                    if (violations.nonEmpty) Left(errorsOnly(violations.map(violationError): _*)) else Right(document)
+                }
+          }
+      } catch {
+        // the nesting check keeps documents shallow; this is the second line, so that a deep one never
+        // takes the JVM down (Pekko exits on a fatal error that reaches it)
+        case _: StackOverflowError => Left(errorsOnly(error("query_too_deep", Code.BadInput)))
+      }
+    checked match {
+      case Left(result) => Future.successful(result)
+      case Right(document) =>
         Executor.execute(
           GraphQLSchema.schema,
           document,
@@ -182,20 +205,16 @@ class GraphQLController @Inject() (
           .map(json => Results.Ok(json))
           .recover {
             case e: QueryReducingError if e.cause == TooComplex => errorsOnly(error("query_too_complex", Code.BadInput))
-            case e: WithViolations => errorsOnly(e.violations.map(violationError): _*)
-            case _: QueryAnalysisError => errorsOnly(error("invalid_query", Code.BadInput))
-            case scala.util.control.NonFatal(e) =>
-              val reference = Secured.newReference()
-              logger.error(s"graphql_error ref=$reference", e)
-              errorsOnly(error("internal_error", Code.InternalError, reference = Some(reference)))
+            case e: WithViolations                              => errorsOnly(e.violations.map(violationError): _*)
+            case _: QueryAnalysisError                          => errorsOnly(error("invalid_query", Code.BadInput))
           }
-    }.flatten
-    withTimeout(execution, settings.timeout).recover {
-      case _: TimeoutException =>
-        val reference = Secured.newReference()
-        logger.warn(s"graphql_timeout ref=$reference timeout=${settings.timeout} ${Secured.accountFields(ctx.request, Some(ctx.user))}")
-        errorsOnly(error("timeout", Code.InternalError, reference = Some(reference)))
     }
+  }
+
+  private def timedOut(ctx: GraphQLContext): Result = {
+    val reference = Secured.newReference()
+    logger.warn(s"graphql_timeout ref=$reference timeout=${settings.timeout} ${Secured.accountFields(ctx.request, Some(ctx.user))}")
+    errorsOnly(error("timeout", Code.InternalError, reference = Some(reference)))
   }
 
   /** `future`, or a [[TimeoutException]] after `timeout`. The work itself goes on to its end on its
@@ -298,20 +317,36 @@ object GraphQLController {
   def forbidden(reference: String): Result =
     failure(Results.Forbidden, "forbidden", "forbidden", Code.Forbidden, Some(reference))
 
-  /** A resolver's error: a [[GraphQLError]] as it is; anything else `internal_error`, logged with
-    * its reference. Never the exception's text.
+  /** A server error: `internal_error`, logged with its reference, never the exception's text. */
+  def internalError(e: Throwable): Result = {
+    val reference = Secured.newReference()
+    logger.error(s"graphql_error ref=$reference", e)
+    errorsOnly(error("internal_error", Code.InternalError, reference = Some(reference)))
+  }
+
+  /** A resolver's error: a [[GraphQLError]] as it is; a violation (a variable or an argument that
+    * doesn't fit its type) `invalid_query`; anything else, Sangria's execution errors included (a
+    * null for a non-null field is a server bug), `internal_error`, logged with its reference. Never
+    * the exception's text.
     */
   val exceptionHandler: ExceptionHandler = ExceptionHandler(
     onException = {
       case (m, e: GraphQLError) => handled(m, e.message, e.code, e.reference)
-      case (m, e) =>
-        val reference = Secured.newReference()
-        logger.error(s"graphql_resolver_error ref=$reference", e)
-        handled(m, "internal_error", Code.InternalError, Some(reference))
+      case (m, e)               => internal(m, e)
     },
     onViolation = { case (m, _) => handled(m, "invalid_query", Code.BadInput, None) },
-    onUserFacingError = { case (m, _) => handled(m, "invalid_query", Code.BadInput, None) }
+    onUserFacingError = {
+      case (m, _: WithViolations) => handled(m, "invalid_query", Code.BadInput, None)
+      case (m, e: Throwable)      => internal(m, e)
+      case (m, e)                 => internal(m, new IllegalStateException(e.getClass.getName))
+    }
   )
+
+  private def internal(m: ResultMarshaller, e: Throwable): HandledException = {
+    val reference = Secured.newReference()
+    logger.error(s"graphql_resolver_error ref=$reference", e)
+    handled(m, "internal_error", Code.InternalError, Some(reference))
+  }
 
   private def handled(m: ResultMarshaller, message: String, code: String, reference: Option[String]): HandledException =
     HandledException(message,

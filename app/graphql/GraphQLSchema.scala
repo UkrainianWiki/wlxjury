@@ -49,7 +49,8 @@ object GraphQLSchema {
     }
 
   /** The rounds of the contest `view` shows, as its viewer may see them (see the object's doc). */
-  def visibleRounds(view: ContestView): Seq[Round] = {
+  def visibleRounds(ctx: GraphQLContext, view: ContestView): Seq[Round] = {
+    ctx.checkDeadline()
     val rounds = Round.findByContest(view.contest.getId).filter(_.deletedAt.isEmpty)
     val viewer = view.viewer
     val (staff, others) = rounds.partition(viewer.canViewOrgInfo)
@@ -65,6 +66,7 @@ object GraphQLSchema {
 
   /** The contests the caller may see, in the order the list gives them: the latest year first. */
   def visibleContests(ctx: GraphQLContext): Seq[ContestView] = {
+    ctx.checkDeadline()
     val contests =
       if (ctx.callerIsRoot) ContestJuryJdbc.findAll()
       else {
@@ -79,7 +81,8 @@ object GraphQLSchema {
   /** One contest, if the caller may see it; else [[GraphQLError]] `NOT_FOUND`, the same for a
     * missing contest, an id that is no number, and one the caller may not see (logged as a denial).
     */
-  def contestById(ctx: GraphQLContext, id: String): ContestView =
+  def contestById(ctx: GraphQLContext, id: String): ContestView = {
+    ctx.checkDeadline()
     id.toLongOption.flatMap(ContestJuryJdbc.findById) match {
       case None => throw GraphQLError.missing("contest")
       case Some(contest) =>
@@ -88,6 +91,7 @@ object GraphQLSchema {
           .map(ContestView(contest, _))
           .getOrElse(throw ctx.contestDenied(contest))
     }
+  }
 
   // --- types
 
@@ -177,7 +181,7 @@ object GraphQLSchema {
         Some("Its rounds the caller may see: all for root and its admins and organizers; for a juror, " +
           "the rounds they judge, once distributed."),
         complexity = Some((_: GraphQLContext, _: Args, child: Double) => 1 + child * RoundsEstimate),
-        resolve = c => visibleRounds(c.value))
+        resolve = c => visibleRounds(c.ctx, c.value))
     )
   )
 

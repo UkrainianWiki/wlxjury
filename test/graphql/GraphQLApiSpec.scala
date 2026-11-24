@@ -154,6 +154,9 @@ class GraphQLApiSpec extends PlaySpecification with PlayTestDb {
         db.scalikejdbc.ApiTokenJdbc.revoke(db.scalikejdbc.ApiTokenJdbc.findByHash(ApiTokenService.hash(token)).get.id,
           userId(rootEmail))
         status(gql(app, meQuery, headers = Seq(bearer(token)))) === UNAUTHORIZED
+        val expired = tokenOf(jurorEmail)
+        DB.autoCommit(implicit s => sql"UPDATE api_token SET expires_at = NOW(3) - INTERVAL 1 DAY WHERE user_id = ${userId(jurorEmail)}".update.apply())
+        status(gql(app, meQuery, headers = Seq(bearer(expired)))) === UNAUTHORIZED
         // a refused token is refused even with a signed-in session: the header alone decides
         status(gql(app, meQuery, as = Some(rootEmail), headers = Seq(bearer(token)))) === UNAUTHORIZED
       }
@@ -436,6 +439,44 @@ class GraphQLApiSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "refuse a document nested deeper than the parser should see, the app still answering" in {
+      testDbApp { app =>
+        setUp()
+        forall(Seq("{a" * 30000, "{ contest(id: " + "[" * 30000 + ") { id } }")) { query =>
+          val result = gql(app, query, as = Some(jurorEmail))
+          status(result) === OK
+          messages(result) === Seq("query_too_deep")
+        }
+        status(gql(app, meQuery, as = Some(jurorEmail))) === OK
+      }
+    }
+
+    "refuse a fragment bomb of spreads only, and count a limit given as a variable" in {
+      testDbApp { app =>
+        setUp()
+        val bomb = (0 until 40).map(i => s"fragment F$i on Query { ...F${i + 1} ...F${i + 1} }").mkString(" ") +
+          " fragment F40 on Query { me { id } } query { ...F0 }"
+        messages(gql(app, bomb, as = Some(jurorEmail))) === Seq("query_too_large")
+        val byVariable = gql(app, "query Q($n: Int) { contests(limit: $n) { items { id rounds { id number title status kind } } } }",
+          as = Some(rootEmail), variables = Json.obj("n" -> 200))
+        messages(byVariable) === Seq("query_too_complex")
+      }
+    }
+
+    "answer a variable of the wrong type and an unknown operation name with a key, never their text" in {
+      testDbApp { app =>
+        setUp()
+        val coercion = gql(app, "query Q($id: ID!) { contest(id: $id) { id } }", as = Some(jurorEmail),
+          variables = Json.obj("id" -> Json.obj("x" -> "secret-text")))
+        codes(coercion) === Seq("BAD_INPUT")
+        contentAsString(coercion) must not(contain("secret-text"))
+        val unknownOperation = postJson(app, Json.obj("query" -> "query Q { me { id } }", "operationName" -> "secret-name"),
+          session = signedIn(jurorEmail))
+        codes(unknownOperation) === Seq("BAD_INPUT")
+        contentAsString(unknownOperation) must not(contain("secret-name"))
+      }
+    }
+
     "answer a syntax or validation error with a key, never the query's text" in {
       testDbApp { app =>
         setUp()
@@ -495,6 +536,17 @@ class GraphQLApiSpec extends PlaySpecification with PlayTestDb {
         val tool = postJson(app, Json.obj("query" -> meQuery), Seq(bearer(token)))
         status(tool) === OK
         (json(tool) \ "data" \ "me" \ "authMethod").as[String] === "TOKEN"
+      }
+    }
+
+    "refuse a POST with neither the session cookie nor a Bearer token as CSRF, with GraphQL's errors too" in {
+      withCsrfApp { app =>
+        setUp()
+        val result = postJson(app, Json.obj("query" -> meQuery))
+        status(result) === FORBIDDEN
+        (json(result) \ "error").as[String] === "csrf"
+        codes(result) === Seq("CSRF")
+        (errors(result).head \ "extensions" \ "reference").as[String] === (json(result) \ "reference").as[String]
       }
     }
 

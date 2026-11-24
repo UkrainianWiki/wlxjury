@@ -56,6 +56,24 @@ class GraphQLSchemaSpec extends Specification {
       val spreads = (0 until 12).map(i => s"fragment F$i on X { ...F${i + 1} ...F${i + 1} x }").mkString(" ") +
         " fragment F12 on X { y } { ...F0 }"
       check(spreads) === Some("query_too_large")
+      // spreads alone, no field anywhere, the last one unknown or back to the first: still stopped
+      forall(Seq("Nope", "F0")) { last =>
+        val bare = (0 until 40).map(i => s"fragment F$i on Query { ...F${i + 1} ...F${i + 1} }").mkString(" ") +
+          s" fragment F40 on Query { ...$last } query { ...F0 }"
+        check(bare) === Some("query_too_large")
+      }
+    }
+
+    "refuse brackets nested deeper than MaxNesting before parsing, outside strings and comments" in {
+      QueryLimits.nestingExceeds("{a" * 30000, QueryLimits.MaxNesting) must beTrue
+      QueryLimits.nestingExceeds("{ contest(id: " + "[" * 30000 + ") { id } }", QueryLimits.MaxNesting) must beTrue
+      QueryLimits.nestingExceeds("{ contest(id: \"" + "{" * 100 + "\") { id } }", QueryLimits.MaxNesting) must beFalse
+      QueryLimits.nestingExceeds("# " + "{" * 100 + "\n{ me { id } }", QueryLimits.MaxNesting) must beFalse
+      QueryLimits.nestingExceeds("{ a(s: \"\"\"" + "{" * 100 + "\"\"\") }", QueryLimits.MaxNesting) must beFalse
+      // an escaped triple quote does not end a block string, so what follows the real end is counted
+      val escaped = "{ a(s: \"\"\"\\\"\"\" \"\"\") " + "{" * 100 + " }"
+      QueryLimits.nestingExceeds(escaped, QueryLimits.MaxNesting) must beTrue
+      QueryLimits.nestingExceeds(RenderSchema.IntrospectionQuery, QueryLimits.MaxNesting) must beFalse
     }
 
     "refuse introspection that nests its type lists more than twice, or deeper than maxIntrospectionDepth" in {
@@ -71,6 +89,17 @@ class GraphQLSchemaSpec extends Specification {
     "be the release config's (conf/application.conf), the defaults a config without them gets" in {
       GraphQLSettings(play.api.Configuration(security.ProductionFilters.release)) === GraphQLSettings.Default
       GraphQLSettings(play.api.Configuration.empty) === GraphQLSettings.Default
+    }
+  }
+
+  "the deadline" should {
+    "stop a resolver once the answer has timed out" in {
+      val caller = api.ApiAuth.Caller(User("u", "u@example.com", Some(1L)), api.ApiAuth.BySession)
+      val request = play.api.test.FakeRequest()
+      GraphQLContext(caller, request, scala.concurrent.duration.Deadline.now + scala.concurrent.duration.Duration(1, "minute"))
+        .checkDeadline() must not(throwA[Throwable])
+      GraphQLContext(caller, request, scala.concurrent.duration.Deadline.now - scala.concurrent.duration.Duration(1, "second"))
+        .checkDeadline() must throwA[GraphQLError]
     }
   }
 

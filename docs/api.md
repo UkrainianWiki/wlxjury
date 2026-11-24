@@ -170,8 +170,10 @@ document with two operations is refused). GET and other methods are 405: queries
   refused (`reason=token_read_only`), as on the REST API's writes. When a token and a session
   cookie come together, the token decides, as on REST, and the query-only rule holds: a cookie
   never adds to a token's rights (and the cookie makes the CSRF token required).
-- **Signed out**: 401, introspection included. A signed-in caller may introspect (the schema is
-  not secret).
+- **Signed out**: refused, introspection included: 401 for a request with the session cookie (a
+  signed-out or expired session) or a refused token; a POST with neither a session cookie nor a
+  Bearer token is refused first by the CSRF filter (403 `csrf`), as every cookieless POST is. A
+  signed-in caller may introspect (the schema is not secret).
 
 ```bash
 curl -H "Authorization: Bearer $WLXJURY_TOKEN" -H "Content-Type: application/json" \
@@ -180,20 +182,22 @@ curl -H "Authorization: Bearer $WLXJURY_TOKEN" -H "Content-Type: application/jso
 ```
 
 **Errors.** GraphQL's `errors` array; each has a message key (never request or exception text),
-`extensions.code` (`UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `BAD_INPUT`, `INTERNAL_ERROR`) and,
-for `NOT_FOUND`, a denial or a server error, `extensions.reference`, which finds the log line. HTTP
-401 (no credentials), 403 (a token's mutation, a read-only token), 400 (a body that isn't one
-request object), 405, 413 and 415 also carry the REST API's `error` field; the rest are 200 with
-`errors`. A query that breaks a rule of the language or the schema is `invalid_query` with the
+`extensions.code` (`UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `BAD_INPUT`, `INTERNAL_ERROR`,
+`CSRF`) and, for `NOT_FOUND`, a denial, a CSRF refusal or a server error, `extensions.reference`,
+which finds the log line. HTTP 401 (no credentials), 403 (a token's mutation, a read-only token, a
+CSRF refusal), 400 (a body that isn't one request object), 405 and 415 also carry the REST API's
+`error` field; 413 has that field only; the rest are 200 with `errors`. A query that breaks a rule of the language or the schema is `invalid_query` with the
 rule's name (`extensions.rule`, e.g. `UndefinedField`) and its locations.
 
 **Limits** (`wlxjury.graphql` in `conf/application.conf`), checked before anything runs: a body of
-at most 64 KB (413); fields nested at most 8 deep (`query_too_deep`; introspection at most 15, its
+at most 64 KB (413); brackets nested at most 64 deep, checked before the query is parsed
+(`query_too_deep`); fields nested at most 8 deep (`query_too_deep`; introspection at most 15, its
 type lists nested at most twice: `introspection_too_deep`); at most 30 aliases
-(`too_many_aliases`) and 1,000 field selections, fragments counted where spread
-(`query_too_large`); a complexity budget of 5,000, each field 1 and a list times its page size
-(`contests` its limit, a contest's `rounds` 20: `query_too_complex`). The run is on the blocking
-pool, answered within 20 seconds (`timeout`).
+(`too_many_aliases`) and 1,000 selections (fields, fragment spreads, inline fragments), fragments
+counted where spread (`query_too_large`); a complexity budget of 5,000, each field 1 and a list times its page size
+(`contests` its limit, a contest's `rounds` 20: `query_too_complex`). Everything after reading the
+body runs on the blocking pool and is answered within 20 seconds (`timeout`); a run past that stops
+at its next database read, and one that waited for a thread past it does nothing.
 
 **No explorer in production.** GraphiQL is for development and tests only (decision Q5); it is not
 served by the app in this slice. Use the SDL, or introspection from a signed-in session.

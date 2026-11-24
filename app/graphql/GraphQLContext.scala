@@ -7,14 +7,22 @@ import org.intracer.wmua.ContestJury
 import play.api.Logger
 import play.api.mvc.RequestHeader
 
+import scala.concurrent.duration.Deadline
+
 /** What every resolver knows: the caller ([[ApiAuth.caller]]: a session or a personal token) and
   * the request, for the denials' log lines. The resolvers never take a contest id from the query
   * as a permission: each loads the resource, then judges the caller in the resource's contest
   * ([[asMemberOf]]).
   */
-final case class GraphQLContext(caller: ApiAuth.Caller, request: RequestHeader) {
+final case class GraphQLContext(caller: ApiAuth.Caller, request: RequestHeader, deadline: Deadline) {
 
   def user: User = caller.user
+
+  /** Stops a run whose answer has timed out (its caller has had `timeout`) before its next query:
+    * each resolver that reads the database calls it first.
+    */
+  def checkDeadline(): Unit =
+    if (deadline.isOverdue()) throw GraphQLError("timeout", GraphQLError.Code.InternalError)
 
   /** The caller is root (a caller check, not a target's: `User.isProtectedTarget` is for targets). */
   def callerIsRoot: Boolean = user.hasRole(User.ROOT_ROLE)

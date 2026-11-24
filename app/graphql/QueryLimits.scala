@@ -13,12 +13,58 @@ import sangria.ast
   *    nested at most [[MaxIntrospectionListNesting]] deep, as graphql-js's
   *    `MaxIntrospectionDepthRule` (the standard introspection query nests them once);
   *  - `maxAliases`: aliased fields;
-  *  - `maxFields`: field selections, each fragment spread counted again where it is spread, so
-  *    that fragments spreading each other many times (a "fragment bomb") stop the walk early.
+  *  - `maxFields`: selections (fields, fragment spreads and inline fragments), each fragment
+  *    counted again where it is spread, so that fragments spreading each other many times (a
+  *    "fragment bomb", with or without fields) stop the walk early.
+  *
+  * Before the document is parsed, [[nestingExceeds]] refuses brackets nested deeper than
+  * [[MaxNesting]]: Sangria's parser recurses with no limit of its own, and a stack overflow is a
+  * fatal error.
   */
 object QueryLimits {
 
   final case class Limits(maxDepth: Int, maxIntrospectionDepth: Int, maxAliases: Int, maxFields: Int)
+
+  /** The nesting of `{`, `[` and `(` a query may have before it is parsed: far over any real query
+    * (`maxDepth` 8 is about 10 braces, a list argument a few more), far under what overflows the
+    * parser's stack.
+    */
+  val MaxNesting = 64
+
+  /** Whether the query's brackets nest deeper than `max`, outside strings, block strings and
+    * comments: a linear scan, before any parse.
+    */
+  def nestingExceeds(query: String, max: Int): Boolean = {
+    var depth = 0
+    var i = 0
+    val n = query.length
+    var exceeded = false
+    while (i < n && !exceeded) {
+      val c = query.charAt(i)
+      if (query.startsWith("\"\"\"", i)) {
+        // a block string ends at the first triple quote without a backslash before it
+        var end = query.indexOf("\"\"\"", i + 3)
+        while (end > 0 && query.charAt(end - 1) == '\\') end = query.indexOf("\"\"\"", end + 3)
+        i = if (end < 0) n else end + 3
+      } else if (c == '"') {
+        i += 1
+        while (i < n && query.charAt(i) != '"' && query.charAt(i) != '\n') {
+          if (query.charAt(i) == '\\') i += 1
+          i += 1
+        }
+        i += 1
+      } else if (c == '#') {
+        while (i < n && query.charAt(i) != '\n' && query.charAt(i) != '\r') i += 1
+      } else {
+        if (c == '{' || c == '[' || c == '(') {
+          depth += 1
+          if (depth > max) exceeded = true
+        } else if (c == '}' || c == ']' || c == ')') depth -= 1
+        i += 1
+      }
+    }
+    exceeded
+  }
 
   /** The nesting of introspection's type-listing fields allowed (graphql-js allows 2). */
   val MaxIntrospectionListNesting = 2
@@ -29,16 +75,17 @@ object QueryLimits {
   /** Why the document breaks a limit (the error's message key), if it does. */
   def check(document: ast.Document, limits: Limits): Option[String] = {
     val fragments = document.fragments
-    var fields = 0
+    var fields = 0 // selections walked
     var aliases = 0
 
     final class Stop(val key: String) extends RuntimeException(key, null, false, false)
 
     def walk(selections: Vector[ast.Selection], depth: Int, intro: Option[(Int, Int)], visiting: Set[String]): Unit =
-      selections.foreach {
+      selections.foreach { selection =>
+        fields += 1
+        if (fields > limits.maxFields) throw new Stop("query_too_large")
+        selection match {
         case f: ast.Field =>
-          fields += 1
-          if (fields > limits.maxFields) throw new Stop("query_too_large")
           if (f.alias.isDefined) {
             aliases += 1
             if (aliases > limits.maxAliases) throw new Stop("too_many_aliases")
@@ -60,6 +107,7 @@ object QueryLimits {
           // a cycle is Sangria's validation error (NoFragmentCycles); here it only ends the walk
           if (!visiting.contains(s.name))
             fragments.get(s.name).foreach(d => walk(d.selections, depth, intro, visiting + s.name))
+        }
       }
 
     try {
