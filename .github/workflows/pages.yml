@@ -1,0 +1,229 @@
+# Reports on GitHub Pages: the Allure report of the browser tests and the Scala coverage HTML, with
+# an index page linking them. Deployed only from master: it runs after a push run of "Browser
+# tests" or "Coverage" on master has finished (workflow_run), or by hand, and builds the site from
+# the latest completed push run of each on master. Nothing from a pull request or a fork gets
+# here (the checkout is master, the artifacts are master push runs').
+#
+# What is published (nothing private; the fixture's data and accounts are synthetic or public
+# Commons data): the Allure report is REBUILT from the engines' results after
+# scripts/allure-public-filter.py has kept only the failure screenshots (traces, videos, logs,
+# error context, environment files are deleted), then checked by allure-offline.mjs as in
+# browser.yml (no analytics, nothing loaded from another host). The coverage part is the Scala
+# HTML report (the repository's own public sources and numbers; the XML is left out). No env
+# dump, no server log, no secret reaches either part; no step here has a credential but the
+# job's GITHUB_TOKEN.
+#
+# One-time setting (a maintainer, outside this file): repository Settings, Pages, Source:
+# GitHub Actions, or
+#   gh api -X POST repos/UkrainianWiki/wlxjury/pages -f build_type=workflow
+# Until then the deploy job fails at "Configure Pages" and nothing is published.
+# Wikimedia access is anonymous (CLAUDE.md, Testing): no COMMONS_* or SCALAWIKI_* credentials here.
+# Actions are pinned by commit SHA, the release as a comment (dependencies practices §2.2).
+name: Reports on Pages
+
+on:
+  workflow_run:
+    workflows: ["Browser tests", "Coverage"]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  # One deploy at a time, none cancelled half way (the official Pages advice); a newer run
+  # waits and rebuilds from the latest reports
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the site
+    # a push run's results; the browser report job is advisory, so a failed run still has reports
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'master' &&
+       (github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read   # download artifacts of the other runs
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      NO_UPDATE_NOTIFIER: '1'
+    steps:
+      # master, the default branch (workflow_run and a manual run on it both start there)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.23.4
+          cache: npm
+          cache-dependency-path: browser-test/package-lock.json
+
+      - name: Find the latest reports of master
+        id: runs
+        run: |
+          # workflow file -> "id sha" of its latest completed (success or failure) push run on master
+          pick() {
+            gh run list --workflow "$1" --branch master --event push --status completed --limit 20 \
+              --json databaseId,headSha,conclusion \
+              --jq '[.[] | select(.conclusion == "success" or .conclusion == "failure")][0] | if . == null then "" else "\(.databaseId) \(.headSha)" end'
+          }
+          browser_run="" browser_sha="" coverage_run="" coverage_sha=""
+          read -r browser_run browser_sha <<<"$(pick browser.yml)" || true
+          read -r coverage_run coverage_sha <<<"$(pick coverage.yml)" || true
+          {
+            echo "browser_run=$browser_run"
+            echo "browser_sha=$browser_sha"
+            echo "coverage_run=$coverage_run"
+            echo "coverage_sha=$coverage_sha"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download the engines' Allure results
+        if: steps.runs.outputs.browser_run != ''
+        env:
+          RUN: ${{ steps.runs.outputs.browser_run }}
+        run: |
+          mkdir -p target/browser-test/allure-attempts
+          gh run download "$RUN" --pattern 'allure-results-*' --dir target/browser-test/allure-attempts || echo "::warning::no Allure results (expired?)"
+
+      # each engine's latest attempt only (browser.yml's report job does the same), then the
+      # public part only
+      - name: Each engine's latest results, public part only
+        id: allure
+        run: |
+          mkdir -p target/browser-test/allure-results
+          for engine in chromium firefox webkit; do
+            latest="" best=0
+            for dir in target/browser-test/allure-attempts/allure-results-"$engine"-attempt-*; do
+              [ -d "$dir" ] || continue
+              n=${dir##*-attempt-}
+              if [ "$n" -gt "$best" ]; then best=$n latest=$dir; fi
+            done
+            if [ -z "$latest" ]; then echo "::warning::no Allure results for $engine"; continue; fi
+            cp -R "$latest"/. target/browser-test/allure-results/
+          done
+          if [ -n "$(ls -A target/browser-test/allure-results 2>/dev/null)" ]; then
+            python3 -B scripts/allure-public-filter.py target/browser-test/allure-results
+            echo "have=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # read-only: the trends from master's pushes (a cache of the default branch is visible
+      # here); this job never saves it
+      - name: Restore the report's history
+        if: steps.allure.outputs.have == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/browser-test/allure-history
+          key: allure-history-pages-${{ github.run_id }}
+          restore-keys: allure-history-
+
+      - name: Install the report tool
+        if: steps.allure.outputs.have == 'true'
+        working-directory: browser-test
+        run: npm ci
+
+      # allure generate, then allure-offline.mjs: fails on an analytics loader or anything loaded
+      # from another host, and adds the CSP meta
+      - name: Generate and check the Allure report
+        if: steps.allure.outputs.have == 'true'
+        working-directory: browser-test
+        env:
+          ALLURE_APPEND_HISTORY: 'false'
+          ALLURE_NO_ANALYTICS: 'true'
+        run: |
+          npm run report:selftest
+          npm run report
+
+      - name: Download the Scala coverage HTML
+        id: coverage
+        if: steps.runs.outputs.coverage_run != ''
+        env:
+          RUN: ${{ steps.runs.outputs.coverage_run }}
+        run: |
+          mkdir -p target/coverage-download
+          if gh run download "$RUN" --pattern 'coverage-html-attempt-*' --dir target/coverage-download; then
+            dir=$(ls -d target/coverage-download/coverage-html-attempt-* 2>/dev/null | sort -V | tail -n 1)
+            if [ -n "$dir" ] && [ -f "$dir/index.html" ]; then
+              echo "dir=$dir" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "::warning::no coverage HTML (expired?)"
+          fi
+
+      - name: Assemble the site
+        env:
+          BROWSER_SHA: ${{ steps.runs.outputs.browser_sha }}
+          COVERAGE_SHA: ${{ steps.runs.outputs.coverage_sha }}
+          HAVE_ALLURE: ${{ steps.allure.outputs.have }}
+          COVERAGE_DIR: ${{ steps.coverage.outputs.dir }}
+        run: |
+          site=target/pages-site
+          mkdir -p "$site"
+          links=""
+          if [ "$HAVE_ALLURE" = true ]; then
+            mkdir -p "$site/allure"
+            cp -R target/browser-test/allure-report/. "$site/allure/"
+            links="$links<li><a href=\"allure/\">Browser tests (Allure report)</a>: commit <code>${BROWSER_SHA:0:12}</code>, three engines, failure screenshots only</li>"
+          fi
+          if [ -n "$COVERAGE_DIR" ]; then
+            mkdir -p "$site/coverage"
+            cp -R "$COVERAGE_DIR"/. "$site/coverage/"
+            find "$site/coverage" -name '*.xml' -delete
+            links="$links<li><a href=\"coverage/\">Scala test coverage (scoverage HTML)</a>: commit <code>${COVERAGE_SHA:0:12}</code></li>"
+          fi
+          if [ -z "$links" ]; then echo "::error::no report to publish"; exit 1; fi
+          {
+            echo '<!doctype html>'
+            echo '<html lang="en">'
+            echo '<head>'
+            echo '<meta charset="utf-8">'
+            echo '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            echo "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\">"
+            echo '<title>WLX Jury Tool reports</title>'
+            echo '<style>body{font-family:system-ui,sans-serif;max-width:42rem;margin:2rem auto;padding:0 1rem;line-height:1.5}</style>'
+            echo '</head>'
+            echo '<body>'
+            echo '<h1>WLX Jury Tool reports</h1>'
+            echo '<p>Built from the latest runs on master by <code>.github/workflows/pages.yml</code>. The test data is synthetic or public Wikimedia Commons data.</p>'
+            echo "<ul>$links</ul>"
+            echo "<p><a href=\"https://github.com/$GITHUB_REPOSITORY\">Source repository</a></p>"
+            echo '</body>'
+            echo '</html>'
+          } > "$site/index.html"
+          {
+            echo "### Site"
+            echo
+            echo '```'
+            find "$site" -maxdepth 2 | sort
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: target/pages-site
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write      # deploy
+      id-token: write   # the deploy action verifies the source with an OIDC token
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # Fails here, clearly, while Pages is not enabled with Source "GitHub Actions"
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
