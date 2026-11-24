@@ -659,7 +659,7 @@ Dated by their development period; release names come from the git tags `0.8`, `
 - Contest greeting and file descriptions.
 - Import files from a Commons page, category or file list.
 - Faster galleries, files grouped by region.
-- Users have a wiki account and can sign in with it.
+- Accounts record a wiki user name, accepted at sign-in instead of the email (with the app's own password).
 
 **Operations**
 
