@@ -72,6 +72,9 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
   first N (cap 8) without the current file, in the list's order. Reusing `RoundList` keeps every
   rule: round membership, region, the `distributing` flag, `mayViewRound`, and the viewed juror's
   votes only.
+- **Link target:** a strip link opens the file in the juror's **current list** (`list.largeUrl`),
+  not the monument-filtered list: simpler, and Back and the next/previous keys stay consistent
+  with the list the juror was in.
 - **The juror's rate on each:** the list's rows are `ImageWithRating` with the viewed juror's vote
   already (as the gallery tile has); shown as the tiles' rate chip (stars, or a yes/no mark;
   none when unrated).
@@ -116,7 +119,7 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
 
 | | Next files | Same monument | My recent votes | Off |
 |---|---|---|---|---|
-| Extra SQL | +3 rows (in the window query) + comment counts, only when Next is chosen | one `LIMIT 9` of the monument list | one `LIMIT 9` of the vote-time order | none |
+| Extra SQL | +3 rows (in the window query) + comment counts | its `LIMIT 9` monument-list read + 3 rows and comment counts for the fallback | its `LIMIT 9` vote-time read + 3 rows and comment counts for the fallback | none |
 | Index | list order index | gallery index with `monument_id` | gallery index with `voted_at` (V99) | none |
 | Caching | none needed | none | none | none |
 | Images | 5 | up to 8 | up to 8 | 0 |
@@ -166,7 +169,7 @@ the modern web guidance plan (finding F1) and the UI approach investigation (htm
 |---|---|---|
 | S1 | `loading="lazy"`, `decoding="async"` and `width`/`height` on the strip's images in both templates. This is the strip's part of F1 of the modern web guidance plan (#134, which cites `contestFile.scala.html:91`); **whichever PR lands first does it** and the other drops it (proposal: #134's F1 PR) | 1 h |
 | S2 | Account column, `User` field, the header menu and its POST (CSRF, denial paths) | 0.5 day |
-| S3 | One strip function for an option, used by both templates; Next files = today's `following`. `RoundList.around`'s 6-row widening, `hood.following` and `commentCounts` become conditional on Next (otherwise "Off: no extra SQL" is false) | 0.5-1 day |
+| S3 | One strip function for an option, used by both templates; Next files = today's `following`. `RoundList.around`'s 6-row widening, `hood.following` and `commentCounts` are read for Next, and for Monument and Recent always (simplest: +3 rows, noise), since both fall back to Next (no monument id, no sibling, `asUserId == 0`, contest files); only Off skips them, so "Off: no extra SQL" holds | 0.5-1 day |
 | S4 | Same monument via `withMonument`, rate chips, the fallback | 0.5 day |
 | S5 | My recent votes via the `latest-vote` order, closed-round and `asUserId == 0` rules | 0.5 day |
 | S6 | Message keys, one snippet for both templates, a browser test of the section | 0.5 day |
