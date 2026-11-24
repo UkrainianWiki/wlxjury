@@ -204,6 +204,8 @@ is listed below.
 
 **Fixes**
 
+- **Thumbnails load as you scroll** (F1-F3, the modern web guidance plan): the by-rate gallery's and the large view's thumbnails load lazily and keep their size so the page does not jump, and the large view's photo loads first.
+
 - **Old juror assignments with no recorded status are now treated as stopped** (the maintainer's
   decision of 2026-11-20; developed 2026-11-20, `stack/208-quick-fixes`): in old rounds, closed
   long ago, some jurors' assignments had no "voting / stopped" status at all. The juror's own pages

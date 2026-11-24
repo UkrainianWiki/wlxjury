@@ -89,7 +89,8 @@
                                         @* an image's or a video's thumbnail; a video's with its mark *@
                                         @defining(if (thumb.deletedAt.isDefined) Global.cachedSrcSet(thumb.image, Global.thumbSizeX, Global.thumbSizeY)
                                                   else Global.srcSet(thumb.image, Global.thumbSizeX, Global.thumbSizeY)) { srcset =>
-                                        <img class="cropped" alt="@if(thumb.image.isVideo) {@Messages("video"): }@thumb.image.title"
+                                        <img class="cropped" loading="lazy" decoding="async" alt="@if(thumb.image.isVideo) {@Messages("video"): }@thumb.image.title"
+                                            @for((width, height) <- Global.thumbBox(thumb.image, Global.thumbSizeX, Global.thumbSizeY)) {width="@width" height="@height"}
                                             src="@Global.resizeTo(thumb.image, Global.thumbSizeX, Global.thumbSizeY)"
                                             @if(srcset.nonEmpty) {srcset="@srcset"}
                                             data-failed-mark="thumb">
@@ -119,14 +120,14 @@
                         @if(image.isImage && file.deletedAt.isDefined && cached.isEmpty) {class="wlx-large-failed"}>
                         @if(image.isImage && file.deletedAt.isDefined) {
                             @for(src <- cached) {
-                                <img id="large_image" alt="@image.title" src="@src" class="mw-100 mh-100"
+                                <img id="large_image" fetchpriority="high" alt="@image.title" src="@src" class="mw-100 mh-100"
                                     @for((width, height) <- Global.largeImageBox(image, Global.largestCachedWidth(image))) {width="@width" height="@height"}
                                     data-failed-mark="large">
                             }
                         }
                         @if(image.isImage && file.deletedAt.isEmpty) {
                             @defining(Global.largeImage(image)) { large =>
-                            <img id="large_image" alt="@image.title"
+                            <img id="large_image" fetchpriority="high" alt="@image.title"
                                 src="@large.src" class="mw-100 mh-100"
                                 @for((width, height) <- Global.largeImageBox(image, large.width)) {width="@width" height="@height"}
                                 srcset="@large.srcset" @large.sizes.map { sizes => sizes="@sizes" }
