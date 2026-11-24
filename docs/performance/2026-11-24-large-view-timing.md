@@ -233,7 +233,7 @@ less steady than the others. The main image came from the cache in 10 of 10 S an
 votes (here, "from the cache" is inferred: the main image's Resource Timing entry is absent, or has
 transferSize 0; absent is the case for F and S, see section 5).
 
-**Fast voters** (set 3, F against A, median paired delta; the dwell is from the page painted and
+**Fast voters** (set 3: F at fast dwell against A; S was not tested at fast dwell, S is about F at normal dwell; median paired delta; the dwell is from the page painted and
 interactive to the key press, and F's prefetch has run since DOMContentLoaded, before that):
 
 | Dwell | RTT 80, binary | RTT 80, rated | 8 Mbit/s, binary | 8 Mbit/s, rated |
@@ -262,7 +262,7 @@ build (`scripts/cdplog.mjs`, logs in `data/large-view-timing/cdp-log-*.txt`): `N
 | B (link only), headless | the preload for file _01 is issued (type Image, initiator `parser`) at +358 ms and finished (256 205 bytes) at +393 ms, together with the page's own image | the page's request for _01 goes to the network again (no `requestServedFromCache`; `encodedDataLength` 256 205 again); Resource Timing: transferSize 256 256 |
 | B (link only), headed | the same: issued by the parser, finished | the same: refetched, transferSize 256 256 |
 | F (link + script) | the link's request and the `Image()`'s one share one request; finished at +215 ms | `requestServedFromCache` for _01, `loadingFinished` with 0 bytes; the page's main image entry is the link's (initiatorType `link`, transferSize 0) |
-| S (script only, meta) | the `Image()` request issued and finished (+162 to +167 ms) | `requestServedFromCache`, 0 bytes; the entry is an `img` with transferSize 0 |
+| S (script only, meta) | the `Image()` request issued and finished (+162 to +167 ms); the log labels its initiator `parser` too, so it is the script's only because S's page has just the `<meta>` and no `<link>` | `requestServedFromCache`, 0 bytes; the entry is an `img` with transferSize 0 |
 
 So the preload **was** issued and completed with the right URL and the stub's cacheable headers; the
 next page's request nevertheless did not find it. In F and S, where a script made an `Image` request for
@@ -409,6 +409,11 @@ table).
 **Contest health:** *cache or job* the category-membership count (70 of 111 ms); otherwise *nothing*.
 
 **Rounds list:** *nothing* (13 ms).
+
+**Decision (maintainer, 2026-11-24):** the next pull request is the script prefetch of the next file's
+main image (same `src`, `srcset` and `sizes` as the page's own image), **no htmx**, **no caching or
+bundling work** for the style and script files (production already caches them for a year). Cached
+counts for round statistics, the galleries and contest health come later.
 
 ## 7. Reproduce
 
