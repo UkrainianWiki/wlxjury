@@ -37,8 +37,21 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-          cache: sbt
           cache-jdk: false   # as v4 (ci.yml)
+
+      # Its own dependency cache, not setup-java's `cache: sbt`: that key is shared with ci.yml,
+      # which saves it first, so it never holds the scoverage 2.5.2 jars and every run fetched
+      # them from Maven Central (HTTP 429 on about one run in ten). This one is saved by the
+      # first successful run for a build-file hash (on master; a PR run may only read the
+      # caches of its base branch).
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/coursier
+            ~/.ivy2/cache
+            ~/.sbt
+          key: coverage-sbt-${{ hashFiles('**/*.sbt', 'project/build.properties', 'project/*.scala') }}
+          restore-keys: coverage-sbt-
 
       # sbt 1.x: without setup-sbt's sbt 2.x disk cache, whose post step hashes the whole
       # checkout (it failed on a file sbt was removing as it exited: browser tests, #358, #359)
@@ -65,6 +78,15 @@ jobs:
 
       - name: Pull the test database image
         run: docker pull -q mariadb:10.6.22
+
+      # Resolution only (no tests, no credentials), retried past Maven Central's rate limit
+      - name: Resolve dependencies (with retries)
+        run: |
+          for i in 1 2 3 4; do
+            sbt -J-Xmx2g coverage update Test/update && exit 0
+            echo "dependency resolution attempt $i failed"; sleep $((i * 20))
+          done
+          exit 1
 
       - name: Instrument, test and report
         # `coverage` instruments the main sources for this sbt session only; `test` runs the

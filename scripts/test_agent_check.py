@@ -24,6 +24,13 @@ class AgentCheckTest(unittest.TestCase):
         self.assertIn("paired delta mean=1.20 ms", summary)
         self.assertNotIn("SQL debug output", summary)
 
+    def test_failure_keeps_the_download_error_before_the_last_error_line(self):
+        text = "[error]   download error: Caught java.io.IOException (Server returned HTTP response code: 429)\n"
+        text += "[error]   not found: /home/runner/.m2/repository/x.pom\n" + "[info] noise\n" * 100
+        text += "[error] Total time: 2 s\n"
+        self.assertIn("HTTP response code: 429", helper.summarize(text, 1))
+        self.assertNotIn("HTTP response code", helper.summarize(text, 0))
+
     def test_success_ignores_expected_application_errors(self):
         text = "[error] s.j.JobScheduler - simulated failure\n" * 1000
         text += "[info] Passed: Total 20, Failed 0, Errors 0, Passed 20\n"
