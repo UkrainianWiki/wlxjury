@@ -21,7 +21,7 @@ Deploy dates come from production's migration history, as described at the end.
 **Fixes**
 
 - By-rate pages no longer scroll sideways (#165).
-- Round form: the category filter is two boxes, Only files in category and Leave out files in category; combining two categories is under More category options.
+- Round form: the category filter is two boxes, Only files in category and Leave out files in category; combining two categories is under More category options (#170).
 
 **Security**
 
