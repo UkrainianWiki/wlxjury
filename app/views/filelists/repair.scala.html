@@ -55,13 +55,17 @@
                 <div class="alert alert-warning" role="status" id="list-repair-not-affected">@Messages("list.repair.not.affected")</div>
             }
 
+            @* one form: Recount shows the ticked rounds' counts again; Confirm posts the ticked rounds,
+               refused if they aren't the ones counted below (`shown`) or the preview is stale (`hash`) *@
+            <form method="post" action="@routes.FileListRepairController.confirm(contest.getId)" id="list-repair-confirm" data-submit-once="true">
+            @csrfField()
+            <input type="hidden" name="shown" value="@p.counted.mkString(",")">
+            <input type="hidden" name="hash" value="@p.hash">
             <h2 class="h4 mt-4" id="list-repair-rounds-heading">@Messages("list.repair.rounds")</h2>
             <p class="text-body-secondary small">@Messages("list.repair.rounds.help", FileListRepair.MixedContests)</p>
             @if(p.rounds.isEmpty) {
                 <p class="text-body-secondary" id="list-repair-rounds-none">@Messages("list.repair.rounds.empty")</p>
             } else {
-                <form method="get" action="@routes.FileListRepairController.repairPage(contest.getId)" id="list-repair-rounds-form">
-                    <input type="hidden" name="chosen" value="true">
                     <div class="table-responsive">
                     <table class="table table-sm" id="list-repair-rounds" aria-labelledby="list-repair-rounds-heading">
                         <thead>
@@ -87,8 +91,9 @@
                         </tbody>
                     </table>
                     </div>
-                    <button type="submit" class="btn btn-outline-primary btn-sm" id="list-repair-recount">@Messages("list.repair.recount")</button>
-                </form>
+                    <button type="submit" name="action" value="recount" class="btn btn-outline-primary btn-sm" id="list-repair-recount"
+                        aria-describedby="list-repair-recount-hint">@Messages("list.repair.recount")</button>
+                    <span class="small text-body-secondary ms-2" id="list-repair-recount-hint">@Messages("list.repair.recount.hint")</span>
             }
 
             <h2 class="h4 mt-4" id="list-repair-counts-heading">@Messages("list.repair.counts")</h2>
@@ -142,14 +147,10 @@
             <p class="text-body-secondary small">@Messages("list.repair.country.help")</p>
 
             @if(p.affected) {
-                <form method="post" action="@routes.FileListRepairController.confirm(contest.getId)" id="list-repair-confirm" data-submit-once="true">
-                    @csrfField()
-                    @for(id <- p.counted) {<input type="hidden" name="round" value="@id">}
-                    <input type="hidden" name="hash" value="@p.hash">
-                    <p class="small">@Messages("list.repair.confirm.help", services.ImageService.ownCategory(contest.getId))</p>
-                    <button type="submit" class="btn btn-primary" id="list-repair-confirm-button">@Messages("list.repair.confirm")</button>
-                </form>
+                <p class="small">@Messages("list.repair.confirm.help", services.ImageService.ownCategory(contest.getId))</p>
+                <button type="submit" name="action" value="confirm" class="btn btn-primary" id="list-repair-confirm-button">@Messages("list.repair.confirm")</button>
             }
+            </form>
         }
     }
 

@@ -43,6 +43,21 @@ class FileListRepairSpec extends Specification with TestDb with BeforeAll with B
   private def plan(contestId: Long, counted: Option[Seq[Long]] = None): FileListRepair.Plan =
     FileListRepair.plan(contestId, counted).toOption.get
 
+  /** A job of the contest, queued (or done); its id. */
+  private def job(kind: String, contestId: Long, subject: (String, Long), done: Boolean = false): Long =
+    DB.localTx { implicit s =>
+      val id = services.jobs.JobJdbc.insert(services.jobs.NewJob(kind, Some(contestId), Some(subject._1), Some(subject._2)), None)
+      if (done) services.jobs.JobJdbc.update(id, services.jobs.JobStatus.Done, play.api.libs.json.Json.obj(),
+        services.jobs.Progress(), None)
+      id
+    }
+
+  private def importJob(contestId: Long, done: Boolean = false): Long =
+    job(services.imports.ImageImportHandler.Kind, contestId, (services.imports.ImageImportHandler.SubjectType, contestId), done)
+
+  private def title(categoryId: Long): Option[String] =
+    DB.readOnly(implicit s => sql"SELECT title FROM category WHERE id = $categoryId".map(_.string(1)).single.apply())
+
   private def root = User.create(User("Root", s"root${System.nanoTime()}@example.org", None, Set(User.ROOT_ROLE), isRoot = true))
 
   "the overview" should {
@@ -61,6 +76,19 @@ class FileListRepairSpec extends Specification with TestDb with BeforeAll with B
         forall(ContestJuryJdbc.findAll().filter(_.categoryId.isDefined).filterNot(_.getId == f.e.getId)) { c =>
           DB.readOnly(implicit s => CategoryLinkJdbc.mayCopyFrom(c.categoryId.get, c.getId)) must_!= shared.contains(c.getId)
         }
+    }
+  }
+
+  "the overview's likely owner" should {
+
+    "be the contest that names a titled shared row, never one of an untitled row" in {
+      val f = fixture()
+      // I has F's titled row as its list and names it as its source too
+      val i = ContestJuryJdbc.create(None, "Repair I", 2018, "Ghana", images = Some(s"Category:Repair shared list 2018"),
+        categoryId = Some(f.titled))
+      val o = FileListRepair.overview().shared.map(c => c.contestId -> c.likelyOwner).toMap
+      (o(i.getId) must beTrue) and (o(f.f.getId) must beFalse) and
+        forall(Seq(f.a, f.b, f.c, f.d))(c => o(c.getId) must beFalse)
     }
   }
 
@@ -85,6 +113,20 @@ class FileListRepairSpec extends Specification with TestDb with BeforeAll with B
         (plan(f.b.getId).counted === Seq(f.b1)) and
         // no rounds: nothing stays
         (plan(f.d.getId).stays must beEmpty) and (plan(f.d.getId).leaves.size === 20)
+    }
+
+    "untick the whole-list rounds of two contests, and only those" in {
+      val f = fixture()
+      // B has a whole-list round too: every legitimate round stays ticked, both whole-list rounds don't
+      val bWhole = Round.create(Round(None, 2, Some("Whole list"), f.b.getId, active = false)).getId
+      f.files.foreach(p => VoteJdbc.create(p, 0, f.juror.getId, bWhole))
+      val (a, b, c) = (plan(f.a.getId), plan(f.b.getId), plan(f.c.getId))
+      def mixed(p: FileListRepair.Plan) = p.rounds.filter(_.mixed).map(_.round.getId)
+      (mixed(a) === Seq(f.aWhole)) and (a.counted === Seq(f.a1, f.a2)) and
+        (mixed(b) === Seq(bWhole)) and (b.counted === Seq(f.b1)) and
+        (b.rounds.find(_.round.getId == bWhole).get.mixedWith === Seq(f.a.getId, f.c.getId)) and
+        (mixed(c) must beEmpty) and (c.counted === Seq(f.c1)) and
+        (a.stays === f.range(1, 5)) and (b.stays === f.range(6, 10)) and (c.stays === f.range(11, 15))
     }
 
     "take a contest already on its own row's files from the shared row its rounds' files were left in" in {
@@ -193,6 +235,52 @@ class FileListRepairSpec extends Specification with TestDb with BeforeAll with B
     }
   }
 
+  "Undo after the old row's rename" should {
+
+    "be refused: the contest would be back on every unnamed import's files; and no import copies an app-titled row" in {
+      val f = fixture()
+      val r = root
+      val repairs = Seq(f.a, f.b, f.c, f.d).map { c =>
+        val p = plan(c.getId)
+        FileListRepair.confirm(c.getId, p.counted, p.hash, r.getId).toOption.get
+      }
+      FileListRepair.rename(f.blank, r.getId) must beRight
+      val refused = FileListRepair.undo(repairs.head.id, r.getId)
+      (refused must beLeft("list.repair.undo.renamed")) and
+        (categoryOf(f.a.getId) must beSome(repairs.head.newCategoryId)) and
+        // a "#..." title is the app's, never a Commons category: never copied into a list
+        (DB.readOnly(implicit s => CategoryLinkJdbc.mayCopyFrom(f.blank, f.a.getId)) must beFalse) and
+        (DB.readOnly(implicit s => CategoryLinkJdbc.mayCopyFrom(f.eOwn, f.a.getId)) must beFalse) and
+        (CategoryLinkJdbc.isAppTitle(FileListRepair.LegacyTitle) must beTrue) and (CategoryLinkJdbc.isAppTitle("Category:X") must beFalse)
+    }
+  }
+
+  "Confirm and Undo with jobs" should {
+
+    "be refused while an import or a distribution is queued or running, and Undo after an import" in {
+      val f = fixture()
+      val r = root
+      val p = plan(f.a.getId)
+      val importing = importJob(f.a.getId)
+      val busyConfirm = FileListRepair.confirm(f.a.getId, p.counted, p.hash, r.getId)
+      DB.autoCommit(implicit s => sql"UPDATE job SET status = 'done' WHERE id = $importing".update.apply())
+      val distributing = job(services.distribution.RoundDistributionHandler.Kind, f.a.getId,
+        (services.distribution.RoundDistributionHandler.SubjectType, f.a1))
+      val busyConfirm2 = FileListRepair.confirm(f.a.getId, p.counted, p.hash, r.getId)
+      DB.autoCommit(implicit s => sql"UPDATE job SET status = 'done' WHERE id = $distributing".update.apply())
+      // the import before the repair doesn't count against its Undo
+      val repair = FileListRepair.confirm(f.a.getId, p.counted, p.hash, r.getId).toOption.get
+      val running = importJob(f.a.getId)
+      val busyUndo = FileListRepair.undo(repair.id, r.getId)
+      DB.autoCommit(implicit s => sql"UPDATE job SET status = 'done' WHERE id = $running".update.apply())
+      // an import since the repair that added nothing: the list's hash is the same, Undo still refused
+      val importedSince = FileListRepair.undo(repair.id, r.getId)
+      (busyConfirm must beLeft("list.repair.busy")) and (busyConfirm2 must beLeft("list.repair.busy")) and
+        (busyUndo must beLeft("list.repair.busy")) and (importedSince must beLeft("list.repair.undo.imported")) and
+        (categoryOf(f.a.getId) must beSome(repair.newCategoryId)) and (ListRepairJdbc.findById(repair.id).exists(_.undone) must beFalse)
+    }
+  }
+
   "Rename" should {
 
     "be offered and allowed only once no contest has the untitled row" in {
@@ -213,6 +301,18 @@ class FileListRepairSpec extends Specification with TestDb with BeforeAll with B
         (FileListRepair.rename(f.blank, r.getId) must beLeft("list.repair.rename.not.blank")) and
         // its files are kept, for audit
         (members(f.blank).size === 20)
+    }
+
+    "add the row's id to the title if another row has it" in {
+      val f = fixture()
+      val r = root
+      CategoryJdbc.findOrInsert(FileListRepair.LegacyTitle)
+      Seq(f.a, f.b, f.c, f.d).foreach { c =>
+        val p = plan(c.getId)
+        FileListRepair.confirm(c.getId, p.counted, p.hash, r.getId) must beRight
+      }
+      (FileListRepair.rename(f.blank, r.getId) must beRight(s"${FileListRepair.LegacyTitle} #${f.blank}")) and
+        (title(f.blank) must beSome(s"${FileListRepair.LegacyTitle} #${f.blank}"))
     }
   }
 }

@@ -64,6 +64,8 @@ class CategoryOwnershipGuardSpec extends Specification {
       uncalled("setCategory") must beEmpty
       // the import; root's list repair (its own row) and its Undo (the list it had before, logged)
       calls("setCategory").map(_._1).distinct.sorted === Seq("app/services/FileListRepair.scala", "app/services/ImageService.scala")
+      // exactly two there: Confirm's (the own row) and Undo's (the old row)
+      calls("setCategory").count(_._1 == "app/services/FileListRepair.scala") === 2
     }
 
     "be added to contests with none: a new contest's category comes from its first import" in {

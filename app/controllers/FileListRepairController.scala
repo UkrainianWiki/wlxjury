@@ -55,34 +55,49 @@ class FileListRepairController @Inject() (cc: ControllerComponents, blocking: Bl
       }
     }
 
+  /** The repair page's form: Recount (the ticked rounds, shown again) or Confirm. Confirm takes the
+    * ticked rounds, never the preview's alone: rounds ticked or unticked without Recount are
+    * refused (`shown`, the rounds the preview counted), and so is a stale preview (its hash).
+    */
   def confirm(contestId: Long): EssentialAction = withAuthOn(blocking)(root) { user => implicit request =>
     val counted = rounds(form(request).getOrElse("round", Nil))
+    val shown = form(request).get("shown").flatMap(_.headOption).map(v => rounds(v.split(',').toSeq.map(_.trim)))
     val hash = form(request).get("hash").flatMap(_.headOption).getOrElse("")
     val back = routes.FileListRepairController.repairPage(contestId, counted.toList, chosen = true)
-    FileListRepair.confirm(contestId, counted, hash, user.getId).fold(
-      {
-        case "error.contest.not.found" => NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))
-        case key => Redirect(back).flashing(FileListRepairController.ErrorFlash -> key)
-      },
-      repair => Redirect(routes.FileListRepairController.repairPage(contestId))
-        .flashing(FileListRepairController.DoneFlash -> "list.repair.done", FileListRepairController.RepairFlash -> repair.id.toString,
-          FileListRepairController.AddedFlash -> repair.filesAdded.toString)
-    )
+    if (form(request).get("action").flatMap(_.headOption).contains("recount")) Redirect(back)
+    else if (shown.exists(_.sorted != counted.sorted))
+      Redirect(back).flashing(FileListRepairController.ErrorFlash -> "list.repair.recount.first")
+    else
+      FileListRepair.confirm(contestId, counted, hash, user.getId).fold(
+        {
+          case "error.contest.not.found" => NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))
+          case key                       => Redirect(back).flashing(FileListRepairController.ErrorFlash -> key)
+        },
+        repair => Redirect(routes.FileListRepairController.repairPage(contestId))
+          .flashing(FileListRepairController.DoneFlash -> "list.repair.done", FileListRepairController.RepairFlash -> repair.id.toString,
+            FileListRepairController.AddedFlash -> repair.filesAdded.toString)
+      )
   }
 
-  def undo(repairId: Long): EssentialAction = withAuthOn(blocking)(root) { user => request =>
-    val contestId = ListRepairJdbc.findById(repairId).map(_.contestId)
-    val back = contestId.fold(routes.FileListRepairController.overview())(routes.FileListRepairController.repairPage(_))
-    FileListRepair.undo(repairId, user.getId).fold(
-      key => Redirect(back).flashing(FileListRepairController.ErrorFlash -> key),
-      repair => Redirect(back).flashing(FileListRepairController.DoneFlash -> "list.repair.undo.done",
-        FileListRepairController.RepairFlash -> repair.id.toString)
-    )
+  def undo(repairId: Long): EssentialAction = withAuthOn(blocking)(root) { user => implicit request =>
+    ListRepairJdbc.findById(repairId).fold[Result](
+      NotFound(views.html.errorPage(Some(user), "error.title", "list.repair.not.found"))
+    ) { found =>
+      val back = routes.FileListRepairController.repairPage(found.contestId)
+      FileListRepair.undo(repairId, user.getId).fold(
+        key => Redirect(back).flashing(FileListRepairController.ErrorFlash -> key),
+        repair => Redirect(back).flashing(FileListRepairController.DoneFlash -> "list.repair.undo.done",
+          FileListRepairController.RepairFlash -> repair.id.toString)
+      )
+    }
   }
 
-  def rename(categoryId: Long): EssentialAction = withAuthOn(blocking)(root) { user => request =>
+  def rename(categoryId: Long): EssentialAction = withAuthOn(blocking)(root) { user => implicit request =>
     FileListRepair.rename(categoryId, user.getId).fold(
-      key => Redirect(routes.FileListRepairController.overview()).flashing(FileListRepairController.ErrorFlash -> key),
+      {
+        case "list.repair.row.not.found" => NotFound(views.html.errorPage(Some(user), "error.title", "list.repair.row.not.found"))
+        case key => Redirect(routes.FileListRepairController.overview()).flashing(FileListRepairController.ErrorFlash -> key)
+      },
       _ => Redirect(routes.FileListRepairController.overview()).flashing(FileListRepairController.DoneFlash -> "list.repair.renamed",
         FileListRepairController.RepairFlash -> categoryId.toString)
     )

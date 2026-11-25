@@ -585,8 +585,9 @@ class GalleryController @Inject() (
       country: Option[String], coi: Boolean = false, author: Option[String] = None,
       monument: Option[String] = None, repair: Option[String] = None): EssentialAction =
     withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId), derived = true)) { user => implicit request =>
-      if (repairDenied(user, repair)) onUnAuthorized(user, request, repairDenial(contestId))
-      else contestFilesView(user, contestId, deleted, round, region, country, coi, author, monument, repair).fold(notFoundPage(user, _), { listed =>
+      val repairGiven = repairOf(repair, request)
+      if (repairDenied(user, repairGiven)) onUnAuthorized(user, request, repairDenial(contestId))
+      else contestFilesView(user, contestId, deleted, round, region, country, coi, author, monument, repairGiven).fold(notFoundPage(user, _), { listed =>
         // all the category's files' counts (cached), which also give their number
         val all = categoryCountsOf(listed)
         val view = listed.round match {
@@ -626,8 +627,9 @@ class GalleryController @Inject() (
       country: Option[String], coi: Boolean = false, author: Option[String] = None,
       monument: Option[String] = None, repair: Option[String] = None): EssentialAction =
     withAuthJsonOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId), derived = true)) { user => implicit request =>
-      if (repairDenied(user, repair)) onUnAuthorizedJson(user, request, repairDenial(contestId))
-      else contestFilesView(user, contestId, deleted, round, region, country, coi, author, monument, repair).fold(notFoundJson, { view =>
+      val repairGiven = repairOf(repair, request)
+      if (repairDenied(user, repairGiven)) onUnAuthorizedJson(user, request, repairDenial(contestId))
+      else contestFilesView(user, contestId, deleted, round, region, country, coi, author, monument, repairGiven).fold(notFoundJson, { view =>
         val messages: play.api.i18n.Messages = messagesApi.preferred(request)
         val regions =
           if (!view.byMonuments) Seq.empty[services.places.Place]
@@ -644,8 +646,9 @@ class GalleryController @Inject() (
       country: Option[String], author: Option[String] = None, monument: Option[String] = None,
       repair: Option[String] = None): EssentialAction =
     withAuthJsonOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId), derived = true)) { user => implicit request =>
-      if (repairDenied(user, repair)) onUnAuthorizedJson(user, request, repairDenial(contestId))
-      else contestFilesView(user, contestId, deleted, round, region, country, author = author, monument = monument, repair = repair)
+      val repairGiven = repairOf(repair, request)
+      if (repairDenied(user, repairGiven)) onUnAuthorizedJson(user, request, repairDenial(contestId))
+      else contestFilesView(user, contestId, deleted, round, region, country, author = author, monument = monument, repair = repairGiven)
         .fold(notFoundJson, { view =>
         val messages: play.api.i18n.Messages = messagesApi.preferred(request)
         val countries = view.countries.fold(Seq.empty[services.places.Place])(cs =>
@@ -686,8 +689,9 @@ class GalleryController @Inject() (
       country: Option[String], coi: Boolean = false, author: Option[String] = None,
       monument: Option[String] = None, repair: Option[String] = None): EssentialAction =
     withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId), derived = true)) { user => implicit request =>
-      if (repairDenied(user, repair)) onUnAuthorized(user, request, repairDenial(contestId))
-      else contestFilesView(user, contestId, deleted, round, region, country, coi, author, monument, repair).fold(notFoundPage(user, _), { view =>
+      val repairGiven = repairOf(repair, request)
+      if (repairDenied(user, repairGiven)) onUnAuthorized(user, request, repairDenial(contestId))
+      else contestFilesView(user, contestId, deleted, round, region, country, coi, author, monument, repairGiven).fold(notFoundPage(user, _), { view =>
         // two files before it and five in all to move among, as a round's large view has them,
         // and on to the last one its strip of following files shows
         val (read, offset) = view.list.fold((Seq.empty[ImageJdbc.StoredFile], 0)) { list =>
@@ -765,6 +769,12 @@ class GalleryController @Inject() (
     * denied it, as the page denies others (403 or JSON 403, logged on `security.authz`).
     */
   private def repairDenied(user: User, repair: Option[String]): Boolean = repair.isDefined && !isRoot(user)
+
+  /** The `repair` parameter as given, an empty one too (`?repair=`, which the router may bind as
+    * none): any `repair` parameter is root's filter.
+    */
+  private def repairOf(bound: Option[String], request: RequestHeader): Option[String] =
+    bound.orElse(request.getQueryString("repair"))
 
   private def repairDenial(contestId: Long): Secured.Denial =
     Secured.Denial(Some(contestId), Some(s"contest:$contestId:file-list-repair"), Set(User.ROOT_ROLE))

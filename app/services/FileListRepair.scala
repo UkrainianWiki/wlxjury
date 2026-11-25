@@ -55,8 +55,11 @@ object FileListRepair {
     * @param size     the row's files
     * @param ownRow   the contest is already on its own row
     * @param left     for one on its own row: its rounds' files in the row but not in its list
+    * @param likelyOwner of a titled shared row, the contest it most likely belongs to: its repair
+    *                 drops the row's files its rounds never showed
     */
-  final case class Candidate(contestId: Long, row: Row, others: Seq[Long], size: Int, ownRow: Boolean = false, left: Int = 0)
+  final case class Candidate(contestId: Long, row: Row, others: Seq[Long], size: Int, ownRow: Boolean = false, left: Int = 0,
+      likelyOwner: Boolean = false)
 
   /** A blank or shared row no contest has as its list any more; `mayRename`: a blank one. */
   final case class Orphan(row: Row, size: Int) {
@@ -70,17 +73,22 @@ object FileListRepair {
     *
     * @param files     its files (`round_image`, any status)
     * @param inSource  of them, those in the row the files come from
-    * @param mixedWith the other contests sharing the row whose rounds show its files too
+    * @param mixedWith the other contests sharing the row of whose files (those of the row their rounds
+    *                  show) this round shows at least half ([[MixedShare]])
     */
   final case class RoundInfo(round: Round, files: Int, inSource: Int, mixedWith: Seq[Long]) {
-    /** Pre-unticked: its files are also in the rounds of at least two other contests that share
-      * the row, as a round filled from the whole shared row is.
+    /** Pre-unticked: it shows most of the files of at least two other contests sharing the row,
+      * as a round filled from the whole shared row does; a contest's own round shows few of
+      * another's (directional: a whole-list round elsewhere never unticks it).
       */
     def mixed: Boolean = mixedWith.size >= MixedContests
   }
 
-  /** The other contests a round's files must also be in for it to be pre-unticked. */
+  /** The other contests most of whose files a round must show to be pre-unticked. */
   val MixedContests = 2
+
+  /** "Most": the share of another contest's files a round must show to count it ([[RoundInfo.mixedWith]]). */
+  val MixedShare = 0.5
 
   /** What a repair of the contest would do, as the page shows it and the confirmation checks.
     *
@@ -225,8 +233,27 @@ object FileListRepair {
     val recent = ListRepairJdbc.recent(20)
     val contestIds = ((candidates ++ onOwn).flatMap(c => c.contestId +: c.others) ++ recent.map(_.contestId)).toSet
     val contests = ContestJuryJdbc.findAll().filter(c => contestIds(c.getId)).map(c => c.getId -> c).toMap
-    Overview(candidates, onOwn, orphans.map(r => Orphan(r, size.getOrElse(r.id, 0))), contests, recent)
+    val marked = candidates.map(c => c.copy(likelyOwner = likelyOwner(c, othersOf.getOrElse(c.row.id, Nil), contests)))
+    Overview(marked, onOwn, orphans.map(r => Orphan(r, size.getOrElse(r.id, 0))), contests, recent)
   }
+
+  /** Whether the candidate is the likely owner of its titled shared row (never of an untitled
+    * one): a contest whose source or V24 name is the row's title; with none, the oldest (year, then
+    * id) of those that have it as their list.
+    */
+  private def likelyOwner(c: Candidate, pointing: Seq[Long], contests: Map[Long, ContestJury]): Boolean =
+    !c.row.legacy && c.others.nonEmpty && {
+      val title = c.row.title.getOrElse("").trim.replace('_', ' ')
+      val bare = (if (title.toLowerCase.startsWith("category:")) title.drop(9) else title).trim
+      def names(o: ContestJury): Boolean =
+        o.images.exists(_.trim.replace('_', ' ').equalsIgnoreCase(title)) ||
+          s"Images from ${o.name} ${o.year} in ${o.country}".equalsIgnoreCase(bare)
+      val group = (c.contestId +: c.others).distinct.flatMap(contests.get)
+      group.filter(names) match {
+        case Seq()  => (c.contestId +: pointing).distinct.flatMap(contests.get).minByOption(o => (o.year, o.getId)).exists(_.getId == c.contestId)
+        case naming => naming.exists(_.getId == c.contestId)
+      }
+    }
 
   /** What a repair of the contest would do, with the rounds `counted` (None: every round but the
     * mixed ones, [[RoundInfo.mixed]]; other contests' rounds ignored). Left: the message key of why
@@ -271,19 +298,15 @@ object FileListRepair {
               LEFT JOIN category_members m ON m.category_id = ${source.id} AND m.page_id = ri.page_id
               WHERE ri.round_id IN ($roundIds) GROUP BY ri.round_id"""
           .map(rs => rs.long(1) -> (rs.int(2), rs.int(3))).list.apply().toMap
-    // every round of the group whose files of the source row are in other group contests' rounds:
-    // (round, its contest, the other contest)
-    val shares =
-      sql"""SELECT a.round_id, ra.contest_id, rb.contest_id
-            FROM round ra
-            STRAIGHT_JOIN round_image a ON a.round_id = ra.id
-            STRAIGHT_JOIN category_members m ON m.category_id = ${source.id} AND m.page_id = a.page_id
-            STRAIGHT_JOIN round_image b ON b.page_id = a.page_id
-            STRAIGHT_JOIN round rb ON rb.id = b.round_id
-            WHERE ra.contest_id IN ($group) AND rb.contest_id IN ($group) AND rb.contest_id <> ra.contest_id
-            GROUP BY a.round_id, ra.contest_id, rb.contest_id"""
+    // the source row's files each round of the group shows: (round, its contest, file)
+    val shown =
+      sql"""SELECT ri.round_id, r.contest_id, ri.page_id
+            FROM category_members m
+            STRAIGHT_JOIN round_image ri ON ri.page_id = m.page_id
+            STRAIGHT_JOIN round r ON r.id = ri.round_id
+            WHERE m.category_id = ${source.id} AND r.contest_id IN ($group)"""
         .map(rs => (rs.long(1), rs.long(2), rs.long(3))).list.apply()
-    val mixedWith = shares.groupMap(_._1)(_._3).view.mapValues(_.distinct.sorted).toMap
+    val mixedWith = mixedRounds(shown)
     val infos = rounds.map { r =>
       val (files, inSource) = roundCounts.getOrElse(r.getId, (0, 0))
       RoundInfo(r, files, inSource, mixedWith.getOrElse(r.getId, Nil))
@@ -299,10 +322,25 @@ object FileListRepair {
     val staysSet = stays.toSet
     val ownFiles = own.fold(Seq.empty[Long])(o => members(o.id))
     val now = if (current.id == source.id) sourceFiles else members(current.id)
-    val mixedRounds = shares.map(_._1).distinct.filter(id => mixedWith.get(id).exists(_.size >= MixedContests))
-    val countries = countriesOf(contest, group, source.id, own.map(_.id), mixedRounds)
+    val mixed = mixedWith.collect { case (id, others) if others.size >= MixedContests => id }.toSet
+    val countries = countriesOf(contest, group, source.id, own.map(_.id),
+      shown.collect { case (round, c, page) if !mixed(round) => page -> c })
     Plan(contest, current, source, own, others, infos, counted, now, stays, sourceFiles.filterNot(staysSet), ownFiles,
       countries, affected)
+  }
+
+  /** Of each round (of `shown`: round, its contest, a file of the row), the other contests of whose
+    * files (those any of their rounds show) it shows at least [[MixedShare]].
+    */
+  def mixedRounds(shown: Seq[(Long, Long, Long)]): Map[Long, Seq[Long]] = {
+    val byContest = shown.groupMap(_._2)(_._3).view.mapValues(_.toSet).toMap
+    shown.groupBy(_._1).map { case (round, rows) =>
+      val contest = rows.head._2
+      val files = rows.map(_._3).toSet
+      round -> byContest.collect {
+        case (other, theirs) if other != contest && theirs.nonEmpty && theirs.count(files) >= MixedShare * theirs.size => other
+      }.toSeq.sorted
+    }
   }
 
   /** The files' countries, by page id: a file's country category as the files page reads it
@@ -311,20 +349,14 @@ object FileListRepair {
     * ones) show it, if they are of one country; a file of the own row, this contest's country.
     */
   private def countriesOf(contest: ContestJury, group: Seq[Long], sourceId: Long, ownId: Option[Long],
-      mixedRounds: Seq[Long])(implicit session: DBSession): Map[Long, String] = {
+      shownBy: Seq[(Long, Long)])(implicit session: DBSession): Map[Long, String] = {
     val contests = ContestJuryJdbc.findAll().filter(c => group.contains(c.getId))
       .sortBy(c => if (c.getId == contest.getId) 0 else 1)
     val prefixes = contests.flatMap(ContestCountries.prefixes).distinct
     val links = (Seq(sourceId) ++ ownId).flatMap(ImageJdbc.categoryCountryLinks(_, prefixes))
     val byCategory = contests.reverse.foldLeft(Map.empty[Long, String])((m, c) => m ++ ContestCountries.fileCountries(c, links))
     val countryOf = contests.map(c => c.getId -> c.country.trim).toMap
-    val notMixed = if (mixedRounds.isEmpty) sqls"" else sqls"AND ri.round_id NOT IN ($mixedRounds)"
-    val byRounds = sql"""SELECT DISTINCT ri.page_id, r.contest_id FROM category_members m
-          STRAIGHT_JOIN round_image ri ON ri.page_id = m.page_id
-          STRAIGHT_JOIN round r ON r.id = ri.round_id
-          WHERE m.category_id = $sourceId AND r.contest_id IN ($group) $notMixed"""
-      .map(rs => rs.long(1) -> rs.long(2)).list.apply()
-      .groupMap(_._1)(p => countryOf.getOrElse(p._2, "")).collect {
+    val byRounds = shownBy.distinct.groupMap(_._1)(p => countryOf.getOrElse(p._2, "")).collect {
         case (pageId, cs) if cs.distinct.size == 1 && cs.head.nonEmpty => pageId -> cs.head
       }
     val ownCountry = Option(contest.country.trim).filter(_.nonEmpty)
@@ -337,17 +369,46 @@ object FileListRepair {
   private def lockContest(contestId: Long)(implicit session: DBSession): Boolean =
     sql"SELECT id FROM contest_jury WHERE id = $contestId FOR UPDATE".map(_.long(1)).single.apply().isDefined
 
-  /** Repairs the contest's list as previewed (`hash`, [[Plan.hash]]) with the rounds `counted`, in
-    * one transaction: its own row (added if there is none) gets the files that stay, becomes its
-    * list, and the repair is logged with the files it added. Left: the message key of the refusal
-    * (the list changed since the preview, it needs no repair, no such contest). Right: the repair.
-    */
   /** Rolls a confirmation back: the files differ from the preview's. */
   private object Stale extends RuntimeException("list changed", null, false, false)
 
+  /** The job kinds that read or write the contest's list while they run: an import (its files go
+    * into the list) and a round's distribution (which reads the list's category once per run).
+    */
+  val BusyKinds: Seq[String] = Seq(services.imports.ImageImportHandler.Kind, services.distribution.RoundDistributionHandler.Kind)
+
+  /** Whether the contest has an import or a distribution queued or running ([[BusyKinds]]). */
+  private def busy(contestId: Long)(implicit session: DBSession): Boolean =
+    sql"""SELECT COUNT(*) FROM job WHERE contest_id = $contestId AND kind IN ($BusyKinds)
+          AND status IN (${services.jobs.JobStatus.active.toSeq})""".map(_.long(1)).single.apply().exists(_ > 0)
+
+  /** A deadlock or a lock wait timeout (MariaDB 1213, 1205), anywhere in the causes: another
+    * transaction had the rows; nothing was changed.
+    */
+  private def lockConflict(t: Throwable): Boolean =
+    Iterator.iterate(t)(_.getCause).takeWhile(_ != null).exists {
+      case e: java.sql.SQLException =>
+        e.getErrorCode == 1213 || e.getErrorCode == 1205 || e.isInstanceOf[java.sql.SQLTransactionRollbackException]
+      case _ => false
+    }
+
+  /** A duplicate key (MariaDB 1062), anywhere in the causes. */
+  private def duplicate(t: Throwable): Boolean =
+    Iterator.iterate(t)(_.getCause).takeWhile(_ != null).exists {
+      case e: java.sql.SQLException => e.getErrorCode == 1062 || e.isInstanceOf[java.sql.SQLIntegrityConstraintViolationException]
+      case _ => false
+    }
+
+  /** Repairs the contest's list as previewed (`hash`, [[Plan.hash]]) with the rounds `counted`, in
+    * one transaction: its own row (added if there is none) gets the files that stay, becomes its
+    * list, and the repair is logged with the files it added. Left: the message key of the refusal
+    * (the list changed since the preview or another transaction had it, an import or a
+    * distribution is queued or running, it needs no repair, no such contest). Right: the repair.
+    */
   def confirm(contestId: Long, counted: Seq[Long], hash: String, actorId: Long): Either[String, ListRepair] = {
     val result = try DB.localTx { implicit session =>
       if (!lockContest(contestId)) Left("error.contest.not.found")
+      else if (busy(contestId)) Left("list.repair.busy")
       else plan(contestId, Some(counted)).flatMap { p =>
         if (!p.affected) Left("list.repair.not.affected")
         else if (p.hash != hash) Left("list.repair.changed")
@@ -370,7 +431,10 @@ object FileListRepair {
           Right((ListRepairJdbc.findById(id).get, p))
         }
       }
-    } catch { case Stale => Left("list.repair.changed") }
+    } catch {
+      case Stale                           => Left("list.repair.changed")
+      case e: Throwable if lockConflict(e) => Left("list.repair.changed")
+    }
     result.map { case (repair, p) =>
       RegionCountCache.invalidateCategory(Seq(repair.newCategoryId, p.current.id, p.source.id).distinct: _*)
       log.info(s"files_repaired contestId=$contestId repairId=${repair.id} oldRow=${p.current.id} sourceRow=${p.source.id} " +
@@ -381,19 +445,31 @@ object FileListRepair {
   }
 
   /** Undoes the repair: the contest's list is its old row again, and its own row loses the files
-    * the repair added (only those). Refused (the message key) if it was undone already, or the
-    * contest's list changed since (another list, a later repair, a later import's files).
+    * the repair added (only those). Refused (the message key) if it was undone already; while an
+    * import or a distribution is queued or running; if the contest's list changed since (another
+    * list, a later repair, a later import's files) or an import ran since (even one that added
+    * nothing); or if the old row was renamed for audit ([[LegacyTitle]]: the contest would be back
+    * on every unnamed import's files).
     */
   def undo(repairId: Long, actorId: Long): Either[String, ListRepair] = {
-    val result = DB.localTx { implicit session =>
+    val result = try DB.localTx { implicit session =>
       ListRepairJdbc.lock(repairId).toRight("list.repair.not.found").flatMap { r =>
         if (r.undone) Left("list.repair.undo.already")
         else if (!lockContest(r.contestId)) Left("error.contest.not.found")
+        else if (busy(r.contestId)) Left("list.repair.busy")
         else {
           val contest = ContestJuryJdbc.findById(r.contestId)
           val later = ListRepairJdbc.findByContest(r.contestId).exists(o => o.id > r.id && !o.undone)
+          val importedSince = sql"""SELECT COUNT(*) FROM job WHERE contest_id = ${r.contestId}
+                AND kind = ${services.imports.ImageImportHandler.Kind}
+                AND created_at >= (SELECT created_at FROM list_repair WHERE id = ${r.id})"""
+            .map(_.long(1)).single.apply().exists(_ > 0)
+          val oldRenamed = r.oldCategoryId.filter(_ != r.newCategoryId).flatMap(row)
+            .exists(_.title.exists(_.startsWith(LegacyTitle)))
           if (!contest.flatMap(_.categoryId).contains(r.newCategoryId) || later ||
               listHash(members(r.newCategoryId)) != r.listHash) Left("list.repair.undo.changed")
+          else if (importedSince) Left("list.repair.undo.imported")
+          else if (oldRenamed) Left("list.repair.undo.renamed")
           else {
             val removed = sql"""DELETE FROM category_members WHERE category_id = ${r.newCategoryId}
                   AND page_id IN (SELECT page_id FROM list_repair_file WHERE repair_id = ${r.id})""".update.apply()
@@ -405,7 +481,7 @@ object FileListRepair {
           }
         }
       }
-    }
+    } catch { case e: Throwable if lockConflict(e) => Left("list.repair.changed") }
     result.map { r =>
       RegionCountCache.invalidateCategory((Seq(r.newCategoryId, r.sourceCategoryId) ++ r.oldCategoryId).distinct: _*)
       log.info(s"files_repair_undone contestId=${r.contestId} repairId=${r.id} oldRow=${r.oldCategoryId.getOrElse("none")} " +
@@ -419,7 +495,7 @@ object FileListRepair {
     * contest's list). Right: the new title.
     */
   def rename(rowId: Long, actorId: Long): Either[String, String] = {
-    val result = DB.localTx { implicit session =>
+    val result = try DB.localTx { implicit session =>
       sql"SELECT id, title FROM category WHERE id = $rowId FOR UPDATE".map(rs => Row(rs.long(1), rs.stringOpt(2))).single.apply()
         .toRight("list.repair.row.not.found").flatMap { r =>
           val inUse = sql"SELECT COUNT(*) FROM contest_jury WHERE category_id = $rowId".map(_.long(1)).single.apply().exists(_ > 0)
@@ -432,6 +508,9 @@ object FileListRepair {
             Right(title)
           }
         }
+    } catch {
+      // another rename took the title meanwhile, or held the rows: nothing changed
+      case e: Throwable if duplicate(e) || lockConflict(e) => Left("list.repair.changed")
     }
     result.foreach(title => log.info(s"list_renamed categoryId=$rowId title=${title.replace(' ', '_')} by=$actorId"))
     result

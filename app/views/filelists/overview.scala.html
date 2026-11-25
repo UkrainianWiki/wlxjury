@@ -33,7 +33,9 @@
             <tbody>
                 @for(c <- overview.shared) {
                     <tr class="list-repair-contest" data-contest="@c.contestId" data-row="@c.row.id">
-                        <td>@contestName(c.contestId) <span class="text-body-secondary">(#@c.contestId)</span></td>
+                        <td>@contestName(c.contestId) <span class="text-body-secondary">(#@c.contestId)</span>
+                            @if(c.likelyOwner) {<br><span class="badge text-bg-info list-repair-owner">@Messages("list.repair.owner.badge")</span>
+                                <span class="small">@Messages("list.repair.owner.note")</span>}</td>
                         <td>@rowLabel(c.row)</td>
                         <td class="small">@for((o, i) <- c.others.zipWithIndex) {@if(i > 0) {, }<a href="@routes.FileListRepairController.repairPage(o)">@contestName(o)</a>}</td>
                         <td class="text-end">@c.size</td>

@@ -52,34 +52,47 @@ class FileListRepairControllerSpec extends PlaySpecification with PlayTestDb {
     "refuse everyone but root, logging the denial and writing nothing; signed out, the login page" in {
       testDbApp { implicit app =>
         val f = fixture()
-        val contest = f.a
-        val p = FileListRepair.plan(contest.getId, None).toOption.get
-        val gets = Seq("/admin/file-lists", s"/admin/contests/${contest.getId}/file-list/repair")
+        val root = rootUser
+        // real repairs first (A to D, by root), so that a refused Undo and Rename have something to undo and rename
+        val repairs = Seq(f.a, f.b, f.c, f.d).map { c =>
+          val p = FileListRepair.plan(c.getId, None).toOption.get
+          FileListRepair.confirm(c.getId, p.counted, p.hash, root.getId).toOption.get
+        }
+        val pf = FileListRepair.plan(f.f.getId, None).toOption.get
+        val gets = Seq("/admin/file-lists", s"/admin/contests/${f.f.getId}/file-list/repair")
         val posts = Seq(
-          s"/admin/contests/${contest.getId}/file-list/repair" -> (p.counted.map("round" -> _.toString) :+ ("hash" -> p.hash)),
-          "/admin/file-lists/repairs/1/undo" -> Nil,
+          s"/admin/contests/${f.f.getId}/file-list/repair" ->
+            (pf.counted.map("round" -> _.toString) ++ Seq("shown" -> pf.counted.mkString(","), "hash" -> pf.hash)),
+          s"/admin/file-lists/repairs/${repairs.head.id}/undo" -> Nil,
           s"/admin/file-lists/${f.blank}/rename" -> Nil)
 
         val signedOut = gets.map(path => send(GET, path, None))
-        val signedOutPosts = posts.map { case (path, form) => status(send(POST, path, None, form: _*)) }
+        val signedOutPosts = posts.map { case (path, form) => send(POST, path, None, form: _*) }
 
         val refused = for (role <- Seq("jury", "organizer", "admin")) yield {
-          val user = member(role, contest)
+          val user = member(role, f.a)
           val (statuses, logs) = LogCapture("security.authz") {
             gets.map(path => status(send(GET, path, Some(user)))) ++
               posts.map { case (path, form) => status(send(POST, path, Some(user), form: _*)) }
           }
           (role, statuses.distinct, logs("security.authz").count(_.startsWith("authorization_denied")))
         }
+        val title = scalikejdbc.DB.readOnly(implicit s =>
+          scalikejdbc.SQL(s"SELECT title FROM category WHERE id = ${f.blank}").map(_.string(1)).single.apply())
         (signedOut.map(status(_)).distinct === Seq(SEE_OTHER)) and
           (signedOut.flatMap(redirectLocation(_)).forall(_.startsWith("/auth")) must beTrue) and
-          (signedOutPosts.forall(_ != OK) must beTrue) and
+          (signedOutPosts.map(status(_)).distinct === Seq(SEE_OTHER)) and
+          (signedOutPosts.flatMap(redirectLocation(_)).forall(_.startsWith("/auth")) must beTrue) and
           (refused === Seq("jury", "organizer", "admin").map(r => (r, Seq(FORBIDDEN), gets.size + posts.size))) and
-          // nothing written
-          (ListRepairJdbc.recent(5) must beEmpty) and
-          (ContestJuryJdbc.findById(contest.getId).flatMap(_.categoryId) must beSome(f.blank)) and
-          (gets.map(path => status(send(GET, path, Some(rootUser)))).distinct === Seq(OK)) and
-          (status(send(GET, "/admin/contests/999999/file-list/repair", Some(rootUser))) === NOT_FOUND)
+          // nothing written: F keeps its list, A's repair isn't undone, the untitled row keeps its title
+          (ListRepairJdbc.recent(10).map(r => (r.id, r.undone)) === repairs.reverse.map(r => (r.id, false))) and
+          (ContestJuryJdbc.findById(f.f.getId).flatMap(_.categoryId) must beSome(f.titled)) and
+          (title must beSome("")) and
+          (gets.map(path => status(send(GET, path, Some(root)))).distinct === Seq(OK)) and
+          (status(send(GET, "/admin/contests/999999/file-list/repair", Some(root))) === NOT_FOUND) and
+          // a missing repair or row: the 404 page
+          (status(send(POST, "/admin/file-lists/repairs/999999/undo", Some(root))) === NOT_FOUND) and
+          (status(send(POST, "/admin/file-lists/999999/rename", Some(root))) === NOT_FOUND)
       }
     }
 
@@ -92,11 +105,13 @@ class FileListRepairControllerSpec extends PlaySpecification with PlayTestDb {
         def enc(v: String) = java.net.URLEncoder.encode(v, "UTF-8")
         val paths = Seq(s"/contest/$id/files?repair=${enc(stays)}", s"/contest/$id/files/${f.file(1)}?repair=${enc(stays)}")
         val json = Seq(s"/contest/$id/files/countries?repair=${enc(stays)}", s"/contest/$id/files/regions?repair=${enc(stays)}")
+        // an empty filter is the filter too
+        val empty = Seq(s"/contest/$id/files?repair=", s"/contest/$id/files/${f.file(1)}?repair=")
         val refused = for (role <- Seq("organizer", "admin")) yield {
           val user = member(role, f.a)
           val (statuses, logs) = LogCapture("security.authz") {
             val plain = status(send(GET, s"/contest/$id/files", Some(user)))
-            (plain, paths.map(p => status(send(GET, p, Some(user)))),
+            (plain, (paths ++ empty).map(p => status(send(GET, p, Some(user)))),
               json.map(p => status(route(app, FakeRequest(GET, p).withHeaders("X-Requested-With" -> "XMLHttpRequest")
                 .withSession(Secured.UserName -> user.email, Secured.CurrentContestId -> id.toString)).get)))
           }
@@ -108,7 +123,7 @@ class FileListRepairControllerSpec extends PlaySpecification with PlayTestDb {
         val large = send(GET, s"/contest/$id/files/${f.file(2)}?repair=${enc(stays)}", Some(root))
         val countries = route(app, FakeRequest(GET, s"/contest/$id/files/countries?repair=${enc(leaves)}")
           .withHeaders("X-Requested-With" -> "XMLHttpRequest").withSession(Secured.UserName -> root.email)).get
-        (refused === Seq.fill(2)(((OK, Seq(FORBIDDEN, FORBIDDEN), Seq(FORBIDDEN, FORBIDDEN)), 4))) and
+        (refused === Seq.fill(2)(((OK, Seq.fill(4)(FORBIDDEN), Seq(FORBIDDEN, FORBIDDEN)), 6))) and
           (status(stayed) === OK) and (galleryFiles(contentAsString(stayed)) === f.range(1, 5)) and
           (Jsoup.parse(contentAsString(stayed)).select("#repair-side").attr("data-side") === "stays") and
           (status(left) === OK) and (galleryFiles(contentAsString(left)) === f.range(6, 20)) and
@@ -135,12 +150,20 @@ class FileListRepairControllerSpec extends PlaySpecification with PlayTestDb {
         val all = Jsoup.parse(contentAsString(send(GET,
           s"/admin/contests/${f.a.getId}/file-list/repair?chosen=true&round=${f.a1}&round=${f.aWhole}", Some(root))))
 
+        val shown = page.select("#list-repair-confirm input[name=shown]").attr("value")
+        val path = s"/admin/contests/${f.a.getId}/file-list/repair"
+        // a round ticked without Recount: refused, and Recount shows the ticked rounds
+        val unrecounted = send(POST, path, Some(root),
+          (ticked :+ f.aWhole).map("round" -> _.toString) ++ Seq("shown" -> shown, "hash" -> hash, "action" -> "confirm"): _*)
+        status(unrecounted)
+        val recount = send(POST, path, Some(root), Seq(f.a1, f.aWhole).map("round" -> _.toString) :+ ("action" -> "recount"): _*)
+        status(recount)
         // a stale hash is refused
-        val stale = send(POST, s"/admin/contests/${f.a.getId}/file-list/repair", Some(root),
-          ticked.map("round" -> _.toString) :+ ("hash" -> ("0" * 64)): _*)
+        val stale = send(POST, path, Some(root),
+          ticked.map("round" -> _.toString) ++ Seq("shown" -> shown, "hash" -> ("0" * 64), "action" -> "confirm"): _*)
         status(stale)
-        val confirmed = send(POST, s"/admin/contests/${f.a.getId}/file-list/repair", Some(root),
-          ticked.map("round" -> _.toString) :+ ("hash" -> hash): _*)
+        val confirmed = send(POST, path, Some(root),
+          ticked.map("round" -> _.toString) ++ Seq("shown" -> shown, "hash" -> hash, "action" -> "confirm"): _*)
         // each answered before the next (the actions run on the blocking pool)
         val (staleStatus, confirmedStatus) = (status(stale), status(confirmed))
         val repair = ListRepairJdbc.recent(1).head
@@ -154,6 +177,10 @@ class FileListRepairControllerSpec extends PlaySpecification with PlayTestDb {
           (page.select("#list-repair-stays-gallery").attr("href") must contain("repair=stays")) and
           (all.select("#list-repair-stays").attr("data-count") === "20") and
           (Seq(staleStatus, confirmedStatus) === Seq(SEE_OTHER, SEE_OTHER)) and
+          (shown === s"${f.a1},${f.a2}") and
+          (flash(unrecounted).get(FileListRepairController.ErrorFlash) must beSome("list.repair.recount.first")) and
+          (redirectLocation(recount).exists(l => l.startsWith(path) && l.contains(s"round=${f.a1}") &&
+            l.contains(s"round=${f.aWhole}") && l.contains("chosen=true")) must beTrue) and
           (flash(stale).get(FileListRepairController.ErrorFlash) must beSome("list.repair.changed")) and
           (flash(confirmed).get(FileListRepairController.DoneFlash) must beSome("list.repair.done")) and
           (repair.filesAdded === 5) and
