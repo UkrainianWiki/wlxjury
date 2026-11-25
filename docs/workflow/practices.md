@@ -38,6 +38,11 @@ still waits. *Example:* round-images D1–D20, all decided 2026-11-02.
 **1.3 A plan's lifecycle** (active → done → rules folded into practices → deleted, or moved to
 `docs/history/`) is in [docs/README.md](../README.md) §2.
 
+**1.4 A plan exists in the repository from its first draft.** A plan or design is committed to
+`docs/plans/` (a draft PR while undecided), never kept only in an agent's scratchpad or a temp
+directory; see CLAUDE.md "Plans and decisions as an agent". *Why:* a reviewed plan with 16
+open decisions was lost with a cleaned scratchpad (2026-11-25).
+
 ## 2. The batch cycle
 
 **2.1 Implement → orchestrator check → independent review → fixes → follow-up review.** The
