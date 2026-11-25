@@ -5,10 +5,10 @@
 
 **Status:** plan only. Nothing is built. Date: 2026-11-11.
 
-**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 1–5 and
-7–16 open, 6 decided; phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5). The
-maintainer made this the top priority for WLM 2026 Ukraine, whose jury final is at the beginning
-of December.
+**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 6 and 14
+decided; 1–5, 7–13, 15–16 open; phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5).
+The maintainer made this the top priority for WLM 2026 Ukraine, whose jury final is at the
+beginning of December.
 
 **Revisions:**
 - **v1:** the first draft. It was recovered with this plan and is not committed (updated 2026-11-25).
@@ -1018,6 +1018,10 @@ decide.)
 **Recommendation: (b) by default, with (c) as a per-view option** if the rules exclude doubles.
 Reason: WLE and WLM rules may differ by year *(inf.)*, and marking costs one more top-k query on
 `F`.
+
+**Decided (maintainer, 2026-11-25): (b) with (c) as a per-view option**: with `national=k`, the
+final round's national top k are marked "national winner" in their regions; a per-view option
+skips them so the region shows its next file.
 
 **15. Dependency on the lineage plan.**
 - (a) Build the small `RoundLineage` core now, or reuse it if lineage lands first.
