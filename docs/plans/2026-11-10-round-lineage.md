@@ -23,8 +23,8 @@
 - **v5, after review** (2026-11-11): provenance loads on demand (decision 10+); the maintainer's
   R1–R3 (decision 11's reading, Reinstate, phase 3b); status writers, locks and V103's DDL fixed
   (§2.6). See "Review".
-- **v5, slice A** (2026-11-25): slice A's scope, built first for WLM 2026, and the rule-2 check
-  that meets decision 3's condition (§8.1). No decision changed.
+- **v5.1 (slice A)** (2026-11-25): slice A's scope, built first for WLM 2026, and the rule-2 check
+  that meets decision 3's condition (§8.1). Decisions 1–18 are unchanged.
 
 See "Review" at the end.
 
@@ -547,6 +547,9 @@ copies:
    requires from V85 on (`:36`) *(inf.: a metadata change on 10.6+; checked in the migration
    review and `FlywayUpgradeSpec`)*.
 
+*Note (v5.1, 2026-11-25):* V103 loses the `track` column to slice A's migration (§8.1), numbered
+at merge (the next free number). The rest of V103 is unchanged.
+
 **Cancel and Reinstate** (decisions 5–7):
 - **Where:** a button per row on the **rounds list** and per cell on the **map**, for the contest's
   admins (`Secured.administersRound`, `Secured.scala:331`). Organizers see the state, not the
@@ -811,7 +814,7 @@ S ≈ ½ day, M ≈ 1–2 days, L ≈ 3+ days of agent work, each with review an
 | Phase | Content | Size |
 |---|---|---|
 | 0 | **Done** for WLM UA 2025 (§10). **Before phase 1** (decision 3): repeat on a WLE Ukraine rounds export, with rule 2 (prefix nominations) added to the script. The maintainer provides the export (agents don't query production) | S |
-| 1 | **Entry condition:** phase 0's WLE check done, and any rule 2 fix written into §2.3. **The map:** `RoundLineage` (Kahn, cycles, ghosts, rule v4, Main and feeder order, sub-rows, positions by id, backtracks, quiet, `inputSummary` in 4 languages); the map's two tables, read-only for organizers; entry links. **Unit spec with a synthetic fixture:** quality + quantity → Main → two regional rounds, one of them a V95 backtrack, plus a nomination, a cancelled test root and a failed creation. **V103** (V95's statement pattern): `round.status` with INSTANT, its CHECK apart, the backfill (a spec per backfill row, rerun safe), `status_changed_at` / `_by`, the track column, `created_at` in its own statement, `FlywayUpgradeSpec`, `MigrationNamingSpec`. **Status in step** in `Round.create`, the creation enqueue, `completeCreation`, `setActiveGuarded` and `release(close)` (only where `distributing = 0` and not `cancelled`, with a spec); `Round.setActive(id, …)` and `setInactiveAllInContest` deleted; readers derive a NULL status; `FixtureVersion` bumped if Gatling's `load` writes the status. **Cancel and Reinstate** (rounds list and map, guards under the round lock, Reinstate to `draft` or `paused`, "Creation incomplete", the admin's id through `JobScheduler.cancel`, audit); the refused start in `setActiveGuarded`'s UPDATE and the status check in `enqueueOrFail`; the `JobHandler.retryRefusal` hook in `JobScheduler.retry` (`job.retry.round.cancelled`), and `distributeNewFiles` / `submit` mapping that refusal instead of "already running"; the hidden places and both toggles; the label setter with a form spec. Negative specs (juror, non-member, organizer without admin actions, root 404, pre-screener after V97, Cancel of an open or busy round, start, "Distribute new files", resubmit and Retry of a cancelled round); view spec; screenshots in both themes | L (7–9 d) |
+| 1 | **Slice A first** (§8.1, 3–4 d of this phase's 7–9 d): the track rule, the label with its own migration and setter, the chip and the Track menu. **Entry condition:** phase 0's WLE check done, and any rule 2 fix written into §2.3. **The map:** `RoundLineage` (Kahn, cycles, ghosts, rule v4, Main and feeder order, sub-rows, positions by id, backtracks, quiet, `inputSummary` in 4 languages); the map's two tables, read-only for organizers; entry links. **Unit spec with a synthetic fixture:** quality + quantity → Main → two regional rounds, one of them a V95 backtrack, plus a nomination, a cancelled test root and a failed creation. **V103** (V95's statement pattern): `round.status` with INSTANT, its CHECK apart, the backfill (a spec per backfill row, rerun safe), `status_changed_at` / `_by`, the track column (moved to slice A's migration, §8.1), `created_at` in its own statement, `FlywayUpgradeSpec`, `MigrationNamingSpec`. **Status in step** in `Round.create`, the creation enqueue, `completeCreation`, `setActiveGuarded` and `release(close)` (only where `distributing = 0` and not `cancelled`, with a spec); `Round.setActive(id, …)` and `setInactiveAllInContest` deleted; readers derive a NULL status; `FixtureVersion` bumped if Gatling's `load` writes the status. **Cancel and Reinstate** (rounds list and map, guards under the round lock, Reinstate to `draft` or `paused`, "Creation incomplete", the admin's id through `JobScheduler.cancel`, audit); the refused start in `setActiveGuarded`'s UPDATE and the status check in `enqueueOrFail`; the `JobHandler.retryRefusal` hook in `JobScheduler.retry` (`job.retry.round.cancelled`), and `distributeNewFiles` / `submit` mapping that refusal instead of "already running"; the hidden places and both toggles; the label setter with a form spec. Negative specs (juror, non-member, organizer without admin actions, root 404, pre-screener after V97, Cancel of an open or busy round, start, "Distribute new files", resubmit and Retry of a cancelled round); view spec; screenshots in both themes | L (7–9 d) |
 | 1c | Stats pager and navbar grouped by track, after multi-role | S–M |
 | 2 | Provenance in both large views, loaded on demand (decision 10+): the collapsed control, the separate GET with `Secured.inContest` and its refusals by round type (decision 11, R1) and negative specs, `LargeViewControllerSpec` asserting no provenance query on render, vote, keyboard navigation or preload, the paired `GalleryLatencyBenchmark` pilot; 2b the file-list column | M–L (2.5–3.5 d) |
 | 3 | Form help and warnings (M); **delete** (M: guards in the transaction, cascade spec and a `round_user` spec without the FK, `MAX(number) + 1` numbering, confirmation page, audit, negative specs) | M–L (3–4 d) |
@@ -823,6 +826,8 @@ S ≈ ½ day, M ≈ 1–2 days, L ≈ 3+ days of agent work, each with review an
 **Total:**
 - phases 1–3b: **15–21.5 agent days**, the sum of the phase ranges (1c counted as ½–2 d);
 - phase 4: 3–4 d, only if needed.
+
+Slice A's 3–4 days (§8.1) are carved out of phase 1, not added on top: the total is unchanged.
 
 **Phase 1 is larger than v3's** because V103 and Cancel move into it, and a day larger than v4's
 for the status writes in step and the backfill specs. A 2025-style contest (61 rounds, 11 of them
@@ -883,10 +888,9 @@ production (a dump of 2026-11-25, V113), in read-only transactions:
   rule 1), Main 1 (Q-02, the merge, rule 6). Quality's spine runs to its deepest round:
   Q-00 → Q-00-1 → Q-00-1-nf → Q-00-1.5, with Q-01 → Q-01-nf a fork.
 - **Two labels give #181's chain:** "Main" on Q-00, and a label of its own on Q-00-1 (e.g. "Second
-  look"). Main is then Q-00, Q-01, "[delete] Q-00-1", Q-01-nf and Q-02, with the spine
-  Q-00 → Q-01 → Q-01-nf → Q-02 (#181 §7.5). "Main" on Q-00 alone takes the second-look branch into
-  Main, and its spine through Q-00-1.5. "[delete] Q-00-1" stays a fork in Main until it is
-  cancelled (slice B) or labelled.
+  look"). Then Main = Q-00, Q-01, Q-01-nf, Q-02, plus the trial "[delete] Q-00-1" as a fork until
+  cancelled, with the spine Q-00 → Q-01 → Q-01-nf → Q-02 (#181 §7.5). "Main" on Q-00 alone takes
+  the second-look branch into Main, and its spine through Q-00-1.5.
 - **Gaps for the phase-1 spec** (not decisions):
   - WLE's roots share no prefix ending in " - " (the nature loss category has another shape), so
     the Quality and Quantity tracks show full category names until labelled;
@@ -898,8 +902,8 @@ production (a dump of 2026-11-25, V113), in read-only transactions:
 
 **WLM 2026: label Main.**
 - Main is automatic only for the merge round, Q-02.
-- The two labels above give Main = Q-00, Q-01, Q-01-nf, Q-02 (with the trial "[delete] Q-00-1" as
-  a fork until it is cancelled).
+- The two labels above give Main = Q-00, Q-01, Q-01-nf, Q-02, plus the trial "[delete] Q-00-1" as
+  a fork until cancelled.
 - The regional winners page doesn't depend on those labels. By #181's decision 17, as refined in
   96f290df, at each step back the page takes the previous round on the Main track if there is one,
   and otherwise the previous round that supplied the most files. So a Main of Q-02 alone still
@@ -917,7 +921,7 @@ and screenshots in both themes.
 warnings (phase 3), Delete (phase 3), phase 3b, SVG lines (phase 4), and phase 1c's grouping of the
 menus (decision 16). Cancel and Reinstate are slice B, after regional winners phase 1.
 
-**Open for the maintainer:**
+**Decided:**
 1. Does slice B (Cancel and Reinstate, 2.5–3.5 days) also ship for December?
    **Decided (maintainer, 2026-11-25)**: slice B (Cancel/Reinstate) ships for December, after
    regional winners phase 1. Order: slice A → regional winners phase 1 → slice B → regional
@@ -927,17 +931,18 @@ menus (decision 16). Cancel and Reinstate are slice B, after regional winners ph
    **Decided (maintainer, 2026-11-25)**: the Track chip and the Track filter on Rounds and Round
    statistics ship in slice A, before multi-role. Grouping the gallery round menus by track
    (decision 16) still waits for multi-role.
-3. The round-tags brainstorm's 5 questions for the WLM UA organizer (§6 there):
-   1. In a "-nf" round, what happens to a photo you mark: dropped for NOFOP, a reject given back,
-      or collected for nomination on Commons?
-   2. When a second look rescues a photo, does it go into the main line's next round (a merge), or
-      along its own line to the end?
-   3. Is one label per round for the line enough, if the tool writes the step itself, or are
-      several typed tags needed?
-   4. Does the second look need new people, or only someone other than the juror who rejected
-      that photo?
-   5. Next year, start from a copy of this year's round setup, or are a note per round and the map
-      enough?
+
+**Open:** the round-tags brainstorm's 5 questions for the WLM UA organizer (§6 there):
+1. In a "-nf" round, what happens to a photo you mark: dropped for NOFOP, a reject given back,
+   or collected for nomination on Commons?
+2. When a second look rescues a photo, does it go into the main line's next round (a merge), or
+   along its own line to the end?
+3. Is one label per round for the line enough, if the tool writes the step itself, or are
+   several typed tags needed?
+4. Does the second look need new people, or only someone other than the juror who rejected
+   that photo?
+5. Next year, start from a copy of this year's round setup, or are a note per round and the map
+   enough?
 
 ---
 
@@ -999,6 +1004,9 @@ It is set on the round form, also for existing rounds, through a setter of its o
 `created_at = created_at`, with a form spec. It fixes what the rule can't know. For 2025 that is
 mainly grouping: "Main" on Quality and Quantity, since those rounds were merged by hand and no
 stored field says they are the main competition.
+
+*Note (v5.1, 2026-11-25), not a change to this decision:* V103 loses the `track` column to slice
+A's migration (§8.1), numbered at merge (the next free number).
 
 **5. Hiding rounds: `round.status`, not an archive flag. Changed.** v4 recommended a new
 `archived_at` / `archived_by`. The maintainer asked to keep hiding in step with the states already
