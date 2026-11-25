@@ -22,8 +22,8 @@ class RoundLinksSpec extends PlaySpecification with PlayTestDb {
 
   private val contestId = 10L
 
-  private def member(email: String, role: String): User =
-    User.create(User(email, email, None, Set(role), Some(services.PasswordHasher.default.hash("secret")), Some(contestId)))
+  private def member(email: String, role: String, contest: Long = contestId): User =
+    User.create(User(email, email, None, Set(role), Some(services.PasswordHasher.default.hash("secret")), Some(contest)))
 
   /** Rounds 1 "First" → 2 "Second" → 3 "Third" (and 4, cancelled, from 2), 5 with no edge; its admin,
     * organizer and a juror of round 2.
@@ -42,8 +42,12 @@ class RoundLinksSpec extends PlaySpecification with PlayTestDb {
     (Seq(first, second, third, cancelled, lone), users)
   }
 
-  private def get(app: Application, email: String, path: String): Future[Result] =
+  private def get(app: Application, email: String, path: String, contest: Long = contestId): Future[Result] =
     route(app, FakeRequest(GET, path)
+      .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contest.toString).withCSRFToken).get
+
+  private def post(app: Application, email: String, path: String, body: (String, String)*): Future[Result] =
+    route(app, FakeRequest(POST, path).withFormUrlEncodedBody(body: _*)
       .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contestId.toString).withCSRFToken).get
 
   private def link(r: Round, label: String) =
@@ -102,6 +106,62 @@ class RoundLinksSpec extends PlaySpecification with PlayTestDb {
         (status(statPage) === FORBIDDEN) and (contentAsString(statPage) must not(contain("round-links"))) and
           (status(reviewPage) === FORBIDDEN) and (contentAsString(reviewPage) must not(contain("round-links"))) and
           (contentAsString(gallery) must not(contain("round-links")))
+      }
+    }
+
+    "be refused to another contest's organizer and admin, and Edit round to the round's organizer, with no links" in {
+      testDbApp { app =>
+        val (Seq(_, second, _, _, _), _) = setUp()
+        createContests(20)
+        member("other-org@example.com", "organizer", contest = 20)
+        member("other-admin@example.com", "admin", contest = 20)
+        val refused = Seq(
+          ("other-org@example.com", stat(second)), ("other-org@example.com", review(second)),
+          ("other-admin@example.com", stat(second)), ("other-admin@example.com", review(second)),
+          ("other-admin@example.com", edit(second)), ("organizer@example.com", edit(second)))
+        refused.map { case (email, p) =>
+          val result = get(app, email, p, contest = if (email.startsWith("other-")) 20L else contestId)
+          (status(result) aka s"$email $p" must_== FORBIDDEN) and
+            (contentAsString(result) aka s"$email $p" must not(contain("round-links")))
+        }.reduce(_ and _)
+      }
+    }
+
+    "never list a previous round of another contest" in {
+      testDbApp { app =>
+        setUp()
+        createContests(20)
+        val elsewhere = roundDao.create(Round(None, 1, Some("Elsewhere"), 20L, distribution = 0))
+        val local = roundDao.create(Round(None, 6, Some("Local"), contestId, distribution = 0, previous = Some(elsewhere.getId.toString)))
+        Seq(stat(local), review(local), edit(local)).map { p =>
+          contentAsString(get(app, "admin@example.com", p)) aka p must not(contain(s"data-round=\"${elsewhere.getId}\""))
+        }.reduce(_ and _)
+      }
+    }
+
+    "show the links on Edit round shown again with an error, as on its page; none for a new round" in {
+      testDbApp { app =>
+        val (Seq(first, second, third, _, _), _) = setUp()
+        // the id and the contest only: the form doesn't bind, and comes back with its errors
+        val edited = post(app, "admin@example.com", "/admin/rounds/save", "id" -> second.getId.toString, "contest" -> contestId.toString)
+        val created = post(app, "admin@example.com", "/admin/rounds/save", "id" -> "", "contest" -> contestId.toString)
+        val links = block(contentAsString(edited))
+        (status(edited) === BAD_REQUEST) and (links must contain(link(first, "Round 1 (First)"))) and
+          (links must contain(link(third, "Round 3 (Third)"))) and
+          (block(contentAsString(get(app, "admin@example.com", edit(second)))) === links) and
+          (status(created) === BAD_REQUEST) and (contentAsString(created) must not(contain("id=\"round-links\"")))
+      }
+    }
+
+    "show a cancelled round's own pages where it came from, and nothing created from it" in {
+      testDbApp { app =>
+        val (Seq(_, second, _, cancelled, _), _) = setUp()
+        Seq(stat(cancelled), review(cancelled)).map { p =>
+          val result = get(app, "admin@example.com", p)
+          val links = block(contentAsString(result))
+          (status(result) aka p must_== OK) and (links aka p must contain("Created from: " + link(second, "Round 2 (Second)"))) and
+            (links aka p must not(contain("round-links-next")))
+        }.reduce(_ and _)
       }
     }
   }
