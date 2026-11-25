@@ -24,6 +24,7 @@ Merged after the 26.11.17 build, for the release after it.
 - Track labels: spaces inside a label are kept as typed, so labels share a track only when they are identical, as the form's help says (#209).
 - Track labels: labelling a first round (or giving it a nomination or regions) no longer changes the category track names of the other first rounds (#209).
 - Rounds page: a round with one of several previous rounds deleted no longer says it "starts a track of its own"; it says the deleted round is left out when its track is chosen (#209).
+- Monument page: a special nomination's own monument (an id like `92-232-4801`) links its nomination's list again after "Update the monument lists", also when an earlier import stored it from another nomination's list it has since moved off (the Bulgarian heritage rows once on the German heritage lists). Run "Update the monument lists" once after the deploy to correct the stored pages.
 
 ## Deployed releases
 
