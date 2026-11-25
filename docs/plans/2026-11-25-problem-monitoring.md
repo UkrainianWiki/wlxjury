@@ -279,7 +279,7 @@ CREATE TABLE support_problem (
   event_count    INT          NOT NULL,          -- purged_count + the linked events' repeat_count
   purged_count   INT          NOT NULL DEFAULT 0, -- repeat_count of linked events a later cleanup deleted (§3.2)
   detected_at    DATETIME(3)  NOT NULL,
-  activity_version INT        NOT NULL DEFAULT 1, -- +1 whenever a tick changes event_count or last_event_at
+  activity_version INT        NOT NULL DEFAULT 1, -- +1 whenever a tick changes event_count, first_event_at or last_event_at
   seen_version   INT          NULL,              -- the activity_version the root account was shown when marking it
   seen_at        DATETIME(3)  NULL,              -- when it was marked (display only)
   seen_by        BIGINT       NULL,              -- the root account that marked it
@@ -429,20 +429,21 @@ an outage longer than any pattern window loses no events:
   matching only; they are not where the scan starts.
 - A batch's problem writes, links and new checkpoint are one transaction. A batch that fails rolls
   back and leaves the checkpoint where it was, so the next tick reads the same events again.
-- Reading an event twice changes nothing: a link is `INSERT IGNORE`, and a problem's `event_count`
-  and `last_event_at` are recomputed from its linked events (`purged_count` plus the sum of
-  `repeat_count`; the later of the stored `last_event_at` and the latest `last_at`; the earlier of
-  the stored `first_event_at` and the earliest linked `created_at`, so an event that reached the
-  writer late still moves the start back), with `activity_version` raised only when one of them
-  changed. A later cleanup of old events therefore doesn't shrink a problem's count or times (§3.2).
+- Reading an event twice changes nothing: a link is `INSERT IGNORE`, and a problem's `event_count`,
+  `first_event_at` and `last_event_at` are recomputed from its linked events (`purged_count` plus
+  the sum of `repeat_count`; the later of the stored `last_event_at` and the latest `last_at`; the
+  earlier of the stored `first_event_at` and the earliest linked `created_at`, so an event that
+  reached the writer late still moves the start back), with `activity_version` raised only when one
+  of the three changed (a late event moves `first_event_at` and adds to `event_count`, so it raises
+  it). A later cleanup of old events therefore doesn't shrink a problem's count or times (§3.2).
 - **First run:** no checkpoint row yet; the tick starts before the oldest event (M-2 and M-3 ship
   together, so that is a few days of events at most) and creates the row.
 - A folded repeat (§3.4) sets the row's `changed_at` to a later time, so the row comes after the
   checkpoint again and is read once more.
 
-For each match the tick creates a problem or extends an open one: the same `pattern` and
-`scope_key` with `last_event_at` within 24 hours → the event linked in `support_problem_event`,
-`event_count` and `last_event_at` recomputed. **An event can belong to several problems:** a
+For each match the tick creates a problem or extends an open one: the same `pattern` and `scope_key`
+with `last_event_at` within 24 hours → the event linked in `support_problem_event`, `event_count`,
+`first_event_at` and `last_event_at` recomputed. **An event can belong to several problems:** a
 fallback refusal is a `form_refused` of one form and account, so it counts for P1 and is also P9;
 each problem gets its own link and lists the event. A match after 24 hours of quiet is a new
 problem. The `job` table (P5) is read as it is at the tick, with no checkpoint.
@@ -483,7 +484,7 @@ resubmit_dropped ref=0b77e5d2 form=round contestId=631 roundId=1991 accountId=12
   the reference the line already carries and writes no second line.
 - **New lines:** `form_refused`, `resubmit_dropped`, `job_cancelled`, `support_event_lost`,
   `support_event_capped`, `problem_detected ref= pattern= scope= count=` (one per new problem; the
-  ref is the problem's first event's).
+  ref is that of the problem's first event at detection).
 - **Replaced:** `RoundController`'s `Contest N: Round … was already created from this form` (it
   quotes the round's description without `logValue`) becomes `resubmit_dropped`.
 - **Logger:** `support.event`, at INFO in the production logback (`conf/logback-production.xml`,
