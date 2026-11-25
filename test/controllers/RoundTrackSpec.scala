@@ -280,13 +280,15 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "warn of a previous round that no longer exists" in {
+    "warn of a previous round that no longer exists; no chip repeating a root's own name" in {
       testDbApp { app =>
         val f = fixture()
         val orphan = roundDao.create(Round(None, 5, Some("Orphan"), f.contest.getId, previous = Some("987654")))
+        val next = roundDao.create(Round(None, 6, Some("Orphan 2"), f.contest.getId, previous = Some(orphan.getId.toString)))
         val doc = page(app, f.admin, s"/admin/rounds?contestId=${f.contest.getId}")
-        doc.select(s".wlx-round-missing-previous[data-round=${orphan.getId}]").text must
-          contain("Previous round 987654 no longer exists")
+        (doc.select(s".wlx-round-missing-previous[data-round=${orphan.getId}]").text must
+          contain("Previous round 987654 no longer exists")) and
+          (rowChips(doc).get("Orphan") must beNone) and (rowChips(doc).get("Orphan 2") === Some("Orphan"))
       }
     }
   }

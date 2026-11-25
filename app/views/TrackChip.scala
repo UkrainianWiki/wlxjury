@@ -36,6 +36,12 @@ object TrackChip {
     else full.substring(0, full.offsetByCodePoints(0, MaxLength - 1)).trim + "…"
   }
 
+  /** The round's track, if its chip says something its name doesn't: none for a root whose track
+    * is named after it (rule 7's last case, no category or media type), which would repeat its name.
+    */
+  def shown(round: Round, lineage: Lineage): Option[Track] =
+    lineage.track(round).filterNot(t => t.kind == Kind.Name && t.name == round.description.trim)
+
   /** The chip's colour class. */
   def colour(track: Track): String =
     if (track.isMain) "wlx-track-main" else s"wlx-track-${Math.floorMod(track.key.hashCode, Colours) + 1}"
