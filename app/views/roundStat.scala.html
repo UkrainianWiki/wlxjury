@@ -76,6 +76,12 @@
             <div class="alert alert-warning" role="status" id="round-no-active-juror">@Messages(if (controllers.Secured.administersRound(user, round)) "round.warning.nojurors.act" else "round.warning.nojurors", round.number)</div>
         }
 
+        @* the rounds it was created from and those created from it (RoundLineage.links), from the
+           contest's rounds the statistics already read; only those the viewer may see *@
+        @if(user.canViewOrgInfo(round)) {
+            @snippets.roundLinks(services.RoundLineage.links(round, stat.rounds).visibleTo(user))
+        }
+
         @* the jurors table scrolls sideways in its own box on a phone, never the page *@
         <div class="row">
             <div class="table-responsive">

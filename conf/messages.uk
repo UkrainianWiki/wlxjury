@@ -1074,6 +1074,9 @@ authors.rated.note = Оцінені: файли з принаймні одніє
 # a round's review before distribution (P3: RoundReviewController, roundReviewHead.scala.html)
 round.review = Переглянути зображення
 round.review.title = Раунд {0} ({1}): його зображення до розподілу
+round.links.from = Створено з:
+round.links.next = Раунди, створені з нього:
+round.links.round = Раунд {0}
 round.review.ready = Зображення готові: {0}. Члени журі не бачать раунд, доки ви його не розподілите.
 round.review.filling = Зображення раунду відбираються.
 round.review.distributing = Зображення розподіляються між членами журі. Раунд відкриється для них, коли це завершиться.

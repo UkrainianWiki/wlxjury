@@ -1098,6 +1098,9 @@ authors.rated.note = Rated: files with at least one rating. ✗: files with at l
 # a round's review before distribution (P3: RoundReviewController, roundReviewHead.scala.html)
 round.review = Review images
 round.review.title = Round {0} ({1}): its images before distribution
+round.links.from = Created from:
+round.links.next = Rounds created from it:
+round.links.round = Round {0}
 round.review.ready = Images ready: {0}. The jurors don''t see the round until you distribute it.
 round.review.filling = The round''s images are being selected.
 round.review.distributing = The images are being distributed to the jurors. The round opens to them when it has finished.
