@@ -2,7 +2,8 @@
 
 **Status:** decided. All twelve questions of the proposal were decided by the maintainer on
 2026-11-26 **[user]** (§1). Nothing is built yet. Written 2026-11-26 against master `96312a39`
-(release 26.11.17) and the open hotfix PR #216 (26.11.17.1), which adds the first guide link.
+(release 26.11.17) and the hotfix PR #216 (26.11.17.1), which adds the first guide link; #217
+forward-merges it to master.
 
 Marks: **[user]** decided by the maintainer; anything else is this plan's default, open to the
 maintainer.
@@ -16,7 +17,8 @@ long role guides.
 
 1. **Where the links point:** GitHub's view of the repository, pinned to the release tag of the
    running build: `https://github.com/UkrainianWiki/wlxjury/blob/<version>/docs/user/<page>.md#<id>`.
-   Not master (ahead of production), not served in the tool.
+   Not master (ahead of production), not served in the tool. A snapshot build (a version that
+   isn't a release's, `26.11.18-SNAPSHOT`, whose tag doesn't exist) links `master` (§4.1).
 2. **New tab:** a help link opens in a new tab, so a half-filled form is never lost; it shows an
    icon and an accessible label that says so.
 3. **Language:** the link text is translated (en, ru, uk, fr); a visually hidden label says the
@@ -26,7 +28,7 @@ long role guides.
 5. **Jurors:** one **Help** link in the gallery's top bar, to the jurors' contents page. No links
    per field or section for jurors.
 6. **Missing sections are written first** (criteria catalogue, image cache, image check, the round
-   settings change log), then linked. No link to "the nearest section".
+   settings change log, and top files, found missing while planning, §3), then linked. No link to "the nearest section".
 7. **Field links only for the hard fields** (Track label, the category boxes, Top N / Choose N, the
    score rule, the distribution settings); section links elsewhere.
 8. **docs/user is split into about 25 topic pages**, with a contents page per role.
@@ -39,7 +41,7 @@ long role guides.
 12. **Images stay flat** in `docs/user/images`, with unchanged names: the screenshot spec and the
     photo scripts don't change.
 
-Already in flight: the hotfix PR #216 adds **More about tracks** after the Track label's help on
+Already in flight: the hotfix PR #216 (forward-merged to master by #217) adds **More about tracks** after the Track label's help on
 the round form, through `views.Guide` (`app/views/Guide.scala`), which reads the build's version
 from `wlxjury-build.json` and links `docs/user/admin-guide.md#a-tracks`. The helper of §4 extends
 `views.Guide`; #216's link is moved onto it in slice 3, and stays valid until then (the contents
@@ -151,8 +153,10 @@ it covers; under it, one entry per old section:
 ### 2.5 What else the split touches
 
 - `docs/testing/stories.md`: its guide links move to the topic pages, at the heading slugs
-  (`scripts/story-coverage.py` checks them against headings). `story-coverage.py` counts `##`
-  headings as sections too in its "unlinked sections" report, since topic pages use `##`.
+  (`scripts/story-coverage.py` checks them against headings). `story-coverage.py`'s "guide
+  sections no story links" report reads every page of `docs/user` (not only the pages the
+  catalogue links, which after the split would hide every page no story links yet), and counts
+  `##` headings as sections too, since topic pages use `##`.
 - `docs/README.md` §3 and §5: one guide per role becomes topic pages plus contents pages; the
   stable-anchor rule covers `j-…`; the user-docs row of §3 names the juror pages.
 - Comments in `browser-test/tests/review.spec.js` and `round-category.spec.js` that cite a guide
@@ -160,10 +164,10 @@ it covers; under it, one entry per old section:
 - `README.md` keeps its links to the three guides (they are the contents pages now).
 - Not changed: images, `images/README.md`, `docs-screenshots.spec.js`, `docs-photos*.py`,
   `DocsPhotos.scala`; plans and history (their links land on the contents pages' entries).
-- Open PRs that edit `docs/user` (#216 tracks, #174, #124) conflict with the split. Whichever
+- Open PRs that edit `docs/user` (#217 tracks, the forward-merge of #216; #174, #124) conflict with the split. Whichever
   merges second carries the other's text: if the split merges second, master is merged into the
   split branch and the changed text is moved into its topic page by hand (no rebase of a pushed
-  branch). The split waits for #216, the hotfix, to merge first.
+  branch). Merge order: #217, then this plan, then the split.
 
 ## 3. Missing sections (slice 2, decision 6)
 
@@ -192,34 +196,37 @@ About half a day, one PR, docs only; each section gets the usual docs review.
     val topics: Map[String, HelpTopic] = Map(
       "tracks"       -> HelpTopic("tracks.md", "a-tracks"),
       "categories"   -> HelpTopic("round-files.md", "a-choose-files"),
-      "juror.help"   -> HelpTopic("juror-guide.md", ""),   // the jurors' contents page
+      "guide"        -> HelpTopic("juror-guide.md", ""),   // the jurors' Help: their contents page
       ...)
-    def url(key: String): String = Guide.url(topics(key))
+    def url(key: String): String = { val t = topics(key); Guide.url(t.page, t.anchor) }
   }
   ```
 
   URLs live only here. A view passes only the key; an unknown key fails the spec, never a page.
-- **`views.Guide`** (from #216) gains `url(page, anchor)`; `admin(anchor)` becomes a call of it, or
+- **`views.Guide`** (from #216/#217) gains `url(page: String, anchor: String, version: String = version)`; `admin(anchor)` becomes a call of it, or
   goes once #216's link uses the helper.
-- **Version source:** `views.Guide.version`, from `wlxjury-build.json` as #216 reads it. A version
-  that isn't a release tag (`26.11.18-SNAPSHOT` in development, or no build file) falls back to
-  `master`: a tag is used only if it matches `^\d+\.\d+\.\d+(\.\d+)?$`. Every release and
-  hotfix is tagged with its bare version (`26.11.17`; workflow practices §7.4), so a production
-  link resolves. No new config key.
+- **Version source:** `views.Guide.version`, as #217 has it: `Guide.versionOf` reads
+  `wlxjury-build.json`'s `version` and keeps it only if it is a release's (numbers and dots,
+  `\d+(\.\d+)+`, so `26.12`, `26.11.17` and `26.11.17.1` alike, as build.sbt's YY.MM versions
+  allow); a snapshot (`26.11.18-SNAPSHOT`) or no build file falls back to `Guide.Fallback`,
+  `master`. This plan reuses that rule and adds none. Every release and hotfix is tagged with its
+  bare version (workflow practices §7.4), so a production link resolves. No new config key.
 - **Twirl snippet `views/snippets/helpLink.scala.html`**, `@helpLink("tracks")`:
 
   ```html
   <a class="help-link" href="…" target="_blank" rel="noopener noreferrer">
     <i class="bi bi-question-circle" aria-hidden="true"></i>
-    More about tracks<span class="visually-hidden"> (guide in English, opens in a new tab)</span>
+    More about tracks<span class="visually-hidden"> (guide in English)</span><!-- + the mark -->
   </a>
   ```
 
-  It reuses `views.ExternalLinks.marked` for the new-tab mark the tool shows after links that
-  leave it (as #216 does), so the hidden text and the mark aren't duplicated; the exact markup
-  follows UI practices.
+  The text and the hidden "(guide in English)" go through `views.ExternalLinks.marked`, as #216's
+  link does: it adds the tool's mark for a link that leaves it, with its own hidden "(opens in a
+  new tab)" (`link.new.tab`), so the help key says only that the guide is English and the new-tab
+  label isn't duplicated. The exact markup follows UI practices.
 - **Message keys:** `help.more.<topic>` per link text ("More about tracks", "More about the file
-  score", …), `help.guide` ("Help", the jurors' top bar), `help.englishNewTab` (the hidden label),
+  score", …), `help.more.guide` ("Help", the jurors' top bar: the table's `guide` topic), `help.english` (the hidden
+  "(guide in English)"),
   in `messages.en`, `.fr`, `.ru`, `.uk`. #216's `round.track.more` becomes `help.more.tracks`.
   The PR body lists the keys for the translation review (ru/uk by the maintainer, fr by a French
   speaker).
@@ -230,11 +237,12 @@ A plain unit spec, no database and no Play app, in the normal suite:
 
 - every topic's page exists under `docs/user/`, and its anchor (when not empty) is an explicit
   `<a id="…">` in that page, not a heading slug;
-- every topic's message key, `help.guide` and `help.englishNewTab` exist in all four
+- every topic's message key (`help.more.<topic>`, `help.more.guide` included) and `help.english` exist in all four
   `conf/messages.*` files, and nowhere is the text empty;
 - every `@helpLink("…")` in `app/views/**/*.scala.html` names a key of the table (a regex over
   the templates);
-- `Guide.url` for a snapshot version links `master`, for `26.11.17.1` that tag.
+- the version rule (`Guide.versionOf`, #217): `26.11.17.1` and a two-part `26.12` link that
+  tag; `26.11.18-SNAPSHOT` and no build file link `master`.
 
 So a renamed or moved section fails the build in the same PR that moves it.
 
@@ -325,7 +333,7 @@ more has **Help** in the gallery.
    pages, juror `j-…` ids, links retargeted (whats-new, story catalogue, docs README),
    `scripts/docs-links.py` and its CI step, the `story-coverage.py` section level. Docs and a
    stdlib script; no Scala. About 1.5 days, then the docs review (the maintainer reads the merged
-   shared topics). After #216 merges.
+   shared topics). After #217 (the forward-merge of #216) and this plan merge.
 2. **The missing sections** (§3), docs only: about half a day.
 3. **The helper** (§4): `HelpLinks`, `Guide.url` and the version rule, `helpLink`, the message keys
    in four languages, `HelpLinksSpec`; #216's tracks link moved onto it; the five admin field links
