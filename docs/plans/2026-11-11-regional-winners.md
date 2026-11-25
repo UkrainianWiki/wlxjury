@@ -64,9 +64,10 @@ photos and tell which round they are from."
     has track data, the deepest plain round, with a note that it was guessed;
   - then the rounds before it in the chain (decision 1), with the side add-ons (decision 3) and
     regional rounds as extra columns, placed by §2.3;
-  - shown by default: the final round and the rounds before it on the "Main" track, latest
-    first (decision 17). Side feeders, add-ons and regional rounds are behind "Show all rounds".
-    Without track data, the path is guessed, in the same note as the final round's.
+  - shown by default: the final round and its main line, latest first (decision 17): stepping
+    back from the final round, the previous round on the "Main" track, else the one that supplied
+    the most files (a guess, in the same note as the final round's). Side feeders, add-ons and
+    regional rounds are behind "Show all rounds".
 - **Each cell** shows the region's top N files in that round by that round's **own** ranking, all
   ties shown (decisions 7, 8), and how many files the region had there.
 - **No algorithm picks a winner.** Scores are never compared across rounds. The organizers see
@@ -331,9 +332,9 @@ the graph built in memory (lineage §1.3).
    - until the contest has track data, the deepest **plain** round, then the largest id ("plain"
      also excludes nomination roots). The header then says that the final round was guessed: "No
      Main track yet; showing R-03, the deepest plain round. Label the Main track to fix it."
-     (updated 2026-11-25, decision 2). The same note covers the default columns' guessed path
-     (§2.3): "… and the rounds before it through the round that gave it the most files" (updated
-     2026-11-25, decision 17).
+     (updated 2026-11-25, decision 2). The same note covers the default columns' guessed steps
+     (§2.3): "… and, before Q-02, Q-01-nf, which gave it the most files (guessed). Label the Main
+     track to fix it." (refined 2026-11-25 after the lineage track check).
    - **Ambiguity:** other plain leaves (rounds no plain round descends from) at the same maximum depth
      are not ancestors of `F`. When there are any, the header warns and names them, with a link for
      each: "R-03 and [test] R-03 both end the chain at depth 3; showing R-03 (larger id). Pick
@@ -379,16 +380,28 @@ because they aren't ancestors of `F`.
    regions outside their filter are blank ("not in this round's regions").
 4. **Explicit list** (`rounds=`, decision 1): the same order, by kind.
 
-**Shown by default** (updated 2026-11-25, decision 17): `F` and the rounds before it on the "Main"
-track (the same lineage track as decision 2), latest first. Side feeders of a merge, add-ons and
-regional rounds are behind "Show all rounds" (a GET flag, so a link, with no script), which shows
-every column in the order above. A column is never dropped for being empty.
+**Shown by default** (decision 17, refined 2026-11-25 after the lineage track check): `F` and its main line, latest first.
+Starting at `F`, step back one previous round at a time:
+- if one of the current round's previous rounds is on the "Main" track (the same lineage track as
+  decision 2), take it;
+- otherwise take the previous round that supplied the most files to the current one (its files in
+  the current round, by `round_image` membership); with a single previous round, that is the one;
+- stop at a root.
 
-- **Without track data** (the same guess as decision 2's `F`): from `F`, step to the previous round
-  that gave it the most files (`round_image` membership of the previous round in the next one),
-  then on from that round, back to a root. The header's "guessed" note says so (§2.1 item 3).
-- **WLM 2026** (§7.5): Q-02 → Q-01-nf → Q-01 → Q-00. **WLE 2026** (§7.4): 1952 → 1942 → 1938 →
-  1920.
+A step taken by the "most files" rule among several previous rounds is marked as guessed, in the
+same header note as decision 2's `F` (§2.1 item 3), which suggests labelling the Main track. Side
+feeders of a merge, add-ons and regional rounds are behind "Show all rounds" (a GET flag, so a link,
+with no script), which shows every column in the order above. A column is never dropped for being
+empty.
+
+- **WLM 2026** (§7.5): the automatic Main track is Q-02 alone (the merge round; Q-00 → Q-01 → … are
+  on the "Quality" track), so the first step is guessed: Q-02 → Q-01-nf (494 of its 507 files) →
+  Q-01 → Q-00, the last two steps having a single previous round. With the two labels ("Main" on
+  Q-00, its own label on Q-00-1), the same path is on the Main track and nothing is guessed.
+- **WLE 2026** (§7.4): Main is 1937, 1938, 1942 and 1952 automatically, so 1952 → 1942 → 1938 follow
+  the track. 1938's previous rounds, 1916 and 1920, are not on it; 1920 supplied 777 of 1938's 856
+  files (1916: 79), so the last step, → 1920, is guessed. 1937 is not a previous round of 1938, so
+  the path never reaches it.
 
 ### 2.4 What a cell shows (rewritten 2026-11-25: "show, don't pick")
 
@@ -678,7 +691,7 @@ GROUP BY ri.round_id, ri.region
 | WLE rounds without `previous` | The only column is `F`. Regions with no file name the unlinked rounds, and the header warns about the small root (§2.4 item 5) |
 | A chain round with a filter of all regions | Not regional (lineage rule 4) |
 | Rounds with different scales | Each column on its own scale; scores are never compared across columns |
-| A merge | The feeder on the Main track (without track data: the one that gave the most files) is a default column; the other feeders are under "Show all rounds" (updated 2026-11-25, decision 17) |
+| A merge | The feeder on the Main track (else, guessed, the one that supplied the most files) is a default column; the other feeders are under "Show all rounds" (decision 17, refined 2026-11-25 after the lineage track check) |
 | Score rule changed after the announcement | The current rule is shown and named |
 | Stopped jurors | Their votes count (§1.3) |
 | Disqualified files, and files deleted while their round was open | Out |
@@ -794,9 +807,11 @@ Phase 0 also records each query's time on the copy, as a first cost figure.
   - a nomination root is excluded from the default `F`;
   - a listed round in `X` is dropped and named;
   - a cycle, and a ghost id;
-  - the default columns: `F` and the Main track's rounds before it; without track data, the path
-    through the round that gave the most files, with the "guessed" note; side feeders, add-ons and
-    regional rounds only with `all` (updated 2026-11-25, decision 17);
+  - the default columns: stepping back from `F`, the previous round on the Main track, else the one
+    that supplied the most files, marked guessed when there was a choice; a single previous round is
+    not a guess; stop at a root; side feeders, add-ons and regional rounds only with `all`; the WLM
+    2026 shape (Main = the merge round alone) and the WLE 2026 shape (Main down to 1938, roots off
+    it) (refined 2026-11-25 after the lineage track check);
   - a region with no file in any column → unlinked rounds named; no files at all; the small-root
     warning;
   - the stored `top_binary_order` is used, else the default;
@@ -908,8 +923,10 @@ what-if; about 0.5 s each, including `docker exec`.
 - **Columns** (updated 2026-11-25: "show, don't pick"): Q-02 first, then by depth Q-00-1.5,
   Qn-00-1-nf, Q-01-nf, Q-00-1-nf, Qn-00-1, Q-00-1, Q-01, Qn-00, Q-00. By depth alone, the first 3
   would be Q-02 and two small feeders of the merge (6 and 7 of Q-02's files). Resolved by decision
-  17 (updated 2026-11-25, decision 17): the default columns follow the Main track, guessed here as
-  Q-02 → Q-01-nf (494 of Q-02's 507 files) → Q-01 → Q-00; the rest are under "Show all rounds".
+  17 (refined 2026-11-25 after the lineage track check): the lineage track check found the automatic Main track to be Q-02 alone (the
+  merge round), with Q-00 → Q-01 → … on the "Quality" track. The default columns are still Q-02 →
+  Q-01-nf (494 of Q-02's 507 files, the one guessed step) → Q-01 → Q-00; with "Main" on Q-00 and
+  its own label on Q-00-1, the same path without a guess. The rest are under "Show all rounds".
 - **"Positive":** every Q-02 file has a mark above 0; in the yes/no feeders whole regions have
   files but no yes (Q-00-1.5: 105 files, 6 positive).
 - **Open round (decision 6):** 13 jurors, each assigned every file; 1,689 of 6,591 marks cast (3.3
@@ -1169,6 +1186,14 @@ regional rounds are behind "Show all rounds".
 
 Without track data, the path is guessed like decision 2's `F`: through the previous round that gave
 the next one the most files, with the same "guessed" note (§2.3).
+
+**Refined (2026-11-25, after the lineage track check)**: the automatic Main track can stop at a merge
+(WLM 2026: Q-02 alone). So the default columns step back from the final round one previous round at
+a time, taking the previous round on the Main track if there is one, else the one that supplied the
+most files to the current round, and stop at a root. Each "most files" step is marked guessed in
+decision 2's header note, which suggests labelling the Main track. WLM 2026 gives Q-02 → Q-01-nf →
+Q-01 → Q-00 with or without labels; WLE 2026 gives 1952 → 1942 → 1938 → 1920, the last step guessed
+(§2.3).
 
 ---
 
