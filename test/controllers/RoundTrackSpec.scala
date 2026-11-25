@@ -118,9 +118,17 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         (views.Guide.versionOf("{}") must beNone) and (views.Guide.versionOf("not json") must beNone)
     }
 
-    "take the build's version, not the fallback, when the build identity is there" in {
-      (buildVersion must not(beEmpty)) and (views.Guide.version === buildVersion) and
-        (views.Guide.version !== views.Guide.Fallback)
+    "point a snapshot's link at master, whose tag doesn't exist" in {
+      val snapshot = views.Guide.versionOf("""{"buildId":"26.11.18-SNAPSHOT-0123456789ab","version":"26.11.18-SNAPSHOT"}""")
+      (snapshot must beNone) and
+        (views.Guide.admin("a-tracks", snapshot.getOrElse(views.Guide.Fallback)) ===
+          "https://github.com/UkrainianWiki/wlxjury/blob/master/docs/user/admin-guide.md#a-tracks")
+    }
+
+    "take the build's version when it is a release's, else master" in {
+      val release = buildVersion.matches("""\d+(\.\d+)+""")
+      (buildVersion must not(beEmpty)) and
+        (views.Guide.version === (if (release) buildVersion else "master"))
     }
   }
 
@@ -144,7 +152,7 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
             "Rounds with the same label share a track. Type Main on the main competition's first round.") and
           // and the admin guide's Tracks section at this version, in a new tab, an anchor the guide has
           (doc.select("#trackLabel_help a#round-track-guide").attr("href") ===
-            s"https://github.com/UkrainianWiki/wlxjury/blob/$buildVersion/docs/user/admin-guide.md#a-tracks") and
+            s"https://github.com/UkrainianWiki/wlxjury/blob/${views.Guide.version}/docs/user/admin-guide.md#a-tracks") and
           (doc.select("#trackLabel_help a#round-track-guide").attr("target") === "_blank") and
           (doc.select("#trackLabel_help a#round-track-guide").text must startWith("More about tracks")) and
           (views.ExternalLinksCheck.newTab(doc.selectFirst("#trackLabel_help a#round-track-guide")) must beTrue) and
