@@ -70,6 +70,8 @@
 @* an existing round's track without its own label (round lineage slice A), named in the track
    field's help *@
 @automaticTrack = @{ editRoundForm("id").value.flatMap(_.toLongOption).flatMap(views.TrackChip.automatic(_, rounds)) }
+@* the track label's help: one line, and the admin guide's Tracks section, as of this version (views.Guide) *@
+@trackHelp = {@Messages("round.track.help", Messages("round.track.main")) <a href="@views.Guide.admin("a-tracks")" target="_blank" rel="noopener noreferrer" id="round-track-guide">@views.ExternalLinks.marked(Messages("round.track.more"), views.Guide.admin("a-tracks"))</a>}
 
 @* the track field, "Main" shown as the page names the Main track (saved back as "Main") *@
 @trackField = @{
@@ -164,7 +166,7 @@
                        count twice; the form refuses more than Round.TrackMaxLength code points, its error
                        at the field and at the top *@
                     @bs.text(trackField, Symbol("_label") -> Messages("round.track.label"),
-                        Symbol("_help") -> Messages("round.track.help", Messages("round.track.main")),
+                        Symbol("_help") -> trackHelp,
                         Symbol("placeholder") -> automaticTrack.fold(Messages("round.track.automatic.new"))(t =>
                             Messages("round.track.automatic", t)),
                         Symbol("maxlength") -> false, Symbol("list") -> "round-track-labels",
