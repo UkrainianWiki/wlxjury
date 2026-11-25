@@ -341,7 +341,7 @@ An in-memory map per **fingerprint** allows at most 5 rows per minute. The finge
 stored column of the row except the times, `ref` and `repeat_count`: kind, contest, round (and
 `is_new_round`), job, account, form, route, method, status, reason, fields, message keys, `outcome`,
 `token_id` and `task` (NULL counts as a value). Only identical events fold, so no pattern loses an
-input: five `same` resubmits and a sixth `changed` one are two rows, and P2 sees the `changed`; P8,
+input's identity: five `same` resubmits and a sixth `changed` one are two rows, and P2 sees the `changed`; P8,
 P10, P11 keep their token, round and task apart. Within a fingerprint, further events in that minute
 increment `repeat_count` of the last row and set its `last_at` to the event's time and `changed_at`
 to the database time (one `UPDATE`, done by the writer thread after that row's insert), and write no
@@ -352,6 +352,14 @@ contests would share one row. Moving `last_at` and `changed_at` makes the next t
 again (§4.2), so a folded repeat after root marked the problem seen raises its `activity_version`
 and makes it new again (§3.1). Restarting the app resets the map; that only lets a few more rows
 through.
+
+**Folded repeats in a window (an accepted approximation).** A folded row keeps one `created_at` and
+one `last_at`, not each repeat's time. A windowed count (§4.2) counts a row with its whole
+`repeat_count` when its `created_at` is in the window. The repeats all fall in the minute after
+that `created_at`, so a window edge inside that minute can move them into or out of the window: a
+count near a threshold (P12: 20 denials in an hour) can be off by that minute's repeats, never by
+more than one minute's worth. This is accepted: the first five events of each minute keep their
+own times, and a flood that big is a problem either way.
 
 ### 3.5 Privacy and backups
 
@@ -423,9 +431,10 @@ an outage longer than any pattern window loses no events:
   back and leaves the checkpoint where it was, so the next tick reads the same events again.
 - Reading an event twice changes nothing: a link is `INSERT IGNORE`, and a problem's `event_count`
   and `last_event_at` are recomputed from its linked events (`purged_count` plus the sum of
-  `repeat_count`; the later of the stored `last_event_at` and the latest `last_at`; `first_event_at`
-  is never recomputed), with `activity_version` raised only when one of them changed. A later
-  cleanup of old events therefore doesn't shrink a problem's count or times (§3.2).
+  `repeat_count`; the later of the stored `last_event_at` and the latest `last_at`; the earlier of
+  the stored `first_event_at` and the earliest linked `created_at`, so an event that reached the
+  writer late still moves the start back), with `activity_version` raised only when one of them
+  changed. A later cleanup of old events therefore doesn't shrink a problem's count or times (§3.2).
 - **First run:** no checkpoint row yet; the tick starts before the oldest event (M-2 and M-3 ship
   together, so that is a few days of events at most) and creates the row.
 - A folded repeat (§3.4) sets the row's `changed_at` to a later time, so the row comes after the
@@ -603,9 +612,10 @@ database holds the history.
   before it; a cleanup of events before a cutoff (in its own spec, once the cleanup is built, §3.2)
   adds the deleted linked events' `repeat_count` to each problem's `purged_count`, and a problem
   still open across the cutoff keeps its `event_count`, `first_event_at` and `last_event_at` when a
-  new event is linked; P2 counts `changed` and `given_up`, not `same`; P5 on a queued job with no
-  running job of its kind and on a stale heartbeat; a disabled pattern makes nothing; a tick that
-  throws leaves the next tick running and trips the watchdog after three intervals.
+  new event is linked; an earlier event linked after a later one moves `first_event_at` back; P2
+  counts `changed` and `given_up`, not `same`; P5 on a queued job with no running job of its kind
+  and on a stale heartbeat; a disabled pattern makes nothing; a tick that throws leaves the next
+  tick running and trips the watchdog after three intervals.
 - **M-4** (`controllers.ProblemsPageSpec`), with the negative authorization cases:
   - root sees the page, the badge with the right count, and can mark seen and new; a problem
     that got an event after the page was shown stays new when that page's Mark as seen is posted;
