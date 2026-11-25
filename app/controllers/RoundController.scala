@@ -11,9 +11,10 @@ import play.api.libs.json.Json
 import play.api.mvc.{AnyContent, ControllerComponents, EssentialAction, Request, RequestHeader, Result}
 import play.twirl.api.Html
 import services.RoundService
-import services.distribution.{RoundDistributionHandler, RoundFreezes, RoundImageCheckHandler, RoundRebalanceHandler,
+import services.distribution.{RoundDistributionHandler, RoundFreezes, RoundImageCheckHandler,
   RoundRebalanceService}
 import services.imports.{FileTitles, ImportSource, WikiTitle}
+import services.distribution.RoundStartBlock
 import services.jobs.JobJdbc
 
 import javax.inject.Inject
@@ -45,13 +46,8 @@ class RoundController @Inject() (
           contest <- ContestJuryJdbc.findById(contestId)
         ) yield {
           val rounds = Round.findByContest(contestId)
-          // the latest of each round's distribution and juror-add jobs (they share the round's key)
-          def latest(kind: String) = JobJdbc.latestBySubjects(kind, RoundDistributionHandler.SubjectType, rounds.flatMap(_.id))
-          val distributions = latest(RoundDistributionHandler.Kind)
-          val rebalances = latest(RoundRebalanceHandler.Kind)
-          val jobs = (distributions.keySet ++ rebalances.keySet).map { id =>
-            id -> (distributions.get(id).toSeq ++ rebalances.get(id)).maxBy(_.id)
-          }.toMap
+          // the latest of each round's distribution and juror-add jobs (as a refused start reads them)
+          val jobs = RoundStartBlock.latestJobs(rounds.flatMap(_.id))
           Ok(
             views.html.rounds(
               user,
@@ -603,7 +599,19 @@ class RoundController @Inject() (
                   if (toConflicts) Redirect(routes.RoundConflictsController.page(round.getId))
                   // back to the list as it was filtered (the form's hidden fields)
                   else Redirect(RoundsFilter.fromForm(request).addTo(routes.RoundController.rounds(Some(round.contestId)).url))
-                if (roundsService.setCurrentRound(Nil, round.copy(active = selectRound.active), user.id)) {
+                def blockedKey(r: Round, block: RoundStartBlock) =
+                  RoundStartBlock.refusedKey(block, User.findRoundJurors(r.getId).nonEmpty)
+                // a round not yet distributed isn't started: its own reason, before any change (a crafted
+                // POST too; the Rounds page shows no Start for it)
+                def refusal(r: Round) =
+                  if (ContestJuryJdbc.findById(r.contestId).exists(_.retired))
+                    messages("round.start.refused.retired", r.number, r.description)
+                  else
+                    messages(RoundStartBlock.of(r).fold("round.start.refused.changed")(blockedKey(r, _)), r.number, r.description)
+                val blocked = Option.when(selectRound.active)(RoundStartBlock.of(round)).flatten
+                if (blocked.isDefined)
+                  back.flashing("error" -> messages(blockedKey(round, blocked.get), round.number, round.description))
+                else if (roundsService.setCurrentRound(Nil, round.copy(active = selectRound.active), user.id)) {
                   val done = Option.when(toConflicts)("success" ->
                     messages(if (selectRound.active) "coi.round.started" else "coi.round.stopped", round.number))
                   // started with no active juror (DG10: warned, never refused): nobody can vote in it
@@ -611,7 +619,9 @@ class RoundController @Inject() (
                     RoundController.WarningFlash -> messages("round.warning.nojurors.act", round.number))
                   val flashed = done.toSeq ++ noJuror
                   if (flashed.isEmpty) back else back.flashing(flashed: _*)
-                } else back.flashing("error" -> messages("round.still.distributing", round.number, round.description))
+                } else // refused under the round's lock: its contest retired, or not distributed (meanwhile);
+                  // neither any more (a race): to try again
+                  back.flashing("error" -> refusal(Round.findById(round.getId).getOrElse(round)))
               }
             }
         )

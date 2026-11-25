@@ -20,6 +20,10 @@ For the next release, 26.11.17.
 - GraphQL: `round(id)` and `roundStat(roundId)` give one round and the round statistics page's numbers, with the page's own-votes rule.
 - GraphQL: `roundImages` and `image` give a juror's files in a round with their votes, paged by cursor, under the galleries' rules.
 
+**Fixes**
+
+- Rounds page: a round not yet distributed to its jurors has no Start button. It reads "Not started – waiting for distribution" with a "Distribute to jurors" link, or "Images are being distributed" while that runs. Starting it anyway no longer says its images are being distributed when they aren't: the message says what to do.
+
 ## Deployed releases
 
 ### 26.11.16 (2026-11-25)

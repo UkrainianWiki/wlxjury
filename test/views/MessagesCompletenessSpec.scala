@@ -148,6 +148,8 @@ class MessagesCompletenessSpec extends Specification {
     Seq("", ".resumed", ".distributing").map("round.resubmitted" + _), // RoundService.Resubmitted.messageKey
     Seq("round.distribute.running", "round.distribute.running.files", "round.distribute.resumed.files",
       "round.still.distributing", "import.already.running"),        // flashed by RoundController, ImageController
+    services.distribution.RoundStartBlock.All.flatMap(b => Seq(b.stateKey, b.refusedKey)), // rounds list, setRound
+    Seq("retired", "changed", "incomplete.no.jurors", "cancelled.no.jurors").map("round.start.refused." + _),                                      // RoundController.setRound
     Seq("creation", "distribute").map(w => s"round.$w.failed.reference"), // RoundController.saveRound
     Seq("missing", "not.failed", "no.handler", "duplicate").map("job.retry." + _), // JobScheduler.retry
     Criterion.ShippedKeys,                                                 // V83's criteria, Criterion.name
