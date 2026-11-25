@@ -43,7 +43,7 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
       distributing = true, status = Some(Round.Status.Draft)))
 
   /** A queued round_distribution job of `round` (never run here). */
-  private def job(f: Fixture, round: Round, params: (String, play.api.libs.json.JsValueWrapper)*): Long =
+  private def job(f: Fixture, round: Round, params: (String, play.api.libs.json.Json.JsValueWrapper)*): Long =
     JobJdbc.insert(NewJob(RoundDistributionHandler.Kind, contestId = Some(f.contestId),
       subjectType = Some(RoundDistributionHandler.SubjectType), subjectId = round.id,
       dedupeKey = Some(RoundDistributionHandler.dedupeKey(round.getId)), params = Json.obj(params: _*)),
