@@ -380,7 +380,8 @@ because they aren't ancestors of `F`.
    regions outside their filter are blank ("not in this round's regions").
 4. **Explicit list** (`rounds=`, decision 1): the same order, by kind.
 
-**Shown by default** (decision 17, refined 2026-11-25 after the lineage track check): `F` and its main line, latest first.
+**Shown by default** (decision 17, refined 2026-11-25 after the lineage track check): `F` and its
+main line, latest first.
 Starting at `F`, step back one previous round at a time:
 - if one of the current round's previous rounds is on the "Main" track (the same lineage track as
   decision 2), take it;
@@ -661,9 +662,9 @@ GROUP BY ri.round_id, ri.region
   so 8 statements, for WLM and WLE 2026 (updated 2026-11-25, decision 17). Each is one GROUP BY of
   a round's votes: the final rounds are small (WLM 2026's Q-02: 507 files × 13 jurors), the early
   ones large (about 38k files × 3 jurors).
-- **All rounds:** 2 statements per column of `A ∪ G ∪ B`: 10 for WLM 2026, 10–15 for future WLM
-  contests *(inf.)*. Phase 0 read every WLM 2026 round's region counts in one statement in about
-  0.5 s on a production copy (§7.5).
+- **All rounds:** 2 statements per column of `A ∪ G ∪ B`: 10 columns, so 20 statements, for WLM
+  2026; 10–15 columns, so 20–30 statements, for future WLM contests *(inf.)*. Phase 0 read every WLM
+  2026 round's region counts in one statement in about 0.5 s on a production copy (§7.5).
 - **Header numbers:** file totals for the chain's rounds come from the cached `RoundImageCounts`.
 - **Unlinked rounds:** one statement, only when needed.
 - **Thumbnails:** 27 regions × shown columns × N, plus ties, through the existing proxy and cache.
@@ -803,7 +804,8 @@ Phase 0 also records each query's time on the copy, as a first cost figure.
     - an add-on of `F` → a column after `F`;
     - a trial round at the same depth → warned and named;
   - a regional round → a column by depth, blank for regions outside its filter;
-  - a merge: all feeders are columns;
+  - a merge: all feeders are columns under `all`; the default shows only the Main or most-files
+    feeder;
   - a nomination root is excluded from the default `F`;
   - a listed round in `X` is dropped and named;
   - a cycle, and a ghost id;
@@ -880,8 +882,9 @@ outputs were not kept; this is the run's summary.
   - Regions 23, 56 and 59 have files in 1938 but no yes there, so their last round with a positive
     file is a root (23 and 59: 1920 only; 56: both).
 - **"Positive":** in the rated rounds 1942 and 1952, every file is positive, so the top N ranks by
-  rate. In 1938, whole regions have no positive file, so decision 4's (a) and (b) differ.
-- **Fewer than N = 3** files in 1952: 11 of its 16 regions.
+  rate. In 1938, whole regions have no positive file, so their cells there have numbers only.
+- **Fewer than N = 3** files in 1952: 11 of its 16 regions (measured at N = 3; the page default is
+  now 1).
 - **Small root:** the side roots 1915 (0.3%) and 1954 (2.1%) against the main roots 1916 (55.7%) and
   1920 (44.3%). "Half" would flag 1920; about 10% separates the side roots cleanly.
 - **`round_image`:** the same (round, region) files as the votes, all `in`, but every counter is 0
@@ -917,16 +920,18 @@ what-if; about 0.5 s each, including `docker exec`.
   only lineage rule 4, compared as a set, keeps them from counting as regional.
 - **Nomination round:** Kha-00 (`special_nomination` Харків; root; 2,920 files, all region 63;
   1,166 positive) is not an ancestor of Q-02 and drops out, as assumed.
-- **Coverage:** all 27 regions have positive files in Q-02, so every region has a file in the
-  final round's column today (updated 2026-11-25: "show, don't pick"). Per
-  region, 1 (18) to 55 (63) files; **3 regions have fewer than N = 3** (18: 1; 35, 85: 2).
+- **Coverage:** all 27 regions have positive files in Q-02, so every region has a file in the final
+  round's column today (updated 2026-11-25: "show, don't pick"). Per region, 1 (18) to 55 (63)
+  files; **3 regions have fewer than N = 3** (18: 1; 35, 85: 2; measured at N = 3; the page default
+  is now 1).
 - **Columns** (updated 2026-11-25: "show, don't pick"): Q-02 first, then by depth Q-00-1.5,
   Qn-00-1-nf, Q-01-nf, Q-00-1-nf, Qn-00-1, Q-00-1, Q-01, Qn-00, Q-00. By depth alone, the first 3
   would be Q-02 and two small feeders of the merge (6 and 7 of Q-02's files). Resolved by decision
-  17 (refined 2026-11-25 after the lineage track check): the lineage track check found the automatic Main track to be Q-02 alone (the
-  merge round), with Q-00 → Q-01 → … on the "Quality" track. The default columns are still Q-02 →
-  Q-01-nf (494 of Q-02's 507 files, the one guessed step) → Q-01 → Q-00; with "Main" on Q-00 and
-  its own label on Q-00-1, the same path without a guess. The rest are under "Show all rounds".
+  17 (refined 2026-11-25 after the lineage track check): the lineage track check found the automatic
+  Main track to be Q-02 alone (the merge round), with Q-00 → Q-01 → … on the "Quality" track. The
+  default columns are still Q-02 → Q-01-nf (494 of Q-02's 507 files, the one guessed step) → Q-01 →
+  Q-00; with "Main" on Q-00 and its own label on Q-00-1, the same path without a guess. The rest are
+  under "Show all rounds".
 - **"Positive":** every Q-02 file has a mark above 0; in the yes/no feeders whole regions have
   files but no yes (Q-00-1.5: 105 files, 6 positive).
 - **Open round (decision 6):** 13 jurors, each assigned every file; 1,689 of 6,591 marks cast (3.3
@@ -1004,7 +1009,8 @@ that it guessed.
 - (a) still names the tie.
 
 **Decided (maintainer, 2026-11-25): (a)**: side rounds are add-ons, never the default final round; a
-tie of plain end rounds is warned about and named; a leave-out add-on off the final ranks below it.
+tie of plain end rounds is warned about and named; a leave-out add-on off the final gets the column
+directly after it (§2.3).
 
 **4. What "present in a round" means.**
 - (a) At least one file with a positive result.
@@ -1032,8 +1038,8 @@ column like any other chain round. The only remaining question is where its colu
 - *(b) newest first, before the chain's columns.*
 
 *Recommendation: (a): one order for all columns. With (a), a shallow regional backtrack can fall
-outside the first 3 columns and be collapsed by default; (b) keeps it in view but breaks the
-depth order.*
+outside the default columns (decision 17) and be collapsed by default; (b) keeps it in view but
+breaks the depth order.*
 
 **Settled by the default-columns decision (2026-11-25)**: regional rounds appear under "Show all
 rounds" in lineage-depth order.
@@ -1046,7 +1052,7 @@ rounds" in lineage-depth order.
 - the report is most useful while round 3 runs;
 - (b) points at round 2 while round 3 still decides.
 
-**Decided (maintainer, 2026-11-25): (a)**: open rounds count, with a "provisional" badge.
+**Decided (maintainer, 2026-11-25): (a)**: open rounds are shown, with a "provisional" badge.
 
 **7. Photos per region.**
 - (a) A parameter from 1 to 10, default 3.
