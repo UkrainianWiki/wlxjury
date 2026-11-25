@@ -60,6 +60,7 @@
     @snippets.multiSelectScripts()
     <script src="@routes.Assets.versioned("javascripts/round-form.js")"></script>
     <script src="@routes.Assets.versioned("javascripts/round-form-token.js")"></script>
+    <script src="@routes.Assets.versioned("javascripts/round-form-wait.js")"></script>
 }
 
 @* the Rounds page's filter, from its round number link (RoundsFilter): kept in the form's action,
@@ -106,6 +107,11 @@
 
             @for(step <- nextStep) {
                 @round.nextStep(step, onReviewPage = false, mayAct = true)
+            }
+
+            @* refused to wait for another round's job (Q7): its live progress, outside the form *@
+            @for(w <- state.waitFor) {
+                @round.edit.waitBox(w)
             }
 
             @for(job <- distributionJob if !job.isDone) {

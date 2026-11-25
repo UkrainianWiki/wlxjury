@@ -2044,3 +2044,11 @@ round.next.files = Check the files
 round.next.matching = Its matching files are still being found.
 round.next.no.files = No file matches the round’s settings, so there is nothing to distribute. Change the settings.
 round.rates.locked = The rating type can’t change any more: the round has votes, a job of it is running, or a later round takes its files. Nothing was saved.
+# a round form refused to wait for another round’s job (UI-path plan Q7)
+round.wait.distributing = Round {0} is being distributed:
+round.wait.rebalancing = Jurors’ files are being moved in round {0}:
+round.wait.progress = {0} of {1} {2}
+round.wait.link = Round {0} on the Rounds list
+round.wait.done = Round {0} has finished. You can save now.
+round.wait.done.rebalancing = Moving jurors’ files in round {0} has finished. You can save now.
+round.wait.ended = Round {0}’s job stopped before it finished: retry it from the Rounds list, then save again.

@@ -195,7 +195,9 @@ class RoundController @Inject() (
         waiting = stored.flatMap(r => services.distribution.RoundReassign.waitingCount(r)).filter(_ > 0),
         nextStep = stored.flatMap(s => RoundNextStep.of(s, job, RoundNextStep.inCount(s))),
         ratesEditable = ratesEditable,
-        resolveUrl = resolveUrl)
+        resolveUrl = resolveUrl,
+        // refused to wait for another round's job (Q7): that job's live progress at the top
+        waitFor = RoundFormWait.of(form, contestId))
     )
   }
 
@@ -449,6 +451,10 @@ class RoundController @Inject() (
             def failed(r: Round, key: String, referenceKey: String, e: Throwable, what: String): Result =
               e match {
                 // the rounds to leave out refused (V95): their message, in the page's language
+                // a wait for another round's job (Q7): its own key, so the form shows that job's progress
+                case refused: RoundDistributionHandler.ExcludeRoundsRefused if RoundFormWait.Keys(refused.refusal.key) =>
+                  logger.warn(s"$what: ${refused.text}")
+                  reRender(r, refused.refusal.key, refused.refusal.args: _*)
                 case refused: RoundDistributionHandler.ExcludeRoundsRefused =>
                   logger.warn(s"$what: ${refused.text}")
                   reRender(r, key, messagesApi.preferred(request)(refused.refusal.key, refused.refusal.args: _*))
@@ -1169,6 +1175,7 @@ object RoundController {
   * @param nextStep       a round being set up: its next step (#186)
   * @param ratesEditable  a round being set up: its rating type can change (#184)
   * @param resolveUrl     a new round's form: its URL with its token, for the page's history entry
+  * @param waitFor        a save refused to wait for another round's job: that job (Q7)
   */
 final case class RoundFormState(
     reapply: Boolean = false,
@@ -1177,7 +1184,8 @@ final case class RoundFormState(
     lockedCriteria: Option[Seq[Long]] = None,
     nextStep: Option[RoundNextStep] = None,
     ratesEditable: Boolean = false,
-    resolveUrl: Option[String] = None
+    resolveUrl: Option[String] = None,
+    waitFor: Option[RoundFormWait] = None
 )
 
 /** The round form's conflict-of-interest counts: the contest's files that are conflicts of

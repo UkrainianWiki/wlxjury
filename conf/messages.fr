@@ -2028,3 +2028,11 @@ round.next.files = Vérifier les fichiers
 round.next.matching = Ses fichiers correspondants sont encore en cours de recherche.
 round.next.no.files = Aucun fichier ne correspond aux paramètres du tour : il n’y a rien à distribuer. Modifiez les paramètres.
 round.rates.locked = Le type de notation ne peut plus changer : le tour a des votes, une tâche du tour est en cours, ou un tour suivant prend ses fichiers. Rien n’a été enregistré.
+# a round form refused to wait for another round’s job (UI-path plan Q7)
+round.wait.distributing = Le tour {0} est en cours de distribution :
+round.wait.rebalancing = Des fichiers de jurés sont en cours de déplacement dans le tour {0} :
+round.wait.progress = {0} sur {1} {2}
+round.wait.link = Le tour {0} dans la liste des tours
+round.wait.done = Le tour {0} est terminé. Vous pouvez enregistrer maintenant.
+round.wait.done.rebalancing = Le déplacement des fichiers de jurés dans le tour {0} est terminé. Vous pouvez enregistrer maintenant.
+round.wait.ended = La tâche du tour {0} s’est arrêtée avant la fin : relancez-la depuis la liste des tours, puis enregistrez à nouveau.

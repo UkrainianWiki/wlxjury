@@ -407,6 +407,96 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  /** A running job of `kind` on round `r`'s key, 1,200 of 1,800 files done. */
+  private def runningJob(contest: ContestJury, r: Round, kind: String): Long =
+    scalikejdbc.DB.autoCommit { implicit s =>
+      services.jobs.JobJdbc.insert(services.jobs.NewJob(kind, contest.id,
+        Some(services.distribution.RoundDistributionHandler.SubjectType), r.id,
+        Some(services.distribution.RoundDistributionHandler.dedupeKey(r.getId)),
+        progress = services.jobs.Progress(Some(1200L), Some(1800L), Some("files"))), owner = Some("spec"))
+    }
+
+  private def endJob(id: Long): Unit = scalikejdbc.DB.autoCommit { implicit s =>
+    scalikejdbc.SQL("UPDATE job SET status = 'done', owner = NULL WHERE id = ?").bind(id).update()
+  }
+
+  private def jobStatus(app: Application, email: Option[String], id: Long): Future[Result] = {
+    val req = FakeRequest(GET, s"/admin/jobs/$id").withHeaders("X-Requested-With" -> "XMLHttpRequest")
+    route(app, email.fold(req)(e => req.withSession(Secured.UserName -> e))).get
+  }
+
+  "a save refused to wait for another round's job (Q7)" should {
+
+    "show the distribution of a round to leave out, its progress and link, outside the form kept as entered" in {
+      testDbApp { implicit app =>
+        val contest = setUp()
+        val busy = roundDao.create(Round(None, 1, Some("Busy"), contest.getId, distributing = true))
+        val jobId = runningJob(contest, busy, services.distribution.RoundDistributionHandler.Kind)
+        val (refused, lines) = supportLines {
+          val r = save(app, "admin@example.com", newRound(contest, token(), "name" -> "Kept as entered",
+            "excludeRounds[0]" -> busy.getId.toString): _*)
+          status(r)
+          r
+        }
+        val page = doc(refused)
+        val box = page.getElementById("round-form-wait")
+        (status(refused) === BAD_REQUEST) and (box must not(beNull)) and
+          (page.select("#round-form #round-form-wait").size === 0) and
+          (box.attr("data-src") === s"/admin/jobs/$jobId") and (box.attr("data-status") === "running") and
+          (page.select("#round-form-wait-running").text must contain("Round 1 is being distributed: 1,200 of 1,800 files")) and
+          (page.select("#round-form-wait-running").hasAttr("hidden") must beFalse) and
+          (page.select("#round-form-wait-link").attr("href") === s"/admin/rounds?contestId=${contest.getId}#round-${busy.getId}") and
+          (page.select("#round-form-wait-done").text === "Round 1 has finished. You can save now.") and
+          (page.select("#round-form-wait-done").hasAttr("hidden") must beTrue) and
+          (page.select("input#name").attr("value") === "Kept as entered") and
+          (page.select(s"select#excludeRounds option[value=${busy.getId}][selected]").size === 1) and
+          (lines.filter(_.startsWith("form_refused ")).map(_.contains("keys=error.exclude.rounds.busy")) === Seq(true))
+      }
+    }
+
+    "show a previous round's juror add, its own wording" in {
+      testDbApp { implicit app =>
+        val contest = setUp()
+        val previous = inReview(contest)
+        TestRoundServices.roundService().distributeReviewed(previous.getId, admin.id,
+          jurors = Some(User.findByEmail("juror1@example.com").flatMap(_.id)))
+        val jobId = runningJob(contest, previous, services.distribution.RoundRebalanceHandler.Kind)
+        val refused = save(app, "admin@example.com", newRound(contest, token(), "name" -> "Next",
+          "previousRound[0]" -> previous.getId.toString): _*)
+        val page = doc(refused)
+        (status(refused) === BAD_REQUEST) and
+          (page.select("#round-form-wait").attr("data-src") === s"/admin/jobs/$jobId") and
+          (page.select("#round-form-wait-running").text must contain("Jurors’ files are being moved in round 1: 1,200 of 1,800 files")) and
+          (page.select("#round-form-wait-done").text === "Moving jurors’ files in round 1 has finished. You can save now.") and
+          (summary(page).map(_._2).mkString must contain("Jurors")) and
+          (Round.findByContest(contest.getId).size === 1)
+      }
+    }
+
+    "poll the job for its contest's admin only, say done when it ends, and then save" in {
+      testDbApp { implicit app =>
+        val contest = setUp()
+        val busy = roundDao.create(Round(None, 1, Some("Busy"), contest.getId, distributing = true))
+        val jobId = runningJob(contest, busy, services.distribution.RoundDistributionHandler.Kind)
+        val running = jobStatus(app, Some("admin@example.com"), jobId)
+        val denied = Seq("organizer@example.com", "juror1@example.com", "other-admin@example.com")
+          .map(e => status(jobStatus(app, Some(e), jobId)))
+        val signedOut = status(jobStatus(app, None, jobId))
+        endJob(jobId)
+        scalikejdbc.DB.autoCommit { implicit s =>
+          scalikejdbc.SQL("UPDATE round SET distributing = FALSE WHERE id = ?").bind(busy.getId).update()
+        }
+        val done = jobStatus(app, Some("admin@example.com"), jobId)
+        val saved = save(app, "admin@example.com", newRound(contest, token(), "excludeRounds[0]" -> busy.getId.toString): _*)
+        (status(running) === OK) and ((contentAsJson(running) \ "status").as[String] === "running") and
+          ((contentAsJson(running) \ "progressDone").as[Long] === 1200L) and
+          (denied === Seq(NOT_FOUND, NOT_FOUND, NOT_FOUND)) and (signedOut === UNAUTHORIZED) and
+          ((contentAsJson(done) \ "status").as[String] === "done") and
+          (status(saved) === SEE_OTHER)
+      }
+    }
+  }
+
   "the rating type (#184)" should {
 
     "be editable while the round is being set up, saved and re-applied, and locked once distributed" in {
