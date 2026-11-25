@@ -188,7 +188,8 @@ class RoundLineageSpec extends Specification {
         round(8, "8", category = Some("Category:wiki loves earth 2026 in Kyrgyzstan long list"))), kg)
       val longList = Track(Kind.Category, "long list")
       (l.trackOf(1) === Track(Kind.Name, "Wiki Loves Earth 2026 in Kyrgyzstan 1 round")) and
-        (l.trackOf(2) === Track(Kind.Category, "Quality")) and (l.trackOf(4) === Track(Kind.Name, "Финальный раунд")) and
+        // its media type, image, differs from the other roots' (all)
+        (l.trackOf(2) === Track(Kind.Category, "Quality")) and (l.trackOf(4) === Track(Kind.Media, "image")) and
         (l.trackOf(5) === Track(Kind.Name, "шорт лист Wiki Loves Earth 2026 in Kyrgyzstan")) and
         // the same category in another case: one track
         (l.trackOf(6) === longList) and (l.trackOf(8) === longList)
@@ -203,17 +204,18 @@ class RoundLineageSpec extends Specification {
         round(3, "Відсіювання: Якісна", category = Some("Category:Wiki Loves Earth Ukraine 2026 - Quality")),
         round(4, "Втрати природи: 0 раунд",
           category = Some("Category:Images from Wiki Loves Earth 2026 Nature Loss Special Category"))), wle)
-      // the only root with a media type of its own: named by its name
-      (l.trackOf(1) === Track(Kind.Name, "Відео: 0 раунд")) and (l.trackOf(2) === quantity) and (l.trackOf(3) === quality) and
+      // a video root beside roots of all media: named by its media type
+      (l.trackOf(1) === Track(Kind.Media, "video")) and (l.trackOf(2) === quantity) and (l.trackOf(3) === quality) and
         (l.trackOf(4) === Track(Kind.Category, "Nature Loss Special Category"))
     }
 
     "name a root by its media type only if the roots differ in media type, else by its name" in {
-      // WLE international: one rated image round
+      // WLE international: one rated image round; two image roots
       val one = RoundLineage(Seq(round(1, "1 round: main category", media = Some("image"))), context)
+      val same = RoundLineage(Seq(round(1, "A", media = Some("image")), round(2, "B", media = Some("image"))), context)
       // images and video roots
       val two = RoundLineage(Seq(round(1, "Photos", media = Some("image")), round(2, "Films", media = Some("video"))), context)
-      (one.trackOf(1) === Track(Kind.Name, "1 round: main category")) and
+      (one.trackOf(1) === Track(Kind.Name, "1 round: main category")) and (same.trackOf(2) === Track(Kind.Name, "B")) and
         (two.trackOf(1) === Track(Kind.Media, "image")) and (two.trackOf(2) === Track(Kind.Media, "video"))
     }
 
