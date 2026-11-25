@@ -34,6 +34,7 @@ that one case (§0). This plan proposes one source of truth per action and a tab
 | 3 | "Reassign files…" offered when no other juror can take the files | `fc5f3ad3` (archive #383, hotfix 26.11.13.1): `RoundReassign.enoughReceivers` (N > 0: at least N other jurors, stopped ones count since a ticked one is restarted; N = 0: at least one other *active* juror); the page, the POST and the job's first step refuse with `AloneKey` | `RoundReassignAuthorizationSpec.scala:164` (alone with N = 1 and N = 0; the other juror with no active jury membership, deleted, or stopped with N = 0; N = 2 with one other) and `:193` (N = 1 with a stopped other, N = 2 with two: offered); `RoundReassignJobSpec.scala:479` (the job's own check) | • **One active plus stopped ones:** covered (stopped count for N > 0, not for N = 0).<br>• **Stopped round_user row:** covered (`juror2 -> false`); a NULL `active` (before V108) reads as stopped, as everywhere.<br>• **Series-derived jurors:** do not exist: series grants derive admin and organizer roles only (`Secured.derivedRoleIn`); receivers are read from real `user_contest` jury rows (`User.contestMembers`), so nothing to cover.<br>• **Open:** a receiver whose account is in an account join (J-2) is not among the examples. |
 | 4 | Criteria UI shown where criteria can't be edited | `3fdff615` (archive #355, 26.11.11): an existing yes/no or comments-only round's form has no criteria and no worst mark (`unratedRound`); `9362cfe5` (archive #386, 26.11.14, "A started round's criteria can no longer be changed"): a rated round running or with a vote lists its criteria read only (`lockedCriteria` → `RoundCriterion.started`), and `RoundCriterion.update` refuses a change | `RoundEditPageSpec.scala:476`, `:498`, `:511` (also on the form shown again with an error), `:528`; `RoundCriteriaSpec.scala:232`, `:406`, `:436`, `:464` (running, or frozen while active: locked; editable again once stopped before a vote), `:365` (re-apply) | • **In review:** criteria editable (not started) but the rating type locked (`editRound.scala.html`: `rates` readonly by `noEdit = !newRound`): #184.<br>• **Paused by a job (frozen while active):** covered.<br>• **Re-apply:** criteria written in its transaction, refusal covered.<br>• **After a refused re-apply save:** the form comes back without re-apply mode (§0.5), so the filters turn read only and the next press is a plain Save. |
 | 5 | 11 × 400 on `POST /admin/rounds/save` | not fixed (26.11.16 and master unchanged on this path) | none for the form shown after a 400. Individual refusals return 400 in `RoundExcludeRoundsFormSpec`, `RoundWorstMarkFormSpec`, `RoundCriteriaSpec`, `RoundEditPageSpec:183` (top-N below 1) and `RoundReviewJurorsReapplyPageSpec:159`, but they check the status and message only, not the mode, open sections or menus of the form that comes back | see §0.5 |
+| 6 | A successful save isn't confirmed, so a user who still sees form fields can't tell the round was created | not fixed | none | • **Create:** `saveRound`'s `Created` branch redirects to the jurors form ("Choose jurors next", `RoundReviewController.jurors`) or to the rounds list ("Review images first", `toRoundsList`) with **no success flash** in either case. Both pages would render one (`jurorsForm.scala.html:31`, `rounds.scala.html`); nothing sets it. The jurors page's heading is "Round N (description): jurors and file distribution" (`round.jurors.heading`), which doesn't say the round was just created.<br>• **Edit save of an existing round:** `saveEdit` → `flashing()` back to the rounds list also has **no success line**; only side effects flash (conflicts disqualified, distribution errors). A **re-apply** does confirm (`round.reapply.started` on the review page). |
 
 ### 0.5 Which saves return 400, and what the admin sees
 
@@ -235,6 +236,25 @@ Order, fitting the queue:
      Back, and land on that round's Edit page with the line, not the filled create form. The
      mechanism is **to verify in Chrome, Firefox and Safari** (bfcache, `no-store`). This
      addresses the 11 × 400 of 2026-11-25.
+     **Success confirmation (§0 row 6), same PR:**
+     - The page after Create shows at the top "Round N (description) has been created. Its files
+       are being selected." and a **next-step box** with three actions: "Edit filters again"
+       (opens Edit round; re-apply while in review), "Review images" (the review page) and
+       "Distribute to jurors" (the jurors form). "Distribute to jurors" is shown disabled, with
+       its reason, while the selection runs or if the round has no files.
+     - The same next-step box appears on Edit round and on the review page for a round in review
+       (this covers #186), and Back after creation lands on Edit round (Q6), where the box is shown
+       too.
+     - Button labels say what happens to the user's round, not app concepts.
+     - The jurors page heading names the round and the step (e.g. "Round 4: choose jurors"), so it
+       can't be mistaken for the submitted form.
+     - An edit save of an existing round says it was saved ("Round N (description) has been
+       saved.") on the rounds list.
+     - A spec asserts the confirmation and the box's three actions (Distribute disabled with its
+       reason during selection) on the page after Create (on each redirect while the form keeps
+       two buttons, §5 Q10), and the edit save's confirmation.
+     - The build includes screenshots of the page after Create (each path while there are two) at
+       1366 and 390 px wide, for review.
    - Smallest wins from §2: on a round in review the Rounds list hides Start and shows "Distribute
      to jurors" in its place; a correct message for a retired contest's round; Add juror… gated
      like Reassign.
@@ -291,3 +311,8 @@ uses its `form_refused` and `resubmit_dropped` lines (slice M-1).
    only in CI, the others on release.
 9. **Add the checklist item (e) now?** Recommendation: yes; it costs one line and applies to
    lineage slice A's review.
+10. **One "Create round" button on the round form?** With the next-step box after Create (§4
+    step 1), the form's two buttons "Choose jurors next" and "Review images first" choose
+    something the box offers anyway, after the user has seen that the round exists.
+    Recommendation: yes, keep a single "Create round" button, and the box offers the next step.
+    Not decided.
