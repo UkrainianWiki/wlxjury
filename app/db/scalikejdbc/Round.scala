@@ -80,7 +80,10 @@ case class Round(
     criterionIds: Seq[Long] = Nil,
     // its lifecycle state (V105, round lineage §2.6): one of Round.Status.All; None for a round
     // not backfilled (a rollback's), read from the flags ([[lifecycle]])
-    status: Option[String] = None
+    status: Option[String] = None,
+    // its manual track label (V115, round lineage §2.3, decision 4): None is the automatic track
+    // (services.RoundLineage); "Main" puts its track in the Main group
+    track: Option[String] = None
 ) extends HasId {
 
   /** The round's state ([[Round.Status]]): the stored one, or for a round without one (created by
@@ -349,6 +352,22 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       if (distributing) Draft else if (open) Active else Paused
   }
 
+  /** The longest track label stored (V115's `round.track`), in characters. */
+  val TrackMaxLength = 64
+
+  /** The track label as stored: trimmed, inner runs of white space as one space, at most
+    * [[TrackMaxLength]] characters; None if empty. "Main" in any case, or one of `mainNames` (the
+    * Main track's name in the app's languages, as the pages show it), is "Main" (round lineage
+    * decision 4: it puts the track in the Main group).
+    */
+  def trackLabel(label: Option[String], mainNames: Iterable[String] = Nil): Option[String] =
+    label.map(_.trim.replaceAll("\\s+", " ")).filter(_.nonEmpty).map { l =>
+      if ((mainNames.toSeq :+ services.RoundLineage.MainLabel).exists(_.trim.equalsIgnoreCase(l)))
+        services.RoundLineage.MainLabel
+      else if (l.codePointCount(0, l.length) <= TrackMaxLength) l
+      else l.substring(0, l.offsetByCodePoints(0, TrackMaxLength)).trim
+    }
+
   /** Round ids stored comma-separated (`previous`, `exclude_rounds`); a part that is no id is skipped. */
   def parseIds(stored: Option[String]): Seq[Long] =
     stored.map(_.split(",").toSeq.flatMap(s => s.trim.toLongOption)).getOrElse(Nil)
@@ -401,7 +420,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       topBinaryOrder = rs.stringOpt(c.topBinaryOrder).flatMap(BinaryOrder.parse),
       averageRule = AverageRule.fromStored(rs.stringOpt(c.averageRule)),
       worstMark = rs.booleanOpt(c.worstMark).getOrElse(false),
-      status = rs.stringOpt(c.status)
+      status = rs.stringOpt(c.status),
+      track = Round.trackLabel(rs.stringOpt(c.track))
     ).withFixedCategories
 
   def create(round: Round)(implicit session: DBSession = AutoSession): Round = {
@@ -447,7 +467,9 @@ object Round extends RoundRepo with CRUDMapper[Round] {
           column.hasCriteria -> round.criterionIds.nonEmpty,
           // from its flags (round lineage §2.6), unless given
           column.status -> status,
-          column.column("status_changed_at") -> ZonedDateTime.now
+          column.column("status_changed_at") -> ZonedDateTime.now,
+          // its manual track label (V115), if the form gave one
+          column.track -> Round.trackLabel(round.track)
         )
     }.updateAndReturnGeneratedKey()
 
@@ -470,6 +492,20 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     sql"""UPDATE round SET name = ${round.name}, average_rule = ${round.averageRule.param},
             worst_mark = ${round.worstMark}, created_at = created_at
           WHERE id = $id""".update(): Unit
+
+  /** The round's manual track label (V115, round lineage decision 4), set on the round form for a
+    * new or an existing round: [[trackLabel]] of it, None (empty) the automatic track. Its own
+    * setter, so that it can be changed at any time, whatever the round's state; `created_at` set to
+    * itself, as every writer of the row does (production's has ON UPDATE CURRENT_TIMESTAMP, V86).
+    *
+    * @return whether the stored label changed
+    */
+  def setTrack(id: Long, track: Option[String], mainNames: Iterable[String] = Nil)(implicit
+      session: DBSession = AutoSession): Boolean = {
+    val label = trackLabel(track, mainNames)
+    sql"""UPDATE round SET track = $label, created_at = created_at
+          WHERE id = $id AND NOT (track <=> $label)""".update() > 0
+  }
 
   /** A re-apply's filters (P3-5): the settings that choose a round's files, as the round form posts
     * them, written before its `fill` job is queued, under the round's lock
