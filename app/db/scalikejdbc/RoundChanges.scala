@@ -62,10 +62,14 @@ object RoundChanges {
     if (text.codePointCount(0, text.length) <= max) text
     else text.substring(0, text.offsetByCodePoints(0, max - 1)) + "…"
 
-  /** The first 8 hex digits of the text's SHA-256: tells two cut values apart. */
-  def hash(text: String): String =
-    java.security.MessageDigest.getInstance("SHA-256").digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))
-      .take(4).map(b => f"${b & 0xff}%02x").mkString
+  /** The text's CRC-32 as 8 hex digits: tells two cut values apart (a checksum, not a secret, so
+    * no MessageDigest: `security.RawSqlSpec` keeps those to passwords and tokens).
+    */
+  def hash(text: String): String = {
+    val crc = new java.util.zip.CRC32()
+    crc.update(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+    f"${crc.getValue}%08x"
+  }
 
   /** The round's settings as compared, whole: None and blank texts, and empty lists, are null. */
   def values(r: Round, criteria: Seq[String]): Snapshot = {
