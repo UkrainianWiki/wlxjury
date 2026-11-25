@@ -1036,6 +1036,11 @@ Once only its own clusters remain, the source contest can be assigned to its own
 
 ### 4.4 Apply (CY-4, conditional on the report)
 
+> **Note (2026-11-25):** CY-4 is to be redone as copy + archive: each year's cluster copied into a
+> new contest and the original archived, instead of the in-place split, Undo and links of
+> §4.4–4.6. See the [contest export, snapshots and copy + archive
+> plan](2026-11-25-contest-export-snapshots-copy-archive.md) §9. This section is kept as written.
+
 Root confirms one contest's plan, and a `contest_split` job runs it.
 
 **The target:**
