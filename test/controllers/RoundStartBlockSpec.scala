@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{PlayTestDb, Round, User}
+import db.scalikejdbc.{PlayTestDb, Round, RoundUser, User}
 import org.jsoup.Jsoup
 import play.api.Application
 import play.api.libs.json.Json
@@ -184,7 +184,12 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
         endedJob(f, failed, "failed")
         val cancelledOne = cancelled(f, 4)
         endedJob(f, cancelledOne, "cancelled")
+        // with a juror, so the round form's "Distribute ? new files" isn't read only
+        val juror = userDao.create(User("Juror", "juror@example.com", None, Set("jury"), contestId = Some(f.contestId)))
+        cancelledOne.addUsers(Seq(RoundUser(cancelledOne.getId, juror.getId, "jury", active = true)))
         val unfinished = draft(f, 5)
+        val cancelledNoJurors = cancelled(f, 6)
+        endedJob(f, cancelledNoJurors, "cancelled")
         def error(r: Round) = flash(setRound(app, f.admin, r, active = true)).get("error")
 
         (error(distributing) must beSome(
@@ -196,12 +201,16 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
           // no Retry for a cancelled job: the round form's "Distribute new files" reinstates it
           (error(cancelledOne) must beSome(
             "Round 4 (Round 4) can't be started: its creation was cancelled. To create it after all, edit the round, " +
-              "tick “Distribute new files” and save.")) and
+              "tick “Distribute ? new files” and save.")) and
           (error(cancelledOne) must beSome(not(contain("Retry")))) and
-          (error(unfinished) must beSome(contain("its creation didn't finish"))) and
+          // no jurors: the form's box is read only, nothing there finishes it
+          (error(cancelledNoJurors) must beSome(
+            "Round 6 (Round 6) can't be started: its creation was cancelled before it had jurors, so it can't be " +
+              "reinstated. Create the round again.")) and
+          (error(unfinished) must beSome(contain("its creation didn't finish, and it has no jurors"))) and
           (error(unfinished) must beSome(not(contain("Retry")))) and
           unchanged(distributing) and unchanged(selecting) and unchanged(failed) and unchanged(cancelledOne) and
-          unchanged(unfinished)
+          unchanged(unfinished) and unchanged(cancelledNoJurors)
       }
     }
 

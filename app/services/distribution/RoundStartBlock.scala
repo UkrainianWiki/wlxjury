@@ -28,7 +28,7 @@ object RoundStartBlock {
       extends RoundStartBlock("selecting", "round.start.state.selecting", "round.start.refused.selecting")
 
   /** Its creation cancelled (RoundDistributionHandler.onCancelled): no Retry for a cancelled job;
-    * the round form's "Distribute new files" reinstates it (RoundService.distributeNewFiles).
+    * the round form's "Distribute ? new files" reinstates it (RoundService.distributeNewFiles).
     */
   case object Cancelled
       extends RoundStartBlock("cancelled", "round.start.state.cancelled", "round.start.refused.cancelled")
@@ -38,7 +38,7 @@ object RoundStartBlock {
       extends RoundStartBlock("failed", "round.start.state.failed", "round.start.refused.failed")
 
   /** Being created with no job running, none failed nor cancelled: the round form's "Distribute
-    * new files" completes it.
+    * ? new files" completes it.
     */
   case object Incomplete
       extends RoundStartBlock("incomplete", "round.start.state.incomplete", "round.start.refused.incomplete")
@@ -72,9 +72,29 @@ object RoundStartBlock {
       }
     }
 
-  /** [[of]] with the round's latest distribution job read now. */
+  /** [[of]] with the round's latest job read now, as the Rounds page reads it ([[latestJobs]]). */
   def of(round: Round): Option[RoundStartBlock] =
     if (!round.distributing) None
-    else of(round, round.id.flatMap(id =>
-      JobJdbc.latestBySubjects(RoundDistributionHandler.Kind, RoundDistributionHandler.SubjectType, Seq(id)).get(id)))
+    else of(round, round.id.flatMap(id => latestJobs(Seq(id)).get(id)))
+
+  /** The latest of each round's distribution and juror-add jobs (they share the round's key): the
+    * Rounds page's jobs column and states, and a refused start's reason, from one source.
+    */
+  def latestJobs(roundIds: Seq[Long]): Map[Long, Job] = {
+    def latest(kind: String) = JobJdbc.latestBySubjects(kind, RoundDistributionHandler.SubjectType, roundIds)
+    val distributions = latest(RoundDistributionHandler.Kind)
+    val rebalances = latest(RoundRebalanceHandler.Kind)
+    (distributions.keySet ++ rebalances.keySet).map { id =>
+      id -> (distributions.get(id).toSeq ++ rebalances.get(id)).maxBy(_.id)
+    }.toMap
+  }
+
+  /** A refused start's message key: a cancelled or unfinished creation is finished by the round form's
+    * "Distribute ? new files", which is read only while the round has no jurors (editRound.scala.html);
+    * and a round not in review gets none (its jurors form and a juror's add choose them in review only).
+    */
+  def refusedKey(block: RoundStartBlock, hasJurors: => Boolean): String = block match {
+    case Cancelled | Incomplete if !hasJurors => block.refusedKey + ".no.jurors"
+    case _                                    => block.refusedKey
+  }
 }
