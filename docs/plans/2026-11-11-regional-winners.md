@@ -5,8 +5,8 @@
 
 **Status:** plan only. Nothing is built. Date: 2026-11-11.
 
-**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 6–10, 12–14
-decided; 1–5, 11, 15–16 open; phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5).
+**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 6–14
+decided; 1–5, 15–16 open; phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5).
 The maintainer made this the top priority for WLM 2026 Ukraine, whose jury final is at the
 beginning of December.
 
@@ -88,7 +88,7 @@ photos and tell which round they are from."
   - **Normal path:** the votes are read, as the all-jurors lists do while `roundImage.read` is off
     (the default, `conf/application.conf:433-443`). This is one GROUP BY of a round's votes per
     candidate round, read in order and stopping once every region has a source.
-  - **Exact consumers** (the wiki export) always read the votes.
+  - **Exact consumers** (the wiki and CSV exports (updated 2026-11-25, decision 11)) always read the votes.
   - **`round_image` counts** are used only when `roundImage.read` is on and the clean-generation
     proof holds.
   - There is no new table and no migration.
@@ -104,7 +104,7 @@ photos and tell which round they are from."
     Done, and rerun for WLM 2026 Ukraine on a production copy of 2026-11-25 (§7.4, §7.5)
     (updated 2026-11-25).
   - **Phase 1** (M–L) is the page.
-  - **Phase 2** (S) is the wiki-text export.
+  - **Phase 2** (S–M) is the export, as wiki text and as CSV (updated 2026-11-25, decision 11).
   - **Phase 3** (S) comes after lineage phase 1 and multi-role's pre-screening rounds
     (migration numbers: next free at merge). `round.status` (V105) is in production already, so
     phase 1 reads it (§2.1) (updated 2026-11-25).
@@ -529,7 +529,7 @@ The score rule is named as on the round form.
   - `round` and `rounds` go through `Round.findByIds(contestId, ids)` (`Round.scala:635`). Other
     contests' ids and missing ids are dropped and named, never `.get`;
   - `n` is clamped to 1–10, and `national` to 0–20;
-  - `format` is `html` or `wiki`.
+  - `format` is `html`, `wiki` or `csv` (updated 2026-11-25, decision 11).
 - **Contest switch:** it is a page GET, so it switches the session's contest
   (`Secured.switchingContest`, `Secured.scala:889-902`).
 - **Read-only.** No POST, no stored state.
@@ -606,7 +606,13 @@ File:Example.jpg|1. 8.50 (17 / 2 jurors)
 - **Filled files** name their round in the caption ("filled from round 2") (updated 2026-11-25,
   decision 9).
 
-**CSV** (optional) needs an `ExportsSpec` change (`ExportsSpec.scala:5-20`).
+**CSV** (`format=csv`, decision 11; part of phase 2 (updated 2026-11-25, decision 11)):
+- **Columns** follow the page rows: region, place, file, round, score or result, national-winner
+  mark. One row per file shown; a filled file's round says "filled from round X".
+- **Not listed:** CoI files and files deleted on Commons are never included (decisions 12–13).
+- **An exact consumer:** it always reads the votes, as the wiki text does.
+- **Path:** through `controllers.Csv` and `GalleryController.csvStream`, the only CSV path, which
+  needs an `ExportsSpec` change (`ExportsSpec.scala:5-20`) in phase 2.
 
 ---
 
@@ -766,7 +772,7 @@ S ≈ ½ day, M ≈ 1–2 days, L ≈ 3+ days of agent work, each with review an
 |---|---|---|
 | 0 | **WLE Ukraine 2026 check, local** (§7.1). On the 26.11 rehearsal copy of production, migrated to V95, with the read-only SQL below. A local script (`python -I`) applies §2. It shows the chain, the add-ons, the ambiguity, the regions that fell back, the unlinked rounds, and whether WLE's `previous` links are recorded. It also verifies WLE's region prefixes and tunes the "small root" threshold. It is phase 1's acceptance case, and it also serves lineage decision 3. Done for WLE 2026 (§7.4) and WLM 2026 (§7.5) (updated 2026-11-25) | S |
 | 1 | **The page.** The `RoundLineage` core, if not landed (½–1 d). `RegionalWinners`: the pure rule of §2, unit-tested (1 d). Region summaries, top N and unlinked rounds, on the votes path, plus the counts path behind `roundImage.read` with its proof (1–1.5 d). Controller, route, view, messages in en/uk/ru/fr, links, screenshots in both themes (1–1.5 d) | M–L (3.5–4.5 d) |
-| 2 | **Wiki text** (S). **2b, optional:** CSV (S) | S–M (½–1 d) |
+| 2 | **Wiki text** (S) and **CSV** (S), both from the start, with the `ExportsSpec` change (decision 11; updated 2026-11-25, decision 11) | S–M (½–1 d) |
 | 3 | **After lineage phase 1 and multi-role's pre-screening rounds:** pre-screening rounds join `X`; the default `F` from the "Main" label; a link from the lineage map. V105's statuses are read in phase 1 already (§2.1) (updated 2026-11-25) | S (½ d) |
 
 **Total:** about 4.5–6.5 agent days.
@@ -878,10 +884,13 @@ Phase 0 also records each query's time on the copy, as a first cost figure.
   - foreign `round` and `rounds` ids are dropped, never `.get`;
   - `n` and `national` are clamped;
   - no per-juror names or votes on the page;
+  - the CSV: its columns, one row per file shown, the filled files' rounds, and no CoI or deleted
+    file (updated 2026-11-25, decision 11);
   - no CoI file, deleted file or non-geographic region on the page or in the export
     (updated 2026-11-25, decisions 12–13).
 - **Guards:** `RouteAuthSpec` and `SignedOutSpec` cover the route. `RawSqlSpec` is unchanged if the
-  SQL stays in `ImageDbNew.scala` / `RoundImageQuery.scala`. `ExportsSpec` changes only in 2b.
+  SQL stays in `ImageDbNew.scala` / `RoundImageQuery.scala`. `ExportsSpec` changes in phase 2, for the CSV
+  (updated 2026-11-25, decision 11).
 - **The browser story:** from the stats pager to a fallback region, then to the large view.
 
 ### 7.3 Benchmark note
@@ -1107,6 +1116,9 @@ files without a region id are not shown on this page.
 **Recommendation: (a).** Reasons:
 - the results are published on Commons;
 - CSV needs an `ExportsSpec` change for little gain.
+
+**Decided (maintainer, 2026-11-25): (c)**: export as wiki text and as CSV, both from the start (not
+"CSV only if asked").
 
 **12. Files with a conflict of interest** (the author matches the contest's CoI list, and the source
 round didn't leave such files out).
