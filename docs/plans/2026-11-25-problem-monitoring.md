@@ -1,6 +1,6 @@
 # Problem monitoring: refusals, errors and failed jobs seen without looking for them (plan, 2026-11-25)
 
-**Status:** draft, for the maintainer's decisions (§9); Q1 decided 2026-11-25. Read-only survey of master at `5d72c4d8`
+**Status:** draft, for the maintainer's decisions (§9); Q1 and Q2 decided 2026-11-25. Read-only survey of master at `5d72c4d8`
 (after the 26.11.16 build); no code changed, no test run. References are to files and functions;
 line numbers drift.
 
@@ -17,8 +17,8 @@ application log line, so their cause can only be inferred (the UI-path testing p
 - **Everything runs in the app on the server.** Detection must not depend on a script someone
   runs on a PC (or over ssh, like `wlxjury-diag`) at their discretion.
 - **Nothing is lost when nobody looks.** A fixed 7-day window is not enough, since someone may
-  look weekly or less often. Events are kept (≥ 90 days or the contest's lifetime: §3.2 proposes),
-  and problems are "new since last seen" until marked as seen.
+  look weekly or less often. Events are kept (Q2, [user] 2026-11-25: stored with no purge for
+  now, cleanup decided later; §3.2), and problems are "new since last seen" until marked as seen.
 - **History in the database.** Events live in the database, so they are in the regular backups
   and comparable across seasons, not only in rotated logs. Longer access-log retention is a
   one-time server change by the maintainer (sudo): a runbook item here (§7, slice M-5).
@@ -38,8 +38,8 @@ application log line, so their cause can only be inferred (the UI-path testing p
 - **The support diagnostics plan**
   ([`2026-11-18-support-diagnostics.md`](2026-11-18-support-diagnostics.md)). Its **D-3**
   (`support_event`, "one row per denial, CSRF refusal, server error, job failure or empty import",
-  30 days, not built) is **taken over by this plan** (slice M-2), with more kinds and a longer
-  retention (Q2; its deferred DG5 is answered by Q2). Its health page (D-1a) and
+  30 days, not built) is **taken over by this plan** (slice M-2), with more kinds and no purge for
+  now (Q2; its deferred DG5 for this table waits for the later cleanup decision). Its health page (D-1a) and
   `GET /api/diagnostics/recent` (D-1b) read the same table once it exists, as D-3 planned. Its
   check **H11** (stuck jobs) and this plan's pattern P5 are one function.
 - **The UI-path testing plan** (PR #189, `docs/plans/2026-11-25-ui-path-testing.md`), decided by
@@ -246,16 +246,20 @@ A problem is **new** when `seen_at IS NULL OR last_event_at > seen_at`: new even
 seen bring it back, so nothing is lost when nobody looks. Seen is shared by all root accounts
 (`seen_by` shows who), not per account (Q5).
 
-### 3.2 Retention (Q2)
+### 3.2 Retention (Q2, decided)
 
-- **Events: 400 days** (recommended). It covers one full season cycle and the same weeks a year
-  later (WLE May–July, WLM September–December), which is what "comparable across seasons" needs.
-  "The contest's lifetime" is not used: contests are reused across years (support diagnostics
-  H21), and denials and server errors often have no contest.
-- **Problems: kept** (a few per week; each keeps its counts and times after its events are
-  purged, so the season comparison survives).
-- **Purge:** the problem check (§4) deletes events older than the retention in batches of 5,000
-  rows per tick, by `created_at`, once a day.
+**Decided [user] 2026-11-25:** "just store them now, think about cleanup later".
+
+- **Events: kept, no purge for now.** No purge is built in M-2. The retention is decided later,
+  once real volumes are known (§3.3).
+- **Problems: kept** (a few per week; each keeps its counts and times, so a later purge of events
+  doesn't lose the season comparison).
+- **A later cleanup stays easy:** `created_at` is indexed and there are no foreign keys, so a purge
+  is a batched `DELETE … WHERE created_at < ? LIMIT 5000` run by the problem check (§4), with no
+  schema change. Options to choose from then: 90 days, 400 days (one season and the same weeks a
+  year later), or by kind (e.g. `denied` shorter). "The contest's lifetime" doesn't fit: contests
+  are reused across years (support diagnostics H21), and denials and server errors often have no
+  contest.
 
 ### 3.3 Size
 
@@ -264,12 +268,13 @@ estimate:
 
 - **Row:** ~250 bytes with its indexes counted roughly twice: ~0.5 KB.
 - **Typical day** (a season day: a few denials, rare 500s, a handful of refused saves and job ends):
-  under 200 events → ~0.1 MB/day, ~40 MB in 400 days.
+  under 200 events → ~0.1 MB/day, ~40 MB a year without a purge.
 - **Worst day without the cap** (a bot posting with stale CSRF tokens): tens of thousands. The cap
   (§3.4) keeps it to one row per minute per fingerprint.
 
-M-2's PR adds a count per kind per day to the health check after its first week on production, and
-the retention is revisited if a kind dominates.
+M-2's PR adds a count per kind per day to the Problems page's Events tab, with the table's size.
+The retention decision (later) is made from those figures, earlier if a kind dominates or the table
+passes ~500 MB.
 
 ### 3.4 Flood cap
 
@@ -292,7 +297,7 @@ the map; that only lets a few more rows through.
 - **Contest export and archive snapshots** don't include these tables (they hold account ids of
   other contests' members and are support data, not contest data).
 - **Retiring an account** keeps its id in events (the account row no longer holds the email after
-  retirement); the retention purge removes them in time.
+  retirement); until the later cleanup decides otherwise.
 
 ## 4. Pattern detection: an in-app periodic check
 
@@ -394,7 +399,7 @@ not running" replaces it when §4.1's watchdog trips. N comes from
   `seen_by`). **Mark as new** undoes it.
 - **Events tab:** the raw events with the same filters, for kinds that make no problem (jobs
   cancelled, a single denial).
-- A line at the top: when the check last ran, and the retention ("events are kept 400 days").
+- A line at the top: when the check last ran, and the retention ("events are kept; no cleanup yet").
 
 ### 6.3 Contest admins (Q3)
 
@@ -408,7 +413,7 @@ other contests, no `server_error` (root support), the email masked. No badge for
 | Slice | Content | Size | When |
 |---|---|---|---|
 | **M-1** | `FormRefusal` (keys and field names, arguments dropped), used only in `RoundController.saveRound`'s two refusal branches (`formWithErrors` and `reRender`), and the `resubmit_dropped` line with §2.3's in-memory form hash (`same` / `changed`), replacing the unquoted resubmit line. **Log only: no table, no migration, no filter.** The line is named `form_refused`; the UI-path plan (#189) is aligned to that name, and M-1 *is* its refusal-UX log item, not a second logger | S (≈ 1 day) | **26.11.17**, inside the UI-path refusal-UX PR (d) |
-| **M-2** | The migration (both tables), `EventRecorder`, the flood cap, `RefusalFilter`, the hooks of §2.1 (`logDenial`, `ErrorHandler`, `CsrfErrorHandler`, `JobScheduler`, link refusals, timers), `FormRefusal` in the other forms, the daily purge, secure-coding §13/§22, `LogHygieneSpec`. Takes over support diagnostics D-3 | M (2–3 days) | after lineage slice A (its migration number then) |
+| **M-2** | The migration (both tables), `EventRecorder`, the flood cap, `RefusalFilter`, the hooks of §2.1 (`logDenial`, `ErrorHandler`, `CsrfErrorHandler`, `JobScheduler`, link refusals, timers), `FormRefusal` in the other forms, secure-coding §13/§22, `LogHygieneSpec`. Takes over support diagnostics D-3 | M (2–3 days) | after lineage slice A (its migration number then) |
 | **M-3** | `ProblemCheckTask` and its watchdog, patterns P1–P11 with settings, `problem_detected`; P5 shared with H11 | M (2–3 days) | right after M-2 |
 | **M-4** | Badge, Problems page, mark seen/new, filters, links; negative authorization specs | S–M (2 days) | with M-3 or right after |
 | **M-5** | Runbook: Apache access-log retention for the jury vhosts (below); operations §5 "What is watched" gains the Problems page | S (half a day + the maintainer's sudo step) | any time; best before the next season |
@@ -456,7 +461,7 @@ database holds the history.
 - **M-2:**
   - `services.monitoring.EventRecorderSpec`: a row per kind with the expected columns; the cap
     (the sixth event in a minute increments `repeat_count`); a failed insert doesn't throw and logs
-    `support_event_lost`; the purge deletes only old rows.
+    `support_event_lost`.
   - `controllers.FormRefusalSpec`: a refused save creates a row with the field names and keys and
     no posted value (the row's every column checked for the value); the filter records a 400 of a
     form without `FormRefusal` once, with `keys=unknown`, and a form with it once, not twice; a
@@ -495,11 +500,11 @@ One decision each. A recommendation is this plan's, open to the maintainer.
    emails of others. Without it, problems are seen only when root opens the app; with it, a quiet
    week still reaches root. Mail delivery is unreliable here (admins are onboarded personally).
    Recommendation was: not now, the badge for a season first (taken).
-2. **Q2. How long are events kept?** Options: 90 days; 400 days; the life of the database
-   (never purged). 90 days loses last season by the next; never purging grows without bound and
-   keeps account ids indefinitely. Problems are kept in every option. **Recommendation: 400 days**
-   (one season and the same weeks a year later), which also answers support diagnostics DG5 for
-   this table.
+2. **Q2. How long are events kept?** **Decided [user] 2026-11-25: "just store them now, think
+   about cleanup later": no purge for now (§3.2).** The question as asked: options 90 days; 400
+   days; the life of the database (never purged). 90 days loses last season by the next; never purging grows without bound and
+   keeps account ids indefinitely. Problems are kept in every option. Recommendation was 400 days; the cleanup is
+   to be decided later from real volumes.
 3. **Q3. Do contest admins see their own contest's problems?** Options: root only; also a contest's
    admins, on its health page, limited to that contest's events (§6.3). Admins would see their own
    jurors' struggles (refused links, a juror on a stopped round) without asking root; the risk is
