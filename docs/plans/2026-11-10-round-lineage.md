@@ -900,10 +900,10 @@ production (a dump of 2026-11-25, V113), in read-only transactions:
 - Main is automatic only for the merge round, Q-02.
 - The two labels above give Main = Q-00, Q-01, Q-01-nf, Q-02 (with the trial "[delete] Q-00-1" as
   a fork until it is cancelled).
-- The regional winners page doesn't depend on those labels: its column path falls back to the
-  previous round that supplied the most files (#181 decision 17), which gives the same path (#181
-  §7.5). #181's phase 1 spec should cover the case here, a Main track holding only the merge round,
-  so that the fallback applies to it too.
+- The regional winners page doesn't depend on those labels. By #181's decision 17, as refined in
+  96f290df, at each step back the page takes the previous round on the Main track if there is one,
+  and otherwise the previous round that supplied the most files. So a Main of Q-02 alone still
+  gives Q-02 → Q-01-nf → Q-01 → Q-00 (#181 §7.5).
 - Organizers should be told to label Main: in slice A's UI (the label setter's help on the round
   form, the Track chip and the Track menu), and with a hint on the Rounds page when a merge round's
   Main track has only that round.
@@ -924,6 +924,9 @@ menus (decision 16). Cancel and Reinstate are slice B, after regional winners ph
    exports.
 2. May the Track menu go before multi-role? Decision 16 groups the round menus by track after
    multi-role; the Track menu is a filter on Rounds and Statistics, not that grouping.
+   **Decided (maintainer, 2026-11-25)**: the Track chip and the Track filter on Rounds and Round
+   statistics ship in slice A, before multi-role. Grouping the gallery round menus by track
+   (decision 16) still waits for multi-role.
 3. The round-tags brainstorm's 5 questions for the WLM UA organizer (§6 there):
    1. In a "-nf" round, what happens to a photo you mark: dropped for NOFOP, a reject given back,
       or collected for nomination on Commons?
