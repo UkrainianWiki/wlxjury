@@ -1047,6 +1047,50 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+  /** V115's rollback SQL after reopen (the script's last comment), on a schema without V114 (the
+    * list repair, unmerged): the rounds' settings entries, then V112's kind CHECK.
+    */
+  private val v115Rollback = Seq(
+    "DELETE FROM contest_change WHERE kind IN ('round_created', 'round_changed', 'round_filters_reapplied')",
+    "ALTER TABLE contest_change DROP CONSTRAINT IF EXISTS contest_change_kind_chk, " +
+      "ADD CONSTRAINT contest_change_kind_chk CHECK (kind IN ('created', 'identity', 'series_assigned', " +
+      "'series_unassigned', 'series_changed', 'split_out', 'split_in', 'split_undone', 'retired', 'unretired', " +
+      "'round_juror_stopped', 'round_juror_reopened', 'round_juror_closed'))",
+    "DELETE FROM flyway_schema_history WHERE version = '115'")
+
+  "V115's round change log" should {
+    "take the rounds' settings kinds and V114's, keep the earlier ones, refuse others, rerun, and roll back" in {
+      val before = versions.takeWhile(_ != "115").last
+      emptyDb("fw_v115_prev")
+      flyway("fw_v115_prev", production.copy(target = Some(before))).migrate()
+      emptyDb("fw_v115")
+      flyway("fw_v115", production.copy(target = Some(before))).migrate().success must beTrue
+      flyway("fw_v115", production.copy(target = Some("115"))).migrate().success must beTrue
+      val once = schema("fw_v115")
+      def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+      def refused(sql: String): Boolean = Using.resource(connect("fw_v115"))(c => scala.util.Try(run(c, Seq(sql))).isFailure)
+      def entry(kind: String) =
+        s"INSERT INTO contest_change (contest_id, actor_id, kind, detail) VALUES (1, 2, '$kind', '{\"round\":1}')"
+      val kinds = Seq("round_created", "round_changed", "round_filters_reapplied", "files_repaired", "files_repair_undone",
+        "round_juror_stopped", "series_assigned").map(k => !refused(entry(k)))
+      (history("fw_v115").map(_.split(" \\| ")(1)) === upTo("115")) and
+        (kinds === Seq.fill(7)(true)) and
+        (refused(entry("Round_changed")) must beTrue) and (refused(entry("round_renamed")) must beTrue) and {
+          Using.resource(connect("fw_v115"))(c => run(c, Seq("DELETE FROM contest_change",
+            "ALTER TABLE contest_change AUTO_INCREMENT = 1")))
+          val reset = schema("fw_v115")
+          Using.resource(connect("fw_v115"))(c => run(c, statements("V115__Round_change_log.sql")))
+          schema("fw_v115") === reset
+        } and {
+          Using.resource(connect("fw_v115"))(c => run(c, v115Rollback))
+          (history("fw_v115").map(_.split(" \\| ")(1)) === upTo(before)) and
+            (tablesOnly(schema("fw_v115")) === tablesOnly(schema("fw_v115_prev"))) and
+            (flyway("fw_v115", production.copy(target = Some("115"))).migrate().success must beTrue) and
+            (tablesOnly(schema("fw_v115")) === tablesOnly(once))
+        }
+    }
+  }
+
   /** V96's rollback SQL after reopen (CHANGELOG, the account change log): the live unsent
     * invitations revoked first, since an older release would show one as mailed; the log dropped.
     */

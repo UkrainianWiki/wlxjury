@@ -12,7 +12,11 @@ Deploy dates come from production's migration history, as described at the end.
 
 ## Unreleased (on master, not yet deployed)
 
-Nothing merged to master after the 26.11.16 build yet.
+For the next release, 26.11.17.
+
+**Features**
+
+- Saving a round's settings logs who changed what, with the old and new values, on the round's statistics and in the contest's change log (migration V115).
 
 ## Deployed releases
 

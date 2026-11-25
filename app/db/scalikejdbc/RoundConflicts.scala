@@ -114,24 +114,36 @@ object RoundConflicts {
       only: Option[Set[Long]] = None,
       excludeCoi: Boolean = false
   ): Outcome = {
-    def setFlag()(implicit session: DBSession): Unit =
-      if (excludeCoi) sql"UPDATE round SET exclude_coi = TRUE WHERE id = $roundId".update(): Unit
-    val outcome = WriteTx.write { implicit session =>
-      gate(roundId, distributionKey) match {
-        // no distribution of it is active: the flag, set under the round's lock, applies to
-        // its later ones (review finding 4)
-        case Left(refused @ (Outcome.Open | Outcome.Frozen)) =>
-          setFlag()
-          refused
-        case Left(refused) => refused
-        case Right(contestId) => Outcome.Disqualified(disqualifyLocked(roundId, contestId, by, only, excludeCoi))
-      }
-    }
+    val outcome = WriteTx.write(implicit session => disqualifyIn(roundId, by, distributionKey, only, excludeCoi))
     outcome match {
       case Outcome.Disqualified(files) => logDisqualified(roundId, by, files)
       case _ =>
     }
     outcome
+  }
+
+  /** [[disqualify]] in the caller's transaction (the round form's edit: with its other settings
+    * and their change log entry); the caller logs a [[Outcome.Disqualified]] after its commit
+    * ([[logDisqualified]]).
+    */
+  def disqualifyIn(
+      roundId: Long,
+      by: User,
+      distributionKey: String,
+      only: Option[Set[Long]] = None,
+      excludeCoi: Boolean = false
+  )(implicit session: DBSession): Outcome = {
+    def setFlag(): Unit =
+      if (excludeCoi) sql"UPDATE round SET exclude_coi = TRUE WHERE id = $roundId".update(): Unit
+    gate(roundId, distributionKey) match {
+      // no distribution of it is active: the flag, set under the round's lock, applies to
+      // its later ones (review finding 4)
+      case Left(refused @ (Outcome.Open | Outcome.Frozen)) =>
+        setFlag()
+        refused
+      case Left(refused) => refused
+      case Right(contestId) => Outcome.Disqualified(disqualifyLocked(roundId, contestId, by, only, excludeCoi))
+    }
   }
 
   /** [[disqualify]]'s writes, for a caller that holds the round's lock and has checked what [[gate]]

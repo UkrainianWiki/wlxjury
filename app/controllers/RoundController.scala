@@ -195,33 +195,47 @@ class RoundController @Inject() (
     * Unticked: stops leaving them out; files disqualified stay so, later distributions may add
     * the others.
     *
-    * @return the flash messages to show
+    * Its writes, in the edit's transaction under the round's lock, decided by the round's flag as
+    * read there: the disqualify's outcome, if it ran ([[leaveOutConflictsDone]] after the commit).
     */
-  private def leaveOutConflicts(stored: Round, exclude: Boolean, user: User)(implicit
+  private def leaveOutConflictsIn(roundId: Long, exclude: Boolean, user: User)(implicit
+      session: scalikejdbc.DBSession
+  ): Option[RoundConflicts.Outcome] = {
+    val excluding = Round.findById(roundId).exists(_.excludeCoi)
+    if (!exclude) {
+      if (excluding) Round.writeExcludeCoi(roundId, excludeCoi = false)
+      None
+    } else if (excluding) None
+    // the flag is set under the round's lock, also when the round is open or frozen
+    else Some(RoundConflicts.disqualifyIn(roundId, user, RoundDistributionHandler.dedupeKey(roundId), excludeCoi = true))
+  }
+
+  /** After the commit of [[leaveOutConflictsIn]]: the disqualified files logged, and the flash
+    * messages to show.
+    */
+  private def leaveOutConflictsDone(stored: Round, outcome: Option[RoundConflicts.Outcome], user: User)(implicit
       messages: Messages
   ): Seq[(String, String)] = {
     val roundId = stored.getId
-    if (!exclude) {
-      if (stored.excludeCoi) Round.setExcludeCoi(roundId, excludeCoi = false)
-      Nil
-    } else if (stored.excludeCoi) Nil
-    else {
-      val inRound = CoiMembers.roundFiles(roundId, CoiMembers.forContest(stored.contestId))
-      // the flag is set under the round's lock, also when the round is open or frozen
-      RoundConflicts.disqualify(roundId, user, RoundDistributionHandler.dedupeKey(roundId), excludeCoi = true) match {
-        case RoundConflicts.Outcome.Disqualified(files) =>
-          if (files.isEmpty) Nil else Seq("success" -> messages("coi.disqualified", files.size, stored.number))
-        // refused before the flag was set: said whether or not the round has conflicts
-        case RoundConflicts.Outcome.Distributing => Seq("error" -> messages("coi.remove.distributing", stored.number))
-        case _ if inRound.isEmpty                => Nil
-        // the flag is set, and a later save changes nothing: the round's conflicts page, linked
-        // on the rounds list (`coiRound`), disqualifies them once the round is stopped
-        case RoundConflicts.Outcome.Open =>
-          Seq("error" -> messages("coi.disqualify.open", stored.number, inRound.size), "coiRound" -> roundId.toString)
-        case RoundConflicts.Outcome.Frozen =>
-          Seq("error" -> messages("coi.disqualify.frozen", stored.number), "coiRound" -> roundId.toString)
-        case _ => Nil
-      }
+    // the round's conflicts, read only where a message counts them (the files weren't disqualified)
+    def inRound = CoiMembers.roundFiles(roundId, CoiMembers.forContest(stored.contestId))
+    outcome match {
+      case None => Nil
+      case Some(RoundConflicts.Outcome.Disqualified(files)) =>
+        RoundConflicts.logDisqualified(roundId, user, files)
+        if (files.isEmpty) Nil else Seq("success" -> messages("coi.disqualified", files.size, stored.number))
+      // refused before the flag was set: said whether or not the round has conflicts
+      case Some(RoundConflicts.Outcome.Distributing) => Seq("error" -> messages("coi.remove.distributing", stored.number))
+      // the flag is set, and a later save changes nothing: the round's conflicts page, linked
+      // on the rounds list (`coiRound`), disqualifies them once the round is stopped
+      case Some(RoundConflicts.Outcome.Open) =>
+        val n = inRound.size
+        if (n == 0) Nil
+        else Seq("error" -> messages("coi.disqualify.open", stored.number, n), "coiRound" -> roundId.toString)
+      case Some(RoundConflicts.Outcome.Frozen) =>
+        if (inRound.isEmpty) Nil
+        else Seq("error" -> messages("coi.disqualify.frozen", stored.number), "coiRound" -> roundId.toString)
+      case _ => Nil
     }
   }
 
@@ -433,16 +447,39 @@ class RoundController @Inject() (
                 }
             }
 
-            // the edit of an existing round, its criteria saved
+            // the edit of an existing round: one transaction under the round's lock. First its
+            // criteria: a started round's (running or voted) are not changed, and a refused change
+            // saves nothing of the form (shown again, its criteria read only); a plain save, whose
+            // filters aren't changed. Then its name, score rule and worst mark, and "Leave out
+            // conflicts of interest" (before "Distribute new files", whose job then reads the
+            // round's flag), with the entry of what changed in the round's settings log (RoundChanges)
             def saveEdit(stored: Round): Result = {
               val roundId = stored.getId
               // the score rule and the worst mark as posted; a client without the select (the
               // checkbox) keeps the stored one
-              Round.updateRound(roundId, round.copy(
+              val edited = round.copy(
                 averageRule = if (editForm.averageRuleShown) round.averageRule else stored.averageRule,
-                worstMark = if (editForm.worstMarkShown) round.worstMark else stored.worstMark))
-              // before "Distribute new files", whose job then reads the round's flag
-              val coi = leaveOutConflicts(stored, round.excludeCoi, user)(request.messages)
+                worstMark = if (editForm.worstMarkShown) round.worstMark else stored.worstMark)
+              val saved =
+                try Right(WriteTx.write { implicit s =>
+                  Round.lock(Seq(roundId))
+                  RoundChanges.logged(roundId, user.id, ContestChangeJdbc.RoundChanged, RoundChanges.Path.Edit) {
+                    if (editForm.criteriaShown)
+                      RoundCriterion.updateIn(roundId, round.criterionIds).left.foreach(r =>
+                        throw RoundController.CriteriaRefused(r.messageKey))
+                    Round.updateRound(roundId, edited)
+                    leaveOutConflictsIn(roundId, round.excludeCoi, user)
+                  }
+                })
+                catch { case RoundController.CriteriaRefused(key) => Left(key) }
+              saved.fold(key => reRender(round, key),
+                outcome => distributeAfterEdit(stored, leaveOutConflictsDone(stored, outcome, user)(request.messages)))
+            }
+
+            // the edit saved: "Distribute new files", "Add files" and "Also give out the waiting
+            // files", if asked for; `coi`: the conflicts' messages
+            def distributeAfterEdit(stored: Round, coi: Seq[(String, String)]): Result = {
+              val roundId = stored.getId
               // one message per kind: an error of the distribution wins over the removal's
               def flashing(errors: (String, String)*) =
                 toRoundsList.flashing((coi ++ errors).toMap.toSeq: _*)
@@ -539,13 +576,8 @@ class RoundController @Inject() (
                   // refused with a message if the round left review or got a vote or a job since; its
                   // criteria are written in the re-apply's transaction
                   case stored if RoundController.reapplyPosted(request) => reapplyFilters(stored)
-                  case stored =>
-                    // first: a started round's criteria (running or voted) are not changed, and a
-                    // refused change saves nothing of the form (shown again, its criteria read only);
-                    // a plain save, whose filters aren't changed
-                    val criteria =
-                      if (editForm.criteriaShown) RoundCriterion.update(roundId, round.criterionIds) else Right(false)
-                    criteria.fold(refused => reRender(round, refused.messageKey), _ => saveEdit(stored))
+                  // its criteria first, in the edit's transaction (saveEdit)
+                  case stored => saveEdit(stored)
                 }
             }
           }
@@ -724,9 +756,10 @@ class RoundController @Inject() (
               val comments = org.intracer.wmua.CommentJdbc.roundCounts(round.contestId, round.getId)
               // open, but nobody can vote in it: a notice (DG10)
               val noActiveJuror = RoundUser.openWithoutActiveJuror(Seq(round)).nonEmpty
-              // the round stopped, started again or closed by a juror of it (RoundJurorChanges), with
-              // who: for those who see the organiser view, not a juror of the open round
-              val jurorChanges =
+              // the round stopped, started again or closed by a juror of it (RoundJurorChanges), and
+              // its settings saved (RoundChanges), with who: for those who see the organiser view,
+              // not a juror of the open round
+              val roundChanges =
                 if (!services.GalleryService.othersVotesVisible(user, round)) Nil
                 else {
                   val changes = ContestChangeJdbc.findByRound(round.contestId, round.getId, RoundController.JurorChangesShown)
@@ -736,7 +769,7 @@ class RoundController @Inject() (
 
               Secured.switchingContest(sessionUser, user)(
                 Ok(views.html.roundStat(user, round, stat, comments, RoundsFilter.fromRequest(request), noActiveJuror,
-                  jurorChanges)))
+                  roundChanges)))
             }
           }
           .getOrElse {

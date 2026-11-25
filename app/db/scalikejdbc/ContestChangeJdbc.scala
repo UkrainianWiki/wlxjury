@@ -49,13 +49,25 @@ object ContestChangeJdbc {
   val RoundJurorReopened = "round_juror_reopened"
   /** A round closed by creating the next round, by an account that judges it. */
   val RoundJurorClosed = "round_juror_closed"
+  /** A round created by the round form, with its settings ([[RoundChanges]], V115). */
+  val RoundCreated = "round_created"
+  /** A round's settings changed: the round form's edit, a start or a stop, its jurors per file. */
+  val RoundChanged = "round_changed"
+  /** A round held in review given new filters by the round form's "Re-apply filters". */
+  val RoundFiltersReapplied = "round_filters_reapplied"
 
   /** The kinds about a contest or a series (V109); the split kinds are written by CY-4 only. */
   val ContestKinds: Seq[String] =
     Seq(Created, Identity, SeriesAssigned, SeriesUnassigned, SeriesChanged, SplitOut, SplitIn, SplitUndone, Retired, Unretired)
 
-  /** The kinds about a round of the contest (V112): its detail's `round` names it. */
-  val RoundKinds: Seq[String] = Seq(RoundJurorStopped, RoundJurorReopened, RoundJurorClosed)
+  /** A round's open state changed by an account that judges it (V112, [[RoundJurorChanges]]). */
+  val RoundJurorKinds: Seq[String] = Seq(RoundJurorStopped, RoundJurorReopened, RoundJurorClosed)
+
+  /** A round's settings saved (V115, [[RoundChanges]]): what changed, from and to. */
+  val RoundSettingKinds: Seq[String] = Seq(RoundCreated, RoundChanged, RoundFiltersReapplied)
+
+  /** The kinds about a round of the contest: its detail's `round` names it. */
+  val RoundKinds: Seq[String] = RoundJurorKinds ++ RoundSettingKinds
 
   /** The kinds the check allows. */
   val Kinds: Seq[String] = ContestKinds ++ RoundKinds

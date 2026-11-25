@@ -689,6 +689,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
             WHERE r.id = $id""".map(_.boolean(1)).single().getOrElse(false) && active
     val (archived, jurorChanges) = WriteTx.write { implicit session =>
       val wasOpen = isOpen(id)
+      // the settings before, under the round's lock (isOpen), for the change log below
+      val before = by.flatMap(_ => RoundChanges.snapshot(id))
       sql"""UPDATE round
             SET ${statusOfStartStop(active, by)},
                 active_before_freeze = IF(freeze_count > 0, $active AND NOT distributing, active_before_freeze),
@@ -702,6 +704,12 @@ object Round extends RoundRepo with CRUDMapper[Round] {
         if (wasOpen == nowOpen) Nil
         else RoundJurorChanges.record(
           if (nowOpen) ContestChangeJdbc.RoundJurorReopened else ContestChangeJdbc.RoundJurorStopped, Seq(id), by)
+      // by an account that doesn't judge it (a juror's entry says it already): its state, from and
+      // to, in the round's settings log (RoundChanges); nothing if nothing changed
+      if (jurorChanges.isEmpty)
+        for ((_, b) <- before; (round, after) <- RoundChanges.snapshot(id))
+          RoundChanges.record(ContestChangeJdbc.RoundChanged, Some(b), round, after, by,
+            if (active) RoundChanges.Path.Start else RoundChanges.Path.Stop)
       // After the update, and read as of then: see ImageJdbc.lockOpenRoundsOf
       (!wasOpen && nowOpen && ImageJdbc.archiveDeletedVotesInRound(id).nonEmpty, jurorChanges)
     }

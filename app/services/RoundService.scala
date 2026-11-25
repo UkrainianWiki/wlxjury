@@ -3,7 +3,7 @@ package services
 import controllers.RoundStat
 import db.RoundRepo
 import db.scalikejdbc.Round.RoundStatRow
-import db.scalikejdbc.{AccountJoinJdbc, ImageJdbc, Round, RoundImageCounts, RoundImageJdbc, RoundUser, VoteJdbc, User, WriteTx}
+import db.scalikejdbc.{AccountJoinJdbc, ContestChangeJdbc, ImageJdbc, Round, RoundChanges, RoundImageCounts, RoundImageJdbc, RoundUser, VoteJdbc, User, WriteTx}
 import org.intracer.wmua.cmd.DistributeImages
 import play.api.Logging
 import play.api.libs.json.{JsObject, JsString, Json}
@@ -150,6 +150,8 @@ class RoundService @Inject() (
         created.addUsersIn(kept.map(u => RoundUser(created.getId, u.getId, u.contestRole.getOrElse(User.JURY_ROLE), active = true)))
         // "Create and review images" (D3): a fill that ends in review; else one pass (D4)
         val job = enqueueOrFail(created, completingCreation = true, createdBy, titles, distributeAfter = !review)
+        // its settings as written, in the round's settings log (RoundChanges), with the round
+        RoundChanges.recordCreated(created.getId, createdBy)
         (created, job)
       })
     catch {
@@ -428,7 +430,9 @@ class RoundService @Inject() (
               val perFile = distribution.getOrElse(fresh.distribution)
               enqueueOrFail(fresh.copy(distribution = perFile), completingCreation = true, createdBy,
                 mode = RoundDistributionHandler.Mode.Distribute, requireInReview = true,
-                underLocks = s => reviewJury(fresh, chosen, perFile, confirmPrevChanged, shownJury)(s))
+                // the jurors per file it sets, in the round's settings log (RoundChanges)
+                underLocks = s => RoundChanges.logged(roundId, createdBy, ContestChangeJdbc.RoundChanged,
+                  RoundChanges.Path.Jurors)(reviewJury(fresh, chosen, perFile, confirmPrevChanged, shownJury)(s))(s))
             } catch {
               case StaleRound if left > 0 => attempt(left - 1)
             }
@@ -548,9 +552,14 @@ class RoundService @Inject() (
                 underLocks = { s =>
                   // D16: no file is deleted once the round has a vote
                   if (RoundImageJdbc.hasVotes(roundId)(s)) throw ReviewRefused(ReapplyVotedKey, Seq(stored.number.toString))
-                  Round.updateFilters(roundId, configured)(s)
-                  // the caller's other changes (the form's name, score rule), committed only with the job
-                  alsoWrite(s)
+                  // what the filters and the caller's writes change, in the round's settings log
+                  // (RoundChanges), committed only with them and the job
+                  RoundChanges.logged(roundId, createdBy, ContestChangeJdbc.RoundFiltersReapplied,
+                    RoundChanges.Path.Reapply) {
+                    Round.updateFilters(roundId, configured)(s)
+                    // the caller's other changes (the form's name, score rule), committed only with the job
+                    alsoWrite(s)
+                  }(s)
                 })
             }
             logger.info(s"Round $roundId: filters re-applied in review (job ${job.id}), by user ${createdBy.orNull}")

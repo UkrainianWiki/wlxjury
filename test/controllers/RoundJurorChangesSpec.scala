@@ -54,7 +54,10 @@ class RoundJurorChangesSpec extends PlaySpecification with PlayTestDb {
     Jsoup.parse(contentAsString(route(app, FakeRequest(GET, s"/roundstat/${round.getId}")
       .withSession(Secured.UserName -> viewer.email).withCSRFToken).get))
 
+  // the juror entries only: a start or stop by an admin who doesn't judge the round is a settings
+  // entry (RoundChanges, RoundChangesServiceSpec)
   private def entries(f: Fixture) = ContestChangeJdbc.findByRound(f.contest.getId, f.round.getId, 10).reverse
+    .filter(c => ContestChangeJdbc.RoundJurorKinds.contains(c.kind))
 
   private def line(kind: String, by: User, f: Fixture, byRound: Option[Long] = None) =
     s"juror_round_change kind=$kind accountId=${by.getId} contestId=${f.contest.getId} roundId=${f.round.getId}" +

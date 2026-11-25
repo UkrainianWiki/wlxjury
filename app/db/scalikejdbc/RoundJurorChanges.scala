@@ -6,7 +6,7 @@ import scalikejdbc._
 /** A round stopped, started again, or closed by creating the next round, by an account that judges
   * it (a juror of it as [[User.isRoundJuror]] decides: votes in it, or round_user, active or not),
   * whatever its role (the maintainer's decision of 2026-11-24, with the conflict-of-interest rule):
-  * a `contest_change` entry ([[ContestChangeJdbc.RoundKinds]]), written in the transaction of the
+  * a `contest_change` entry ([[ContestChangeJdbc.RoundJurorKinds]]), written in the transaction of the
   * change, shown on the round's statistics page, and a WARN line on `security.authz` after the
   * commit (ids only). A change by an account that doesn't judge the round, or by a job alone, writes
   * neither.
@@ -23,7 +23,7 @@ object RoundJurorChanges {
     */
   def record(kind: String, roundIds: Seq[Long], actorId: Option[Long], byRoundId: Option[Long] = None)(implicit
       session: DBSession): Seq[Entry] = {
-    require(ContestChangeJdbc.RoundKinds.contains(kind), "not a round kind")
+    require(ContestChangeJdbc.RoundJurorKinds.contains(kind), "not a round juror kind")
     actorId.filter(_ => roundIds.nonEmpty).toSeq.flatMap { actor =>
       val judged = User.roundsJuredIn(actor, roundIds)
       if (judged.isEmpty) Nil
