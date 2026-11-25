@@ -1,13 +1,16 @@
 @import services.jobs.Job
-@(job: Job, returnTo: String, reloadOnDone: Boolean = true, cancellable: Boolean = true)(implicit messages: Messages, req: RequestHeader)
+@(job: Job, returnTo: String, reloadOnDone: Boolean = true, cancellable: Boolean = true, label: Option[String] = None)(implicit messages: Messages, req: RequestHeader)
 @* A background job's status with its Retry / Cancel buttons, refreshed by
    public/javascripts/job-status.js while the job is queued or running. `cancellable`: false for a
    job past the point where Cancel is refused (an account join after its first round step; the
-   status JSON's details say so too) *@
+   status JSON's details say so too). `label`: the job's title (or the page's name for it), shown once
+   on its own line above the text, which then carries only the progress (views.JobStatusText, and
+   formatJobStatus with data-labelled after each poll); without it the poll puts the title in the text *@
 <div class="job-status" data-src="@routes.JobController.status(job.id)" data-status="@job.status"
      data-denied-text="@Messages("job.status.denied")"
-     @if(reloadOnDone) {data-reload-on-done="true"}>
-    <span class="job-status-text">@job.status@for(done <- job.progressDone; total <- job.progressTotal) { (@done / @total @job.progressUnit.getOrElse(""))}@for(e <- job.failure) {: @e.message}</span>
+     @if(reloadOnDone) {data-reload-on-done="true"} @if(label.isDefined) {data-labelled="true"}>
+    @for(l <- label) {<div class="job-status-label">@l</div>}
+    <span class="job-status-text">@views.JobStatusText.text(job)</span>
     <form method="post" action="@routes.JobController.retry(job.id)" class="job-retry"
           style="display: @if(job.isFailed) {inline} else {none}">
         @csrfField()

@@ -23,6 +23,7 @@ Merged after the 26.11.17 build, for the release after it.
 - Round form: a track label that is too long is listed at the top as "Track label (optional): …" with a link to the field; a label of emoji or other characters outside the basic plane can be typed up to its 64 characters (the browser no longer counted them twice) (#209).
 - Track labels: spaces inside a label are kept as typed, so labels share a track only when they are identical, as the form's help says (#209).
 - Track labels: labelling a first round (or giving it a nomination or regions) no longer changes the category track names of the other first rounds (#209).
+- Job progress (imports, monument id and monument list updates, a round's distribution, image checks, author normalization): the job's name is shown once, on its own line without a colon, and the line under it carries only the progress ("1,034 / 38,248 files (2%), 33 monument ids changed…"), on the first view and after each update.
 - Rounds page: a round with one of several previous rounds deleted no longer says it "starts a track of its own"; it says the deleted round is left out when its track is chosen (#209).
 
 ## Deployed releases
