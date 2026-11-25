@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import scala.collection.mutable
 import scala.concurrent.duration._
 
-/** Adding a juror to a running round (`round_rebalance`, docs/plans/2026-11-16-round-editing.md
+/** Adding a juror to a running or a stopped round (`round_rebalance`, docs/plans/2026-11-16-round-editing.md
   * §5, PR 1a): a round where every file goes to every juror. The job's steps, the pause and its
   * release in every path, the refusals in both directions, Retry after a failed step, Cancel,
   * and votes cast while it runs.
@@ -354,12 +354,22 @@ class RoundRebalanceJobSpec extends Specification with TestDb with BeforeAll wit
 
   "the refusals" should {
 
-    "refuse a round not running, a legacy round, one frozen by another job, one with a job, nothing queued" in {
+    "refuse a round being set up, a retired contest's, a legacy round, one frozen by another job, one with a job, nothing queued" in {
       val (contest, round, js, y, admin) = setUp(3)
       val r = round.getId
       implicit val (service, _) = inline(new TestRebalance(chunkRows = 10))
+      // being created (or its creation failed or was cancelled): its jurors are chosen in its setup
+      sql"UPDATE round SET distributing = 1, active = 0, status = 'draft' WHERE id = $r".update()
+      val settingUp = Round.findById(r).get
+      val settingUpKey = refusedKey(service.add(settingUp, y.getId, admin, signature(round)))
+      val settingUpPage = service.preview(settingUp, y.getId).refusal.map(_.key)
+      sql"UPDATE round SET distributing = 0, active = 1, status = 'active' WHERE id = $r".update()
+      // a retired contest's stopped round (root reaches it; its admins don't)
       Round.setActive(r, active = false)
-      val stoppedKey = refusedKey(service.add(Round.findById(r).get, y.getId, admin, signature(round)))
+      sql"UPDATE contest_jury SET retired_at = NOW(3) WHERE id = ${contest.getId}".update()
+      val retiredKey = refusedKey(service.add(Round.findById(r).get, y.getId, admin, signature(round)))
+      val retiredPage = service.preview(Round.findById(r).get, y.getId).refusal.map(_.key)
+      sql"UPDATE contest_jury SET retired_at = NULL WHERE id = ${contest.getId}".update()
       Round.setActive(r, active = true)
       DB.localTx { s => Round.freeze(Seq(r))(s) }
       val frozenKey = refusedKey(service.add(Round.findById(r).get, y.getId, admin, signature(round)))
@@ -372,7 +382,9 @@ class RoundRebalanceJobSpec extends Specification with TestDb with BeforeAll wit
       JobJdbc.insert(NewJob(RoundDistributionHandler.Kind, Some(contest.getId), Some("round"), Some(r),
         Some(RoundDistributionHandler.dedupeKey(r))), owner = None)(AutoSession)
       val busy = service.add(Round.findById(r).get, y.getId, admin, signature(round))
-      (stoppedKey must beSome(RoundRebalanceHandler.NotRunningKey)) and
+      (settingUpKey must beSome(RoundRebalanceHandler.SettingUpKey)) and
+        (settingUpPage must beSome(RoundRebalanceHandler.SettingUpKey)) and
+        (retiredKey must beSome(RoundRebalanceHandler.RetiredKey)) and (retiredPage must beSome(RoundRebalanceHandler.RetiredKey)) and
         (frozenKey must beSome(RoundRebalanceHandler.FrozenKey)) and
         (legacyKey must beSome(RoundRebalanceHandler.LegacyKey)) and
         (busy must beAnInstanceOf[RoundRebalanceService.Busy]) and
@@ -1134,6 +1146,178 @@ class RoundRebalanceJobSpec extends Specification with TestDb with BeforeAll wit
       (preview.waiting === 0L) and (preview.files === 6L) and
         (RoundReassign.waitingForCount(round.getId, round.distribution, y.getId) === 0L) and
         (rows(round.getId, y.getId).size === 6) and (js.size === 3)
+    }
+  }
+
+  // ── a stopped round (D3 revised 2026-11-25) ────────────────────────────────
+
+  /** The round's active flag, freeze count, saved flag and status. */
+  private def roundState(r: Long): (Boolean, Int, Option[Boolean], String) =
+    sql"SELECT active, freeze_count, active_before_freeze, status FROM round WHERE id = $r"
+      .map(rs => (rs.boolean(1), rs.int(2), rs.booleanOpt(3), rs.string(4))).single().get
+
+  /** Stopped, as its Stop leaves it, and as every path of the job must leave it. */
+  private val StoppedState = (false, 0, None, Round.Status.Paused)
+
+  /** Held by the add's own freeze while stopped. */
+  private val FrozenStopped = (false, 1, Some(false), Round.Status.Paused)
+
+  /** Stops the round as its Stop button does. */
+  private def stop(r: Long): Round = {
+    require(Round.setActiveGuarded(r, active = false))
+    Round.findById(r).get
+  }
+
+  /** A crashed instance's handler: a failed step leaves its state and the round's freeze as they were
+    * (no cleanup ran), as the instance that died mid-job leaves them.
+    */
+  private class CrashingRebalance(chunkRows: Int) extends TestRebalance(chunkRows) {
+    override def onFailed(job: Job, ctx: StepContext): play.api.libs.json.JsObject = job.state
+  }
+
+  /** The round as committed, and as its juror sees it, read on other connections. */
+  private def jurorsView(r: Long, juror: User) = {
+    val fresh = Round.findById(r).get
+    (roundState(r), fresh.openToJurors, Round.isPaused(r), new GalleryService().pausedFor(juror, fresh),
+      Round.activeRounds(juror).exists(_.id.contains(r)))
+  }
+
+  "adding a juror to a stopped round" should {
+
+    "move only unrated files fairly, keep the round stopped and its jurors on round_closed; started, every juror has a fair share" in {
+      val (round0, js, y, admin) = setUpN(24, 2, jurors = 4)
+      val r = round0.getId
+      // some rated votes, which never move
+      val rated = js.flatMap(j => rows(r, j.getId).take(2).map { case (p, _) => VoteJdbc.rate(p, j.getId, r, 1); (p, j.getId) })
+      val round = stop(r)
+      val pagesBefore = perPage(r)
+      val juror = User.findInContest(js.head.getId, round.contestId).get
+      val seen = mutable.Buffer.empty[((Boolean, Int, Option[Boolean], String), Boolean, Boolean, Boolean, Boolean)]
+      val h = new TestRebalance(chunkRows = 3) {
+        // read on other connections while a step moves rows: the round frozen, still stopped
+        override protected def afterMove(roundId: Long, pageIds: Seq[Long])(implicit session: DBSession): Unit =
+          if (seen.isEmpty) seen += jurorsView(r, juror)
+      }
+      implicit val (service, _) = inline(h)
+      val preview = service.preview(round, y.getId, Some(js.map(_.getId)))
+      val job = queued(service.add(round, y.getId, admin, signature(round), js.map(_.getId)))
+      val done = JobJdbc.findById(job.id).get
+      val ids = js.map(_.getId) :+ y.getId
+      def levels = { val u = unrated(r, ids); ids.map(u.getOrElse(_, 0L)) }
+      val stoppedLevels = levels
+      val stoppedAfter = roundState(r)
+      require(Round.setActiveGuarded(r, active = true))
+      (preview.refusal must beNone) and (preview.files must be_>(0L)) and
+        (done.status === JobStatus.Done) and (RoundRebalanceHandler.filesGiven(done) === preview.files) and
+        (seen.toSeq === Seq((FrozenStopped, false, false, false, false))) and
+        (stoppedAfter === StoppedState) and (roundUser(r, y.getId) must beSome(true)) and
+        (rows(r, y.getId).forall(_._2 == 0) must beTrue) and
+        (rated.forall { case (p, j) => VoteJdbc.findBy(p, j, r).exists(_.rate == 1) } must beTrue) and
+        (perPage(r) === pagesBefore) and pairsUnique(r) and
+        (stoppedLevels.max - stoppedLevels.min must be_<=(1L)) and
+        // started later: every juror has their fair share, the new one too
+        (roundState(r)._1 must beTrue) and (levels === stoppedLevels) and
+        (RoundImageInvariants.violations(r) must beEmpty)
+    }
+
+    "give a round of every file to every juror's new juror every file, the round staying stopped" in {
+      val (_, round0, _, y, admin) = setUp(6)
+      val r = round0.getId
+      val round = stop(r)
+      implicit val (service, _) = inline(new TestRebalance(chunkRows = 2))
+      val job = queued(service.add(round, y.getId, admin, signature(round)))
+      (JobJdbc.findById(job.id).map(_.status) must beSome(JobStatus.Done)) and
+        (rows(r, y.getId) === (1L to 6L).map(_ -> 0)) and (roundState(r) === StoppedState) and
+        (RoundImageInvariants.violations(r) must beEmpty)
+    }
+
+    "stay stopped after a failed step, its Retry, and a Cancel" in {
+      val (_, round0, _, y, admin) = setUp(9)
+      val r = round0.getId
+      val round = stop(r)
+      val h = new TestRebalance(chunkRows = 2)
+      h.failAtGive = Some(3)
+      implicit val (service, scheduler) = inline(h)
+      val job = queued(service.add(round, y.getId, admin, signature(round)))
+      val failed = (JobJdbc.findById(job.id).map(_.status) must beSome(JobStatus.Failed)) and
+        (roundState(r) === StoppedState) and (rows(r, y.getId).size === 4)
+      val retried = scheduler.retry(job.id).toOption.get
+      val afterRetry = (retried.status === JobStatus.Done) and (rows(r, y.getId) === (1L to 9L).map(_ -> 0)) and
+        (roundState(r) === StoppedState) and (RoundImageInvariants.violations(r) must beEmpty)
+      // another add, cancelled after a failed step: released, still stopped
+      SharedTestDb.truncateAll()
+      val (_, round1, _, y1, admin1) = setUp(6)
+      val r1 = round1.getId
+      val stopped1 = stop(r1)
+      val h1 = new TestRebalance(chunkRows = 2)
+      h1.failAtGive = Some(2)
+      val (service1, scheduler1) = inline(h1)
+      val job1 = queued(service1.add(stopped1, y1.getId, admin1, signature(stopped1)(service1)))
+      val atFailure = roundState(r1)
+      scheduler1.cancel(job1.id)
+      failed and afterRetry and (atFailure === StoppedState) and
+        (JobJdbc.findById(job1.id).map(_.status) must beSome(JobStatus.Cancelled)) and
+        (roundState(r1) === StoppedState) and (roundUser(r1, y1.getId) must beSome(true)) and (rows(r1, y1.getId).size === 2)
+    }
+
+    "stay stopped when another instance takes the job over after its own died mid-job" in {
+      val (_, round0, _, y, admin) = setUp(6)
+      val r = round0.getId
+      val round = stop(r)
+      val crashing = new CrashingRebalance(chunkRows = 2)
+      crashing.failAtGive = Some(2)
+      val (service, _) = inline(crashing)
+      val job = queued(service.add(round, y.getId, admin, signature(round)(service)))
+      // as a dead instance leaves it: running, its lease expired, the round still held by its freeze
+      sql"""UPDATE job SET status = 'running', owner = 'dead-instance', heartbeat_at = NOW(3) - INTERVAL 120 SECOND
+            WHERE id = ${job.id}""".update()
+      val held = roundState(r)
+      val s = new JobScheduler(Seq(new TestRebalance(chunkRows = 2)), JobScheduler.Settings(
+        pollInterval = 50.millis, heartbeatInterval = 200.millis, lease = 60.seconds))
+      schedulers += s
+      s.start()
+      val done = s.await(job.id, 30.seconds)
+      (held === FrozenStopped) and (done.status === JobStatus.Done) and (rows(r, y.getId) === (1L to 6L).map(_ -> 0)) and
+        (roundState(r) === StoppedState) and (RoundImageInvariants.violations(r) must beEmpty)
+    }
+
+    "start a stopped juror again with a fair share, the round staying stopped" in {
+      val (round0, js, _, admin) = setUpN(30, 1, jurors = 3)
+      val r = round0.getId
+      val back = js.head
+      // they rated 6 of their 10 files before being stopped
+      rows(r, back.getId).take(6).foreach { case (p, _) => VoteJdbc.rate(p, back.getId, r, 1) }
+      RoundUser.setActive(r, back.getId, active = false)
+      val round = stop(r)
+      val others = js.tail.map(_.getId)
+      implicit val (service, _) = inline(new TestRebalance(chunkRows = 100))
+      val preview = service.preview(round, back.getId)
+      val before = unrated(r, js.map(_.getId))
+      queued(service.add(round, back.getId, admin, signature(round), others, restart = true))
+      val after = unrated(r, js.map(_.getId))
+      (preview.restart must beTrue) and (preview.refusal must beNone) and
+        (roundUser(r, back.getId) must beSome(true)) and (roundState(r) === StoppedState) and
+        (after(back.getId) must be_>(before(back.getId))) and
+        (after.values.max - after.values.min must be_<=(1L)) and (RoundImageInvariants.violations(r) must beEmpty)
+    }
+
+    "follow a Start or a Stop made while it runs: the round ends as last set, paused for its jurors only if started" in {
+      Seq(true, false).map { startedMeanwhile =>
+        SharedTestDb.truncateAll()
+        val (_, round0, js, y, admin) = setUp(6)
+        val r = round0.getId
+        val round = if (startedMeanwhile) stop(r) else round0
+        val juror = User.findInContest(js.head.getId, round.contestId).get
+        val pausedSeen = mutable.Buffer.empty[Boolean]
+        val h = new TestRebalance(chunkRows = 2)
+        h.afterGive = Some(1 -> (() => require(Round.setActiveGuarded(r, active = startedMeanwhile))))
+        h.atGive = Some(2 -> (() => pausedSeen += new GalleryService().pausedFor(juror, Round.findById(r).get)))
+        val (service, _) = inline(h)
+        val job = queued(service.add(round, y.getId, admin, signature(round)(service)))
+        (JobJdbc.findById(job.id).map(_.status) must beSome(JobStatus.Done)) and
+          (rows(r, y.getId).size === 6) and (pausedSeen.toSeq === Seq(startedMeanwhile)) and
+          (roundState(r) === (if (startedMeanwhile) (true, 0, None, Round.Status.Active) else StoppedState))
+      }.reduce(_ and _)
     }
   }
 }

@@ -14,7 +14,7 @@ import services.jobs.{JobJdbc, NewJob}
 
 import scala.concurrent.Future
 
-/** Adding a juror to a running round ([[RoundJurorsController]]) and the pause its job holds,
+/** Adding a juror to a running or a stopped round ([[RoundJurorsController]]) and the pause its job holds,
   * through the router (jobs run inline): the page and its POST for the round's contest's admins
   * and root only, checked in the round's contest, with the CSRF token; refusals queue nothing;
   * the paused round's page and vote error for its jurors; Start/Stop refused while a job holds
@@ -208,7 +208,7 @@ class RoundJurorsAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "refuse a juror of another contest, a non-member, an inactive member, a round not running, a changed jury" in {
+    "refuse a juror of another contest, a non-member, an inactive member, a round being set up, a changed jury" in {
       testDbApp { app =>
         val (round, _, users) = setUp()
         val r = round.getId
@@ -217,9 +217,10 @@ class RoundJurorsAuthorizationSpec extends PlaySpecification with PlayTestDb {
           (status(result) === CONFLICT) and (contentAsString(result) must contain("round-juror-add-notice"))
         }.reduce(_ and _)
         val stale = post(app, Some("admin@example.com"), page(r), "juror" -> users("newjuror").getId.toString, "jury" -> "1|")
-        Round.setActive(r, active = false)
-        val stopped = post(app, Some("admin@example.com"), page(r), "juror" -> users("newjuror").getId.toString, "jury" -> jury(r))
-        refused and (status(stale) === CONFLICT) and (status(stopped) === CONFLICT) and (rebalanceJobs() === 0) and
+        sql"UPDATE round SET distributing = 1, active = 0, status = 'draft' WHERE id = $r".update()
+        val settingUp = post(app, Some("admin@example.com"), page(r), "juror" -> users("newjuror").getId.toString, "jury" -> jury(r))
+        refused and (status(stale) === CONFLICT) and (status(settingUp) === CONFLICT) and
+          (contentAsString(settingUp) must contain("is still being set up")) and (rebalanceJobs() === 0) and
           (files(r, users("newjuror")) === 0)
       }
     }
@@ -406,6 +407,142 @@ class RoundJurorsAuthorizationSpec extends PlaySpecification with PlayTestDb {
           (jobsAfterTamper === 0) and
           (status(restarted) === SEE_OTHER) and (files(r, stopped) === 3) and
           (RoundUser.byRoundId(r).find(_.userId == stopped.getId).map(_.active) must beSome(true))
+      }
+    }
+  }
+
+  // ── offered == allowed (D3 revised 2026-11-25: running and stopped rounds) ───
+
+  /** A state of the round the statistics are shown for, set on the fixture's round (`legacy`: another
+    * round, with votes and no round_user rows), and who acts on it.
+    */
+  private case class Case(name: String, offered: Boolean, pageAllows: Boolean, actor: String = "admin@example.com",
+      legacy: Boolean = false)(val set: (Round, Map[String, User]) => Unit)
+
+  private def freeze(r: Long): Unit = DB.localTx { s => Round.freeze(Seq(r))(s) }
+
+  private val cases = Seq(
+    Case("running", offered = true, pageAllows = true)((_, _) => ()),
+    Case("stopped", offered = true, pageAllows = true)((r, _) => Round.setActive(r.getId, active = false)),
+    Case("being created", offered = false, pageAllows = false)((r, _) =>
+      sql"UPDATE round SET distributing = 1, active = 0, status = 'draft' WHERE id = ${r.getId}".update()),
+    // the plan's allowed exception: the page and the POST add the round_user row only; not linked (its
+    // jurors are chosen on the jurors form)
+    Case("held in review", offered = false, pageAllows = true)((r, _) =>
+      sql"UPDATE round SET distributing = 1, active = 0, status = 'paused' WHERE id = ${r.getId}".update()),
+    Case("running, frozen by another job", offered = false, pageAllows = false)((r, _) => freeze(r.getId)),
+    Case("stopped, frozen by another job", offered = false, pageAllows = false)((r, _) => {
+      Round.setActive(r.getId, active = false); freeze(r.getId)
+    }),
+    Case("holding a queued job's key", offered = false, pageAllows = false)((r, _) =>
+      JobJdbc.insert(NewJob(RoundDistributionHandler.Kind, Some(r.contestId), Some("round"), r.id,
+        Some(RoundDistributionHandler.dedupeKey(r.getId))), owner = None)(AutoSession)),
+    Case("legacy", offered = false, pageAllows = false, legacy = true)((_, _) => ()),
+    // root reaches a retired contest's round; its admins get the 403 page
+    Case("a retired contest's, stopped", offered = false, pageAllows = false, actor = "root@example.com")((r, _) => {
+      Round.setActive(r.getId, active = false)
+      sql"UPDATE contest_jury SET retired_at = NOW(3) WHERE id = ${r.contestId}".update()
+    })
+  )
+
+  "Add juror… and Start and give a fair share…" should {
+
+    "be offered on the statistics exactly when the page and its POST take the juror (but the review exception), alike" in {
+      testDbApp { app =>
+        cases.map { c =>
+          SharedPlayApp.truncateAll()
+          val (fixture, _, users) = setUp()
+          val round =
+            if (!c.legacy) fixture
+            else {
+              val legacy = roundDao.create(Round(None, 2, Some("Legacy"), contestId, distribution = 0, active = true))
+              VoteJdbc.create(1, 0, users("juror").getId, legacy.getId)
+              legacy
+            }
+          val r = round.getId
+          // a stopped juror of the round, whose row offers "Start and give a fair share…"
+          if (!c.legacy) RoundUser.setActive(r, users("juror2").getId, active = false)
+          c.set(round, users)
+          val actor = Some(c.actor)
+          val stat = get(app, actor, s"/roundstat/$r")
+          val statBody = contentAsString(stat)
+          val addPage = contentAsString(get(app, actor, page(r) + s"?juror=${users("newjuror").getId}"))
+          val restartPage = contentAsString(get(app, actor, page(r) + s"?juror=${users("juror2").getId}"))
+          val activeBefore = Round.findById(r).map(_.active)
+          val result = post(app, actor, page(r), "juror" -> users("newjuror").getId.toString, "jury" -> jury(r))
+          val allowedByPost = status(result) == SEE_OTHER
+          def allowedByPage(body: String) = body.contains("round-juror-add-form") && !body.contains("round-juror-add-refused")
+          (status(stat) aka s"${c.name}: statistics" must_== OK) and
+            (statBody.contains("id=\"round-juror-add-link\"") aka s"${c.name}: Add juror… offered" must_== c.offered) and
+            (statBody.contains("round-juror-share") aka s"${c.name}: Start and give a fair share… offered" must_==
+              (c.offered && !c.legacy)) and
+            (allowedByPage(addPage) aka s"${c.name}: the add page takes the juror" must_== c.pageAllows) and
+            (allowedByPost aka s"${c.name}: the POST takes the juror (${status(result)})" must_== c.pageAllows) and
+            (status(result) aka s"${c.name}: a refused POST" must beOneOf(SEE_OTHER, CONFLICT)) and
+            // the stopped juror's own page: the same answer (none in a legacy round)
+            ((c.legacy || allowedByPage(restartPage) == c.pageAllows) aka s"${c.name}: the restart page" must beTrue) and
+            // the round's own state is left as it was: a stopped round stays stopped, a running one running
+            (Round.findById(r).map(_.active) aka s"${c.name}: the round's active flag" must_== activeBefore) and
+            (rebalanceJobs() aka s"${c.name}: jobs queued" must_== (if (allowedByPost && !c.name.contains("review")) 1 else 0))
+        }.reduce(_ and _)
+      }
+    }
+
+    "keep a stopped round closed for its jurors while a juror is added: round_closed, never round_paused" in {
+      testDbApp { app =>
+        val (round, _, users) = setUp()
+        val r = round.getId
+        val juror = users("juror")
+        Round.setActive(r, active = false)
+        pause(round, users("newjuror"))
+        val vote = route(app, FakeRequest(POST, s"/rate/round/$r/pageid/1/select/1")
+          .withSession(Secured.UserName -> "juror@example.com", Secured.CurrentContestId -> contestId.toString)
+          .withHeaders("X-Requested-With" -> "XMLHttpRequest").withCSRFToken).get
+        val largeJson = route(app, FakeRequest(GET, s"/large/round/$r/user/${juror.getId}/pageid/1")
+          .withSession(Secured.UserName -> "juror@example.com", Secured.CurrentContestId -> contestId.toString)
+          .withHeaders(ACCEPT -> "application/json", "X-Requested-With" -> "XMLHttpRequest").withCSRFToken).get
+        val gallery = get(app, Some("juror@example.com"), s"/gallery/round/$r/user/${juror.getId}/page/1")
+        (status(vote) === CONFLICT) and (contentAsString(vote) must contain("round_closed")) and
+          (contentAsString(vote) must not(contain("round_paused"))) and
+          (contentAsString(largeJson) must not(contain("round_paused"))) and
+          (status(gallery) === OK) and (contentAsString(gallery) must contain("data-reason=\"round_stopped\"")) and
+          (contentAsString(gallery) must not(contain("id=\"round-paused\""))) and
+          (VoteJdbc.findBy(1, juror.getId, r).map(_.rate) must beSome(0))
+      }
+    }
+
+    "add a juror to a stopped round through the POST, the round staying stopped, with no warning" in {
+      testDbApp { app =>
+        val (round, _, users) = setUp()
+        val r = round.getId
+        val y = users("newjuror")
+        Round.setActive(r, active = false)
+        val shown = contentAsString(get(app, Some("admin@example.com"), page(r) + s"?juror=${y.getId}"))
+        val result = post(app, Some("admin@example.com"), page(r), "juror" -> y.getId.toString, "jury" -> jury(r))
+        (shown must contain("id=\"round-juror-add-stopped\"")) and (shown must not(contain("id=\"round-juror-add-pause\""))) and
+          (status(result) === SEE_OTHER) and (flash(result).get("success") must beSome(contain("3"))) and
+          (flash(result).get(RoundController.WarningFlash) must beNone) and (files(r, y) === 3) and
+          (Round.findById(r).map(r => (r.active, r.freezeCount)) must beSome((false, 0))) and
+          (RoundUser.byRoundId(r).find(_.userId == y.getId).map(_.active) must beSome(true)) and
+          (RoundImageInvariants.violations(r) must beEmpty)
+      }
+    }
+
+    "be refused on a stopped round to its organizer, a juror and another contest's admin, with nothing queued or linked" in {
+      testDbApp { app =>
+        val (round, _, users) = setUp()
+        val r = round.getId
+        Round.setActive(r, active = false)
+        RoundUser.setActive(r, users("juror2").getId, active = false)
+        val body = Seq("juror" -> users("newjuror").getId.toString, "jury" -> jury(r))
+        Seq("organizer@example.com", "juror@example.com", "other-admin@example.com").map { e =>
+          (status(get(app, Some(e), page(r))) aka s"$e: page" must_== FORBIDDEN) and
+            (status(get(app, Some(e), page(r) + s"?juror=${users("juror2").getId}")) aka s"$e: restart page" must_== FORBIDDEN) and
+            (status(post(app, Some(e), page(r), body: _*)) aka s"$e: POST" must_== FORBIDDEN)
+        }.reduce(_ and _) and
+          (contentAsString(get(app, Some("organizer@example.com"), s"/roundstat/$r")) must not(contain(page(r)))) and
+          (rebalanceJobs() === 0) and (files(r, users("newjuror")) === 0) and
+          (Round.findById(r).map(_.active) must beSome(false))
       }
     }
   }

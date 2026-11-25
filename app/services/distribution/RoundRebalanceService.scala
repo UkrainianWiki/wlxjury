@@ -7,7 +7,8 @@ import services.jobs._
 
 import javax.inject.Inject
 
-/** Adding a juror to a running round (docs/plans/2026-11-16-round-editing.md, §5): what the add
+/** Adding a juror to a running or a stopped round (docs/plans/2026-11-16-round-editing.md, §5; D3
+  * revised 2026-11-25): what the add
   * page shows ([[preview]]) and queueing the job ([[add]], a [[RoundRebalanceHandler]] job).
   */
 class RoundRebalanceService @Inject() (jobs: JobScheduler) {
