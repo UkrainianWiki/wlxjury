@@ -97,7 +97,7 @@ class RoundFindFilesAgainSpec extends PlaySpecification with PlayTestDb {
           val refused = flash(start(app, after)).get("error")
           (offered(before, r) aka s"round ${r.number} offered" must beTrue) and
             (code === SEE_OTHER) and
-            (redirectLocation(result) must beSome(startWith(s"/admin/rounds?contestId=$contestId"))) and
+            (redirectLocation(result) must beSome(s"/admin/rounds?contestId=$contestId#round-${r.getId}")) and
             (flash(result).get("success") must beSome(contain("finding its matching files again"))) and
             (after.inReview aka s"round ${r.number} in review" must beTrue) and (files(after) === 3) and
             (User.findRoundJurors(r.getId) must beEmpty) and

@@ -820,7 +820,9 @@ class RoundController @Inject() (
     withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
       withAdminRound(user, id, roundNotFound(user), request) { round =>
         val messages = messagesApi.preferred(request)
-        val back = Redirect(RoundsFilter.fromForm(request).addTo(routes.RoundController.rounds(Some(round.contestId)).url))
+        // back to the round's row (its anchor) on the Rounds page as it was filtered
+        val back = Redirect(RoundsFilter.fromForm(request).addTo(routes.RoundController.rounds(Some(round.contestId)).url) +
+          s"#round-${round.getId}")
         def said(key: String, args: Any*) = messages(key, (Seq[Any](round.number, round.description) ++ args): _*)
         // a job of the round queued or running (a second press while its fill runs): said so, not refused
         if (JobJdbc.activeByDedupeKey(RoundDistributionHandler.dedupeKey(round.getId)).isDefined)
