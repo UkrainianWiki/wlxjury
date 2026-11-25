@@ -12,43 +12,51 @@ Deploy dates come from production's migration history, as described at the end.
 
 ## Unreleased (on master, not yet deployed)
 
-Merged after the 26.11.17 build, for the release after it:
-
-**Fixes**
-
-- Round form: a track label that is too long is listed at the top as "Track label (optional): …" with a link to the field; a label of emoji or other characters outside the basic plane can be typed up to its 64 characters (the browser no longer counted them twice).
-- Track labels: spaces inside a label are kept as typed, so labels share a track only when they are identical, as the form's help says.
-- Track labels: labelling a first round (or giving it a nomination or regions) no longer changes the category track names of the other first rounds.
-- Rounds page: a round with one of several previous rounds deleted no longer says it "starts a track of its own"; it says the deleted round is left out when its track is chosen.
-- Round form: a screen reader now reads the category choice's error ("More category options") with its radio buttons, and announces the group as invalid.
-
-For the next release, 26.11.17.
+Merged after the 26.11.17 build, for the release after it.
 
 **Features**
 
-- Saving a round's settings logs who changed what, with the old and new values, on the round's statistics and in the contest's change log (migration V114).
-- GraphQL: `round(id)` and `roundStat(roundId)` give one round and the round statistics page's numbers, with the page's own-votes rule.
-- GraphQL: `roundImages` and `image` give a juror's files in a round with their votes, paged by cursor, under the galleries' rules.
-- Rounds show their track (Main, Quality, a nomination, a region…) as a coloured chip on the Rounds page, the round statistics and the organisers' round menu, with a Track filter on Rounds and Statistics; admins can label a round's track on its form, and label changes are logged (migration V115).
-- "Add juror…" and a stopped juror's "Start and give a fair share…" work on stopped rounds too: the unrated files move while the round stays stopped, and every juror has a fair share when it is started again. The round statistics offer them only when they can be done: not on a round still being set up (its jurors are chosen there), held by a job, or from before jurors were stored. The add page names the rounds created from this round, whose files change only when they are distributed again.
-- Retiring a contest is refused while a job holds one of its rounds (a juror being added, or a distribution reading its votes): try again when the job has finished.
-- A round's statistics, review page and Edit round page link the rounds it was created from ("Created from: Round 3 (…)") and the rounds created from it, for its admins and organizers.
-- A round being set up says on its Edit page and its review page that jurors can't see it yet, with "Change the settings", "Check the files" and "Distribute to jurors" (disabled, saying why, while its files are being matched or when none matches) (#186).
-- A round's rating type can be changed while it is being set up (in review, nothing distributed); it is locked once distributed (#184).
-- A new round is set up in numbered steps with a step bar: 1 "Which files" (the form, one button "Save and find matching files"), 2 "Check the matching files" (the review page, "N files match (the contest has M)", then "Distribute to jurors" as its main button), 3 "Jurors" (the jurors form), then open to jurors. The Rounds page reads "Setting up – step 2 of 3: check files" or "… step 3 of 3: choose jurors" with that step's button in place of Start; the round form, statistics and conflicts page show the same step with a link.
+- A new round is set up in numbered steps with a step bar: 1 "Which files" (the form, one button "Save and find matching files"), 2 "Check the matching files" (the review page, "N files match (the contest has M)", then "Distribute to jurors" as its main button), 3 "Jurors" (the jurors form), then open to jurors. The Rounds page reads "Setting up – step 2 of 3: check files" or "… step 3 of 3: choose jurors" with that step's button in place of Start; the round form, statistics and conflicts page show the same step with a link (#205).
 
 **Fixes**
 
-- Rounds page: a round whose setup was cancelled or didn't finish, meant to be reviewed first and with no jurors yet, has "Find the matching files again": its files are found again and it waits for review, instead of having to be set up anew. Its refused Start says so (#194).
-- A round stopped while a juror is being added to it no longer makes the add fail: the add completes and the round stays stopped.
-- Rounds page: a round not yet distributed to its jurors has no Start button. It reads "Not started – waiting for distribution" with a "Distribute to jurors" link, or "Images are being distributed" while that runs. Starting it anyway no longer says its images are being distributed when they aren't: the message says what to do.
-- Round form: a refused save comes back as the same form (re-apply mode, regions, nominations, the round's jurors kept), lists every error at the top with a link to its field, shows each at its field, and opens the section that holds it ("Media filtering" stayed closed before, hiding the error). Each refused save is logged as `form_refused` (field names and message keys, never the values).
-- Round form: Back or a repeated Save after a new round was saved opens that round's Edit page ("Round N is saved. You can change its settings here.") instead of the stale form; nothing is created twice or refused, and a repeat is logged as `resubmit_dropped` (same or changed form).
-- Saving a new round says so on the page it lands on ("Round N (description) is saved. Its matching files are being found. Check them, then choose jurors."); saving an existing round's settings says "Round N (description) is saved."
-- Distribute is refused for a round whose settings match no file; the jurors form shows it disabled with the reason.
-- Round form: a save refused because another round's job must finish first (a round to leave out still being distributed, a previous round with a juror being added) keeps the form as entered and shows that job's progress, linked to it; when it has finished the box says "Round N has finished. You can save now." and Save is enabled again.
+- Round form: a track label that is too long is listed at the top as "Track label (optional): …" with a link to the field; a label of emoji or other characters outside the basic plane can be typed up to its 64 characters (the browser no longer counted them twice) (#209).
+- Track labels: spaces inside a label are kept as typed, so labels share a track only when they are identical, as the form's help says (#209).
+- Track labels: labelling a first round (or giving it a nomination or regions) no longer changes the category track names of the other first rounds (#209).
+- Rounds page: a round with one of several previous rounds deleted no longer says it "starts a track of its own"; it says the deleted round is left out when its track is chosen (#209).
+- Round form: a screen reader now reads the category choice's error ("More category options") with its radio buttons, and announces the group as invalid (#211).
 
 ## Deployed releases
+
+### 26.11.17 (2026-11-26)
+
+Built from master after `26.11.16`; it migrates the database, so the deploy takes a backup.
+
+**Features**
+
+- Saving a round's settings logs who changed what, with the old and new values, on the round statistics and in the contest's change log (#178).
+- Rounds show their track (Main, Quality, a nomination, a region…) as a coloured chip, with a Track filter on Rounds and Statistics; admins can label a round's track on its form (#193).
+- A round's statistics, review and Edit round pages link the rounds it was created from and the rounds created from it (#197).
+- "Add juror…" and a stopped juror's "Start and give a fair share…" work on stopped rounds too (#196).
+- A round being set up says that jurors can't see it yet, with its next steps: change the settings, check the files, distribute to jurors (#198).
+- A round's rating type can be changed until it is distributed (#198).
+- GraphQL: one round, its statistics, and a juror's files in a round with their votes (#182).
+
+**Fixes**
+
+- Rounds page: a round not yet distributed has no Start button; it offers "Distribute to jurors" instead (#192).
+- Round form: a refused save keeps the form as entered and shows every error at the top and at its field (#198).
+- Round form: Back or a repeated Save after saving a new round opens that round's Edit page; nothing is created twice (#198).
+- Saving a round says so on the page it lands on (#198).
+- Distribute is refused for a round whose settings match no file (#198).
+- A round save that must wait for another round's job shows that job's progress and enables Save when it has finished (#198).
+- A review-first round whose setup was cancelled can find its matching files again instead of being set up anew (#199).
+- A round stopped while a juror is being added no longer makes the add fail (#196).
+- Retiring a contest is refused while a job holds one of its rounds (#196).
+
+**Operations**
+
+- Migrations: V114, V115.
 
 ### 26.11.16 (2026-11-25)
 
