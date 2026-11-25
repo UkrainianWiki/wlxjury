@@ -116,7 +116,8 @@ object GraphQLContext {
 /** An error a resolver or the endpoint answers with: a message key (never request or exception
   * text), its `extensions.code` and, for a denial or a server error, the reference of its log line.
   */
-final case class GraphQLError(message: String, code: String, reference: Option[String] = None)
+final case class GraphQLError(message: String, code: String, reference: Option[String] = None,
+    reason: Option[String] = None)
     extends Exception(message, null, false, false)
 
 object GraphQLError {
@@ -129,6 +130,11 @@ object GraphQLError {
     val BadInput = "BAD_INPUT"
     val InternalError = "INTERNAL_ERROR"
     val TooManyRequests = "TOO_MANY_REQUESTS"
+
+    /** A round not open to its juror now (stopped, being created, the juror stopped on it, its files
+      * moving): a state, not a denial, as the web gallery's 409 `round_closed` / `round_paused`.
+      */
+    val Conflict = "CONFLICT"
   }
 
   private val logger = Logger("graphql")
@@ -149,4 +155,9 @@ object GraphQLError {
 
   /** A resource the caller sees but may not use so, with the reference of its denial's log line. */
   def forbidden(reference: String): GraphQLError = GraphQLError("forbidden", Code.Forbidden, Some(reference))
+
+  /** A juror's round not open to them now: `round_closed` with the state's reason
+    * (`services.GalleryService.RoundState`, e.g. `juror_stopped`) in `extensions.reason`.
+    */
+  def roundClosed(reason: String): GraphQLError = GraphQLError("round_closed", Code.Conflict, reason = Some(reason))
 }

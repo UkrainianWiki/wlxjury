@@ -199,7 +199,7 @@ tests (section 5) apply to every slice. Days include review.
 |---|---|---|---|
 | 1 | Foundation and first screens: Play action `POST /api/graphql`, auth, limits, denial logging, SDL file plus the schema-matches-SDL test, codegen config, a section in `docs/api.md`, fixture sign-in; queries `me`, `contests`, `contest(id)` with rounds | #136's first screen, the root contests grid | 3-4 |
 | 2 | Done: `roundStat` (round statistics, juror stats) and `round(id)` | #136's second screen, organizer round statistics | 1-1.5 |
-| 3 | After #129 and the vote-rule extraction: `roundImages` (keyset connection, the viewer's own vote, through `viewerRounds` / `viewAs`), `image(roundId, pageId)` | the juror gallery and large view | 2 |
+| 3 | Done (Q8 amended): `roundImages` (keyset connection, the viewer's own vote, through `viewerRounds` / `viewAs`), `image(roundId, pageId)` | the juror gallery and large view | 2 |
 | 4 | Mutation `vote(roundId, pageId, rate, criterion?)`, after its rules are extracted into a service (below) | juror voting | 3 |
 | 5 | Comments, users, monuments; series fields once #119-#124 are in. Admin and organizer screens come first, so this slice may move ahead of 3-4 | organizer and admin screens | 2 |
 | 6 | Organizer and admin mutations through the services (no `createRound` in the first slices); subscriptions only when a screen needs one | later | open |
@@ -230,6 +230,10 @@ contest's round, no CSRF header, a token caller. This is why slice 4 is 3 days a
 - Q7. No `createRound` mutation in the first slices (a later one would only enqueue the distribution job).
 - Q8. Admin and organizer screens first (slices 1, 2, 5); the juror slices 3-4 come after #129 and the
   vote-rule extraction.
+- Q8 amended (maintainer, 2026-11-25): slice 3 no longer waits for #129's gallery build. It follows the paging
+  rules of #129's plan (`2026-11-19-own-gallery-tiles.md` §3.6, keyset continuation: the full sort key with the
+  page id as tie-break, the cursor carrying the last file's key as it was when its page was read, that file left
+  out of the next page). Voting (slice 4) still waits for the vote-rule extraction.
 - CY-2 (#140), a rule coming: a juror of a round sees only their own votes in that round whatever their role.
   The vote and round-image resolvers apply it (section 4, item 5; negative test in section 5).
 

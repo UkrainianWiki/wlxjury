@@ -1,10 +1,10 @@
 package graphql
 
-import controllers.Secured
+import controllers.{Global, ListOrder, RoundList, Secured, VoteFilter}
 import db.scalikejdbc.{PlayTestDb, Round, RoundUser, User, UserContestJdbc}
 import org.intracer.wmua.{Image, Vote}
 import play.api.Application
-import play.api.libs.json.{JsArray, JsNull, JsObject, JsValue, Json}
+import play.api.libs.json.{JsArray, JsNull, JsObject, JsString, JsValue, Json}
 import play.api.mvc.Result
 import play.api.test.{FakeRequest, PlaySpecification}
 import scalikejdbc._
@@ -15,7 +15,8 @@ import scala.concurrent.{Await, Future}
 import scala.jdk.CollectionConverters._
 
 /** GraphQL's round queries through the router, as served (plan §6, slices 2 and 3): `round(id)`,
-  * `roundStat(roundId)`, and their negative authorization tests (plan §5): another contest's round, an
+  * `roundStat(roundId)`, `roundImages` (keyset paging, its statements a page) and `image`, and their
+  * negative authorization tests (plan §5): another contest's round, an
   * inactive membership, a juror, the conflict-of-interest rule, a stopped juror, a token with a series
   * grant, root.
   */
@@ -119,13 +120,19 @@ class GraphQLRoundsSpec extends PlaySpecification with PlayTestDb {
   /** `f`'s result and the lines logged meanwhile on `name`. */
   private def withLog[T](name: String)(f: => T): (T, Seq[String]) = {
     val log = logger(name)
+    val level = log.getLevel
+    // INFO lines too (round.access), whatever the test config's level
+    log.setLevel(ch.qos.logback.classic.Level.INFO)
     val appender = new ch.qos.logback.core.read.ListAppender[ch.qos.logback.classic.spi.ILoggingEvent]
     appender.start()
     log.addAppender(appender)
     try {
       val result = f
       (result, appender.list.asScala.toSeq.map(e => s"${e.getLevel} ${e.getFormattedMessage}"))
-    } finally log.detachAppender(appender)
+    } finally {
+      log.detachAppender(appender)
+      log.setLevel(level)
+    }
   }
 
   /** `field` is null with one error of `code`, whose reference is on exactly one `security.authz` line. */
@@ -351,6 +358,366 @@ class GraphQLRoundsSpec extends PlaySpecification with PlayTestDb {
         val s = seriesSetUp()
         deniedAs("roundStat", "NOT_FOUND")(asToken(app, s.seriesAdmin, statQuery, Json.obj("id" -> s.free.toString)))
         deniedAs("round", "NOT_FOUND")(asToken(app, s.seriesAdmin, roundQuery(s.free)))
+      }
+    }
+  }
+
+  // --- slice 3: roundImages and image
+
+  private val imagesQuery =
+    """query I($round: ID!, $user: ID, $filter: ImageFilter, $order: ImageOrder, $first: Int, $after: String) {
+      |  roundImages(roundId: $round, userId: $user, filter: $filter, order: $order, first: $first, after: $after) {
+      |    totalCount pageInfo { endCursor hasNextPage }
+      |    nodes { pageId title width height monumentId isVideo vote { rate voted votedAt }
+      |      thumbnail { url srcset width height } row: thumbnail(size: ROW) { url srcset } largeImage { src srcset fallback } } } }""".stripMargin
+
+  /** The same list with a file's page id only: a page of 200 within the complexity budget. */
+  private val idsQuery =
+    """query I($round: ID!, $user: ID, $filter: ImageFilter, $order: ImageOrder, $first: Int, $after: String) {
+      |  roundImages(roundId: $round, userId: $user, filter: $filter, order: $order, first: $first, after: $after) {
+      |    pageInfo { endCursor hasNextPage } nodes { pageId } } }""".stripMargin
+
+  private def images(app: Application, as: String, round: Long, user: Option[Long] = None, filter: Option[String] = None,
+                     order: Option[String] = None, first: Option[Int] = None, after: Option[String] = None,
+                     query: String = imagesQuery, session: Option[Seq[(String, String)]] = None): Future[Result] = {
+    val variables = Json.obj("round" -> round.toString) ++
+      user.fold(Json.obj())(u => Json.obj("user" -> u.toString)) ++
+      filter.fold(Json.obj())(v => Json.obj("filter" -> v)) ++ order.fold(Json.obj())(v => Json.obj("order" -> v)) ++
+      first.fold(Json.obj())(v => Json.obj("first" -> v)) ++ after.fold(Json.obj())(v => Json.obj("after" -> v))
+    post(app, query, session.getOrElse(signedIn(as)), variables = variables)
+  }
+
+  private def nodes(result: Future[Result]): Seq[JsObject] = (data(result, "roundImages") \ "nodes").as[Seq[JsObject]]
+
+  private def pageIdsOf(result: Future[Result]): Seq[Long] = nodes(result).map(o => (o \ "pageId").as[String].toLong)
+
+  private def ratesOf(result: Future[Result]): Seq[(Long, Int)] =
+    nodes(result).map(o => (o \ "pageId").as[String].toLong -> (o \ "vote" \ "rate").as[Int])
+
+  private def pageInfo(result: Future[Result]): (Option[String], Boolean) = {
+    val info = data(result, "roundImages") \ "pageInfo"
+    ((info \ "endCursor").asOpt[String], (info \ "hasNextPage").as[Boolean])
+  }
+
+  /** All pages of a list, `first` at a time, following the cursors: each page's page ids. */
+  private def allPages(app: Application, as: String, round: Long, first: Int, filter: Option[String] = None,
+                       order: Option[String] = None): Seq[Seq[Long]] = {
+    val pages = Seq.newBuilder[Seq[Long]]
+    var after = Option.empty[String]
+    var more = true
+    var n = 0
+    while (more && n < 100) {
+      val result = images(app, as, round, filter = filter, order = order, first = Some(first), after = after, query = idsQuery)
+      errors(result) must beEmpty
+      val ids = pageIdsOf(result)
+      val (end, hasNext) = pageInfo(result)
+      if (hasNext) ids.size === first
+      if (ids.nonEmpty) pages += ids
+      after = end
+      more = hasNext
+      n += 1
+    }
+    // past the last page: nothing, no cursor
+    val past = images(app, as, round, filter = filter, order = order, first = Some(first), after = after, query = idsQuery)
+    pageIdsOf(past) must beEmpty
+    pageInfo(past) === ((None, false))
+    pages.result()
+  }
+
+  /** A rated round (1-5 stars) of juror A in 10, files 101..113: monument ids in threes, two files with none,
+    * rates with ties, vote times with ties (some untimed).
+    */
+  private def pagingRound(): Round = {
+    val a = User.findByEmail(jurorAEmail).head
+    val round = Round.create(Round(None, 4, Some("paging"), 10, rates = Round.ratesById(5), active = true))
+    round.addUsers(Seq(RoundUser(round.getId, a.getId, "jury", active = true)))
+    val files = (101 to 113).map { i =>
+      Image(i.toLong, s"File:P$i.jpg", None, None, 800, 600,
+        if (i == 104 || i == 109) None else Some(f"80-361-${(i - 101) / 3}%04d"))
+    }
+    imageDao.batchInsert(files)
+    val rates = Seq(5, 5, 3, 0, 3, 5, -1, 0, 0, 3, 5, -1, 0)
+    selectionDao.batchInsert(files.zip(rates).map { case (image, rate) => Vote(image, a, round, rate) })
+    def at(time: String, pages: Int*) = DB.autoCommit(implicit s =>
+      sql"UPDATE vote SET voted_at = TIMESTAMP($time) WHERE round_id = ${round.getId} AND page_id IN ($pages)".update.apply())
+    at("2026-11-01 10:00:00.123", 101, 102, 105)
+    at("2026-11-02 10:00:00.456", 103, 106)
+    at("2026-11-03 10:00:00", 107, 110)
+    DB.autoCommit(implicit s =>
+      sql"UPDATE vote SET voted_at = NULL WHERE round_id = ${round.getId} AND page_id IN (111, 112)".update.apply())
+    round
+  }
+
+  /** The juror's whole list as the galleries read it (one query, no paging). */
+  private def wholeList(round: Round, juror: Long, filter: VoteFilter, order: ListOrder): Seq[Long] =
+    RoundList(round, juror, filter = filter, order = order).query.list().map(_.pageId)
+
+  "roundImages" should {
+
+    "list a juror's own files with their own votes, and the thumbnails the web galleries load" in {
+      testDbApp { app =>
+        val f = setUp()
+        val result = images(app, jurorAEmail, f.binary)
+        errors(result) must beEmpty
+        ratesOf(result) === Seq(1L -> 1, 2L -> -1, 3L -> 0, 4L -> 1, 5L -> 0, 6L -> 0)
+        (data(result, "roundImages") \ "totalCount").as[Int] === 6
+        pageInfo(result)._2 === false
+        val image = Image(1L, "File:Image1.jpg", Some("https://upload.wikimedia.org/wikipedia/commons/a/ab/Image1.jpg"),
+          None, 640, 480, Some("80-361-0001"))
+        val first = nodes(result).head
+        (first \ "thumbnail" \ "url").as[String] === Global.resizeTo(image, Global.gallerySizeX, Global.gallerySizeY)
+        (first \ "thumbnail" \ "srcset").as[String] === Global.srcSet(image, Global.gallerySizeX, Global.gallerySizeY)
+        (first \ "thumbnail" \ "url").as[String] must startWith("/wikipedia/commons/thumb/a/ab/Image1.jpg/")
+        (first \ "row" \ "url").as[String] === Global.resizeTo(image, Global.gallerySizeY)
+        (first \ "largeImage" \ "src").as[String] === Global.largeImage(image).src
+        (first \ "vote" \ "voted").as[Boolean] === true
+        // a filter of the round's tabs; another kind's is refused
+        pageIdsOf(images(app, jurorAEmail, f.binary, filter = Some("UNRATED"))) === Seq(3L, 5L, 6L)
+        pageIdsOf(images(app, jurorAEmail, f.binary, filter = Some("SELECTED"))) === Seq(1L, 4L)
+        messages(images(app, jurorAEmail, f.binary, filter = Some("RATED"))) === Seq("filter_not_in_round")
+        pageIdsOf(images(app, jurorAEmail, f.rated, filter = Some("RATED"), order = Some("RATE"))) === Seq(1L, 2L, 3L)
+      }
+    }
+
+    "page by keyset in every order and tab: stable, ties by page id, no file twice or missing, the last page last" in {
+      testDbApp { app =>
+        setUp()
+        val round = pagingRound()
+        val a = userId(jurorAEmail)
+        val orders = Seq("FILE" -> ListOrder.FileOrder, "RATE" -> ListOrder.ByRate, "LATEST_VOTE" -> ListOrder.LatestVote,
+          "OLDEST_VOTE" -> ListOrder.OldestVote)
+        val filters = Seq("ALL" -> VoteFilter.All, "UNRATED" -> VoteFilter.Unrated, "RATED" -> VoteFilter.Rated)
+        // file order on its own: no monument id first, then by monument id, ties by page id
+        val byFile = (101L to 113L).sortBy(i => (if (i == 104 || i == 109) "" else f"80-361-${(i - 101) / 3}%04d", i))
+        wholeList(round, a, VoteFilter.All, ListOrder.FileOrder) === byFile
+        forall(for (o <- orders; flt <- filters; size <- Seq(1, 2, 5)) yield (o, flt, size)) {
+          case ((orderName, order), (filterName, filter), size) =>
+            val pages = allPages(app, jurorAEmail, round.getId, size, Some(filterName), Some(orderName))
+            val all = pages.flatten
+            val expected = wholeList(round, a, filter, order)
+            (all === expected) and (all.distinct === all) and (pages.dropRight(1).forall(_.size == size) must beTrue)
+        }
+      }
+    }
+
+    "continue after a page's last file where it was when the page was read, whatever votes came after" in {
+      testDbApp { app =>
+        setUp()
+        val round = pagingRound()
+        val a = userId(jurorAEmail)
+        // by rate: the page's last file voted down after the page was read
+        val before = wholeList(round, a, VoteFilter.All, ListOrder.ByRate)
+        val page1 = images(app, jurorAEmail, round.getId, order = Some("RATE"), first = Some(4), query = idsQuery)
+        pageIdsOf(page1) === before.take(4)
+        DB.autoCommit(implicit s =>
+          sql"UPDATE vote SET rate = -1 WHERE round_id = ${round.getId} AND page_id = ${before(3)}".update.apply())
+        def rest(after: Option[String], order: String, filter: Option[String] = None): Seq[Long] = {
+          var cursor = after
+          val ids = Seq.newBuilder[Long]
+          var more = true
+          while (more) {
+            val r = images(app, jurorAEmail, round.getId, order = Some(order), filter = filter, first = Some(3), after = cursor,
+              query = idsQuery)
+            ids ++= pageIdsOf(r)
+            val (end, hasNext) = pageInfo(r)
+            cursor = end
+            more = hasNext
+          }
+          ids.result()
+        }
+        // nothing skipped; the moved file not on the next page, only again at its new place further on (a client
+        // drops a page id it already shows, as the web gallery's script does)
+        val moved = before(3)
+        val continued = rest(pageInfo(page1)._1, "RATE")
+        continued.filterNot(_ == moved) === before.drop(4)
+        continued.take(3) must not(contain(moved))
+        continued.count(_ == moved) must be_<=(1)
+
+        // the unrated tab: its first page voted, the next page starts at the next unrated file
+        val unrated = wholeList(round, a, VoteFilter.Unrated, ListOrder.FileOrder)
+        val u1 = images(app, jurorAEmail, round.getId, filter = Some("UNRATED"), first = Some(2), query = idsQuery)
+        pageIdsOf(u1) === unrated.take(2)
+        DB.autoCommit(implicit s =>
+          sql"UPDATE vote SET rate = 4 WHERE round_id = ${round.getId} AND page_id IN (${unrated.take(2)})".update.apply())
+        rest(pageInfo(u1)._1, "FILE", Some("UNRATED")) === unrated.drop(2)
+      }
+    }
+
+    "refuse a cursor that is no cursor, or one of another list, and clamp the page size to 1..200" in {
+      testDbApp { app =>
+        setUp()
+        val round = pagingRound()
+        messages(images(app, jurorAEmail, round.getId, after = Some("garbage"))) === Seq("bad_cursor")
+        codes(images(app, jurorAEmail, round.getId, after = Some("garbage"))) === Seq("BAD_INPUT")
+        val fileCursor = pageInfo(images(app, jurorAEmail, round.getId, first = Some(2), query = idsQuery))._1.get
+        messages(images(app, jurorAEmail, round.getId, order = Some("RATE"), after = Some(fileCursor))) === Seq("bad_cursor")
+        messages(images(app, jurorAEmail, round.getId, filter = Some("UNRATED"), after = Some(fileCursor))) === Seq("bad_cursor")
+        // another juror's list
+        round.addUsers(Seq(RoundUser(round.getId, userId(jurorBEmail), "jury", active = true)))
+        messages(images(app, organizerEmail, round.getId, user = Some(userId(jurorBEmail)), after = Some(fileCursor))) ===
+          Seq("bad_cursor")
+        // a cursor of the juror's list, its values tampered: another slice of the same list, never an error
+        val tampered = {
+          val json = Json.parse(java.util.Base64.getUrlDecoder.decode(fileCursor)).as[JsObject]
+          val k = (json \ "k").as[JsArray].value.toSeq
+          java.util.Base64.getUrlEncoder.withoutPadding.encodeToString(
+            Json.stringify(json ++ Json.obj("k" -> (Seq(JsString("80-361-0002' OR 1=1 --")) ++ k.tail))).getBytes("UTF-8"))
+        }
+        errors(images(app, jurorAEmail, round.getId, after = Some(tampered), query = idsQuery)) must beEmpty
+        pageIdsOf(images(app, jurorAEmail, round.getId, first = Some(0), query = idsQuery)) must haveSize(1)
+        val big = images(app, jurorAEmail, round.getId, first = Some(1000), query = idsQuery)
+        (pageIdsOf(big).size, pageInfo(big)._2) === ((13, false))
+      }
+    }
+
+    "read a constant number of statements a page, whatever its size (no statement per file)" in {
+      testDbApp { app =>
+        setUp()
+        val a = User.findByEmail(jurorAEmail).head
+        val round = Round.create(Round(None, 5, Some("big"), 10, rates = Round.ratesById(5), active = true))
+        round.addUsers(Seq(RoundUser(round.getId, a.getId, "jury", active = true)))
+        val files = (1001 to 1080).map(i => Image(i.toLong, s"File:B$i.jpg",
+          Some(s"https://upload.wikimedia.org/wikipedia/commons/b/bc/B$i.jpg"), None, 800, 600, Some(f"80-361-${i % 7}%04d")))
+        imageDao.batchInsert(files)
+        selectionDao.batchInsert(files.map(image => Vote(image, a, round, (image.pageId % 6).toInt)))
+        val counter = new java.util.concurrent.atomic.AtomicInteger
+        def statements(first: Int, after: Option[String] = None): (Int, Future[Result]) = {
+          val previous = GlobalSettings.queryCompletionListener
+          GlobalSettings.queryCompletionListener = (sql, params, ms) => { counter.incrementAndGet(); previous(sql, params, ms) }
+          counter.set(0)
+          try {
+            val result = images(app, jurorAEmail, round.getId, order = Some("RATE"), first = Some(first), after = after)
+            errors(result) must beEmpty
+            (counter.get, result)
+          } finally GlobalSettings.queryCompletionListener = previous
+        }
+        statements(5) // warm-up: caches of the caller's lookups
+        val (small, smallResult) = statements(5)
+        val (large, largeResult) = statements(50)
+        val (next, _) = statements(50, pageInfo(smallResult)._1)
+        println(s"roundImages statements per request (totalCount and the checks included): first 5: $small, " +
+          s"first 50: $large, first 50 after a cursor: $next")
+        nodes(largeResult) must haveSize(50)
+        large === small
+        next === small
+      }
+    }
+  }
+
+  "roundImages and image, who sees what" should {
+
+    "refuse a juror another juror's list or all jurors' (FORBIDDEN, logged), and a file not in their list (NOT_FOUND)" in {
+      testDbApp { app =>
+        val f = setUp()
+        deniedAs("roundImages", "FORBIDDEN")(images(app, jurorAEmail, f.binary, user = Some(userId(jurorBEmail))))
+        deniedAs("roundImages", "FORBIDDEN")(images(app, jurorAEmail, f.binary, user = Some(0)))
+        val (r, lines) = withLog("security.authz")(images(app, jurorAEmail, f.binary, user = Some(userId(jurorBEmail))))
+        lines.head must contain("reason=other_users_votes")
+        val imageQuery = "query I($r: ID!, $p: ID!, $u: ID) { image(roundId: $r, pageId: $p, userId: $u) { pageId vote { rate } } }"
+        def image(as: String, page: Long, user: Option[Long] = None) =
+          gql(app, imageQuery, as, Json.obj("r" -> f.binary.toString, "p" -> page.toString) ++
+            user.fold(Json.obj())(u => Json.obj("u" -> u.toString)))
+        (data(image(jurorAEmail, 2), "image") \ "vote" \ "rate").as[Int] === -1
+        (data(image(organizerEmail, 2, Some(userId(jurorBEmail))), "image") \ "vote" \ "rate").as[Int] === 1
+        deniedAs("image", "FORBIDDEN")(image(jurorAEmail, 2, Some(userId(jurorBEmail))))
+        missingAs("image")(image(jurorAEmail, 999))
+      }
+    }
+
+    "show the organizer, the admin and root a juror's list with that juror's votes; not a non-juror's, nor all jurors' yet" in {
+      testDbApp { app =>
+        val f = setUp()
+        forall(Seq(organizerEmail, adminEmail, rootEmail)) { email =>
+          ratesOf(images(app, email, f.binary, user = Some(userId(jurorBEmail)))) ===
+            Seq(1L -> 1, 2L -> 1, 3L -> -1, 4L -> 0, 5L -> 0, 6L -> 0)
+        }
+        // their own list: they are not its jurors
+        val own = images(app, organizerEmail, f.binary)
+        (pageIdsOf(own), (data(own, "roundImages") \ "totalCount").as[Int]) === ((Nil, 0))
+        val (notJuror, lines) = withLog("security.authz")(images(app, organizerEmail, f.binary, user = Some(userId(adminEmail))))
+        (codes(notJuror), messages(notJuror), lines) === ((Seq("NOT_FOUND"), Seq("juror_not_found"), Nil))
+        messages(images(app, organizerEmail, f.binary, user = Some(0))) === Seq("all_jurors_not_supported")
+        ratesOf(images(app, rootEmail, f.other20, user = Some(userId(outsiderEmail)))).map(_._2) === Seq.fill(6)(0)
+      }
+    }
+
+    "apply the conflict-of-interest rule: an organizer who is a juror of the open round gets their own votes only" in {
+      testDbApp { app =>
+        val f = setUp()
+        val organizer = User.findByEmail(organizerEmail).head
+        Round.findById(f.binary).get.addUsers(Seq(RoundUser(f.binary, organizer.getId, "organizer", active = true)))
+        selectionDao.batchInsert(Seq(Vote(1, organizer.getId, f.binary, 1)))
+        ratesOf(images(app, organizerEmail, f.binary)) === Seq(1L -> 1)
+        deniedAs("roundImages", "FORBIDDEN")(images(app, organizerEmail, f.binary, user = Some(userId(jurorAEmail))))
+        DB.autoCommit(implicit s => sql"UPDATE round SET active = FALSE WHERE id = ${f.binary}".update.apply())
+        ratesOf(images(app, organizerEmail, f.binary, user = Some(userId(jurorAEmail)))).size === 6
+      }
+    }
+
+    "answer a stopped juror and a juror of a round being created with CONFLICT round_closed and the state, not a denial" in {
+      testDbApp { app =>
+        val f = setUp()
+        DB.autoCommit(implicit s =>
+          sql"UPDATE round_user SET active = FALSE WHERE round_id = ${f.binary} AND user_id = ${userId(jurorBEmail)}".update.apply())
+        def state(as: String, round: Long) = {
+          val ((r, authz), access) = withLog("round.access")(withLog("security.authz")(images(app, as, round)))
+          (data(r, "roundImages") === JsNull) and (codes(r) === Seq("CONFLICT")) and (messages(r) === Seq("round_closed")) and
+            (authz must beEmpty) and (access must haveSize(1)) and
+            ((errors(r).head \ "extensions" \ "reason").as[String] must beOneOf("juror_stopped", "round_distributing"))
+        }
+        state(jurorBEmail, f.binary)
+        (errors(images(app, jurorBEmail, f.binary)).head \ "extensions" \ "reason").as[String] === "juror_stopped"
+        state(jurorAEmail, f.distributing)
+        (errors(images(app, jurorAEmail, f.distributing)).head \ "extensions" \ "reason").as[String] === "round_distributing"
+      }
+    }
+
+    "answer another contest's round, an inactive member's and a round the juror doesn't judge as NOT_FOUND, logged" in {
+      testDbApp { app =>
+        val f = setUp()
+        deniedAs("roundImages", "NOT_FOUND")(images(app, outsiderEmail, f.binary))
+        deniedAs("roundImages", "NOT_FOUND")(images(app, adminEmail, f.other20, user = Some(userId(outsiderEmail))))
+        deniedAs("roundImages", "NOT_FOUND")(images(app, inactiveEmail, f.binary))
+        deniedAs("roundImages", "NOT_FOUND")(images(app, jurorBEmail, f.rated))
+        missingAs("roundImages")(images(app, jurorAEmail, 999999))
+      }
+    }
+  }
+
+  "a series admin's roundImages" should {
+
+    "follow the derived Admin role from a session, own votes only in the open round they judge; nothing from a token" in {
+      testDbApp { app =>
+        val root = account(rootEmail, root = true)
+        val thisYear = java.time.Year.now().getValue
+        val seriesId = services.series.ContestSeries.createSeriesTx("Nepal", Some("wlm"), Some("Nepal"), None, root.getId)
+          .toOption.get
+        val now = db.scalikejdbc.ContestJuryJdbc.create(None, "Wiki Loves Monuments", thisYear, "Nepal").getId
+        services.series.ContestSeries.setSeries(now, Some(seriesId), root.getId, None)
+        val seriesAdmin = account("seriesadmin@example.com")
+        UserContestJdbc.createMembership(seriesAdmin.getId, now, "organizer")
+        services.series.SeriesAdmins.grant(root, seriesId, seriesAdmin.getId, None, None).toOption.get
+        UserContestJdbc.delete(seriesAdmin.getId, now)
+        val juror = account(jurorAEmail)
+        UserContestJdbc.createMembership(juror.getId, now, User.JURY_ROLE)
+        def round(number: Long, jurors: Seq[User]) = {
+          val r = Round.create(Round(None, number, Some(s"round $number"), now, active = true))
+          r.addUsers(jurors.map(j => RoundUser(r.getId, j.getId, "jury", active = true)))
+          r
+        }
+        val free = round(1, Seq(juror))
+        val coi = round(2, Seq(seriesAdmin, juror))
+        val files = (1 to 3).map(i => Image(i.toLong, s"File:S$i.jpg", None, None, 640, 480, None))
+        imageDao.batchInsert(files)
+        selectionDao.batchInsert(files.flatMap(i => Seq(Vote(i, juror, free, 1), Vote(i, juror, coi, -1),
+          Vote(i, seriesAdmin, coi, 0))))
+        val session = Some(Seq(Secured.UserName -> seriesAdmin.email, Secured.CurrentContestId -> now.toString))
+        ratesOf(images(app, "", free.getId, user = Some(juror.getId), session = session)).map(_._2) === Seq(1, 1, 1)
+        ratesOf(images(app, "", coi.getId, session = session)).map(_._2) === Seq(0, 0, 0)
+        deniedAs("roundImages", "FORBIDDEN")(images(app, "", coi.getId, user = Some(juror.getId), session = session))
+        val token = Seq(AUTHORIZATION -> s"Bearer ${ApiTokenService.create(seriesAdmin.getId, "cli", Some(90))}")
+        deniedAs("roundImages", "NOT_FOUND")(post(app, imagesQuery, headers = token,
+          variables = Json.obj("round" -> free.getId.toString, "user" -> juror.getId.toString)))
       }
     }
   }

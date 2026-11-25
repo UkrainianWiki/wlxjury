@@ -356,7 +356,7 @@ object GraphQLController {
     */
   val exceptionHandler: ExceptionHandler = ExceptionHandler(
     onException = {
-      case (m, e: GraphQLError) => handled(m, e.message, e.code, e.reference)
+      case (m, e: GraphQLError) => handled(m, e.message, e.code, e.reference, e.reason)
       case (m, e)               => internal(m, e)
     },
     onViolation = { case (m, _) => handled(m, "invalid_query", Code.BadInput, None) },
@@ -373,10 +373,13 @@ object GraphQLController {
     handled(m, "internal_error", Code.InternalError, Some(reference))
   }
 
-  private def handled(m: ResultMarshaller, message: String, code: String, reference: Option[String]): HandledException =
+  /** One error: the key, `extensions.code`, the reference, and a round state's `reason`. */
+  private def handled(m: ResultMarshaller, message: String, code: String, reference: Option[String],
+      reason: Option[String] = None): HandledException =
     HandledException(message,
       Map("code" -> m.scalarNode(code, "String", Set.empty)) ++
-        reference.map(r => "reference" -> m.scalarNode(r, "String", Set.empty)))
+        reference.map(r => "reference" -> m.scalarNode(r, "String", Set.empty)) ++
+        reason.map(r => "reason" -> m.scalarNode(r, "String", Set.empty)))
 }
 
 /** How many GraphQL runs each account has at once, at most `max` (`wlxjury.graphql.maxInFlightPerCaller`):
