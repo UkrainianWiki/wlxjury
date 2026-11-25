@@ -20,6 +20,9 @@ For the next release, 26.11.17.
 - GraphQL: `round(id)` and `roundStat(roundId)` give one round and the round statistics page's numbers, with the page's own-votes rule.
 - GraphQL: `roundImages` and `image` give a juror's files in a round with their votes, paged by cursor, under the galleries' rules.
 - Rounds show their track (Main, Quality, a nomination, a region…) as a coloured chip on the Rounds page, the round statistics and the organisers' round menu, with a Track filter on Rounds and Statistics; admins can label a round's track on its form, and label changes are logged (migration V115).
+- "Add juror…" and a stopped juror's "Start and give a fair share…" work on stopped rounds too: the unrated files move while the round stays stopped, and every juror has a fair share when it is started again. The round statistics offer them only when they can be done: not on a round still being set up (its jurors are chosen there), held by a job, or from before jurors were stored.
+- Retiring a contest is refused while a job holds one of its rounds (a juror being added, or a distribution reading its votes): try again when the job has finished.
+- A round stopped (or started) while a juror is being added to it no longer makes the add fail: the add completes and the round stays as last set.
 
 **Fixes**
 

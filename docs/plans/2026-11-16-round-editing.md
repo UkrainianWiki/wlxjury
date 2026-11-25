@@ -268,7 +268,7 @@ code:
   - **During its own job**, a round counts as running when the job froze it (`state.frozen`). The
     per-step check is `freeze_count > (state.frozen ? 1 : 0)`.
 - **Default for add:** the same rule as D3 for reassigning. A stopped or finished round is started
-  first.
+  first. (Revised 2026-11-25, see D3: a stopped round takes a juror too and stays stopped.)
   - **An allowed exception:** a P3 round held in review (after P3-3). Adding a juror there only
     adds the `round_user` row, with no move and no pause, and the distribute step gives them files.
 - **The pause** (the 2026-11-03 rule): the job freezes the round in its first step and releases it
@@ -905,6 +905,15 @@ Deferred by the maintainer (2026-11-16), not rejected. The design kept for then:
   discarded-votes table or migration now.
 - **D3 [user]. Running rounds only.** "Reassign files…" isn't offered, and its POST is refused, for a
   round that isn't running (§5's definition); the admin starts it first.
+  **Revised 2026-11-25 [user]** for adding a juror only (2026-11-25-ui-path-testing.md §5 Q5): "Add
+  juror…" and "Start and give a fair share…" are allowed on stopped rounds too. The job freezes and
+  releases the stopped round as a running one (`active_before_freeze = 0`), so it stays stopped in
+  every path (done, failed, Cancel, Retry, a restart's takeover) and its jurors keep `round_closed`;
+  the juror added ends active. Both are offered exactly when allowed
+  (`RoundRebalanceHandler.addOffered` = no `roundRefusal` and no job on the round's key): not on a
+  round being set up (`distributing`; the held-in-review exception below stays on its page), frozen
+  by another job, legacy, or of a retired contest (which retiring now refuses while a job holds a
+  round frozen, `contest.retire.busy.round`). "Reassign files…" stays running-only.
 
 **Defaults** (each with its reason; the maintainer may overrule any):
 - **"Evenly" = water-filling of open work:** jurors end with about the same number of unrated files.
@@ -922,7 +931,8 @@ Deferred by the maintainer (2026-11-16), not rejected. The design kept for then:
 - **The round pauses while a move runs** (the 2026-11-03 rule), with its own "paused" state for its
   jurors and scheduler priority: seconds for most moves, under a minute for the largest add.
 - **Adding a juror follows D3's rule too:** running rounds only, with one allowed exception: a P3
-  round held in review, where adding only writes the `round_user` row.
+  round held in review, where adding only writes the `round_user` row. (Revised 2026-11-25, see D3:
+  stopped rounds too.)
 - **A ticked stopped donor stays stopped** (add page): D1 covers receivers, who are started again;
   donors only give files away and need not vote.
 - **The reassigned juror's unrated aside rows go to receivers:** otherwise a file restored on
