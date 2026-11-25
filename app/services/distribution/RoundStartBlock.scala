@@ -27,11 +27,23 @@ object RoundStartBlock {
   case object Selecting
       extends RoundStartBlock("selecting", "round.start.state.selecting", "round.start.refused.selecting")
 
-  /** Being created with no job running: its creation failed or was cancelled (its job's Retry). */
+  /** Its creation cancelled (RoundDistributionHandler.onCancelled): no Retry for a cancelled job;
+    * the round form's "Distribute new files" reinstates it (RoundService.distributeNewFiles).
+    */
+  case object Cancelled
+      extends RoundStartBlock("cancelled", "round.start.state.cancelled", "round.start.refused.cancelled")
+
+  /** Its creation's last job failed: its Retry, in the round's row (jobStatus). */
+  case object Failed
+      extends RoundStartBlock("failed", "round.start.state.failed", "round.start.refused.failed")
+
+  /** Being created with no job running, none failed nor cancelled: the round form's "Distribute
+    * new files" completes it.
+    */
   case object Incomplete
       extends RoundStartBlock("incomplete", "round.start.state.incomplete", "round.start.refused.incomplete")
 
-  val All: Seq[RoundStartBlock] = Seq(NotDistributed, Distributing, Selecting, Incomplete)
+  val All: Seq[RoundStartBlock] = Seq(NotDistributed, Distributing, Selecting, Cancelled, Failed, Incomplete)
 
   /** Whether a job, once done, opens the round to its jurors: a distribute, a one-pass job from
     * before P3, or a fill that queues the distribute (not one queued from the review, which leaves
@@ -44,20 +56,25 @@ object RoundStartBlock {
 
   /** The block of a round, None if it may be started (not `distributing`).
     *
-    * @param activeJob the round's distribution job, if one is queued or running
+    * @param latestJob the round's latest distribution job (the Rounds page's; any other kind is ignored)
     */
-  def of(round: Round, activeJob: Option[Job]): Option[RoundStartBlock] =
+  def of(round: Round, latestJob: Option[Job]): Option[RoundStartBlock] =
     if (!round.distributing) None
-    else
-      activeJob.filter(j => j.isActive && j.kind == RoundDistributionHandler.Kind) match {
-        case Some(job) if opensWhenDone(job) => Some(Distributing)
-        case Some(_)                         => Some(Selecting)
-        case None if round.inReview          => Some(NotDistributed)
-        case None                            => Some(Incomplete)
+    else {
+      val job = latestJob.filter(_.kind == RoundDistributionHandler.Kind)
+      job.filter(_.isActive) match {
+        case Some(j) if opensWhenDone(j)                       => Some(Distributing)
+        case Some(_)                                           => Some(Selecting)
+        case None if round.inReview                            => Some(NotDistributed)
+        case None if round.lifecycle == Round.Status.Cancelled => Some(Cancelled)
+        case None if job.exists(_.isFailed)                    => Some(Failed)
+        case None                                              => Some(Incomplete)
       }
+    }
 
-  /** [[of]] with the round's active job read now. */
+  /** [[of]] with the round's latest distribution job read now. */
   def of(round: Round): Option[RoundStartBlock] =
     if (!round.distributing) None
-    else of(round, round.id.flatMap(id => JobJdbc.activeByDedupeKey(RoundDistributionHandler.dedupeKey(id))))
+    else of(round, round.id.flatMap(id =>
+      JobJdbc.latestBySubjects(RoundDistributionHandler.Kind, RoundDistributionHandler.SubjectType, Seq(id)).get(id)))
 }

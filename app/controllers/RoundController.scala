@@ -607,10 +607,12 @@ class RoundController @Inject() (
                 // a round not yet distributed isn't started: its own reason, before any change (a crafted
                 // POST too; the Rounds page shows no Start for it)
                 def refusal(r: Round) =
-                  RoundStartBlock.of(r).fold(messages("round.start.refused.retired", r.number, r.description))(
-                    block => messages(block.refusedKey, r.number, r.description))
+                  if (ContestJuryJdbc.findById(r.contestId).exists(_.retired))
+                    messages("round.start.refused.retired", r.number, r.description)
+                  else
+                    messages(RoundStartBlock.of(r).fold("round.start.refused.changed")(_.refusedKey), r.number, r.description)
                 val blocked = Option.when(selectRound.active)(RoundStartBlock.of(round)).flatten
-                if (blocked.isDefined) back.flashing("error" -> refusal(round))
+                if (blocked.isDefined) back.flashing("error" -> messages(blocked.get.refusedKey, round.number, round.description))
                 else if (roundsService.setCurrentRound(Nil, round.copy(active = selectRound.active), user.id)) {
                   val done = Option.when(toConflicts)("success" ->
                     messages(if (selectRound.active) "coi.round.started" else "coi.round.stopped", round.number))
@@ -619,7 +621,8 @@ class RoundController @Inject() (
                     RoundController.WarningFlash -> messages("round.warning.nojurors.act", round.number))
                   val flashed = done.toSeq ++ noJuror
                   if (flashed.isEmpty) back else back.flashing(flashed: _*)
-                } else // refused under the round's lock: being created meanwhile, or its contest retired
+                } else // refused under the round's lock: its contest retired, or not distributed (meanwhile);
+                  // neither any more (a race): to try again
                   back.flashing("error" -> refusal(Round.findById(round.getId).getOrElse(round)))
               }
             }

@@ -97,10 +97,10 @@
                             @* an open round with no active juror, nobody can vote in it (DG10): a warning icon after
                                the Yes, its words in the tooltip and for screen readers *@
                             @* a round not yet distributed (RoundStartBlock: in review, its images being selected or
-                               distributed, or its creation not finished) has no Start: its state instead, and for one
+                               distributed, its creation cancelled, failed or not finished) has no Start: its state instead, and for one
                                waiting in review, its jurors form, where it is distributed (the maintainer, 2026-11-25) *@
                             <td>@RoundStartBlock.of(round, jobs.get(round.getId)) match {
-                                case Some(block) => {<span class="wlx-round-start-state small" data-round="@round.getId" data-state="@block.reason">@Messages(block.stateKey)</span>@if(block == RoundStartBlock.NotDistributed) { <a class="round-start-distribute small" href="@routes.RoundReviewController.jurors(round.getId)">@Messages("round.review.distribute")</a>}}
+                                case Some(block) => {<span class="wlx-round-start-state small" data-round="@round.getId" data-state="@block.reason">@Messages(block.stateKey)</span>@if(block == RoundStartBlock.NotDistributed) { <a class="btn btn-primary btn-sm ms-1 round-start-distribute" href="@routes.RoundReviewController.jurors(round.getId)">@Messages("round.review.distribute")</a>}}
                                 case None => {@snippets.startStop(round.active, round.getId, contest.getId, routes.RoundController.setRound, extraFields = filterFields)@if(noActiveJuror.contains(round.getId)) {<span class="wlx-round-warning text-warning-emphasis ms-1" data-round="@round.getId" title="@Messages("round.warning.nojurors.short")"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i><span class="visually-hidden">, @Messages("round.warning.nojurors.short")</span></span>}}
                             }</td>
                             <td>@roundsStat.getOrElse(round.getId, 0) </td>
@@ -111,13 +111,12 @@
                                     job.kind == services.distribution.RoundRebalanceHandler.Kind) {
                                 @snippets.jobStatus(job, req.uri)
                             }
-                            @* a round in review (P3): its images ready, to review, and its jurors form, where it
-                               is distributed (RoundReviewController.jurors) *@
+                            @* a round in review (P3): its images ready and to review; its jurors form, where it is
+                               distributed, is linked from its state in the Active column (one Distribute per row) *@
                             @if(round.inReview && !jobs.get(round.getId).exists(_.isActive)) {
                                 <div class="round-review" id="round-review-@round.getId">
                                     @Messages("rounds.images.ready", roundsStat.getOrElse(round.getId, 0))
                                     <a href="@routes.RoundReviewController.review(round.getId)">@Messages("rounds.review")</a>
-                                    <a class="btn btn-primary btn-sm round-jurors-link" href="@routes.RoundReviewController.jurors(round.getId)">@Messages("round.review.distribute")</a>
                                 </div>
                             }
                             @* frozen with no job holding it (RoundFreezes): flagged; root releases it *@

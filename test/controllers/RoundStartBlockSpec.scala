@@ -42,6 +42,20 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
     roundDao.create(Round(None, number, Some(s"Round $number"), contestId = f.contestId, active = false,
       distributing = true, status = Some(Round.Status.Draft)))
 
+  /** A creation whose job was cancelled (RoundDistributionHandler.onCancelled): `cancelled`, `distributing`. */
+  private def cancelled(f: Fixture, number: Int): Round =
+    roundDao.create(Round(None, number, Some(s"Round $number"), contestId = f.contestId, active = false,
+      distributing = true, status = Some(Round.Status.Cancelled)))
+
+  /** A job of `round` ended with `status` (failed, cancelled). */
+  private def endedJob(f: Fixture, round: Round, status: String): Long = {
+    val id = job(f, round, "mode" -> RoundDistributionHandler.Mode.Fill, "distributeAfter" -> true)
+    scalikejdbc.DB.autoCommit { implicit s =>
+      scalikejdbc.SQL("UPDATE job SET status = ? WHERE id = ?").bind(status, id).update.apply()
+    }
+    id
+  }
+
   /** A queued round_distribution job of `round` (never run here). */
   private def job(f: Fixture, round: Round, params: (String, play.api.libs.json.Json.JsValueWrapper)*): Long =
     JobJdbc.insert(NewJob(RoundDistributionHandler.Kind, contestId = Some(f.contestId),
@@ -55,7 +69,7 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
 
   private def setRound(app: Application, user: User, round: Round, active: Boolean): Future[Result] =
     route(app, FakeRequest(POST, "/admin/setround")
-      .withSession(Secured.UserName -> user.email)
+      .withSession(Secured.UserName -> user.email, Secured.CurrentContestId -> round.contestId.toString)
       .withFormUrlEncodedBody("currentId" -> round.getId.toString, "setActive" -> active.toString)
       .withCSRFToken).get
 
@@ -75,15 +89,19 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
         val review = inReview(f, 2)
         val html = contentAsString(roundsPage(app, f, f.admin))
         val link = row(html, review).selectFirst("a.round-start-distribute")
+        // one Distribute per row: the review block keeps its images and Review link only
+        val distributes = row(html, review).select(s"a[href='/admin/rounds/${review.getId}/jurors']")
 
         (hasStart(html, review) must beFalse) and
           (stateOf(html, review) must beSome("not.distributed" -> "Not started – waiting for distribution")) and
           (link.attr("href") === s"/admin/rounds/${review.getId}/jurors") and
-          (link.text() === "Distribute to jurors")
+          (link.text() === "Distribute to jurors") and
+          (distributes.size() === 1) and
+          (row(html, review).select(s"#round-review-${review.getId} a").size() === 1)
       }
     }
 
-    "show a round whose distribution runs as being distributed, a selection for review as such, a failed creation as unfinished" in {
+    "show a running distribution, a selection for review, a failed, a cancelled and an unfinished creation each as such" in {
       testDbApp { implicit app =>
         val f = fixture()
         val distributing = inReview(f, 1)
@@ -93,14 +111,21 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
         val distributeAfter = draft(f, 3)
         job(f, distributeAfter, "mode" -> RoundDistributionHandler.Mode.Fill, "distributeAfter" -> true)
         val failed = draft(f, 4)
+        endedJob(f, failed, "failed")
+        val cancelledOne = cancelled(f, 5)
+        endedJob(f, cancelledOne, "cancelled")
+        val unfinished = draft(f, 6)
         val html = contentAsString(roundsPage(app, f, f.admin))
 
-        (Seq(distributing, selecting, distributeAfter, failed).map(hasStart(html, _)) === Seq(false, false, false, false)) and
+        (Seq(distributing, selecting, distributeAfter, failed, cancelledOne, unfinished).map(hasStart(html, _)) ===
+          Seq.fill(6)(false)) and
+          (stateOf(html, cancelledOne) must beSome("cancelled" -> "Not started – its creation was cancelled")) and
+          (stateOf(html, failed) must beSome("failed" -> "Not started – its distribution failed")) and
+          (stateOf(html, unfinished).map(_._1) must beSome("incomplete")) and
           (stateOf(html, distributing) must beSome(
             "distributing" -> "Images are being distributed. The round starts by itself when done.")) and
           (stateOf(html, selecting).map(_._1) must beSome("selecting")) and
           (stateOf(html, distributeAfter).map(_._1) must beSome("distributing")) and
-          (stateOf(html, failed).map(_._1) must beSome("incomplete")) and
           (row(html, distributing).select("a.round-start-distribute").isEmpty must beTrue)
       }
     }
@@ -148,7 +173,7 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "refuse a round whose distribution runs as still being distributed, a selection for review and an unfinished creation each with their own message" in {
+    "refuse a running distribution, a selection for review, a failed, a cancelled and an unfinished creation each with its own message" in {
       testDbApp { implicit app =>
         val f = fixture()
         val distributing = inReview(f, 1)
@@ -156,14 +181,27 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
         val selecting = draft(f, 2)
         job(f, selecting, "mode" -> RoundDistributionHandler.Mode.Fill, "distributeAfter" -> false)
         val failed = draft(f, 3)
+        endedJob(f, failed, "failed")
+        val cancelledOne = cancelled(f, 4)
+        endedJob(f, cancelledOne, "cancelled")
+        val unfinished = draft(f, 5)
         def error(r: Round) = flash(setRound(app, f.admin, r, active = true)).get("error")
 
         (error(distributing) must beSome(
           "Round 1 (Round 1) can't be started yet: its images are still being distributed. " +
             "It starts by itself once its distribution has finished.")) and
           (error(selecting) must beSome(contain("its images are still being selected for review"))) and
-          (error(failed) must beSome(contain("its distribution didn't finish"))) and
-          unchanged(distributing) and unchanged(selecting) and unchanged(failed)
+          (error(failed) must beSome(
+            "Round 3 (Round 3) can't be started: its distribution failed. Retry its job in its row.")) and
+          // no Retry for a cancelled job: the round form's "Distribute new files" reinstates it
+          (error(cancelledOne) must beSome(
+            "Round 4 (Round 4) can't be started: its creation was cancelled. To create it after all, edit the round, " +
+              "tick “Distribute new files” and save.")) and
+          (error(cancelledOne) must beSome(not(contain("Retry")))) and
+          (error(unfinished) must beSome(contain("its creation didn't finish"))) and
+          (error(unfinished) must beSome(not(contain("Retry")))) and
+          unchanged(distributing) and unchanged(selecting) and unchanged(failed) and unchanged(cancelledOne) and
+          unchanged(unfinished)
       }
     }
 
@@ -179,6 +217,22 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
           (flash(start).get("error") must beNone) and
           (Round.findById(open.getId).map(_.active) must beSome(false)) and
           (Round.findById(stopped.getId).map(_.active) must beSome(true))
+      }
+    }
+
+    "refuse a stopped round of a retired contest as retired (refused by the update, the round read again)" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val stopped = roundDao.create(Round(None, 2, Some("Stopped"), contestId = f.contestId, active = false))
+        scalikejdbc.DB.autoCommit { implicit s =>
+          scalikejdbc.SQL("UPDATE contest_jury SET retired_at = NOW(3) WHERE id = ?").bind(f.contestId).update.apply()
+        }
+        val root = userDao.create(User("Root", "root@example.com", None, Set(User.ROOT_ROLE), isRoot = true))
+        val result = setRound(app, root, stopped, active = true)
+
+        (status(result) === SEE_OTHER) and
+          (flash(result).get("error") must beSome("Round 2 (Stopped) can't be started: its contest is retired.")) and
+          (Round.findById(stopped.getId).map(_.active) must beSome(false))
       }
     }
 
