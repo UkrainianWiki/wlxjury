@@ -854,8 +854,9 @@ slice A builds part of them early.
 - **A Track menu** on Rounds and Statistics, next to Status and Type: `track=` in `RoundsFilter`.
 
 **Logging.** A label change is written to the change log as a new `contest_change` kind, through
-the mechanism #178 adds for round settings (V114), so slice A goes after #178. Cancel and
-Reinstate, if slice B is built, get kinds of their own the same way.
+the mechanism #178 adds for round settings (V114), so slice A goes after #178. Slice B's Cancel
+and Reinstate are logged the same way, as `contest_change` kinds of their own, through the round
+change log (#178).
 
 **Shared with regional winners (#181).** Its decision 2: the default final round is the Main
 track's deepest round. Its decision 17: the default columns are that round and the Main-track rounds
@@ -891,8 +892,21 @@ production (a dump of 2026-11-25, V113), in read-only transactions:
     the Quality and Quantity tracks show full category names until labelled;
   - WLE 2025's round 1668 names a previous round 1666 that no longer exists (number 5 is missing,
     9 `round_user` rows remain, no votes): a deleted round (§10.5's question, for WLE 2025). The
-    rule doesn't say which track a round whose only previous round is a ghost takes; the script
-    treated it as a root (rule 7, its name).
+    rule doesn't say which track a round whose previous rounds are all missing takes. **Slice A
+    treats it as a root** (rule 7) **and shows a warning** naming the missing round; the script
+    treated it as a root too.
+
+**WLM 2026: label Main.**
+- Main is automatic only for the merge round, Q-02.
+- The two labels above give Main = Q-00, Q-01, Q-01-nf, Q-02 (with the trial "[delete] Q-00-1" as
+  a fork until it is cancelled).
+- The regional winners page doesn't depend on those labels: its column path falls back to the
+  previous round that supplied the most files (#181 decision 17), which gives the same path (#181
+  §7.5). #181's phase 1 spec should cover the case here, a Main track holding only the merge round,
+  so that the fallback applies to it too.
+- Organizers should be told to label Main: in slice A's UI (the label setter's help on the round
+  form, the Track chip and the Track menu), and with a hint on the Rounds page when a merge round's
+  Main track has only that round.
 
 **Size:** 3–4 agent days, with review and targeted specs: the unit spec on a synthetic fixture
 (tracks only, including WLM 2026's shape with its two labels), the migration specs, the form spec,
@@ -901,10 +915,13 @@ and screenshots in both themes.
 
 **Not in slice A:** the map page (decisions 1–2, §2.2), provenance (phase 2), form help and
 warnings (phase 3), Delete (phase 3), phase 3b, SVG lines (phase 4), and phase 1c's grouping of the
-menus (decision 16). Cancel and Reinstate are slice B.
+menus (decision 16). Cancel and Reinstate are slice B, after regional winners phase 1.
 
 **Open for the maintainer:**
 1. Does slice B (Cancel and Reinstate, 2.5–3.5 days) also ship for December?
+   **Decided (maintainer, 2026-11-25)**: slice B (Cancel/Reinstate) ships for December, after
+   regional winners phase 1. Order: slice A → regional winners phase 1 → slice B → regional
+   exports.
 2. May the Track menu go before multi-role? Decision 16 groups the round menus by track after
    multi-role; the Track menu is a filter on Rounds and Statistics, not that grouping.
 3. The round-tags brainstorm's 5 questions for the WLM UA organizer (§6 there):
