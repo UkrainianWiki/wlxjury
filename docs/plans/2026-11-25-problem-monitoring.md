@@ -1,6 +1,6 @@
 # Problem monitoring: refusals, errors and failed jobs seen without looking for them (plan, 2026-11-25)
 
-**Status:** draft, for the maintainer's decisions (§9); Q1–Q5 decided 2026-11-25. Read-only survey of master at `5d72c4d8`
+**Status:** decided: all questions (Q1–Q7, §9) decided by the maintainer 2026-11-25; not built. Read-only survey of master at `5d72c4d8`
 (after the 26.11.16 build); no code changed, no test run. References are to files and functions;
 line numbers drift.
 
@@ -8,7 +8,7 @@ line numbers drift.
 row (`POST /admin/rounds/save` → 400), and a twelfth save at 08:15 was taken as a resubmit of a
 round already created at 08:01, so its changes were dropped (production logs, 2026-11-25). Nobody
 noticed at the time. It was found by chance in Apache's access log. None of the 11 refusals left an
-application log line, so their cause can only be inferred (the UI-path testing plan, draft PR #189,
+application log line, so their cause can only be inferred (the UI-path testing plan, #189,
 §0.5, lists the candidates).
 
 **Decided by the maintainer, 2026-11-25:**
@@ -42,8 +42,8 @@ application log line, so their cause can only be inferred (the UI-path testing p
   now (Q2; its deferred DG5 for this table waits for the later cleanup decision). Its health page (D-1a) and
   `GET /api/diagnostics/recent` (D-1b) read the same table once it exists, as D-3 planned. Its
   check **H11** (stuck jobs) and this plan's pattern P5 are one function.
-- **The UI-path testing plan** (PR #189, `docs/plans/2026-11-25-ui-path-testing.md`), decided by
-  the maintainer. Its Q3 (decided): refused saves are logged in the 26.11.17 refusal-UX PR, as
+- **The UI-path testing plan** (#189, merged, `docs/plans/2026-11-25-ui-path-testing.md`), decided
+  by the maintainer. Its Q3 (decided): refused saves are logged in the 26.11.17 refusal-UX PR, as
   `form_refused`; that log item **is** slice M-1 here, built once, in that PR. Its Q6 (decided):
   Back after creating a round lands on the created round's Edit page (§2.3). Its Q7 (decided): a
   refusal that is a wait (`error.exclude.rounds.busy`, `error.previous.round.rebalancing`) shows the
@@ -413,7 +413,7 @@ other contests, no `server_error` (root support), the email masked. No badge for
 | Slice | Content | Size | When |
 |---|---|---|---|
 | **M-1** | `FormRefusal` (keys and field names, arguments dropped), used only in `RoundController.saveRound`'s two refusal branches (`formWithErrors` and `reRender`), and the `resubmit_dropped` line with §2.3's in-memory form hash (`same` / `changed`), replacing the unquoted resubmit line. **Log only: no table, no migration, no filter.** The line is named `form_refused`; the UI-path plan (#189) is aligned to that name, and M-1 *is* its refusal-UX log item, not a second logger | S (≈ 1 day) | **26.11.17**, inside the UI-path refusal-UX PR (d) |
-| **M-2** | The migration (both tables), `EventRecorder`, the flood cap, `RefusalFilter`, the hooks of §2.1 (`logDenial`, `ErrorHandler`, `CsrfErrorHandler`, `JobScheduler`, link refusals, timers), `FormRefusal` in the other forms, secure-coding §13/§22, `LogHygieneSpec`. Takes over support diagnostics D-3 | M (2–3 days) | after lineage slice A (its migration number then) |
+| **M-2** | The migration (both tables), `EventRecorder`, the flood cap, `RefusalFilter`, the hooks of §2.1 (`logDenial`, `ErrorHandler`, `CsrfErrorHandler`, `JobScheduler`, link refusals, timers), `FormRefusal` in the other forms, secure-coding §13/§22, `LogHygieneSpec`. Takes over support diagnostics D-3 | M (2–3 days) | after 26.11.18, before regional winners (Q6, decided); its migration number then |
 | **M-3** | `ProblemCheckTask` and its watchdog, patterns P1–P12 with settings, all on by default (Q4), `problem_detected`; P5 shared with H11 | M (2–3 days) | right after M-2 |
 | **M-4** | Badge, Problems page, mark seen/new, filters, links; negative authorization specs | S–M (2 days) | with M-3 or right after |
 | **M-5** | Runbook: Apache access-log retention for the jury vhosts (below); operations §5 "What is watched" gains the Problems page | S (half a day + the maintainer's sudo step) | any time; best before the next season |
@@ -421,12 +421,13 @@ other contests, no `server_error` (root support), the email masked. No badge for
 | later | Opt-in digest (Q1) | S–M (1–2 days) | not now (Q1 decided); revisit after a season |
 
 About **8–10 days** for M-1 to M-5. M-1 has no migration, so it ships in 26.11.17 without
-touching the migration order. M-2 to M-4 are one feature; they can ship together in one release
-after lineage slice A, before or alongside regional winners (Q6).
+touching the migration order. M-2 to M-4 are one feature, shipped together. **Order (Q6, decided [user]
+2026-11-25):** 26.11.17 round fixes (M-1 in them) → 26.11.18 setup steps and the cut picker →
+monitoring M-2 to M-4 → regional winners.
 
 **M-5 runbook: access-log retention (maintainer, sudo, one time).** Ubuntu's
 `/etc/logrotate.d/apache2` rotates daily and keeps 14. The plan: a stanza of its own for the jury
-vhosts' access and error logs, before the generic one, keeping the period decided in Q7:
+vhosts' access and error logs, before the generic one, keeping **90 days, compressed** (Q7, decided):
 
 ```
 /var/log/apache2/jury*.log {
@@ -444,8 +445,7 @@ vhosts' access and error logs, before the generic one, keeping the period decide
 }
 ```
 
-The file names and the period are filled from the server (`ls /var/log/apache2/`) and Q7 when M-5
-is built, then the same file goes into the infra repo's playbook so a rebuilt server keeps it.
+The file names are filled from the server (`ls /var/log/apache2/`) when M-5 is built, then the same file goes into the infra repo's playbook so a rebuilt server keeps it.
 Check: `sudo logrotate -d /etc/logrotate.d/apache2-jury` (dry run) and, the next day, one rotated
 file more. The app's own log keeps 30 days / 1 GB (support diagnostics §7), unchanged: the
 database holds the history.
@@ -491,7 +491,8 @@ database holds the history.
 
 ## 9. Questions for the maintainer
 
-One decision each. A recommendation is this plan's, open to the maintainer.
+One decision each; all decided by the maintainer on 2026-11-25. Each keeps the question as it was
+asked and its recommendation, for the record.
 
 1. **Q1. A mail digest to root?** **Decided [user] 2026-11-25: no digest now; badge and
    Problems page only; revisit after a season.** The question as asked: the app never mails automatically. The option: a daily digest of
@@ -517,12 +518,15 @@ One decision each. A recommendation is this plan's, open to the maintainer.
 5. **Q5. Is "seen" shared by all root accounts or per account?** **Decided [user] 2026-11-25: shared, one "seen" state for all root accounts.** The question as asked: Shared: one person marks it, every
    root sees it handled, with who marked it. Per account: each root sees everything once.
    Recommendation was: shared (one or two root accounts, and the point is "someone looked").
-6. **Q6. Where do M-2 to M-4 go in the queue?** After 26.11.17's small fixes (M-1 in them) and
+6. **Q6. Where do M-2 to M-4 go in the queue?** **Decided [user] 2026-11-25: before regional
+   winners; order 26.11.17 round fixes → 26.11.18 setup steps and the cut picker → monitoring M-2 to
+   M-4 → regional winners.** The question as asked: after 26.11.17's small fixes (M-1 in them) and
    lineage slice A: before regional winners, or after. Before: the next season's first problems are
-   caught. After: regional winners ships sooner. **Recommendation: before regional winners**, since
+   caught. After: regional winners ships sooner. Recommendation was: before regional winners, since
    the 2026-11-25 case shows the gap is live now.
-7. **Q7. How long are the jury vhosts' Apache access logs kept (M-5)?** Options: 14 days (Ubuntu's
+7. **Q7. How long are the jury vhosts' Apache access logs kept (M-5)?** **Decided [user]
+   2026-11-25: 90 days, compressed (M-5 runbook).** The question as asked: options 14 days (Ubuntu's
    default, today); 90 days; 400 days. The access log has IP addresses, so a longer period keeps
    more personal data (secure-coding §22); the database events (no IP) carry the long history.
-   **Recommendation: 90 days**, compressed: enough to read the request lines around a problem
+   Recommendation was: 90 days, compressed: enough to read the request lines around a problem
    found up to a season later in the Problems page.
