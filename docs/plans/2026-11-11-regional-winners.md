@@ -5,10 +5,11 @@
 
 **Status:** plan only. Nothing is built. Date: 2026-11-11.
 
-**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 1–3, 5–8,
-10–14 and default columns (17) decided; 4 and 9 replaced; 15, 16 open; phase 0 done for WLE 2026,
-rerun for WLM 2026 below (§7.4, §7.5). The maintainer made this the top priority for WLM 2026
-Ukraine, whose jury final is at the beginning of December.
+**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; all decisions made (4
+and 9 replaced by "show, don't pick"); ready to build after lineage slice A. Order of work: lineage
+slice A → regional winners phase 1 → phase 2 (exports) → phase 3. Phase 0 is done for WLE 2026 and
+WLM 2026 (§7.4, §7.5). The maintainer made this the top priority for WLM 2026 Ukraine, whose jury
+final is at the beginning of December.
 
 **Revisions:**
 - **v1:** the first draft. It was recovered with this plan and is not committed (updated 2026-11-25).
@@ -93,13 +94,15 @@ photos and tell which round they are from."
   depth) that the lineage plan (§1.3) assigns to a shared `services.RoundLineage`, plus the track
   computation for "Main" and the manual label (`round.track`, lineage decision 4). That is the core
   shared with lineage's minimum slice (A): tracks with the manual label, the chip and the Track
-  menu, about 3–4 days. Order of work: lineage's track part first, or together with this plan's
-  phase 1. The track label's migration is lineage's (number: next free at merge).
+  menu, about 3–4 days. Order of work (decision 15): lineage's slice A first, then this plan's phase
+  1 on top of it. The track label's migration is lineage's (number: next free at merge).
 - **No migration of its own.** Production is at V113, so it already has `round_image` (V84), the
   counts (V89), `average_rule` (V90), `exclude_rounds` (V95) and `round.status` (V105). V84's
   backfill rebuilt `round_image` from the votes, so the report also works for WLE 2026 after the
   fact.
-- **Size:** about 3.5–4.5 agent days, plus lineage's slice A (3–4 days) if it hasn't landed.
+- **Size:** about 3.5–4.5 agent days, after lineage's slice A (3–4 days). Order of work (decision
+  15): lineage slice A → regional winners phase 1 → phase 2 (exports) → phase 3, the first two
+  before the WLM final in early December.
   - **Phase 0** (S): done for WLE 2026 and WLM 2026 (§7.4, §7.5).
   - **Phase 1** (M, 2.5–3 days) is the page, on lineage's slice A.
   - **Phase 2** (S–M) is the export, as wiki text and as CSV (decision 11).
@@ -170,7 +173,7 @@ regions only (updated 2026-11-25, decision 10).
 | Yes/no (`isBinary`, `app/db/scalikejdbc/Round.scala:119`) | approvals and rejections | a `BinaryOrder` (`app/org/intracer/wmua/BinaryOrder.scala`); default: approvals descending, then rejections ascending (`:33-37, 53`); ties in page-id order | `rateString`: the approvals (`ImageWithRating.scala:146-153`) |
 | Rated | grade sum (a ✗, rate -1, counts as 0) and the average under `average_rule` (V90): `rated` (the default), `assigned` or `sum` (`AverageRule.scala:5-24, 50-63`) | average key, then sum; `sum` rounds rank by the sum alone (`ImageWithRating.scala:262-277`) | `rateText(round)`: e.g. "14.50 (29 / 2 of 3 jurors)" (`:161-164`) |
 | Criteria (`hasCriteria`) | vote rate = sum of the criteria once all are rated (`V89__Round_image_counts.sql:10-12`) | as rated | `criteriaRateString` (`:210-217`) |
-| Comments only (`commentsOnlyRound`, `Round.scala:317`) | none | — | not a candidate |
+| Comments only (`commentsOnlyRound`, `Round.scala:317`) | none | — | not a column (updated 2026-11-25: "show, don't pick") |
 
 **The order of a yes/no round lives on the next round.** `round.top_binary_order` (V72) is stored on
 the round that took a top-N *from* a yes/no round (`Round.scala:65-68`; `BinaryOrder.scala:10`).
@@ -693,7 +696,7 @@ GROUP BY ri.round_id, ri.region
 
 | Plan | How this fits |
 |---|---|
-| Round lineage (`2026-11-10-round-lineage.md`) | **Graph core.** Uses the shared `services.RoundLineage` core (§1.3): graph, Kahn order, ancestors, depth. **Track core** (updated 2026-11-25, decision 2): also the "Main" track computation and the manual label (`round.track`), shared with lineage's minimum slice A (track label, chip, Track menu; about 3–4 days), built first or together with phase 1. **Chain.** "Chain" here is `F` and its ancestors, not a track; only the default `F` reads the track label. **Kinds.** Rule 4 is reused for "regional", and §4's leave-out steps become add-ons. **Status.** V105's `cancelled`, `draft` and in-review `paused` join `X` (updated 2026-11-25). **No storage** (decision 15 there). **Back-reference.** The lineage plan's §6 table should get a row for this report, linking its regions table and backtracking (§4 there) to this page. Not edited here |
+| Round lineage (`2026-11-10-round-lineage.md`) | **Graph core.** Uses the shared `services.RoundLineage` core (§1.3): graph, Kahn order, ancestors, depth. **Track core** (updated 2026-11-25, decision 2): also the "Main" track computation and the manual label (`round.track`), shared with lineage's minimum slice A (track label, chip, Track menu; about 3–4 days), built first, then phase 1 on top of it (updated 2026-11-25, decision 15). **Chain.** "Chain" here is `F` and its ancestors, not a track; only the default `F` reads the track label. **Kinds.** Rule 4 is reused for "regional", and §4's leave-out steps become add-ons. **Status.** V105's `cancelled`, `draft` and in-review `paused` join `X` (updated 2026-11-25). **No storage** (decision 15 there). **Back-reference.** The lineage plan's §6 table should get a row for this report, linking its regions table and backtracking (§4 there) to this page. Not edited here |
 | Lineage §4 backtracking | The report shows which regions need a backtrack. The round is created through the normal form, and the report then shows it as a column (§2.3) (updated 2026-11-25: "show, don't pick") |
 | Multi-role (migration: next free at merge; updated 2026-11-25) | Pre-screening rounds are never columns. Pure pre-screeners get 403 (decisions 2 and 3 there) |
 | Combined juror votes | The report is never shown to jurors |
@@ -709,12 +712,16 @@ S ≈ ½ day, M ≈ 1–2 days, L ≈ 3+ days of agent work, each with review an
 | Phase | Content | Size |
 |---|---|---|
 | 0 | **WLE Ukraine 2026 check, local** (§7.1). On the 26.11 rehearsal copy of production, migrated to V95, with the read-only SQL below. A local script (`python -I`) applies §2. It shows the chain, the add-ons, the ambiguity, the regions that fell back, the unlinked rounds, and whether WLE's `previous` links are recorded. It also verifies WLE's region prefixes and tunes the "small root" threshold. It is phase 1's acceptance case, and it also serves lineage decision 3. Done for WLE 2026 (§7.4) and WLM 2026 (§7.5) (updated 2026-11-25) | S |
-| 1 | **The page,** on lineage's slice A (the `RoundLineage` core with the Main track and the manual label, about 3–4 d, built first or together; not counted here). The column model: rounds, order, default columns, `F` (pure, unit-tested; ½ d). Region summaries, top N and unlinked rounds on the votes path, plus the counts path behind `roundImage.read` with its proof (1 d). Controller, route, view, messages in en/uk/ru/fr, links, screenshots in both themes (1–1.5 d). (updated 2026-11-25: "show, don't pick") | M (2.5–3 d) |
+| 1 | **The page,** on lineage's slice A (the `RoundLineage` core with the Main track and the manual label, about 3–4 d, built first (decision 15); not counted here). The column model: rounds, order, default columns, `F` (pure, unit-tested; ½ d). Region summaries, top N and unlinked rounds on the votes path, plus the counts path behind `roundImage.read` with its proof (1 d). Controller, route, view, messages in en/uk/ru/fr, links, screenshots in both themes (1–1.5 d). (updated 2026-11-25: "show, don't pick") | M (2.5–3 d) |
 | 2 | **Wiki text** (S) and **CSV** (S), both from the start, with the `ExportsSpec` change (decision 11; updated 2026-11-25, decision 11) | S–M (½–1 d) |
 | 3 | **After lineage phase 1 and multi-role's pre-screening rounds:** pre-screening rounds join `X`; a link from the lineage map. The default `F` from the "Main" track moves to phase 1 (updated 2026-11-25, decision 2). V105's statuses are read in phase 1 already (§2.1) (updated 2026-11-25) | S (½ d) |
 
 **Total:** about 3.5–4.5 agent days (updated 2026-11-25: "show, don't pick"): phase 1 2.5–3, phase 2
-½–1, phase 3 ½. With lineage's slice A not landed yet, about 6.5–8.5 days in all.
+½–1, phase 3 ½. With lineage's slice A, about 6.5–8.5 days in all.
+
+**Order of work** (updated 2026-11-25, decision 15): lineage slice A → regional winners phase 1 →
+phase 2 (exports) → phase 3. Slice A and phase 1 come before the WLM final in early December; phase
+3 waits for lineage phase 1 and multi-role's pre-screening rounds.
 
 ### 7.1 Phase 0 SQL (read-only; V95 schema and later)
 
@@ -855,8 +862,8 @@ outputs were not kept; this is the run's summary.
 - **Coverage:** regions with a positive file: 25 in 1938, 24 in 1942 (63 dropped), 16 in 1952.
   - Falling back to 1942: 05, 07, 21, 35, 44, 61, 85 and the files without an id.
   - Falling back to 1938: 63.
-  - Regions 23, 56 and 59 have files in 1938 but no yes there, so their source is a root (23 and 59:
-    1920 only; 56: both).
+  - Regions 23, 56 and 59 have files in 1938 but no yes there, so their last round with a positive
+    file is a root (23 and 59: 1920 only; 56: both).
 - **"Positive":** in the rated rounds 1942 and 1952, every file is positive, so the top N ranks by
   rate. In 1938, whole regions have no positive file, so decision 4's (a) and (b) differ.
 - **Fewer than N = 3** files in 1952: 11 of its 16 regions.
@@ -925,13 +932,14 @@ what-if; about 0.5 s each, including `docker exec`.
 
 ---
 
-## 8. Open decisions
+## 8. Decisions
 
-They will be asked one by one. (updated 2026-11-25) In decisions 2 and 3, "V99" means lineage's Cancel
-of a distributed round: V105's status is in production, but it cancels only creations. Settled
-in the plan, so not asked: pre-screening rounds are never
-columns, access is limited to the contest's Admins and Organizers, and a yes/no round's order
-comes from the stored `top_binary_order` (§2.5).
+(updated 2026-11-25) All decided by the maintainer on 2026-11-25; 4 and 9 replaced by "show, don't
+pick", and 17 added. They were asked one by one. (updated 2026-11-25) In decisions 2 and 3, "V99"
+means lineage's Cancel of a distributed round: V105's status is in production, but it cancels only
+creations. Settled in the plan, so not asked: pre-screening rounds are never columns, access is
+limited to the contest's Admins and Organizers, and a yes/no round's order comes from the stored
+`top_binary_order` (§2.5).
 
 **1. Which rounds are candidates.**
 - (a) The chain, plus the regional rounds and add-ons that branch from it.
@@ -1135,7 +1143,11 @@ skips them so the region shows its next file.
 *Note (updated 2026-11-25, decision 2), not a decision: decision 2 makes the shared core larger.
 "Build the core now" now includes the track computation for "Main" and the manual label: lineage's
 minimum slice (A), with tracks, the manual label, the chip and the Track menu, about 3–4 days.
-Regional winners phase 1 builds on it; lineage's track part comes first or together with it.*
+Regional winners phase 1 builds on it.*
+
+**Decided (maintainer, 2026-11-25): lineage track core first**: build round lineage's slice A (track
+rule, manual label, chip, Track menu) first, then regional winners phase 1 on top of it. One shared
+core, both before the WLM final in early December.
 
 **16. Hand-made decisions and overrides.**
 - (a) No stored overrides; `rounds=` for chains done by hand.
@@ -1145,6 +1157,9 @@ Regional winners phase 1 builds on it; lineage's track part comes first or toget
 **Recommendation: (a)** now. Reasons:
 - (b) and (c) need a table, a migration, CSRF writes and an audit trail;
 - revisit (b) if organizers bookmark long URLs.
+
+**Decided (maintainer, 2026-11-25): (a)**: no storage now. Everything is in the link; revisit if
+organizers need to record confirmed winners.
 
 **17. Default columns (new, 2026-11-25).**
 
