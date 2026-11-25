@@ -173,6 +173,50 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  "a label change in the round's settings log" should {
+
+    def entries(f: Fixture, r: Round): Seq[ContestChange] =
+      ContestChangeJdbc.findByRound(f.contest.getId, r.getId, 50)
+        .filter(c => ContestChangeJdbc.RoundSettingKinds.contains(c.kind)).reverse
+
+    def changed(c: ContestChange): Map[String, (String, String)] =
+      (c.detail \ "changed").as[play.api.libs.json.JsObject].fields.map { case (k, v) =>
+        k -> ((v \ "from").get.toString, (v \ "to").get.toString)
+      }.toMap
+
+    "be an entry of its own, from and to, with who; none when the label is unchanged" in {
+      testDbApp { app =>
+        val f = fixture()
+        val codes = Seq(
+          save(app, f.admin, Some(f.q00), f.contest.getId, "track" -> "Main", "trackShown" -> "true"),
+          // the same label again: nothing
+          save(app, f.admin, Some(f.q00), f.contest.getId, "track" -> "main", "trackShown" -> "true"),
+          // a name and a label: two entries
+          save(app, f.admin, Some(f.q00), f.contest.getId, "name" -> "Q-00 first", "track" -> "", "trackShown" -> "true")
+        ).map(status(_))
+        val logged = entries(f, f.q00)
+        (codes === Seq(SEE_OTHER, SEE_OTHER, SEE_OTHER)) and
+          (logged.map(c => (c.kind, c.actorId, (c.detail \ "path").as[String])) === Seq(
+            (ContestChangeJdbc.RoundTrackChanged, f.admin.getId, "edit"),
+            (ContestChangeJdbc.RoundChanged, f.admin.getId, "edit"),
+            (ContestChangeJdbc.RoundTrackChanged, f.admin.getId, "edit"))) and
+          (changed(logged.head) === Map("track" -> ("null", "\"Main\""))) and
+          (changed(logged(1)).keySet === Set("name")) and
+          (changed(logged(2)) === Map("track" -> ("\"Main\"", "null")))
+      }
+    }
+
+    "show on the round's statistics to an organizer, read only, Main in the page's language" in {
+      testDbApp { app =>
+        val f = fixture()
+        status(save(app, f.admin, Some(f.merge), f.contest.getId, "track" -> "Main", "trackShown" -> "true")) === SEE_OTHER
+        val lines = page(app, f.organizer, s"/roundstat/${f.merge.getId}", "uk")
+          .select("#round-setting-changes li.round-setting-change").eachText().asScala.toSeq
+        (lines.size === 1) and (lines.head must contain("Мітка треку")) and (lines.head must contain("Основний"))
+      }
+    }
+  }
+
   "the Rounds page" should {
 
     "show each round's Track chip, the Track menu in the tracks' order, and the hint for a merge alone on Main" in {

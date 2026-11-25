@@ -41,12 +41,18 @@ object RoundChanges {
     val All: Seq[String] = Seq(Create, Edit, Reapply, Start, Stop, Jurors, Reinstate, Cancel)
   }
 
+  /** The track label (V115, round lineage slice A): its change is an entry of its own kind,
+    * [[ContestChangeJdbc.RoundTrackChanged]] (§8.1), not part of the save's other entry.
+    */
+  val TrackField = "track"
+  // (before Fields, which lists it: an object's vals are set in order)
+
   /** The settings compared, in the order shown. */
   val Fields: Seq[String] = Seq(
     "name", "rates", "halfStar", "criteria", "averageRule", "worstMark",
     "previous", "prevSelectedBy", "prevRejectedBy", "prevRejectedMode", "prevMinAvgRate", "topImages", "topBinaryOrder",
     "category", "excludeCategory", "categoryClause", "regions", "monuments", "minImageSize", "minMpx", "mediaType",
-    "specialNomination", "excludeRounds", "excludeCoi", "distribution", "active", "status")
+    "specialNomination", "excludeRounds", "excludeCoi", "distribution", "active", "status", TrackField)
 
   /** Left out of a creation's entry: every new round starts in the same state. */
   private val Lifecycle = Set("active", "status")
@@ -103,7 +109,8 @@ object RoundChanges {
       "excludeCoi" -> JsBoolean(r.excludeCoi),
       "distribution" -> JsNumber(r.distribution),
       "active" -> JsBoolean(r.active),
-      "status" -> text(r.status)
+      "status" -> text(r.status),
+      TrackField -> text(r.track)
     )
   }
 
@@ -149,15 +156,23 @@ object RoundChanges {
     Json.obj("round" -> round.getId, "number" -> round.number, "path" -> path,
       "changed" -> JsObject(changes.map { case (f, from, to) => f -> (stored("from", from) ++ stored("to", to)) }))
 
-  /** Writes the entry, if anything changed and an account did it: its id. */
+  /** Writes the entry, if anything changed and an account did it: its id. A changed track label is
+    * an entry of its own ([[ContestChangeJdbc.RoundTrackChanged]], with the same path), after the
+    * entry of the other settings, if any: the id of the first written.
+    */
   def record(kind: String, before: Option[Snapshot], round: Round, after: Snapshot, actorId: Option[Long], path: String)(
       implicit session: DBSession): Option[Long] = {
-    require(ContestChangeJdbc.RoundSettingKinds.contains(kind), "not a round settings kind")
+    require(ContestChangeJdbc.RoundSettingKinds.contains(kind) && kind != ContestChangeJdbc.RoundTrackChanged,
+      "not a round settings kind")
     require(Path.All.contains(path), "unknown round change path")
-    val changes = diff(before, after)
-    actorId.filter(_ => changes.nonEmpty).map { actor =>
-      ContestChangeJdbc.create(Some(round.contestId), None, actor, kind, detail = detail(round, path, changes))
-    }
+    val (track, others) = diff(before, after).partition(_._1 == TrackField)
+    def write(k: String, changes: Seq[(String, JsValue, JsValue)]) =
+      actorId.filter(_ => changes.nonEmpty).map { actor =>
+        ContestChangeJdbc.create(Some(round.contestId), None, actor, k, detail = detail(round, path, changes))
+      }
+    val main = write(kind, others)
+    val label = write(ContestChangeJdbc.RoundTrackChanged, track)
+    main.orElse(label)
   }
 
   /** `writes`, with the round's settings read before and after them in the caller's transaction,
