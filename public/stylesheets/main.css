@@ -109,6 +109,12 @@ body.gallery {
 .wlx-round-named, .dropdown-item.wlx-round-item, #round-stat-rounds .page-link {
     display: flex; align-items: baseline;
 }
+/* the Rounds table: the name keeps the width beside its icon, and the Track chip goes to a line
+   of its own under it when name and chip don't fit on one line (a long name was squeezed onto a
+   third line by the chip beside it); the name's width is the cell's less the icon slot's
+   (2.15em + .4em, .wlx-round-icon) */
+.wlx-round-named { flex-wrap: wrap; }
+.wlx-round-named > .round-stat-link { max-width: calc(100% - 2.55em); }
 /* a round's Track chip after its name (round lineage slice A, snippets/trackChip): its track's
    colours (theme.css --wlx-track-*), a thin edge of its text colour so a pale chip shows on the
    stripes and the hover grey; never cut or wrapped inside; in the Track menu a swatch before the name */

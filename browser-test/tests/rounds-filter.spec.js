@@ -121,7 +121,9 @@ async function checkIcons(page, mode, scope, expected, backgrounds, what) {
   * (`inactive`, given the inactive look) text and icons grey, its text at 4.5:1 on each background
   * it may have (`backgrounds`), its links in the link colour. */
 async function checkLook(page, mode, { active, inactive, backgrounds, link }) {
-  await expect(active.locator('.badge')).toHaveCount(0);
+  // no badge but its Track chip: the fixture's rounds are on two tracks (each round a first round
+  // of its own), so every round has its chip (round lineage, hotfix 26.11.17.1)
+  await expect(active.locator('.badge:not(.wlx-track)')).toHaveCount(0);
   await checkIcons(page, mode, active, COLOURED, backgrounds, 'the active round');
   const grey = await colour(page, 'var(--bs-secondary-color)');
   // once settled: the inactive class was just given, and a pager link's colour changes with a
@@ -304,7 +306,8 @@ for (const mode of ['light', 'dark']) {
         // the name and what its icons show read apart (", " for screen readers only,
         // snippets/roundSpoken; the icons hidden from them), the name first
         // (Chromium may put a space before the hidden text, out of the line's flow: "Rating Round , Rated, Active")
-        await expect(current).toHaveAccessibleName(/^Rating Round ?, Rated, Active$/);
+        // then its Track chip, read as ", Track: …" (two tracks in the fixture: every round has one)
+        await expect(current).toHaveAccessibleName(/^Rating Round ?, Rated, Active ?, Track: Rating Round$/);
         const otherLink = page.locator(`#round-stat-rounds .page-item[data-round="${fixture.roundBinaryId}"] > .page-link`);
         await otherLink.evaluate((a) => a.classList.add('wlx-round-inactive'));
         const bg = await otherLink.evaluate((a) => getComputedStyle(a).backgroundColor);
@@ -335,7 +338,7 @@ for (const mode of ['light', 'dark']) {
         expect(await slotOf(active)).toEqual({ type: 'binary', inactive: false, hidden: 'true',
           icons: ['wlx-round-yes', 'wlx-round-no'], title: 'Yes/No, Active' });
         expect((await slotOf(other)).icons).toEqual(['wlx-round-star']);
-        await expect(active).toHaveAccessibleName(/^Yes\/No Round ?, Yes\/No, Active$/);
+        await expect(active).toHaveAccessibleName(/^Yes\/No Round ?, Yes\/No, Active ?, Track: Yes\/No Round$/);
         expectLinedUp(await edges(items), `${mode}: the galleries' round menu`);
         await other.evaluate((a) => a.classList.add('wlx-round-inactive'));
         const menuBg = await other.evaluate((a) => getComputedStyle(a.closest('.dropdown-menu')).backgroundColor);
