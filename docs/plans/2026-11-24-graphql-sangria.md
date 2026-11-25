@@ -125,7 +125,8 @@ Negative authorization (each must also log one `security.authz` WARN carrying th
 - a juror reads another juror's votes (`userId`), or all jurors (`userId` 0): refused.
 - an organizer asks for votes of a user who is not a juror of the round: not found.
 - a juror lists `users` and sees members or emails of other contests: none.
-- a juror queries a `distributing` round: not found.
+- a juror queries a `distributing` round: not found from `round(id)` and `roundStat`; `roundImages` and `image`
+  answer `CONFLICT` `round_closed` with reason `round_distributing`, as the web gallery's state page tells its juror.
 - a non-admin calls a mutation; a token calls a mutation (queries only for tokens); a session mutation without
   the CSRF token; Bearer plus a session cookie without the CSRF token: refused.
 - signed-out introspection (`__schema`, `__type`) is refused; a signed-in juror may introspect (the schema is not
@@ -181,7 +182,8 @@ the session cookie; the main write path is session plus CSRF, and tokens stay qu
   carries `data-csrf-token`, as the gallery vote does (`voteTexts.scala.html`). Bearer without a session cookie
   is the token path and needs no header.
 - Errors: GraphQL's standard `errors` array with `extensions.code` (`UNAUTHENTICATED`, `FORBIDDEN`,
-  `NOT_FOUND`, `BAD_INPUT`, `INTERNAL_ERROR`, `CSRF`) and `extensions.reference` for the log line; messages are
+  `NOT_FOUND`, `BAD_INPUT`, `CONFLICT` (a juror's round not open to them now: message `round_closed`, always with
+  `extensions.reason`), `INTERNAL_ERROR`, `CSRF`, `TOO_MANY_REQUESTS`) and `extensions.reference` for the log line; messages are
   keys, never exception text. HTTP 401 for no session, 200 with `errors` otherwise.
 - Pagination: cursor connections (`first`, `after`, `pageInfo { endCursor hasNextPage }`, `totalCount`), not
   offset: a 38k-image round paged by offset gets slow and unstable while jurors vote and the order shifts. For

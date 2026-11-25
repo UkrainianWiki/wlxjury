@@ -233,11 +233,14 @@ class GraphQLRoundsSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "refuse a juror with FORBIDDEN, logged with the error's reference, as the page's 403" in {
+    "refuse a juror their own round's statistics with FORBIDDEN (the page's 403); another round as NOT_FOUND, both logged" in {
       testDbApp { app =>
         val f = setUp()
         deniedAs("roundStat", "FORBIDDEN")(stat(app, jurorAEmail, f.binary))
-        deniedAs("roundStat", "FORBIDDEN")(stat(app, jurorBEmail, f.rated))
+        deniedAs("roundStat", "FORBIDDEN")(stat(app, jurorAEmail, f.rated))
+        // a round the juror doesn't see: its existence not told
+        deniedAs("roundStat", "NOT_FOUND")(stat(app, jurorBEmail, f.rated))
+        deniedAs("roundStat", "NOT_FOUND")(stat(app, jurorAEmail, f.distributing))
       }
     }
 
@@ -363,6 +366,9 @@ class GraphQLRoundsSpec extends PlaySpecification with PlayTestDb {
   }
 
   // --- slice 3: roundImages and image
+
+  private val imageQuery =
+    "query I($r: ID!, $p: ID!, $u: ID) { image(roundId: $r, pageId: $p, userId: $u) { pageId vote { rate } } }"
 
   private val imagesQuery =
     """query I($round: ID!, $user: ID, $filter: ImageFilter, $order: ImageOrder, $first: Int, $after: String) {
@@ -545,13 +551,16 @@ class GraphQLRoundsSpec extends PlaySpecification with PlayTestDb {
 
     "refuse a cursor that is no cursor, or one of another list, and clamp the page size to 1..200" in {
       testDbApp { app =>
-        setUp()
+        val f = setUp()
         val round = pagingRound()
         messages(images(app, jurorAEmail, round.getId, after = Some("garbage"))) === Seq("bad_cursor")
         codes(images(app, jurorAEmail, round.getId, after = Some("garbage"))) === Seq("BAD_INPUT")
         val fileCursor = pageInfo(images(app, jurorAEmail, round.getId, first = Some(2), query = idsQuery))._1.get
         messages(images(app, jurorAEmail, round.getId, order = Some("RATE"), after = Some(fileCursor))) === Seq("bad_cursor")
         messages(images(app, jurorAEmail, round.getId, filter = Some("UNRATED"), after = Some(fileCursor))) === Seq("bad_cursor")
+        // another round's list of the same juror, order and tab
+        messages(images(app, jurorAEmail, f.rated, after = Some(fileCursor))) === Seq("bad_cursor")
+        codes(images(app, jurorAEmail, f.rated, after = Some(fileCursor))) === Seq("BAD_INPUT")
         // another juror's list
         round.addUsers(Seq(RoundUser(round.getId, userId(jurorBEmail), "jury", active = true)))
         messages(images(app, organizerEmail, round.getId, user = Some(userId(jurorBEmail)), after = Some(fileCursor))) ===
@@ -563,7 +572,10 @@ class GraphQLRoundsSpec extends PlaySpecification with PlayTestDb {
           java.util.Base64.getUrlEncoder.withoutPadding.encodeToString(
             Json.stringify(json ++ Json.obj("k" -> (Seq(JsString("80-361-0002' OR 1=1 --")) ++ k.tail))).getBytes("UTF-8"))
         }
-        errors(images(app, jurorAEmail, round.getId, after = Some(tampered), query = idsQuery)) must beEmpty
+        val slice = images(app, jurorAEmail, round.getId, after = Some(tampered), query = idsQuery)
+        errors(slice) must beEmpty
+        val list = wholeList(round, userId(jurorAEmail), VoteFilter.All, ListOrder.FileOrder).toSet
+        pageIdsOf(slice).filterNot(list) must beEmpty
         pageIdsOf(images(app, jurorAEmail, round.getId, first = Some(0), query = idsQuery)) must haveSize(1)
         val big = images(app, jurorAEmail, round.getId, first = Some(1000), query = idsQuery)
         (pageIdsOf(big).size, pageInfo(big)._2) === ((13, false))
@@ -598,6 +610,7 @@ class GraphQLRoundsSpec extends PlaySpecification with PlayTestDb {
         println(s"roundImages statements per request (totalCount and the checks included): first 5: $small, " +
           s"first 50: $large, first 50 after a cursor: $next")
         nodes(largeResult) must haveSize(50)
+        small must beBetween(1, 10)
         large === small
         next === small
       }
@@ -680,6 +693,102 @@ class GraphQLRoundsSpec extends PlaySpecification with PlayTestDb {
         deniedAs("roundImages", "NOT_FOUND")(images(app, inactiveEmail, f.binary))
         deniedAs("roundImages", "NOT_FOUND")(images(app, jurorBEmail, f.rated))
         missingAs("roundImages")(images(app, jurorAEmail, 999999))
+      }
+    }
+  }
+
+  "the round queries' further cases" should {
+
+    "answer a retired contest's round as NOT_FOUND to its admin (logged), not to root" in {
+      testDbApp { app =>
+        val f = setUp()
+        DB.autoCommit(implicit s => sql"UPDATE contest_jury SET retired_at = NOW(3) WHERE id = 10".update.apply())
+        val a = Some(userId(jurorAEmail))
+        deniedAs("round", "NOT_FOUND")(gql(app, roundQuery(f.binary), adminEmail))
+        deniedAs("roundStat", "NOT_FOUND")(stat(app, adminEmail, f.binary))
+        deniedAs("roundImages", "NOT_FOUND")(images(app, adminEmail, f.binary, user = a))
+        deniedAs("roundImages", "NOT_FOUND")(images(app, jurorAEmail, f.binary))
+        (data(gql(app, roundQuery(f.binary), rootEmail), "round") \ "id").as[String] === f.binary.toString
+        (data(stat(app, rootEmail, f.binary), "roundStat") \ "totalFiles").as[Int] === 6
+        ratesOf(images(app, rootEmail, f.binary, user = a)).size === 6
+      }
+    }
+
+    "answer a deleted round as a missing one to round(id), roundImages and image" in {
+      testDbApp { app =>
+        val f = setUp()
+        DB.autoCommit(implicit s => sql"UPDATE round SET deleted_at = NOW() WHERE id = ${f.binary}".update.apply())
+        missingAs("round")(gql(app, roundQuery(f.binary), adminEmail))
+        missingAs("roundImages")(images(app, jurorAEmail, f.binary))
+        missingAs("roundImages")(images(app, adminEmail, f.binary, user = Some(userId(jurorAEmail))))
+        missingAs("image")(gql(app, imageQuery, jurorAEmail, Json.obj("r" -> f.binary.toString, "p" -> "1")))
+      }
+    }
+
+    "tell a juror of a stopped round round_stopped, and of a round paused by a job round_paused, from both queries" in {
+      testDbApp { app =>
+        val f = setUp()
+        DB.autoCommit(implicit s => sql"UPDATE round SET active = FALSE WHERE id = ${f.binary}".update.apply())
+        def reasons(result: Future[Result]) =
+          (codes(result), messages(result), errors(result).map(e => (e \ "extensions" \ "reason").as[String]))
+        reasons(images(app, jurorAEmail, f.binary)) === ((Seq("CONFLICT"), Seq("round_closed"), Seq("round_stopped")))
+        reasons(gql(app, imageQuery, jurorAEmail, Json.obj("r" -> f.binary.toString, "p" -> "1"))) ===
+          ((Seq("CONFLICT"), Seq("round_closed"), Seq("round_stopped")))
+        // the organisers see a stopped round's files
+        ratesOf(images(app, organizerEmail, f.binary, user = Some(userId(jurorAEmail)))).size === 6
+
+        // the rated round paused by a rebalance: frozen while open, the job holding its key
+        val rated = Round.findById(f.rated).get
+        DB.localTx { s => Round.freeze(Seq(f.rated))(s) }
+        services.jobs.JobJdbc.insert(services.jobs.NewJob(services.distribution.RoundRebalanceHandler.Kind,
+          Some(rated.contestId), Some("round"), rated.id,
+          Some(services.distribution.RoundDistributionHandler.dedupeKey(f.rated)),
+          params = Json.obj("roundId" -> f.rated, "add" -> userId(jurorBEmail)),
+          state = Json.obj("frozen" -> Seq(f.rated))), owner = None)(AutoSession)
+        reasons(images(app, jurorAEmail, f.rated)) === ((Seq("CONFLICT"), Seq("round_closed"), Seq("round_paused")))
+        reasons(gql(app, imageQuery, jurorAEmail, Json.obj("r" -> f.rated.toString, "p" -> "1"))) ===
+          ((Seq("CONFLICT"), Seq("round_closed"), Seq("round_paused")))
+        ratesOf(images(app, organizerEmail, f.rated, user = Some(userId(jurorAEmail)))).size === 6
+      }
+    }
+
+    "apply the conflict-of-interest rule to root as a juror of the open round, and to image" in {
+      testDbApp { app =>
+        val f = setUp()
+        val root = User.findByEmail(rootEmail).head
+        val organizer = User.findByEmail(organizerEmail).head
+        Round.findById(f.binary).get.addUsers(Seq(RoundUser(f.binary, root.getId, "jury", active = true),
+          RoundUser(f.binary, organizer.getId, "organizer", active = true)))
+        selectionDao.batchInsert(Seq(Vote(1, root.getId, f.binary, -1), Vote(1, organizer.getId, f.binary, 1)))
+        val a = userId(jurorAEmail)
+        ratesOf(images(app, rootEmail, f.binary)) === Seq(1L -> -1)
+        deniedAs("roundImages", "FORBIDDEN")(images(app, rootEmail, f.binary, user = Some(a)))
+        def image(as: String, user: Option[Long]) = gql(app, imageQuery, as,
+          Json.obj("r" -> f.binary.toString, "p" -> "1") ++ user.fold(Json.obj())(u => Json.obj("u" -> u.toString)))
+        (data(image(organizerEmail, None), "image") \ "vote" \ "rate").as[Int] === 1
+        deniedAs("image", "FORBIDDEN")(image(organizerEmail, Some(a)))
+        deniedAs("image", "FORBIDDEN")(image(rootEmail, Some(a)))
+        // the round's statistics: their own row's votes only
+        (data(stat(app, rootEmail, f.binary), "roundStat") \ "selectedFiles").toOption must beSome(JsNull: JsValue)
+        // a juror stopped on the round: image tells the state too
+        DB.autoCommit(implicit s =>
+          sql"UPDATE round_user SET active = FALSE WHERE round_id = ${f.binary} AND user_id = ${userId(jurorBEmail)}".update.apply())
+        val stopped = image(jurorBEmail, None)
+        (codes(stopped), (errors(stopped).head \ "extensions" \ "reason").as[String]) === (("CONFLICT" :: Nil, "juror_stopped"))
+      }
+    }
+
+    "answer each round's checks once a request, however many aliases ask" in {
+      testDbApp { app =>
+        val f = setUp()
+        val query = (1 to 5).map(i => s"s$i: roundStat(roundId: ${f.binary}) { totalFiles }").mkString("{ ", " ", " }")
+        val (result, lines) = withLog("security.authz")(gql(app, query, jurorAEmail))
+        // one denial line for the five (the same error, its reference), no repeat count: one check
+        codes(result) === Seq.fill(5)("FORBIDDEN")
+        errors(result).map(e => (e \ "extensions" \ "reference").as[String]).distinct must haveSize(1)
+        lines must haveSize(1)
+        val many = (1 to 30).map(i => s"s$i: roundStat(roundId: ${f.binary}) { totalFiles }").mkString("{ ", " ", " }")
+        messages(gql(app, many, adminEmail)) === Seq("query_too_complex")
       }
     }
   }

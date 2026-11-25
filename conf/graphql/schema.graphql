@@ -166,10 +166,10 @@ type Query {
   "One round the caller may see (as in its contest's rounds); null with a NOT_FOUND error for any other."
   round(id: ID!): Round
 
-  "A round's statistics, for root and its contest's admins and organizers: null with FORBIDDEN for its other members, NOT_FOUND for a round the caller may not see."
+  "A round's statistics, for root and its contest's admins and organizers: null with NOT_FOUND for a round the caller doesn't see (as round(id)), FORBIDDEN for one they see but may not see the statistics of."
   roundStat(roundId: ID!): RoundStat
 
-  "A page of a juror's list of a round's files with their votes, as the round's gallery lists them: the caller's own list (a juror sees only their own votes), or with userId a juror's, for those who may see other jurors' votes there (othersVotesVisible). Keyset pages: pass pageInfo.endCursor as after. Null with NOT_FOUND for a round the caller may not view, FORBIDDEN for another juror's list they may not see, CONFLICT round_closed (extensions.reason) or round_paused for a juror's round not open to them now."
+  "A page of a juror's list of a round's files with their votes, as the round's gallery lists them: the caller's own list (a juror sees only their own votes), or with userId a juror's, for those who may see other jurors' votes there (othersVotesVisible). Keyset pages: pass pageInfo.endCursor as after. Null with NOT_FOUND for a round the caller may not view, FORBIDDEN for another juror's list they may not see, CONFLICT round_closed with extensions.reason for a juror's round not open to them now."
   roundImages(roundId: ID!,
 
     "Whose list: omitted, the caller's own; a juror of the round's, for root and the contest's admins and organizers who are not a juror of the open round."

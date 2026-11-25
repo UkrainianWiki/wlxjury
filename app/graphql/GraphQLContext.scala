@@ -34,6 +34,22 @@ final case class GraphQLContext(caller: ApiAuth.Caller, request: RequestHeader, 
   private val firstDenial = new java.util.concurrent.atomic.AtomicReference[String](null)
   private val moreDenials = new java.util.concurrent.atomic.AtomicInteger(0)
 
+  /** What a request's resolvers read once per key ([[memo]]). */
+  private val memos = new java.util.concurrent.ConcurrentHashMap[Any, scala.util.Try[Any]]()
+
+  /** `f`'s answer once per request for `key` (a round and the caller's checks in it, a round's
+    * statistics), its failure too (a denial, a round's state: the same error, its line logged once), so
+    * that aliases of a field don't repeat the work. Not atomic: two fields resolved at once may both run
+    * `f`, and the first answer is kept.
+    */
+  def memo[T](key: Any)(f: => T): T = {
+    val answer = Option(memos.get(key)).getOrElse {
+      val tried = scala.util.Try[Any](f)
+      Option(memos.putIfAbsent(key, tried)).getOrElse(tried)
+    }
+    answer.get.asInstanceOf[T]
+  }
+
   /** The caller is root (a caller check, not a target's: `User.isProtectedTarget` is for targets). */
   def callerIsRoot: Boolean = user.hasRole(User.ROOT_ROLE)
 

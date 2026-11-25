@@ -195,8 +195,10 @@ class SeriesReachGuardSpec extends Specification {
     "app/services/GalleryService.scala" -> (4, "the definitions (othersVotesVisible delegating to its batch form " +
       "othersVotesVisibleIn: one rule); viewAs: every gallery view (gallery, by rate, file list, " +
       "CSV, comments report and its CSV, the JSON endpoints) and the large view as another juror or all (0)"),
-    "app/graphql/GraphQLSchema.scala" -> (1, "GraphQL's Round.othersVotesVisible flag (no votes shown yet; the vote " +
-      "fields of later slices must apply the rule)"),
+    "app/graphql/GraphQLSchema.scala" -> (1, "GraphQL's Round.othersVotesVisible flag, for a contest's rounds " +
+      "(roundImages and image apply the rule through GalleryService.viewAs)"),
+    "app/graphql/RoundQueries.scala" -> (1, "GraphQL's roundStat: other jurors' selections, rejections and the " +
+      "totals by vote, hidden as in roundStatTable"),
     "app/controllers/LargeViewController.scala" -> (1, "the large view's every-juror votes panel (juryStat)"),
     "app/controllers/MonumentController.scala" -> (1, "a monument's files in a round: own votes only"),
     "app/controllers/AuthorsController.scala" -> (1, "a round's authors with every juror's votes"),
@@ -214,9 +216,11 @@ class SeriesReachGuardSpec extends Specification {
     * and listed here.
     */
   private val AggregateVoteReaders: Seq[(String, Set[String], String)] = Seq(
-    ("""\bgetRoundStat\(""", Set("app/services/RoundService.scala", "app/controllers/RoundController.scala"),
+    ("""\b(getRoundStat|RoundService\.roundStat)\(""",
+      Set("app/services/RoundService.scala", "app/controllers/RoundController.scala", "app/graphql/RoundQueries.scala"),
       "each juror's tallies and the totals by vote: the round's stat table only (the edit page's panel and the " +
-        "statistics), which hides other jurors' columns and the totals from a juror of the open round (roundStatTable)"),
+        "statistics), which hides other jurors' columns and the totals from a juror of the open round (roundStatTable); " +
+        "GraphQL's roundStat (RoundQueries), which hides the same behind GalleryService.othersVotesVisible"),
     ("""\broundUserStat\(""", Set("app/db/RoundRepo.scala", "app/db/scalikejdbc/Round.scala", "app/services/RoundService.scala"),
       "every juror's count per rate: getRoundStat only"),
     ("""\bimageCountsByRate\(""", Set("app/db/RoundRepo.scala", "app/db/scalikejdbc/Round.scala", "app/services/RoundService.scala"),

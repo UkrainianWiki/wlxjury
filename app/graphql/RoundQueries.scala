@@ -24,9 +24,10 @@ object RoundQueries {
 
   /** The round `id` and the caller in its contest, if they may see the contest: else `NOT_FOUND`,
     * the same for a missing round (a deleted one too), an id that is no number, and a round of a
-    * contest the caller is not in (logged as a denial), or of a retired one (root sees those).
+    * contest the caller is not in (logged as a denial), or of a retired one (root sees those). Once a
+    * request ([[GraphQLContext.memo]]).
     */
-  def roundIn(ctx: GraphQLContext, id: String): RoundAccess = {
+  def roundIn(ctx: GraphQLContext, id: String): RoundAccess = ctx.memo(("round", id)) {
     ctx.checkDeadline()
     id.toLongOption.flatMap(Round.findById(_)).filter(_.deletedAt.isEmpty) match {
       case None => throw GraphQLError.missing("round")
@@ -98,21 +99,23 @@ object RoundQueries {
 
   /** `roundStat(roundId)`: the web round statistics page's numbers (`RoundController.roundStat`, the
     * same [[RoundService.roundStat]]) for those it shows them to: root and the contest's admins and
-    * organizers ([[User.canViewOrgInfo]]), a series grant's derived role counting. Anyone else in the
-    * contest gets `FORBIDDEN` (logged as a denial, as the page's 403); a round the caller may not see
-    * the contest of, `NOT_FOUND` ([[roundIn]]). The conflict-of-interest rule as on the page: a viewer
-    * who is a juror of the open round sees each juror's progress, but other jurors' selected and
-    * rejected counts and the round's files by rate only once it is closed. Emails: decision Q6
-    * ([[GraphQLSchema.emailVisible]]), not the page's (which shows them to organizers too).
+    * organizers ([[User.canViewOrgInfo]]), a series grant's derived role counting. A round the caller
+    * doesn't see ([[roundById]]'s rule: another contest's, or for a juror one they don't judge or one
+    * being created) is `NOT_FOUND`, so that its existence isn't told; a round they see but may not see
+    * the statistics of (a juror's own round) is `FORBIDDEN`, as the page's 403; both logged. The
+    * conflict-of-interest rule as on the page ([[GalleryService.othersVotesVisible]]): a viewer who is a
+    * juror of the open round sees each juror's progress, but other jurors' selected and rejected counts
+    * and the round's files by vote only once it is closed. Emails: decision Q6
+    * ([[GraphQLSchema.emailVisible]]), not the page's (which shows them to organizers too). Once a request.
     */
-  def roundStat(ctx: GraphQLContext, roundId: String): RoundStatView = {
+  def roundStat(ctx: GraphQLContext, roundId: String): RoundStatView = ctx.memo(("roundStat", roundId)) {
     val RoundAccess(round, viewer) = roundIn(ctx, roundId)
+    val view = roundById(ctx, roundId)
     if (!viewer.canViewOrgInfo(round))
       throw ctx.denied(Secured.Denial.round(round, User.ADMIN_ROLES ++ User.ORG_COM_ROLES), GraphQLError.forbidden)
     ctx.checkDeadline()
     val stat = RoundService.roundStat(Round, round.getId, round, withDeletedFiles = true)
-    val view = GraphQLSchema.roundViews(ctx, viewer, Seq(round)).head
-    RoundStatView(view, stat, viewer, view.of.othersVisible(round.getId),
+    RoundStatView(view, stat, viewer, GalleryService.othersVotesVisible(viewer, round),
       GraphQLSchema.emailVisible(ctx.user, Seq(round.contestId)))
   }
 
@@ -129,37 +132,44 @@ object RoundQueries {
     * round's contest ([[roundIn]]): [[GalleryService.refusal]] with [[GalleryService.viewerRounds]] (what
     * [[GalleryService.mayViewRound]] answers, told apart: a denial is `NOT_FOUND`, logged; a juror's round
     * not open to them now, a state, is `CONFLICT` `round_closed` with its `reason`, logged on
-    * `round.access` as the web's 409), [[GalleryService.pausedFor]] (`CONFLICT` `round_paused`), then
+    * `round.access` as the web's 409), [[GalleryService.pausedFor]] (`CONFLICT` `round_closed`, reason
+    * `round_paused`: every `CONFLICT` carries a reason), then
     * [[GalleryService.viewAs]] for `userId` (omitted: the caller's own list): another juror's votes, or
     * all jurors' (0), only for those who may see the round's organiser views and are not a juror of the
     * open round (conflict of interest), else `FORBIDDEN`, logged with reason `other_users_votes`; and only
     * of a juror of the round, else `NOT_FOUND` `juror_not_found`. All the jurors' votes together (0) are
-    * not listed by this slice: `BAD_INPUT` `all_jurors_not_supported` once allowed.
+    * not listed by this slice: `BAD_INPUT` `all_jurors_not_supported` once allowed. Once a request per
+    * round and `userId` ([[GraphQLContext.memo]]).
     */
-  def galleryAccess(ctx: GraphQLContext, roundId: String, userId: Option[String]): GalleryAccess = {
-    val RoundAccess(round, viewer) = roundIn(ctx, roundId)
-    val asUserId = userId.fold(viewer.getId)(id => id.toLongOption.filter(_ >= 0).getOrElse(throw GraphQLError.badInput("bad_user_id")))
-    ctx.checkDeadline()
-    gallery.refusal(viewer, Some(round), round.contestId, gallery.viewerRounds(viewer, round)) match {
-      case Some(GalleryService.Refusal.Denied) =>
-        throw ctx.denied(Secured.Denial.round(round, Secured.ViewerRoles))
-      case Some(state: GalleryService.RoundState) =>
-        GalleryService.accessLogger.info(GalleryService.accessRefusedLine(state, round, viewer))
-        throw GraphQLError.roundClosed(state.reason)
-      case None => ()
+  def galleryAccess(ctx: GraphQLContext, roundId: String, userId: Option[String]): GalleryAccess =
+    ctx.memo(("gallery", roundId, userId)) {
+      val RoundAccess(round, viewer) = roundIn(ctx, roundId)
+      val asUserId =
+        userId.fold(viewer.getId)(id => id.toLongOption.filter(_ >= 0).getOrElse(throw GraphQLError.badInput("bad_user_id")))
+      ctx.checkDeadline()
+      gallery.refusal(viewer, Some(round), round.contestId, gallery.viewerRounds(viewer, round)) match {
+        case Some(GalleryService.Refusal.Denied) =>
+          throw ctx.denied(Secured.Denial.round(round, Secured.ViewerRoles))
+        case Some(state: GalleryService.RoundState) =>
+          GalleryService.accessLogger.info(GalleryService.accessRefusedLine(state, round, viewer))
+          throw GraphQLError.roundClosed(state.reason)
+        case None => ()
+      }
+      if (gallery.pausedFor(viewer, round)) throw GraphQLError.roundClosed(RoundPaused)
+      gallery.viewAs(viewer, round, asUserId) match {
+        case GalleryService.ViewAs.Allowed => ()
+        case GalleryService.ViewAs.OtherUsersVotes =>
+          throw ctx.denied(Secured.Denial.round(round, User.ADMIN_ROLES ++ User.ORG_COM_ROLES)
+            .copy(reason = Some(GalleryService.OtherUsersVotesReason)), GraphQLError.forbidden)
+        case GalleryService.ViewAs.NotRoundJuror =>
+          throw GraphQLError.missing("juror").copy(message = "juror_not_found")
+      }
+      if (asUserId == 0) throw GraphQLError.badInput("all_jurors_not_supported")
+      GalleryAccess(round, viewer, asUserId)
     }
-    if (gallery.pausedFor(viewer, round)) throw GraphQLError("round_paused", GraphQLError.Code.Conflict)
-    gallery.viewAs(viewer, round, asUserId) match {
-      case GalleryService.ViewAs.Allowed => ()
-      case GalleryService.ViewAs.OtherUsersVotes =>
-        throw ctx.denied(Secured.Denial.round(round, User.ADMIN_ROLES ++ User.ORG_COM_ROLES)
-          .copy(reason = Some(GalleryService.OtherUsersVotesReason)), GraphQLError.forbidden)
-      case GalleryService.ViewAs.NotRoundJuror =>
-        throw GraphQLError.missing("juror").copy(message = "juror_not_found")
-    }
-    if (asUserId == 0) throw GraphQLError.badInput("all_jurors_not_supported")
-    GalleryAccess(round, viewer, asUserId)
-  }
+
+  /** `round_closed`'s reason while a job moves the round's files (the web's 409 `round_paused`). */
+  val RoundPaused = "round_paused"
 
   /** The thumbnail boxes of the web galleries (`ThumbnailSize`). */
   object Thumbs {
@@ -220,21 +230,24 @@ object RoundQueries {
     * ([[ImageDbNew.SelectionQuery.listKeyed]]) and its page id; the next page is the files from that
     * place on, that file left out (`s.page_id <> after`). The order's columns end in the page id, so no
     * two files share a place: no file twice or skipped across pages, also with equal sort keys; a vote
-    * after a page was read moves a file, never the place a cursor continues from. Two statements a
-    * page (the page with its places, and the count if `totalCount` is asked), after the checks', whatever
-    * its size.
+    * after a page was read moves a file, never the place a cursor continues from (a file moved further
+    * on is shown again there: a client drops a page id it shows, as the gallery's script does). The
+    * cursor names its round, order, filter and juror: another list's is `BAD_INPUT` `bad_cursor`. Two
+    * statements a page (the page with its places, and the count if `totalCount` is asked), after the
+    * checks', whatever its size.
     */
   def roundImages(ctx: GraphQLContext, roundId: String, userId: Option[String], filter: VoteFilter, order: ListOrder,
       first: Int, after: Option[String]): ImagePage = {
     val GalleryAccess(round, _, asUserId) = galleryAccess(ctx, roundId, userId)
     if (!VoteFilter.ofRound(round).contains(filter)) throw GraphQLError.badInput("filter_not_in_round")
     val query = RoundList(round, asUserId, filter = filter, order = order).query
-    val cursor = after.map(c => ImageCursor.decode(c, query.order, order, filter, asUserId)
+    val cursor = after.map(c => ImageCursor.decode(c, query.order, round.getId, order, filter, asUserId)
       .getOrElse(throw GraphQLError.badInput("bad_cursor")))
     val size = imagePageSize(first)
     ctx.checkDeadline()
-    // the place's own file (if its key is unchanged, the first row) left out, and one more to know
-    // whether a page follows
+    // n + 2 rows: the cursor's own file is left out wherever it is among them (the first row if its key
+    // is unchanged; further on, or past them, if a vote moved it on: then a later page shows it again),
+    // and the one after the page tells whether a page follows
     val rows = query
       .copy(keyset = cursor.map(c => Keyset(c.values, before = false)), limit = Some(Limit(Some(size + 2), Some(0))))
       .listKeyed()
@@ -244,7 +257,9 @@ object RoundQueries {
     new ImagePage(
       page.map { case (file, _) => RoundImageView(file, round) },
       hasNextPage = rows.sizeIs > size,
-      endCursor = page.lastOption.map { case (file, key) => ImageCursor.encode(order, filter, asUserId, key.values, file.pageId) },
+      endCursor = page.lastOption.map { case (file, key) =>
+        ImageCursor.encode(round.getId, order, filter, asUserId, key.values, file.pageId)
+      },
       total = { ctx.checkDeadline(); query.count() })
   }
 
@@ -261,7 +276,7 @@ object RoundQueries {
   }
 }
 
-/** `roundImages`' cursors: base64url JSON of the list they continue (its order, filter and juror,
+/** `roundImages`' cursors: base64url JSON of the list they continue (its round, order, filter and juror,
   * checked against the request's, so that a cursor of another list is refused) and the place of a
   * page's last file, its values of the order's columns ([[ListOrder.columns]]), the last its page id.
   * Each value is parsed by its column (a monument id a string or null, any other column a number)
@@ -277,8 +292,9 @@ object ImageCursor {
 
   private val MonumentColumn = "s.monument_id"
 
-  def encode(order: ListOrder, filter: VoteFilter, asUserId: Long, values: Seq[Option[Any]], pageId: Long): String = {
-    val json = Json.obj("o" -> order.param, "f" -> filter.param, "u" -> asUserId, "k" -> values.map(toJson), "p" -> pageId)
+  def encode(roundId: Long, order: ListOrder, filter: VoteFilter, asUserId: Long, values: Seq[Option[Any]],
+      pageId: Long): String = {
+    val json = Json.obj("r" -> roundId, "o" -> order.param, "f" -> filter.param, "u" -> asUserId, "k" -> values.map(toJson), "p" -> pageId)
     Base64.getUrlEncoder.withoutPadding.encodeToString(Json.stringify(json).getBytes(UTF_8))
   }
 
@@ -295,12 +311,12 @@ object ImageCursor {
   /** The place `cursor` names in the list of `columns` (the query's order), if it is a cursor of this
     * list: the same order, filter and juror, a value per column of its type, the last the page id.
     */
-  def decode(cursor: String, columns: Seq[(String, Int)], order: ListOrder, filter: VoteFilter,
+  def decode(cursor: String, columns: Seq[(String, Int)], roundId: Long, order: ListOrder, filter: VoteFilter,
       asUserId: Long): Option[Place] =
     if (cursor.length > MaxLength) None
     else
       Try(Json.parse(new String(Base64.getUrlDecoder.decode(cursor), UTF_8))).toOption.collect { case o: JsObject => o }
-        .filter(o => (o \ "o").asOpt[String].contains(order.param) && (o \ "f").asOpt[String].contains(filter.param) &&
+        .filter(o => (o \ "r").asOpt[Long].contains(roundId) && (o \ "o").asOpt[String].contains(order.param) && (o \ "f").asOpt[String].contains(filter.param) &&
           (o \ "u").asOpt[Long].contains(asUserId))
         .flatMap { o =>
           for {

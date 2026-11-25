@@ -72,6 +72,9 @@ object GraphQLSchema {
   /** The largest page `contests` gives; a larger `limit` is clamped to it. */
   val MaxPageSize = 200
 
+  /** What a `roundStat` counts as in the complexity budget: a read of every juror's votes in the round. */
+  val RoundStatCost = 200
+
   /** How many rounds a contest's `rounds` counts as in the complexity budget (a contest has a few). */
   val RoundsEstimate = 20
 
@@ -511,16 +514,18 @@ object GraphQLSchema {
         arguments = IdArg :: Nil,
         resolve = c => RoundQueries.roundById(c.ctx, c.arg(IdArg))),
       Field("roundStat", OptionType(RoundStatType),
-        Some("A round's statistics, for root and its contest's admins and organizers: null with FORBIDDEN for " +
-          "its other members, NOT_FOUND for a round the caller may not see."),
+        Some("A round's statistics, for root and its contest's admins and organizers: null with NOT_FOUND for a " +
+          "round the caller doesn't see (as round(id)), FORBIDDEN for one they see but may not see the statistics of."),
         arguments = RoundIdArg :: Nil,
+        // each a statistics read (every juror's votes counted): about what a page of files costs
+        complexity = Some((_: GraphQLContext, _: Args, child: Double) => RoundStatCost + child),
         resolve = c => RoundQueries.roundStat(c.ctx, c.arg(RoundIdArg))),
       Field("roundImages", OptionType(RoundImageConnectionType),
         Some("A page of a juror's list of a round's files with their votes, as the round's gallery lists them: " +
           "the caller's own list (a juror sees only their own votes), or with userId a juror's, for those who may " +
           "see other jurors' votes there (othersVotesVisible). Keyset pages: pass pageInfo.endCursor as after. " +
           "Null with NOT_FOUND for a round the caller may not view, FORBIDDEN for another juror's list they may " +
-          "not see, CONFLICT round_closed (extensions.reason) or round_paused for a juror's round not open to them now."),
+          "not see, CONFLICT round_closed with extensions.reason for a juror's round not open to them now."),
         arguments = RoundIdArg :: UserIdArg :: FilterArg :: OrderArg :: FirstArg :: AfterArg :: Nil,
         complexity = Some((_: GraphQLContext, args: Args, child: Double) =>
           1 + child * RoundQueries.imagePageSize(args.arg(FirstArg))),

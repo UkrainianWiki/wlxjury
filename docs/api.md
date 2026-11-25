@@ -157,8 +157,8 @@ the contract the UI is written against. So far (slices 1 to 3) it has queries on
 | a contest's `rounds` | all its rounds for root and its admins and organizers; for a juror, the rounds they are a juror of, once distributed (a round being created or in review is not listed), also one they are stopped in |
 | a round's `myStatus` | the caller as a juror of the round: `ACTIVE`, `STOPPED` (stopped on it by its admins: still listed, no new files, no votes), or null when not one of its jurors |
 | a round's `othersVotesVisible` | whether the caller may see other jurors' votes there, as in its galleries: root and the contest's admins and organizers, but not while the round is open if they are one of its jurors (conflict of interest: their own votes only); never a juror |
-| `round(id)` | one round, if the caller sees it in its contest's `rounds` (above); else null with `NOT_FOUND`, the same for a missing round, a deleted one, one of a contest the caller is not in, and (for a juror) one they don't judge or one being created (the denials logged). A round's `contestId` names its contest |
-| `roundStat(roundId)` | the round statistics page's numbers, for those it shows them to: root and the contest's admins and organizers. Its `totalFiles`, a yes/no round's files with at least one vote of each kind (`selectedFiles`, `unratedFiles`, `rejectedFiles`), files deleted on Commons, the comments on its files, `noActiveJuror`, and per juror with votes in it (`jurors`): their files, `unrated`, a rated round's `rated`, a yes/no round's `selected` and `rejected`, and `status` (`ACTIVE`, `STOPPED`). A juror of the contest gets null with `FORBIDDEN` (the page's 403), anyone not in the contest `NOT_FOUND`; both logged |
+| `round(id)` | one round, if the caller sees it in its contest's `rounds` (above); else null with `NOT_FOUND`, the same for a missing round, a deleted one, one of a contest the caller is not in or of a retired one (root sees those), and (for a juror) one they don't judge or one being created (the denials logged; `roundImages` tells its juror a round being created as `CONFLICT` `round_distributing`, as the web gallery's state page). A round's `contestId` names its contest |
+| `roundStat(roundId)` | the round statistics page's numbers, for those it shows them to: root and the contest's admins and organizers (each `roundStat` counts 200 in the complexity budget). Its `totalFiles`, a yes/no round's files with at least one vote of each kind (`selectedFiles`, `unratedFiles`, `rejectedFiles`), files deleted on Commons, the comments on its files, `noActiveJuror`, and per juror with votes in it (`jurors`): their files, `unrated`, a rated round's `rated`, a yes/no round's `selected` and `rejected`, and `status` (`ACTIVE`, `STOPPED`). A round the caller doesn't see as `round(id)` shows it is null with `NOT_FOUND` (its existence not told); a round they see but may not see the statistics of (a juror's own round) `FORBIDDEN` (the page's 403); both logged |
 
 `roundStat` keeps the own-votes rule of the page: a viewer who is a juror of the open round sees
 each juror's progress (files, unrated, rated) but another juror's `selected` and `rejected`, and the
@@ -173,8 +173,9 @@ round's files by kind, are null until the round is closed. A juror's `email` fol
 Both run the web galleries' checks in their order (`GalleryService.refusal` with `viewerRounds`, `pausedFor`,
 `viewAs`): a round the caller may not view (another contest, an inactive membership, a juror's round they don't
 judge) is `NOT_FOUND`, logged; a juror's round not open to them now is a state, not a denial: `CONFLICT` with the
-message `round_closed` and `extensions.reason` (`juror_stopped`, `round_stopped`, `round_distributing`,
-`round_preparing`, `round_closing`), or `round_paused` while a job moves its files, as the gallery's 409.
+message `round_closed` and always an `extensions.reason` (`juror_stopped`, `round_stopped`, `round_distributing`
+for a round being created, `round_preparing`, `round_closing`, and `round_paused` while a job moves its files),
+as the gallery's 409 and its state page. A request answers each round's checks once, however many aliases ask.
 
 **Paging `roundImages`** (keyset, the own gallery tiles plan's continuation rules). Pass the page's
 `pageInfo.endCursor` as the next request's `after`, with the same `roundId`, `userId`, `filter` and `order` (a
@@ -189,7 +190,8 @@ is shown again there, so a client drops a page id it already shows, as the galle
 **Thumbnails.** A file's `thumbnail(size)` is what the web galleries load: `GALLERY` (300 x 250, a rated round's
 gallery, the default), `ROW` (250 tall, a yes/no round's gallery), `STRIP` (150 x 120, the large view's strip),
 each with `url` (1x), `srcset` (1.5x, 2x) and the size it is shown at. The URLs are paths on this server (the
-image proxy, `/wikipedia/commons/thumb/...`), served to a signed-in session only, so a page of the tool (same
+image proxy, `/wikipedia/commons/thumb/...`), served to a signed-in session only; where the box is at least as
+wide as the file, the URL is the Commons file itself (`upload.wikimedia.org`), as on the web pages; so a page of the tool (same
 origin, the session cookie) loads them; a token caller gets the paths but can't load them. `largeImage` is the
 large view's: Wikimedia's own sizes for a Commons file, this server's thumbnail as `fallback`.
 
@@ -241,7 +243,7 @@ type lists nested at most twice: `introspection_too_deep`); at most 30 aliases
 (`too_many_aliases`) and 1,000 selections (fields, fragment spreads, inline fragments), fragments
 counted where spread (`query_too_large`); every fragment used (`unused_fragment`), named once
 (`duplicate_fragment`), and nothing but operations and fragments (`non_executable_definition`); a complexity budget of 5,000, each field 1 and a list times its page size
-(`contests` its limit, a contest's `rounds` 20, `roundImages` its `first`: `query_too_complex`; a page of
+(`contests` its limit, a contest's `rounds` 20, `roundImages` its `first`, a `roundStat` 200: `query_too_complex`; a page of
 200 files fits with about 20 fields a file). Everything after reading the
 body runs on the blocking pool and is answered within 20 seconds (`timeout`); a run past that stops
 at its next database read, and one that waited for a thread past it does nothing. An account has
