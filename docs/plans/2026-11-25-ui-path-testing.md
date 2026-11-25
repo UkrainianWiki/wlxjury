@@ -1,6 +1,6 @@
 # UI-path testing: offered actions that match allowed actions
 
-**Status:** draft, for the maintainer's decisions (§5). Written 2026-11-25 from the maintainer's
+**Status:** draft, for the maintainer's decisions (§5); Q1 and Q6 decided 2026-11-25 **[user]**. Written 2026-11-25 from the maintainer's
 request of the same day: "we have been consistently seeing inconsistent UI paths". Read-only survey
 of master at `5d72c4d8` (after the 26.11.16 build); no code changed, no test run. References are to
 files and functions; line numbers are of that commit and drift.
@@ -102,11 +102,17 @@ message.
 1. Open every section that contains an error, and put a linked error summary at the top (every
    error, each linking to its field).
 2. Render the error branch through `roundFormView`, so the form keeps its mode, menus and jurors.
-3. Log each refused save once (WARN, message keys only, no input text).
-4. Check the form token before validating: "Round N was already created from this form – edit
-   it" with a link, which also covers Back from the browser cache.
-5. On a duplicate resubmit, offer to apply the changes to the round created (or say they were not
-   applied) instead of dropping them silently.
+3. Log each refused save once (message keys only, no input text) as `form_refused`, and a dropped
+   resubmit as `resubmit_dropped`: both lines are defined by the problem-monitoring plan (draft
+   PR #191, slice M-1), not by a logger of this plan.
+4. **[user] 2026-11-25: the stale create form is never shown again** (§5 Q6). On submit (or on
+   creation) the form page's history entry is replaced by a URL that resolves the form token: if
+   that form already created a round, it redirects to that round's Edit page with one line, "Round
+   N has been created. You can change it here."; if not (the submit was refused), it shows the form
+   as usual. Today validation runs before the token check, so **the server must check the token
+   first**.
+5. No duplicate can be created this way and nothing is dropped silently: Back lands on the created
+   round's Edit page. Another round is made with the usual "Create round" button.
 6. Catch bad input up front: unreadable list lines on paste; min and required hints for top-N and
    the category boxes.
 
@@ -219,13 +225,16 @@ Order, fitting the queue:
    - #184: rating type editable in review (no votes, no job, no later round using it).
    - A separate **refusal UX** PR (d) for the round form, with the six fix candidates of §0.5:
      sections with an error open and a linked error summary; the error branch through
-     `roundFormView`; one WARN log line per refused save (`round_save_refused contestId roundId
-     keys=…`); the form token checked before validation, with "already created – edit it"; a
-     duplicate resubmit that offers to apply the changes instead of dropping them; up-front input
-     checks. Specs: a field error in Media filtering comes back with the card open and in the
-     summary; a refused re-apply comes back in re-apply mode with editable filters; a new round's
-     refused form keeps its regions; a Back-resubmit of a created round's form gets the link,
-     not a 400. This addresses the 11 × 400 of 2026-11-25.
+     `roundFormView`; the `form_refused` / `resubmit_dropped` lines of #191 (slice M-1); the form
+     token checked before validation, and the create form's history entry replaced by a URL that
+     resolves the token ([user], §5 Q6); up-front input checks. Specs: a field error in Media
+     filtering comes back with the card open and in the summary; a refused re-apply comes back in
+     re-apply mode with editable filters; a new round's refused form keeps its regions; a POST of
+     a token that already created a round redirects to its Edit page with "Round N has been
+     created. You can change it here.", not a 400. **Playwright check:** create a round, press
+     Back, and land on that round's Edit page with the line, not the filled create form. The
+     mechanism is **to verify in Chrome, Firefox and Safari** (bfcache, `no-store`). This
+     addresses the 11 × 400 of 2026-11-25.
    - Smallest wins from §2: on a round in review the Rounds list hides Start and shows "Distribute
      to jurors" in its place; a correct message for a retired contest's round; Add juror… gated
      like Reassign.
@@ -243,31 +252,38 @@ Order, fitting the queue:
    generic dead-end check, after (3), so their checks can read the same expected matrix.
 
 **Problem monitoring** (refused saves, dead ends and the like recorded in the app and shown to
-root and admins, rather than found in the access log) will be a separate plan; this plan only
-adds the log line.
+root and admins, rather than found in the access log) is its own plan, draft PR #191; this plan
+uses its `form_refused` and `resubmit_dropped` lines (slice M-1).
 
 ## 5. Questions for the maintainer
 
 1. **Adopt the action matrix (`RoundActions`) for round and juror actions?** It centralises the
-   show/allow decision for ≈ 12 actions; lock-held refusals stay. Recommendation: yes, after
-   26.11.17, as one refactor PR with its specs.
+   show/allow decision for ≈ 12 actions; lock-held refusals stay. **[user] Decided 2026-11-25:**
+   yes, after 26.11.17, as one refactor PR with its specs (§4 step 3).
 2. **What should a refused round-form save look like?** Options: the same form in the same mode
    with the error next to its field (needs field-keyed errors for the form-level checks), or the
    same form with all errors listed at the top. Recommendation: same mode, all errors at the top
    now (26.11.17), field placement as part of (a).
-3. **Log refused saves?** A WARN line per refused round save with the message keys (no input text),
-   like `security.authz`'s denial line. Recommendation: yes, in the 26.11.17 refusal PR; it is
-   what would have explained the 11 × 400.
+3. **Log refused saves?** A line per refused round save with the message keys (no input text):
+   `form_refused`, and `resubmit_dropped`, as the problem-monitoring plan (#191, slice M-1)
+   defines them. Recommendation: yes, in the 26.11.17 refusal PR; it is what would have explained
+   the 11 × 400.
 4. **Round in review on the rounds list: hide Start and show "Distribute to jurors" in its place?**
    Start there can only be refused. Recommendation: yes for rounds in review (in the Start
    column, besides the review line's link); hide Start also for draft and cancelled rounds.
 5. **Gate "Add juror…" and "Start with a fair share" like Reassign (running rounds only)**, or keep
    them offered with the page explaining? Recommendation: gate them, with a one-line hint
    "Start the round to add jurors" on a stopped round, and none in review (the jurors form does it).
-6. **On a duplicate resubmit of a created round's form, apply the changes or only link to the
-   round?** On 2026-11-25 the resubmit's changes were dropped silently. Recommendation: link to
-   Edit round with "nothing was changed: make the changes there" for 26.11.17; applying them
-   automatically needs the edit rules (re-apply only in review) and is a later decision.
+6. **Back after creating a round.** **[user] Decided 2026-11-25:** the stale create form is never
+   shown again. On submit (or creation) the form page's history entry is replaced by a URL that
+   resolves the form token: a token that already created a round redirects to that round's Edit
+   page with one line, "Round N has been created. You can change it here."; a token whose submit
+   was refused shows the form as usual. No duplicate can be created this way; another round is
+   made with the usual "Create round" button. The server checks the token before validating
+   (today it validates first). Rejected: a stale form with two links, and the label "New round
+   form" (it names app logic, not what happened to the user's round): user-facing text says what
+   happened to their round. To verify in Chrome, Firefox and Safari (bfcache, `no-store`), with a
+   Playwright check (§4 step 1).
 7. **Waits shown as errors** (`exclude.rounds.busy`, `previous.round.rebalancing`): keep refusing,
    or accept the save and let the job wait? Recommendation: keep refusing for 26.11.17, but say
    "wait for job X (link), then save again" and keep the form; decide queuing later.
