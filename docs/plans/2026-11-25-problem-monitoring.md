@@ -224,7 +224,7 @@ CREATE TABLE support_event (
 
 CREATE TABLE support_problem (
   id             BIGINT AUTO_INCREMENT PRIMARY KEY,
-  pattern        VARCHAR(48)  NOT NULL,          -- P1..P11, §4.2
+  pattern        VARCHAR(48)  NOT NULL,          -- P1..P12, §4.2
   scope_key      VARCHAR(191) NOT NULL,          -- e.g. form=round;account=12;contest=631
   severity       VARCHAR(8)   NOT NULL,          -- warn | fail
   contest_id     BIGINT       NULL,
