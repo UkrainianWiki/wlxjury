@@ -9,7 +9,6 @@ import org.apache.pekko.util.ByteString
 import play.api.libs.json._
 import play.api.libs.streams.Accumulator
 import play.api.mvc._
-import play.api.routing.Router.Routes
 import play.api.routing.sird._
 import play.api.{Configuration, Logger}
 import sangria.ast
@@ -69,11 +68,12 @@ object GraphQLSettings {
   * and CSRF (every POST with the session cookie needs the `Csrf-Token` header; only a Bearer request
   * without the session cookie skips it, [[ApiAuth.bearerWithoutSession]]). Then, in this order:
   *
-  *  1. any other method: 405, nothing read or run;
-  *  2. the caller ([[ApiAuth.caller]], on the blocking pool, before the body is read): a personal
-  *     token or the session, the token deciding when both come (a cookie never adds to a token's
-  *     rights); none, 401; a read-only, server-only token is refused as on the REST API's writes
-  *     ([[ApiAuth.scopeRefusal]], `token_read_only`), logged;
+  *  1. the caller ([[ApiAuth.caller]], resolved by the router's guard, [[api.ApiRouter.guarded]], on
+  *     the blocking pool, before anything else): a personal token or the session, the token deciding
+  *     when both come (a cookie never adds to a token's rights); none, 401 ([[noCaller]]), whatever
+  *     the method;
+  *  2. any method but POST: 405, nothing read or run; a read-only, server-only token is refused as on
+  *     the REST API's writes ([[ApiAuth.scopeRefusal]], `token_read_only`), logged;
   *  3. `Content-Type: application/json`, else 415; the body at most `maxBodyBytes`, else 413;
   *  4. one JSON object `{query, operationName?, variables?}`: an array (a batch) or anything else is
   *     400; a document with more than one operation is refused (no batching);
@@ -83,7 +83,7 @@ object GraphQLSettings {
   *     document's nesting before it is parsed, its shape ([[QueryLimits]]), Sangria's validation,
   *     then the run, with the complexity budget; the resolvers check the deadline too.
   *
-  * Introspection needs a caller (step 2), so it is refused signed out (in production a POST with
+  * Introspection needs a caller (step 1), so it is refused signed out (in production a POST with
   * neither the session cookie nor a Bearer token gets the CSRF filter's 403 first). Errors are GraphQL's
   * `errors` with a message key (never request or exception text), `extensions.code` and, for a
   * denial or a server error, `extensions.reference`; the HTTP failures (401, 403, 400, 405) also
@@ -95,31 +95,38 @@ class GraphQLController @Inject() (
     blocking: BlockingExecutionContext,
     actorSystem: ActorSystem,
     configuration: Configuration
-)(implicit ec: ExecutionContext, mat: Materializer) {
+)(implicit ec: ExecutionContext, mat: Materializer) extends api.CallerRoutes {
 
   import GraphQLController._
   import PlayJsonMarshalling._
 
   val settings: GraphQLSettings = GraphQLSettings(configuration)
 
-  val routes: Routes = { case p"/graphql" => endpoint }
+  /** Mounted by [[api.ApiRouter]] behind its guard: the handler runs only with a caller. */
+  val callerRoutes: PartialFunction[RequestHeader, ApiAuth.Caller => EssentialAction] = {
+    case p"/graphql" => endpoint
+  }
+
+  def noCaller: Result = unauthenticated
+
+  /** The credentials couldn't be read (the database): a referenced server error, as GraphQL's. */
+  def callerUnavailable(e: Throwable): Result = {
+    val reference = Secured.newReference()
+    logger.error(s"graphql_auth_error ref=$reference", e)
+    failure(Results.InternalServerError, "server_error", "internal_error", Code.InternalError, Some(reference))
+  }
 
   private def blockingFuture[T](f: => T): Future[T] = Future(f)(blocking)
 
-  val endpoint: EssentialAction = EssentialAction { request =>
+  /** Steps 2 and 3, for a request whose caller the router's guard resolved (step 1). */
+  def endpoint(caller: ApiAuth.Caller): EssentialAction = EssentialAction { request =>
     if (request.method != "POST")
       Accumulator.done(failure(Results.MethodNotAllowed, "method_not_allowed", "method_not_allowed", Code.BadInput)
         .withHeaders("Allow" -> "POST"))
     else
-      Accumulator.flatten(blockingFuture(authorize(request)).recover {
-        // the credentials couldn't be read (the database): a referenced server error, as GraphQL's
-        case NonFatal(e) =>
-          val reference = Secured.newReference()
-          logger.error(s"graphql_auth_error ref=$reference", e)
-          Left(failure(Results.InternalServerError, "server_error", "internal_error", Code.InternalError, Some(reference)))
-      }.map {
-        case Left(result) => Accumulator.done(result)
-        case Right(caller) =>
+      scopeRefusal(caller, request) match {
+        case Some(result) => Accumulator.done(result)
+        case None =>
           if (!request.contentType.exists(_.equalsIgnoreCase("application/json")))
             Accumulator.done(failure(Results.UnsupportedMediaType, "unsupported_media_type", "unsupported_media_type",
               Code.BadInput))
@@ -128,22 +135,16 @@ class GraphQLController @Inject() (
               case Left(tooLarge) => Future.successful(tooLarge)
               case Right(body)    => handle(caller, request, body)
             }
-      })
+      }
   }
 
-  /** Step 2: the caller, or the 401 / 403 to answer. */
-  private def authorize(request: RequestHeader): Either[Result, ApiAuth.Caller] =
-    ApiAuth.caller(request) match {
-      case None => Left(unauthenticated)
-      case Some(caller) =>
-        ApiAuth.scopeRefusal(caller.via, request, Endpoint) match {
-          case Some(reason) =>
-            val reference = Secured.logDenial(caller.user, request,
-              Secured.Denial(resource = Some(s"api:$Endpoint"), reason = Some(reason)),
-              caller.via.logFields :+ ("remote" -> Secured.logValue(request.remoteAddress)))
-            Left(forbidden(reference))
-          case None => Right(caller)
-        }
+  /** Step 2: the 403 of a token whose scope refuses the endpoint, logged; None for anyone else. */
+  private def scopeRefusal(caller: ApiAuth.Caller, request: RequestHeader): Option[Result] =
+    ApiAuth.scopeRefusal(caller.via, request, Endpoint).map { reason =>
+      val reference = Secured.logDenial(caller.user, request,
+        Secured.Denial(resource = Some(s"api:$Endpoint"), reason = Some(reason)),
+        caller.via.logFields :+ ("remote" -> Secured.logValue(request.remoteAddress)))
+      forbidden(reference)
     }
 
   /** At most `maxInFlightPerCaller` runs per account at once ([[InFlightLimiter]]): the blocking

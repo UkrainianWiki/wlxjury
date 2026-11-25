@@ -12,10 +12,20 @@ Deploy dates come from production's migration history, as described at the end.
 
 ## Unreleased (on master, not yet deployed)
 
+**Features**
+
+- GraphQL: series admins see their series' contests and rounds with the same roles as on the web pages.
+- GraphQL: `me.email` shows the caller's own email, for every role.
+- GraphQL: a round's `myStatus` shows a juror stopped in it; `othersVotesVisible` follows the own-votes rule.
+
 **Fixes**
 
 - By-rate pages no longer scroll sideways (#165).
 - Round form: the category filter is two boxes, Only files in category and Leave out files in category; combining two categories is under More category options.
+
+**Security**
+
+- Every non-REST route under `/api` needs a signed-in caller before it runs (a guard in the API router).
 
 ## Deployed releases
 

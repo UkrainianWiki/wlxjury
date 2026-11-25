@@ -1,22 +1,29 @@
 package graphql
 
 import api.ApiAuth
-import db.scalikejdbc.{ContestJuryJdbc, Round, User}
+import db.scalikejdbc.{ContestJuryJdbc, Round, RoundUser, User}
 import org.intracer.wmua.ContestJury
 import sangria.schema._
+import services.GalleryService
 
 /** The GraphQL schema (plan §6, slice 1): the caller (`me`), their contests and one contest with
   * its rounds. Its SDL is checked in as `conf/graphql/schema.graphql`, the UI's contract
   * (`graphql.GraphQLSchemaSpec` fails when the two differ). Who sees what:
   *
   *  - `contests`: root, every contest (retired ones too); anyone else, the contests where they have
-  *    an access role ([[User.ACCESS_ROLES]]) in an active membership of a contest not retired;
+  *    an access role ([[User.ACCESS_ROLES]]) in an active membership of a contest not retired, and
+  *    (a session's) the contests their contest series grants reach, with the derived role, as on the
+  *    web UI ([[GraphQLContext.asMemberOf]]: contest series plan §3.3, CA7, CA20);
   *  - `contest(id)`: one of those; any other, or a missing one, is null with `NOT_FOUND` (a denial
   *    logged on `security.authz` with the error's reference);
   *  - a contest's `rounds`: all of them for those who may see its organiser views (root, its admins
   *    and organizers, [[User.canViewOrgInfo]]); a juror, the rounds they are a juror of
-  *    ([[User.roundsJuredIn]]) that are not being created or reviewed (`distributing`);
-  *  - `email`: root, and the Admins of a contest the account is a member of ([[emailVisible]]).
+  *    ([[User.roundsJuredIn]]) that are not being created or reviewed (`distributing`), also one
+  *    where their own row is stopped (`myStatus` says so);
+  *  - a round's `othersVotesVisible`: the galleries' rule ([[GalleryService.othersVotesVisibleIn]]),
+  *    the conflict-of-interest rule included (a juror of an open round sees only their own votes);
+  *  - `me.email`: the caller's own, always; another account's email (a later slice's `users`) only for
+  *    root and the Admins of a contest the account is a member of ([[emailVisible]]).
   *
   * No vote, count or juror data in this slice.
   */
@@ -24,6 +31,36 @@ object GraphQLSchema {
 
   /** A contest as the caller sees it: `viewer` is the caller in that contest ([[GraphQLContext.asMemberOf]]). */
   final case class ContestView(contest: ContestJury, viewer: User)
+
+  /** What a contest's rounds share, read once for all of them and only if a field asks for it: the
+    * rounds the viewer is a juror of, those where they are stopped, and those where they see other
+    * jurors' votes. `jurorRounds`: those of `rounds` already known to be the viewer's as a juror
+    * ([[visibleRounds]] read them); the rest are read if asked.
+    */
+  final class RoundsOf(ctx: GraphQLContext, viewer: User, rounds: Seq[Round], jurorRounds: Set[Long]) {
+
+    /** The rounds the viewer is a juror of ([[User.roundsJuredIn]]: votes in it, or a round_user row). */
+    lazy val juredIn: Set[Long] = {
+      val unknown = rounds.flatMap(_.id).filterNot(jurorRounds)
+      if (unknown.isEmpty) jurorRounds
+      else { ctx.checkDeadline(); jurorRounds ++ User.roundsJuredIn(viewer.getId, unknown) }
+    }
+
+    /** Of [[juredIn]], those where the viewer's round_user row is stopped ([[RoundUser.stoppedIn]]). */
+    lazy val stopped: Set[Long] = { ctx.checkDeadline(); RoundUser.stoppedIn(viewer.getId, juredIn.toSeq) }
+
+    /** The rounds where the viewer sees other jurors' votes ([[GalleryService.othersVotesVisibleIn]]). */
+    lazy val othersVisible: Set[Long] = { ctx.checkDeadline(); GalleryService.othersVotesVisibleIn(viewer, rounds) }
+  }
+
+  /** A round as the viewer sees it, with what its contest's rounds share ([[RoundsOf]]). */
+  final case class RoundView(round: Round, of: RoundsOf)
+
+  /** The viewer's status as a juror of a round (`myStatus`). */
+  object JurorStatus {
+    val Active = "active"
+    val Stopped = "stopped"
+  }
 
   /** A page of `contests`. */
   final case class ContestPage(totalCount: Int, offset: Int, limit: Int, items: Seq[ContestView])
@@ -37,10 +74,11 @@ object GraphQLSchema {
   /** `limit` clamped to 1..[[MaxPageSize]]. */
   def pageSize(limit: Int): Int = math.max(1, math.min(limit, MaxPageSize))
 
-  /** Whether `viewer` may see `target`'s email (decision Q6): root, or an Admin, in an active
-    * membership of a contest that is not retired, of a contest `target` is a member of
-    * (`targetContests`, any role). Real memberships only: a contest series grant's derived Admin
-    * role does not count here.
+  /** Whether `viewer` may see another account's (`target`'s) email (decision Q6), for a later
+    * slice's `users`: root, or an Admin, in an active membership of a contest that is not retired,
+    * of a contest `target` is a member of (`targetContests`, any role). Real memberships only: a
+    * contest series grant's derived Admin role does not count here. The caller's own email
+    * (`me.email`) is always shown (the maintainer's decision of 2026-11-24).
     */
   def emailVisible(viewer: User, targetContests: Seq[Long]): Boolean =
     viewer.hasRole(User.ROOT_ROLE) || {
@@ -49,7 +87,7 @@ object GraphQLSchema {
     }
 
   /** The rounds of the contest `view` shows, as its viewer may see them (see the object's doc). */
-  def visibleRounds(ctx: GraphQLContext, view: ContestView): Seq[Round] = {
+  def visibleRounds(ctx: GraphQLContext, view: ContestView): Seq[RoundView] = {
     ctx.checkDeadline()
     val rounds = Round.findByContest(view.contest.getId).filter(_.deletedAt.isEmpty)
     val viewer = view.viewer
@@ -62,7 +100,9 @@ object GraphQLSchema {
         val mine = User.roundsJuredIn(viewer.getId, open.flatMap(_.id))
         open.filter(r => mine.contains(r.getId))
       }
-    (staff ++ juror).sortBy(_.getId)
+    val visible = (staff ++ juror).sortBy(_.getId)
+    val of = new RoundsOf(ctx, viewer, visible, juror.flatMap(_.id).toSet)
+    visible.map(RoundView(_, of))
   }
 
   /** The contests the caller may see, in the order the list gives them: the latest year first. */
@@ -71,8 +111,8 @@ object GraphQLSchema {
     val contests =
       if (ctx.callerIsRoot) ContestJuryJdbc.findAll()
       else {
-        val ids = ctx.user.userContests.filter(m => m.opens && m.roles.exists(User.ACCESS_ROLES)).map(_.contestId)
-        controllers.Secured.contestsByIds(ids).filterNot(_.retired)
+        val real = ctx.user.userContests.filter(m => m.opens && m.roles.exists(User.ACCESS_ROLES)).map(_.contestId)
+        controllers.Secured.contestsByIds((real ++ ctx.seriesContestIds).distinct).filterNot(_.retired)
       }
     contests
       .flatMap(c => ctx.asMemberOf(c.getId).map(ContestView(c, _)))
@@ -144,25 +184,48 @@ object GraphQLSchema {
     Some(round.lifecycle).filter(Round.Status.All.contains)
       .getOrElse(Round.Status.ofFlags(distributing = round.distributing, open = round.active))
 
-  val RoundType: ObjectType[GraphQLContext, Round] = ObjectType(
+  val JurorStatusType: EnumType[String] = EnumType(
+    "JurorStatus",
+    Some("The caller's status as a juror of a round."),
+    List(
+      EnumValue("ACTIVE", Some("A juror of the round, not stopped."), JurorStatus.Active),
+      EnumValue("STOPPED", Some("Stopped on the round by its admins: no new files, no votes; its gallery says so."),
+        JurorStatus.Stopped)
+    )
+  )
+
+  val RoundType: ObjectType[GraphQLContext, RoundView] = ObjectType(
     "Round",
     "A judging round of a contest.",
-    fields[GraphQLContext, Round](
-      Field("id", IDType, resolve = _.value.getId.toString),
-      Field("number", IntType, Some("Its number in the contest."), resolve = _.value.number.toInt),
-      Field("name", OptionType(StringType), Some("Its name, if it has one."), resolve = _.value.name.filter(_.trim.nonEmpty)),
-      Field("title", StringType, Some("Its name, or its number if it has none."), resolve = _.value.description),
-      Field("status", RoundStatusType, resolve = c => statusOf(c.value)),
+    fields[GraphQLContext, RoundView](
+      Field("id", IDType, resolve = _.value.round.getId.toString),
+      Field("number", IntType, Some("Its number in the contest."), resolve = _.value.round.number.toInt),
+      Field("name", OptionType(StringType), Some("Its name, if it has one."),
+        resolve = _.value.round.name.filter(_.trim.nonEmpty)),
+      Field("title", StringType, Some("Its name, or its number if it has none."), resolve = _.value.round.description),
+      Field("status", RoundStatusType, resolve = c => statusOf(c.value.round)),
       Field("inReview", BooleanType, Some("Filled and waiting for its admins' review before its jurors see it."),
-        resolve = _.value.inReview),
-      Field("kind", RoundKindType, resolve = c => kindOf(c.value)),
+        resolve = _.value.round.inReview),
+      Field("kind", RoundKindType, resolve = c => kindOf(c.value.round)),
       Field("maxStars", OptionType(IntType),
         Some("A rated round's highest number of stars a juror can give (a half-star 1-7 round draws 3); null otherwise."),
-        resolve = c => Option.when(c.value.isRated)(c.value.maxRate / c.value.starUnits)),
+        resolve = c => Option.when(c.value.round.isRated)(c.value.round.maxRate / c.value.round.starUnits)),
       Field("halfStars", BooleanType, Some("Whether a rated round takes half stars."),
-        resolve = c => c.value.isRated && c.value.starUnits == 2),
+        resolve = c => c.value.round.isRated && c.value.round.starUnits == 2),
       Field("hasCriteria", BooleanType, Some("Whether a rated round is voted on per criterion."),
-        resolve = c => c.value.isRated && c.value.hasCriteria)
+        resolve = c => c.value.round.isRated && c.value.round.hasCriteria),
+      Field("myStatus", OptionType(JurorStatusType),
+        Some("The caller's status as a juror of this round: STOPPED when stopped on it (the round is still " +
+          "listed); null when the caller is not one of its jurors."),
+        resolve = c => {
+          val id = c.value.round.getId
+          Option.when(c.value.of.juredIn(id))(if (c.value.of.stopped(id)) JurorStatus.Stopped else JurorStatus.Active)
+        }),
+      Field("othersVotesVisible", BooleanType,
+        Some("Whether the caller may see other jurors' votes in this round, as in its galleries: root and the " +
+          "contest's admins and organizers, except while the round is open if they are one of its jurors " +
+          "(conflict of interest: then only their own votes); never a juror."),
+        resolve = c => c.value.of.othersVisible(c.value.round.getId))
     )
   )
 
@@ -204,9 +267,8 @@ object GraphQLSchema {
     fields[GraphQLContext, ApiAuth.Caller](
       Field("id", IDType, resolve = _.value.user.getId.toString),
       Field("fullname", StringType, resolve = _.value.user.fullname),
-      Field("email", OptionType(StringType),
-        Some("Only for root and for the Admins of a contest the account is a member of; null for anyone else."),
-        resolve = c => Option.when(emailVisible(c.ctx.user, c.value.user.userContests.map(_.contestId)))(c.value.user.email)),
+      Field("email", OptionType(StringType), Some("The caller's own email (null if the account has none)."),
+        resolve = c => Option(c.value.user.email).filter(_.trim.nonEmpty)),
       Field("isRoot", BooleanType, resolve = _.value.user.hasRole(User.ROOT_ROLE)),
       Field("currentContestId", OptionType(IDType),
         Some("The session's current contest; for a token, the account's latest contest."),
