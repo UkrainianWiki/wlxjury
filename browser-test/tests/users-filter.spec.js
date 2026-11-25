@@ -46,6 +46,11 @@ async function count(item) {
   return Number((await item.locator('.wlx-menu-count').textContent()).replace(/\D/g, ''));
 }
 
+/** The chosen item's count on the page its link opened: from the same request as the listed rows.
+  * The count read on the page before can be stale by then: the specs that run alongside
+  * (users.spec.js) add accounts to contests and give them roles. */
+const chosenCount = (menu) => count(menu.locator('.dropdown-item.active'));
+
 for (const mode of ['light', 'dark']) {
   test(`the all-users page's menus in ${mode} mode`, { tag: '@R-03' }, async ({ contextAs, baseURL, browserName }, testInfo) => {
     const context = await contextAs('root', { viewport: { width: 1440, height: 900 } });
@@ -73,21 +78,22 @@ for (const mode of ['light', 'dark']) {
       await expect(menu.locator('.dropdown-menu')).toBeHidden();
     }
 
-    // the choices compose: Juror, then the newest year; each lists what its item counted
+    // the choices compose: Juror, then the newest year; each lists what its item counts
     await role.locator('> button').click();
     const juror = role.getByRole('link', { name: /^Juror/ });
-    const jurors = await count(juror);
     await Promise.all([page.waitForURL(/\/admin\/allUsers\?role=jury$/), juror.click()]);
     await expect(role.locator('> button')).toHaveAccessibleName('Role: Juror');
+    const jurors = await chosenCount(role);
     await expect(rows(page)).toHaveCount(jurors);
     expect(jurors).toBeLessThan(everyone);
     await year.locator('> button').click();
     const newest = year.locator('.dropdown-item').nth(1);
     const yearText = (await newest.locator('span:not(.wlx-menu-count)').first().textContent()).trim();
-    const inYear = await count(newest);
     await Promise.all([page.waitForURL(new RegExp(`year=${yearText}&role=jury$`)), newest.click()]);
     await expect(year.locator('> button')).toHaveAccessibleName(`Year: ${yearText}`);
     await expect(role.locator('> button')).toHaveAccessibleName('Role: Juror');
+    const inYear = await chosenCount(year);
+    expect(await chosenCount(role), 'the Year and Role menus count the same accounts').toBe(inYear);
     await expect(rows(page)).toHaveCount(inYear);
     // All years again keeps the role
     await year.locator('> button').click();

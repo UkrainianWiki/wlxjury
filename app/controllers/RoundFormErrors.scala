@@ -67,6 +67,7 @@ object RoundFormErrors {
   /** The label of a field as the form shows it; None for a field it doesn't show (hidden ones). */
   def labelKey(field: String, form: Form[_]): Option[String] = base(field) match {
     case "name"              => Some("round.name.optional")
+    case "trackLabel"        => Some("round.track.label")
     case "previousRound"     => Some("previous.round")
     case "minJurors"         => Some("selected.by.at.least.x.jurors")
     case "topBinaryOrder"    => Some("top.images.binary.order")
