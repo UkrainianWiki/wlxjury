@@ -92,9 +92,40 @@ object RoundStartBlock {
   /** A refused start's message key: a cancelled or unfinished creation is finished by the round form's
     * "Distribute ? new files", which is read only while the round has no jurors (editRound.scala.html);
     * and a round not in review gets none (its jurors form and a juror's add choose them in review only).
+    * Without jurors, one meant to be held in review (`reviewFirst`) has "Find the matching files again"
+    * in its row ([[mayFindFilesAgain]]); one meant to be distributed after its fill can't be finished
+    * (it needs jurors, which a round outside review doesn't get): a new round is set up instead.
     */
-  def refusedKey(block: RoundStartBlock, hasJurors: => Boolean): String = block match {
-    case Cancelled | Incomplete if !hasJurors => block.refusedKey + ".no.jurors"
-    case _                                    => block.refusedKey
+  def refusedKey(block: RoundStartBlock, hasJurors: => Boolean, reviewFirst: => Boolean): String = block match {
+    case Cancelled | Incomplete if !hasJurors =>
+      if (reviewFirst) block.refusedKey + ".no.jurors" else "round.start.refused.setup.no.jurors"
+    case _ => block.refusedKey
   }
+
+  /** Whether a creation's fill is held in review when it ends ("Review images first"), by its latest
+    * distribution job, as [[services.RoundService.distributeNewFiles]] decides it
+    * ([[services.RoundService.creationIntent]] false).
+    */
+  def reviewFirst(latestJob: Option[Job]): Boolean =
+    !services.RoundService.creationIntent(latestJob.filter(_.kind == RoundDistributionHandler.Kind))
+
+  /** "Find the matching files again" (issue #194): a round whose setup was cancelled or didn't finish
+    * ([[Cancelled]], [[Incomplete]]), meant to be held in review after its fill ([[reviewFirst]]), with
+    * no jurors. Its round form's "Distribute ? new files" is read only without jurors, but a fill held in
+    * review needs none: [[services.RoundService.distributeNewFiles]] fills it again and holds it in
+    * review (step 2, checking the matching files), as it reinstates a cancelled creation. The Rounds
+    * page offers it, and RoundController.findFilesAgain allows it, exactly then.
+    *
+    * @param latestJob the round's latest distribution job
+    * @param hasJurors the round has jurors (`User.findRoundJurors`, as the round form counts them)
+    */
+  def mayFindFilesAgain(round: Round, latestJob: Option[Job], hasJurors: => Boolean): Boolean =
+    of(round, latestJob).exists(b => b == Cancelled || b == Incomplete) && reviewFirst(latestJob) && !hasJurors
+
+  /** [[mayFindFilesAgain]] with the round's latest distribution job and jurors read now. */
+  def mayFindFilesAgain(round: Round): Boolean =
+    round.id.exists { id =>
+      mayFindFilesAgain(round, JobJdbc.latestBySubjects(RoundDistributionHandler.Kind, RoundDistributionHandler.SubjectType,
+        Seq(id)).get(id), db.scalikejdbc.User.findRoundJurors(id).nonEmpty)
+    }
 }

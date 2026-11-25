@@ -70,7 +70,11 @@ class RoundController @Inject() (
               RoundsFilter.fromRequest(request).withLineage(lineage),
               // open rounds nobody can vote in (no active juror): a warning icon (DG10)
               RoundUser.openWithoutActiveJuror(rounds),
-              Some(lineage)
+              Some(lineage),
+              // "Find the matching files again" (#194): the jurors read only for a cancelled or unfinished
+              // setup meant for review
+              rounds.filter(r => RoundStartBlock.mayFindFilesAgain(r, jobs.get(r.getId), User.findRoundJurors(r.getId).nonEmpty))
+                .flatMap(_.id).toSet
             )
           )
         }
@@ -773,7 +777,8 @@ class RoundController @Inject() (
                   // back to the list as it was filtered (the form's hidden fields)
                   else Redirect(RoundsFilter.fromForm(request).addTo(routes.RoundController.rounds(Some(round.contestId)).url))
                 def blockedKey(r: Round, block: RoundStartBlock) =
-                  RoundStartBlock.refusedKey(block, User.findRoundJurors(r.getId).nonEmpty)
+                  RoundStartBlock.refusedKey(block, User.findRoundJurors(r.getId).nonEmpty,
+                    RoundStartBlock.reviewFirst(roundsService.distributionJob(r.getId)))
                 // a round not yet distributed isn't started: its own reason, before any change (a crafted
                 // POST too; the Rounds page shows no Start for it)
                 def refusal(r: Round) =
@@ -799,6 +804,46 @@ class RoundController @Inject() (
             }
         )
   }
+
+  /** "Find the matching files again" (issue #194): a round whose setup was cancelled or didn't finish,
+    * meant to be held in review, with no jurors ([[RoundStartBlock.mayFindFilesAgain]], read again here:
+    * the Rounds page offers it exactly then) is filled again by the reinstating path
+    * ([[RoundService.distributeNewFiles]]: a fill held in review, which needs no jurors) and goes back to
+    * review. The round's contest's admins and root; back to the Rounds page as it was filtered.
+    */
+  def findFilesAgain(id: Long): EssentialAction =
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
+      withAdminRound(user, id, roundNotFound(user), request) { round =>
+        val messages = messagesApi.preferred(request)
+        val back = Redirect(RoundsFilter.fromForm(request).addTo(routes.RoundController.rounds(Some(round.contestId)).url))
+        def said(key: String, args: Any*) = messages(key, (Seq[Any](round.number, round.description) ++ args): _*)
+        if (!RoundStartBlock.mayFindFilesAgain(round)) back.flashing("error" -> said("round.find.again.refused"))
+        else
+          try
+            roundsService.distributeNewFiles(round.getId, user.id) match {
+              case RoundService.Started(_) | RoundService.Resumed(_) => back.flashing("success" -> said("round.find.again.started"))
+              case RoundService.AlreadyRunning(_)                    => back.flashing("error" -> said("round.find.again.running"))
+              case givenUp: RoundService.GivenUp =>
+                back.flashing("error" -> messages("round.distribute.attempts", round.number, givenUp.reference))
+            }
+          catch {
+            // the rounds it leaves out, or its previous rounds, refused it: their message
+            case refused: RoundDistributionHandler.ExcludeRoundsRefused =>
+              logger.warn(s"Round ${round.getId}: matching files not found again: ${refused.text}")
+              back.flashing("error" -> said("round.find.again.failed", messages(refused.refusal.key, refused.refusal.args: _*)))
+            case NonFatal(e) =>
+              RoundController.refusal(e) match {
+                case Some(text) =>
+                  logger.warn(s"Round ${round.getId}: matching files not found again: $text")
+                  back.flashing("error" -> said("round.find.again.failed", text))
+                case None =>
+                  val reference = Secured.newReference()
+                  logger.error(s"Round ${round.getId}: could not find its matching files again ref=$reference", e)
+                  back.flashing("error" -> said("round.find.again.failed.reference", reference))
+              }
+          }
+      }
+    }
 
   /** Activates or deactivates a juror in a round of a contest the user administers.
     * Only that round's round_user row changes, under the round's lock; refused while a job holds
