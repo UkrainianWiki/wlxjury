@@ -1,6 +1,6 @@
 # Problem monitoring: refusals, errors and failed jobs seen without looking for them (plan, 2026-11-25)
 
-**Status:** draft, for the maintainer's decisions (§9); Q1–Q4 decided 2026-11-25. Read-only survey of master at `5d72c4d8`
+**Status:** draft, for the maintainer's decisions (§9); Q1–Q5 decided 2026-11-25. Read-only survey of master at `5d72c4d8`
 (after the 26.11.16 build); no code changed, no test run. References are to files and functions;
 line numbers drift.
 
@@ -244,7 +244,7 @@ CREATE TABLE support_problem (
 
 A problem is **new** when `seen_at IS NULL OR last_event_at > seen_at`: new events after it was
 seen bring it back, so nothing is lost when nobody looks. Seen is shared by all root accounts
-(`seen_by` shows who), not per account (Q5).
+(`seen_by` shows who), not per account (Q5, decided [user] 2026-11-25).
 
 ### 3.2 Retention (Q2, decided)
 
@@ -514,9 +514,9 @@ One decision each. A recommendation is this plan's, open to the maintainer.
 4. **Q4. Which patterns are on by default?** **Decided [user] 2026-11-25: "Everything": all patterns, P10 and the contest-wide denial burst (P12) included, on by default; tuned later via settings.** The question as asked: §4.2's table: P1–P9 and P11 on; P10 (jurors on a stopped
    round) and denials across a contest off, as likely noise. **Recommendation: as in the table**,
    tuned after M-2's first weeks of events.
-5. **Q5. Is "seen" shared by all root accounts or per account?** Shared: one person marks it, every
+5. **Q5. Is "seen" shared by all root accounts or per account?** **Decided [user] 2026-11-25: shared, one "seen" state for all root accounts.** The question as asked: Shared: one person marks it, every
    root sees it handled, with who marked it. Per account: each root sees everything once.
-   **Recommendation: shared** (one or two root accounts, and the point is "someone looked").
+   Recommendation was: shared (one or two root accounts, and the point is "someone looked").
 6. **Q6. Where do M-2 to M-4 go in the queue?** After 26.11.17's small fixes (M-1 in them) and
    lineage slice A: before regional winners, or after. Before: the next season's first problems are
    caught. After: regional winners ships sooner. **Recommendation: before regional winners**, since
