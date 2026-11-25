@@ -324,8 +324,15 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
         }
         val opened = get(app, "admin@example.com", s"/admin/rounds/edit?contestId=${contest.getId}&submitToken=$t")
         val shownToken = doc(opened).select("input[name=submitToken]").attr("value")
+        // refused, the form comes back with a fresh token (its double-submit and Back protection kept)
+        val refused = save(app, "admin@example.com", newRound(contest, t, "topImages" -> "0"): _*)
+        val refusedToken = doc(refused).select("input[name=submitToken]").attr("value")
+        val unreadable = save(app, "admin@example.com", newRound(contest, t, "fileList" -> "https://example.org/x"): _*)
+        val unreadableToken = doc(unreadable).select("input[name=submitToken]").attr("value")
         val again = save(app, "admin@example.com", newRound(contest, t, "name" -> "Again"): _*)
         (status(opened) === OK) and (shownToken !== t) and
+          (status(refused) === BAD_REQUEST) and (refusedToken must beMatching("[0-9a-f-]{36}")) and (refusedToken !== t) and
+          (status(unreadable) === BAD_REQUEST) and (unreadableToken must beMatching("[0-9a-f-]{36}")) and (unreadableToken !== t) and
           (status(again) === SEE_OTHER) and (redirectLocation(again).get must startWith("/admin/rounds?")) and
           (Round.findByContest(contest.getId).exists(r => r.name.contains("Again") && r.deletedAt.isEmpty) must beTrue)
       }

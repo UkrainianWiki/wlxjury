@@ -432,7 +432,7 @@ class RoundController @Inject() (
                 case None =>
                   refusedForm(user, new Round(id = None, contestId = cid,
                     number = formWithErrors.data.get("number").flatMap(_.toLongOption).getOrElse(0L)),
-                    formWithErrors, RoundController.submitToken(request).filterNot(Round.submitTokenTaken))
+                    formWithErrors, RoundController.formToken(RoundController.submitToken(request)))
                 case Some(id) =>
                   withAdminRound(user, id, roundNotFound(user), request) {
                     case stored if stored.contestId != cid =>
@@ -460,7 +460,8 @@ class RoundController @Inject() (
             // failure shown as a global form error, so the admin can fix and resubmit
             // instead of losing the page.
             def reRender(r: Round, message: String, args: Any*): Result =
-              refusedForm(user, r, filledWith(r, message, args), liveToken.filter(_ => r.id.isEmpty))
+              refusedForm(user, r, filledWith(r, message, args),
+                Option.when(r.id.isEmpty)(RoundController.formToken(liveToken)).flatten)
 
             def filledWith(r: Round, message: String, args: Seq[Any]): Form[EditRound] =
               editRoundForm
@@ -1198,6 +1199,12 @@ object RoundController {
 
     def size: Int = hashes.size
   }
+
+  /** The token a refused new-round form comes back with: the posted one, unless a round (a deleted
+    * one) holds it; then a fresh one, so the form keeps its double-submit and Back protection.
+    */
+  def formToken(posted: Option[String]): Option[String] =
+    posted.filterNot(Round.submitTokenTaken).orElse(Some(newSubmitToken()))
 
   /** A one-time token for a new-round form (see RoundService.submit). */
   def newSubmitToken(): String = java.util.UUID.randomUUID().toString
