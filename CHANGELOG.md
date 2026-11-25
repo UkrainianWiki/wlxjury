@@ -12,23 +12,27 @@ Deploy dates come from production's migration history, as described at the end.
 
 ## Unreleased (on master, not yet deployed)
 
+Nothing merged to master after the 26.11.16 build yet.
+
+## Deployed releases
+
+### 26.11.16 (2026-11-25)
+
+Built from master after `26.11.15`; no migration (the schema stays V113).
+
 **Features**
 
-- GraphQL: series admins see their series' contests and rounds with the same roles as on the web pages.
-- GraphQL: `me.email` shows the caller's own email, for every role.
-- GraphQL: a round's `myStatus` shows a juror stopped in it; `othersVotesVisible` follows the own-votes rule.
+- GraphQL: series admins see their series' contests and rounds; `me.email` shows your own email; `myStatus` shows a stopped juror (#169).
 
 **Fixes**
 
-- By-rate pages no longer scroll sideways (#165).
-- Round form: the category filter is two boxes, Only files in category and Leave out files in category; combining two categories is under More category options (#170).
-- An import no longer gives a contest a list of files shared with other contests; if its earlier list was shared, the files page says it was not copied (#172).
+- Round form: the category filter is two boxes, Only files in category and Leave out files in category (#170).
+- By-rate pages no longer scroll sideways (#168).
+- An import no longer gives a contest another contest's file list (#172).
 
 **Security**
 
-- Every non-REST route under `/api` needs a signed-in caller before it runs (a guard in the API router).
-
-## Deployed releases
+- Every route under `/api` outside the REST API needs a signed-in caller (#169).
 
 ### 26.11.15 (2026-11-24)
 
