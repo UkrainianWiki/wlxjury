@@ -5,8 +5,8 @@
 
 **Status:** plan only. Nothing is built. Date: 2026-11-11.
 
-**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 6 and 14
-decided; 1–5, 7–13, 15–16 open; phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5).
+**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 6, 7 and
+14 decided; 1–5, 8–13, 15–16 open; phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5).
 The maintainer made this the top priority for WLM 2026 Ukraine, whose jury final is at the
 beginning of December.
 
@@ -431,7 +431,7 @@ Every order is fixed: rounds by kind, depth and id; files by the rank key, then 
 - **The rank is within the region.** A parity spec checks that it equals the rank in the round's
   all-jurors "by rate" gallery with that region and order.
 
-**N per region:** the `n` parameter, 1–10, default 3 (decision 7). **Ties at the N-th place** are
+**N per region:** the `n` parameter, 1–10, default 1 (updated 2026-11-25, decision 7). **Ties at the N-th place** are
 shown up to 2N, then "+k more tied" with a link to the region's "by rate" gallery
 (`/byrate/round/:r/user/0/region/:region/page/1`, `conf/routes:65`). Ranks are written as ranges
 (decision 8).
@@ -463,7 +463,8 @@ The score rule is named as on the round form.
 ### 3.1 Route and access
 
 - **Route:**
-  `GET /contest/:contestId/regional-winners` → `RegionalWinnersController.page(contestId: Long, round: Option[Long] ?= None, rounds: Option[String] ?= None, n: Int ?= 3, national: Int ?= 0, format: String ?= "html")`.
+  `GET /contest/:contestId/regional-winners` → `RegionalWinnersController.page(contestId: Long, round: Option[Long] ?= None, rounds: Option[String] ?= None, n: Int ?= 1, national: Int ?= 0, format: String ?= "html")`
+  (`n` default 1: updated 2026-11-25, decision 7).
 - **Permission:** `withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId)))`,
   as for the contest files page (`GalleryController.scala:587`) and the lineage map.
 - **Refusals:**
@@ -952,6 +953,9 @@ comes from the stored `top_binary_order` (§2.5).
 - (c) A per-contest setting.
 
 **Recommendation: (a).** Reason: it needs no storage, and contests award different numbers *(inf.)*.
+
+**Decided (maintainer, 2026-11-25): (a) with default 1**: a parameter from 1 to 10 photos per
+region, default **1** (not the recommended 3).
 
 **8. Ties at the N-th place.**
 - (a) Up to 2N, then "+k more tied".
