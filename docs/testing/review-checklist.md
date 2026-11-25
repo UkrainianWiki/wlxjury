@@ -59,7 +59,7 @@ For every change with tests, and every change that should have them. Each line p
 
 ## Before merge
 
-- [ ] Every review thread (CodeRabbit's or a person's) has a reply on the thread (fixed in
-  `<commit>`, not applicable because …, or follow-up issue #N) and is resolved; the `master`
+- [ ] Every review thread (CodeRabbit's or a person's) has a reply on the thread (the fixing
+  commit, or a reply per [workflow](../workflow/practices.md) §3.1) and is resolved; the `master`
   ruleset blocks the merge otherwise. No CodeRabbit review (rate limit) is no reason to wait
   ([workflow](../workflow/practices.md) §3.4).
