@@ -94,7 +94,7 @@ request.
 
 | Kind | When | Fields beyond the common ones (time, kind, contest, account, route template, method, status, ref) | Hook (file / function) | Existing log line |
 |---|---|---|---|---|
-| `form_refused` | A form POST answered 400 (or 409/422) with its form shown again | `form` (stable id, e.g. `round`, `contest`, `user`, `criteria`), `round_id` or "new", the **field names** with errors, the **message keys** (field and global), never the values or the keys' arguments | `controllers.FormRefusal` (new, §2.2), called from each form's error branch; `RefusalFilter` (new, `app/modules/`, next to `SessionLifetimeFilter`) as the fallback for any form that doesn't call it | none today (new `form_refused`) |
+| `form_refused` | A page form POST answered 400 or 422 with its form shown again (HTML only) | `form` (stable id, e.g. `round`, `contest`, `user`, `criteria`), `round_id` or "new", the **field names** with errors, the **message keys** (field and global), never the values or the keys' arguments | `controllers.FormRefusal` (new, §2.2), called from each form's error branch; `RefusalFilter` (new, `app/modules/`, next to `SessionLifetimeFilter`) as the fallback for any form that doesn't call it | none today (new `form_refused`) |
 | `resubmit_dropped` | A round form's token was already used: no new round, the posted changes dropped (`RoundService.Resubmitted`) | `round_id`, `outcome` = `resumed` / `distributing` / `given_up` / `same` / `changed` (`same` / `changed`: §2.3) | `RoundController.saveRound`, the `case resubmitted: RoundService.Resubmitted` branch | `Contest N: Round … was already created from this form` (WARN, quotes the round's description unquoted: replaced, §5) |
 | `denied` | Every 403 of a signed-in user, page, JSON or API | `resource`, `reason` (`Secured.denialReason`), required roles | `Secured.logDenial` (the single point: `onUnAuthorized`, `onUnAuthorizedJson` and `api.ApiAuth` all go through it) | `authorization_denied` |
 | `server_error` | A 500 | none (the reference finds the stack trace in the log) | `ErrorHandler.onServerError`, after the reference is made | `server_error` |
@@ -139,7 +139,7 @@ Two layers:
    (the route's `HandlerDef`) and `keys = unknown` only when **all** of these hold:
    - a POST of a signed-in session (the session's `AccountId`, as `Secured.accountFields` reads it);
    - **not a script request** (`X-Requested-With` or a non-`navigate` `Sec-Fetch-Mode`, as
-     `Secured.isPageRequest` tells them), so votes, polls and JSON calls never count;
+     `!Secured.isScriptRequest(request)` tells them; a browser form POST has `Sec-Fetch-Mode: navigate`), so votes, polls and JSON calls never count;
    - the route is not on the **vote list** (the gallery and large-view vote routes, by
      `HandlerDef`), a second guard for clients without those headers: the vote path's 409
      `round_closed` (`GalleryController`) and its 400s are routine juror races, not refused forms;
@@ -404,7 +404,7 @@ other contests, no `server_error` (root support), the email masked. No badge for
 
 | Slice | Content | Size | When |
 |---|---|---|---|
-| **M-1** | `FormRefusal` (keys and field names, arguments dropped), used only in `RoundController.saveRound`'s two refusal branches (`formWithErrors` and `reRender`), and the `resubmit_dropped` line (with §2.3's `same` / `changed`) replacing the unquoted resubmit line. **Log only: no table, no migration, no filter.** The line is named `form_refused`; the UI-path plan (#189) is aligned to that name, and M-1 *is* its refusal-UX log item, not a second logger | S (≈ 1 day) | **26.11.17**, inside the UI-path refusal-UX PR (d) |
+| **M-1** | `FormRefusal` (keys and field names, arguments dropped), used only in `RoundController.saveRound`'s two refusal branches (`formWithErrors` and `reRender`), and the `resubmit_dropped` line with §2.3's in-memory form hash (`same` / `changed`), replacing the unquoted resubmit line. **Log only: no table, no migration, no filter.** The line is named `form_refused`; the UI-path plan (#189) is aligned to that name, and M-1 *is* its refusal-UX log item, not a second logger | S (≈ 1 day) | **26.11.17**, inside the UI-path refusal-UX PR (d) |
 | **M-2** | The migration (both tables), `EventRecorder`, the flood cap, `RefusalFilter`, the hooks of §2.1 (`logDenial`, `ErrorHandler`, `CsrfErrorHandler`, `JobScheduler`, link refusals, timers), `FormRefusal` in the other forms, the daily purge, secure-coding §13/§22, `LogHygieneSpec`. Takes over support diagnostics D-3 | M (2–3 days) | after lineage slice A (its migration number then) |
 | **M-3** | `ProblemCheckTask` and its watchdog, patterns P1–P11 with settings, `problem_detected`; P5 shared with H11 | M (2–3 days) | right after M-2 |
 | **M-4** | Badge, Problems page, mark seen/new, filters, links; negative authorization specs | S–M (2 days) | with M-3 or right after |
