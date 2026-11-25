@@ -1,6 +1,6 @@
 # UI-path testing: offered actions that match allowed actions
 
-**Status:** draft, for the maintainer's decisions (§5); Q1, Q4, Q6 and the setup steps (§4 step 1, superseding Q10) decided 2026-11-25 **[user]**. Written 2026-11-25 from the maintainer's
+**Status:** draft, for the maintainer's decisions (§5); Q1, Q4, Q5, Q6 and the setup steps (§4 step 1, superseding Q10) decided 2026-11-25 **[user]**. Written 2026-11-25 from the maintainer's
 request of the same day: "we have been consistently seeing inconsistent UI paths". Read-only survey
 of master at `5d72c4d8` (after the 26.11.16 build); no code changed, no test run. References are to
 files and functions; line numbers are of that commit and drift.
@@ -273,8 +273,20 @@ Order, fitting the queue:
        reason while matching, the Rounds list's step states, and the edit save's confirmation.
      - The build includes screenshots of steps 1–3 at 1366 and 390 px wide, for review.
    - Smallest wins from §2: on a round in review the Rounds list hides Start and shows "Distribute
-     to jurors" in its place; a correct message for a retired contest's round; Add juror… gated
-     like Reassign.
+     to jurors" in its place; a correct message for a retired contest's round.
+   - **Add juror on stopped rounds** (§5 Q5, [user] 2026-11-25), its own PR, about 1–2 days:
+     - "Add juror…" and "Start with a fair share" are allowed on stopped rounds too. The add-juror
+       job moves unrated files without pausing (the round is already closed to jurors), and the
+       round stays stopped; when it is started again every juror has a fair share.
+     - Rounds being set up (distributing, before distribution): the links are hidden; jurors are
+       chosen in step 3. Running rounds: unchanged.
+     - `Round.freeze` / release leave a stopped round stopped (`active_before_freeze`).
+     - `RoundRebalanceHandler.isRunning` / `refusal` gain a "stopped" allowance.
+     - The added juror ends active in a stopped round, with no "started in a stopped round"
+       warning on this path. The `round_paused` / `round_closed` semantics for jurors are
+       unchanged.
+     - Offered == allowed. Specs include the negative cases: a round being set up, frozen by
+       another job, a legacy round.
 2. **Lineage slice A** (being built: track label, chip, filter) adds no round action; it should
    not wait. Its new chip/filter links are views only. The checklist item (e) applies to it from
    its review on.
@@ -312,8 +324,12 @@ page (§0 row 7).
    refusal messages, one Distribute action per row as its primary button. The step wording of §4
    replaces #192's interim state text later.
 5. **Gate "Add juror…" and "Start with a fair share" like Reassign (running rounds only)**, or keep
-   them offered with the page explaining? Recommendation: gate them, with a one-line hint
-   "Start the round to add jurors" on a stopped round, and none in review (the jurors form does it).
+   them offered with the page explaining? **[user] Decided 2026-11-25:** allow both on stopped
+   rounds too (the job moves the unrated files without pausing; the round stays stopped, and every
+   juror has a fair share when it starts again); hide them on rounds being set up (jurors are
+   chosen in step 3); running rounds unchanged. Built as its own 26.11.17 PR (§4 step 1).
+   **This revises D3 of [`2026-11-16-round-editing.md`](2026-11-16-round-editing.md)** ("running
+   rounds only").
 6. **Back after saving a new round.** **[user] Decided 2026-11-25:** the stale create form is never
    shown again. On submit (or creation) the form page's history entry is replaced by a URL that
    resolves the form token: a token that already created a round redirects to that round's Edit
