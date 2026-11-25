@@ -11,7 +11,9 @@ Fails on:
 - a #anchor (in the page, or to another Markdown page of the repository) that is neither an
   explicit <a id="…"> of the target page nor one of its heading slugs (GitHub's, -1 for a repeat);
 - an explicit id twice in one page, or in two topic pages;
-- a ## or ### heading of a topic page without an explicit <a id="…"> on the line above.
+- a ## or ### heading of a topic page without an explicit <a id="…"> on the line above;
+- a heading (with its id lines) right after an HTML line such as <img …>, with no blank line
+  between: the HTML block goes on to the blank line, so GitHub shows the heading as plain text.
 
 The topic pages are docs/user/*.md except the contents pages (admin-guide.md, organizer-guide.md,
 juror-guide.md), README.md and whats-new-*.md. Code blocks are skipped; headings inside HTML
@@ -20,7 +22,6 @@ checked in README.md, docs/README.md and docs/testing/stories.md.
 """
 import argparse
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -76,6 +77,22 @@ class Page:
             # a line that starts in a comment, or opens one, is the comment's
             self.lines.append((n, line, code, start_comment or (not code and "<!--" in line)))
         self._anchors = None
+
+    def swallowed(self):
+        """(line number, text) of the headings whose id lines and heading follow an HTML line
+        (<img …>, not an id) with no blank line: they are inside that HTML block."""
+        out = []
+        for k, (n, line, code, comment) in enumerate(self.lines):
+            m = None if code or comment else HEADING.match(line)
+            if not m:
+                continue
+            j = k - 1
+            while j >= 0 and ID_LINE.match(self.lines[j][1]):
+                j -= 1
+            prev = self.lines[j][1].lstrip() if j >= 0 and not self.lines[j][2] else ""
+            if prev.startswith("<") and not prev.startswith("<!--"):
+                out.append((n, m.group(2)))
+        return out
 
     def headings(self):
         """(line number, level, text, ids on the lines just above) of the rendered headings."""
@@ -171,6 +188,8 @@ def check(root, legacy_rev=None, legacy_texts=None):
             if i in seen:
                 errors.append(f"{rel(f, root)}:{n}: the id {i} is also on line {seen[i]}")
             seen.setdefault(i, n)
+        for n, text in page(f).swallowed():
+            errors.append(f"{rel(f, root)}:{n}: the heading \"{text}\" follows an HTML line without a blank line")
     for f in INBOUND:
         if (root / f).is_file():
             check_links(root / f, True)
@@ -263,6 +282,8 @@ def self_test():
     files = dict(good, **{"docs/user/other.md": "<a id=\"t-part\"></a>\n# Other\n"})
     errs = run(files)
     expect(any("is also in" in e for e in errs), f"an id in two topic pages, got {errs}")
+    variant("docs/user/topic.md", "alt=\"x\">\n\nSee", "alt=\"x\">\n<a id=\"t-more\"></a>\n## More\n\nSee",
+            "follows an HTML line", "a heading right after an <img> line")
     variant("docs/README.md", "user/topic.md#t-part", "user/topic.md#nope", "no such anchor",
             "an inbound link to a missing anchor")
     variant("docs/user/admin-guide.md", "<a id=\"a-old\"></a>", "", "old anchor #a-old is gone",

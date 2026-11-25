@@ -57,7 +57,8 @@ python scripts/story-coverage.py --self-test  # on scripts/testdata/story-covera
 
 The user guide's link check ([docs README](../docs/README.md) §5): every relative link, image
 and `#anchor` of `docs/user` resolves (an explicit `<a id>` or a heading slug), an id is used
-once, and every `##`/`###` heading of a topic page has an id; also the links into `docs/user`
+once, every `##`/`###` heading of a topic page has an id, and no heading follows an HTML line
+(`<img>`) without a blank line (GitHub would show it as text); also the links into `docs/user`
 from `README.md`, `docs/README.md` and the story catalogue. Python standard library only, no
 build; a step of `ci.yml`.
 

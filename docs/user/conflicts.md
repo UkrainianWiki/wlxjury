@@ -36,6 +36,7 @@ controls to disqualify and requalify files there, see [Disqualifying and
 requalifying](#a-disqualify); for organizers the page is read only.
 
 <img src="images/organizer-conflicts.png" alt="The conflicts of interest page of a round with one file by a juror, no disqualified files and no history" width="1280">
+
 <a id="a-leave-out-conflicts"></a>
 ## Leaving conflicts of interest out of a round
 
