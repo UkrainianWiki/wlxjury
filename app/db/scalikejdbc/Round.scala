@@ -926,6 +926,13 @@ object RoundUser extends JoinTable[RoundUser] {
     sql"""SELECT 1 FROM round_user WHERE round_id = $roundId AND user_id = $userId AND active = FALSE"""
       .map(_.int(1)).single.apply().isDefined
 
+  /** Of `roundIds`, those where the user is stopped ([[isStopped]]), in one query (GraphQL's `myStatus`). */
+  def stoppedIn(userId: Long, roundIds: Seq[Long])(implicit session: DBSession = AutoSession): Set[Long] =
+    if (roundIds.isEmpty) Set.empty
+    else
+      sql"""SELECT round_id FROM round_user WHERE round_id IN (${roundIds.distinct}) AND user_id = $userId AND active = FALSE"""
+        .map(_.long(1)).list.apply().toSet
+
   def setActive(roundId: Long, userId: Long, active: Boolean): Int =
     updateBy(sqls.eq(ru.roundId, roundId).and.eq(ru.userId, userId))
       .withAttributes("active" -> active)

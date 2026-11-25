@@ -37,20 +37,30 @@ final case class GraphQLContext(caller: ApiAuth.Caller, request: RequestHeader, 
   /** The caller is root (a caller check, not a target's: `User.isProtectedTarget` is for targets). */
   def callerIsRoot: Boolean = user.hasRole(User.ROOT_ROLE)
 
-  /** The caller as a member of the contest (`Secured.inContest`: an active membership of a contest
-    * that is not retired), with their role there; root in any contest. None when they have no
-    * access role there: not a member, only an inactive role ("no", board, staff, auditor), a
-    * retired contest, or (a session's) only a contest series grant's reach, whose derived role
-    * counts only in an action that opts in to it (none here; contest series plan §3.3).
+  /** The caller as a member of the contest, with their role there, as the web UI's contest and round
+    * pages judge them (contest series plan §3.3): [[GraphQLContext.access]], checked by
+    * `Secured.checked`, the check of every action. A real membership counts if it is active and its
+    * contest not retired; for a session, so does a contest series grant's derived role (Admin from
+    * the grant's start year on, Organizer below it, CA20), except in a contest where the account holds
+    * a real Juror row (CA7: the series doesn't apply there; `SeriesAdminJdbc.seriesContests`). A
+    * personal token never gets series reach (`ApiTokenService` resolves the account without it).
+    * Root in any contest. None when they have no access role there: not a member, only an inactive
+    * role ("no", board, staff, auditor), or a retired contest.
     */
-  def asMemberOf(contestId: Long): Option[User] = {
-    val there = Secured.inContest(user, contestId)
-    if (callerIsRoot)
+  def asMemberOf(contestId: Long): Option[User] =
+    if (callerIsRoot) {
+      val there = Secured.inContest(user, contestId)
       // root needs no membership; without one there, no contest role either (not the current contest's)
       Some(if (there.contestId.contains(contestId)) there
            else user.copy(contestId = Some(contestId), roles = user.roles -- user.contestRoles))
-    else Option.when(there.contestId.contains(contestId) && there.contestRoles.exists(User.ACCESS_ROLES))(there)
-  }
+    } else
+      Secured.checked(user, GraphQLContext.access(contestId)).toOption
+        .filter(there => there.contestId.contains(contestId) && there.contestRoles.exists(User.ACCESS_ROLES))
+
+  /** The contests the caller's series grants reach (a session's only: a token's user has none), with
+    * the derived role there; [[asMemberOf]] judges each.
+    */
+  def seriesContestIds: Seq[Long] = Secured.seriesContestIds(user)
 
   /** A contest the caller may not see, as a missing one ([[GraphQLError.notFound]]). The request's
     * first denial is logged on `security.authz` with the reference the error carries; a later one
@@ -82,6 +92,15 @@ final case class GraphQLContext(caller: ApiAuth.Caller, request: RequestHeader, 
 }
 
 object GraphQLContext {
+
+  /** The permission a contest's data needs: an access role there, a series grant's derived role
+    * counting (an opt-in, listed in `security.SeriesReachGuardSpec`), as on the web UI's round and
+    * gallery pages (contest series plan §3.3, "Every action, classified": rounds, galleries and
+    * statistics take the derived role).
+    */
+  def access(contestId: Long): Secured.ContestPermission =
+    Secured.ContestPermission(User.ACCESS_ROLES, Some(contestId), derived = true)
+
   private val logger = Logger("graphql")
   private val authzLogger = Logger("security.authz")
 }

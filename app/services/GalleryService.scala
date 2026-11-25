@@ -238,10 +238,22 @@ object GalleryService {
     * reviewed (distributing), or paused by a freeze while open; closed: anything else (stopped,
     * finalized, cancelled). A juror of the round: [[User.isRoundJuror]], a round_user row, active
     * or stopped, or votes of their own in it. The one check of every place that shows other
-    * jurors' votes (a guard spec lists them).
+    * jurors' votes (a guard spec lists them). [[othersVotesVisibleIn]] of the one round: the rule
+    * has one definition.
     */
   def othersVotesVisible(user: User, round: Round): Boolean =
-    user.canViewOrgInfo(round) && ownVotesOnlyRounds(user, Seq(round)).isEmpty
+    round.id.exists(othersVotesVisibleIn(user, Seq(round)))
+
+  /** Of `rounds`, those where `user` sees other jurors' votes ([[othersVotesVisible]], whose rule this
+    * is): those whose organiser info they may see, but the open ones they are a juror of. In two
+    * queries at most, none when they see no round's organiser info (GraphQL's `othersVotesVisible` of
+    * a contest's rounds).
+    */
+  def othersVotesVisibleIn(user: User, rounds: Seq[Round]): Set[Long] = {
+    val staff = rounds.filter(user.canViewOrgInfo)
+    val ownOnly = ownVotesOnlyRounds(user, staff)
+    staff.flatMap(_.id).filterNot(ownOnly).toSet
+  }
 
   /** Of `rounds`, those where `user` sees only their own votes ([[othersVotesVisible]]): the open
     * rounds they are a juror of. In two queries at most, for a menu of rounds (the galleries' round
