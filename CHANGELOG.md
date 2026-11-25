@@ -18,6 +18,10 @@ For the next release, 26.11.17.
 
 - Saving a round's settings logs who changed what, with the old and new values, on the round's statistics and in the contest's change log (migration V114).
 
+**Fixes**
+
+- Rounds page: a round not yet distributed to its jurors has no Start button. It reads "Not started – waiting for distribution" with a "Distribute to jurors" link, or "Images are being distributed" while that runs. Starting it anyway no longer says its images are being distributed when they aren't: the message says what to do.
+
 ## Deployed releases
 
 ### 26.11.16 (2026-11-25)

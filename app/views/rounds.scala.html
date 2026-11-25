@@ -2,6 +2,7 @@
 @import controllers.SelectRound
 @import db.scalikejdbc.Round
 @import db.scalikejdbc.User
+@import services.distribution.RoundStartBlock
 @(
         adminUser: User,
         rounds: Seq[Round],
@@ -95,7 +96,13 @@
                             <td>@round.limits.recommended.fold("")(_.toString) </td> -->
                             @* an open round with no active juror, nobody can vote in it (DG10): a warning icon after
                                the Yes, its words in the tooltip and for screen readers *@
-                            <td>@snippets.startStop(round.active, round.getId, contest.getId, routes.RoundController.setRound, extraFields = filterFields)@if(noActiveJuror.contains(round.getId)) {<span class="wlx-round-warning text-warning-emphasis ms-1" data-round="@round.getId" title="@Messages("round.warning.nojurors.short")"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i><span class="visually-hidden">, @Messages("round.warning.nojurors.short")</span></span>}</td>
+                            @* a round not yet distributed (RoundStartBlock: in review, its images being selected or
+                               distributed, or its creation not finished) has no Start: its state instead, and for one
+                               waiting in review, its jurors form, where it is distributed (the maintainer, 2026-11-25) *@
+                            <td>@RoundStartBlock.of(round, jobs.get(round.getId)) match {
+                                case Some(block) => {<span class="wlx-round-start-state small" data-round="@round.getId" data-state="@block.reason">@Messages(block.stateKey)</span>@if(block == RoundStartBlock.NotDistributed) { <a class="round-start-distribute small" href="@routes.RoundReviewController.jurors(round.getId)">@Messages("round.review.distribute")</a>}}
+                                case None => {@snippets.startStop(round.active, round.getId, contest.getId, routes.RoundController.setRound, extraFields = filterFields)@if(noActiveJuror.contains(round.getId)) {<span class="wlx-round-warning text-warning-emphasis ms-1" data-round="@round.getId" title="@Messages("round.warning.nojurors.short")"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i><span class="visually-hidden">, @Messages("round.warning.nojurors.short")</span></span>}}
+                            }</td>
                             <td>@roundsStat.getOrElse(round.getId, 0) </td>
                             @* a distribution's job while it matters (a fill that left the round in review: the
                                review line below instead); a juror's add (round_rebalance) also done, with the files it

@@ -14,6 +14,7 @@ import services.RoundService
 import services.distribution.{RoundDistributionHandler, RoundFreezes, RoundImageCheckHandler, RoundRebalanceHandler,
   RoundRebalanceService}
 import services.imports.{FileTitles, ImportSource, WikiTitle}
+import services.distribution.RoundStartBlock
 import services.jobs.JobJdbc
 
 import javax.inject.Inject
@@ -603,7 +604,14 @@ class RoundController @Inject() (
                   if (toConflicts) Redirect(routes.RoundConflictsController.page(round.getId))
                   // back to the list as it was filtered (the form's hidden fields)
                   else Redirect(RoundsFilter.fromForm(request).addTo(routes.RoundController.rounds(Some(round.contestId)).url))
-                if (roundsService.setCurrentRound(Nil, round.copy(active = selectRound.active), user.id)) {
+                // a round not yet distributed isn't started: its own reason, before any change (a crafted
+                // POST too; the Rounds page shows no Start for it)
+                def refusal(r: Round) =
+                  RoundStartBlock.of(r).fold(messages("round.start.refused.retired", r.number, r.description))(
+                    block => messages(block.refusedKey, r.number, r.description))
+                val blocked = Option.when(selectRound.active)(RoundStartBlock.of(round)).flatten
+                if (blocked.isDefined) back.flashing("error" -> refusal(round))
+                else if (roundsService.setCurrentRound(Nil, round.copy(active = selectRound.active), user.id)) {
                   val done = Option.when(toConflicts)("success" ->
                     messages(if (selectRound.active) "coi.round.started" else "coi.round.stopped", round.number))
                   // started with no active juror (DG10: warned, never refused): nobody can vote in it
@@ -611,7 +619,8 @@ class RoundController @Inject() (
                     RoundController.WarningFlash -> messages("round.warning.nojurors.act", round.number))
                   val flashed = done.toSeq ++ noJuror
                   if (flashed.isEmpty) back else back.flashing(flashed: _*)
-                } else back.flashing("error" -> messages("round.still.distributing", round.number, round.description))
+                } else // refused under the round's lock: being created meanwhile, or its contest retired
+                  back.flashing("error" -> refusal(Round.findById(round.getId).getOrElse(round)))
               }
             }
         )
