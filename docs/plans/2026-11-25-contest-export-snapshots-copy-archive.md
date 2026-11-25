@@ -32,17 +32,23 @@ estimated from round ids). No DB access.
 |---|---|---|
 | 1 | Round-save change logging (separate PR, in progress) | — |
 | 2 | Release 26.11.16 | — |
-| 3 | Full contest export (§3), incl. the internal variant | 5–8 d |
-| 4 | Snapshot store (§4) | 2–3 d |
-| 5 | Archived state (§5) | 3–4 d |
-| 6 | Copy engine (§6–7) | 6–9 d |
-| 7 | Compare page, notices, "verified", root list (§8) | 3–4 d |
-| 8 | Pilot on 449 (§10) | — |
-| 9 | Repairs: B for the finished contests, #174 in place for 108, 446, 538, 625 (§10) | — |
-| 10 | Series assignment (archived contests left out) | — |
-| 11 | CY-4 as copy + archive (§9; #124 rework) | 4–6 d on top of the engine |
+| 3 | Regional winners, for the WLM 2026 Ukraine jury final at the beginning of December (separate plan) | — |
+| 4 | Round lineage, for its special nomination tracks after the main nomination final in December ([round lineage plan](2026-11-10-round-lineage.md)) | — |
+| 5 | Full contest export (§3), incl. the internal variant | 5–8 d |
+| 6 | Snapshot store (§4) | 2–3 d |
+| 7 | Archived state (§5) | 3–4 d |
+| 8 | Copy engine (§6–7) | 6–9 d |
+| 9 | Compare page, notices, "verified", root list (§8) | 3–4 d |
+| 10 | Pilot on 449 (§10) | — |
+| 11 | Repairs: B for the finished contests, #174 in place for 108, 446, 538, 625 (§10) | — |
+| 12 | Series assignment (archived contests left out) | — |
+| 13 | CY-4 as copy + archive (§9; #124 rework) | 4–6 d on top of the engine |
 
 B adds about 16–23 days over in-place repair with a change record.
+
+**Reprioritised by the maintainer, 2026-11-25:** what the current WLM 2026 Ukraine contest needs
+comes first (steps 3–4). **The target of steps 5–13 is a fixed state before the next WLE,** several
+months away; their order is unchanged.
 
 ## 3. Contest data export
 
@@ -287,7 +293,10 @@ columns with the redefined `live_series_id`; `contest_copy_round`.
   and its remapping (§6), round 1222 as is and Mixed (Q4), the copy engine (§7), the compare page,
   AccountNotices and "verified" (§8), CY-4 redone as copy + archive (§9). In-place repair (#174) stays
   for 108, 446, 538 and 625; pilot 449.
-- **D6. Order of work** as in §2.
+- **D6. Order of work** as in §2. Reprioritised the same day: after the round change log and
+  26.11.16 come regional winners (WLM 2026 Ukraine jury final, early December) and round lineage
+  (its special nomination tracks after the main final), then this plan's sequence, unchanged; the
+  target is a fixed state before the next WLE.
 - **D7. Migration numbers** taken as the next free number at merge.
 
 ## 13. Open questions (not yet decided)
