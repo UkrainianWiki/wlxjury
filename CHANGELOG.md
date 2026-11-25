@@ -17,6 +17,7 @@ Deploy dates come from production's migration history, as described at the end.
 - GraphQL: series admins see their series' contests and rounds with the same roles as on the web pages.
 - GraphQL: `me.email` shows the caller's own email, for every role.
 - GraphQL: a round's `myStatus` shows a juror stopped in it; `othersVotesVisible` follows the own-votes rule.
+- Root's "Repair file lists" pages move a contest off an untitled or shared file list, one contest at a time, with a preview in the files gallery and Undo (V114).
 
 **Fixes**
 

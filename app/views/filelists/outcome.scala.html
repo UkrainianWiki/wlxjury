@@ -1,0 +1,12 @@
+@()(implicit flash: Flash, messages: Messages)
+@* The outcome of the last file list action (FileListRepairController's flash): done, with the
+   repair (or row) and the files added, or refused with the reason's message key *@
+@for(key <- flash.get(controllers.FileListRepairController.DoneFlash)) {
+    <div class="alert alert-success" role="status" id="list-repair-done" data-key="@key">
+        @Messages(key, flash.get(controllers.FileListRepairController.RepairFlash).getOrElse(""),
+            flash.get(controllers.FileListRepairController.AddedFlash).getOrElse("0"))
+    </div>
+}
+@for(key <- flash.get(controllers.FileListRepairController.ErrorFlash)) {
+    <div class="alert alert-danger" role="alert" id="list-repair-error" data-key="@key">@Messages(key)</div>
+}

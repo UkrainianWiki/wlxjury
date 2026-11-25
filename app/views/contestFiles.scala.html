@@ -41,6 +41,13 @@
                 }
                 <p><a href="@routes.RoundController.roundStat(round.getId)">@Messages("statistics")</a></p>
             }
+            case None if view.repair.isDefined => {
+                @* root's repair preview's side (FileListRepair): its files, back to the repair page *@
+                @for(r <- view.repair) {
+                    <h2 class="h4" id="repair-side" data-side="@r.filter.side">@Messages(s"list.repair.gallery.${r.filter.side}")@snippets.count(pager.count)</h2>
+                    <p><a id="repair-back" href="@routes.FileListRepairController.repairPage(view.contest.getId, r.filter.counted.toList, chosen = true)">&larr; @Messages("list.repair.gallery.back")</a></p>
+                }
+            }
             case None => {
                 <ul class="nav nav-tabs mb-2" id="file-tabs">
                     <li class="nav-item">

@@ -67,7 +67,9 @@ object CategoryLinkJdbc extends SQLSyntaxSupport[CategoryLink] {
     * in <country>", the title with or without a `Category:` prefix, any case). A contest that left
     * a shared row for its own still has its source. A blank one holds the files of every unnamed
     * import; another contest's holds its files too (a source set by title once gave a 2026 contest
-    * a 2020 category).
+    * a 2020 category). Nor one whose title starts with `#` ([[isAppTitle]]): another contest's own
+    * row ("#contest N") or the untitled row kept for audit ("#unnamed legacy import",
+    * services.FileListRepair), whose files are several contests'.
     */
   def mayCopyFrom(id: Long, contestId: Long)(implicit session: DBSession): Boolean =
     sql"""SELECT c.title, (
@@ -80,7 +82,13 @@ object CategoryLinkJdbc extends SQLSyntaxSupport[CategoryLink] {
                     '_', ' ')))
           FROM category c WHERE c.id = $id"""
       .map(rs => (rs.stringOpt(1), rs.long(2))).single.apply()
-      .exists { case (title, others) => !CategoryJdbc.isBlank(title.orNull) && others == 0 }
+      .exists { case (title, others) => !CategoryJdbc.isBlank(title.orNull) && !isAppTitle(title.orNull) && others == 0 }
+
+  /** A title the app gave, never a Commons category's (a `#` can't be in a page title): a
+    * contest's own row ("#contest N", services.ImageService.ownCategory) or the untitled row kept
+    * for audit (services.FileListRepair.LegacyTitle).
+    */
+  def isAppTitle(title: String): Boolean = title != null && title.trim.startsWith("#")
 
   /** Puts the pages of category `from` in contest `contestId`'s own category `to` too, skipping
     * the links that exist; nothing if `from` may not be copied ([[mayCopyFrom]]).

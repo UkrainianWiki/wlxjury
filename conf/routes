@@ -184,6 +184,12 @@ POST        /admin/contests/reuse/scan                                          
 GET         /admin/contests/:id/reuse                                               @controllers.ReuseReportController.contest(id: Long)
 # a contest's health report (support diagnostics plan, D-1a): its admins and root only
 GET         /admin/contests/:id/health                                              @controllers.ContestHealthController.page(id: Long)
+# Repairing shared file lists (root; V114): the overview, a contest's repair page, Confirm, Undo, the blank row's rename
+GET         /admin/file-lists                                                       @controllers.FileListRepairController.overview()
+POST        /admin/file-lists/repairs/:repairId/undo                                @controllers.FileListRepairController.undo(repairId: Long)
+POST        /admin/file-lists/:categoryId/rename                                    @controllers.FileListRepairController.rename(categoryId: Long)
+GET         /admin/contests/:contestId/file-list/repair                             @controllers.FileListRepairController.repairPage(contestId: Long, round: List[Long] ?= Nil, chosen: Boolean ?= false)
+POST        /admin/contests/:contestId/file-list/repair                             @controllers.FileListRepairController.confirm(contestId: Long)
 # Contest series (root; contest series plan, CY-1)
 GET         /admin/series                                                           @controllers.SeriesController.list()
 POST        /admin/series                                                           @controllers.SeriesController.create()
@@ -233,11 +239,11 @@ GET         /contests                                                           
 POST        /contests/save                                                          @controllers.ContestController.saveContest()
 POST        /contests/import                                                        @controllers.ContestController.importContests()
 GET         /contest/:id/images                                                     @controllers.ImageController.images(id: Long)
-GET         /contest/:contestId/files                                               @controllers.GalleryController.contestFiles(contestId: Long, page: Int ?= 1, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None, coi: Boolean ?= false, author: Option[String] ?= None, monument: Option[String] ?= None)
-GET         /contest/:contestId/files/regions                                       @controllers.GalleryController.contestFileRegions(contestId: Long, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None, coi: Boolean ?= false, author: Option[String] ?= None, monument: Option[String] ?= None)
-GET         /contest/:contestId/files/countries                                     @controllers.GalleryController.contestFileCountries(contestId: Long, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None, author: Option[String] ?= None, monument: Option[String] ?= None)
+GET         /contest/:contestId/files                                               @controllers.GalleryController.contestFiles(contestId: Long, page: Int ?= 1, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None, coi: Boolean ?= false, author: Option[String] ?= None, monument: Option[String] ?= None, repair: Option[String] ?= None)
+GET         /contest/:contestId/files/regions                                       @controllers.GalleryController.contestFileRegions(contestId: Long, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None, coi: Boolean ?= false, author: Option[String] ?= None, monument: Option[String] ?= None, repair: Option[String] ?= None)
+GET         /contest/:contestId/files/countries                                     @controllers.GalleryController.contestFileCountries(contestId: Long, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None, author: Option[String] ?= None, monument: Option[String] ?= None, repair: Option[String] ?= None)
 GET         /contest/:contestId/authors                                             @controllers.AuthorsController.list(contestId: Long, round: Option[Long] ?= None, sort: Option[String] ?= None)
-GET         /contest/:contestId/files/:pageId                                       @controllers.GalleryController.contestFileLarge(contestId: Long, pageId: Long, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None, coi: Boolean ?= false, author: Option[String] ?= None, monument: Option[String] ?= None)
+GET         /contest/:contestId/files/:pageId                                       @controllers.GalleryController.contestFileLarge(contestId: Long, pageId: Long, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None, coi: Boolean ?= false, author: Option[String] ?= None, monument: Option[String] ?= None, repair: Option[String] ?= None)
 # the import form's identity warning for a typed source (support diagnostics plan, DG10): its admins and root
 GET         /contest/:id/importimages/source-identity                               @controllers.ImageController.sourceIdentity(id: Long, source: String ?= "")
 POST        /contest/:id/importimages                                               @controllers.ImageController.importImages(id: Long)

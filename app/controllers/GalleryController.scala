@@ -9,7 +9,7 @@ import play.api.Configuration
 import play.api.http.HttpEntity
 import play.api.i18n.I18nSupport
 import play.api.mvc._
-import services.GalleryService
+import services.{FileListRepair, GalleryService}
 import services.imports.ContestCountries
 import services.regions.{ContestKind, RegionScheme}
 
@@ -583,12 +583,16 @@ class GalleryController @Inject() (
     */
   def contestFiles(contestId: Long, page: Int, deleted: Boolean, round: Option[Long], region: String,
       country: Option[String], coi: Boolean = false, author: Option[String] = None,
-      monument: Option[String] = None): EssentialAction =
+      monument: Option[String] = None, repair: Option[String] = None): EssentialAction =
     withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId), derived = true)) { user => implicit request =>
-      contestFilesView(user, contestId, deleted, round, region, country, coi, author, monument).fold(notFoundPage(user, _), { listed =>
+      val repairGiven = repairOf(repair, request)
+      if (repairDenied(user, repairGiven)) onUnAuthorized(user, request, repairDenial(contestId))
+      else contestFilesView(user, contestId, deleted, round, region, country, coi, author, monument, repairGiven).fold(notFoundPage(user, _), { listed =>
         // all the category's files' counts (cached), which also give their number
         val all = categoryCountsOf(listed)
         val view = listed.round match {
+          // a repair preview's side: its files only (FileListRepair), no tabs to count
+          case None if listed.repair.isDefined => listed
           case Some(r) =>
             val (deletedCount, counted) = ImageJdbc.roundDeletedFileCounts(r.getId)
             listed.copy(deletedCount = deletedCount, countedInRound = counted)
@@ -621,9 +625,11 @@ class GalleryController @Inject() (
     */
   def contestFileRegions(contestId: Long, deleted: Boolean, round: Option[Long], region: String,
       country: Option[String], coi: Boolean = false, author: Option[String] = None,
-      monument: Option[String] = None): EssentialAction =
+      monument: Option[String] = None, repair: Option[String] = None): EssentialAction =
     withAuthJsonOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId), derived = true)) { user => implicit request =>
-      contestFilesView(user, contestId, deleted, round, region, country, coi, author, monument).fold(notFoundJson, { view =>
+      val repairGiven = repairOf(repair, request)
+      if (repairDenied(user, repairGiven)) onUnAuthorizedJson(user, request, repairDenial(contestId))
+      else contestFilesView(user, contestId, deleted, round, region, country, coi, author, monument, repairGiven).fold(notFoundJson, { view =>
         val messages: play.api.i18n.Messages = messagesApi.preferred(request)
         val regions =
           if (!view.byMonuments) Seq.empty[services.places.Place]
@@ -637,9 +643,12 @@ class GalleryController @Inject() (
     * country menu's, read when the menu is opened, as [[contestFileRegions]].
     */
   def contestFileCountries(contestId: Long, deleted: Boolean, round: Option[Long], region: String,
-      country: Option[String], author: Option[String] = None, monument: Option[String] = None): EssentialAction =
+      country: Option[String], author: Option[String] = None, monument: Option[String] = None,
+      repair: Option[String] = None): EssentialAction =
     withAuthJsonOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId), derived = true)) { user => implicit request =>
-      contestFilesView(user, contestId, deleted, round, region, country, author = author, monument = monument)
+      val repairGiven = repairOf(repair, request)
+      if (repairDenied(user, repairGiven)) onUnAuthorizedJson(user, request, repairDenial(contestId))
+      else contestFilesView(user, contestId, deleted, round, region, country, author = author, monument = monument, repair = repairGiven)
         .fold(notFoundJson, { view =>
         val messages: play.api.i18n.Messages = messagesApi.preferred(request)
         val countries = view.countries.fold(Seq.empty[services.places.Place])(cs =>
@@ -666,7 +675,7 @@ class GalleryController @Inject() (
     * country ([[services.places.PlaceScheme.Countries.counts]]).
     */
   private def countryCounts(view: ContestFilesView, countries: services.places.PlaceScheme.Countries): Map[String, Int] = {
-    val narrowed = Seq(view.authorFiles, view.monumentFiles).flatten.map(_.toSet)
+    val narrowed = Seq(view.authorFiles, view.monumentFiles, view.repair.map(_.files)).flatten.map(_.toSet)
     countries.counts(countries.byFile.keys.filter(pageId => narrowed.forall(_(pageId))))
   }
 
@@ -678,9 +687,11 @@ class GalleryController @Inject() (
     */
   def contestFileLarge(contestId: Long, pageId: Long, deleted: Boolean, round: Option[Long], region: String,
       country: Option[String], coi: Boolean = false, author: Option[String] = None,
-      monument: Option[String] = None): EssentialAction =
+      monument: Option[String] = None, repair: Option[String] = None): EssentialAction =
     withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId), derived = true)) { user => implicit request =>
-      contestFilesView(user, contestId, deleted, round, region, country, coi, author, monument).fold(notFoundPage(user, _), { view =>
+      val repairGiven = repairOf(repair, request)
+      if (repairDenied(user, repairGiven)) onUnAuthorized(user, request, repairDenial(contestId))
+      else contestFilesView(user, contestId, deleted, round, region, country, coi, author, monument, repairGiven).fold(notFoundPage(user, _), { view =>
         // two files before it and five in all to move among, as a round's large view has them,
         // and on to the last one its strip of following files shows
         val (read, offset) = view.list.fold((Seq.empty[ImageJdbc.StoredFile], 0)) { list =>
@@ -708,37 +719,65 @@ class GalleryController @Inject() (
     */
   private def contestFilesView(user: User, contestId: Long, deleted: Boolean, round: Option[Long],
       region: String, country: Option[String], coi: Boolean = false, author: Option[String] = None,
-      monument: Option[String] = None): Either[String, ContestFilesView] = {
+      monument: Option[String] = None, repair: Option[String] = None): Either[String, ContestFilesView] = {
     val contest = ContestJuryJdbc.findById(contestId)
-    val maybeRound = round.flatMap(Round.findById).filter(_.contestId == contestId)
+    // root's repair preview (FileListRepair): the files that stay or leave, of the row they come
+    // from; no round, no conflicts of interest, not only the deleted ones
+    val repairView: Option[Either[String, RepairView]] = repair.filter(_ => contest.isDefined).map { value =>
+      FileListRepair.GalleryFilter.parse(value).toRight("error.not.found").flatMap { filter =>
+        FileListRepair.galleryFiles(contestId, filter).left.map(_ => "error.not.found").map { case (plan, files) =>
+          RepairView(filter, plan.source.id, files, plan.countries)
+        }
+      }
+    }
+    val chosenRepair = repairView.flatMap(_.toOption)
+    val maybeRound = round.filter(_ => repair.isEmpty).flatMap(Round.findById).filter(_.contestId == contestId)
+    // the category the list's files are of: the repair's source row, else the contest's
+    val listCategory = chosenRepair.map(_.categoryId).orElse(contest.flatMap(_.categoryId))
     // the monument id exactly as given (an import stores it trimmed)
     val chosenMonument = monument.filter(m => m.trim.nonEmpty && maybeRound.isEmpty)
     val monumentFiles = chosenMonument.map { m =>
-      contest.flatMap(_.categoryId).fold(Seq.empty[Long])(ImageJdbc.categoryMonumentFiles(_, m))
+      listCategory.fold(Seq.empty[Long])(ImageJdbc.categoryMonumentFiles(_, m))
     }
     // the author exactly as given (an import stores it trimmed), only for those who see authors
     val chosenAuthor = author.filter(a => a.trim.nonEmpty && maybeRound.isEmpty && user.canViewAuthors(contestId))
     val authorFiles = chosenAuthor.map { a =>
-      contest.flatMap(_.categoryId).fold(Seq.empty[Long])(ImageJdbc.categoryAuthorFiles(_, a))
+      listCategory.fold(Seq.empty[Long])(ImageJdbc.categoryAuthorFiles(_, a))
     }
     // the people of the conflicts of interest name the files' authors: only for those who see them
-    val coiFiles = Option.when(coi && maybeRound.isEmpty && user.canViewAuthors(contestId)) {
+    val coiFiles = Option.when(coi && maybeRound.isEmpty && repair.isEmpty && user.canViewAuthors(contestId)) {
       contest.flatMap(_.categoryId).fold(Map.empty[Long, CoiMembers.Member])(
         CoiMembers.files(_, CoiMembers.forContest(contestId)))
     }
     val chosenCountry = country.filter(_ => maybeRound.isEmpty && coiFiles.isEmpty)
     // the countries of an international contest (services.places.PlaceScheme): its files' links
     // to its country categories, read once
-    val countries = contest.filter(_ => maybeRound.isEmpty).flatMap(services.places.PlaceScheme.countries)
+    val countries = chosenRepair.flatMap(r => contest.map(services.places.PlaceScheme.Countries(_, r.countries)))
+      .orElse(contest.filter(_ => maybeRound.isEmpty && repair.isEmpty).flatMap(services.places.PlaceScheme.countries))
     if (contest.isEmpty) Left("error.contest.not.found")
-    else if (round.isDefined && maybeRound.isEmpty) Left("error.round.not.found")
+    else if (repairView.exists(_.isLeft)) Left("error.not.found")
+    else if (round.isDefined && repair.isEmpty && maybeRound.isEmpty) Left("error.round.not.found")
     else if (chosenCountry.exists(c => !countries.exists(_.has(c))))
       Left("error.not.found")
     else
-      Right(ContestFilesView(contest.get, deletedOnly = deleted || maybeRound.isDefined, maybeRound,
+      Right(ContestFilesView(contest.get, deletedOnly = (deleted && repair.isEmpty) || maybeRound.isDefined, maybeRound,
         Some(region).filter(_ != "all"), chosenCountry, countries, coiFiles = coiFiles, author = chosenAuthor,
-        authorFiles = authorFiles, monument = chosenMonument, monumentFiles = monumentFiles))
+        authorFiles = authorFiles, monument = chosenMonument, monumentFiles = monumentFiles, repair = chosenRepair))
   }
+
+  /** The repair filter is root's (FileListRepair): anyone else who may open the files page is
+    * denied it, as the page denies others (403 or JSON 403, logged on `security.authz`).
+    */
+  private def repairDenied(user: User, repair: Option[String]): Boolean = repair.isDefined && !isRoot(user)
+
+  /** The `repair` parameter as given, an empty one too (`?repair=`, which the router may bind as
+    * none): any `repair` parameter is root's filter.
+    */
+  private def repairOf(bound: Option[String], request: RequestHeader): Option[String] =
+    bound.orElse(request.getQueryString("repair"))
+
+  private def repairDenial(contestId: Long): Secured.Denial =
+    Secured.Denial(Some(contestId), Some(s"contest:$contestId:file-list-repair"), Set(User.ROOT_ROLE))
 
   private def notFoundPage(user: User, messageKey: String)(implicit request: RequestHeader): Result =
     NotFound(views.html.errorPage(Some(user), "error.title", messageKey))
@@ -802,8 +841,13 @@ final case class ContestFilesView(
     monument: Option[String] = None,
     monumentFiles: Option[Seq[Long]] = None,
     // the round's review list (P3, RoundReviewController): its files of this status, all of them
-    reviewStatus: Option[String] = None
+    reviewStatus: Option[String] = None,
+    // root's repair preview's side (FileListRepair): the files that stay or leave
+    repair: Option[RepairView] = None
 ) {
+
+  /** The `repair` parameter of this list's links. */
+  private def repairParam: Option[String] = repair.map(_.filter.param)
 
   /** The page is a round's review ([[RoundReviewController]]), not the contest's files. */
   def review: Boolean = reviewStatus.isDefined && round.isDefined
@@ -818,6 +862,7 @@ final case class ContestFilesView(
   def list: Option[ImageJdbc.FileList] =
     round.map(r => reviewStatus.fold[ImageJdbc.FileList](ImageJdbc.FileList.RoundDeleted(r.getId))(
       ImageJdbc.FileList.RoundImages(r.getId, _, countryFiles.map(ImageJdbc.CountryFilter(_)))))
+      .orElse(repair.map(r => ImageJdbc.FileList.Category(r.categoryId, deletedOnly = false, countryFilter)))
       .orElse(contest.categoryId.map(ImageJdbc.FileList.Category(_, deletedOnly, countryFilter)))
 
   /** The files the list is narrowed to ([[ImageJdbc.CountryFilter]]): the conflicts of
@@ -825,7 +870,7 @@ final case class ContestFilesView(
     * all of them.
     */
   def countryFilter: Option[ImageJdbc.CountryFilter] =
-    Seq(coiFiles.map(_.keys.toSeq).orElse(countryFiles), authorFiles, monumentFiles).flatten
+    Seq(coiFiles.map(_.keys.toSeq).orElse(countryFiles), authorFiles, monumentFiles, repair.map(_.files)).flatten
       .reduceOption { (a, b) => val inB = b.toSet; a.filter(inB) }
       .map(ids => ImageJdbc.CountryFilter(ids.sorted))
 
@@ -853,19 +898,19 @@ final case class ContestFilesView(
   /** This list's first page without its author: the author chip's remove link. */
   def withoutAuthorUrl: String =
     routes.GalleryController.contestFiles(contest.getId, 1, deletedOnly, roundId, region.getOrElse("all"), country,
-      coi, None, monument).url
+      coi, None, monument, repairParam).url
 
   /** This list's first page without its monument: the monument chip's remove link. */
   def withoutMonumentUrl: String =
     routes.GalleryController.contestFiles(contest.getId, 1, deletedOnly, roundId, region.getOrElse("all"), country,
-      coi, author).url
+      coi, author, None, repairParam).url
 
   private def pageUrl(page: Int, region: String, country: Option[String]): String =
     (round, reviewStatus) match {
       case (Some(r), Some(status)) => routes.RoundReviewController.review(r.getId, status, page, region, country).url
       case _ =>
         routes.GalleryController.contestFiles(contest.getId, page, deletedOnly, roundId, region, country, coi, author,
-          monument).url
+          monument, repairParam).url
     }
 
   /** The large view of a file in this list. */
@@ -875,7 +920,7 @@ final case class ContestFilesView(
         routes.RoundReviewController.file(r.getId, pageId, status, region.getOrElse("all"), country).url
       case _ =>
         routes.GalleryController.contestFileLarge(contest.getId, pageId, deletedOnly, roundId, region.getOrElse("all"),
-          country, coi, author, monument).url
+          country, coi, author, monument, repairParam).url
     }
 
   /** A comment on the file of a round's review list, from its large view, going back to it there
@@ -908,7 +953,7 @@ final case class ContestFilesView(
         case (Some(r), Some(status)) => routes.RoundReviewController.regions(r.getId, status, region.getOrElse("all"), country).url
         case _ =>
           routes.GalleryController.contestFileRegions(contest.getId, deletedOnly, roundId, "all", country, coi,
-            author, monument).url
+            author, monument, repairParam).url
       }))
 
   /** The country menu of an international contest ([[services.places.PlaceScheme.byCountries]]),
@@ -916,18 +961,25 @@ final case class ContestFilesView(
     * or of a round's review list ([[RoundReviewController.regions]] serves its places).
     */
   def countryMenu: Option[RegionMenu] =
-    Option.when((round.isEmpty || review) && !coi && services.places.PlaceScheme.byCountries(contest))(
+    Option.when((round.isEmpty || review) && !coi && (services.places.PlaceScheme.byCountries(contest) || repair.isDefined))(
       RegionMenu.countries(country, countryUrl("all"), pageUrl(1),
         (round, reviewStatus) match {
           case (Some(r), Some(status)) => routes.RoundReviewController.regions(r.getId, status, region.getOrElse("all"), country).url
           case _ =>
             routes.GalleryController.contestFileCountries(contest.getId, deletedOnly, roundId, region.getOrElse("all"),
-              country, author, monument).url
+              country, author, monument, repairParam).url
         }))
 
   /** The page's place menu: its contest's one level of places, countries or regions. */
   def placeMenu(implicit messages: play.api.i18n.Messages): Option[RegionMenu] = countryMenu.orElse(regionMenu)
 }
+
+/** Root's repair preview's side on the contest files page (services.FileListRepair): the filter,
+  * the row the files come from, its files of this side, by page id, and the countries of the
+  * plan's files.
+  */
+final case class RepairView(filter: FileListRepair.GalleryFilter, categoryId: Long, files: Seq[Long],
+    countries: Map[Long, String])
 
 /** A list's files by the Votes menu's choices (navbar.scala.html votesMenu): what each choice
   * would list ([[count]]), and whether its juror has files in the round ([[hasFiles]]: the

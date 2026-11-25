@@ -100,6 +100,9 @@ export function fixtureFor(browserName) {
     // a running round of one juror per file whose one juror has unrated files, in a contest of its
     // own (organizer.spec.js: no "Reassign files…"); null in the guides' screenshot mode
     aloneRound: s.aloneRound || null,
+    // root's file list repair pages (list-repair.spec.js): the shared untitled list's contest A, the
+    // contest already on its own row, the row and A's whole-list round; null in the guides' screenshot mode
+    listRepair: s.listRepair || null,
   };
 }
 

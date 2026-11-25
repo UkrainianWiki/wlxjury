@@ -126,7 +126,8 @@ class MessagesCompletenessSpec extends Specification {
     "reuse.action." -> services.series.ReuseReport.Action.All,                      // series/reuseReport, reuseContest
     "reuse.disagree." -> services.series.ReuseReport.DisagreementParts,             // series/reuseContest
     "reuse.signal." -> services.series.ReuseReport.SignalCodes,                     // series/reuseContest
-    "reuse.skip." -> services.series.ReuseReport.SkipReasons                        // series/reuseContest
+    "reuse.skip." -> services.series.ReuseReport.SkipReasons,                       // series/reuseContest
+    "list.repair.gallery." -> services.FileListRepair.Sides                         // contestFiles.scala.html, filelists/repair
   )
 
   /** Keys looked up from a value rather than a literal. */
