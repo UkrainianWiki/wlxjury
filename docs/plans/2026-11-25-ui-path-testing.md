@@ -1,6 +1,7 @@
 # UI-path testing: offered actions that match allowed actions
 
-**Status:** draft, for the maintainer's decisions (§5); Q1–Q7 and the setup steps (§4 step 1, superseding Q10) decided 2026-11-25 **[user]**. Written 2026-11-25 from the maintainer's
+**Status:** decided. Every question of §5 (Q1–Q9, and the setup steps of §4 step 1, superseding
+Q10) was decided by the maintainer on 2026-11-25 **[user]**. Written 2026-11-25 from the maintainer's
 request of the same day: "we have been consistently seeing inconsistent UI paths". Read-only survey
 of master at `5d72c4d8` (after the 26.11.16 build); no code changed, no test run. References are to
 files and functions; line numbers are of that commit and drift.
@@ -302,9 +303,10 @@ Order, fitting the queue:
    plus specs.
 4. **Regional winners report**: read-only, no round actions; unaffected. If it adds a link from
    the rounds list, it goes through the matrix.
-5. **Playwright journeys (c)**: two journeys, "create → review → re-apply with an error → distribute
-   → vote → stop → next round" and "running round: add juror → reassign → stop juror", with a
-   generic dead-end check, after (3), so their checks can read the same expected matrix.
+5. **Playwright journeys (c)** (Q8): two journeys, "round setup (save and find matching files →
+   check files → jurors and distribute) → vote → stop → next round" and "refusals, Back after
+   saving, and a wait with a running job", with a generic dead-end check, after (3), so their checks
+   can read the same expected matrix. Chromium in CI; Firefox and WebKit at release.
 
 **Problem monitoring** (refused saves, dead ends and the like recorded in the app and shown to
 root and admins, rather than found in the access log) is its own plan, draft PR #191; this plan
@@ -352,9 +354,11 @@ page (§0 row 7).
    refused form (kept as entered) shows the blocking job's live progress, linked to it; when the
    job finishes it says "Round 3 has finished. You can save now." and Save is enabled. In the
    26.11.17 refusal PR.
-8. **Playwright journeys: how many, which engines?** Recommendation: two journeys (§4.5), Chromium
-   only in CI, the others on release.
-9. **Add the checklist item (e) now?** Recommendation: yes; it costs one line and applies to
-   lineage slice A's review.
+8. **Playwright journeys: how many, which engines?** **[user] Decided 2026-11-25:** two journeys:
+   round setup through the next round; and refusals, Back after saving and a wait with a running
+   job. Chromium in CI; Firefox and WebKit at release.
+9. **Add the checklist item (e) now?** **[user] Decided 2026-11-25:** yes; added in this PR to
+   [`docs/testing/review-checklist.md`](../testing/review-checklist.md) ("Assertions"). It applies
+   from lineage slice A's review on.
 10. *(Superseded 2026-11-25 by the decided setup steps, §4 step 1: one button, "Save and find
     matching files".)*
