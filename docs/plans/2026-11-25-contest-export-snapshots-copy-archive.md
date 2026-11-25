@@ -34,7 +34,7 @@ estimated from round ids). No DB access.
 | 2 | Release 26.11.16 | — |
 | 3 | Regional winners, for the WLM 2026 Ukraine jury final at the beginning of December (separate plan) | — |
 | 4 | Round lineage, for its special nomination tracks after the main nomination final in December ([round lineage plan](2026-11-10-round-lineage.md)) | — |
-| 5 | Full contest export (§3), incl. the internal variant | 5–8 d |
+| 5 | Full contest export (§3), incl. the internal variant (to confirm, Q7) | 5–8 d |
 | 6 | Snapshot store (§4) | 2–3 d |
 | 7 | Archived state (§5) | 3–4 d |
 | 8 | Copy engine (§6–7) | 6–9 d |
@@ -44,7 +44,7 @@ estimated from round ids). No DB access.
 | 12 | Series assignment (archived contests left out) | — |
 | 13 | CY-4 as copy + archive (§9; #124 rework) | 4–6 d on top of the engine |
 
-B adds about 16–23 days over in-place repair with a change record.
+Steps 5–9 add up to about 19–28 days (23–34 with CY-4, step 13).
 
 **Reprioritised by the maintainer, 2026-11-25:** what the current WLM 2026 Ukraine contest needs
 comes first (steps 3–4). **The target of steps 5–13 is a fixed state before the next WLE,** several
@@ -64,7 +64,7 @@ months away; their order is unchanged.
 |---|---|---|---|
 | default | stable WLX user id | no | root (Admins later) |
 | with names | WLX user id + full name + wiki account; **never email** | yes | root only |
-| full internal | every copied table with its internal ids and columns (§6) | yes | root / internal only; feeds the copy engine (Q7) |
+| full internal | every copied table with its internal ids and columns (§6) | yes | root / internal only; feeds the copy engine (to confirm, Q7) |
 
 The default variant already carries WLX user ids, so the internal variant differs by fidelity: all the
 tables the copy needs (round_user, round_criterion, round_image with status and counts, votes,
@@ -131,7 +131,8 @@ with the wiki account in the names variant.
 ### 4.4 Retention
 
 - 90 days, a total cap (new snapshots refused past it, a snapshot an open change still needs never
-  deleted), and a daily prune job; each deletion logged in `contest_change`. Exact values: Q14.
+  deleted), and a daily prune job; each deletion logged in `contest_change`. 90 days for before/after is
+  decided (D4); manual snapshots' lifetime and the cap value: Q14.
 - Off-site copies (the server's backup timer beside the nightly dump, an ops change) and encryption:
   Q12, Q13.
 
@@ -188,7 +189,7 @@ export doesn't capture accounts.
 
 - **Round 1222** (485, WLE 2021 Wales: a round over the whole shared list, 835 files outside the clean
   list) is **copied as is** (round_image and votes, so its results don't change) and marked **Mixed**
-  (#174's marker). New rounds and "Distribute new files" read only the clean list. Confirmation: Q4.
+  (the reuse report's Mixed, `ReuseReport`). New rounds and "Distribute new files" read only the clean list. Confirmation: Q4.
 - **Links:** old URLs stay on the archive. A map table `contest_copy_round(copy_id, old_round_id,
   new_round_id)` serves the juror notice, compare and Undo. Notice or redirect for juror links: Q5.
 
@@ -218,9 +219,10 @@ A `contest_copy` job; root confirms a plan with a hash.
   (archive count, copy count, files only in the archive by country, with gallery links on both sides
   through a `copy=` filter like #174's `repair=`); Mixed rounds named. Exact equality everywhere
   except the filtered files; any other difference is shown red (an engine bug).
-- **Notices:** AccountNotices extended to the `copied_to` / `copied_from` change kinds for Admins and
-  Organizers (a bar at sign-in leading to the compare page), with root's unticked "also mail them"
-  box. Root also contacts Admins personally where mail is unreliable.
+- **Notices:** for Admins and Organizers, a bar at sign-in leading to the compare page, from the
+  `copied_to` / `copied_from` entries in `contest_change`. AccountNotices reads `account_change` only,
+  so it needs a notice source for these `contest_change` entries, or a new notice mechanism is added.
+  Root's unticked "also mail them" box. Root also contacts Admins personally where mail is unreliable.
 - **Verified:** an Admin's "Verified" button writes a `copy_verified` entry. A root list
   (`/admin/contest-copies`) shows copies awaiting verification, "Verified by <admin> on <date>", and
   Undo while it is allowed.
@@ -229,7 +231,8 @@ A `contest_copy` job; root confirms a plan with a hash.
 
 - Each year's cluster of a reused contest becomes a new contest copied from it (transform: its rounds
   and their matching files), the reused contest's own year too (466 → a fixed "WLE 2020 Nepal"); then
-  the original is archived: n+1 copies, the original untouched.
+  the original is archived: n+1 copies (n = one per year cluster, + 1 for the reused contest's own
+  year), the original untouched.
 - **Replaces** #124's in-place moves, row locks on live rounds, pause and resume, the split-item
   inverse and the §4.6 redirects. Undo = delete the copies and un-archive.
 - **Costs:** votes duplicated (466: 48 rounds); new round ids for juror links.
@@ -241,7 +244,7 @@ A `contest_copy` job; root confirms a plan with a hash.
 
 ## 10. Repairs in place and the 14 contests
 
-- **#174 stays** (merged as planned, root only) for the contests where a copy makes no sense: **108,
+- **#174 (open draft PR) stays, root only,** for the contests where a copy makes no sense: **108,
   446, 538** (empty lists, decided; nothing to compare) and **625** (an open round; timing: Q9). Its
   plan is B's file filter.
 - **Pilot: 449** (small, finished); its Admins verify on the compare page before the rest (Q10).
@@ -249,7 +252,7 @@ A `contest_copy` job; root confirms a plan with a hash.
 **The 14 contests** (estimated from a V107 copy; to be confirmed on the 2026-11-25 copy). Round ids
 ≥ ~1800 are 2026, 1550–1800 are 2025.
 
-| Contest | Rounds (last; active flag) | State | Path |
+| Contest | Rounds (last; active flag) | State | Path (estimate) |
 |---|---|---|---|
 | 108 test 2017 | 10 (249) | finished, test | in place via #174 (empty list) |
 | 446 WLE 2020 Indonesia / 538 WLE 2022 IE+NI | 1 empty / 0 | finished | in place via #174 (empty lists) |
@@ -272,7 +275,10 @@ CY-4 as B for 454 and 485, later 572 and 466 after their rounds close, 599 when 
 
 Numbers are taken as the next free number at merge (D7); the drafts' V113–V115 are not kept (master's
 V113 is the legacy-tables InnoDB conversion). Expected: the `contest_export` table; the archived
-columns with the redefined `live_series_id`; `contest_copy_round`.
+columns with the redefined `live_series_id`; `contest_copy_round`; the `contest_change` kind CHECK
+extended (export, archived, copied_to, copied_from, copy_verified, prune), plus `ContestChangeJdbc.Kinds`.
+That migration goes after #174's V114 and after the round-change-log migration, which extend the same
+CHECK.
 
 ## 12. Decisions (2026-11-25)
 
@@ -325,8 +331,8 @@ Each is a separate decision, to be asked one at a time.
   or kept only on the server?
 - **Q13. Encryption:** is the off-site copy of the nightly dump encrypted, and should snapshot copies
   be? (No encryption at rest on the server itself: same data, same disk as the DB.)
-- **Q14. Retention and cap values:** 90 days for before/after, manual snapshots' lifetime, the total
-  cap (e.g. 5 GB).
+- **Q14. Retention and cap values:** manual snapshots' lifetime, and the total cap (e.g. 5 GB).
+  (90 days for before/after is decided, D4.)
 - **Q15. CY-4 and `wlxjury-release snapshot` / `dump_ref`:** dropped in favour of exports?
 - **Q16. Restore in the app:** may root restore a contest's file list from a snapshot in the app, or
   only by hand from the file?
