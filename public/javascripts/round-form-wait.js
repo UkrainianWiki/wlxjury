@@ -3,7 +3,7 @@
 // switches the session's contest) and shows its progress. While it runs, the form's Save buttons
 // are disabled; when it has finished, the box says so and Save is enabled again, the form as
 // entered (no reload). Failed or cancelled: the box says what to do, Save enabled (the server
-// decides). Signed out or no access (a series admin: the jobs' JSON answers real admins only), or
+// decides). Signed out or no access (no longer an admin of its contest), or
 // the network failing again and again (retried slower, up to 30 s apart, MAX_ERRORS times): the box
 // says its progress can't be shown, Save enabled, polling stops.
 (function () {

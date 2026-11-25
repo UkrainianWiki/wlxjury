@@ -18,6 +18,6 @@
     <p class="mb-0" id="round-form-wait-done"@if(!job.isDone) { hidden}>@Messages(if (w.rebalancing) "round.wait.done.rebalancing" else "round.wait.done", number)</p>
     <p class="mb-0" id="round-form-wait-ended"@if(!ended) { hidden}>@Messages("round.wait.ended", number)
         <a href="@routes.RoundController.rounds(Some(w.round.contestId))#round-@w.round.getId" target="_blank" rel="noopener">@Messages("round.wait.link", number)</a></p>
-    @* the job can't be read here (signed out, or a series admin, whom the jobs' JSON doesn't answer) *@
+    @* the job can't be read here (signed out meanwhile, or no longer an admin of its contest) *@
     <p class="mb-0" id="round-form-wait-unknown" hidden>@Messages("round.wait.unknown", number)</p>
 </div>

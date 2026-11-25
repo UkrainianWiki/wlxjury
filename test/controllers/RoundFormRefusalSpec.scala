@@ -306,8 +306,8 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
         val contest = setUp()
         val t = token()
         status(save(app, "admin@example.com", newRound(contest, t): _*)) must_== SEE_OTHER
-        val other = User.findByEmail("other-admin@example.com").head
-        val page = get(app, "other-admin@example.com", s"/admin/rounds/edit?contestId=${other.contestId.get}&submitToken=$t")
+        val otherContest = ContestJuryJdbc.findAll().map(_.getId).find(_ != contest.getId).get
+        val page = get(app, "other-admin@example.com", s"/admin/rounds/edit?contestId=$otherContest&submitToken=$t")
         val shownToken = doc(page).select("input[name=submitToken]").attr("value")
         (status(page) === OK) and (shownToken must not(beEmpty)) and (shownToken !== t)
       }
@@ -573,7 +573,7 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
 
   "a series admin's wait box" should {
 
-    "be shown, and degrade (the jobs' JSON answers the contest's real admins only)" in {
+    "be shown, its job's JSON answering the series admin as the round form does" in {
       testDbApp { implicit app =>
         val contest = setUp()
         val root = User.create(User("Root", "root@example.com", None, Set(User.ROOT_ROLE), isRoot = true))
@@ -592,7 +592,7 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
           .withHeaders("X-Requested-With" -> "XMLHttpRequest")).get
         (status(refused) === BAD_REQUEST) and (doc(refused).select("#round-form-wait-unknown").size === 1) and
           (doc(refused).select("#round-form-wait").attr("data-src") === s"/admin/jobs/$jobId") and
-          (status(poll) === NOT_FOUND)
+          (status(poll) === OK) and ((contentAsJson(poll) \ "status").as[String] === "running")
       }
     }
   }
