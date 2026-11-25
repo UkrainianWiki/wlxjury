@@ -355,7 +355,8 @@ own words (its name, year, country and images category, in any case), years, "im
 Categories that differ only in case are one track; two that would get one name keep longer
 names. Only a "Category:" page names a track: a file list or a "Commons:" page pasted into the
 field is no category. With nothing left the root is named by its media type, **only if the roots
-set more than one** (images and video), and otherwise by its name. **Chips show only in a contest
+have more than one** (none set counting as all: a video round beside the others), and otherwise by
+its name. **Chips show only in a contest
 with two tracks or more** (the Track menu's rule), then on every round, a root named after itself
 too. A chip longer than 32 characters shows its start and its end, "…" between.
 

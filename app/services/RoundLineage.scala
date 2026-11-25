@@ -373,11 +373,13 @@ object RoundLineage {
     val roots = rounds.filter(r => previous(r.getId).isEmpty)
     val scopes = scopeNames(roots.flatMap(rootCategory), context.boilerplate)
 
-    // a media type names a track only if it tells the roots apart: the roots set more than one
-    // (images and video); one set alone (WLE international's one image round) leaves the name
-    def media(r: Round): Option[String] =
-      r.mediaType.map(_.trim).filter(m => m.nonEmpty && m != db.scalikejdbc.MediaType.All)
-    val severalMedia = roots.flatMap(media).distinct.sizeIs > 1
+    // a media type names a track only if it tells the roots apart: the roots have more than one,
+    // none set counting as all (a video round beside the others); one alone (WLE international's
+    // one image round) leaves the name
+    def mediaOf(r: Round): String =
+      r.mediaType.map(_.trim).filter(_.nonEmpty).getOrElse(db.scalikejdbc.MediaType.All)
+    def media(r: Round): Option[String] = Some(mediaOf(r)).filter(_ != db.scalikejdbc.MediaType.All)
+    val severalMedia = roots.map(mediaOf).distinct.sizeIs > 1
 
     def rootScope(r: Round): Track =
       rootCategory(r).map(c => scopes.getOrElse(c, c)).filter(_.nonEmpty).map(Track(Kind.Category, _))
