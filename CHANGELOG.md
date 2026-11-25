@@ -23,11 +23,18 @@ For the next release, 26.11.17.
 - "Add juror…" and a stopped juror's "Start and give a fair share…" work on stopped rounds too: the unrated files move while the round stays stopped, and every juror has a fair share when it is started again. The round statistics offer them only when they can be done: not on a round still being set up (its jurors are chosen there), held by a job, or from before jurors were stored. The add page names the rounds created from this round, whose files change only when they are distributed again.
 - Retiring a contest is refused while a job holds one of its rounds (a juror being added, or a distribution reading its votes): try again when the job has finished.
 - A round's statistics, review page and Edit round page link the rounds it was created from ("Created from: Round 3 (…)") and the rounds created from it, for its admins and organizers.
+- A round being set up says on its Edit page and its review page that jurors can't see it yet, with "Change the settings", "Check the files" and "Distribute to jurors" (disabled, saying why, while its files are being matched or when none matches) (#186).
+- A round's rating type can be changed while it is being set up (in review, nothing distributed); it is locked once distributed (#184).
 
 **Fixes**
 
 - A round stopped while a juror is being added to it no longer makes the add fail: the add completes and the round stays stopped.
 - Rounds page: a round not yet distributed to its jurors has no Start button. It reads "Not started – waiting for distribution" with a "Distribute to jurors" link, or "Images are being distributed" while that runs. Starting it anyway no longer says its images are being distributed when they aren't: the message says what to do.
+- Round form: a refused save comes back as the same form (re-apply mode, regions, nominations, the round's jurors kept), lists every error at the top with a link to its field, shows each at its field, and opens the section that holds it ("Media filtering" stayed closed before, hiding the error). Each refused save is logged as `form_refused` (field names and message keys, never the values).
+- Round form: Back or a repeated Save after a new round was saved opens that round's Edit page ("Round N is saved. You can change its settings here.") instead of the stale form; nothing is created twice or refused, and a repeat is logged as `resubmit_dropped` (same or changed form).
+- Saving a new round says so on the page it lands on ("Round N (description) is saved. Its matching files are being found. Check them, then choose jurors."); saving an existing round's settings says "Round N (description) is saved."
+- Distribute is refused for a round whose settings match no file; the jurors form shows it disabled with the reason.
+- Round form: a save refused because another round's job must finish first (a round to leave out still being distributed, a previous round with a juror being added) keeps the form as entered and shows that job's progress, linked to it; when it has finished the box says "Round N has finished. You can save now." and Save is enabled again.
 
 ## Deployed releases
 

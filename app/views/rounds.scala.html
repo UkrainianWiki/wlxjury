@@ -92,7 +92,7 @@
                        (snippets/roundIcon), before its name, which opens its statistics; the
                        number its form, as before; both keep the filter *@
                     @for(round <- shown) {
-                        <tr class="round-row@if(!round.active) { wlx-round-inactive}" data-round="@round.getId">
+                        <tr class="round-row@if(!round.active) { wlx-round-inactive}" data-round="@round.getId" id="round-@round.getId">
                             <td> <a class="round-edit-link" href="@filter.addTo(routes.RoundController.editRound(id = round.id, contestId = contest.getId).url)">@round.number</a> </td>
                             <td> <div class="wlx-round-named">@snippets.roundIcon(round)<a class="round-stat-link" href="@filter.addTo(routes.RoundController.roundStat(round.getId).url)">@round.description</a>@snippets.roundSpoken(round)@snippets.trackChip(round, lineage)</div>
                                 @* a previous round that no longer exists: the round is a root of its own track *@

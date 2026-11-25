@@ -102,7 +102,7 @@ a guide or a test needs them.
 | A-12 | An admin browses the contest's files, its "Deleted on Commons" tab and a file's page | – | |
 | A-13 | An admin updates the files' monument ids and the monument lists | – | *Part:* the template and the offer only; the update in `AppendImagesSpec` |
 | A-14 | An admin adds a pasted list of files to an existing round, whatever its filters | – | |
-| A-15 | A double submit of the new round form makes one round | – | |
+| A-15 | A double submit of the new round form makes one round; Back after saving it opens the saved round's Edit page, never the stale form | – | |
 | A-16 | An admin makes the next round from earlier results: selected by at least, minimum average, top N, several rounds merged | – | the form's choices in view specs (`TopBinaryOrderChoiceSpec` …), the selection in service specs |
 | A-17 | An admin edits the contest's greeting, previewed per member; a new account gets it by mail | – | *Part:* saving it only |
 | A-18 | An admin signs in with login and password | – | |

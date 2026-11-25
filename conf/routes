@@ -149,7 +149,7 @@ POST        /users/notices/dismiss                                              
 POST        /theme                                                                  @controllers.UserController.setTheme()
 
 GET         /admin/rounds                                                           @controllers.RoundController.rounds(contestId: Option[Long] ?= None)
-GET         /admin/rounds/edit                                                      @controllers.RoundController.editRound(id: Option[Long] ?= None, contestId: Long, topImages: Option[Int] ?= None)
+GET         /admin/rounds/edit                                                      @controllers.RoundController.editRound(id: Option[Long] ?= None, contestId: Long, topImages: Option[Int] ?= None, submitToken: Option[String] ?= None)
 POST        /admin/rounds/save                                                      @controllers.RoundController.saveRound()
 GET         /admin/criteria                                                         @controllers.CriteriaController.list(contestId: Option[Long] ?= None)
 POST        /admin/criteria                                                         @controllers.CriteriaController.add(contestId: Option[Long] ?= None)

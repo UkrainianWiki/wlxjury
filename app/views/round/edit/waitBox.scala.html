@@ -1,0 +1,23 @@
+@(w: controllers.RoundFormWait)(implicit messages: Messages)
+@* A save refused to wait for another round's job (controllers.RoundFormWait, Q7): that job's progress,
+   polled by round-form-wait.js from its JSON (JobController.status: the job's contest's admins only,
+   a script request), linked to the job's row on the Rounds list (a new tab: the form stays as
+   entered). While it runs, Save is disabled; when it has finished, "Round N has finished. You can
+   save now." and Save enabled again; failed or cancelled, what to do; unreadable, that its progress
+   can't be shown, Save enabled. Outside the round form. *@
+@job = @{ w.job }
+@number = @{ w.round.number }
+@progress = @{ (for (done <- job.progressDone; total <- job.progressTotal if total > 0)
+    yield Messages("round.wait.progress", done, total, job.progressUnit.getOrElse(""))).getOrElse("") }
+@ended = @{ !job.isActive && !job.isDone }
+<div class="alert alert-warning" role="status" id="round-form-wait" data-src="@routes.JobController.status(job.id)"
+     data-status="@job.status" data-progress-text="@Messages("round.wait.progress", "{0}", "{1}", "{2}")">
+    <p class="mb-0" id="round-form-wait-running"@if(!job.isActive) { hidden}>@Messages(if (w.rebalancing) "round.wait.rebalancing" else "round.wait.distributing", number)
+        <span id="round-form-wait-progress">@progress</span>
+        <a href="@routes.RoundController.rounds(Some(w.round.contestId))#round-@w.round.getId" target="_blank" rel="noopener" id="round-form-wait-link">@Messages("round.wait.link", number)</a></p>
+    <p class="mb-0" id="round-form-wait-done"@if(!job.isDone) { hidden}>@Messages(if (w.rebalancing) "round.wait.done.rebalancing" else "round.wait.done", number)</p>
+    <p class="mb-0" id="round-form-wait-ended"@if(!ended) { hidden}>@Messages("round.wait.ended", number)
+        <a href="@routes.RoundController.rounds(Some(w.round.contestId))#round-@w.round.getId" target="_blank" rel="noopener">@Messages("round.wait.link", number)</a></p>
+    @* the job can't be read here (signed out meanwhile, or no longer an admin of its contest) *@
+    <p class="mb-0" id="round-form-wait-unknown" hidden>@Messages("round.wait.unknown", number)</p>
+</div>

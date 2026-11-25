@@ -507,6 +507,14 @@ object Round extends RoundRepo with CRUDMapper[Round] {
           WHERE id = $id AND NOT (track <=> $label)""".update() > 0
   }
 
+  /** The rating type of a round being set up (#184: in review, nothing distributed, no later round
+    * taking its files), in the caller's transaction under the round's lock
+    * ([[controllers.RoundController]] checks it there).
+    */
+  def updateRates(id: Long, rates: Rates)(implicit session: DBSession): Unit =
+    // created_at set to itself: production's has ON UPDATE CURRENT_TIMESTAMP (V86)
+    sql"UPDATE round SET rates = ${rates.id}, created_at = created_at WHERE id = $id".update(): Unit
+
   /** A re-apply's filters (P3-5): the settings that choose a round's files, as the round form posts
     * them, written before its `fill` job is queued, under the round's lock
     * ([[services.RoundService.reapplyFilters]]). The rating, the jurors and the distribution aren't
@@ -857,8 +865,19 @@ object Round extends RoundRepo with CRUDMapper[Round] {
             status = $to"""
 
   /** The round created by the submission with this token (see V59), if any. */
+  /** The live round a new-round form's token saved: a deleted round's token answers none (its form
+    * is then saved without the token, [[submitTokenTaken]]).
+    */
   def findBySubmitToken(token: String)(implicit session: DBSession = AutoSession): Option[Round] =
-    where(sqls.eq(r.submitToken, token)).apply().headOption
+    where(sqls.eq(r.submitToken, token).and.isNull(r.deletedAt)).apply().headOption
+
+  /** Whether any round, deleted or not, holds the token (its unique index): a form can't save another with it. */
+  def submitTokenTaken(token: String)(implicit session: DBSession = AutoSession): Boolean =
+    sql"SELECT 1 FROM round WHERE submit_token = $token LIMIT 1".map(_ => true).single().isDefined
+
+  /** The contest's rounds, read in the caller's transaction (e.g. under a round's lock). */
+  def findByContestIn(contest: Long)(implicit session: DBSession): Seq[Round] =
+    where("contestId" -> contest).orderBy(r.id).apply()
 
   def countByContest(contestId: Long): Long =
     countBy(sqls.eq(r.contestId, contestId))

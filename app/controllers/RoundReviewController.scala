@@ -99,7 +99,9 @@ class RoundReviewController @Inject() (
             // a re-apply failed or cancelled: its filters saved, its files half chosen (Distribute refuses)
             reapplyUnfinished = reapplyUnfinished(round, job),
             // one read of the contest's rounds
-            links = services.RoundLineage.links(round, Round.findByContest(round.contestId)).visibleTo(user)
+            links = services.RoundLineage.links(round, Round.findByContest(round.contestId)).visibleTo(user),
+            // being set up: its next step, and Distribute's state (#186)
+            nextStep = RoundNextStep.of(round, job, counts.getOrElse(RoundImageJdbc.Status.In, 0))
           )
           Secured.switchingContest(sessionUser, user)(
             Ok(views.html.contestFiles(user, files, pager, view, Some(summary))))
@@ -243,6 +245,10 @@ class RoundReviewController @Inject() (
           val back = Redirect(routes.RoundReviewController.jurors(round.getId, 0))
           if (!mayDistribute(user, round)) onUnAuthorized(sessionUser, request, Secured.Denial.round(round, User.ADMIN_ROLES))
           else if (bound.isEmpty) back.flashing("error" -> messages("error.invalid"))
+          // no file matched: nothing to give out (the pages show Distribute disabled, RoundNextStep)
+          else if (RoundNextStep.of(round, RoundService.latestJob(round), RoundNextStep.inCount(round))
+              .exists(_.state == RoundNextStep.NoFiles))
+            back.flashing("error" -> messages("round.next.no.files"))
           else roundsService.distributeReviewed(round.getId, user.id,
             jurors = Option.when(choice.jurorsShown)(choice.jurors.flatMap(_.toLongOption)),
             distribution = choice.distribution.filter(_ => choice.jurorsShown),
@@ -368,7 +374,8 @@ final case class RoundReview(
     reapplied: Option[ReapplyDiff] = None,
     reapplyUnfinished: Boolean = false,
     /** The rounds it was created from and those created from it, those the viewer may see. */
-    links: services.RoundLineage.Links = services.RoundLineage.Links.empty
+    links: services.RoundLineage.Links = services.RoundLineage.Links.empty,
+    nextStep: Option[RoundNextStep] = None
 ) {
   def count(status: String): Int = statusCounts.getOrElse(status, 0)
 }

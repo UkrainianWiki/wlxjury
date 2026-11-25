@@ -1,0 +1,18 @@
+@(form: Form[controllers.EditRound], shown: controllers.RoundFormErrors.Shown, heading: Option[String] = None)(implicit messages: Messages)
+@* A refused round form's errors, all of them, at the top (UI-path plan §0.5): each with its field's
+   label, linking to that field (RoundFormErrors), which shows it too; a form-level error without a
+   field, or one the page doesn't show (`shown`), without a link. Focused by round-form-token.js,
+   so a screen reader reads it first. *@
+@defining(controllers.RoundFormErrors.items(form, shown)) { items =>
+@if(items.nonEmpty) {
+<div class="alert alert-danger" role="alert" id="round-form-errors" tabindex="-1">
+    @* "Nothing was saved", unless the settings were (a saved edit's refused distribution) *@
+    <h2 class="h6">@heading.getOrElse(Messages("round.form.errors", items.size))</h2>
+    <ul class="mb-0">
+    @for(item <- items) {
+        <li>@for(label <- item.labelKey) {@for(a <- item.anchor) {<a href="#@a" class="alert-link">@Messages(label)</a>}@if(item.anchor.isEmpty) {@Messages(label)}: }@item.text</li>
+    }
+    </ul>
+</div>
+}
+}
