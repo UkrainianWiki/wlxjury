@@ -11,7 +11,8 @@ import play.api.libs.json._
   * (status, rating, score rule, rejected files, top-N order, media type) are stored as they are and
   * shown in the viewer's language by the keys the other pages use; an unknown code as it is. A value
   * longer than [[Shown]] characters is cut, its whole stored text in the item's title; two values
-  * that read the same although they differ (cut past the stored length) get their hashes.
+  * that read the same although they differ (cut past the stored length, or lists whose texts hold
+  * commas) get their hashes, of the stored values (never of the text shown).
   */
 object RoundChangeText {
 
@@ -69,13 +70,14 @@ object RoundChangeText {
       val from = Option.when(!created)(value(f, (entry \ "from").getOrElse(JsNull)))
       val to = value(f, (entry \ "to").getOrElse(JsNull))
       val item = Item(f, label(f), from.map(short), short(to), from, to)
-      // the same text shown for two different values (cut): each with its hash, the whole value's
-      // as stored beside a value cut on writing, else the stored text's
+      // the same text shown for two different values (cut, or a list whose texts hold its commas): each
+      // with its hash, the whole value's as stored beside a value cut on writing, else the stored value's
+      // (RoundChanges.valueHash: a list's of its JSON, never of the text shown)
       if (!item.from.contains(item.to)) item
       else {
-        def tagged(side: String, shown: String, full: String) =
-          s"$shown #${(entry \ s"${side}Hash").asOpt[String].getOrElse(RoundChanges.hash(full))}"
-        item.copy(from = item.from.map(tagged("from", _, from.getOrElse(""))), to = tagged("to", item.to, to))
+        def tagged(side: String, shown: String) = s"$shown #${(entry \ s"${side}Hash").asOpt[String]
+          .getOrElse(RoundChanges.valueHash((entry \ side).getOrElse(JsNull)))}"
+        item.copy(from = item.from.map(tagged("from", _)), to = tagged("to", item.to))
       }
     }
   }

@@ -14,8 +14,8 @@ import scalikejdbc._
   * a creation's `from` is null, and lists only the settings not left at their defaults. Values are
   * compared whole and stored short: ids, names, category titles, a text cut at [[MaxValueLength]]
   * code points; never lists of files. A cut text has its whole length and a short hash of it beside
-  * it (`fromLength`, `fromHash`, `toLength`, `toHash`), so two values that differ only past the cut
-  * still read as different.
+  * it (`fromLength`, `fromHash`, `toLength`, `toHash`), and a list with a text cut the hash of the
+  * whole list ([[valueHash]]), so two values that differ only past the cut still read as different.
   */
 object RoundChanges {
 
@@ -75,6 +75,14 @@ object RoundChanges {
     val crc = new java.util.zip.CRC32()
     crc.update(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))
     f"${crc.getValue}%08x"
+  }
+
+  /** A stored value's hash ([[hash]]): a text's of the text, any other value's (a list) of its JSON, so
+    * a list `["A, B"]` and `["A", "B"]` differ though they read the same, comma-separated.
+    */
+  def valueHash(v: JsValue): String = v match {
+    case JsString(t) => hash(t)
+    case other       => hash(Json.stringify(other))
   }
 
   /** The round's settings as compared, whole: None and blank texts, and empty lists, are null. */
@@ -139,15 +147,18 @@ object RoundChanges {
     }
 
   /** A value as stored: a text cut ([[cut]]), with its whole length and hash under `side`Length and
-    * `side`Hash if it was; a list's texts cut, each.
+    * `side`Hash if it was; a list's texts cut, each, with the whole list's hash ([[valueHash]]) under
+    * `side`Hash if any was.
     */
   private def stored(side: String, v: JsValue): JsObject = v match {
     case JsString(t) if cut(t, MaxValueLength) != t =>
       Json.obj(side -> cut(t, MaxValueLength), s"${side}Length" -> t.codePointCount(0, t.length), s"${side}Hash" -> hash(t))
-    case JsArray(items) => Json.obj(side -> JsArray(items.map {
-      case JsString(t) => JsString(cut(t, MaxValueLength))
-      case other       => other
-    }))
+    case list @ JsArray(items) =>
+      val short = JsArray(items.map {
+        case JsString(t) => JsString(cut(t, MaxValueLength))
+        case other       => other
+      })
+      if (short == list) Json.obj(side -> list) else Json.obj(side -> short, s"${side}Hash" -> valueHash(list))
     case other => Json.obj(side -> other)
   }
 
