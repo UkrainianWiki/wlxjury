@@ -392,6 +392,19 @@ object UiShotsServer {
       }
       round.getId -> juror
     }
+    // root's file list repair pages (list-repair.spec.js, services.FileListRepair): the shared
+    // untitled list of services.FileListRepairFixture, over 22 files no round of the fixture has
+    // (the newest), in contests of their own. Not in the guides' screenshot mode
+    val listRepair: Option[services.FileListRepairFixture.F] = Option.when(f.docsPhotos.isEmpty &&
+        db.scalikejdbc.ContestJuryJdbc.findAll().forall(!_.name.startsWith("UI repair"))) {
+      val prefix = "UI repair"
+      val pages = sql"""SELECT page_id FROM images WHERE deleted_at IS NULL
+                        AND NOT EXISTS (SELECT 1 FROM round_image ri WHERE ri.page_id = images.page_id)
+                        ORDER BY page_id DESC LIMIT 22""".map(_.long(1)).list()
+      val use = if (pages.size >= 22) pages.sorted
+        else sql"SELECT page_id FROM images WHERE deleted_at IS NULL ORDER BY page_id DESC LIMIT 22".map(_.long(1)).list().sorted
+      services.FileListRepairFixture.create(use, prefix, 2017)
+    }
     // the comments report's Back checks (gallery-back.spec.js): a running yes/no round of one juror
     // with six files, in a contest of its own, so that the comments the spec writes on them (as
     // root, once per server) never reach another spec's files, lists or menus (comments are the
@@ -565,6 +578,7 @@ object UiShotsServer {
          |  "docsCriteria": ${docsCriteria.fold("null") { case (r, p) => s"""{"roundId": $r, "pageId": $p}""" }},
          |  "closedRoundJurors": [${closedRoundJurors.mkString(", ")}],
          |  "aloneRound": ${aloneRound.fold("null") { case (r, j) => s"""{"roundId": $r, "jurorId": $j}""" }},
+         |  "listRepair": ${listRepair.fold("null") { r => s"""{"contestId": ${r.a.getId}, "ownContestId": ${r.e.getId}, "blankRow": ${r.blank}, "wholeRound": ${r.aWhole}}""" }},
          |  "commentFile": {"juror": $commentJuror, "pageId": $commentPage, "otherRounds": $commentOthers},
          |  "anchorRound": ${anchorRound.fold("null") { case (r, j, files) => s"""{"roundId": $r, "jurorId": $j, "pageIds": [${files.mkString(", ")}]}""" }},
          |  "pageId": $pageId,

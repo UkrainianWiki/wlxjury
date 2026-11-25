@@ -27,6 +27,7 @@ the move to Ubuntu 24.04, [`2026-10-19-mariadb-10.11.md`](../plans/2026-10-19-ma
 7. [Guards](#7-guards)
 8. [Where the setup doesn't follow these yet (for triage)](#8-where-the-setup-doesnt-follow-these-yet-for-triage)
 9. [Contest series (root)](#9-contest-series-root)
+10. [Repairing shared file lists (root)](#10-repairing-shared-file-lists-root)
 
 ## 1. Log lines
 
@@ -428,3 +429,42 @@ grantId=`, `series_admin_moved account= from= series= grantId= from_year= by=`.
   real rows listed above that root doesn't want kept.
 - **Migration back-out:** V112's rollback is in its last comment (every grant and its log rows are
   lost; an older binary reads no grant, so series admins lose their series access with it).
+
+## 10. Repairing shared file lists (root)
+
+**10.1 Why.** A contest's file list is its `contest_jury.category_id` row, its files in
+`category_members`: new rounds, resubmits and "Distribute new files" pick from it. From 2017 an
+import found or created that row by title, so every import without a source shared the row of the
+empty title (production's row 248: 1428 files of five countries, the list of ten contests), and a
+source set by title gave some contests another contest's row. The guards of the shared-category fix
+stop new damage; the old lists are repaired by hand, one contest at a time.
+
+**10.2 The pages.** `/admin/file-lists` (root only; linked from `/admin/series`) lists every contest
+whose list row is untitled or that another contest has as its list, source or V24 name (the import
+guard's notion, `CategoryLinkJdbc.mayCopyFrom`), the contests already moved to their own row whose
+rounds' files were left in such a row, and the untitled or shared rows no contest uses any more.
+A contest's repair page (`/admin/contests/<id>/file-list/repair`) shows its rounds with the files
+each counts: a round whose files are also in the rounds of two or more other contests sharing the
+row (one filled from the whole shared row, as 1086, 1222 and 1442 were) starts unticked, with the
+contests named; untick or tick others and press **Recount**. It counts the files **now in the
+list**, those that **stay** (the counted rounds show them), those that **leave** and those already
+in the contest's own row, each by country, and **View gallery** opens the files gallery on the stays
+or the leaves (`repair=stays:<rounds>` or `leaves:`, root only; anyone else is denied, logged).
+
+**10.3 Confirm and Undo.** **Confirm** checks the preview's hash (contest, list row, source row,
+rounds counted, the files that stay; else "the list changed; reload the preview") and, in one
+transaction under the contest's row lock, adds the contest's own `#contest <id>` row if missing,
+puts the files that stay into it (only the missing ones are recorded), makes it the contest's list,
+and logs a `list_repair` row with those files plus a `contest_change` `files_repaired` row and a
+`round.admin` INFO line `files_repaired contestId= repairId= oldRow= sourceRow= newRow= rounds=
+stays= leaves= added= by=`. Rounds, `round_image` and votes never change; an empty result is fine.
+**Undo** (the repair page or the overview) restores the previous list and removes from the own row
+only the files the repair added (`files_repair_undone`); it is refused if the contest's list
+changed since (another list, a later repair, or files added by an import: `list_hash`). When no
+contest has the untitled row any more, **Rename to "#unnamed legacy import"** keeps it, with its
+files, for audit (`list_renamed` INFO line).
+
+**10.4 Size.** A repair runs in the request: on a test container a 40,000-file row (38,000 staying)
+previewed in about 0.5 s, confirmed in 1.0 s and undone in 0.25 s; the overview took 0.12 s. The
+largest affected rows are far smaller. V114 only adds the tables and the log kinds; its rollback is
+in its last comment.

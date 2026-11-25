@@ -1,0 +1,110 @@
+@(
+        user: db.scalikejdbc.User,
+        overview: services.FileListRepair.Overview,
+        names: Map[Long, String]
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@* Root's overview of the file lists to repair (FileListRepairController.overview): the contests on a
+   blank or shared list row, those already on their own row whose rounds' files were left in a shared
+   one, the rows no contest has any more (the blank one with Rename), and the latest repairs with
+   Undo. Titles and names are data, escaped by Twirl. *@
+@contestName(id: Long) = @{ overview.contests.get(id).fold(Messages("list.repair.contest.id", id))(c => s"${c.name} ${c.year} ${c.country}".trim) }
+@rowLabel(row: services.FileListRepair.Row) = {#@row.id @if(row.blank) {<span class="badge text-bg-warning">@Messages("list.repair.row.blank")</span>} else {<span class="list-repair-title">@row.title.getOrElse("")</span>}}
+
+@mainAdmin("list.repair.title", user, user.getId) {
+    <h1 class="h3">@Messages("list.repair.title")</h1>
+    <p class="text-body-secondary" id="list-repair-help">@Messages("list.repair.help")</p>
+    @outcome()
+
+    <h2 class="h4 mt-4" id="list-repair-shared-heading">@Messages("list.repair.shared")</h2>
+    @if(overview.shared.isEmpty) {
+        <p class="text-body-secondary" id="list-repair-shared-none">@Messages("list.repair.shared.none")</p>
+    } else {
+        <div class="table-responsive">
+        <table class="table table-striped table-sm" id="list-repair-shared" aria-labelledby="list-repair-shared-heading">
+            <thead>
+                <tr>
+                    <th scope="col">@Messages("contest")</th>
+                    <th scope="col">@Messages("list.repair.row")</th>
+                    <th scope="col">@Messages("list.repair.others")</th>
+                    <th scope="col" class="text-end">@Messages("list.repair.size")</th>
+                    <th scope="col"><span class="visually-hidden">@Messages("list.repair.open")</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @for(c <- overview.shared) {
+                    <tr class="list-repair-contest" data-contest="@c.contestId" data-row="@c.row.id">
+                        <td>@contestName(c.contestId) <span class="text-body-secondary">(#@c.contestId)</span></td>
+                        <td>@rowLabel(c.row)</td>
+                        <td class="small">@for((o, i) <- c.others.zipWithIndex) {@if(i > 0) {, }<a href="@routes.FileListRepairController.repairPage(o)">@contestName(o)</a>}</td>
+                        <td class="text-end">@c.size</td>
+                        <td><a class="btn btn-sm btn-outline-primary" href="@routes.FileListRepairController.repairPage(c.contestId)"
+                               aria-label="@Messages("list.repair.open.of", contestName(c.contestId))">@Messages("list.repair.open")</a></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+
+    @if(overview.onOwnRow.nonEmpty) {
+        <h2 class="h4 mt-4" id="list-repair-own-heading">@Messages("list.repair.own")</h2>
+        <p class="text-body-secondary">@Messages("list.repair.own.help")</p>
+        <div class="table-responsive">
+        <table class="table table-striped table-sm" id="list-repair-own" aria-labelledby="list-repair-own-heading">
+            <thead>
+                <tr>
+                    <th scope="col">@Messages("contest")</th>
+                    <th scope="col">@Messages("list.repair.source")</th>
+                    <th scope="col" class="text-end">@Messages("list.repair.left")</th>
+                    <th scope="col"><span class="visually-hidden">@Messages("list.repair.open")</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @for(c <- overview.onOwnRow) {
+                    <tr class="list-repair-own-contest" data-contest="@c.contestId" data-row="@c.row.id">
+                        <td>@contestName(c.contestId) <span class="text-body-secondary">(#@c.contestId)</span></td>
+                        <td>@rowLabel(c.row)</td>
+                        <td class="text-end">@c.left</td>
+                        <td><a class="btn btn-sm btn-outline-primary" href="@routes.FileListRepairController.repairPage(c.contestId)"
+                               aria-label="@Messages("list.repair.open.of", contestName(c.contestId))">@Messages("list.repair.open")</a></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+
+    <h2 class="h4 mt-4" id="list-repair-orphans-heading">@Messages("list.repair.orphans")</h2>
+    @if(overview.orphans.isEmpty) {
+        <p class="text-body-secondary" id="list-repair-orphans-none">@Messages("list.repair.orphans.none")</p>
+    } else {
+        <div class="table-responsive">
+        <table class="table table-sm" id="list-repair-orphans" aria-labelledby="list-repair-orphans-heading">
+            <thead>
+                <tr>
+                    <th scope="col">@Messages("list.repair.row")</th>
+                    <th scope="col" class="text-end">@Messages("list.repair.size")</th>
+                    <th scope="col"><span class="visually-hidden">@Messages("list.repair.rename")</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @for(o <- overview.orphans) {
+                    <tr class="list-repair-orphan" data-row="@o.row.id">
+                        <td>@rowLabel(o.row)</td>
+                        <td class="text-end">@o.size</td>
+                        <td>@if(o.mayRename) {
+                            <form method="post" action="@routes.FileListRepairController.rename(o.row.id)" class="d-inline" data-submit-once="true">
+                                @csrfField()
+                                <button type="submit" class="btn btn-sm btn-outline-secondary list-repair-rename">@Messages("list.repair.rename", services.FileListRepair.LegacyTitle)</button>
+                            </form>
+                        }</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+
+    <h2 class="h4 mt-4" id="list-repair-recent-heading">@Messages("list.repair.recent")</h2>
+    @repairs(overview.recent, names, Some(overview.contests))
+}

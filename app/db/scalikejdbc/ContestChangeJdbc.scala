@@ -57,8 +57,18 @@ object ContestChangeJdbc {
   /** The kinds about a round of the contest (V112): its detail's `round` names it. */
   val RoundKinds: Seq[String] = Seq(RoundJurorStopped, RoundJurorReopened, RoundJurorClosed)
 
+  /** Root repaired the contest's file list (services.FileListRepair, V114). */
+  val FilesRepaired = "files_repaired"
+  /** Root undid a repair of the contest's file list. */
+  val FilesRepairUndone = "files_repair_undone"
+
+  /** The kinds about the contest's file list (V114): never in [[latestOf]], so a series batch's
+    * Undo doesn't take a list repair for a change of the contest.
+    */
+  val ListKinds: Seq[String] = Seq(FilesRepaired, FilesRepairUndone)
+
   /** The kinds the check allows. */
-  val Kinds: Seq[String] = ContestKinds ++ RoundKinds
+  val Kinds: Seq[String] = ContestKinds ++ RoundKinds ++ ListKinds
 
   val CommentMaxLength = 500
 

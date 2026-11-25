@@ -1,0 +1,51 @@
+@(
+        repairs: Seq[db.scalikejdbc.ListRepair],
+        names: Map[Long, String],
+        contests: Option[Map[Long, org.intracer.wmua.ContestJury]] = None
+)(implicit messages: Messages, req: RequestHeader)
+@* Repairs of file lists, the newest first, each with Undo while it is not undone (the service
+   refuses one whose list changed since); with `contests`, a column naming each one's contest *@
+@if(repairs.isEmpty) {
+    <p class="text-body-secondary" id="list-repair-repairs-none">@Messages("list.repair.repairs.none")</p>
+} else {
+    <div class="table-responsive">
+    <table class="table table-sm" id="list-repair-repairs">
+        <caption class="visually-hidden">@Messages("list.repair.repairs")</caption>
+        <thead>
+            <tr>
+                <th scope="col">@Messages("list.repair.repair")</th>
+                @if(contests.isDefined) {<th scope="col">@Messages("contest")</th>}
+                <th scope="col">@Messages("list.repair.rows")</th>
+                <th scope="col">@Messages("list.repair.rounds.counted")</th>
+                <th scope="col" class="text-end">@Messages("list.repair.added")</th>
+                <th scope="col">@Messages("list.repair.by")</th>
+                <th scope="col"><span class="visually-hidden">@Messages("list.repair.undo")</span></th>
+            </tr>
+        </thead>
+        <tbody>
+            @for(r <- repairs) {
+                <tr class="list-repair-repair" data-repair="@r.id" data-contest="@r.contestId">
+                    <td>#@r.id</td>
+                    @for(cs <- contests) {
+                        <td><a href="@routes.FileListRepairController.repairPage(r.contestId)">@cs.get(r.contestId).fold(Messages("list.repair.contest.id", r.contestId))(c => s"${c.name} ${c.year} ${c.country}".trim)</a></td>
+                    }
+                    <td class="small">@Messages("list.repair.rows.moved", r.oldCategoryId.fold("")(id => s"#$id"), s"#${r.newCategoryId}")@if(r.oldCategoryId.forall(_ != r.sourceCategoryId)) { (@Messages("list.repair.rows.from", s"#${r.sourceCategoryId}"))}</td>
+                    <td class="small">@if(r.roundsCounted.isEmpty) {@Messages("list.repair.rounds.none")} else {@r.roundsCounted.map(id => s"#$id").mkString(", ")}</td>
+                    <td class="text-end">@r.filesAdded</td>
+                    <td class="small">@names.getOrElse(r.createdBy, s"#${r.createdBy}"), <span class="text-nowrap">@views.LinkTimes.utc(r.createdAt)</span></td>
+                    <td>
+                        @if(r.undone) {
+                            <span class="text-body-secondary">@Messages("list.repair.undone", r.undoneBy.map(id => names.getOrElse(id, s"#$id")).getOrElse(""), r.undoneAt.map(views.LinkTimes.utc).getOrElse(""))</span>
+                        } else {
+                            <form method="post" action="@routes.FileListRepairController.undo(r.id)" class="d-inline" data-submit-once="true">
+                                @csrfField()
+                                <button type="submit" class="btn btn-sm btn-outline-danger list-repair-undo" aria-label="@Messages("list.repair.undo.of", r.id)">@Messages("list.repair.undo")</button>
+                            </form>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    </div>
+}

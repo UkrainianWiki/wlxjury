@@ -129,6 +129,7 @@ a guide or a test needs them.
 | R-04 | Root signs in with login and password | – | |
 | R-05 | Root mails a reset-password link to an account, or ends all its sessions | – | |
 | R-06 | Root lists the possible duplicate accounts of every contest and outside them, and keeps accounts separate | [admin guide](../user/admin-guide.md#possible-duplicate-accounts) | |
+| R-07 | Root repairs a contest's untitled or shared file list: finds it on the overview, ticks the rounds whose files count (a mixed round pre-unticked), sees what stays and leaves by country and in the files gallery, confirms, and can undo; renames the untitled row once no contest has it | [operations §10](../operations/practices.md#10-repairing-shared-file-lists-root) | root only; an admin, organizer and juror are refused every page and the gallery's repair filter (`FileListRepairControllerSpec`, `FileListRepairSpec`) |
 
 ## System and security
 

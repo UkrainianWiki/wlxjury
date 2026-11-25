@@ -26,6 +26,8 @@
             <i class="bi bi-list-check" aria-hidden="true"></i> @Messages("series.assign.title")</a>
         <a class="btn btn-outline-secondary ms-2" href="@routes.ReuseReportController.list()" id="series-reuse-link">
             <i class="bi bi-diagram-3" aria-hidden="true"></i> @Messages("reuse.title")</a>
+        <a class="btn btn-outline-secondary ms-2" href="@routes.FileListRepairController.overview()" id="series-file-lists-link">
+            <i class="bi bi-wrench" aria-hidden="true"></i> @Messages("list.repair.title")</a>
         <span class="text-body-secondary ms-2" id="series-unassigned">@Messages("series.unassigned.count", unassigned)</span>
     </p>
 

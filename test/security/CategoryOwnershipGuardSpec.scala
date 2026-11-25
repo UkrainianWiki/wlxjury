@@ -15,7 +15,8 @@ import org.specs2.mutable.Specification
   *  - `CategoryJdbc.findOrInsert` is called only with a contest's own title
   *    (`ImageService.ownCategory`); `addCountries`' country categories are their own method;
   *  - `contest_jury.category_id` is written only by `ContestJuryJdbc` (its `create`, called with
-  *    none, and `setCategory`), and `setCategory` is called only by `ImageService` (the import);
+  *    none, and `setCategory`), and `setCategory` is called only by `ImageService` (the import) and
+  *    `FileListRepair` (root's repair, to the contest's own row, and its Undo, back to the old one);
   *  - rows of `category` are inserted only by `CategoryJdbc`.
   *
   * Every reference to `findOrInsert` and `setCategory` is a call (the 2017 code passed
@@ -48,7 +49,8 @@ class CategoryOwnershipGuardSpec extends Specification {
     "be found or added only by a contest's own title" in {
       uncalled("findOrInsert") must beEmpty
       val found = calls("findOrInsert")
-      found.map(_._1) === Seq("app/services/ImageService.scala")
+      // the import, and root's list repair (services.FileListRepair), which moves a contest to its own
+      found.map(_._1).distinct.sorted === Seq("app/services/FileListRepair.scala", "app/services/ImageService.scala")
       forall(found) { case (_, args) => args must startWith("ImageService.ownCategory(") }
     }
 
@@ -60,7 +62,8 @@ class CategoryOwnershipGuardSpec extends Specification {
       counts("""(?is)UPDATE\s+contest_jury\b[^;"]{0,400}?\bcategory_id\s*=""".r) must beEmpty
       counts("""(?is)INSERT\s+(IGNORE\s+)?INTO\s+contest_jury\b[^;"]{0,400}?\bcategory_id\b""".r) must beEmpty
       uncalled("setCategory") must beEmpty
-      calls("setCategory").map(_._1) === Seq("app/services/ImageService.scala")
+      // the import; root's list repair (its own row) and its Undo (the list it had before, logged)
+      calls("setCategory").map(_._1).distinct.sorted === Seq("app/services/FileListRepair.scala", "app/services/ImageService.scala")
     }
 
     "be added to contests with none: a new contest's category comes from its first import" in {

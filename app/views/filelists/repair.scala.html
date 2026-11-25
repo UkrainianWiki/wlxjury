@@ -1,0 +1,158 @@
+@import services.FileListRepair
+@(
+        user: db.scalikejdbc.User,
+        contest: org.intracer.wmua.ContestJury,
+        plan: Either[String, FileListRepair.Plan],
+        repairs: Seq[db.scalikejdbc.ListRepair],
+        contests: Map[Long, org.intracer.wmua.ContestJury],
+        names: Map[Long, String]
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@* A contest's file list repair page (FileListRepairController.repairPage): its rounds with the files
+   each counts (pre-unticked: the mixed ones, FileListRepair.RoundInfo.mixed), the counts by country
+   with the files gallery's preview of what stays and what leaves, Confirm (the plan's hash), and the
+   contest's repairs with Undo. *@
+@contestName(id: Long) = @{ contests.get(id).fold(Messages("list.repair.contest.id", id))(c => s"${c.name} ${c.year} ${c.country}".trim) }
+@rowLabel(row: FileListRepair.Row) = {#@row.id @if(row.blank) {<span class="badge text-bg-warning">@Messages("list.repair.row.blank")</span>} else {<span class="list-repair-title">@row.title.getOrElse("")</span>}}
+@countries(p: FileListRepair.Plan, files: Seq[Long]) = {
+    @if(files.nonEmpty) {
+        <ul class="list-inline small mb-0 list-repair-countries">
+            @for((country, n) <- p.byCountry(files)) {
+                <li class="list-inline-item" data-country="@country">@if(country.isEmpty) {@Messages("list.repair.country.none")} else {@country}@snippets.count(n)</li>
+            }
+        </ul>
+    }
+}
+@galleryLink(p: FileListRepair.Plan, side: String, id: String) = {
+    <a id="@id" class="btn btn-sm btn-outline-secondary" href="@routes.GalleryController.contestFiles(contest.getId, repair = Some(FileListRepair.GalleryFilter(side, p.counted).param))">
+        <i class="bi bi-images" aria-hidden="true"></i> @Messages("list.repair.view.gallery")<span class="visually-hidden"> (@Messages(s"list.repair.gallery.$side"))</span></a>
+}
+
+@mainAdmin("list.repair.page.title", user, user.getId) {
+    <p><a href="@routes.FileListRepairController.overview()" id="list-repair-overview-link">&larr; @Messages("list.repair.title")</a></p>
+    <h1 class="h3">@Messages("list.repair.page.title"): @contest.name @contest.year @contest.country <span class="text-body-secondary h5">(#@contest.getId)</span></h1>
+    @outcome()
+
+    @plan match {
+        case Left(key) => {
+            <div class="alert alert-info" role="status" id="list-repair-nothing" data-key="@key">@Messages(key)</div>
+        }
+        case Right(p) => {
+            <dl class="row mb-3" id="list-repair-rows">
+                <dt class="col-sm-3">@Messages("list.repair.current")</dt>
+                <dd class="col-sm-9" id="list-repair-current">@rowLabel(p.current)@if(p.onOwnRow) { <span class="badge text-bg-secondary">@Messages("list.repair.own.badge")</span>}</dd>
+                @if(p.source.id != p.current.id) {
+                    <dt class="col-sm-3">@Messages("list.repair.source")</dt>
+                    <dd class="col-sm-9" id="list-repair-source">@rowLabel(p.source)</dd>
+                }
+                <dt class="col-sm-3">@Messages("list.repair.others")</dt>
+                <dd class="col-sm-9" id="list-repair-others">@if(p.others.isEmpty) {@Messages("list.repair.others.none")} else {
+                    @for((o, i) <- p.others.zipWithIndex) {@if(i > 0) {, }<a href="@routes.FileListRepairController.repairPage(o)">@contestName(o)</a>}}</dd>
+                <dt class="col-sm-3">@Messages("list.repair.own.row")</dt>
+                <dd class="col-sm-9" id="list-repair-own-row">@p.own.orElse(Option.when(p.onOwnRow)(p.current)).fold(play.twirl.api.HtmlFormat.escape(Messages("list.repair.own.row.none", services.ImageService.ownCategory(contest.getId))))(rowLabel)</dd>
+            </dl>
+
+            @if(!p.affected) {
+                <div class="alert alert-warning" role="status" id="list-repair-not-affected">@Messages("list.repair.not.affected")</div>
+            }
+
+            <h2 class="h4 mt-4" id="list-repair-rounds-heading">@Messages("list.repair.rounds")</h2>
+            <p class="text-body-secondary small">@Messages("list.repair.rounds.help", FileListRepair.MixedContests)</p>
+            @if(p.rounds.isEmpty) {
+                <p class="text-body-secondary" id="list-repair-rounds-none">@Messages("list.repair.rounds.empty")</p>
+            } else {
+                <form method="get" action="@routes.FileListRepairController.repairPage(contest.getId)" id="list-repair-rounds-form">
+                    <input type="hidden" name="chosen" value="true">
+                    <div class="table-responsive">
+                    <table class="table table-sm" id="list-repair-rounds" aria-labelledby="list-repair-rounds-heading">
+                        <thead>
+                            <tr>
+                                <th scope="col">@Messages("list.repair.round.count")</th>
+                                <th scope="col">@Messages("round")</th>
+                                <th scope="col" class="text-end">@Messages("list.repair.round.files")</th>
+                                <th scope="col" class="text-end">@Messages("list.repair.round.in.source")</th>
+                                <th scope="col">@Messages("list.repair.round.note")</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for(r <- p.rounds) {
+                                <tr class="list-repair-round" data-round="@r.round.getId" data-mixed="@r.mixed">
+                                    <td><input class="form-check-input" type="checkbox" name="round" value="@r.round.getId" id="round-@r.round.getId"
+                                        @if(p.counted.contains(r.round.getId)) {checked}></td>
+                                    <td><label for="round-@r.round.getId">@Messages("round") @r.round.number@if(r.round.name.exists(_.trim.nonEmpty)) {: @r.round.name} <span class="text-body-secondary">(#@r.round.getId)</span></label></td>
+                                    <td class="text-end">@r.files</td>
+                                    <td class="text-end">@r.inSource</td>
+                                    <td class="small">@if(r.mixed) {<span class="badge text-bg-warning">@Messages("list.repair.round.mixed.badge")</span> @Messages("list.repair.round.mixed", r.mixedWith.map(contestName).mkString(", "))}</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    </div>
+                    <button type="submit" class="btn btn-outline-primary btn-sm" id="list-repair-recount">@Messages("list.repair.recount")</button>
+                </form>
+            }
+
+            <h2 class="h4 mt-4" id="list-repair-counts-heading">@Messages("list.repair.counts")</h2>
+            <div class="table-responsive">
+            <table class="table table-sm" id="list-repair-counts" aria-labelledby="list-repair-counts-heading">
+                <thead>
+                    <tr>
+                        <th scope="col">@Messages("list.repair.files")</th>
+                        <th scope="col" class="text-end">@Messages("list.repair.count")</th>
+                        <th scope="col">@Messages("list.repair.by.country")</th>
+                        <th scope="col"><span class="visually-hidden">@Messages("list.repair.view.gallery")</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr id="list-repair-now" data-count="@p.now.size">
+                        <th scope="row">@Messages("list.repair.now")</th>
+                        <td class="text-end">@p.now.size</td>
+                        <td>@countries(p, p.now)</td>
+                        <td><a class="btn btn-sm btn-outline-secondary" href="@routes.GalleryController.contestFiles(contest.getId)">
+                            <i class="bi bi-images" aria-hidden="true"></i> @Messages("list.repair.view.gallery")<span class="visually-hidden"> (@Messages("list.repair.now"))</span></a></td>
+                    </tr>
+                    <tr id="list-repair-stays" data-count="@p.stays.size">
+                        <th scope="row">@Messages("list.repair.stays")</th>
+                        <td class="text-end">@p.stays.size</td>
+                        <td>@countries(p, p.stays)</td>
+                        <td>@galleryLink(p, "stays", "list-repair-stays-gallery")</td>
+                    </tr>
+                    <tr id="list-repair-leaves" data-count="@p.leaves.size">
+                        <th scope="row">@Messages("list.repair.leaves")</th>
+                        <td class="text-end">@p.leaves.size</td>
+                        <td>@countries(p, p.leaves)</td>
+                        <td>@galleryLink(p, "leaves", "list-repair-leaves-gallery")</td>
+                    </tr>
+                    @if(p.own.isDefined) {
+                        <tr id="list-repair-own-files" data-count="@p.ownFiles.size">
+                            <th scope="row">@Messages("list.repair.own.files")</th>
+                            <td class="text-end">@p.ownFiles.size</td>
+                            <td>@countries(p, p.ownFiles)</td>
+                            <td></td>
+                        </tr>
+                    }
+                    <tr id="list-repair-new" data-count="@p.newSize" class="fw-semibold">
+                        <th scope="row">@Messages("list.repair.new")</th>
+                        <td class="text-end">@p.newSize</td>
+                        <td class="small fw-normal">@Messages("list.repair.new.help", p.added.size)</td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+            </div>
+            <p class="text-body-secondary small">@Messages("list.repair.country.help")</p>
+
+            @if(p.affected) {
+                <form method="post" action="@routes.FileListRepairController.confirm(contest.getId)" id="list-repair-confirm" data-submit-once="true">
+                    @csrfField()
+                    @for(id <- p.counted) {<input type="hidden" name="round" value="@id">}
+                    <input type="hidden" name="hash" value="@p.hash">
+                    <p class="small">@Messages("list.repair.confirm.help", services.ImageService.ownCategory(contest.getId))</p>
+                    <button type="submit" class="btn btn-primary" id="list-repair-confirm-button">@Messages("list.repair.confirm")</button>
+                </form>
+            }
+        }
+    }
+
+    <h2 class="h4 mt-4">@Messages("list.repair.repairs")</h2>
+    @views.html.filelists.repairs(repairs, names)
+}

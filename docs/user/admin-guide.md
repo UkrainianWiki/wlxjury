@@ -1455,6 +1455,11 @@ stopped.
 - See the [possible duplicate accounts](#a-duplicates) of every contest and outside them, keep
   any of them separate, and [join](#a-join) any two accounts (also an admin account, or one in no
   contest).
+- **Repair file lists** (a button on **Series**): old imports left some contests sharing one
+  untitled or shared list of files. One contest at a time, the repair page shows what stays (the
+  files its own rounds show) and what leaves, by country and in the files gallery, then moves the
+  files that stay into the contest's own list; rounds and votes don't change, and **Undo** puts the
+  old list back. See the [operations guide](../operations/practices.md#10-repairing-shared-file-lists-root).
 - Run **Check every round's images**, on the rounds list: it checks that every round's list of
   files matches its votes, and repairs any drift.
 - Run **Normalize stored authors**, on the rounds list, see [below](#a-normalize-authors).
