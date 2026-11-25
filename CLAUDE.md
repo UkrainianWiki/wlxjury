@@ -63,8 +63,8 @@ A changelog entry is one short user-facing line per change (a few words, no impl
 
 ### Plans and decisions as an agent
 
-- A plan or design (anything the maintainer will decide on, or with open questions) is committed to `docs/plans/YYYY-MM-DD-<topic>.md` on a branch, with a PR (a draft while undecided), as soon as it is written; decisions are recorded in that file when made. Before starting a planned feature, check its plan is in `docs/plans`; if not, recover it first.
-- Runbooks, analysis outputs and review reports that must not be public go to a durable local work folder outside the repository, not a temp directory, and never with a local path written into the repository.
+- A plan or design (anything the maintainer will decide on, or with open questions) is committed to `docs/plans/YYYY-MM-DD-<topic>.md` on a branch, with a PR (a draft while undecided), as soon as it is written; decisions are recorded in that file when made. Before starting a planned feature, check its plan is in `docs/plans`; if not, recover it first (from git branches, from the session transcripts the agent tool keeps, e.g. Claude Code's `~/.claude/projects/<project>/*.jsonl`, or ask the maintainer).
+- Runbooks, analysis outputs and review reports that must not be public go to the maintainer's durable local work folder outside the repository (ask if it is not known), not a temp directory, and never with a local path written into the repository.
 - Session scratchpads and temp directories hold only files that can be regenerated. A plan, hand-off note or PR body never points at a scratchpad path.
 
 ### Front-end work as an agent
