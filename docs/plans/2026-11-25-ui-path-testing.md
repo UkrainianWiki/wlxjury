@@ -75,8 +75,11 @@ and the service refusals log), so production's access log shows the 400s but not
 
 **Why the 400s.** None of the 11 was logged, and every service refusal logs a WARN, so the
 service refusals (including the wait `error.previous.round.rebalancing` and
-`ExcludeRoundsRefused`) are ruled out. What is left are the silent paths: the `formWithErrors`
-branch, `files.list.unreadable` and `error.rejected.by.no.source`. Most likely (medium
+`ExcludeRoundsRefused`) are ruled out. Among the silent paths left are the `formWithErrors`
+branch, `files.list.unreadable` and `error.rejected.by.no.source`. The other plain `reRender`
+refusals in `RoundController` (26.11.15) are unlogged too: a retired contest, criteria or the
+worst mark on a round that isn't rated, a criteria refusal, a re-apply of a round not in review,
+and a distribution already running. Most likely (medium
 confidence) a **field error inside the "Media filtering" card**: the card is rendered collapsed
 on every render, the 400 included, and holds every filter field (previous rounds, rejected-by,
 top-N, the category boxes, the rounds to leave out, media type). The error showed only inside
