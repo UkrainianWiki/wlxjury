@@ -5,8 +5,8 @@
 
 **Status:** plan only. Nothing is built. Date: 2026-11-11.
 
-**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 6–14
-decided; 1–5, 15–16 open; phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5).
+**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 1, 2 and
+6–14 decided; 3–5, 15–16 open; phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5).
 The maintainer made this the top priority for WLM 2026 Ukraine, whose jury final is at the
 beginning of December.
 
@@ -56,9 +56,12 @@ photos and tell which round they are from."
     when the source has fewer than N (updated 2026-11-25, decision 9);
   - why that round was used: "From round 2 (R-02): round 3 has no files of this region."
 - **The rule:**
-  - **The default `F`** is the deepest round that is not any of these: a nomination round, a regional
-    round, a leave-out round, or a review of rejected files. When several rounds tie at that depth,
-    the page names them and asks the organizer to pick one.
+  - **The default `F`** is the deepest round of the contest's "Main" track (round lineage's computed
+    track rule plus the organizer's manual label, lineage decision 4) (updated 2026-11-25, decision
+    2). Until a contest has track data, it is the deepest round that is not any of these: a
+    nomination round, a regional round, a leave-out round, or a review of rejected files; the page
+    then says that it guessed. When several rounds tie at that depth, the page names them and asks
+    the organizer to pick one.
   - **For each region**, the candidates are tried in a fixed order:
     1. the region's regional rounds, newest first;
     2. the chain rounds, deepest first;
@@ -92,9 +95,12 @@ photos and tell which round they are from."
   - **`round_image` counts** are used only when `roundImage.read` is on and the clean-generation
     proof holds.
   - There is no new table and no migration.
-- **Does not wait for the lineage plan.** It needs only the graph core (ancestors and depth) that the
-  lineage plan (§1.3) assigns to a shared `services.RoundLineage`. Whichever feature lands first
-  builds it.
+- **Builds on round lineage's track core** (updated 2026-11-25, decision 2). It needs the graph core
+  (ancestors and depth) that the lineage plan (§1.3) assigns to a shared `services.RoundLineage`,
+  plus the track computation for "Main" and the manual label (`round.track`, lineage decision 4).
+  That is the core shared with lineage's minimum slice (A): tracks with the manual label, the chip
+  and the Track menu, about 3–4 days. Order of work: lineage's track part first, or together with
+  this plan's phase 1. The track label's migration is lineage's (number: next free at merge).
 - **No migration of its own** (updated 2026-11-25). Production is at V113, so it already has
   `round_image` (V84), the counts (V89), `average_rule` (V90), `exclude_rounds` (V95) and
   `round.status` (V105). V84's backfill rebuilt `round_image` from the votes, so the report also
@@ -103,7 +109,8 @@ photos and tell which round they are from."
   - **Phase 0** (S) checks the rule on WLE Ukraine 2026, locally, on the 26.11 rehearsal copy.
     Done, and rerun for WLM 2026 Ukraine on a production copy of 2026-11-25 (§7.4, §7.5)
     (updated 2026-11-25).
-  - **Phase 1** (M–L) is the page.
+  - **Phase 1** (M–L) is the page. It builds on lineage's slice A (3–4 days, if not landed)
+    (updated 2026-11-25, decision 2).
   - **Phase 2** (S–M) is the export, as wiki text and as CSV (updated 2026-11-25, decision 11).
   - **Phase 3** (S) comes after lineage phase 1 and multi-role's pre-screening rounds
     (migration numbers: next free at merge). `round.status` (V105) is in production already, so
@@ -325,10 +332,13 @@ the graph built in memory (lineage §1.3).
    - **plain:** none of the above.
 3. **`F`, the final round:**
    - the `round` parameter, if it is a contest round outside `X`; any kind may be picked;
-   - else the default: the deepest **plain** round, then the largest id.
-     - Before lineage phase 1, "plain" also excludes nomination roots.
-     - After phase 1, the default `F` is the deepest round of the track labelled "Main" if there is
-       one (lineage decision 4).
+   - else the default (updated 2026-11-25, decision 2): the deepest round of the "Main" track, as
+     round lineage computes it (its track rule plus the organizer's manual label, lineage decision
+     4);
+   - until the contest has track data, the deepest **plain** round, then the largest id ("plain"
+     also excludes nomination roots). The header then says that the final round was guessed: "No
+     Main track yet; showing R-03, the deepest plain round. Label the Main track to fix it."
+     (updated 2026-11-25, decision 2).
    - **Ambiguity:** other plain leaves (rounds no plain round descends from) at the same maximum depth
      are not ancestors of `F`. When there are any, the header warns and names them, with a link for
      each: "R-03 and [test] R-03 both end the chain at depth 3; showing R-03 (larger id). Pick
@@ -755,7 +765,7 @@ GROUP BY ri.round_id, ri.region
 
 | Plan | How this fits |
 |---|---|
-| Round lineage (`2026-11-10-round-lineage.md`) | **Graph core.** Uses the shared `services.RoundLineage` core (§1.3): graph, Kahn order, ancestors, depth; built here if this lands first. **Chain.** "Chain" here is `F` and its ancestors, not a track; after lineage phase 1 only the default `F` reads the track label. **Kinds.** Rule 4 is reused for "regional", and §4's leave-out steps become add-ons. **Status.** V105's `cancelled`, `draft` and in-review `paused` join `X` (updated 2026-11-25). **No storage** (decision 15 there). **Back-reference.** The lineage plan's §6 table should get a row for this report, linking its regions table and backtracking (§4 there) to this page. Not edited here |
+| Round lineage (`2026-11-10-round-lineage.md`) | **Graph core.** Uses the shared `services.RoundLineage` core (§1.3): graph, Kahn order, ancestors, depth. **Track core** (updated 2026-11-25, decision 2): also the "Main" track computation and the manual label (`round.track`), shared with lineage's minimum slice A (track label, chip, Track menu; about 3–4 days), built first or together with phase 1. **Chain.** "Chain" here is `F` and its ancestors, not a track; only the default `F` reads the track label. **Kinds.** Rule 4 is reused for "regional", and §4's leave-out steps become add-ons. **Status.** V105's `cancelled`, `draft` and in-review `paused` join `X` (updated 2026-11-25). **No storage** (decision 15 there). **Back-reference.** The lineage plan's §6 table should get a row for this report, linking its regions table and backtracking (§4 there) to this page. Not edited here |
 | Lineage §4 backtracking | The report shows which regions need a backtrack. The round is created through the normal form, and the report then uses it (§2.3) |
 | Multi-role (migration: next free at merge; updated 2026-11-25) | Pre-screening rounds are never candidates. Pure pre-screeners get 403 (decisions 2 and 3 there) |
 | Combined juror votes | The report is never shown to jurors |
@@ -771,11 +781,12 @@ S ≈ ½ day, M ≈ 1–2 days, L ≈ 3+ days of agent work, each with review an
 | Phase | Content | Size |
 |---|---|---|
 | 0 | **WLE Ukraine 2026 check, local** (§7.1). On the 26.11 rehearsal copy of production, migrated to V95, with the read-only SQL below. A local script (`python -I`) applies §2. It shows the chain, the add-ons, the ambiguity, the regions that fell back, the unlinked rounds, and whether WLE's `previous` links are recorded. It also verifies WLE's region prefixes and tunes the "small root" threshold. It is phase 1's acceptance case, and it also serves lineage decision 3. Done for WLE 2026 (§7.4) and WLM 2026 (§7.5) (updated 2026-11-25) | S |
-| 1 | **The page.** The `RoundLineage` core, if not landed (½–1 d). `RegionalWinners`: the pure rule of §2, unit-tested (1 d). Region summaries, top N and unlinked rounds, on the votes path, plus the counts path behind `roundImage.read` with its proof (1–1.5 d). Controller, route, view, messages in en/uk/ru/fr, links, screenshots in both themes (1–1.5 d) | M–L (3.5–4.5 d) |
+| 1 | **The page.** On lineage's slice A, built first or together (the `RoundLineage` core with the Main track and the manual label, about 3–4 d, if not landed; it replaces v2's ½–1 d core estimate; updated 2026-11-25, decision 2). `RegionalWinners`: the pure rule of §2, unit-tested (1 d). Region summaries, top N and unlinked rounds, on the votes path, plus the counts path behind `roundImage.read` with its proof (1–1.5 d). Controller, route, view, messages in en/uk/ru/fr, links, screenshots in both themes (1–1.5 d) | M–L (3.5–4.5 d) |
 | 2 | **Wiki text** (S) and **CSV** (S), both from the start, with the `ExportsSpec` change (decision 11; updated 2026-11-25, decision 11) | S–M (½–1 d) |
-| 3 | **After lineage phase 1 and multi-role's pre-screening rounds:** pre-screening rounds join `X`; the default `F` from the "Main" label; a link from the lineage map. V105's statuses are read in phase 1 already (§2.1) (updated 2026-11-25) | S (½ d) |
+| 3 | **After lineage phase 1 and multi-role's pre-screening rounds:** pre-screening rounds join `X`; a link from the lineage map. The default `F` from the "Main" track moves to phase 1 (updated 2026-11-25, decision 2). V105's statuses are read in phase 1 already (§2.1) (updated 2026-11-25) | S (½ d) |
 
-**Total:** about 4.5–6.5 agent days.
+**Total:** about 4.5–6.5 agent days. (updated 2026-11-25, decision 2) The ½–1 d core moves into
+lineage's slice A (3–4 d), so with slice A not landed yet, about 6.5–10 days in all.
 
 ### 7.1 Phase 0 SQL (read-only; V95 schema and later)
 
@@ -845,6 +856,9 @@ Phase 0 also records each query's time on the copy, as a first cost figure.
   - a regional round, and a regional backtrack with a smaller depth but a larger id, wins;
   - a merge;
   - a nomination root is excluded from the default `F`;
+  - the default `F` is the Main track's deepest round, by the track rule and by the manual label;
+    without track data, the deepest plain round with the "guessed" note (updated 2026-11-25,
+    decision 2);
   - a listed round in `X` is dropped and named;
   - a cycle, and a ghost id;
   - no source with unlinked rounds named, no files at all, and the small-root warning;
@@ -1010,6 +1024,9 @@ comes from the stored `top_binary_order` (§2.5).
 - (b) would take a WLM Interior or Film round as "latest";
 - (c) alone repeats this year's miss.
 
+**Decided (maintainer, 2026-11-25): (a) with (c) as an override**: the chain plus regional rounds and
+add-ons, with a "rounds=" list overriding it.
+
 **2. The default final round.**
 - (a) The deepest plain round, then the largest id; after lineage phase 1, the "Main" track's
   deepest round.
@@ -1022,6 +1039,12 @@ comes from the stored `top_binary_order` (§2.5).
 - (c) isn't kept up to date.
 
 *Note (updated 2026-11-25): (c) is moot, as the code no longer reads `current_round` (#153).*
+
+**Decided (maintainer, 2026-11-25)**: the main nomination's winners final is tracked in the app
+through round lineage's "Main" track. The final round is the deepest round of the Main track
+(computed track rule plus the organizer's manual label, lineage decision 4). Until a contest has
+track data, the page falls back to the deepest plain round of the chain (then largest id), and says
+that it guessed.
 
 **3. Side branches and an ambiguous final round (new).**
 - (a) Leave-out and rejected-review rounds never become the default `F`. They are add-ons placed by
@@ -1171,6 +1194,11 @@ skips them so the region shows its next file.
 **Recommendation: (a).** Reasons:
 - the core is ½–1 day and is shared by design;
 - lineage phase 1 is L (7–9 d), with its own entry condition.
+
+*Note (updated 2026-11-25, decision 2), not a decision: decision 2 makes the shared core larger.
+"Build the core now" now includes the track computation for "Main" and the manual label: lineage's
+minimum slice (A), with tracks, the manual label, the chip and the Track menu, about 3–4 days.
+Regional winners phase 1 builds on it; lineage's track part comes first or together with it.*
 
 **16. Hand-made decisions and overrides.**
 - (a) No stored overrides; `rounds=` for chains done by hand.
