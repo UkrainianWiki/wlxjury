@@ -1,6 +1,6 @@
 # Problem monitoring: refusals, errors and failed jobs seen without looking for them (plan, 2026-11-25)
 
-**Status:** draft, for the maintainer's decisions (§9); Q1 and Q2 decided 2026-11-25. Read-only survey of master at `5d72c4d8`
+**Status:** draft, for the maintainer's decisions (§9); Q1, Q2 and Q3 decided 2026-11-25. Read-only survey of master at `5d72c4d8`
 (after the 26.11.16 build); no code changed, no test run. References are to files and functions;
 line numbers drift.
 
@@ -289,7 +289,7 @@ the map; that only lets a few more rows through.
   never values or message arguments; the route template, never the path or query; no IP, no user
   agent, no request or exception text. Secure-coding §13 and §22 gain the table; `LogHygieneSpec`
   gains the new lines.
-- **Who reads it:** root (§6), and, if Q3 says so, a contest's admins for their contest's events.
+- **Who reads it:** root only (§6; Q3 decided).
 - **Backups:** both tables are in the nightly dump and in each release's pre-migration dump
   (operations §3.1), so history survives a restore and a server move. At ~40 MB a year they don't
   change the dump time noticeably. A restore brings back the events up to the dump; the gap since
@@ -401,9 +401,9 @@ not running" replaces it when §4.1's watchdog trips. N comes from
   cancelled, a single denial).
 - A line at the top: when the check last ran, and the retention ("events are kept; no cleanup yet").
 
-### 6.3 Contest admins (Q3)
+### 6.3 Contest admins (Q3, decided: root only)
 
-Root only in the first slices. If Q3 says yes, the contest health page (support diagnostics D-1a,
+**Decided [user] 2026-11-25: root only for now, no admin section.** If it is reopened later, the contest health page (support diagnostics D-1a,
 `/admin/contests/:id/health`, already admins and root) gets a **Problems** section for that contest:
 only its problems and events with `contest_id` = the contest, only of its members, no `denied` of
 other contests, no `server_error` (root support), the email masked. No badge for admins.
@@ -417,7 +417,7 @@ other contests, no `server_error` (root support), the email masked. No badge for
 | **M-3** | `ProblemCheckTask` and its watchdog, patterns P1–P11 with settings, `problem_detected`; P5 shared with H11 | M (2–3 days) | right after M-2 |
 | **M-4** | Badge, Problems page, mark seen/new, filters, links; negative authorization specs | S–M (2 days) | with M-3 or right after |
 | **M-5** | Runbook: Apache access-log retention for the jury vhosts (below); operations §5 "What is watched" gains the Problems page | S (half a day + the maintainer's sudo step) | any time; best before the next season |
-| later | Contest admins' section (Q3) | S (1 day) | if Q3 = yes |
+| later | Contest admins' section (Q3) | S (1 day) | not now (Q3 decided: root only) |
 | later | Opt-in digest (Q1) | S–M (1–2 days) | not now (Q1 decided); revisit after a season |
 
 About **8–10 days** for M-1 to M-5. M-1 has no migration, so it ships in 26.11.17 without
@@ -505,7 +505,7 @@ One decision each. A recommendation is this plan's, open to the maintainer.
    days; the life of the database (never purged). 90 days loses last season by the next; never purging grows without bound and
    keeps account ids indefinitely. Problems are kept in every option. Recommendation was 400 days; the cleanup is
    to be decided later from real volumes.
-3. **Q3. Do contest admins see their own contest's problems?** Options: root only; also a contest's
+3. **Q3. Do contest admins see their own contest's problems?** **Decided [user] 2026-11-25: root only for now, no admin section.** The question as asked: Options: root only; also a contest's
    admins, on its health page, limited to that contest's events (§6.3). Admins would see their own
    jurors' struggles (refused links, a juror on a stopped round) without asking root; the risk is
    noise and showing one member's refusals to the contest's admins, which the health page's member
