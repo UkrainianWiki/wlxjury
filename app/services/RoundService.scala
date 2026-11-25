@@ -624,10 +624,34 @@ class RoundService @Inject() (
       round.previousIds.flatMap(id => found.find(_.id.contains(id)))
     }
 
-  /** @param withDeletedFiles count the round's files deleted on Commons too: only the
-    *                         statistics page shows them, not the edit page's stat table
+  /** The round statistics page's numbers ([[RoundService.roundStat]]). */
+  def getRoundStat(roundId: Long, round: Round, withDeletedFiles: Boolean = false): RoundStat =
+    RoundService.roundStat(dao, roundId, round, withDeletedFiles)
+
+  /** Starts or stops a round (and stops `prevRoundIds`, logged for `by` like the round's own change, RoundJurorChanges). A frozen round takes the change
+    * when its distribution ends; a round still being created can't be started.
+    *
+    * @return false if the round can't be started: it is still being distributed
     */
-  def getRoundStat(roundId: Long, round: Round, withDeletedFiles: Boolean = false): RoundStat = {
+  def setCurrentRound(prevRoundIds: Seq[Long], round: Round, by: Option[Long] = None): Boolean = {
+    logger.info(
+      s"Setting current round ${if (prevRoundIds.nonEmpty) s"from ${prevRoundIds.mkString(", ")}" else ""} to ${round.getId}"
+    )
+
+    prevRoundIds.foreach(rId => Round.setActiveGuarded(rId, active = false, by))
+    Round.setActiveGuarded(round.getId, active = round.active, by)
+  }
+}
+
+object RoundService {
+
+  /** The numbers of a round's statistics (the statistics page, the edit page's stat table, GraphQL's
+    * `roundStat`): each juror's votes by rate, the round's files, a binary round's files by rate.
+    *
+    * @param withDeletedFiles count the round's files deleted on Commons too: only the
+    *                         statistics page (and GraphQL) shows them, not the edit page's stat table
+    */
+  def roundStat(dao: RoundRepo, roundId: Long, round: Round, withDeletedFiles: Boolean = false): RoundStat = {
     val rounds = dao.findByContest(round.contestId)
 
     val statRows: Seq[RoundStatRow] = dao.roundUserStat(roundId)
@@ -666,23 +690,6 @@ class RoundService @Inject() (
 
     RoundStat(jurors, round, rounds, byUserCount, byUserRateCount, total, totalByRate, deletedFiles, deletedCounted)
   }
-
-  /** Starts or stops a round (and stops `prevRoundIds`, logged for `by` like the round's own change, RoundJurorChanges). A frozen round takes the change
-    * when its distribution ends; a round still being created can't be started.
-    *
-    * @return false if the round can't be started: it is still being distributed
-    */
-  def setCurrentRound(prevRoundIds: Seq[Long], round: Round, by: Option[Long] = None): Boolean = {
-    logger.info(
-      s"Setting current round ${if (prevRoundIds.nonEmpty) s"from ${prevRoundIds.mkString(", ")}" else ""} to ${round.getId}"
-    )
-
-    prevRoundIds.foreach(rId => Round.setActiveGuarded(rId, active = false, by))
-    Round.setActiveGuarded(round.getId, active = round.active, by)
-  }
-}
-
-object RoundService {
 
   /** enqueueOrFail's refusal of a distribute of a round not in review (read under its locks). */
   private case object NotInReviewRefused extends RuntimeException("not in review", null, false, false)

@@ -68,17 +68,25 @@ final case class GraphQLContext(caller: ApiAuth.Caller, request: RequestHeader, 
     * aliases writes one line, not one per field.
     */
   def contestDenied(contest: ContestJury): GraphQLError =
+    denied(Secured.Denial.contest(contest.id, User.ACCESS_ROLES))
+
+  /** A denial ([[Secured.Denial]]: a contest's, a round's) answered as `error` with the reference,
+    * a missing resource ([[GraphQLError.notFound]]) by default, else e.g. [[GraphQLError.forbidden]]
+    * for a resource the caller sees but may not use so (another juror's votes, a round's statistics
+    * for its juror). The request's first denial is logged on `security.authz`; a later one carries
+    * the same reference and is counted ([[logRepeatedDenials]]).
+    */
+  def denied(denial: Secured.Denial, error: String => GraphQLError = GraphQLError.notFound): GraphQLError =
     Option(firstDenial.get) match {
       case Some(reference) =>
         moreDenials.incrementAndGet()
-        GraphQLError.notFound(reference)
+        error(reference)
       case None =>
-        val reference = Secured.logDenial(user, request,
-          Secured.Denial.contest(contest.id, User.ACCESS_ROLES), caller.via.logFields)
-        if (firstDenial.compareAndSet(null, reference)) GraphQLError.notFound(reference)
+        val reference = Secured.logDenial(user, request, denial, caller.via.logFields)
+        if (firstDenial.compareAndSet(null, reference)) error(reference)
         else {
           moreDenials.incrementAndGet()
-          GraphQLError.notFound(firstDenial.get)
+          error(firstDenial.get)
         }
     }
 
@@ -138,4 +146,7 @@ object GraphQLError {
   }
 
   def badInput(message: String): GraphQLError = GraphQLError(message, Code.BadInput)
+
+  /** A resource the caller sees but may not use so, with the reference of its denial's log line. */
+  def forbidden(reference: String): GraphQLError = GraphQLError("forbidden", Code.Forbidden, Some(reference))
 }

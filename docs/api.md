@@ -147,7 +147,7 @@ Errors are JSON, with a fixed code and never the request's text:
 `docs/plans/2026-11-24-graphql-sangria.md`; Sangria). It sits beside the REST endpoints, under the
 same `/api` router, so it takes the same callers, the same `Host` check and the same CSRF rule.
 The schema is the checked-in SDL, [`conf/graphql/schema.graphql`](../conf/graphql/schema.graphql):
-the contract the UI is written against. So far (slice 1) it has queries only:
+the contract the UI is written against. So far (slices 1 and 2) it has queries only:
 
 | Query | Who sees what |
 |---|---|
@@ -157,9 +157,13 @@ the contract the UI is written against. So far (slice 1) it has queries only:
 | a contest's `rounds` | all its rounds for root and its admins and organizers; for a juror, the rounds they are a juror of, once distributed (a round being created or in review is not listed), also one they are stopped in |
 | a round's `myStatus` | the caller as a juror of the round: `ACTIVE`, `STOPPED` (stopped on it by its admins: still listed, no new files, no votes), or null when not one of its jurors |
 | a round's `othersVotesVisible` | whether the caller may see other jurors' votes there, as in its galleries: root and the contest's admins and organizers, but not while the round is open if they are one of its jurors (conflict of interest: their own votes only); never a juror |
+| `round(id)` | one round, if the caller sees it in its contest's `rounds` (above); else null with `NOT_FOUND`, the same for a missing round, a deleted one, one of a contest the caller is not in, and (for a juror) one they don't judge or one being created (the denials logged). A round's `contestId` names its contest |
+| `roundStat(roundId)` | the round statistics page's numbers, for those it shows them to: root and the contest's admins and organizers. Its `totalFiles`, a yes/no round's files with at least one vote of each kind (`selectedFiles`, `unratedFiles`, `rejectedFiles`), files deleted on Commons, the comments on its files, `noActiveJuror`, and per juror with votes in it (`jurors`): their files, `unrated`, a rated round's `rated`, a yes/no round's `selected` and `rejected`, and `status` (`ACTIVE`, `STOPPED`). A juror of the contest gets null with `FORBIDDEN` (the page's 403), anyone not in the contest `NOT_FOUND`; both logged |
 
-No vote, count or juror data yet; those come with the round and gallery slices, under the
-own-votes rules (`othersVotesVisible` says which applies).
+`roundStat` keeps the own-votes rule of the page: a viewer who is a juror of the open round sees
+each juror's progress (files, unrated, rated) but another juror's `selected` and `rejected`, and the
+round's files by kind, are null until the round is closed. A juror's `email` follows decision Q6
+(root and the contest's Admins only; the web page shows it to organizers too).
 
 **Series admins** (contest series plan §3.3, CA7, CA20) get from a **session** the roles the web
 pages give them: derived Admin in their series' live contests from the grant's start year on,
@@ -237,7 +241,8 @@ served by the app in this slice. Use the SDL, or introspection from a signed-in 
   root.
 
 **For developers.** `graphql.GraphQLController` (the HTTP part and the checks, in order),
-`graphql.GraphQLSchema` (types and resolvers), `graphql.GraphQLContext` (the caller and
+`graphql.GraphQLSchema` (types and resolvers), `graphql.RoundQueries` (the round queries' resolvers:
+the round loaded first, then the caller judged in its contest), `graphql.GraphQLContext` (the caller and
 `asMemberOf`: the caller judged in the resource's contest by `Secured.checked` with a permission
 that takes a series grant's derived role, as the round pages do, never a contest id taken from the
 query as a permission; root bypasses), `graphql.QueryLimits`. The router (`api.ApiRouter`) mounts
@@ -248,4 +253,5 @@ kind of dependency of the router, another composition of its routes, a non-Tapir
 `Api.routes`, another `conf/routes` entry under `/api`), not a proof: a new route is still reviewed. A resolver loads the resource first, then
 judges the caller in its contest; a contest the caller may not see is logged on `security.authz`
 (`resource=contest:<id>`) with the reference the `NOT_FOUND` error carries. Tests:
-`graphql.GraphQLApiSpec` (through the router and filters) and `graphql.GraphQLSchemaSpec`.
+`graphql.GraphQLApiSpec` (through the router and filters), `graphql.GraphQLRoundsSpec` (the round
+queries, through the router) and `graphql.GraphQLSchemaSpec`.

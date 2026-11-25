@@ -6,9 +6,10 @@ import org.intracer.wmua.ContestJury
 import sangria.schema._
 import services.GalleryService
 
-/** The GraphQL schema (plan §6, slice 1): the caller (`me`), their contests and one contest with
-  * its rounds. Its SDL is checked in as `conf/graphql/schema.graphql`, the UI's contract
-  * (`graphql.GraphQLSchemaSpec` fails when the two differ). Who sees what:
+/** The GraphQL schema (plan §6, slices 1 and 2): the caller (`me`), their contests and one contest
+  * with its rounds, one round and its statistics. Its SDL is checked in as
+  * `conf/graphql/schema.graphql`, the UI's contract (`graphql.GraphQLSchemaSpec` fails when the two
+  * differ). Who sees what:
   *
   *  - `contests`: root, every contest (retired ones too); anyone else, the contests where they have
   *    an access role ([[User.ACCESS_ROLES]]) in an active membership of a contest not retired, and
@@ -24,8 +25,8 @@ import services.GalleryService
   *    the conflict-of-interest rule included (a juror of an open round sees only their own votes);
   *  - `me.email`: the caller's own, always; another account's email (a later slice's `users`) only for
   *    root and the Admins of a contest the account is a member of ([[emailVisible]]).
-  *
-  * No vote, count or juror data in this slice.
+  *  - `round(id)`: one round of a contest's `rounds` as the caller sees them; `roundStat(roundId)`: the
+  *    round statistics page's numbers, for those it shows them to ([[RoundQueries]], slice 2).
   */
 object GraphQLSchema {
 
@@ -89,8 +90,15 @@ object GraphQLSchema {
   /** The rounds of the contest `view` shows, as its viewer may see them (see the object's doc). */
   def visibleRounds(ctx: GraphQLContext, view: ContestView): Seq[RoundView] = {
     ctx.checkDeadline()
-    val rounds = Round.findByContest(view.contest.getId).filter(_.deletedAt.isEmpty)
-    val viewer = view.viewer
+    roundViews(ctx, view.viewer, Round.findByContest(view.contest.getId).filter(_.deletedAt.isEmpty))
+  }
+
+  /** Of `rounds` (of one contest, none deleted), those `viewer` (the caller in that contest,
+    * [[GraphQLContext.asMemberOf]]) may see, by id: all for those who may see its organiser views
+    * ([[User.canViewOrgInfo]]); a juror, the rounds they are a juror of that are not being created or
+    * reviewed. A contest's `rounds`, and `round(id)` of one round ([[RoundQueries.roundById]]).
+    */
+  def roundViews(ctx: GraphQLContext, viewer: User, rounds: Seq[Round]): Seq[RoundView] = {
     val (staff, others) = rounds.partition(viewer.canViewOrgInfo)
     val juror =
       if (others.isEmpty || !viewer.hasAnyRole(User.VoterRoles)) Nil
@@ -199,6 +207,7 @@ object GraphQLSchema {
     "A judging round of a contest.",
     fields[GraphQLContext, RoundView](
       Field("id", IDType, resolve = _.value.round.getId.toString),
+      Field("contestId", IDType, Some("Its contest's id."), resolve = _.value.round.contestId.toString),
       Field("number", IntType, Some("Its number in the contest."), resolve = _.value.round.number.toInt),
       Field("name", OptionType(StringType), Some("Its name, if it has one."),
         resolve = _.value.round.name.filter(_.trim.nonEmpty)),
@@ -226,6 +235,58 @@ object GraphQLSchema {
           "contest's admins and organizers, except while the round is open if they are one of its jurors " +
           "(conflict of interest: then only their own votes); never a juror."),
         resolve = c => c.value.of.othersVisible(c.value.round.getId))
+    )
+  )
+
+  val JurorStatType: ObjectType[GraphQLContext, RoundQueries.JurorStatView] = ObjectType(
+    "JurorStat",
+    "A juror's row of a round's statistics, as the round statistics page has it.",
+    fields[GraphQLContext, RoundQueries.JurorStatView](
+      Field("id", IDType, Some("The juror's account id."), resolve = _.value.juror.getId.toString),
+      Field("fullname", StringType, resolve = _.value.juror.fullname),
+      Field("email", OptionType(StringType),
+        Some("The juror's email: for root and the contest's Admins only (decision Q6); null for anyone else."),
+        resolve = c => Option.when(c.value.emailVisible)(c.value.juror.email).filter(e => e != null && e.trim.nonEmpty)),
+      Field("status", JurorStatusType, Some("STOPPED when stopped on the round by its admins."),
+        resolve = c => if (c.value.stopped) JurorStatus.Stopped else JurorStatus.Active),
+      Field("files", IntType, Some("Their files in the round."), resolve = _.value.files),
+      Field("unrated", IntType, Some("Their files without a vote yet."), resolve = _.value.unrated),
+      Field("rated", OptionType(IntType),
+        Some("A rated round's files they voted on (any vote: stars, or the cross that is the worst mark); null in a yes/no round."), resolve = _.value.rated),
+      Field("selected", OptionType(IntType),
+        Some("A yes/no round's yes votes; null in a rated round, and for another juror's row while the caller " +
+          "sees only their own votes (the round's othersVotesVisible)."), resolve = _.value.selected),
+      Field("rejected", OptionType(IntType),
+        Some("A yes/no round's no votes; null as for selected."), resolve = _.value.rejected)
+    )
+  )
+
+  val RoundStatType: ObjectType[GraphQLContext, RoundQueries.RoundStatView] = ObjectType(
+    "RoundStat",
+    "A round's statistics, as the round statistics page shows them.",
+    fields[GraphQLContext, RoundQueries.RoundStatView](
+      Field("round", RoundType, resolve = _.value.round),
+      Field("totalFiles", IntType, Some("The round's files."), resolve = _.value.stat.total),
+      Field("selectedFiles", OptionType(IntType),
+        Some("A yes/no round's files with at least one yes vote; null in a rated round and while the caller sees " +
+          "only their own votes."), resolve = _.value.totalByRate(org.intracer.wmua.Vote.Selected)),
+      Field("unratedFiles", OptionType(IntType),
+        Some("A yes/no round's files with at least one vote still to come; null as for selectedFiles."),
+        resolve = _.value.totalByRate(org.intracer.wmua.Vote.Unrated)),
+      Field("rejectedFiles", OptionType(IntType),
+        Some("A yes/no round's files with at least one no vote; null as for selectedFiles."),
+        resolve = _.value.totalByRate(org.intracer.wmua.Vote.Rejected)),
+      Field("deletedFiles", IntType, Some("The round's files deleted on Commons."), resolve = _.value.stat.deletedFiles),
+      Field("deletedFilesCounted", IntType, Some("Of those, the files still in its galleries and results."),
+        resolve = _.value.stat.deletedCounted),
+      Field("commentsInRound", IntType, Some("Comments written in this round on its files."),
+        resolve = c => { c.ctx.checkDeadline(); c.value.comments.roundComments }),
+      Field("commentsAllRounds", IntType, Some("All the contest's comments on the round's files."),
+        resolve = c => { c.ctx.checkDeadline(); c.value.comments.allComments }),
+      Field("noActiveJuror", BooleanType, Some("Open, but none of its jurors can vote in it (all stopped, or none)."),
+        resolve = c => { c.ctx.checkDeadline(); c.value.noActiveJuror }),
+      Field("jurors", ListType(JurorStatType), Some("Its jurors with votes in it, each with their counts."),
+        resolve = _.value.jurors)
     )
   )
 
@@ -283,6 +344,7 @@ object GraphQLSchema {
   val OffsetArg: Argument[Int] = Argument("offset", OptionInputType(IntType), "How many contests to skip.", 0)
   val LimitArg: Argument[Int] = Argument("limit", OptionInputType(IntType), "The page size, at most 200.", 100)
   val IdArg: Argument[String] = Argument("id", IDType)
+  val RoundIdArg: Argument[String] = Argument("roundId", IDType)
 
   val QueryType: ObjectType[GraphQLContext, Unit] = ObjectType(
     "Query",
@@ -302,7 +364,16 @@ object GraphQLSchema {
       Field("contest", OptionType(ContestType),
         Some("One contest the caller may see; null with a NOT_FOUND error for any other."),
         arguments = IdArg :: Nil,
-        resolve = c => contestById(c.ctx, c.arg(IdArg)))
+        resolve = c => contestById(c.ctx, c.arg(IdArg))),
+      Field("round", OptionType(RoundType),
+        Some("One round the caller may see (as in its contest's rounds); null with a NOT_FOUND error for any other."),
+        arguments = IdArg :: Nil,
+        resolve = c => RoundQueries.roundById(c.ctx, c.arg(IdArg))),
+      Field("roundStat", OptionType(RoundStatType),
+        Some("A round's statistics, for root and its contest's admins and organizers: null with FORBIDDEN for " +
+          "its other members, NOT_FOUND for a round the caller may not see."),
+        arguments = RoundIdArg :: Nil,
+        resolve = c => RoundQueries.roundStat(c.ctx, c.arg(RoundIdArg)))
     )
   )
 

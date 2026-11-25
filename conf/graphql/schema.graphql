@@ -42,6 +42,34 @@ enum ContestRole {
   JURY
 }
 
+"A juror's row of a round's statistics, as the round statistics page has it."
+type JurorStat {
+  "The juror's account id."
+  id: ID!
+  fullname: String!
+
+  "The juror's email: for root and the contest's Admins only (decision Q6); null for anyone else."
+  email: String
+
+  "STOPPED when stopped on the round by its admins."
+  status: JurorStatus!
+
+  "Their files in the round."
+  files: Int!
+
+  "Their files without a vote yet."
+  unrated: Int!
+
+  "A rated round's files they voted on (any vote: stars, or the cross that is the worst mark); null in a yes/no round."
+  rated: Int
+
+  "A yes/no round's yes votes; null in a rated round, and for another juror's row while the caller sees only their own votes (the round's othersVotesVisible)."
+  selected: Int
+
+  "A yes/no round's no votes; null as for selected."
+  rejected: Int
+}
+
 "The caller's status as a juror of a round."
 enum JurorStatus {
   "A juror of the round, not stopped."
@@ -79,11 +107,20 @@ type Query {
 
   "One contest the caller may see; null with a NOT_FOUND error for any other."
   contest(id: ID!): Contest
+
+  "One round the caller may see (as in its contest's rounds); null with a NOT_FOUND error for any other."
+  round(id: ID!): Round
+
+  "A round's statistics, for root and its contest's admins and organizers: null with FORBIDDEN for its other members, NOT_FOUND for a round the caller may not see."
+  roundStat(roundId: ID!): RoundStat
 }
 
 "A judging round of a contest."
 type Round {
   id: ID!
+
+  "Its contest's id."
+  contestId: ID!
 
   "Its number in the contest."
   number: Int!
@@ -125,6 +162,41 @@ enum RoundKind {
 
   "No votes, comments only."
   COMMENTS_ONLY
+}
+
+"A round's statistics, as the round statistics page shows them."
+type RoundStat {
+  round: Round!
+
+  "The round's files."
+  totalFiles: Int!
+
+  "A yes/no round's files with at least one yes vote; null in a rated round and while the caller sees only their own votes."
+  selectedFiles: Int
+
+  "A yes/no round's files with at least one vote still to come; null as for selectedFiles."
+  unratedFiles: Int
+
+  "A yes/no round's files with at least one no vote; null as for selectedFiles."
+  rejectedFiles: Int
+
+  "The round's files deleted on Commons."
+  deletedFiles: Int!
+
+  "Of those, the files still in its galleries and results."
+  deletedFilesCounted: Int!
+
+  "Comments written in this round on its files."
+  commentsInRound: Int!
+
+  "All the contest's comments on the round's files."
+  commentsAllRounds: Int!
+
+  "Open, but none of its jurors can vote in it (all stopped, or none)."
+  noActiveJuror: Boolean!
+
+  "Its jurors with votes in it, each with their counts."
+  jurors: [JurorStat!]!
 }
 
 "A round's lifecycle state."

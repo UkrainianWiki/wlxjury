@@ -17,6 +17,7 @@ For the next release, 26.11.17.
 **Features**
 
 - Saving a round's settings logs who changed what, with the old and new values, on the round's statistics and in the contest's change log (migration V114).
+- GraphQL: `round(id)` and `roundStat(roundId)` give one round and the round statistics page's numbers, with the page's own-votes rule.
 
 ## Deployed releases
 
