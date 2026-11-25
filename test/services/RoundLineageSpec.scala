@@ -192,6 +192,21 @@ class RoundLineageSpec extends Specification {
       (l.cycle === Seq(1L, 2L)) and (l.trackOf.keySet === Set(1L, 2L, 3L))
     }
 
+    "run a spine through a cancelled round, skipping it, to the deepest live round" in {
+      val l = RoundLineage(Seq(
+        round(1, "M1", track = Some("Main")), round(2, "M2", Seq(1)),
+        round(3, "M3", Seq(2), status = Some(Round.Status.Cancelled)), round(4, "M4", Seq(3)), round(5, "M5", Seq(2))
+      ), context)
+      (spine(l, Track.Main) === Seq("M1", "M2", "M4")) and (l.deepest(Track.Main).map(_.description) === Some("M4"))
+    }
+
+    "group labels by exact match after trimming: case counts, Main in any case" in {
+      val l = RoundLineage(Seq(round(1, "A", track = Some(" Second  look ")), round(2, "B", track = Some("second look")),
+        round(3, "C", track = Some("Second look")), round(4, "D", track = Some("MAIN"))), context)
+      (l.trackOf(1) === Track(Kind.Label, "Second look")) and (l.trackOf(3) === l.trackOf(1)) and
+        (l.trackOf(2) === Track(Kind.Label, "second look")) and (l.trackOf(4) === Track.Main)
+    }
+
     "give stable keys, and find a track by its key" in {
       val l = RoundLineage(Seq(round(1, "A", track = Some("Second look"))), context)
       (Track.Main.key === "main") and (l.trackOf(1).key === "label:Second look") and

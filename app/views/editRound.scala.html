@@ -53,9 +53,9 @@
 @* the track field, "Main" shown as the page names the Main track (saved back as "Main") *@
 @trackField = @{
     editRoundForm.copy(data = editRoundForm.data.map {
-        case ("track", v) if v.trim.equalsIgnoreCase(services.RoundLineage.MainLabel) => "track" -> Messages("round.track.main")
+        case ("trackLabel", v) if v.trim.equalsIgnoreCase(services.RoundLineage.MainLabel) => "trackLabel" -> Messages("round.track.main")
         case other => other
-    })("track")
+    })("trackLabel")
 }
 
 @mainAdmin("edit.round", user, user.getId, contestId = contestId, head = formScripts) {

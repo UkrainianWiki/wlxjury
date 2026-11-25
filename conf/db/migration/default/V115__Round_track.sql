@@ -1,7 +1,8 @@
 -- A round's manual track label (round lineage plan, docs/plans/2026-11-10-round-lineage.md §2.3 and
 -- decision 4; built in slice A, §8.1): it names the round's track, and later rounds without a label
 -- of their own inherit it; identical labels share a track; "Main" puts the track in the Main group;
--- NULL (or empty) is the automatic track (services.RoundLineage, rule v4). Set on the round form, for
+-- NULL (or empty) is the automatic track (services.RoundLineage, rule v4). Compared byte for byte
+-- (utf8mb4_bin), as RoundLineage groups labels: a change of case or accent alone is a change. Set on the round form, for
 -- new and existing rounds, by its own setter (db.scalikejdbc.Round.setTrack, created_at kept).
 --
 -- A label change is logged (§8.1) through the round change log (V114, db.scalikejdbc.RoundChanges)
@@ -19,7 +20,7 @@
 -- lock_wait_timeout (a long transaction or backup: it fails with nothing changed).
 SET STATEMENT lock_wait_timeout = 60 FOR
 ALTER TABLE round
-  ADD COLUMN IF NOT EXISTS track VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL;
+  ADD COLUMN IF NOT EXISTS track VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL DEFAULT NULL;
 
 SET STATEMENT lock_wait_timeout = 60 FOR
 ALTER TABLE contest_change DROP CONSTRAINT IF EXISTS contest_change_kind_chk,

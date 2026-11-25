@@ -126,6 +126,12 @@ object EditRound {
 
   val WorstMarkRatedOnly = "error.worst.mark.rated.only"
 
+  /** A track label of at most [[Round.TrackMaxLength]] code points (Round.trackLabel's count). */
+  private val trackLabelLength: Constraint[String] = Constraint[String]("constraint.maxLength", Round.TrackMaxLength) { s =>
+    if (s.trim.codePointCount(0, s.trim.length) <= Round.TrackMaxLength) Valid
+    else Invalid(ValidationError("error.maxLength", Round.TrackMaxLength))
+  }
+
   /** "Leave out files that are in round(s)" (V95): other rounds of the round's contest, found there,
     * none of its previous rounds and none being distributed now
     * ([[RoundDistributionHandler.excludedRoundsError]], which the service and the job check again).
@@ -181,8 +187,11 @@ object EditRound {
       "excludeRounds" -> seq(text),
       "topUpWaiting" -> boolean,
       // the round's track label (V115, round lineage decision 4): empty is the automatic track; with
-      // the hidden field saying the form had it, so a client without both keeps an existing round's
-      "track" -> optional(text(maxLength = Round.TrackMaxLength)),
+      // the hidden field saying the form had it, so a client without both keeps an existing round's.
+      // Not `track`: that is the Rounds page's Track filter, which the form's action carries
+      // (RoundsFilter.fromForm reads a posted field first). At most TrackMaxLength code points, as
+      // Round.trackLabel cuts it
+      "trackLabel" -> optional(text.verifying(trackLabelLength)),
       "trackShown" -> boolean
     )((edit, excludeCoi, selected, combine, topOrder, rejectedBy, criteria, criteriaShown, halfStar, averageRule, worstMark,
         worstMarkShown, rejectedMode, excludeRounds, topUpWaiting, track, trackShown) => {

@@ -746,17 +746,15 @@ class RoundController @Inject() (
                 // the maintainer's decision of 2026-11-19): this round if the filter keeps it,
                 // else the first of the contest's rounds the user may see that it keeps, in order
                 val requested = RoundsFilter.fromRequest(request)
+                // a Track choice: the contest's tracks, from all its rounds (round lineage slice A); a
+                // track the contest doesn't have is none, and left out of the redirect
+                val filter = if (requested.track.isEmpty) requested
+                  else ContestJuryJdbc.findById(round.contestId)
+                    .fold(requested.withTrack(None))(c => requested.withLineage(services.RoundLineage.of(Round.findByContest(c.getId), c)))
                 val target =
-                  if (requested.isDefault) round
-                  else {
-                    val rounds = if (currentContestId.contains(round.contestId)) visible else visibleIn(round.contestId)
-                    // a Track choice: the contest's tracks, from all its rounds (round lineage slice A)
-                    val filter = if (requested.track.isEmpty) requested
-                      else ContestJuryJdbc.findById(round.contestId)
-                        .fold(requested)(c => requested.withLineage(services.RoundLineage.of(Round.findByContest(c.getId), c)))
-                    filter.statRound(round, rounds)
-                  }
-                Redirect(requested.addTo(routes.RoundController.roundStat(target.getId).url))
+                  if (filter.isDefault) round
+                  else filter.statRound(round, if (currentContestId.contains(round.contestId)) visible else visibleIn(round.contestId))
+                Redirect(filter.addTo(routes.RoundController.roundStat(target.getId).url))
               }
               .getOrElse {
                 // a state, not an error, as for a juror ([[LoginController.index]]): no link back

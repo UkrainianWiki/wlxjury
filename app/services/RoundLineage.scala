@@ -93,8 +93,9 @@ object RoundLineage {
     *                        (the id of the first Main round that takes each), the other category,
     *                        label, media and name tracks by name, the nominations by name, the
     *                        regions by their first round
-    * @param spines          each track's spine: the chain from its first round to its deepest
-    *                        (the latest by id on ties), cancelled rounds skipped
+    * @param spines          each track's spine: the chain from its first round to its deepest live
+    *                        round (the latest by id on ties), through cancelled rounds, which it
+    *                        skips
     * @param merges          the rounds rule 6 placed in Main
     * @param missingPrevious a round's previous rounds that don't exist (a ghost, "missing round N"):
     *                        with none left the round is a root (rule 7), and the Rounds page warns
@@ -199,8 +200,11 @@ object RoundLineage {
     val cycle = rounds.map(_.getId).filterNot(placed.contains)
     val sequence = order.toSeq ++ cycle
 
+    // a label groups by exact match after trimming (case and accents count, as round.track compares
+    // them, utf8mb4_bin): "second look" and "Second look" are two tracks, each named as spelled;
+    // only Main is matched in any case
     def label(r: Round): Option[Track] =
-      r.track.map(_.trim).filter(_.nonEmpty).map { l =>
+      r.track.map(_.trim.replaceAll("\\s+", " ")).filter(_.nonEmpty).map { l =>
         if (l.equalsIgnoreCase(MainLabel)) Track.Main else Track(Kind.Label, l)
       }
 
@@ -274,21 +278,24 @@ object RoundLineage {
     val rest = others.filterNot(t => t.kind == Kind.Region || t.kind == Kind.Nomination).sorted(byName)
     val tracks = main ++ feeders ++ rest ++ nominations ++ regions
 
-    // spines: the depth of each live round along its own track's live previous rounds
-    // (each round's step back, its deepest such previous round, the latest by id on ties: fixed as
-    // the depths are, so a cycle's rounds can't send the walk round it)
+    // spines: each round's depth along its own track's previous rounds, cancelled ones included (a
+    // cancelled round still links its track: M1 → M2 → M3 (cancelled) → M4 runs to M4); the deepest
+    // live round ends the spine, and the cancelled rounds on the way are skipped (§2.3). Each round's
+    // step back is its deepest such previous round, the latest by id on ties: fixed as the depths
+    // are, so a cycle's rounds can't send the walk round it
     val depth = mutable.Map.empty[Long, Int]
     val back = mutable.Map.empty[Long, Long]
     val deeper: Ordering[Long] = Ordering.by((id: Long) => (depth(id), id))
-    sequence.filterNot(id => cancelled(byId(id))).foreach { id =>
+    sequence.foreach { id =>
       val inTrack = previous(id).filter(p => trackOf(p) == trackOf(id) && depth.contains(p))
       inTrack.maxOption(deeper).foreach(back(id) = _)
       depth(id) = inTrack.map(depth).maxOption.fold(0)(_ + 1)
     }
     val spines = tracks.flatMap { t =>
-      val live = depth.keys.filter(trackOf(_) == t).toSeq
+      val live = depth.keys.filter(id => trackOf(id) == t && !cancelled(byId(id))).toSeq
       live.maxOption(deeper).map { last =>
         t -> Iterator.iterate(Option(last))(_.flatMap(back.get)).takeWhile(_.isDefined).flatten.toSeq.reverse
+          .filterNot(id => cancelled(byId(id)))
       }
     }.toMap
 

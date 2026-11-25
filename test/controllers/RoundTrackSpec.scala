@@ -109,15 +109,15 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         Round.setTrack(f.q01.getId, Some("Second look"))
         val doc = page(app, f.admin, s"/admin/rounds/edit?contestId=${f.contest.getId}&id=${f.q01.getId}")
-        val input = doc.getElementById("track")
+        val input = doc.getElementById("trackLabel")
         (input must not(beNull)) and (input.attr("maxlength") === "64") and (input.attr("value") === "Second look") and
           (doc.select("datalist#round-track-labels option").eachAttr("value").asScala.toSeq === Seq("Main", "Second look")) and
           (doc.select("input[name=trackShown][type=hidden]").attr("value") === "true") and
-          (doc.getElementById("track_help").text must contain("Automatic: Quality.")) and {
+          (doc.getElementById("trackLabel_help").text must contain("Automatic: Quality.")) and {
             // Main as the page's language names it
             Round.setTrack(f.q00.getId, Some("Main"))
             page(app, f.admin, s"/admin/rounds/edit?contestId=${f.contest.getId}&id=${f.q00.getId}", "uk")
-              .getElementById("track").attr("value") === "Основний"
+              .getElementById("trackLabel").attr("value") === "Основний"
           }
       }
     }
@@ -129,26 +129,56 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         DB.autoCommit(implicit s => sql"UPDATE round SET created_at = $created".update())
         def createdAt(r: Round) = DB.readOnly(implicit s =>
           sql"SELECT created_at FROM round WHERE id = ${r.getId}".map(_.timestamp(1)).single())
-        (status(save(app, f.admin, Some(f.merge), f.contest.getId, "track" -> "  Final   line ", "trackShown" -> "true")) ===
+        (status(save(app, f.admin, Some(f.merge), f.contest.getId, "trackLabel" -> "  Final   line ", "trackShown" -> "true")) ===
           SEE_OTHER) and (label(f.merge) === Some("Final line")) and (createdAt(f.merge) === Some(created)) and
-          (status(save(app, f.admin, Some(f.q00), f.contest.getId, "track" -> "main", "trackShown" -> "true")) === SEE_OTHER) and
+          (status(save(app, f.admin, Some(f.q00), f.contest.getId, "trackLabel" -> "main", "trackShown" -> "true")) === SEE_OTHER) and
           (label(f.q00) === Some("Main")) and
-          (status(save(app, f.admin, Some(f.q01), f.contest.getId, "track" -> "Основний", "trackShown" -> "true")) ===
+          (status(save(app, f.admin, Some(f.q01), f.contest.getId, "trackLabel" -> "Основний", "trackShown" -> "true")) ===
             SEE_OTHER) and (label(f.q01) === Some("Main")) and
           // a client without the field keeps it; an empty field clears it
           (status(save(app, f.admin, Some(f.q01), f.contest.getId)) === SEE_OTHER) and (label(f.q01) === Some("Main")) and
-          (status(save(app, f.admin, Some(f.q01), f.contest.getId, "track" -> "", "trackShown" -> "true")) === SEE_OTHER) and
+          (status(save(app, f.admin, Some(f.q01), f.contest.getId, "trackLabel" -> "", "trackShown" -> "true")) === SEE_OTHER) and
           (label(f.q01) must beNone) and (createdAt(f.q01) === Some(created)) and
           // longer than 64 characters: refused, the form again
-          (status(save(app, f.admin, Some(f.q01), f.contest.getId, "track" -> "x" * 65, "trackShown" -> "true")) ===
+          (status(save(app, f.admin, Some(f.q01), f.contest.getId, "trackLabel" -> "x" * 65, "trackShown" -> "true")) ===
             BAD_REQUEST) and (label(f.q01) must beNone)
+      }
+    }
+
+    "store and log a change of case or accent alone" in {
+      testDbApp { app =>
+        val f = fixture()
+        val steps = Seq("Second look", "second look", "Étape", "Etape").map { l =>
+          status(save(app, f.admin, Some(f.q01), f.contest.getId, "trackLabel" -> l, "trackShown" -> "true")) -> label(f.q01)
+        }
+        val logged = ContestChangeJdbc.findByRound(f.contest.getId, f.q01.getId, 50)
+          .filter(_.kind == ContestChangeJdbc.RoundTrackChanged).reverse
+          .map(c => (c.detail \ "changed" \ "track" \ "to").as[String])
+        (steps === Seq(SEE_OTHER -> Some("Second look"), SEE_OTHER -> Some("second look"), SEE_OTHER -> Some("Étape"),
+          SEE_OTHER -> Some("Etape"))) and (logged === Seq("Second look", "second look", "Étape", "Etape"))
+      }
+    }
+
+    "keep the Rounds page's Track filter through a save, whatever the label" in {
+      testDbApp { app =>
+        val f = fixture()
+        def saved(l: String) = route(app, FakeRequest(POST, "/admin/rounds/save?track=category%3AQuality")
+          .withSession(Secured.UserName -> f.admin.email)
+          .withFormUrlEncodedBody("id" -> f.q01.getId.toString, "number" -> "3", "name" -> "Q-01",
+            "contest" -> f.contest.getId.toString, "roles" -> "jury", "distribution" -> "0", "rates" -> "1", "minMpx" -> "",
+            "minSize" -> "", "mediaType" -> "all", "trackLabel" -> l, "trackShown" -> "true")
+          .withCSRFToken).get
+        val back = s"/admin/rounds?contestId=${f.contest.getId}&track=category%3AQuality"
+        forall(Seq("main", "", "Second look")) { l =>
+          redirectLocation(saved(l)) must beSome(back)
+        } and (label(f.q01) === Some("Second look"))
       }
     }
 
     "be stored with a new round" in {
       testDbApp { app =>
         val f = fixture()
-        (status(save(app, f.admin, None, f.contest.getId, "name" -> "Q-03", "track" -> "Second look",
+        (status(save(app, f.admin, None, f.contest.getId, "name" -> "Q-03", "trackLabel" -> "Second look",
           "trackShown" -> "true", "previousRound[0]" -> f.merge.getId.toString)) === SEE_OTHER) and
           (roundDao.findByContest(f.contest.getId).find(_.name.contains("Q-03")).flatMap(_.track) === Some("Second look"))
       }
@@ -159,7 +189,7 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         Round.setTrack(f.q00.getId, Some("Main"))
         val refused = Seq(f.juror, f.organizer, f.adminB).map { u =>
-          status(save(app, u, Some(f.q00), f.contest.getId, "track" -> "Hijacked", "trackShown" -> "true"))
+          status(save(app, u, Some(f.q00), f.contest.getId, "trackLabel" -> "Hijacked", "trackShown" -> "true"))
         }
         val forms = Seq(f.juror, f.organizer, f.adminB).map { u =>
           status(get(app, u, s"/admin/rounds/edit?contestId=${f.contest.getId}&id=${f.q00.getId}"))
@@ -167,7 +197,7 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         (refused === Seq(FORBIDDEN, FORBIDDEN, FORBIDDEN)) and (forms === Seq(FORBIDDEN, FORBIDDEN, FORBIDDEN)) and
           (label(f.q00) === Some("Main")) and
           // another contest's admin posting their own contest with this round: refused too
-          (status(save(app, f.adminB, Some(f.q00), f.adminB.currentContest.get, "track" -> "X", "trackShown" -> "true")) ===
+          (status(save(app, f.adminB, Some(f.q00), f.adminB.currentContest.get, "trackLabel" -> "X", "trackShown" -> "true")) ===
             FORBIDDEN) and (label(f.q00) === Some("Main"))
       }
     }
@@ -188,11 +218,11 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
       testDbApp { app =>
         val f = fixture()
         val codes = Seq(
-          save(app, f.admin, Some(f.q00), f.contest.getId, "track" -> "Main", "trackShown" -> "true"),
+          save(app, f.admin, Some(f.q00), f.contest.getId, "trackLabel" -> "Main", "trackShown" -> "true"),
           // the same label again: nothing
-          save(app, f.admin, Some(f.q00), f.contest.getId, "track" -> "main", "trackShown" -> "true"),
+          save(app, f.admin, Some(f.q00), f.contest.getId, "trackLabel" -> "main", "trackShown" -> "true"),
           // a name and a label: two entries
-          save(app, f.admin, Some(f.q00), f.contest.getId, "name" -> "Q-00 first", "track" -> "", "trackShown" -> "true")
+          save(app, f.admin, Some(f.q00), f.contest.getId, "name" -> "Q-00 first", "trackLabel" -> "", "trackShown" -> "true")
         ).map(status(_))
         val logged = entries(f, f.q00)
         (codes === Seq(SEE_OTHER, SEE_OTHER, SEE_OTHER)) and
@@ -209,7 +239,7 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
     "show on the round's statistics to an organizer, read only, Main in the page's language" in {
       testDbApp { app =>
         val f = fixture()
-        status(save(app, f.admin, Some(f.merge), f.contest.getId, "track" -> "Main", "trackShown" -> "true")) === SEE_OTHER
+        status(save(app, f.admin, Some(f.merge), f.contest.getId, "trackLabel" -> "Main", "trackShown" -> "true")) === SEE_OTHER
         val lines = page(app, f.organizer, s"/roundstat/${f.merge.getId}", "uk")
           .select("#round-setting-changes li.round-setting-change").eachText().asScala.toSeq
         (lines.size === 1) and (lines.head must contain("Мітка треку")) and (lines.head must contain("Основний"))
@@ -274,7 +304,7 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
           (trackMenu(doc).find(_._1 == "Quality").get._3 must contain(s"/roundstat/${f.q00.getId}?track=category%3AQuality")) and
           (main.select("#round-stat-rounds .page-link").size === 1) and
           // read only: no label field, no round form link
-          (doc.getElementById("track") must beNull) and (doc.select("a[href*=/admin/rounds/edit]").size === 0)
+          (doc.getElementById("trackLabel") must beNull) and (doc.select("a[href*=/admin/rounds/edit]").size === 0)
       }
     }
 
@@ -284,6 +314,14 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         val result = get(app, f.organizer, s"/roundstat?contestId=${f.contest.getId}&track=category%3AQuantity")
         (status(result) === SEE_OTHER) and
           (redirectLocation(result) must beSome(s"/roundstat/${f.qn00.getId}?track=category%3AQuantity"))
+      }
+    }
+
+    "leave a track the contest doesn't have out of the current round's statistics link" in {
+      testDbApp { app =>
+        val f = fixture()
+        redirectLocation(get(app, f.organizer, s"/roundstat?contestId=${f.contest.getId}&track=label%3ANope")) must
+          beSome(s"/roundstat/${f.merge.getId}")
       }
     }
   }
