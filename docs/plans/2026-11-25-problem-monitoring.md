@@ -1,6 +1,6 @@
 # Problem monitoring: refusals, errors and failed jobs seen without looking for them (plan, 2026-11-25)
 
-**Status:** draft, for the maintainer's decisions (§9). Read-only survey of master at `5d72c4d8`
+**Status:** draft, for the maintainer's decisions (§9); Q1 decided 2026-11-25. Read-only survey of master at `5d72c4d8`
 (after the 26.11.16 build); no code changed, no test run. References are to files and functions;
 line numbers drift.
 
@@ -24,8 +24,8 @@ application log line, so their cause can only be inferred (the UI-path testing p
   one-time server change by the maintainer (sudo): a runbook item here (§7, slice M-5).
 - **Root sees it everywhere.** A badge "Problems: N new" on every root page and a root-only
   Problems page.
-- **No automatic mail.** An opt-in digest to root (off by default) is an open question (Q1),
-  not decided.
+- **No mail digest now (Q1, [user] 2026-11-25).** Root sees problems through the badge and the
+  Problems page only; an opt-in digest is revisited after a season.
 
 **Builds on, does not reopen:**
 
@@ -42,10 +42,13 @@ application log line, so their cause can only be inferred (the UI-path testing p
   retention (Q2; its deferred DG5 is answered by Q2). Its health page (D-1a) and
   `GET /api/diagnostics/recent` (D-1b) read the same table once it exists, as D-3 planned. Its
   check **H11** (stuck jobs) and this plan's pattern P5 are one function.
-- **The UI-path testing plan** (draft PR #189, `docs/plans/2026-11-25-ui-path-testing.md`). Its
-  26.11.17 refusal-UX PR (d) proposes "one WARN log line per refused save
-  (`round_save_refused contestId roundId keys=…`)" (its §5 Q3). Slice M-1 here is that same hook,
-  generalised to every form, so that PR builds M-1 instead of a round-only line.
+- **The UI-path testing plan** (PR #189, `docs/plans/2026-11-25-ui-path-testing.md`), decided by
+  the maintainer. Its Q3 (decided): refused saves are logged in the 26.11.17 refusal-UX PR, as
+  `form_refused`; that log item **is** slice M-1 here, built once, in that PR. Its Q6 (decided):
+  Back after creating a round lands on the created round's Edit page (§2.3). Its Q7 (decided): a
+  refusal that is a wait (`error.exclude.rounds.busy`, `error.previous.round.rebalancing`) shows the
+  blocking job's live progress; such refusals are still `form_refused` events, and P1 counts them
+  like any other (three waits in 15 minutes is still a stuck admin).
 - **Background jobs** (`services.jobs.JobScheduler`, the `job` table, V60) and the app's existing
   timers (`modules.RoundCountsTask` / `RoundCountsTimer`, `modules.LegacyPasswordRetirementTask`).
 - **The app never mails automatically** (the existing-accounts plan's unticked "Tell its owner by
@@ -410,7 +413,7 @@ other contests, no `server_error` (root support), the email masked. No badge for
 | **M-4** | Badge, Problems page, mark seen/new, filters, links; negative authorization specs | S–M (2 days) | with M-3 or right after |
 | **M-5** | Runbook: Apache access-log retention for the jury vhosts (below); operations §5 "What is watched" gains the Problems page | S (half a day + the maintainer's sudo step) | any time; best before the next season |
 | later | Contest admins' section (Q3) | S (1 day) | if Q3 = yes |
-| later | Opt-in digest (Q1) | S–M (1–2 days) | if Q1 = yes |
+| later | Opt-in digest (Q1) | S–M (1–2 days) | not now (Q1 decided); revisit after a season |
 
 About **8–10 days** for M-1 to M-5. M-1 has no migration, so it ships in 26.11.17 without
 touching the migration order. M-2 to M-4 are one feature; they can ship together in one release
@@ -485,13 +488,13 @@ database holds the history.
 
 One decision each. A recommendation is this plan's, open to the maintainer.
 
-1. **Q1. A mail digest to root?** The app never mails automatically. The option: a daily digest of
+1. **Q1. A mail digest to root?** **Decided [user] 2026-11-25: no digest now; badge and
+   Problems page only; revisit after a season.** The question as asked: the app never mails automatically. The option: a daily digest of
    new problems, sent only to root accounts that tick "Mail me new problems daily" (unticked by
    default, on root's profile page), with the problems' kinds and counts and a link, no names or
    emails of others. Without it, problems are seen only when root opens the app; with it, a quiet
    week still reaches root. Mail delivery is unreliable here (admins are onboarded personally).
-   **Recommendation: not now.** Build M-1 to M-5, use the badge for a season, and decide when the
-   season shows whether problems wait too long.
+   Recommendation was: not now, the badge for a season first (taken).
 2. **Q2. How long are events kept?** Options: 90 days; 400 days; the life of the database
    (never purged). 90 days loses last season by the next; never purging grows without bound and
    keeps account ids indefinitely. Problems are kept in every option. **Recommendation: 400 days**
