@@ -83,6 +83,23 @@ class ContestReuseSpec extends Specification with TestDb with BeforeAll with Bef
       other.getId must be_>(0L)
     }
 
+    "take no identity from a blank-titled category, whatever contest has it" in {
+      val other = contestWithFiles("Wiki Loves Monuments", 2024, "Armenia", None, 41L to 50L)
+      val c = contestWithFiles("Wiki Loves Monuments", 2025, "Nepal", Some(NepalWlm25), (1L to 10L) ++ (41L to 50L))
+      // the other contest's category is the row every unnamed import once shared (production's 248)
+      val blank = DB.autoCommit { implicit s =>
+        val id = sql"INSERT INTO category (title) VALUES ('')".updateAndReturnGeneratedKey.apply()
+        db.scalikejdbc.CategoryLinkJdbc.linkIgnore(id, 41L to 50L)
+        sql"UPDATE contest_jury SET category_id = $id WHERE id = ${other.getId}".update.apply()
+        id
+      }
+      round(c, 1, "Mixed", files = (1L to 10L) ++ (41L to 50L))
+      signs(c) must beEmpty
+      // titled, the same category is the other contest's: a sign
+      DB.autoCommit(implicit s => sql"UPDATE category SET title = 'Category:Other files' WHERE id = $blank".update.apply())
+      signs(c).collect { case ContestReuse.RoundFiles(_, named, n, of) => (named.year, n, of) } === Seq((Some(2024), 10L, 20L))
+    }
+
     "read the rounds' files by keys only, in the forced order" in {
       val c = contestWithFiles("Wiki Loves Monuments", 2025, "Nepal", Some(NepalWlm25), 1L to 30L)
       inCountries(Wlm25, "Armenia" -> (1L to 30L))

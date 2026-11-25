@@ -311,7 +311,8 @@ object UiShotsServer {
         val (old, nepal) = files.splitAt(20)
         DB.localTx { implicit session =>
           val categoryId = CategoryJdbc.findOrInsert(services.ImageService.ownCategory(id))
-          ContestJuryJdbc.setImagesSource(id, Some(nepalSource), Some(categoryId))
+          ContestJuryJdbc.setImagesSource(id, Some(nepalSource))
+          ContestJuryJdbc.setCategory(id, categoryId)
           CategoryLinkJdbc.linkIgnore(categoryId, files)
           val prefix = "Category:Images from Wiki Loves Earth 2020 in "
           CategoryLinkJdbc.addCountries(old.zipWithIndex.map { case (p, i) =>

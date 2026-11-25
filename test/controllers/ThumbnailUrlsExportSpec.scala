@@ -18,7 +18,7 @@ class ThumbnailUrlsExportSpec extends PlaySpecification with PlayTestDb {
         val image = Image(1L, "File:Corallus.jpg",
           Some("https://upload.wikimedia.org/wikipedia/commons/9/9e/Corallus.jpg"), None, 4000, 3000, None)
         imageDao.batchInsert(Seq(image))
-        contestDao.setImagesSource(contest.getId, Some("Category:WLE images"))
+        db.scalikejdbc.TestDb.setSource(contest.getId, Some("Category:WLE images"))
         db.scalikejdbc.CategoryLinkJdbc.addToCategory(contestDao.findById(contest.getId).get.categoryId.get, Seq(image))
 
         val result = route(app, FakeRequest(GET, s"/thumb_urls/${contest.getId}")

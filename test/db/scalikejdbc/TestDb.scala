@@ -45,7 +45,7 @@ trait TestDb {
       // by their ids): "country10" would make every test contest international
       // (services.places.PlaceScheme.byCountries), with countries for places
       val contest = ContestJuryJdbc.create(Some(id), s"contest$id", 2000 + id.toInt, TestDb.Country)
-      ContestJuryJdbc.setImagesSource(id, Some(s"Images from ${contest.name}"))
+      TestDb.setSource(id, Some(s"Images from ${contest.name}"))
       contest
     }
 
@@ -84,4 +84,15 @@ object TestDb {
 
   /** The test contests' country ([[TestDb.createContests]]): one real country, without regions in scalawiki. */
   val Country = "Andorra"
+
+  /** Sets the contest's source and gives it its own category, as its first import does (the test
+    * contests' files are in their category; setImagesSource sets the source's text only).
+    * @return the category's id
+    */
+  def setSource(contestId: Long, source: Option[String])(implicit session: DBSession = AutoSession): Long = {
+    ContestJuryJdbc.setImagesSource(contestId, source)
+    val categoryId = CategoryJdbc.findOrInsert(_root_.services.ImageService.ownCategory(contestId))
+    ContestJuryJdbc.setCategory(contestId, categoryId)
+    categoryId
+  }
 }

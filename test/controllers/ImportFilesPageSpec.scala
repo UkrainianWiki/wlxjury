@@ -53,6 +53,29 @@ class ImportFilesPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "say that an import left behind a list the contest shared with others" in {
+      testDbApp { implicit app =>
+        val (contest, admin) = fixture()
+        val other = contestDao.create(None, "WLE", 2024, "Armenia")
+        // the two contests' list is one category, as a source set by title once made it
+        val shared = db.scalikejdbc.CategoryJdbc.findOrInsert("Category:Shared")
+        Seq(contest, other).foreach(c => contestDao.setCategory(c.getId, shared))
+
+        val result = route(app, importFiles(contest.getId, admin)).get
+        status(result) must_== SEE_OTHER
+        flash(result).get(ImageController.ListNotCopiedFlash) must beSome("1")
+        contestDao.findById(contest.getId).get.categoryId must not(beSome(shared))
+        // a second import has its own list to add to: nothing to say
+        flash(route(app, importFiles(contest.getId, admin)).get).get(ImageController.ListNotCopiedFlash) must beNone
+
+        val withNotice = FakeRequest(GET, s"/contest/${contest.getId}/images").withSession(Secured.UserName -> admin.email)
+          .withFlash(ImageController.ListNotCopiedFlash -> "1").withCSRFToken
+        val page = contentAsString(route(app, withNotice).get)
+        page must contain("id=\"import-list-not-copied\"")
+        page must contain("was not copied into the contest")
+      }
+    }
+
     "not start a second import while one is running" in {
       testDbApp { implicit app =>
         val (contest, admin) = fixture()

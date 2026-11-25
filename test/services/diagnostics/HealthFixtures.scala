@@ -31,7 +31,8 @@ object HealthFixtures {
     CountryFilesCache.clear()
     val contest = ContestJuryJdbc.create(None, name, year, country)
     val categoryId = CategoryJdbc.findOrInsert(ImageService.ownCategory(contest.getId))
-    ContestJuryJdbc.setImagesSource(contest.getId, source, Some(categoryId))
+    ContestJuryJdbc.setImagesSource(contest.getId, source)
+    ContestJuryJdbc.setCategory(contest.getId, categoryId)
     val stored = DB.readOnly(implicit s => ImageJdbc.existingIds(files.toSet)).toSet
     ImageJdbc.batchInsert(files.filterNot(stored).map(id => Image(id, s"File:Health $id.jpg", None, None, 640, 480, None)))
     DB.autoCommit(implicit s => CategoryLinkJdbc.linkIgnore(categoryId, files))

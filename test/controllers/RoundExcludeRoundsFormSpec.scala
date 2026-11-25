@@ -24,7 +24,7 @@ class RoundExcludeRoundsFormSpec extends PlaySpecification with PlayTestDb {
     */
   private def fixture(): (ContestJury, User, Seq[Long], Round, Round, Round) = {
     val contest = contestDao.create(None, "WLE", 2024, "Ukraine")
-    contestDao.setImagesSource(contest.getId, Some("Category:WLE images"))
+    db.scalikejdbc.TestDb.setSource(contest.getId, Some("Category:WLE images"))
     val admin = userDao.create(User("Admin", "admin@example.com", None, Set("admin"), contestId = contest.id))
     val jurors = (1 to 2).map(i =>
       userDao.create(User(s"Juror $i", s"juror$i@example.com", None, Set("jury"), contestId = contest.id)).getId)

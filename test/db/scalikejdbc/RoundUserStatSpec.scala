@@ -37,7 +37,7 @@ class RoundUserStatSpec extends Specification with BeforeAll with TestDb {
 
   private def mkContest(id: Long)(implicit session: DBSession): ContestJury = {
     val c = ContestJuryJdbc.create(Some(id), s"contest$id", (2000 + id).toInt, s"country$id")
-    ContestJuryJdbc.setImagesSource(id, Some(s"source$id"))
+    TestDb.setSource(id, Some(s"source$id"))
     c
   }
 

@@ -69,7 +69,9 @@ class ContestService @Inject() (val commons: MwBot) {
         contest.year,
         contest.country,
         contest.images,
-        contest.categoryId,
+        // none, whatever the caller sent: a contest's category is its own, given by its first
+        // import (ImageService.importFiles), never another contest's (security.CategoryOwnershipGuardSpec)
+        None,
         contest.monumentIdTemplate,
         contest.campaign
       )

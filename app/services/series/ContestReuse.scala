@@ -197,19 +197,25 @@ object ContestReuse {
 
   /** The identity each category names: another contest's whose category it is, else its title's
     * ("Category:Images from Wiki Loves Earth 2020 in Armenia"); categories naming none are left out.
-    * The contests of `known` if given, else read.
+    * The contests of `known` if given, else read. A blank-titled category names none, whatever its
+    * contests: the row every unnamed import once shared holds unrelated contests' files
+    * (CategoryJdbc.isBlank), so its files are no sign of reuse.
     */
   private[series] def categoryIdentities(categoryIds: Seq[Long], known: Option[Seq[ContestJury]] = None)(implicit
       session: DBSession): Map[Long, ContestIdentity] =
     if (categoryIds.isEmpty) Map.empty
     else {
+      val titles = sql"SELECT id, title FROM category WHERE id IN ($categoryIds)"
+        .map(rs => rs.long(1) -> rs.string(2)).list.apply()
+      val blank = titles.collect { case (id, title) if db.scalikejdbc.CategoryJdbc.isBlank(title) => id }.toSet
+      val named = categoryIds.toSet -- blank
       val owners = known.fold[Seq[ContestJury]](db.scalikejdbc.ContestJuryJdbc
         .findAllBy(sqls.in(db.scalikejdbc.ContestJuryJdbc.defaultAlias.categoryId, categoryIds)))(
         _.filter(_.categoryId.exists(categoryIds.toSet)))
-      val byContest = owners
+      val byContest = owners.filter(_.categoryId.exists(named))
         .flatMap(c => c.categoryId.map(_ -> ContestIdentity.parse(ContestIdentity.describe(c)))).toMap
-      val byTitle = sql"SELECT id, title FROM category WHERE id IN ($categoryIds)"
-        .map(rs => rs.long(1) -> ContestIdentity.parse(rs.string(2))).list.apply()
+      val byTitle = titles.filterNot { case (id, _) => blank(id) }
+        .map { case (id, title) => id -> ContestIdentity.parse(title) }
         .filter { case (_, identity) => identity.year.isDefined && identity.kind.isDefined }.toMap
       (byTitle ++ byContest).filter { case (_, identity) => !identity.isEmpty }
     }

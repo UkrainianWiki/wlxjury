@@ -200,7 +200,7 @@ object WritePathStress {
     implicit val session: DBSession = AutoSession
     val rnd = new Random(seed)
     val contest = ContestJuryJdbc.create(Some(1L), "Stress", 2026, "Ukraine")
-    ContestJuryJdbc.setImagesSource(1L, Some("Images from Stress"))
+    TestDb.setSource(1L, Some("Images from Stress"))
     val categoryId = ContestJuryJdbc.findById(1L).flatMap(_.categoryId).get
     val jurors = (1 to jurorCount).map { i =>
       User.create(User(s"Juror $i", s"juror$i@example.com", None, Set("jury"), Some("h"), contest.id,

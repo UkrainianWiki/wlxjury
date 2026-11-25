@@ -638,8 +638,8 @@ class RoundController @Inject() (
               .flashing("error" -> messagesApi.preferred(request)(WikiTitle.InvalidKey)),
             imagesSource => {
               for (contest <- contestId.flatMap(ContestJuryJdbc.findById)) {
-                // the source only: the contest's files stay those of its imports
-                ContestJuryJdbc.setImagesSource(contest.getId, imagesSource, contest.categoryId)
+                // the source only: the contest's files stay those of its imports (its own category)
+                ContestJuryJdbc.setImagesSource(contest.getId, imagesSource)
               }
               Redirect(routes.RoundController.rounds(contestId))
             }

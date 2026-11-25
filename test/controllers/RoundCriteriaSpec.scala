@@ -34,7 +34,7 @@ class RoundCriteriaSpec extends PlaySpecification with PlayTestDb {
   private def fixture(): (ContestJury, ContestJury, Seq[User]) = {
     val a = contestDao.create(None, "WLE", 2024, "Ukraine")
     val b = contestDao.create(None, "WLM", 2024, "Poland")
-    contestDao.setImagesSource(a.getId, Some("Category:WLE images"))
+    TestDb.setSource(a.getId, Some("Category:WLE images"))
     member("admin@example.com", "admin", a.getId)
     member("organizer@example.com", "organizer", a.getId)
     val jurors = (1 to 2).map(i => member(s"juror$i@example.com", "jury", a.getId))

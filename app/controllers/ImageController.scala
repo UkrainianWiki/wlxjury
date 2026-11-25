@@ -167,6 +167,8 @@ class ImageController @Inject() (
   private def startImport(contest: ContestJury, source: String, list: String, action: String, user: User)(implicit
       request: RequestHeader): Result = {
     // the import runs in the background: the files page shows its progress
+    // asked before the import, which gives the contest its own list
+    val leavesList = action == "import.files" && imageService.leavesListBehind(contest.getId)
     val jobs =
       if (action == "import.files") Seq(imageService.importFiles(contest, source, list, user.id))
       else if (action == "update.monuments") imageService.updateMonuments(contest, source, user.id)
@@ -177,7 +179,10 @@ class ImageController @Inject() (
       .map(ImageController.identityWarningText(contest, _)(messagesApi.preferred(request)))
     val back = Redirect(routes.ImageController.images(contest.getId))
     jobs.collect { case Left(running) => running } match {
-      case Nil => warning.fold(back)(w => back.flashing(ImageController.SourceWarningFlash -> w))
+      case Nil =>
+        // the old list was blank-titled or another contest's too: not copied (ImageService.importFiles)
+        val notCopied = Option.when(leavesList)(ImageController.ListNotCopiedFlash -> "1")
+        back.flashing((warning.map(ImageController.SourceWarningFlash -> _) ++ notCopied).toSeq: _*)
       case running =>
         back.flashing("error" ->
           running.map(j => messagesApi.preferred(request)("import.already.running", imageService.title(j))).mkString(" "))
@@ -255,6 +260,11 @@ object ImageController {
 
   /** The flash key of the identity warning shown with a queued import (DG10). */
   val SourceWarningFlash = "sourceWarning"
+
+  /** The flash key of the notice that an import left the contest's previous list of files behind
+    * ([[services.ImageService.leavesListBehind]]).
+    */
+  val ListNotCopiedFlash = "listNotCopied"
 
   /** The longest source the identity check reads (a Commons title is at most 255 bytes). */
   val MaxSourceLength = 512
