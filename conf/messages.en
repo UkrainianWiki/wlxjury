@@ -1547,6 +1547,7 @@ round.track.help = Names this round''s track: later rounds without a label of th
 round.track.automatic = Automatic: {0}.
 round.track.main.hint = Round {0} joins rounds of several tracks, so it starts the Main track alone. To show the main competition''s earlier rounds on it, set the track label of its first round to Main on that round''s form.
 round.track.previous.missing = Previous round {0} no longer exists: this round starts a track of its own.
+round.track.previous.missing.some = Previous round {0} no longer exists: it is left out when this round''s track is chosen.
 rounds.filter.track.all = All tracks
 round.badge.active = Active
 round.badge.inactive = Inactive
