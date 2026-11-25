@@ -1,9 +1,9 @@
 // A round's review before distribution (P3, docs/user/admin-guide.md "Reviewing a round's images",
-// "Choosing the jurors"), as the contest's admin. The new-round form has filters only, and two
-// buttons (the maintainer's decision of 2026-11-16): "Review images first" holds the round in review
-// (the rounds list, then its review page); "Choose jurors next" goes to the round's jurors form,
-// which waits for the selection and then offers the jurors. The review page's Distribute opens that
-// form, which refuses with no juror; Edit the round offers "Re-apply filters", whose narrower monument
+// "Choosing the jurors"), as the contest's admin. The round is set up in numbered steps (UI-path plan
+// §4 step 1, the maintainer's decision of 2026-11-25): the new-round form (step 1) has filters only and
+// one button, "Save and find matching files", which holds the round in review and lands on its review
+// page (step 2), "N files match (the contest has M)" once they are found; its "Distribute to jurors"
+// opens the round's jurors form (step 3), which refuses with no juror; Edit the round offers "Re-apply filters", whose narrower monument
 // filter (ids separated by ", ") takes files out and the review page shows by how many; a comment in
 // the review's large view; two jurors picked, one per file, Distribute opens the round.
 //
@@ -17,6 +17,17 @@ import { readServer } from '../lib/server.js';
 // two monuments of the fixture's contest (data/wlm-UA-images-2025.csv), then one of them
 const BOTH = '73-250-0001, 21-104-0001';
 const ONE = '73-250-0001';
+
+/** Reloads the review page of a round being set up until its matching has ended; returns the
+  * number of its files that match ("N files match (the contest has M)"). */
+async function matched(page, roundId) {
+  const heading = page.locator('#round-review-match');
+  await expect(async () => {
+    await page.goto(`/admin/rounds/${roundId}/review`);
+    await expect(heading).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 90_000, intervals: [500, 1_000, 2_000] });
+  return Number(await heading.getAttribute('data-in'));
+}
 
 /** Reloads the review page until its state line matches `text`; returns the line. */
 async function reviewState(page, roundId, text) {
@@ -40,8 +51,6 @@ async function postTo(page, path, button) {
   return response.text();
 }
 
-const readyCount = (line) => Number(/Images ready: (\d+)/.exec(line)?.[1] ?? NaN);
-
 /** The media filtering panel opened (a collapsible). */
 async function openFiltering(page) {
   const toggle = page.getByRole('button', { name: 'Media filtering' });
@@ -63,25 +72,23 @@ async function newRound(page, contestId, name, monuments) {
 test.describe('an admin', () => {
   test.use({ role: 'admin' });
 
-  test('creates a round with "Review images first", re-applies its filters, comments, then distributes from its jurors form',
+  test('sets up a round with "Save and find matching files", re-applies its filters, comments, then distributes from its jurors form',
     { tag: ['@A-21', '@A-01'] }, async ({ page, fixture, browserName }) => {
       test.setTimeout(240_000);
       const name = `Review ${browserName} ${Date.now()}`;
 
-      // 1. the new round form: filters only, "Review images first"
+      // 1. the new round form (step 1): filters only, one button
       await newRound(page, fixture.contestId, name, BOTH);
-      await page.getByRole('button', { name: 'Review images first' }).click();
-      await expect(page).toHaveURL((url) => url.pathname === '/admin/rounds');
-      const row = page.getByRole('row').filter({ hasText: name });
-      const edit = new URL(await row.locator('a[href*="/admin/rounds/edit"]').first().getAttribute('href'), page.url());
-      const roundId = edit.searchParams.get('id');
-      expect(roundId).toMatch(/^\d+$/);
+      await page.getByRole('button', { name: 'Save and find matching files' }).click();
+      await expect(page).toHaveURL((url) => /^\/admin\/rounds\/\d+\/review$/.test(url.pathname));
+      const roundId = /^\/admin\/rounds\/(\d+)\/review$/.exec(new URL(page.url()).pathname)[1];
       const reviewPath = `/admin/rounds/${roundId}/review`;
       const jurorsPath = `/admin/rounds/${roundId}/jurors`;
 
-      // 2. held in review: the files of both monuments (the ids' spaces trimmed)
-      const before = readyCount(await reviewState(page, roundId, 'Images ready'));
+      // 2. held in review (step 2): the files of both monuments (the ids' spaces trimmed)
+      const before = await matched(page, roundId);
       expect(before).toBeGreaterThan(0);
+      await expect(page.locator('#round-setup-steps li[aria-current="step"]')).toHaveAttribute('data-step', '2');
 
       // 3. Distribute opens the jurors form: the contest's jurors chosen; with none it refuses and says so
       await page.locator('#round-review-distribute-link').click();
@@ -104,7 +111,7 @@ test.describe('an admin', () => {
       await expect(page.locator('#monumentIds')).toBeEditable();
       await page.locator('#monumentIds').fill(ONE);
       expect(await postTo(page, reviewPath, reapply)).toMatch(/id="flash-success"[^>]*>[^<]*its filters are being re-applied/);
-      const after = readyCount(await reviewState(page, roundId, 'Images ready'));
+      const after = await matched(page, roundId);
       expect(after).toBeGreaterThan(0);
       expect(after).toBeLessThan(before);
       await expect(page.locator('#round-review-reapplied')).toContainText(`${before - after} removed`);
@@ -163,25 +170,26 @@ test.describe('an admin', () => {
       await expect(confirm).not.toHaveAttribute('aria-describedby');
     });
 
-  test('creates a round with "Choose jurors next": its jurors form waits for the selection, then offers the jurors',
+  test('sets up a round: step 3 (its jurors form) once its files are found, the round still hidden from jurors',
     { tag: ['@A-21'] }, async ({ page, fixture, browserName }) => {
       test.setTimeout(150_000);
       const name = `Jurors next ${browserName} ${Date.now()}`;
 
       await newRound(page, fixture.contestId, name, ONE);
-      await page.getByRole('button', { name: 'Choose jurors next' }).click();
-      await expect(page).toHaveURL((url) => /^\/admin\/rounds\/\d+\/jurors$/.test(url.pathname));
-      const jurorsPath = new URL(page.url()).pathname;
-
-      // the form once the selection has ended (the job's status script reloads the page; reloaded here too)
-      await expect(async () => {
-        await page.goto(jurorsPath);
-        await expect(page.locator('#round-jurors-form')).toBeVisible({ timeout: 1_000 });
-      }).toPass({ timeout: 90_000, intervals: [500, 1_000, 2_000] });
-      const images = Number((await page.locator('#round-jurors-images .wlx-count').textContent()).replace(/\D/g, ''));
+      await page.getByRole('button', { name: 'Save and find matching files' }).click();
+      await expect(page).toHaveURL((url) => /^\/admin\/rounds\/\d+\/review$/.test(url.pathname));
+      const roundId = /^\/admin\/rounds\/(\d+)\/review$/.exec(new URL(page.url()).pathname)[1];
+      const images = await matched(page, roundId);
       expect(images).toBeGreaterThan(0);
-      // nothing distributed: the round waits in review, hidden from the jurors
-      await page.locator('#round-jurors-review').click();
-      await expect(page.locator('#round-review-state')).toContainText(`Images ready: ${images}`);
+
+      // step 3 from the step bar: its jurors form, its heading naming the round and the step
+      await page.locator('#round-setup-steps li[data-step="3"] a').click();
+      await expect(page).toHaveURL((url) => url.pathname === `/admin/rounds/${roundId}/jurors`);
+      await expect(page.locator('#round-jurors-title')).toContainText('step 3 of 3: jurors');
+      await expect(page.locator('#round-jurors-form')).toBeVisible();
+      expect(Number((await page.locator('#round-jurors-images .wlx-count').textContent()).replace(/\D/g, ''))).toBe(images);
+      // nothing distributed: the round waits in review, hidden from the jurors, at step 3 on the Rounds page
+      await page.locator('#round-jurors-rounds').click();
+      await expect(page.locator(`#round-${roundId} .wlx-round-start-state`)).toHaveText('Setting up – step 3 of 3: choose jurors');
     });
 });

@@ -175,6 +175,50 @@ body.gallery {
     .wlx-rounds-table > * > tr > :nth-child(2) { min-width: 14rem; }
 }
 .wlx-rounds-table > * > tr > :nth-child(7) { width: 20%; }
+/* a round's setup steps (round/setupSteps.scala.html, UI-path plan §4 step 1): numbered steps in a
+   row, wrapping on a phone; the page's step bold with its number filled, the steps done ticked */
+.wlx-setup-steps {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .35rem 1rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.wlx-setup-step {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    color: var(--bs-secondary-color);
+}
+.wlx-setup-step:not(:last-child)::after {
+    content: "\203A";
+    margin-inline-start: .6rem;
+    color: var(--bs-secondary-color);
+}
+.wlx-setup-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 1.6rem;
+    height: 1.6rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 50%;
+    font-size: .85rem;
+}
+.wlx-setup-done .wlx-setup-num {
+    background: var(--bs-success-bg-subtle);
+    border-color: var(--bs-success-border-subtle);
+    color: var(--bs-success-text-emphasis);
+}
+.wlx-setup-current { color: var(--bs-body-color); font-weight: 600; }
+.wlx-setup-current .wlx-setup-num {
+    background: var(--bs-primary);
+    border-color: var(--bs-primary);
+    color: var(--bs-white);
+}
 /* the start/stop button first, its Yes/No after it, a little apart (snippets/startStop) */
 .wlx-start-stop-text { margin-inline-start: .35em; }
 .dropdown-item.wlx-round-inactive:not(.active),

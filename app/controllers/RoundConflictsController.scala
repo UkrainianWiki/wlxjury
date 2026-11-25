@@ -39,8 +39,13 @@ class RoundConflictsController @Inject() (
     withAuthOn(blocking)(rolePermission(ViewRoles, derived = true)) { sessionUser => implicit request =>
       withRound(sessionUser, id, ViewRoles, mayView) { (user, round) =>
         val review = RoundConflicts.review(round)
+        // being set up: its one-line state and a link to its current step (UI-path plan §0 row 7)
+        val setupStep =
+          if (!round.distributing) None
+          else RoundNextStep.of(round, services.RoundService.latestJob(round), RoundNextStep.inCount(round))
         Secured.switchingContest(sessionUser, user)(
-          Ok(views.html.round.conflicts(user, round, review, mayEdit(user, round), RoundConflicts.RequalifyReason.All))
+          Ok(views.html.round.conflicts(user, round, review, mayEdit(user, round), RoundConflicts.RequalifyReason.All,
+            setupStep))
         )
       }
     }
