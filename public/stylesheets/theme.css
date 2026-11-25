@@ -31,6 +31,22 @@
     --bs-form-invalid-color: #8f0000;
     --bs-form-invalid-border-color: #8f0000;
     --wlx-invalid-icon: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%238f0000' viewBox='0 0 12 12'%3e%3ccircle cx='6' cy='6' r='4.5'/%3e%3cpath stroke-linejoin='round' d='M5.8 3.6h.4L6 6.5z'/%3e%3ccircle cx='6' cy='8.2' r='.6' fill='%238f0000' stroke='none'/%3e%3c/svg%3e");
+    /* a round's Track chip (round lineage slice A, views.TrackChip): a pale fill and a dark text,
+       7.5:1 or more each; Main the WLM green, white on it 8.5:1. The chip's text carries the meaning */
+    --wlx-track-main-bg: #025935;
+    --wlx-track-main-fg: #ffffff;
+    --wlx-track-1-bg: #dbe7fb;
+    --wlx-track-1-fg: #0b3d91;
+    --wlx-track-2-bg: #d6f0e0;
+    --wlx-track-2-fg: #084a26;
+    --wlx-track-3-bg: #fbecc8;
+    --wlx-track-3-fg: #5c3b00;
+    --wlx-track-4-bg: #e9ddf7;
+    --wlx-track-4-fg: #4a1d7a;
+    --wlx-track-5-bg: #d3eef0;
+    --wlx-track-5-fg: #0d4e54;
+    --wlx-track-6-bg: #f8dbe6;
+    --wlx-track-6-fg: #7a1640;
 }
 
 [data-bs-theme=dark] {
@@ -56,6 +72,22 @@
     --bs-form-invalid-color: #f46e5d;
     --bs-form-invalid-border-color: #f46e5d;
     --wlx-invalid-icon: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23f46e5d' viewBox='0 0 12 12'%3e%3ccircle cx='6' cy='6' r='4.5'/%3e%3cpath stroke-linejoin='round' d='M5.8 3.6h.4L6 6.5z'/%3e%3ccircle cx='6' cy='8.2' r='.6' fill='%23f46e5d' stroke='none'/%3e%3c/svg%3e");
+    /* the Track chips: a dark fill and a light text, 9:1 or more each; Main the light green with
+       the page's black text 9.0:1 */
+    --wlx-track-main-bg: #44cc8e;
+    --wlx-track-main-fg: #101418;
+    --wlx-track-1-bg: #13284a;
+    --wlx-track-1-fg: #b4ceff;
+    --wlx-track-2-bg: #10301f;
+    --wlx-track-2-fg: #9be3b8;
+    --wlx-track-3-bg: #3a2a06;
+    --wlx-track-3-fg: #f5cf7a;
+    --wlx-track-4-bg: #2c1a43;
+    --wlx-track-4-fg: #d8c0f5;
+    --wlx-track-5-bg: #0e2f33;
+    --wlx-track-5-fg: #93dde2;
+    --wlx-track-6-bg: #3d1424;
+    --wlx-track-6-fg: #f5b5cd;
 }
 
 /* danger buttons and filled badges: Bootstrap computes their colours at build time from its own

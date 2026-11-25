@@ -243,7 +243,8 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
           contain("data-coi-round-files=\"0\"")
         val again = save(app, "admin@example.com", saveRound(round, excludeCoi = true))
         status(again) === SEE_OTHER
-        flash(again).get("success") must beNone
+        // the save said, nothing disqualified
+        flash(again).get("success") must beSome("Round 1 (R) is saved.")
         RoundImageJdbc.disqualified(r).map(_.pageId) === Seq(2L)
         VoteJdbc.byRound(r).map(_.pageId).toSet === Set(1L, 3L)
       }
@@ -272,7 +273,8 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
         Round.setExcludeCoi(round.getId, excludeCoi = true)
         val result = save(app, "admin@example.com", saveRound(round, excludeCoi = false))
         status(result) === SEE_OTHER
-        flash(result).get("success") must beNone
+        // the save said, nothing disqualified
+        flash(result).get("success") must beSome("Round 1 (R) is saved.")
         VoteJdbc.byRound(round.getId).map(_.pageId).toSet === Set(1L, 2L, 3L)
         roundDao.findById(round.getId).get.excludeCoi must beFalse
       }

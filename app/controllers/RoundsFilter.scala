@@ -6,11 +6,15 @@ import play.api.mvc.RequestHeader
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
-/** The Status, Type and Order menus of the Rounds page and the Round Statistics page (the
-  * maintainer's decisions of 2026-11-18): which of the rounds the viewer already sees are listed,
-  * and in what order. Kept in the URL (`status`, `type`, `order`), only where not the default, so a
-  * page with no params is as before (all rounds, oldest first); links between the two pages carry
-  * them ([[addTo]]). An unknown value is the default, never an error.
+/** The Status, Type, Track and Order menus of the Rounds page and the Round Statistics page (the
+  * maintainer's decisions of 2026-11-18; the Track menu, round lineage slice A, 2026-11-25): which
+  * of the rounds the viewer already sees are listed, and in what order. Kept in the URL (`status`,
+  * `type`, `track`, `order`), only where not the default, so a page with no params is as before (all
+  * rounds, oldest first); links between the two pages carry them ([[addTo]]). An unknown value is
+  * the default, never an error: a track the contest doesn't have too ([[withLineage]]).
+  *
+  * The track is a key of [[services.RoundLineage.Track]]; a round's track is the contest's lineage's
+  * (`trackOf`, set by [[withLineage]]): without it, a filter by track keeps no round.
   *
   * It only narrows and orders a list it is given: the rounds a viewer may see are decided before
   * (the contest's rounds for its admins, those whose statistics they may view on the statistics
@@ -19,12 +23,25 @@ import java.nio.charset.StandardCharsets
 final case class RoundsFilter(
     status: RoundsFilter.Status = RoundsFilter.Status.All,
     kind: RoundsFilter.Kind = RoundsFilter.Kind.All,
-    order: RoundsFilter.Order = RoundsFilter.Order.Oldest
+    order: RoundsFilter.Order = RoundsFilter.Order.Oldest,
+    track: Option[String] = None,
+    // each round's track key, from the contest's lineage ([[withLineage]]); not a choice of the viewer
+    trackOf: Map[Long, String] = Map.empty
 ) {
 
   import RoundsFilter._
 
-  def matches(round: Round): Boolean = status.matches(round) && kind.matches(round)
+  def matches(round: Round): Boolean = status.matches(round) && kind.matches(round) && trackMatches(round)
+
+  /** The round is on the chosen track (any, without one). */
+  def trackMatches(round: Round): Boolean = track.forall(t => round.id.flatMap(trackOf.get).contains(t))
+
+  /** The round is on that track. */
+  def onTrack(round: Round, key: String): Boolean = round.id.flatMap(trackOf.get).contains(key)
+
+  /** With the contest's tracks: each round's, and the chosen one only if the contest has it. */
+  def withLineage(lineage: services.RoundLineage.Lineage): RoundsFilter =
+    copy(track = track.filter(lineage.byKey(_).isDefined), trackOf = lineage.keys)
 
   /** The rounds this filter keeps, in its order. */
   def apply(rounds: Seq[Round]): Seq[Round] = sort(rounds.filter(matches))
@@ -51,14 +68,16 @@ final case class RoundsFilter(
   def withStatus(s: Status): RoundsFilter = copy(status = s)
   def withKind(k: Kind): RoundsFilter = copy(kind = k)
   def withOrder(o: Order): RoundsFilter = copy(order = o)
+  def withTrack(t: Option[String]): RoundsFilter = copy(track = t)
 
-  def isDefault: Boolean = this == RoundsFilter.Default
+  def isDefault: Boolean = copy(trackOf = Map.empty) == RoundsFilter.Default
 
   /** The query params of the choices that aren't the default, in a fixed order. */
   def params: Seq[(String, String)] =
     Seq(
       Option.when(status != Status.All)(StatusParam -> status.param),
       Option.when(kind != Kind.All)(TypeParam -> kind.param),
+      track.map(TrackParam -> _),
       Option.when(order != Order.Oldest)(OrderParam -> order.param)
     ).flatten
 
@@ -78,6 +97,7 @@ object RoundsFilter {
   val StatusParam = "status"
   val TypeParam = "type"
   val OrderParam = "order"
+  val TrackParam = "track"
 
   val Default: RoundsFilter = RoundsFilter()
 
@@ -127,7 +147,8 @@ object RoundsFilter {
     RoundsFilter(
       param(StatusParam).flatMap(Status.parse).getOrElse(Status.All),
       param(TypeParam).flatMap(Kind.parse).getOrElse(Kind.All),
-      param(OrderParam).flatMap(Order.parse).getOrElse(Order.Oldest)
+      param(OrderParam).flatMap(Order.parse).getOrElse(Order.Oldest),
+      param(TrackParam).map(_.trim).filter(_.nonEmpty)
     )
 
   /** From the request's query string. */
@@ -140,15 +161,37 @@ object RoundsFilter {
   }
 }
 
-/** The Status, Type and Order menus as the navbar draws them (navbar.scala.html roundsMenus):
-  * the current filter, the page each choice opens (`url`: the page with that filter), and the
-  * rounds the viewer sees on the page, for the items' counts.
+/** The Status, Type, Track and Order menus as the navbar draws them (navbar.scala.html roundsMenus):
+  * the current filter, the page each choice opens (`url`: the page with that filter), the rounds
+  * the viewer sees on the page, for the items' counts, and the contest's lineage, for the Track menu
+  * (none: no Track menu).
   */
-final case class RoundsFilterBar(filter: RoundsFilter, url: RoundsFilter => String, rounds: Seq[Round]) {
+final case class RoundsFilterBar(
+    filter: RoundsFilter,
+    url: RoundsFilter => String,
+    rounds: Seq[Round],
+    lineage: Option[services.RoundLineage.Lineage] = None
+) {
 
-  /** How many of the rounds a Status choice keeps, within the current type. */
-  def count(status: RoundsFilter.Status): Int = rounds.count(r => status.matches(r) && filter.kind.matches(r))
+  /** How many of the rounds a Status choice keeps, within the current type and track. */
+  def count(status: RoundsFilter.Status): Int =
+    rounds.count(r => status.matches(r) && filter.kind.matches(r) && filter.trackMatches(r))
 
-  /** How many of the rounds a Type choice keeps, within the current status. */
-  def count(kind: RoundsFilter.Kind): Int = rounds.count(r => kind.matches(r) && filter.status.matches(r))
+  /** How many of the rounds a Type choice keeps, within the current status and track. */
+  def count(kind: RoundsFilter.Kind): Int =
+    rounds.count(r => kind.matches(r) && filter.status.matches(r) && filter.trackMatches(r))
+
+  /** How many of the rounds a Track choice keeps (its key; None: all), within the current status and type. */
+  def count(track: Option[String]): Int =
+    rounds.count(r => filter.status.matches(r) && filter.kind.matches(r) && track.forall(filter.onTrack(r, _)))
+
+  /** The Track menu's tracks, in the lineage's order, those of the rounds listed: shown with two or
+    * more of them, or a track chosen.
+    */
+  def tracks: Seq[services.RoundLineage.Track] = lineage.fold(Seq.empty[services.RoundLineage.Track]) { l =>
+    val listed = rounds.flatMap(l.track).toSet
+    l.tracks.filter(listed.contains)
+  }
+
+  def trackMenuShown: Boolean = tracks.sizeIs > 1 || filter.track.isDefined
 }

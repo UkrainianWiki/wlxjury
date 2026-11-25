@@ -25,7 +25,13 @@
    enoughReceivers; a round of one juror has none: the page would only refuse); read once, by the `defining` around the rows (a definition like
    this one is evaluated at each use) *@
 @reassignableJurors = @{ if (running && mayPause) services.distribution.RoundReassign.reassignableJurors(round) else Set.empty[Long] }
+@* "Add juror…" and a stopped juror's "Start and give a fair share…": admins, exactly when the add page and
+   its POST take a juror into this round (RoundRebalanceHandler.addOffered: running or stopped, not being
+   set up, nor held by a job, nor a legacy round or a retired contest's; D3 revised 2026-11-25); read once,
+   by the `defining` around the table *@
+@addOffered = @{ mayPause && services.distribution.RoundRebalanceHandler.addOffered(round) }
 
+@defining(addOffered) { mayAdd =>
 <table class="table table-striped table-sm wlx-stat-table">
     <thead>
         <tr>
@@ -57,7 +63,7 @@
             @if(mayPause) {
                 <td>@snippets.startStop(juror.active.getOrElse(true), juror.getId, round.getId, routes.RoundController.setRoundUser, withText = false, what = "juror", extraFields = filterFields)
                     @* a stopped juror: started again with a fair share of the others' unrated files (the add page) *@
-                    @if(!juror.active.getOrElse(true)) {
+                    @if(mayAdd && !juror.active.getOrElse(true)) {
                         <a class="btn btn-sm btn-outline-secondary round-juror-share" href="@routes.RoundJurorsController.addPage(round.getId, juror.id)" title="@Messages("round.juror.share")" aria-label="@Messages("round.juror.share")"><i class="bi bi-person-plus" aria-hidden="true"></i></a>
                     }
                     @* their unrated files to the other jurors; they end stopped (the reassign page) *@
@@ -161,6 +167,7 @@
 }
 @* "Add juror…" for the round's admins (RoundJurorsController): the page lists the contest's jurors
    outside the round and says what the add does, or why it can't be done now *@
-@if(mayPause) {
+@if(mayAdd) {
     <p id="round-juror-add-link"><a class="btn btn-sm btn-outline-secondary" href="@routes.RoundJurorsController.addPage(round.getId, None)"><i class="bi bi-person-plus" aria-hidden="true"></i> @Messages("round.juror.add")</a></p>
+}
 }

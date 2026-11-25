@@ -7,7 +7,8 @@ import services.jobs._
 
 import javax.inject.Inject
 
-/** Adding a juror to a running round (docs/plans/2026-11-16-round-editing.md, §5): what the add
+/** Adding a juror to a running or a stopped round (docs/plans/2026-11-16-round-editing.md, §5; D3
+  * revised 2026-11-25): what the add
   * page shows ([[preview]]) and queueing the job ([[add]], a [[RoundRebalanceHandler]] job).
   */
 class RoundRebalanceService @Inject() (jobs: JobScheduler) {
@@ -292,6 +293,16 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
 }
 
 object RoundRebalanceService {
+
+  /** The rounds created from this one: those of its contest with it among their `previous` rounds
+    * (the lineage's edges, [[services.RoundLineage]]), but cancelled creations, by id. Their files
+    * were chosen from this round's votes when they were distributed, and change only when one of
+    * them is distributed again ("Distribute new files", its filters re-applied in review, a Retry of
+    * its creation): the add page says so. One read of the contest's rounds; the same rounds as the
+    * round's own pages list ([[services.RoundLineage.links]]).
+    */
+  def createdFrom(round: Round): Seq[Round] =
+    services.RoundLineage.links(round, Round.findByContest(round.contestId)).next
 
   /** Starts or stops a juror of the round (the round stat table's Start/Stop), under the round's
     * lock: refused while a job holds the round's key (a distribution, or a juror being added), as

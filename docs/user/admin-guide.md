@@ -1211,7 +1211,7 @@ While a background job holds the round (its distribution, a juror being added, o
 files being reassigned), these buttons are refused with a message: try again when the job has finished.
 
 <a id="a-add-juror"></a>
-### Adding a juror to a running round
+### Adding a juror to a round
 
 Under the jurors' table of the [statistics page](organizer-guide.md#o-statistics) (and of the
 round form's jurors panel), **Add juror…** opens a page listing the round's jurors (stopped ones
@@ -1224,8 +1224,10 @@ The round's own jurors aren't in that list. A stopped juror is brought back from
 table (**Start and give a fair share…**, below). An active juror can't be added again: to give them
 more files, **Stop** them, then use **Start and give a fair share…**.
 
-- Only a running round takes a juror: started, its distribution done, and not held by another
-  round's distribution. Start the round first.
+- A running or a stopped round takes a juror: its distribution done, and not held by another
+  round's distribution or another job. **Add juror…** and **Start and give a fair share…** are
+  shown only then. A round still being set up has neither: its jurors are chosen while it is set
+  up. A retired contest's rounds take no juror.
 - In a round where every file goes to every juror, the new juror gets every file of the round
   they don't have yet, unrated, except files deleted on Commons.
 - In a round where each file goes to a set number of jurors, the new juror takes unrated files
@@ -1251,13 +1253,17 @@ more files, **Stop** them, then use **Start and give a fair share…**.
   that juror as its subject instead of the list. **Start … again** starts them again with a share
   of the others' unrated files (their own unrated files counted). They can then change their
   earlier votes in the round, as after a plain Start.
-- The round pauses for a few seconds while the files are given: its jurors see a page saying so
-  ("Reload shortly") and their votes are refused meanwhile; then the round is open again.
-- If the job fails, the round is open again and **Retry** resumes it. **Cancel** also opens the
-  round. A juror the job added stays in the round with the files given so far; only if it gave
-  them nothing yet are they stopped again (if they weren't active before).
-- Choosing a juror who is already in the round tops them up: they get only what they are short
-  of. That is also how to finish an add that was cancelled.
+- A running round pauses for a few seconds while the files are given: its jurors see a page saying
+  so ("Reload shortly") and their votes are refused meanwhile; then the round is open again.
+- A stopped round stays stopped: its jurors can't vote in it, as before. When it is started again,
+  every juror has their share, the new juror too.
+- If the job fails, the round is open or stopped as last set (a Start or Stop pressed meanwhile
+  is kept), and **Retry** resumes it. **Cancel** leaves the round the same way. A juror the job
+  added stays in the round with the files given so far; only if it gave them nothing yet are they
+  stopped again (if they weren't active before).
+- A juror who is already active in the round can't be added again. To give them the rest of a
+  cancelled add, or more files, **Stop** them, then use **Start and give a fair share…**: they get
+  only what they are short of.
 - Rounds from before the rounds' jurors were stored (old rounds) can't take a juror.
 
 <a id="a-reassign-juror"></a>

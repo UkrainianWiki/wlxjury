@@ -55,6 +55,10 @@ object ContestChangeJdbc {
   val RoundChanged = "round_changed"
   /** A round held in review given new filters by the round form's "Re-apply filters". */
   val RoundFiltersReapplied = "round_filters_reapplied"
+  /** A round's track label changed (V115, round lineage slice A §8.1): by the round form's creation,
+    * edit or re-apply, an entry of its own beside that save's other settings ([[RoundChanges.record]]).
+    */
+  val RoundTrackChanged = "round_track_changed"
 
   /** The kinds about a contest or a series (V109); the split kinds are written by CY-4 only. */
   val ContestKinds: Seq[String] =
@@ -64,7 +68,7 @@ object ContestChangeJdbc {
   val RoundJurorKinds: Seq[String] = Seq(RoundJurorStopped, RoundJurorReopened, RoundJurorClosed)
 
   /** A round's settings saved (V114, [[RoundChanges]]): what changed, from and to. */
-  val RoundSettingKinds: Seq[String] = Seq(RoundCreated, RoundChanged, RoundFiltersReapplied)
+  val RoundSettingKinds: Seq[String] = Seq(RoundCreated, RoundChanged, RoundFiltersReapplied, RoundTrackChanged)
 
   /** The kinds about a round of the contest: its detail's `round` names it. */
   val RoundKinds: Seq[String] = RoundJurorKinds ++ RoundSettingKinds

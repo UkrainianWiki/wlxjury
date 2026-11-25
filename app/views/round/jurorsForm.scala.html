@@ -94,8 +94,16 @@
                         @bs.checkbox(field = v.form("confirmPrevChanged"),
                             Symbol("_text") -> Messages("round.review.prev.changed.confirm.box"))
                     }
-                    <button type="submit" class="btn btn-primary">@Messages("round.review.distribute")</button>
-                    <span class="form-text ms-2">@Messages("round.review.distribute.help")</span>
+                    @* refused with no matching file, or a re-apply not finished (RoundNextStep): disabled, saying why *@
+                    @if(v.inCount == 0) {
+                        <p class="alert alert-warning" id="round-jurors-no-files">@Messages("round.next.no.files")</p>
+                    }
+                    @if(v.inCount == 0 || v.reapplyUnfinished) {
+                        <button type="submit" class="btn btn-primary" disabled aria-describedby="@if(v.inCount == 0) {round-jurors-no-files} else {round-jurors-reapply-unfinished}">@Messages("round.review.distribute")</button>
+                    } else {
+                        <button type="submit" class="btn btn-primary">@Messages("round.review.distribute")</button>
+                        <span class="form-text ms-2">@Messages("round.review.distribute.help")</span>
+                    }
                 </form>
                 @if(v.jurorsEditable && v.contestJurors.nonEmpty) {
                     <script type="application/json" id="round-form-texts">{"multiSelect": @views.JsTexts.multiSelect, "distribution": @views.JsTexts(

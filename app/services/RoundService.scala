@@ -99,10 +99,16 @@ class RoundService @Inject() (
       round
     }
 
+  /** A new-round form posted again after it saved `existing` (its token checked before the form is
+    * validated, [[controllers.RoundController.saveRound]]): no new round; [[resubmitted]]'s outcome.
+    * Authorization is the caller's.
+    */
+  def resubmit(existing: Round): Resubmitted = resubmitted(existing)
+
   /** A known submission again: no new round. A failed distribution is resumed (but not one
     * given up after its attempts: that waits for the job page's Retry); a running one goes on.
     */
-  private def resubmitted(existing: Round): Submitted =
+  private def resubmitted(existing: Round): Resubmitted =
     distributionJob(existing.getId) match {
       // a failed distribute (P3) is retried on its job page or by the review's Distribute, not by
       // the creation's form posted again

@@ -42,6 +42,7 @@ object RoundChangeText {
     case "prevRejectedMode" => RejectedMode.parse(code).fold(code)(m => known(m.messageKey, code))
     case "topBinaryOrder"   => BinaryOrder.parse(code).fold(code)(o => known(o.messageKey, code))
     case "mediaType"        => if (MediaType.mediaTypes.contains(code)) known(code, code) else code
+    case RoundChanges.TrackField => if (code == services.RoundLineage.MainLabel) messages("round.track.main") else code
     case _                  => code
   }
 

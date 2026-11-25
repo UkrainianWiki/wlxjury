@@ -137,9 +137,12 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         status(first) must_== SEE_OTHER
         flash(first).get("error") must beNone
 
+        // the form's token is checked first: the saved round's Edit page, saying so (UI-path plan §5 Q6)
         val second = route(app, saveNewRound(contest.getId, jurors, token, admin)).get
         status(second) must_== SEE_OTHER
-        flash(second).get("error") must beSome.which(_.contains("already created from this form"))
+        val saved = roundDao.findByContest(contest.getId).find(_.name.contains("Round 2")).get
+        redirectLocation(second) must beSome(s"/admin/rounds/edit?id=${saved.getId}&contestId=${contest.getId}")
+        flash(second).get("success") must beSome(s"Round ${saved.number} is saved. You can change its settings here.")
 
         roundDao.findByContest(contest.getId).count(_.name.contains("Round 2")) === 1
       }

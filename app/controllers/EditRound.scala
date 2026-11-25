@@ -22,6 +22,8 @@ import scala.util.Try
   *                      it leaves an existing round's rule as it is
   * @param worstMarkShown the form had the worst mark checkbox (`round.worstMark`): a client
   *                      without it leaves an existing round's option as it is
+  * @param trackShown the form had the track label field (`round.track`, V115): a client without it
+  *                      leaves an existing round's label as it is
   */
 case class EditRound(
     round: Round,
@@ -37,7 +39,8 @@ case class EditRound(
     rejectedByChoice: Option[Int] = None,
     // "Also give out the N files waiting for a juror" with "Distribute new files" (round-editing
     // plan §7), off by default
-    topUpWaiting: Boolean = false
+    topUpWaiting: Boolean = false,
+    trackShown: Boolean = true
 )
 
 object EditRound {
@@ -123,6 +126,12 @@ object EditRound {
 
   val WorstMarkRatedOnly = "error.worst.mark.rated.only"
 
+  /** A track label of at most [[Round.TrackMaxLength]] code points (Round.trackLabel's count). */
+  private val trackLabelLength: Constraint[String] = Constraint[String]("constraint.maxLength", Round.TrackMaxLength) { s =>
+    if (s.trim.codePointCount(0, s.trim.length) <= Round.TrackMaxLength) Valid
+    else Invalid(ValidationError("error.maxLength", Round.TrackMaxLength))
+  }
+
   /** "Leave out files that are in round(s)" (V95): other rounds of the round's contest, found there,
     * none of its previous rounds and none being distributed now
     * ([[RoundDistributionHandler.excludedRoundsError]], which the service and the job check again).
@@ -176,9 +185,16 @@ object EditRound {
         _.forall(m => m == EditRound.NoRejectedFilter || RejectedMode.parse(m).isDefined)),
       // "Leave out files that are in round(s)" (V95): round ids, checked by validExcludedRounds
       "excludeRounds" -> seq(text),
-      "topUpWaiting" -> boolean
+      "topUpWaiting" -> boolean,
+      // the round's track label (V115, round lineage decision 4): empty is the automatic track; with
+      // the hidden field saying the form had it, so a client without both keeps an existing round's.
+      // Not `track`: that is the Rounds page's Track filter, which the form's action carries
+      // (RoundsFilter.fromForm reads a posted field first). At most TrackMaxLength code points, as
+      // Round.trackLabel cuts it
+      "trackLabel" -> optional(text.verifying(trackLabelLength)),
+      "trackShown" -> boolean
     )((edit, excludeCoi, selected, combine, topOrder, rejectedBy, criteria, criteriaShown, halfStar, averageRule, worstMark,
-        worstMarkShown, rejectedMode, excludeRounds, topUpWaiting) => {
+        worstMarkShown, rejectedMode, excludeRounds, topUpWaiting, track, trackShown) => {
       val configured = (selected, combine.flatMap(CategoryCombine.parse)) match {
         // the round form's two boxes and its choice: the rule they mean, stored as the operation
         // select stored it (an exclusion's category as the first operand)
@@ -201,14 +217,16 @@ object EditRound {
         prevRejectedMode = rejectedMode.flatMap(RejectedMode.parse).getOrElse(RejectedMode.Default),
         criterionIds = criterionIdsOf(criteria), halfStar = halfStar,
         averageRule = averageRule.flatMap(AverageRule.parse).getOrElse(AverageRule.Default),
-        worstMark = worstMark && worstMarkShown, excludeRounds = excludeRoundIdsOf(excludeRounds)),
-        averageRuleShown = averageRule.isDefined, worstMarkShown = worstMarkShown, topUpWaiting = topUpWaiting)
+        worstMark = worstMark && worstMarkShown, excludeRounds = excludeRoundIdsOf(excludeRounds),
+        track = Round.trackLabel(track)),
+        averageRuleShown = averageRule.isDefined, worstMarkShown = worstMarkShown, topUpWaiting = topUpWaiting,
+        trackShown = trackShown)
     })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue), None,
       edit.round.topImages.filter(_ > 0).map(_ => edit.round.topOrderParam), edit.round.rejectedByFilter.map(_.toString),
       edit.round.criterionIds.map(_.toString), edit.criteriaShown, edit.round.halfStar,
       Some(edit.round.averageRule.param), edit.round.worstMark, edit.worstMarkShown,
       Some(edit.round.rejectedByFilter.fold(NoRejectedFilter)(_ => edit.round.prevRejectedMode.param)),
-      edit.round.excludeRounds.map(_.toString), edit.topUpWaiting)))
+      edit.round.excludeRounds.map(_.toString), edit.topUpWaiting, edit.round.track, edit.trackShown)))
       .verifying(validCategories)
       .verifying(validCriteria)
       .verifying(validRejectedBy)

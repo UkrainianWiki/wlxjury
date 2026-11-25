@@ -17,11 +17,16 @@
         criteria: Seq[org.intracer.wmua.Criterion] = Nil,
         scoreRuleWarning: Option[controllers.RoundController.ScoreRuleWarning] = None,
         imageCheckJob: Option[services.jobs.Job] = None,
-        reapply: Boolean = false,
-        unratedRound: Boolean = false,
-        waiting: Option[Long] = None,
-        lockedCriteria: Option[Seq[Long]] = None
+        state: controllers.RoundFormState = controllers.RoundFormState()
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@* the form's state (RoundFormState: a template takes at most 22 parameters, implicits included) *@
+@reapply = @{ state.reapply }
+@unratedRound = @{ state.unratedRound }
+@waiting = @{ state.waiting }
+@lockedCriteria = @{ state.lockedCriteria }
+@nextStep = @{ state.nextStep }
+@ratesEditable = @{ state.ratesEditable }
+@resolveUrl = @{ state.resolveUrl }
 @* `reapply`: a round held in review with no vote and no job (P3-5): its filters editable, the main
    button "Re-apply filters" (the hidden `reapply` field), "Distribute new files" left out (a re-apply
    adds the new matches);
@@ -30,21 +35,49 @@
    `worstMarkShown`, so a save leaves its stored ones as they are;
    `lockedCriteria`: a rated round's stored criteria once it is started, running or with a vote
    (RoundController.lockedCriteria): listed read only, without selects or `criteriaShown`, as its save
-   refuses any change (RoundCriterion.update) *@
+   refuses any change (RoundCriterion.update);
+   `nextStep`: a round being set up, its next step (#186, round/nextStep.scala.html);
+   `ratesEditable`: the rating type of a round being set up can change (#184), its select as a new
+   round's;
+   `resolveUrl`: the new-round form's URL with its token, which round-form-token.js puts in the
+   page's history entry: Back after a save opens the saved round's Edit page (RoundController.editRound);
+   a refused save's errors: all listed at the top (round/edit/errorSummary), each also at its field,
+   its section open (RoundFormErrors) *@
 
 @implicitLayout = @{ bs.Layout.horizontal("col-md-4", "col-md-8") }
 @import helper._
+
+@* the criteria's errors (RoundFormErrors.placed moves them to `criteria`): in their section *@
+@criteriaErrors = {
+    @for((error, i) <- editRoundForm("criteria").errors.zipWithIndex) {
+        <div class="text-danger small mb-2" id="criteria_error_@i">@Messages(error.messages, error.args: _*)</div>
+    }
+}
 
 @* the round form's scripts (round-form.js), and their texts as JSON, which no script parses
    as code *@
 @formScripts = {
     @snippets.multiSelectScripts()
     <script src="@routes.Assets.versioned("javascripts/round-form.js")"></script>
+    <script src="@routes.Assets.versioned("javascripts/round-form-token.js")"></script>
+    <script src="@routes.Assets.versioned("javascripts/round-form-wait.js")"></script>
 }
 
 @* the Rounds page's filter, from its round number link (RoundsFilter): kept in the form's action,
    so that a save, a failed one's form again and Cancel come back to the same list *@
 @roundsFilter = @{ controllers.RoundsFilter.fromRequest(req) }
+
+@* an existing round's track without its own label (round lineage slice A), named in the track
+   field's help *@
+@automaticTrack = @{ editRoundForm("id").value.flatMap(_.toLongOption).flatMap(views.TrackChip.automatic(_, rounds)) }
+
+@* the track field, "Main" shown as the page names the Main track (saved back as "Main") *@
+@trackField = @{
+    editRoundForm.copy(data = editRoundForm.data.map {
+        case ("trackLabel", v) if v.trim.equalsIgnoreCase(services.RoundLineage.MainLabel) => "trackLabel" -> Messages("round.track.main")
+        case other => other
+    })("trackLabel")
+}
 
 @mainAdmin("edit.round", user, user.getId, contestId = contestId, head = formScripts) {
     <script type="application/json" id="round-form-texts">{"multiSelect": @views.JsTexts.multiSelect, "distribution": @views.JsTexts(
@@ -58,10 +91,27 @@
                 <h1 class="h3">@Messages("create.round")</h1>
             } else {
                 <h1 class="h3">@Messages("edit.round")</h1>
+                @* the rounds it was created from and those created from it (RoundLineage.links), from the
+                   contest's rounds the page already has *@
+                @for(rid <- editRoundForm("id").value.flatMap(_.toLongOption); round <- rounds.find(_.id.contains(rid))) {
+                    @snippets.roundLinks(services.RoundLineage.links(round, rounds).visibleTo(user))
+                }
             }
 
+            @flash.get("success").map { msg =>
+                <div class="alert alert-info" id="flash-success">@msg</div>
+            }
             @flash.get("error").map { err =>
                 <div class="alert alert-danger">@err</div>
+            }
+
+            @for(step <- nextStep) {
+                @round.nextStep(step, onReviewPage = false, mayAct = true)
+            }
+
+            @* refused to wait for another round's job (Q7): its live progress, outside the form *@
+            @for(w <- state.waitFor) {
+                @round.edit.waitBox(w)
             }
 
             @for(job <- distributionJob if !job.isDone) {
@@ -71,10 +121,13 @@
                 <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
             }
 
-            @bs.form(Call("POST", roundsFilter.addTo(routes.RoundController.saveRound().url)), Symbol("id") -> "round-form") {
+            @bs.form(Call("POST", roundsFilter.addTo(routes.RoundController.saveRound().url)), Symbol("id") -> "round-form",
+                Symbol("data-resolve-url") -> resolveUrl.getOrElse(None)) {
                 @csrfField()
 
-                @snippets.formError(editRoundForm)
+                @round.edit.errorSummary(editRoundForm, controllers.RoundFormErrors.Shown(rounds = rounds.nonEmpty,
+                    regions = regions.nonEmpty, nominations = specialNominations.nonEmpty, unrated = unratedRound),
+                    state.summaryHeading)
 
                 <fieldset>
                     <input type="hidden" id="id" name="id" value='@editRoundForm("id").value' />
@@ -92,6 +145,22 @@
 
                     @bs.text(editRoundForm("name"), Symbol("_label") -> Messages("round.name.optional"))
 
+                    @* the round's track label (round lineage decision 4, slice A): empty is the automatic
+                       track; any time, also for an existing round (Round.setTrack); the contest's labels
+                       and Main offered as they are spelled, since identical labels share a track *@
+                    @bs.text(trackField, Symbol("_label") -> Messages("round.track.label"),
+                        Symbol("_help") -> (Messages("round.track.help", Messages("round.track.main")) +
+                            automaticTrack.fold("")(t => " " + Messages("round.track.automatic", t))),
+                        Symbol("maxlength") -> Round.TrackMaxLength, Symbol("list") -> "round-track-labels",
+                        Symbol("autocomplete") -> "off")
+                    <datalist id="round-track-labels">
+                        <option value="@Messages("round.track.main")"></option>
+                        @for(label <- rounds.flatMap(_.track).filterNot(_ == services.RoundLineage.MainLabel).distinct.sorted) {
+                            <option value="@label"></option>
+                        }
+                    </datalist>
+                    <input type="hidden" name="trackShown" value="true" />
+
                     @defining(!newRound) { noEdit =>
                         @round.edit.imageFiltering(editRoundForm, rounds, regions, user, noEdit && !reapply, specialNominations)
 
@@ -105,7 +174,7 @@
 
                         @* open when the form comes back with a list in it *@
                         @snippets.collapsible("add.files", "headingAddFiles", "collapseAddFiles",
-                            open = editRoundForm("fileList").value.exists(_.trim.nonEmpty)) {
+                            open = editRoundForm("fileList").value.exists(_.trim.nonEmpty) || controllers.RoundFormErrors.inAddFiles(editRoundForm)) {
                             @bs.textarea(editRoundForm("fileList"),
                                 Symbol("_label") -> Messages("add.files.list"),
                                 Symbol("_help") -> Messages("add.files.help"),
@@ -146,7 +215,7 @@
                         @bs.select(
                             editRoundForm("rates"),
                             Round.rates.map(x => (x.id.toString, views.RatingType.label(x))),
-                            Symbol("_label") -> Messages("rating.type"), Symbol("readonly") -> noEdit)
+                            Symbol("_label") -> Messages("rating.type"), Symbol("readonly") -> (noEdit && !ratesEditable))
 
                         @* how a rated round scores its files (V90, AverageRule): editable on an existing
                            round too, as it changes only how results are shown; a next round's distribution
@@ -204,6 +273,7 @@
                         <div id="round-criteria">
                         @snippets.collapsible("criteria", "headingCriteria", "collapseCriteria", open = true) {
                             <p class="form-text" id="round-criteria-locked">@Messages("criteria.locked")</p>
+                            @criteriaErrors
                             @if(stored.isEmpty) {
                             <p class="form-text" id="round-criteria-none">@Messages("criteria.locked.none")</p>
                             } else {
@@ -222,7 +292,9 @@
                         @* hidden and not sent for a yes/no or comments-only rating of a new round (round-form.js) *@
                         <div id="round-criteria">
                         @snippets.collapsible("criteria", "headingCriteria", "collapseCriteria",
-                            open = chosen || editRoundForm.errors.exists(e => org.intracer.wmua.Criterion.ErrorKeys(e.message))) {
+                            open = chosen || editRoundForm.errors.exists(e => org.intracer.wmua.Criterion.ErrorKeys(e.message)) ||
+                                controllers.RoundFormErrors.inCriteria(editRoundForm)) {
+                            @criteriaErrors
                             <p class="form-text">@Messages("criteria.help", org.intracer.wmua.Criterion.MinPerRound, org.intracer.wmua.Criterion.MaxPerRound)
                                 <a href="@routes.CriteriaController.list(contestId)">@Messages("criteria.catalogue")</a></p>
                             @* all the selects for a page without scripts; round-form.js shows only the chosen

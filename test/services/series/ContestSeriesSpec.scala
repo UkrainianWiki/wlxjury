@@ -124,7 +124,7 @@ class ContestSeriesSpec extends Specification with TestDb with BeforeAll with Be
         ContestChangeJdbc.Retired, ContestChangeJdbc.Identity, ContestChangeJdbc.Created)
     }
 
-    "refuse retiring a contest while a round is open, paused (frozen while open) or being created" in {
+    "refuse retiring a contest while a round is open, paused (frozen while open), being created, or held by a job" in {
       implicit val actor: User = root
       val c = HealthFixtures.contestWithFiles("Wiki Loves Monuments", 2025, "Nepal", None, Seq(1L))
       val open = HealthFixtures.round(c, 1, "Open")
@@ -140,6 +140,11 @@ class ContestSeriesSpec extends Specification with TestDb with BeforeAll with Be
       DB.autoCommit(implicit s => sql"UPDATE round SET status = 'draft' WHERE id = ${open.getId}".update())
       // a stopped round (V105's paused, not open) doesn't keep it
       DB.autoCommit(implicit s => sql"UPDATE round SET distributing = 0, status = ${Round.Status.Paused} WHERE id = ${open.getId}".update())
+      // unless a job holds it frozen while stopped (a juror being added to it, D3 revised 2026-11-25):
+      // the job would find its contest retired between its steps
+      DB.autoCommit(implicit s => sql"UPDATE round SET freeze_count = 1, active_before_freeze = 0 WHERE id = ${open.getId}".update())
+      ContestSeries.retireContest(c.getId, actor.getId, None) === Left("contest.retire.busy.round")
+      DB.autoCommit(implicit s => sql"UPDATE round SET freeze_count = 0, active_before_freeze = NULL WHERE id = ${open.getId}".update())
       ContestSeries.retireContest(c.getId, actor.getId, None) === Right(())
       reload(c).retired must beTrue
     }

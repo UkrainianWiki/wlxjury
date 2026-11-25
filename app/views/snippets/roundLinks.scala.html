@@ -1,0 +1,12 @@
+@(links: services.RoundLineage.Links)(implicit messages: Messages)
+@* A round's edges on its own pages (round statistics, review, Edit round; RoundLineage.links): the
+   rounds it was created from and those created from it, each linked to its statistics, cancelled
+   creations left out; the caller keeps only those the viewer may see (Links.visibleTo). Nothing
+   without either. *@
+@list(rounds: Seq[db.scalikejdbc.Round]) = {@for((r, i) <- rounds.zipWithIndex) {@if(i > 0) {, }<a href="@routes.RoundController.roundStat(r.getId)" data-round="@r.getId">@Messages("round.links.round", r.number)@for(name <- r.name.map(_.trim).filter(_.nonEmpty)) { (@name)}</a>}}
+@if(!links.isEmpty) {
+    <ul class="list-unstyled text-muted small mb-2" id="round-links">
+        @if(links.from.nonEmpty) {<li id="round-links-from">@Messages("round.links.from") @list(links.from)</li>}
+        @if(links.next.nonEmpty) {<li id="round-links-next">@Messages("round.links.next") @list(links.next)</li>}
+    </ul>
+}

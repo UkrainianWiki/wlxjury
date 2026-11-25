@@ -7,10 +7,11 @@
         preview: Option[Preview],
         notice: Option[String],
         signature: String,
-        paused: Boolean
+        paused: Boolean,
+        createdFrom: Seq[Round] = Nil
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
-@* Adding a juror to a running round (RoundJurorsController): a GET form to choose the juror (only the
+@* Adding a juror to a running or a stopped round (RoundJurorsController): a GET form to choose the juror (only the
    contest's jurors outside the round; the server refuses an active juror of the round). A stopped juror
    of the round, reached by the round statistics' "Start and give a fair share…" (`?juror=`), is the
    page's fixed subject instead of the select, and its confirm sends `restart` (a stopped juror without
@@ -44,6 +45,13 @@
             }
             @if(paused) {
                 <div class="alert alert-info" role="status">@Messages("round.paused.staff")</div>
+            }
+            @* the rounds created from this one (RoundRebalanceService.createdFrom): information, not a warning;
+               their files change only when they are distributed again *@
+            @if(createdFrom.nonEmpty) {
+                <p class="text-muted" id="round-juror-add-next">@Messages("round.juror.add.next")
+                    @for((next, i) <- createdFrom.zipWithIndex) {@if(i > 0) {, }<a href="@routes.RoundController.roundStat(next.getId)" data-round="@next.getId">@Messages("round.juror.add.next.round", next.number)@for(name <- next.name.filter(_.trim.nonEmpty)) { (@name)}</a>}.
+                    @Messages("round.juror.add.next.votes")</p>
             }
 
             <form method="get" action="@routes.RoundJurorsController.addPage(round.getId, None)" id="round-juror-add-choose">
@@ -153,7 +161,15 @@
                                 @if(p.restart) {
                                     <p class="text-muted" id="round-juror-add-restart">@Messages("round.juror.add.restart", juror.fullname)</p>
                                 }
-                                <p class="text-muted">@Messages("round.juror.add.pause")</p>
+                                @* running: the job pauses it for its jurors; stopped: it stays stopped (D3 revised
+                                   2026-11-25); held in review: nothing moves (the note above) *@
+                                @if(!round.inReview) {
+                                    @if(services.distribution.RoundRebalanceHandler.isRunning(round)) {
+                                        <p class="text-muted" id="round-juror-add-pause">@Messages("round.juror.add.pause")</p>
+                                    } else {
+                                        <p class="text-muted" id="round-juror-add-stopped">@Messages("round.juror.add.stopped.round", round.number)</p>
+                                    }
+                                }
                             </div>
                             <p class="text-muted" id="round-juror-add-stale" role="status" data-stale-text="@Messages("round.juror.preview.stale", Messages("round.juror.add.show"))"></p>
                             @form(routes.RoundJurorsController.add(round.getId), Symbol("id") -> "round-juror-add-form",

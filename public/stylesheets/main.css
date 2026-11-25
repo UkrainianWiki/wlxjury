@@ -109,6 +109,22 @@ body.gallery {
 .wlx-round-named, .dropdown-item.wlx-round-item, #round-stat-rounds .page-link {
     display: flex; align-items: baseline;
 }
+/* a round's Track chip after its name (round lineage slice A, snippets/trackChip): its track's
+   colours (theme.css --wlx-track-*), a thin edge of its text colour so a pale chip shows on the
+   stripes and the hover grey; never cut or wrapped inside; in the Track menu a swatch before the name */
+.wlx-track {
+    margin-left: .375rem; font-weight: 500; white-space: nowrap; flex: none;
+    border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+}
+.wlx-track-swatch { display: inline-block; width: .75rem; height: .75rem; border-radius: 50%; margin-right: .375rem;
+    vertical-align: -.05em; border: 1px solid color-mix(in srgb, currentColor 35%, transparent); }
+.wlx-track-main { background-color: var(--wlx-track-main-bg); color: var(--wlx-track-main-fg); }
+.wlx-track-1 { background-color: var(--wlx-track-1-bg); color: var(--wlx-track-1-fg); }
+.wlx-track-2 { background-color: var(--wlx-track-2-bg); color: var(--wlx-track-2-fg); }
+.wlx-track-3 { background-color: var(--wlx-track-3-bg); color: var(--wlx-track-3-fg); }
+.wlx-track-4 { background-color: var(--wlx-track-4-bg); color: var(--wlx-track-4-fg); }
+.wlx-track-5 { background-color: var(--wlx-track-5-bg); color: var(--wlx-track-5-fg); }
+.wlx-track-6 { background-color: var(--wlx-track-6-bg); color: var(--wlx-track-6-fg); }
 /* a round menu's items: on one line (the menu as wide as its longest), the menu no wider than the
    window and never with a horizontal scrollbar (it scrolls down, as the region menu: below): a
    name too long for the window cut with an ellipsis on a desktop (wlx-item-text,

@@ -132,7 +132,7 @@ object VerifyChecks {
     base)
 }
 
-/** Adds a juror to a running round, as a [[Job]] of kind `round_rebalance` whose subject is the
+/** Adds a juror to a running or a stopped round, as a [[Job]] of kind `round_rebalance` whose subject is the
   * round (docs/plans/2026-11-16-round-editing.md, §5). It shares the round's dedupe key with its
   * distribution ([[RoundDistributionHandler.dedupeKey]]): the key's unique index makes the two
   * exclude each other, and every check of a round "being distributed" sees it too; the
@@ -142,7 +142,10 @@ object VerifyChecks {
   * itself: its first step freezes it ([[Round.freeze]]) and the last releases it; failure and
   * Cancel release it, and Retry freezes it again from its first step. While it is paused its
   * jurors keep it in their menus and get the "paused" page and the vote error `round_paused`
-  * ([[Round.pausedCond]]). Its steps are claimed before other kinds' ([[priority]]).
+  * ([[Round.pausedCond]]). A stopped round (D3 revised 2026-11-25) is frozen and released the same
+  * way, which keeps it stopped (`active_before_freeze = 0`), also on failure, Cancel, Retry and a
+  * restart's recovery: its jurors keep `round_closed`. Its steps are claimed before other kinds'
+  * ([[priority]]).
   *
   * Steps, each in one short transaction with the round locked first and the refusals checked
   * again ([[RoundRebalanceHandler.refusal]]):
@@ -828,7 +831,16 @@ object RoundRebalanceHandler {
 
   // refusals: job error keys (job.error.*, shown by the job status and the add page)
   val MissingKey = "job.error.rebalance.missing"
+  /** "Isn't running": no longer given (a stopped round takes a juror since 2026-11-25); kept for the
+    * jobs that failed with it before.
+    */
   val NotRunningKey = "job.error.rebalance.not.running"
+  /** The round is being set up (`distributing`: being created, its creation failed or was cancelled;
+    * held in review has its own path, [[RoundRebalanceService.add]]): its jurors are chosen there.
+    */
+  val SettingUpKey = "job.error.rebalance.setting.up"
+  /** The round's contest is retired: its jurors don't change (contest series plan §3.1). */
+  val RetiredKey = "job.error.rebalance.retired"
   val FrozenKey = "job.error.rebalance.frozen"
   val LegacyKey = "job.error.rebalance.legacy"
   val NotJurorKey = "job.error.rebalance.not.juror"
@@ -1057,10 +1069,47 @@ object RoundRebalanceHandler {
     // the membership's role exactly `jury` (contestMembers' filter), so an active one
     User.contestMembers(contestId, roles = Some(Seq(User.JURY_ROLE)), ids = Some(Seq(jurorId))).find(_.deletedAt.isEmpty)
 
+  /** Why adding a juror to the round is refused now, whoever it is, if it is (round-editing plan §5,
+    * D3 revised 2026-11-25: a running or a stopped round takes a juror). In this order: frozen by
+    * another job ([[FrozenKey]]); being set up, `distributing` ([[SettingUpKey]]; a round held in
+    * review has its own path, [[RoundRebalanceService.add]]); its contest retired ([[RetiredKey]],
+    * read plainly: a retirement locks the contest's rounds and is refused while a job holds one
+    * frozen, [[services.series.ContestSeries.liveRoundRefusal]]); no round_user rows, a legacy round
+    * ([[LegacyKey]]). Not being set up nor frozen by another job, the round is running or stopped
+    * (with this job's freeze, `active_before_freeze` says which): both take a juror. A stopped round
+    * stays stopped: [[Round.freeze]] saves `active = 0` and [[Round.release]] restores it, so it is
+    * never open to its jurors (no `round_paused`, [[Round.pausedCond]]: they keep `round_closed`).
+    * The stat table's "Add juror…" and "Start and give a fair share…" are offered exactly when this
+    * and [[BusyKey]] don't refuse ([[addOffered]]).
+    */
+  def roundRefusal(round: Round, run: RoundRun, frozenByUs: Boolean)(implicit session: DBSession): Option[JobError] = {
+    val n = round.number.toString
+    if (run.frozenByOther(frozenByUs)) Some(JobError(FrozenKey, Seq(n)))
+    else if (run.distributing) Some(JobError(SettingUpKey, Seq(n)))
+    else if (contestRetired(round.contestId)) Some(JobError(RetiredKey, Seq(n)))
+    else if (!hasRoundUsers(round.getId)) Some(JobError(LegacyKey, Seq(n)))
+    else None
+  }
+
+  /** Whether the contest is retired, a plain read. */
+  def contestRetired(contestId: Long)(implicit session: DBSession): Boolean =
+    sql"SELECT retired_at IS NOT NULL FROM contest_jury WHERE id = $contestId".map(_.boolean(1)).single().getOrElse(false)
+
+  /** Whether the round statistics offer "Add juror…" and a stopped juror's "Start and give a fair
+    * share…": exactly when the add page and its POST would take a juror into this round now, as far
+    * as the round decides ([[roundRefusal]], from the round as read, and no job holding its key,
+    * [[BusyKey]]); plain reads. A round held in review isn't offered (its jurors are chosen on the
+    * jurors form), though its add page keeps the allowed exception (the `round_user` row only).
+    */
+  def addOffered(round: Round)(implicit session: DBSession = AutoSession): Boolean =
+    roundRefusal(round, RoundRun(round.active, round.distributing, round.freezeCount, activeBeforeFreeze = false),
+      frozenByUs = false).isEmpty &&
+      JobJdbc.activeByDedupeKey(RoundDistributionHandler.dedupeKey(round.getId)).isEmpty
+
   /** Why adding `jurorId` to the round is refused now, if it is: checked on the page, on the POST
-    * and by every step, each under the round's lock (but the page). In this order: frozen by
-    * another job; not running; no round_user rows (a legacy round); the juror not an active jury
-    * member of the round's contest; a ticked donor not a juror of the round (round_user, active or
+    * and by every step, each under the round's lock (but the page). In this order: the round's
+    * refusals ([[roundRefusal]]: frozen by another job, being set up, retired, legacy); the juror
+    * not an active jury member of the round's contest; a ticked donor not a juror of the round (round_user, active or
     * not). Not checked here, so that the steps don't refuse their own juror: a juror already active
     * in the round ([[AlreadyJurorKey]]), and a stopped one sent without the restart page
     * ([[StoppedJurorKey]]), are refused by [[RoundRebalanceService]] (the page, and the POST under the
@@ -1074,11 +1123,9 @@ object RoundRebalanceHandler {
       session: DBSession
   ): Option[JobError] = {
     val n = round.number.toString
-    if (run.frozenByOther(frozenByUs)) Some(JobError(FrozenKey, Seq(n)))
-    else if (!run.running(frozenByUs)) Some(JobError(NotRunningKey, Seq(n)))
-    else if (!hasRoundUsers(round.getId)) Some(JobError(LegacyKey, Seq(n)))
-    else if (eligibleJuror(round.contestId, jurorId).isEmpty) Some(JobError(NotJurorKey, Seq(jurorId.toString)))
-    else donors.find(d => !isRoundJuror(round.getId, d)).map(d => JobError(DonorKey, Seq(d.toString, n)))
+    roundRefusal(round, run, frozenByUs)
+      .orElse(Option.when(eligibleJuror(round.contestId, jurorId).isEmpty)(JobError(NotJurorKey, Seq(jurorId.toString))))
+      .orElse(donors.find(d => !isRoundJuror(round.getId, d)).map(d => JobError(DonorKey, Seq(d.toString, n))))
   }
 
   /** Whether the round runs as [[RoundRun.running]] says, from the round as read (no lock): the stat

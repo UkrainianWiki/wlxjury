@@ -1093,6 +1093,60 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+  /** V115's rollback SQL after reopen (the script's last comment): the label entries, V114's kind
+    * CHECK back, the manual track labels.
+    */
+  private val v115Rollback = Seq(
+    "DELETE FROM contest_change WHERE kind = 'round_track_changed'",
+    "ALTER TABLE contest_change DROP CONSTRAINT IF EXISTS contest_change_kind_chk, " +
+      "ADD CONSTRAINT contest_change_kind_chk CHECK (kind IN ('created', 'identity', 'series_assigned', " +
+      "'series_unassigned', 'series_changed', 'split_out', 'split_in', 'split_undone', 'retired', 'unretired', " +
+      "'round_juror_stopped', 'round_juror_reopened', 'round_juror_closed', 'round_created', 'round_changed', " +
+      "'round_filters_reapplied'))",
+    "ALTER TABLE round DROP COLUMN IF EXISTS track",
+    "DELETE FROM flyway_schema_history WHERE version = '115'")
+
+  "V115's round track label" should {
+    "run after V114, take a label and the label entries' kind, keep V114's kinds, rerun as a no-op, and roll back" in {
+      val before = versions.takeWhile(_ != "115").last
+      emptyDb("fw_v115_prev")
+      flyway("fw_v115_prev", production.copy(target = Some(before))).migrate()
+      emptyDb("fw_v115")
+      flyway("fw_v115", production.copy(target = Some(before))).migrate().success must beTrue
+      Using.resource(connect("fw_v115"))(c => run(c, Seq(
+        "INSERT INTO round (id, number, contest_id, created_at) VALUES (1, 1, 1, '2020-01-02 03:04:05')")))
+      flyway("fw_v115", production.copy(target = Some("115"))).migrate().success must beTrue
+      val once = schema("fw_v115")
+      def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+      val (existing, stored) = Using.resource(connect("fw_v115")) { c =>
+        val existing = rows(c, "SELECT track IS NULL, created_at FROM round")(rs => rs.getBoolean(1) -> rs.getString(2))
+        run(c, Seq("UPDATE round SET track = 'Друга лінія', created_at = created_at WHERE id = 1"))
+        (existing, rows(c, "SELECT track FROM round")(_.getString(1)))
+      }
+      def refused(sql: String): Boolean = Using.resource(connect("fw_v115"))(c => scala.util.Try(run(c, Seq(sql))).isFailure)
+      def entry(kind: String) =
+        s"INSERT INTO contest_change (contest_id, actor_id, kind, detail) VALUES (1, 2, '$kind', '{\"round\":1}')"
+      val kinds = Seq("round_track_changed", "round_changed", "round_created", "round_filters_reapplied",
+        "round_juror_stopped", "series_assigned").map(k => !refused(entry(k)))
+      (history("fw_v115").map(_.split(" \\| ")(1)) === upTo("115")) and
+        (history("fw_v115").map(_.split(" \\| ")(1)) must contain("114")) and
+        (existing === List(true -> "2020-01-02 03:04:05")) and (stored === List("Друга лінія")) and
+        (kinds === Seq.fill(6)(true)) and (refused(entry("Round_track_changed")) must beTrue) and
+        (refused(entry("round_track")) must beTrue) and {
+          Using.resource(connect("fw_v115"))(c => run(c, Seq("UPDATE round SET track = NULL, created_at = created_at",
+            "DELETE FROM contest_change", "ALTER TABLE contest_change AUTO_INCREMENT = 1")))
+          Using.resource(connect("fw_v115"))(c => run(c, statements("V115__Round_track.sql")))
+          schema("fw_v115") === once
+        } and {
+          Using.resource(connect("fw_v115"))(c => run(c, v115Rollback))
+          (history("fw_v115").map(_.split(" \\| ")(1)) === upTo(before)) and
+            (tablesOnly(schema("fw_v115")) === tablesOnly(schema("fw_v115_prev"))) and
+            (flyway("fw_v115", production.copy(target = Some("115"))).migrate().success must beTrue) and
+            (tablesOnly(schema("fw_v115")) === tablesOnly(once))
+        }
+    }
+  }
+
   /** V96's rollback SQL after reopen (CHANGELOG, the account change log): the live unsent
     * invitations revoked first, since an older release would show one as mailed; the log dropped.
     */

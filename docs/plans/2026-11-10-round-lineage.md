@@ -80,10 +80,10 @@ Track the rounds' lineage:
   author index, `stack/149-author-round-filter`) is not deployed; otherwise take the next free
   number above it (production's Flyway settings refuse a V103 added after V104 ran):
   - `round.status`, P3's column, with its backfill, and `status_changed_at` / `status_changed_by`;
-  - the manual track label, `round.track`;
   - `round.created_at` without `ON UPDATE` (§1.4, decision 17).
 
-  A 2025-style contest is hard to read until its trial rounds are cancelled.
+  The manual track label, `round.track`, has a migration of its own in slice A (§8.1), numbered
+  at merge (V115). A 2025-style contest is hard to read until its trial rounds are cancelled.
 
 ---
 
@@ -379,7 +379,7 @@ either in R's track, or in the track R's region subset came from, or left out by
 
 **Labels** are truncated by character count, without font metrics.
 
-**Manual label** (V103, phase 1; decision 4):
+**Manual label** (slice A's migration, V115, §8.1; decision 4):
 - it names the round's track and is inherited by its later rounds without one;
 - identical labels share a track;
 - "Main" puts the track in the Main group.
@@ -424,8 +424,10 @@ real side branches such as Q-02-nofop, so it is dropped.
 
 ### 2.5 Phasing of the view
 
-- **Phase 1:** `RoundLineage`, the tables, V103 (`round.status` and its backfill, the track label,
-  `created_at`), Cancel and Reinstate, hiding and the toggles, the manual label.
+- **Slice A** (§8.1, first): `RoundLineage`'s track rule, the manual label (its own migration,
+  V115), the Track chip and the Track menu.
+- **Phase 1:** the rest of `RoundLineage`, the tables, V103 (`round.status` and its backfill,
+  `created_at`), Cancel and Reinstate, hiding and the toggles.
 - **Phase 1c:** menus grouped by track, after multi-role.
 - **Phase 4:** SVG lines, optional.
 
