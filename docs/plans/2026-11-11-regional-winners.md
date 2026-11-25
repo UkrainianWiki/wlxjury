@@ -5,8 +5,8 @@
 
 **Status:** plan only. Nothing is built. Date: 2026-11-11.
 
-**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 6, 7 and
-14 decided; 1–5, 8–13, 15–16 open; phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5).
+**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 6, 7, 8
+and 14 decided; 1–5, 9–13, 15–16 open; phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5).
 The maintainer made this the top priority for WLM 2026 Ukraine, whose jury final is at the
 beginning of December.
 
@@ -431,10 +431,10 @@ Every order is fixed: rounds by kind, depth and id; files by the rank key, then 
 - **The rank is within the region.** A parity spec checks that it equals the rank in the round's
   all-jurors "by rate" gallery with that region and order.
 
-**N per region:** the `n` parameter, 1–10, default 1 (updated 2026-11-25, decision 7). **Ties at the N-th place** are
-shown up to 2N, then "+k more tied" with a link to the region's "by rate" gallery
-(`/byrate/round/:r/user/0/region/:region/page/1`, `conf/routes:65`). Ranks are written as ranges
-(decision 8).
+**N per region:** the `n` parameter, 1–10, default 1 (updated 2026-11-25, decision 7). **Ties at
+the N-th place:** all tied files are shown (updated 2026-11-25, decision 8), with a link to the region's
+"by rate" gallery (`/byrate/round/:r/user/0/region/:region/page/1`, `conf/routes:65`). Ranks are
+written as ranges (decision 8).
 
 **Score in the round's own terms:**
 - yes/no: "3 of 3 jurors: yes", plus the rejections;
@@ -590,10 +590,11 @@ GROUP BY ri.round_id, ri.region
 ### 4.3 Per source round: the top N of its regions
 
 - **The query:** a window over the same per-file aggregate (votes path, or counts path under the
-  proof). It computes `RANK()` and `ROW_NUMBER()` over `PARTITION BY region ORDER BY <rank key>`,
-  plus `COUNT(*) OVER (PARTITION BY region, <key>)` for "+k more tied".
+  proof). It computes `RANK()` over `PARTITION BY region ORDER BY <rank key>`. All tied files are
+  shown, so the `ROW_NUMBER()` cap and the tie count are not needed (updated 2026-11-25, decision 8).
   - It is limited to the regions this round is the source for.
-  - It filters `<positive> AND rk <= N AND rn <= 2N`.
+  - It filters `<positive> AND rk <= N`, which keeps every file tied at the N-th place
+    (updated 2026-11-25, decision 8).
 - **Rank key columns:** `RankKey.of(round, order).columns`, translated with
   `RoundImageQuery.translate` (`:213`) on the counts path. A file with no positive result ranks
   below one with it, so filtering after ranking leaves the ranks unchanged.
@@ -624,7 +625,8 @@ GROUP BY ri.round_id, ri.region
   rounds below the sources are not scanned.
 - **Top N:** one window statement per source round, usually 1–3.
 - **Unlinked rounds:** one statement, only when needed.
-- **Thumbnails:** at most 27 × 2N, through the existing proxy and cache.
+- **Thumbnails:** 27 × N plus the files tied at the N-th place, with no cap (updated 2026-11-25, decision 8),
+  through the existing proxy and cache.
 - **Nothing else changes:** no new query on the voting path, the galleries or the large view.
 - **Caching:** none in phase 1. If needed, a stopped round's summary can be cached later by
   `(round_id, counts_gen)` or by the round's last vote time.
@@ -760,7 +762,7 @@ Phase 0 also records each query's time on the copy, as a first cost figure.
   - a listed round in `X` is dropped and named;
   - a cycle, and a ghost id;
   - no source with unlinked rounds named, no files at all, and the small-root warning;
-  - ties at N, the 2N cap, "+k more";
+  - ties at N: all tied files are shown (updated 2026-11-25, decision 8);
   - the stored `top_binary_order` is used, else the default.
 - **`RegionalBestQuerySpec`** (DB, truncate isolation):
   - parity with `RoundList` per region ("by rate", all jurors) for yes/no under each order, rated
@@ -965,6 +967,9 @@ region, default **1** (not the recommended 3).
 **Recommendation: (a).** Reasons:
 - (b) hides a tie the organizers must resolve;
 - (c) can mean 40 files at "3 of 3 yes".
+
+**Decided (maintainer, 2026-11-25): (c)**: all files tied at the N-th place are shown (not the
+recommended 2N cap).
 
 **9. Fewer than N positive files in the source.**
 - (a) Show those, with a link to the next candidate.
