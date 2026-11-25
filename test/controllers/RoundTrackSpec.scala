@@ -1,0 +1,262 @@
+package controllers
+
+import db.scalikejdbc._
+import org.intracer.wmua._
+import org.jsoup.Jsoup
+import org.jsoup.nodes.{Document, Element}
+import play.api.Application
+import play.api.mvc.Result
+import play.api.test.CSRFTokenHelper._
+import play.api.test.{FakeRequest, PlaySpecification}
+import scalikejdbc._
+
+import scala.concurrent.Future
+import scala.jdk.CollectionConverters._
+
+/** Round lineage slice A (docs/plans/2026-11-10-round-lineage.md §8.1): the round form's track label
+  * (decision 4: offered to the contest's admins, saved on a new or an existing round at any time with
+  * `created_at` kept, "Main" in any case or language, kept by a client without the field, refused
+  * unchanged to a juror, an organizer and another contest's admin); the Track chip on the Rounds page,
+  * the round statistics and the galleries' round menu (not a juror's); the Track menu on Rounds and
+  * Statistics (`track=`, an unknown one all rounds); the Rounds page's hint for a merge alone on Main
+  * and its warning for a missing previous round. Organizers see the chips and the menu read only.
+  */
+class RoundTrackSpec extends PlaySpecification with PlayTestDb {
+
+  sequential
+
+  private val Prefix = "Category:WLM 2026 in Ukraine - "
+
+  private case class Fixture(
+      contest: ContestJury,
+      q00: Round, qn00: Round, q01: Round, merge: Round,
+      admin: User, organizer: User, juror: User, adminB: User)
+
+  private def fixture(): Fixture = {
+    val contest = contestDao.create(None, "Wiki Loves Monuments", 2026, "Ukraine")
+    TestDb.setSource(contest.getId, Some("Category:Images from Wiki Loves Monuments 2026 in Ukraine"))
+    val other = contestDao.create(None, "WLE", 2026, "Ukraine")
+    def round(n: Int, name: String, previous: Seq[Round] = Nil, category: Option[String] = None, active: Boolean = false) =
+      roundDao.create(Round(None, n, Some(name), contest.getId, active = active, category = category,
+        previous = Option.when(previous.nonEmpty)(previous.map(_.getId).mkString(","))))
+    val q00 = round(1, "Q-00", category = Some(Prefix + "Quality"))
+    val qn00 = round(2, "Qn-00", category = Some(Prefix + "Quantity"))
+    val q01 = round(3, "Q-01", Seq(q00))
+    val merge = round(4, "Q-02", Seq(q01, qn00), active = true)
+    def user(name: String, role: String, c: ContestJury) =
+      userDao.create(User(name, s"${name.toLowerCase}@example.com", None, Set(role), contestId = c.id))
+    val admin = user("Admin", "admin", contest)
+    val organizer = user("Org", "organizer", contest)
+    val juror = user("Juror", "jury", contest)
+    val adminB = user("AdminB", "admin", other)
+    val images = (1L to 2L).map(id => Image(id, s"File:Image$id.jpg", None, None, 640, 480, Some(s"12-345-$id")))
+    imageDao.batchInsert(images)
+    merge.addUsers(Seq(RoundUser(merge.getId, juror.getId, "jury", active = true)))
+    selectionDao.batchInsert(images.map(i => Vote(i, juror, merge, 0)))
+    Fixture(contest, q00, qn00, q01, merge, admin, organizer, juror, adminB)
+  }
+
+  private def get(app: Application, viewer: User, path: String, lang: String = "en"): Future[Result] =
+    route(app, FakeRequest(GET, path).withSession(Secured.UserName -> viewer.email)
+      .withHeaders(ACCEPT_LANGUAGE -> lang).withCSRFToken).get
+
+  private def page(app: Application, viewer: User, path: String, lang: String = "en"): Document = {
+    val result = get(app, viewer, path, lang)
+    status(result) aka path must_== OK
+    Jsoup.parse(contentAsString(result))
+  }
+
+  /** The round form as the edit page posts it, with `extra` fields. */
+  private def save(app: Application, viewer: User, round: Option[Round], contestId: Long,
+      extra: (String, String)*): Future[Result] =
+    route(app, FakeRequest(POST, "/admin/rounds/save")
+      .withSession(Secured.UserName -> viewer.email)
+      .withFormUrlEncodedBody(
+        (Seq("number" -> round.fold("0")(_.number.toString), "name" -> round.flatMap(_.name).getOrElse("New"),
+          "contest" -> contestId.toString, "roles" -> "jury", "distribution" -> "0", "rates" -> "1", "minMpx" -> "",
+          "minSize" -> "", "mediaType" -> "all") ++ round.map("id" -> _.getId.toString) ++
+          Option.when(round.isEmpty)("submitToken" -> java.util.UUID.randomUUID().toString))
+          .filterNot(f => extra.exists(_._1 == f._1)) ++ extra: _*)
+      .withCSRFToken).get
+
+  private def label(r: Round): Option[String] = roundDao.findById(r.getId).flatMap(_.track)
+
+  private def chips(doc: Document, selector: String): Map[String, String] =
+    doc.select(selector).asScala.toSeq.flatMap { e =>
+      Option(e.selectFirst(".wlx-track")).map { chip =>
+        val c = e.clone(); c.select(".wlx-round-spoken, .wlx-track, .wlx-round-icon").remove()
+        c.text.trim -> chip.ownText.trim
+      }
+    }.toMap
+
+  private def rowChips(doc: Document) = chips(doc, "tbody tr.round-row .wlx-round-named")
+
+  private def rows(doc: Document): Seq[String] =
+    doc.select("tbody tr.round-row .round-stat-link").asScala.toSeq.map(_.text)
+
+  /** The Track menu's items: (text, count, href). */
+  private def trackMenu(doc: Document): Seq[(String, String, String)] =
+    doc.select("#rounds-track-menu .dropdown-item").asScala.toSeq.map { a =>
+      val text = a.select("span").asScala.find(s => !s.hasClass("wlx-menu-count") && !s.hasClass("wlx-track-swatch"))
+        .fold("")(_.text)
+      (text, a.select(".wlx-menu-count").text, a.attr("href"))
+    }
+
+  "the round form's track label" should {
+
+    "be offered to an admin, with the contest's labels and Main, and the round's automatic track in its help" in {
+      testDbApp { app =>
+        val f = fixture()
+        Round.setTrack(f.q01.getId, Some("Second look"))
+        val doc = page(app, f.admin, s"/admin/rounds/edit?contestId=${f.contest.getId}&id=${f.q01.getId}")
+        val input = doc.getElementById("track")
+        (input must not(beNull)) and (input.attr("maxlength") === "64") and (input.attr("value") === "Second look") and
+          (doc.select("datalist#round-track-labels option").eachAttr("value").asScala.toSeq === Seq("Main", "Second look")) and
+          (doc.select("input[name=trackShown][type=hidden]").attr("value") === "true") and
+          (doc.getElementById("track_help").text must contain("Automatic: Quality.")) and {
+            // Main as the page's language names it
+            Round.setTrack(f.q00.getId, Some("Main"))
+            page(app, f.admin, s"/admin/rounds/edit?contestId=${f.contest.getId}&id=${f.q00.getId}", "uk")
+              .getElementById("track").attr("value") === "Основний"
+          }
+      }
+    }
+
+    "be saved on an existing round, open or stopped, keeping created_at; Main in any case or language" in {
+      testDbApp { app =>
+        val f = fixture()
+        val created = java.sql.Timestamp.valueOf("2020-01-02 03:04:05")
+        DB.autoCommit(implicit s => sql"UPDATE round SET created_at = $created".update())
+        def createdAt(r: Round) = DB.readOnly(implicit s =>
+          sql"SELECT created_at FROM round WHERE id = ${r.getId}".map(_.timestamp(1)).single())
+        (status(save(app, f.admin, Some(f.merge), f.contest.getId, "track" -> "  Final   line ", "trackShown" -> "true")) ===
+          SEE_OTHER) and (label(f.merge) === Some("Final line")) and (createdAt(f.merge) === Some(created)) and
+          (status(save(app, f.admin, Some(f.q00), f.contest.getId, "track" -> "main", "trackShown" -> "true")) === SEE_OTHER) and
+          (label(f.q00) === Some("Main")) and
+          (status(save(app, f.admin, Some(f.q01), f.contest.getId, "track" -> "Основний", "trackShown" -> "true")) ===
+            SEE_OTHER) and (label(f.q01) === Some("Main")) and
+          // a client without the field keeps it; an empty field clears it
+          (status(save(app, f.admin, Some(f.q01), f.contest.getId)) === SEE_OTHER) and (label(f.q01) === Some("Main")) and
+          (status(save(app, f.admin, Some(f.q01), f.contest.getId, "track" -> "", "trackShown" -> "true")) === SEE_OTHER) and
+          (label(f.q01) must beNone) and (createdAt(f.q01) === Some(created)) and
+          // longer than 64 characters: refused, the form again
+          (status(save(app, f.admin, Some(f.q01), f.contest.getId, "track" -> "x" * 65, "trackShown" -> "true")) ===
+            BAD_REQUEST) and (label(f.q01) must beNone)
+      }
+    }
+
+    "be stored with a new round" in {
+      testDbApp { app =>
+        val f = fixture()
+        (status(save(app, f.admin, None, f.contest.getId, "name" -> "Q-03", "track" -> "Second look",
+          "trackShown" -> "true", "previousRound[0]" -> f.merge.getId.toString)) === SEE_OTHER) and
+          (roundDao.findByContest(f.contest.getId).find(_.name.contains("Q-03")).flatMap(_.track) === Some("Second look"))
+      }
+    }
+
+    "be refused, unchanged, to a juror, an organizer and another contest's admin, who get no form" in {
+      testDbApp { app =>
+        val f = fixture()
+        Round.setTrack(f.q00.getId, Some("Main"))
+        val refused = Seq(f.juror, f.organizer, f.adminB).map { u =>
+          status(save(app, u, Some(f.q00), f.contest.getId, "track" -> "Hijacked", "trackShown" -> "true"))
+        }
+        val forms = Seq(f.juror, f.organizer, f.adminB).map { u =>
+          status(get(app, u, s"/admin/rounds/edit?contestId=${f.contest.getId}&id=${f.q00.getId}"))
+        }
+        (refused === Seq(FORBIDDEN, FORBIDDEN, FORBIDDEN)) and (forms === Seq(FORBIDDEN, FORBIDDEN, FORBIDDEN)) and
+          (label(f.q00) === Some("Main")) and
+          // another contest's admin posting their own contest with this round: refused too
+          (status(save(app, f.adminB, Some(f.q00), f.adminB.currentContest.get, "track" -> "X", "trackShown" -> "true")) ===
+            FORBIDDEN) and (label(f.q00) === Some("Main"))
+      }
+    }
+  }
+
+  "the Rounds page" should {
+
+    "show each round's Track chip, the Track menu in the tracks' order, and the hint for a merge alone on Main" in {
+      testDbApp { app =>
+        val f = fixture()
+        val doc = page(app, f.admin, s"/admin/rounds?contestId=${f.contest.getId}")
+        (rowChips(doc) === Map("Q-00" -> "Quality", "Qn-00" -> "Quantity", "Q-01" -> "Quality", "Q-02" -> "Main")) and
+          (doc.select(".wlx-track[data-track=main]").hasClass("wlx-track-main") must beTrue) and
+          (doc.select(".wlx-track").first().attr("title") must startWith("Track: ")) and
+          (trackMenu(doc).map(t => (t._1, t._2)) === Seq("All tracks" -> "4", "Main" -> "1", "Quality" -> "2",
+            "Quantity" -> "1")) and
+          (doc.getElementById("rounds-main-hint").text must contain("Round Q-02 joins rounds of several tracks")) and {
+            // labelled Main: the hint goes, the main rounds on Main
+            Round.setTrack(f.q00.getId, Some("Main"))
+            val labelled = page(app, f.admin, s"/admin/rounds?contestId=${f.contest.getId}")
+            (labelled.getElementById("rounds-main-hint") must beNull) and
+              (rowChips(labelled) === Map("Q-00" -> "Main", "Qn-00" -> "Quantity", "Q-01" -> "Main", "Q-02" -> "Main"))
+          }
+      }
+    }
+
+    "list a track's rounds, carry the choice in its links, and list all rounds for an unknown track" in {
+      testDbApp { app =>
+        val f = fixture()
+        val quality = page(app, f.admin, s"/admin/rounds?contestId=${f.contest.getId}&track=category%3AQuality")
+        val unknown = page(app, f.admin, s"/admin/rounds?contestId=${f.contest.getId}&track=label%3ANope")
+        (rows(quality) === Seq("Q-00", "Q-01")) and
+          (quality.select("tbody .round-stat-link").first().attr("href") must contain("track=category%3AQuality")) and
+          (quality.select("#rounds-track-menu .dropdown-item.active").text must contain("Quality")) and
+          (rows(unknown) === Seq("Q-00", "Qn-00", "Q-01", "Q-02"))
+      }
+    }
+
+    "warn of a previous round that no longer exists" in {
+      testDbApp { app =>
+        val f = fixture()
+        val orphan = roundDao.create(Round(None, 5, Some("Orphan"), f.contest.getId, previous = Some("987654")))
+        val doc = page(app, f.admin, s"/admin/rounds?contestId=${f.contest.getId}")
+        doc.select(s".wlx-round-missing-previous[data-round=${orphan.getId}]").text must
+          contain("Previous round 987654 no longer exists")
+      }
+    }
+  }
+
+  "the round statistics" should {
+
+    "show the organizer the chips and the Track menu, read only, filtering the round menu" in {
+      testDbApp { app =>
+        val f = fixture()
+        val doc = page(app, f.organizer, s"/roundstat/${f.merge.getId}")
+        val main = page(app, f.organizer, s"/roundstat/${f.merge.getId}?track=main")
+        (chips(doc, "#round-stat-rounds .page-link") === Map("Q-00" -> "Quality", "Qn-00" -> "Quantity",
+          "Q-01" -> "Quality", "Q-02" -> "Main")) and
+          (trackMenu(doc).map(_._1) === Seq("All tracks", "Main", "Quality", "Quantity")) and
+          (trackMenu(doc).find(_._1 == "Quality").get._3 must contain(s"/roundstat/${f.q00.getId}?track=category%3AQuality")) and
+          (main.select("#round-stat-rounds .page-link").size === 1) and
+          // read only: no label field, no round form link
+          (doc.getElementById("track") must beNull) and (doc.select("a[href*=/admin/rounds/edit]").size === 0)
+      }
+    }
+
+    "open the first round of a track from the current round's statistics" in {
+      testDbApp { app =>
+        val f = fixture()
+        val result = get(app, f.organizer, s"/roundstat?contestId=${f.contest.getId}&track=category%3AQuantity")
+        (status(result) === SEE_OTHER) and
+          (redirectLocation(result) must beSome(s"/roundstat/${f.qn00.getId}?track=category%3AQuantity"))
+      }
+    }
+  }
+
+  "the galleries' round menu" should {
+
+    "show the chips to an organizer, and none to a juror" in {
+      testDbApp { app =>
+        val f = fixture()
+        val org = page(app, f.organizer, s"/gallery/round/${f.q00.getId}/user/0/page/1")
+        val juror = page(app, f.juror, s"/gallery/round/${f.merge.getId}/user/${f.juror.getId}/page/1")
+        def items(d: Document): Seq[Element] = d.select("#round-menu .dropdown-item").asScala.toSeq
+        (items(org).map(i => Option(i.selectFirst(".wlx-track")).map(_.ownText)) ===
+          Seq(Some("Quality"), Some("Quantity"), Some("Quality"), Some("Main"))) and
+          (juror.select("#round-menu .wlx-track").size === 0) and (juror.select(".wlx-track").size === 0) and
+          (juror.select("#rounds-track-menu").size === 0)
+      }
+    }
+  }
+}

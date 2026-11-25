@@ -1,0 +1,5 @@
+@(round: db.scalikejdbc.Round, lineage: Option[services.RoundLineage.Lineage])(implicit messages: Messages)
+@* A round's Track chip, after its name (round lineage slice A, §8.1): its track's name, cut short
+   (whole in the title), in its track's colour (views.TrackChip, theme.css --wlx-track-*); "Track:"
+   before it for screen readers. Nothing without a lineage (a page or viewer without tracks). No
+   white space around it *@@for(l <- lineage; t <- l.track(round)) {<span class="badge wlx-track @views.TrackChip.colour(t)" data-track="@t.key" title="@Messages("round.track"): @views.TrackChip.name(t, l)"><span class="visually-hidden">, @Messages("round.track"): </span>@views.TrackChip.short(t, l)</span>}

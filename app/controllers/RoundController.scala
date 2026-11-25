@@ -46,6 +46,8 @@ class RoundController @Inject() (
           contest <- ContestJuryJdbc.findById(contestId)
         ) yield {
           val rounds = Round.findByContest(contestId)
+          // the rounds' tracks (round lineage slice A): the Track chips, menu and hints
+          val lineage = services.RoundLineage.of(rounds, contest)
           // the latest of each round's distribution and juror-add jobs (as a refused start reads them)
           val jobs = RoundStartBlock.latestJobs(rounds.flatMap(_.id))
           Ok(
@@ -64,10 +66,11 @@ class RoundController @Inject() (
               Option.when(user.isRoot)(JobJdbc.latestByDedupeKey(services.imports.AuthorNormalizeHandler.DedupeKey)).flatten,
               // rounds left frozen with no job holding them: flagged, root may release them
               RoundFreezes.leftFrozen(rounds),
-              // the Status, Type and Order menus' choices (unknown values: the default)
-              RoundsFilter.fromRequest(request),
+              // the Status, Type, Track and Order menus' choices (unknown values: the default)
+              RoundsFilter.fromRequest(request).withLineage(lineage),
               // open rounds nobody can vote in (no active juror): a warning icon (DG10)
-              RoundUser.openWithoutActiveJuror(rounds)
+              RoundUser.openWithoutActiveJuror(rounds),
+              Some(lineage)
             )
           )
         }
@@ -292,6 +295,12 @@ class RoundController @Inject() (
     */
   private def adminOfRound(user: User, round: Round): Boolean = Secured.administersRound(user, round)
 
+  /** The Main track's name in each of the app's languages: typed as a track label, it is "Main"
+    * (round lineage decision 4), as the pages show it in the viewer's language.
+    */
+  private lazy val trackMainNames: Seq[String] =
+    controllerComponents.langs.availables.map(lang => messagesApi("round.track.main")(lang)).distinct
+
   def contestSpecialNominations(contestId: Long): Seq[SpecialNomination] = {
     ContestJuryJdbc
       .findById(contestId)
@@ -418,6 +427,7 @@ class RoundController @Inject() (
                       RoundCriterion.updateIn(roundId, round.criterionIds)(s).left.foreach(r =>
                         throw RoundController.CriteriaRefused(r.messageKey))
                     Round.updateRound(roundId, edited)(s)
+                    if (editForm.trackShown) Round.setTrack(roundId, round.track, trackMainNames)(s)
                     // newly ticked: the conflicts disqualified (dq, code coi, their events) under the held
                     // lock, before the job; the fill leaves out later ones by the flag
                     if (round.excludeCoi && !stored.excludeCoi)
@@ -464,6 +474,9 @@ class RoundController @Inject() (
                       RoundCriterion.updateIn(roundId, round.criterionIds).left.foreach(r =>
                         throw RoundController.CriteriaRefused(r.messageKey))
                     Round.updateRound(roundId, edited)
+                    // the track label (round lineage decision 4), by its own setter; a client without
+                    // the field keeps it
+                    if (editForm.trackShown) Round.setTrack(roundId, round.track, trackMainNames)
                     leaveOutConflictsIn(roundId, round.excludeCoi, user)
                   }
                 })
@@ -527,8 +540,8 @@ class RoundController @Inject() (
                   // a new round's images are selected and it waits in review, without jurors (the
                   // maintainer's decision of 2026-11-16, superseding D4's "Distribute as soon as the
                   // images are ready"): its jurors are chosen on its jurors form, which distributes it
-                  roundsService.submit(round.copy(active = true), Nil, RoundController.submitToken(request), user.id,
-                    titles, review = true) match {
+                  roundsService.submit(round.copy(active = true, track = Round.trackLabel(round.track, trackMainNames)),
+                    Nil, RoundController.submitToken(request), user.id, titles, review = true) match {
                     // the selection runs in the background: "Choose jurors next" waits for it on the
                     // round's jurors form; "Review images first", on the rounds list, which shows its progress
                     case created: RoundService.Created =>
@@ -732,14 +745,18 @@ class RoundController @Inject() (
                 // opens chosen as the statistics page's own menus choose (RoundsFilter.statRound,
                 // the maintainer's decision of 2026-11-19): this round if the filter keeps it,
                 // else the first of the contest's rounds the user may see that it keeps, in order
-                val filter = RoundsFilter.fromRequest(request)
+                val requested = RoundsFilter.fromRequest(request)
                 val target =
-                  if (filter.isDefault) round
-                  else
-                    filter.statRound(round,
-                      if (currentContestId.contains(round.contestId)) visible
-                      else visibleIn(round.contestId))
-                Redirect(filter.addTo(routes.RoundController.roundStat(target.getId).url))
+                  if (requested.isDefault) round
+                  else {
+                    val rounds = if (currentContestId.contains(round.contestId)) visible else visibleIn(round.contestId)
+                    // a Track choice: the contest's tracks, from all its rounds (round lineage slice A)
+                    val filter = if (requested.track.isEmpty) requested
+                      else ContestJuryJdbc.findById(round.contestId)
+                        .fold(requested)(c => requested.withLineage(services.RoundLineage.of(Round.findByContest(c.getId), c)))
+                    filter.statRound(round, rounds)
+                  }
+                Redirect(requested.addTo(routes.RoundController.roundStat(target.getId).url))
               }
               .getOrElse {
                 // a state, not an error, as for a juror ([[LoginController.index]]): no link back
@@ -779,9 +796,13 @@ class RoundController @Inject() (
                   changes.map(c => c -> names.getOrElse(c.actorId, s"#${c.actorId}"))
                 }
 
+              // the contest's tracks (round lineage slice A): the rounds' Track chips and the Track menu
+              val lineage = ContestJuryJdbc.findById(round.contestId).map(services.RoundLineage.of(stat.rounds, _))
+              val filter = lineage.fold(RoundsFilter.fromRequest(request))(RoundsFilter.fromRequest(request).withLineage(_))
+
               Secured.switchingContest(sessionUser, user)(
-                Ok(views.html.roundStat(user, round, stat, comments, RoundsFilter.fromRequest(request), noActiveJuror,
-                  roundChanges)))
+                Ok(views.html.roundStat(user, round, stat, comments, filter, noActiveJuror,
+                  roundChanges, lineage)))
             }
           }
           .getOrElse {

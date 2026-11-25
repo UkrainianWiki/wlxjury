@@ -83,7 +83,8 @@ class RoundsFilterSpec extends PlaySpecification with PlayTestDb {
   /** The statistics page's round menu, by name, in order. */
   private def statMenu(doc: Document): Seq[String] =
     doc.select("#round-stat-rounds .page-link").asScala.toSeq.map { a =>
-      val c = a.clone(); c.select(".wlx-round-spoken").remove(); c.text.trim
+      // without what screen readers alone hear and the Track chip (round lineage slice A)
+      val c = a.clone(); c.select(".wlx-round-spoken, .wlx-track").remove(); c.text.trim
     }
 
   /** A round's icon slot (snippets/roundIcon) in `e`: its type, whether grey (inactive), its icons
@@ -156,7 +157,7 @@ class RoundsFilterSpec extends PlaySpecification with PlayTestDb {
         spoken(row(f.comments)) === ", Active"
         // the slot before the name, the name its statistics link; no "Active" badge any more
         row(f.fin).selectFirst(".wlx-round-named > .wlx-round-icon + a.round-stat-link") must not(beNull)
-        doc.select("tbody .badge").size === 0
+        doc.select("tbody .badge:not(.wlx-track)").size === 0
         Seq(f.pre, f.criteria).forall(r => row(r).hasClass("wlx-round-inactive")) must beTrue
         Seq(f.stars, f.comments, f.fin).exists(r => row(r).hasClass("wlx-round-inactive")) must beFalse
         // no strikethrough
@@ -446,7 +447,7 @@ class RoundsFilterSpec extends PlaySpecification with PlayTestDb {
         // a comments-only round's chip without the empty slot (its name and "Active" for screen readers)
         link(f.comments).select(".wlx-round-icon").size === 0
         spoken(link(f.comments)) === ", Active"
-        link(f.stars).select(".badge").size === 0
+        link(f.stars).select(".badge:not(.wlx-track)").size === 0
       }
     }
 
@@ -594,7 +595,8 @@ class RoundsFilterSpec extends PlaySpecification with PlayTestDb {
         icon(item(f.comments)) === (("none", false, Nil, ""))
         spoken(item(f.fin)) === ", Yes/No, Active"
         item(f.fin).child(0).hasClass("wlx-round-icon") must beTrue
-        item(f.fin).select(".badge").size === 0
+        // no Active badge (the Track chip is a badge of its own: RoundTrackSpec)
+        item(f.fin).select(".badge:not(.wlx-track)").size === 0
         // the menu scrolls inside itself, as the region menu (main.css)
         doc.select("#round-menu > ul.dropdown-menu.wlx-round-menu").size === 1
         doc.select("#rounds-status-menu, #rounds-type-menu, #rounds-order-menu").size === 0

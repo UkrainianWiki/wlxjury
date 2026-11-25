@@ -46,6 +46,18 @@
    so that a save, a failed one's form again and Cancel come back to the same list *@
 @roundsFilter = @{ controllers.RoundsFilter.fromRequest(req) }
 
+@* an existing round's track without its own label (round lineage slice A), named in the track
+   field's help *@
+@automaticTrack = @{ editRoundForm("id").value.flatMap(_.toLongOption).flatMap(views.TrackChip.automatic(_, rounds)) }
+
+@* the track field, "Main" shown as the page names the Main track (saved back as "Main") *@
+@trackField = @{
+    editRoundForm.copy(data = editRoundForm.data.map {
+        case ("track", v) if v.trim.equalsIgnoreCase(services.RoundLineage.MainLabel) => "track" -> Messages("round.track.main")
+        case other => other
+    })("track")
+}
+
 @mainAdmin("edit.round", user, user.getId, contestId = contestId, head = formScripts) {
     <script type="application/json" id="round-form-texts">{"multiSelect": @views.JsTexts.multiSelect, "distribution": @views.JsTexts(
         "all" -> Messages("each.file.to.all.jurors"),
@@ -91,6 +103,22 @@
                     }
 
                     @bs.text(editRoundForm("name"), Symbol("_label") -> Messages("round.name.optional"))
+
+                    @* the round's track label (round lineage decision 4, slice A): empty is the automatic
+                       track; any time, also for an existing round (Round.setTrack); the contest's labels
+                       and Main offered as they are spelled, since identical labels share a track *@
+                    @bs.text(trackField, Symbol("_label") -> Messages("round.track.label"),
+                        Symbol("_help") -> (Messages("round.track.help", Messages("round.track.main")) +
+                            automaticTrack.fold("")(t => " " + Messages("round.track.automatic", t))),
+                        Symbol("maxlength") -> Round.TrackMaxLength, Symbol("list") -> "round-track-labels",
+                        Symbol("autocomplete") -> "off")
+                    <datalist id="round-track-labels">
+                        <option value="@Messages("round.track.main")"></option>
+                        @for(label <- rounds.flatMap(_.track).filterNot(_ == services.RoundLineage.MainLabel).distinct.sorted) {
+                            <option value="@label"></option>
+                        }
+                    </datalist>
+                    <input type="hidden" name="trackShown" value="true" />
 
                     @defining(!newRound) { noEdit =>
                         @round.edit.imageFiltering(editRoundForm, rounds, regions, user, noEdit && !reapply, specialNominations)
