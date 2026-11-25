@@ -5,8 +5,8 @@
 
 **Status:** plan only. Nothing is built. Date: 2026-11-11.
 
-**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 6, 7, 8
-and 14 decided; 1–5, 9–13, 15–16 open; phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5).
+**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 6–9 and 14
+decided; 1–5, 10–13, 15–16 open; phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5).
 The maintainer made this the top priority for WLM 2026 Ukraine, whose jury final is at the
 beginning of December.
 
@@ -52,7 +52,8 @@ photos and tell which round they are from."
 - **One read-only page per contest:** `/contest/:id/regional-winners`, for the contest's Admins and
   Organizers (and root). It shows one row per region of the contest's country. Each row has:
   - the region's best photos;
-  - the round they come from;
+  - the round each comes from, with "filled from round X" on files taken from a later candidate
+    when the source has fewer than N (updated 2026-11-25, decision 9);
   - why that round was used: "From round 2 (R-02): round 3 has no files of this region."
 - **The rule:**
   - **The default `F`** is the deepest round that is not any of these: a nomination round, a regional
@@ -65,12 +66,16 @@ photos and tell which round they are from."
 
     The source is the first candidate with a file of the region that has a **positive result**: a
     "yes", or a grade sum above 0.
+
+    If the source has fewer than N such files, the region is filled up from the next candidates in
+    the same order until N (updated 2026-11-25, decision 9).
 - **"Best" uses each round's own terms.**
   - **Ranking:** files are ranked as the round's all-jurors "by rate" gallery ranks them
     (`ImageWithRating.RankKey.of`, `ImageWithRating.scala:262-277`).
   - **Yes/no rounds:** they use the order the next chain round stored for its top-N, else the
     default order.
-  - **Scales:** rounds with different scales are never compared.
+  - **Scales:** rounds with different scales are never compared. In a filled region, the files of
+    a later round always come before those of an earlier one (updated 2026-11-25, decision 9).
 - **No region can go missing quietly.**
   - These are always shown:
     - a region with no source;
@@ -406,8 +411,25 @@ because they aren't ancestors of `F`.
    > done outside the app.
 
    The numbers come from `RoundImageCounts` (cached) and the category count (cached).
-6. **One source per region** (decision 9). If the source has fewer than N positive files, the row
-   says "only 1 file with a result in round 3" and links to the next candidate's files of `x`.
+6. **Filling up to N** (updated 2026-11-25, decision 9). If the source has fewer than N
+   positive files of `x`, the region is filled up:
+   - after the source's positive files, walk the region's candidate order (§2.3, the same order the
+     source was chosen from) below the source;
+   - from each candidate, append its positive files of `x` that are not already shown, in that
+     round's own rank order, until N files are shown;
+   - the round where N is reached is the **last round used**. Decision 8 applies there: every file
+     tied with the N-th file in that round is shown too;
+   - if the candidates run out first, the row shows the files found, with "only 2 files with a
+     result in the chain";
+   - the trail (item 2) runs down to the last round used, naming the files each round added.
+
+   With the default N = 1 (decision 7), the source always has enough, so filling happens only with
+   `n` ≥ 2.
+
+   **Open point (not decided):** a filled file may have been judged and not selected in a later
+   round of the chain (e.g. rejected in round 3, positive in round 2). Phase 0 on WLM 2026 shows this
+   is the usual case (§7.5). This plan shows such a file with a "not selected in round 3" note and
+   counts it in N; skipping it instead is the alternative to ask the maintainer.
 7. **Open rounds** (decision 6):
    - an active round, or one with unrated votes for `x`, is a valid source, with a "provisional"
      badge and the votes still to cast;
@@ -432,9 +454,19 @@ Every order is fixed: rounds by kind, depth and id; files by the rank key, then 
   all-jurors "by rate" gallery with that region and order.
 
 **N per region:** the `n` parameter, 1–10, default 1 (updated 2026-11-25, decision 7). **Ties at
-the N-th place:** all tied files are shown (updated 2026-11-25, decision 8), with a link to the region's
-"by rate" gallery (`/byrate/round/:r/user/0/region/:region/page/1`, `conf/routes:65`). Ranks are
-written as ranges (decision 8).
+the N-th place:** all tied files are shown (updated 2026-11-25, decision 8), with a link to the
+region's "by rate" gallery (`/byrate/round/:r/user/0/region/:region/page/1`, `conf/routes:65`).
+Ranks are written as ranges (decision 8).
+
+**Filled files** (updated 2026-11-25, decision 9):
+- **Order:** files of a later round always come before files of an earlier one; within a round, by
+  that round's rank key. Scores of different rounds, and of a yes/no and a rated round, are never
+  compared.
+- **Labels:** each file shows its round and its rank within that round. A file from a round other
+  than the source also shows "filled from round X".
+- **Badges:** the national-winner mark (decision 14), the CoI and deleted badges (decisions 12–13)
+  and "provisional" (decision 6) apply to filled files as to the source's. A file that is not
+  counted in N under those decisions makes the walk go on to the next file.
 
 **Score in the round's own terms:**
 - yes/no: "3 of 3 jurors: yes", plus the rejections;
@@ -498,23 +530,27 @@ own box, with captions and row headers.
    - dropped or missing rounds;
    - a GET form with the final-round select, `rounds`, N and `national`.
 2. **Summary:** "27 regions: 21 from round 3, 4 from round 2 (fallback), 1 with files only in
-   unlinked rounds, 1 with no files". The parts are in-page anchors.
+   unlinked rounds, 1 with no files". With `n` ≥ 2 it adds "3 filled from earlier rounds"
+   (updated 2026-11-25, decision 9). The parts are in-page anchors.
 3. **The table, one row per region,** in `RegionScheme.regions` order. Its columns:
-   - **Region:** the name, the contest's file count, and a "fallback" badge.
+   - **Region:** the name, the contest's file count, and "fallback" and "filled" badges
+     (updated 2026-11-25, decision 9).
    - **Best photos:** thumbnails (`Global.resizeTo`, `app/controllers/Global.scala:58`). Each has its
      rank, title, score and badges (provisional, CoI, deleted, national winner), and links to the
-     large view (`conf/routes:97`).
-   - **Source round:** number and name (`Round.description`, `Round.scala:114-117`), rating and scale,
-     "2 of 3 in the chain" / "regional" / "add-on to R-02", and links to its stats and its region
-     gallery.
-   - **Why:** the reasons (§2.4) and the trail, down to the source: "R-03: 0 files · R-02: 12 files,
+     large view (`conf/routes:97`). Each also names its round, and a filled one says "filled from
+     round X" (updated 2026-11-25, decision 9).
+   - **Source round** (and the fill rounds, if any; updated 2026-11-25, decision 9): number and
+     name (`Round.description`, `Round.scala:114-117`), rating and scale, "2 of 3 in the chain" /
+     "regional" / "add-on to R-02", and links to its stats and its region gallery.
+   - **Why:** the reasons (§2.4) and the trail, down to the source (with filling, down to the last
+     round used; updated 2026-11-25, decision 9): "R-03: 0 files · R-02: 12 files,
      5 selected".
 4. **Collapsed groups** (`<details>`):
    - nomination prefixes and Other prefixes (decision 10);
    - files without a monument id (count, with a link to the contest files page);
    - regions with no files in the contest.
 5. **Filters:**
-   - "only fallbacks and regions without a source";
+   - "only fallbacks, filled regions and regions without a source" (updated 2026-11-25, decision 9);
    - "hide regions with no files".
 
    Both are GET flags. The default shows every region.
@@ -544,6 +580,8 @@ File:Example.jpg|1. 8.50 (17 / 2 jurors)
 - **Captions** are numbers and message text only, with no author wikitext. File titles can't contain
   `|`, `[`, `]`, `{` or `}`.
 - **Not listed:** files that may not be eligible (decisions 12–14) are left out of the export.
+- **Filled files** name their round in the caption ("filled from round 2") (updated 2026-11-25,
+  decision 9).
 
 **CSV** (optional) needs an `ExportsSpec` change (`ExportsSpec.scala:5-20`).
 
@@ -587,14 +625,19 @@ GROUP BY ri.round_id, ri.region
 - `round_image`'s membership and region are kept in the vote's transaction (V84 comment), so they
   are exact whatever `roundImage.read` is. Only the counts are background-kept.
 
-### 4.3 Per source round: the top N of its regions
+### 4.3 Per source round: the top N of its regions (and fill rounds, updated 2026-11-25, decision 9)
 
 - **The query:** a window over the same per-file aggregate (votes path, or counts path under the
   proof). It computes `RANK()` over `PARTITION BY region ORDER BY <rank key>`. All tied files are
   shown, so the `ROW_NUMBER()` cap and the tie count are not needed (updated 2026-11-25, decision 8).
-  - It is limited to the regions this round is the source for.
+  - It is limited to the regions this round is the source or a fill round for (updated
+    2026-11-25, decision 9).
   - It filters `<positive> AND rk <= N`, which keeps every file tied at the N-th place
     (updated 2026-11-25, decision 8).
+  - **Fill rounds** (updated 2026-11-25, decision 9): the ranks stay the round's own, over all its
+    positive files of `x`. The filter is `rk <= k + s`, where `k` is the number of files still needed and `s` the
+    number of already shown files of `x` that this round holds. The rule (Scala) then drops the
+    shown files and cuts at `k`, keeping the tie at the cut.
 - **Rank key columns:** `RankKey.of(round, order).columns`, translated with
   `RoundImageQuery.translate` (`:213`) on the counts path. A file with no positive result ranks
   below one with it, so filtering after ranking leaves the ranks unchanged.
@@ -611,8 +654,9 @@ GROUP BY ri.round_id, ri.region
   - summaries are read round by round in the order of §2.3, newest regional rounds and the deepest
     chain round first;
   - each round resolves the regions it has a positive file for;
-  - reading stops when every region has a source, or the candidates run out;
-  - a region keeps its trail only down to its source.
+  - reading stops when every region has a source and N files, or the candidates run out
+    (updated 2026-11-25, decision 9);
+  - a region keeps its trail only down to its last round used.
 - **Typical case:** 1–2 summaries, because the final round covers most regions and the previous
   round the rest.
 - **Worst case:** all of `A ∪ G ∪ B`.
@@ -623,10 +667,12 @@ GROUP BY ri.round_id, ri.region
     round, far less later *(inf.)*.
 - **Header numbers:** file totals for the chain's rounds come from the cached `RoundImageCounts`, so
   rounds below the sources are not scanned.
-- **Top N:** one window statement per source round, usually 1–3.
+- **Top N:** one window statement per source or fill round, usually 1–3. With `n` ≥ 2, a region
+  with few files can reach back to a root (§7.5: region 18 of WLM 2026 at `n=3`), so up to all of
+  `A ∪ G ∪ B` (updated 2026-11-25, decision 9).
 - **Unlinked rounds:** one statement, only when needed.
-- **Thumbnails:** 27 × N plus the files tied at the N-th place, with no cap (updated 2026-11-25, decision 8),
-  through the existing proxy and cache.
+- **Thumbnails:** 27 × N plus the files tied at the N-th place, with no cap (updated 2026-11-25,
+  decision 8), through the existing proxy and cache.
 - **Nothing else changes:** no new query on the voting path, the galleries or the large view.
 - **Caching:** none in phase 1. If needed, a stopped round's summary can be cached later by
   `(round_id, counts_gen)` or by the round's last vote time.
@@ -641,7 +687,10 @@ GROUP BY ri.round_id, ri.region
 | Kyiv city (`80`) and Kyiv oblast (`32`) | Separate regions. Sub-region ids (`80-361`) in a filter count as their top-level region |
 | A region in round 3 with only rejected files | Not present (decision 4). The reason says "none selected", and the report falls back |
 | A region in round 3 with files not yet voted | Not present until it has a positive result. "Provisional" on the source (decision 6) |
-| A region in round 3 with 1 positive file, N = 3 | Round 3 alone, with a note and a link (decision 9) |
+| A region in round 3 with 1 positive file, N = 3 | Round 3's file, then 2 filled from the next candidates, each labelled "filled from round X" (decision 9; updated 2026-11-25, decision 9) |
+| A filled candidate holds a file already shown from a later round | Shown once, from the later round (updated 2026-11-25, decision 9) |
+| A filled file was not selected in a later round | Shown with a "not selected in round 3" note; open point (§2.4 item 6; updated 2026-11-25, decision 9) |
+| Fewer than N positive files in the whole candidate order | The files found, with "only k files with a result in the chain" (updated 2026-11-25, decision 9) |
 | A "round 2 not in round 3" round, created after this report | An add-on above round 2, below round 3 (§2.3). It never becomes `F` (§2.2) |
 | A review round of round 2's rejected files | An add-on below round 2 |
 | A trial round at round 3's depth (until lineage's Cancel; updated 2026-11-25) | Named in the ambiguity warning; `F` is the larger id, and the organizer can pick the other |
@@ -649,7 +698,7 @@ GROUP BY ri.round_id, ri.region
 | A regional round copied by hand (2025, no edge) | Named under "unlinked rounds" for its regions (§2.4 item 3). It can be added with `rounds=` |
 | WLE rounds without `previous` | The chain is just `F`. Missing regions name the unlinked rounds, and the header warns about the small root (§2.4 item 5) |
 | A chain round with a filter of all regions | Not regional (lineage rule 4) |
-| Rounds with different scales | Each region's photos come from one round, on its scale |
+| Rounds with different scales | Each file is shown on its own round's scale; files of a later round come first; scores of different rounds are never compared (updated 2026-11-25, decision 9) |
 | A merge | All feeders are in `A`, below the merge |
 | Score rule changed after the announcement | The current rule is shown and named |
 | Stopped jurors | Their votes count (§1.3) |
@@ -763,6 +812,15 @@ Phase 0 also records each query's time on the copy, as a first cost figure.
   - a cycle, and a ghost id;
   - no source with unlinked rounds named, no files at all, and the small-root warning;
   - ties at N: all tied files are shown (updated 2026-11-25, decision 8);
+  - **filling** (updated 2026-11-25, decision 9):
+    - 1 positive file in round 3 at N = 3 → 2 more from round 2, labelled "filled from round 2";
+    - a file shown from round 3 is not repeated from round 2;
+    - a tie at the cut in the last round used → all tied files of that round shown;
+    - a yes/no round's files after a rated round's, never interleaved by score;
+    - the candidates run out before N → the files found, with the note;
+    - a national winner, a CoI file and a deleted file among the filled files get their badges;
+    - a filled file not selected in a later round gets the note;
+    - WLM 2026 phase 0's region 18 (1 file in Q-02 at `n=3`) fills 2 files from Qn-00 (§7.5);
   - the stored `top_binary_order` is used, else the default.
 - **`RegionalBestQuerySpec`** (DB, truncate isolation):
   - parity with `RoundList` per region ("by rate", all jurors) for yes/no under each order, rated
@@ -770,7 +828,9 @@ Phase 0 also records each query's time on the copy, as a first cost figure.
   - `dq` and `deleted` files are out, and stopped jurors are counted;
   - both read paths give the same rows (votes; counts with a clean generation), and a dirty
     generation falls back;
-  - the unlinked-rounds query.
+  - the unlinked-rounds query;
+  - the fill query: the round's own ranks, the `rk <= k + s` bound and the cut with ties
+    (updated 2026-11-25, decision 9).
 - **`RegionalWinnersPageSpec`** (controller):
   - admin 200, organizer 200, root 200, and 404 for a missing contest;
   - negative: a juror of the contest, a non-member, an admin of another contest and a pre-screener
@@ -856,6 +916,9 @@ what-if; about 0.5 s each, including `docker exec`.
   1,166 positive) is not an ancestor of Q-02 and drops out, as assumed.
 - **Coverage:** all 27 regions have positive files in Q-02, so no region falls back today. Per
   region, 1 (18) to 55 (63) files; **3 regions have fewer than N = 3** (18: 1; 35, 85: 2).
+  At `n=3`, region 18 fills from Qn-00: Q-02's feeders hold no other positive file of 18, and all
+  43 of Qn-00's positive files of 18 got no yes in Qn-00-1, so every filled file is one a later
+  round didn't select (§2.4 item 6's open point) (updated 2026-11-25, decision 9).
 - **"Positive":** every Q-02 file has a mark above 0; in the yes/no feeders whole regions have
   files but no yes (Q-00-1.5: 105 files, 6 positive).
 - **Open round (decision 6):** 13 jurors, each assigned every file; 1,689 of 6,591 marks cast (3.3
@@ -976,6 +1039,10 @@ recommended 2N cap).
 - (b) Fill up from earlier rounds.
 
 **Recommendation: (a).** Reason: one source per region keeps the page explainable, and scales differ.
+
+**Decided (maintainer, 2026-11-25): (b)**: a region with fewer than N positive files in its source
+round is filled up from earlier rounds in the chain until N, each file labelled with the round it
+comes from (not the recommended "one source per region").
 
 **10. Region scope.**
 - (a) Geographic regions in the table; nomination prefixes, Other and files without an id in
