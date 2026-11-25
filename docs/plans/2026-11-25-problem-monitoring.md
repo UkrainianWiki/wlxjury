@@ -1,6 +1,6 @@
 # Problem monitoring: refusals, errors and failed jobs seen without looking for them (plan, 2026-11-25)
 
-**Status:** draft, for the maintainer's decisions (§9); Q1, Q2 and Q3 decided 2026-11-25. Read-only survey of master at `5d72c4d8`
+**Status:** draft, for the maintainer's decisions (§9); Q1–Q4 decided 2026-11-25. Read-only survey of master at `5d72c4d8`
 (after the 26.11.16 build); no code changed, no test run. References are to files and functions;
 line numbers drift.
 
@@ -329,7 +329,7 @@ each match creates a problem or extends an open one: the same `pattern` and `sco
 `last_event_at` within 24 hours → `last_event_at`, `event_count` updated, its events'
 `problem_id` set. A match after 24 hours of quiet is a new problem.
 
-| # | Pattern | Default rule | Severity | Default on (Q4) |
+| # | Pattern | Default rule | Severity | Default (Q4, decided: all on) |
 |---|---|---|---|---|
 | P1 | **Refused saves of one form** | ≥ 3 `form_refused` of one form by one account within 15 minutes (the 2026-11-25 case: it fires at the third, 08:06) | warn | on |
 | P2 | **Resubmit dropped** | any `resubmit_dropped` with outcome `changed` (the 08:15 save: edits lost; rare once the UI-path Q6 fix ships) or `given_up`; `same` (a double click) makes no problem | warn | on |
@@ -340,13 +340,13 @@ each match creates a problem or extends an open one: the same `pattern` and `sco
 | P7 | **CSRF refusals of one account** | ≥ 3 `csrf_refused` of one account within 15 minutes (a page left open across a deploy or a session change) | warn | on |
 | P8 | **Link refused** | ≥ 2 `link_refused` for one token or account within 24 hours (someone can't get in) | warn | on |
 | P9 | **Fallback refusals** | any `form_refused` with `keys = unknown` (a form without `FormRefusal`) | warn | on |
-| P10 | **Jurors on a stopped round** | ≥ 5 `round_access_refused` of one round within 1 hour | warn | off |
+| P10 | **Jurors on a stopped round** | ≥ 5 `round_access_refused` of one round within 1 hour | warn | on |
 | P11 | **In-app task failing** | ≥ 2 `task_failed` of one task within 1 hour | fail | on |
-| — | **Denials across a contest** | ≥ 20 `denied` in one contest within 1 hour | warn | off |
-| — | **Jobs cancelled** | `job_cancelled`: recorded, shown on the Problems page's Events tab, no problem (an admin's Cancel is a normal action) | — | off |
+| P12 | **Denials across a contest** | ≥ 20 `denied` in one contest within 1 hour | warn | on |
+| — | **Jobs cancelled** | `job_cancelled`: recorded, shown on the Problems page's Events tab, no problem (an admin's Cancel is a normal action) | — | not a pattern (recorded only) |
 
 Thresholds are settings (`problems.patterns.p1.count`, `.window`, `.enabled`), so they can be tuned
-on production without a release. Exact rules are tuned in M-3 against the first weeks of M-2's
+on production without a release. **Q4, decided [user] 2026-11-25: "Everything":** every pattern (P1–P12) is on by default; noisy ones are tuned or turned off later through these settings, against the first weeks of M-2's
 events.
 
 ## 5. Logging: one structured line per event
@@ -414,7 +414,7 @@ other contests, no `server_error` (root support), the email masked. No badge for
 |---|---|---|---|
 | **M-1** | `FormRefusal` (keys and field names, arguments dropped), used only in `RoundController.saveRound`'s two refusal branches (`formWithErrors` and `reRender`), and the `resubmit_dropped` line with §2.3's in-memory form hash (`same` / `changed`), replacing the unquoted resubmit line. **Log only: no table, no migration, no filter.** The line is named `form_refused`; the UI-path plan (#189) is aligned to that name, and M-1 *is* its refusal-UX log item, not a second logger | S (≈ 1 day) | **26.11.17**, inside the UI-path refusal-UX PR (d) |
 | **M-2** | The migration (both tables), `EventRecorder`, the flood cap, `RefusalFilter`, the hooks of §2.1 (`logDenial`, `ErrorHandler`, `CsrfErrorHandler`, `JobScheduler`, link refusals, timers), `FormRefusal` in the other forms, secure-coding §13/§22, `LogHygieneSpec`. Takes over support diagnostics D-3 | M (2–3 days) | after lineage slice A (its migration number then) |
-| **M-3** | `ProblemCheckTask` and its watchdog, patterns P1–P11 with settings, `problem_detected`; P5 shared with H11 | M (2–3 days) | right after M-2 |
+| **M-3** | `ProblemCheckTask` and its watchdog, patterns P1–P12 with settings, all on by default (Q4), `problem_detected`; P5 shared with H11 | M (2–3 days) | right after M-2 |
 | **M-4** | Badge, Problems page, mark seen/new, filters, links; negative authorization specs | S–M (2 days) | with M-3 or right after |
 | **M-5** | Runbook: Apache access-log retention for the jury vhosts (below); operations §5 "What is watched" gains the Problems page | S (half a day + the maintainer's sudo step) | any time; best before the next season |
 | later | Contest admins' section (Q3) | S (1 day) | not now (Q3 decided: root only) |
@@ -511,7 +511,7 @@ One decision each. A recommendation is this plan's, open to the maintainer.
    noise and showing one member's refusals to the contest's admins, which the health page's member
    view already allows. **Recommendation: root only for M-4; add the admins' section after a season,
    if root finds the problems would have been better handled by the contest's admins.**
-4. **Q4. Which patterns are on by default?** §4.2's table: P1–P9 and P11 on; P10 (jurors on a stopped
+4. **Q4. Which patterns are on by default?** **Decided [user] 2026-11-25: "Everything": all patterns, P10 and the contest-wide denial burst (P12) included, on by default; tuned later via settings.** The question as asked: §4.2's table: P1–P9 and P11 on; P10 (jurors on a stopped
    round) and denials across a contest off, as likely noise. **Recommendation: as in the table**,
    tuned after M-2's first weeks of events.
 5. **Q5. Is "seen" shared by all root accounts or per account?** Shared: one person marks it, every
