@@ -1,4 +1,4 @@
-// The round form's category filter (docs/user/admin-guide.md "Choosing the round's files"): two
+// The round form's category filter (docs/user/round-files.md "Choosing the round's files"): two
 // boxes always shown in the Media filtering section, "Only files in category" with its hint and
 // "Leave out files in category"; "More category options" (a <details>, closed) says what the second
 // box does, and its label follows the choice. Nothing is saved: the form's POST is answered here,

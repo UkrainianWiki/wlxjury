@@ -502,7 +502,7 @@ def collect(root):
     linked = {(p, a) for s in stories.values() for t, a in s.links
               for p in [(cat_path.parent / t).resolve() if t else cat_path.resolve()]}
     unlinked = [(p, title) for p, heads in guides.items() if heads
-                for level, title, a in heads if level == 3 and (p, a) not in linked]
+                for level, title, a in heads if level in (2, 3) and (p, a) not in linked]
     extra = {"counts": (browser_tags, browser_raw, scala_count, scala_raw), "skipped": skipped, "unlinked": [(rel(p) if root.resolve() in p.parents else p.name, t) for p, t in unlinked]}
     return stories, errors, notes, extra
 
