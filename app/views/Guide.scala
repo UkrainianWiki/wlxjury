@@ -16,11 +16,17 @@ object Guide {
   /** The branch a link falls back to without a build identity. */
   val Fallback = "master"
 
-  /** A build identity's version (`wlxjury-build.json`'s `version`), if it has one. */
-  def versionOf(manifest: String): Option[String] =
-    Try((Json.parse(manifest) \ "version").as[String]).toOption.map(_.trim).filter(_.nonEmpty)
+  /** A release's version, a tag: numbers and dots only (`26.11.17.1`); a snapshot has no tag. */
+  private val Release = """\d+(\.\d+)+""".r
 
-  /** The build's version, the release tag (`26.11.17.1`). */
+  /** A build identity's version (`wlxjury-build.json`'s `version`), if it is a release's: none for
+    * a snapshot (`26.11.18-SNAPSHOT`, a build of master between releases), whose tag doesn't exist,
+    * so its links go to the default branch.
+    */
+  def versionOf(manifest: String): Option[String] =
+    Try((Json.parse(manifest) \ "version").as[String]).toOption.map(_.trim).filter(Release.matches)
+
+  /** The build's version, the release tag (`26.11.17.1`), or [[Fallback]] for a snapshot. */
   lazy val version: String = Try {
     val stream = getClass.getClassLoader.getResourceAsStream("wlxjury-build.json")
     try new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8) finally stream.close()

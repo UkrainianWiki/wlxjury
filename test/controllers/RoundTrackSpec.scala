@@ -118,6 +118,13 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         (views.Guide.versionOf("{}") must beNone) and (views.Guide.versionOf("not json") must beNone)
     }
 
+    "point a snapshot's link at master, whose tag doesn't exist" in {
+      val snapshot = views.Guide.versionOf("""{"buildId":"26.11.18-SNAPSHOT-0123456789ab","version":"26.11.18-SNAPSHOT"}""")
+      (snapshot must beNone) and
+        (views.Guide.admin("a-tracks", snapshot.getOrElse(views.Guide.Fallback)) ===
+          "https://github.com/UkrainianWiki/wlxjury/blob/master/docs/user/admin-guide.md#a-tracks")
+    }
+
     "take the build's version, not the fallback, when the build identity is there" in {
       (buildVersion must not(beEmpty)) and (views.Guide.version === buildVersion) and
         (views.Guide.version !== views.Guide.Fallback)
