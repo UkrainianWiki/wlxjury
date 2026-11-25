@@ -5,8 +5,8 @@
 
 **Status:** plan only. Nothing is built. Date: 2026-11-11.
 
-**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 1, 2 and
-6–14 decided; 3–5, 15–16 open; phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5).
+**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 1–3 and
+6–14 decided; 4, 5, 15–16 open; phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5).
 The maintainer made this the top priority for WLM 2026 Ukraine, whose jury final is at the
 beginning of December.
 
@@ -1058,6 +1058,9 @@ that it guessed.
 - (c) silently drops round 3 when organizers make the very round this report suggests;
 - (b) blocks the page on a trial round, which can't be cancelled before V99;
 - (a) still names the tie.
+
+**Decided (maintainer, 2026-11-25): (a)**: side rounds are add-ons, never the default final round; a
+tie of plain end rounds is warned about and named; a leave-out add-on off the final ranks below it.
 
 **4. What "present in a round" means.**
 - (a) At least one file with a positive result.
