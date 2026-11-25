@@ -90,14 +90,31 @@ application log line, so their cause can only be inferred (the UI-path testing p
 
 One recorder, `services.monitoring.EventRecorder.record(event: SupportEvent): Unit`, used by every
 hook. It writes the log line (§5) at once, on the caller's thread, and **hands the row to a bounded
-in-memory queue** (1,000 events) drained by one writer thread of its own, which inserts in small
-batches with `autoSession`. A request thread therefore never waits for the database: when the
-database is slow or down (it may be the cause of a 500), the queue fills, further rows are dropped
-and counted, and a `support_event_lost count= kinds=` WARN line (once a minute) says so; the log
-lines are still written. The writer never throws (error class only in its WARN line). On shutdown
-it drains the queue for up to 5 seconds. A flood is capped in memory before the queue (§3.4). In
-tests the recorder writes inline (`problems.mode = manual`), so specs read the row right after the
-request.
+in-memory queue** (1,000 events) drained by one writer thread of its own, which writes in small
+batches, **one explicit transaction per batch** (not `autoSession`, which would commit each
+statement on its own), in this order:
+
+1. mark the batch as opening in memory (no time yet);
+2. read `NOW(3)` as the transaction's first statement: T0;
+3. publish T0 in memory ("open since T0"), before any row is written;
+4. insert the rows and apply the folds (§3.4), each with `changed_at = NOW(3)`, so `≥ T0`;
+5. commit (or roll back), then clear the mark.
+
+The order is what lets the problem check (§4.2) never pass an uncommitted row. Publishing T0
+before any row is written means a row can't exist uncommitted while no T0 is shown. The opening
+mark covers the gap between reading `NOW(3)` and publishing T0: without it, a tick could take its
+upper bound in that gap, see no open batch, and, if the writer stalled there longer than the
+settle margin, move its checkpoint past the rows written next. A tick takes its own `U = NOW(3)`
+before it looks at the mark; when it sees a batch opening without T0 it waits for T0 (one round
+trip). A batch that opens after the tick looked reads a T0 later than that tick's `U`, so its rows
+land after the tick's bound anyway.
+
+A request thread therefore never waits for the database: when the database is slow or down (it may
+be the cause of a 500), the queue fills, further rows are dropped and counted, and a
+`support_event_lost count= kinds=` WARN line (once a minute) says so; the log lines are still
+written. The writer never throws (error class only in its WARN line). On shutdown it drains the
+queue for up to 5 seconds. A flood is capped in memory before the queue (§3.4). In tests the
+recorder writes inline (`problems.mode = manual`), so specs read the row right after the request.
 
 ### 2.1 Event kinds
 
@@ -298,10 +315,10 @@ per account (Q5, decided [user] 2026-11-25).
   is a batched `DELETE … WHERE created_at < ? LIMIT 5000` run by the problem check (§4), with the
   events' `support_problem_event` rows deleted with them, and no schema change. Before deleting, it
   adds the deleted linked events' `repeat_count` to each problem's `purged_count`, so a problem that
-  is still open across the cutoff keeps its full count (§4.2); the cleanup's spec checks that.
-  Options to choose from then: 90 days, 400 days (one season and the same weeks a year later), or by
-  kind (e.g. `denied` shorter). "The contest's lifetime" doesn't fit: contests are reused across
-  years (support diagnostics H21), and denials and server errors often have no contest.
+  is still open across the cutoff keeps its full count (§4.2); the cleanup's spec checks that (§8,
+  M-3). Options to choose from then: 90 days, 400 days (one season and the same weeks a year later),
+  or by kind (e.g. `denied` shorter). "The contest's lifetime" doesn't fit: contests are reused
+  across years (support diagnostics H21), and denials and server errors often have no contest.
 
 ### 3.3 Size
 
@@ -386,15 +403,15 @@ an outage longer than any pattern window loses no events:
   `(changed_at, id) > (checkpoint_at, checkpoint_id)` and `changed_at ≤ U − problems.settle`
   (default 2 minutes), at most `problems.batch` rows (default 10,000). The settle margin leaves out
   rows the writer thread is likely still committing.
-- **The scan never passes an open writer transaction.** The writer (§2) reads `NOW(3)` as the first
-  statement of each batch transaction and publishes it in memory as "open since T0" until the
-  commit or rollback returns; every row it writes in that transaction has `changed_at ≥ T0`. The
-  tick's upper bound is the earlier of `U − problems.settle` and just before T0 of an open batch,
-  so a writer that stalls (a slow commit, a lock wait, a long pause) only holds the scan back; its
-  rows are never left behind the checkpoint. The settle margin is then only a cheap first filter.
-  The writer and the check run in one app; if a second instance ever runs (§4.1), this guard has to
-  span instances (the bound also stays before the oldest open writer transaction in
-  `information_schema.INNODB_TRX`, the writers' connections named), built with that instance.
+- **The scan never passes an open writer transaction.** The writer publishes the start (T0) of its
+  open batch transaction before writing any row, and clears it only after the commit or rollback
+  returns (§2, with why the order matters). The tick's upper bound is the earlier of `U` minus
+  `problems.settle` and just before T0 of an open batch, so a writer that stalls (a slow commit, a
+  lock wait, a long pause) only holds the scan back; its rows are never left behind the checkpoint.
+  The settle margin is then only a cheap first filter. The writer and the check run in one app; if a
+  second instance ever runs (§4.1), this guard has to span instances (the bound also stays before
+  the oldest open writer transaction in `information_schema.INNODB_TRX`, the writers' connections
+  named), built with that instance.
 - The new checkpoint is the last row read, so it only moves forward, never back, and a batch
   that is full advances it even when all its rows share one `changed_at`. A full batch is followed
   at once by the next, each its own transaction, until the backlog is read. A tick that reads no
@@ -582,9 +599,13 @@ database holds the history.
   `changed_at` are each read once over four batches and the checkpoint never moves back; an event
   inside the settle margin is read by the first tick after it settles; a writer batch held open past
   the margin (a test hook) keeps the checkpoint before its T0, and its rows are read after it
-  commits; P2 counts `changed` and `given_up`, not `same`; P5 on a queued job with no running job of
-  its kind and on a stale heartbeat; a disabled pattern makes nothing; a tick that throws leaves the
-  next tick running and trips the watchdog after three intervals.
+  commits; a tick that finds a batch marked opening without T0 waits for T0 and keeps its bound
+  before it; a cleanup of events before a cutoff (in its own spec, once the cleanup is built, §3.2)
+  adds the deleted linked events' `repeat_count` to each problem's `purged_count`, and a problem
+  still open across the cutoff keeps its `event_count`, `first_event_at` and `last_event_at` when a
+  new event is linked; P2 counts `changed` and `given_up`, not `same`; P5 on a queued job with no
+  running job of its kind and on a stale heartbeat; a disabled pattern makes nothing; a tick that
+  throws leaves the next tick running and trips the watchdog after three intervals.
 - **M-4** (`controllers.ProblemsPageSpec`), with the negative authorization cases:
   - root sees the page, the badge with the right count, and can mark seen and new; a problem
     that got an event after the page was shown stays new when that page's Mark as seen is posted;
