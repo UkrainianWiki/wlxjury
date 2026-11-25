@@ -488,6 +488,36 @@ class RoundJurorsAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "name the rounds created from it, linked, as information; none for a round with none or only a cancelled one" in {
+      testDbApp { app =>
+        val (round, _, users) = setUp()
+        val r = round.getId
+        RoundUser.setActive(r, users("juror2").getId, active = false)
+        def pages() = Seq(page(r), page(r) + s"?juror=${users("newjuror").getId}", page(r) + s"?juror=${users("juror2").getId}")
+          .map(p => contentAsString(get(app, Some("admin@example.com"), p)))
+        // a cancelled creation from it doesn't count
+        val cancelled = roundDao.create(Round(None, 2, Some("Gone"), contestId, previous = Some(r.toString)))
+        sql"UPDATE round SET status = ${Round.Status.Cancelled}, distributing = 1 WHERE id = ${cancelled.getId}".update()
+        val none = pages()
+        val semi = roundDao.create(Round(None, 3, Some("Semi-final"), contestId, previous = Some(r.toString)))
+        val other = roundDao.create(Round(None, 4, None, contestId, previous = Some(s"${r},${semi.getId}")))
+        val two = pages()
+        val semiPages = Seq(contentAsString(get(app, Some("admin@example.com"), page(semi.getId))))
+        none.map(b => b must not(contain("round-juror-add-next"))).reduce(_ and _) and
+          two.map { b =>
+            (b must contain("id=\"round-juror-add-next\"")) and (b must contain("Created from this round:")) and
+              (b must contain(s"""href="/roundstat/${semi.getId}" data-round="${semi.getId}">Round 3 (Semi-final)</a>""")) and
+              (b must contain(s"""href="/roundstat/${other.getId}" data-round="${other.getId}">Round 4</a>""")) and
+              (b must not(contain(s"""/roundstat/${cancelled.getId}""""))) and
+              (b must contain("images are distributed again")) and
+              (b must contain("<p class=\"text-muted\" id=\"round-juror-add-next\">"))
+          }.reduce(_ and _) and
+          // round 3 has round 4 created from it too
+          (semiPages.head must contain(s"""data-round="${other.getId}"""")) and
+          (semiPages.head must not(contain(s"""data-round="${semi.getId}"""")))
+      }
+    }
+
     "keep a stopped round closed for its jurors while a juror is added: round_closed, never round_paused" in {
       testDbApp { app =>
         val (round, _, users) = setUp()

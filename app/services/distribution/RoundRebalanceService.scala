@@ -294,6 +294,17 @@ class RoundRebalanceService @Inject() (jobs: JobScheduler) {
 
 object RoundRebalanceService {
 
+  /** The rounds created from this one: those of its contest with it among their `previous` rounds
+    * (the lineage's edges, [[services.RoundLineage]]), but cancelled creations, by id. Their files
+    * were chosen from this round's votes when they were distributed, and change only when one of
+    * them is distributed again ("Distribute new files", its filters re-applied in review, a Retry of
+    * its creation): the add page says so. One read of the contest's rounds.
+    */
+  def createdFrom(round: Round): Seq[Round] =
+    Round.findByContest(round.contestId)
+      .filter(r => r.previousIds.contains(round.getId) && !services.RoundLineage.cancelled(r))
+      .sortBy(_.getId)
+
   /** Starts or stops a juror of the round (the round stat table's Start/Stop), under the round's
     * lock: refused while a job holds the round's key (a distribution, or a juror being added), as
     * that job reads the round's jurors as they were. A plain read of the key under the lock, as

@@ -7,7 +7,8 @@
         preview: Option[Preview],
         notice: Option[String],
         signature: String,
-        paused: Boolean
+        paused: Boolean,
+        createdFrom: Seq[Round] = Nil
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @* Adding a juror to a running or a stopped round (RoundJurorsController): a GET form to choose the juror (only the
@@ -44,6 +45,13 @@
             }
             @if(paused) {
                 <div class="alert alert-info" role="status">@Messages("round.paused.staff")</div>
+            }
+            @* the rounds created from this one (RoundRebalanceService.createdFrom): information, not a warning;
+               their files change only when they are distributed again *@
+            @if(createdFrom.nonEmpty) {
+                <p class="text-muted" id="round-juror-add-next">@Messages("round.juror.add.next")
+                    @for((next, i) <- createdFrom.zipWithIndex) {@if(i > 0) {, }<a href="@routes.RoundController.roundStat(next.getId)" data-round="@next.getId">@Messages("round.juror.add.next.round", next.number)@for(name <- next.name.filter(_.trim.nonEmpty)) { (@name)}</a>}.
+                    @Messages("round.juror.add.next.votes")</p>
             }
 
             <form method="get" action="@routes.RoundJurorsController.addPage(round.getId, None)" id="round-juror-add-choose">

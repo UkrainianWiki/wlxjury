@@ -155,7 +155,7 @@ class RoundJurorsController @Inject() (
     val preview = juror.map(rebalance.preview(round, _, donors))
     val jury = preview.fold(rebalance.jury(round))(_.jury)
     views.html.round.addJuror(user, round, jury, preview, notice, RoundRebalanceService.signature(jury.jurors),
-      Round.isPaused(round.getId))
+      Round.isPaused(round.getId), RoundRebalanceService.createdFrom(round))
   }
 
   private def reassignView(user: User, round: Round, preview: ReassignPreview, notice: Option[String])(implicit
