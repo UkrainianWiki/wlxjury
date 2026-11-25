@@ -5,10 +5,10 @@
 
 **Status:** plan only. Nothing is built. Date: 2026-11-11.
 
-**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 1–3,
-6–8, 10–14 decided; 4 and 9 replaced by "show, don't pick"; 5 (narrowed to a column's place), 15,
-16 open; phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5). The maintainer made this
-the top priority for WLM 2026 Ukraine, whose jury final is at the beginning of December.
+**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 1–3, 5–8,
+10–14 and default columns (17) decided; 4 and 9 replaced; 15, 16 open; phase 0 done for WLE 2026,
+rerun for WLM 2026 below (§7.4, §7.5). The maintainer made this the top priority for WLM 2026
+Ukraine, whose jury final is at the beginning of December.
 
 **Revisions:**
 - **v1:** the first draft. It was recovered with this plan and is not committed (updated 2026-11-25).
@@ -63,7 +63,9 @@ photos and tell which round they are from."
     has track data, the deepest plain round, with a note that it was guessed;
   - then the rounds before it in the chain (decision 1), with the side add-ons (decision 3) and
     regional rounds as extra columns, placed by §2.3;
-  - the latest 2–3 columns are shown; the others are collapsed behind "Show all rounds".
+  - shown by default: the final round and the rounds before it on the "Main" track, latest
+    first (decision 17). Side feeders, add-ons and regional rounds are behind "Show all rounds".
+    Without track data, the path is guessed, in the same note as the final round's.
 - **Each cell** shows the region's top N files in that round by that round's **own** ranking, all
   ties shown (decisions 7, 8), and how many files the region had there.
 - **No algorithm picks a winner.** Scores are never compared across rounds. The organizers see
@@ -326,7 +328,9 @@ the graph built in memory (lineage §1.3).
    - until the contest has track data, the deepest **plain** round, then the largest id ("plain"
      also excludes nomination roots). The header then says that the final round was guessed: "No
      Main track yet; showing R-03, the deepest plain round. Label the Main track to fix it."
-     (updated 2026-11-25, decision 2).
+     (updated 2026-11-25, decision 2). The same note covers the default columns' guessed path
+     (§2.3): "… and the rounds before it through the round that gave it the most files" (updated
+     2026-11-25, decision 17).
    - **Ambiguity:** other plain leaves (rounds no plain round descends from) at the same maximum depth
      are not ancestors of `F`. When there are any, the header warns and names them, with a link for
      each: "R-03 and [test] R-03 both end the chain at depth 3; showing R-03 (larger id). Pick
@@ -368,12 +372,20 @@ because they aren't ancestors of `F`.
    - an add-on whose anchor is `F` itself goes directly after `F`;
    - a rejected-review add-on goes directly after `P`;
    - several add-ons at the same place go newest first.
-3. **Regional rounds `G`:** by lineage depth, like any chain round (proposed; decision 5 asks only
-   this). Their cells for regions outside their filter are blank ("not in this round's regions").
+3. **Regional rounds `G`:** by lineage depth, like any chain round (decision 5). Their cells for
+   regions outside their filter are blank ("not in this round's regions").
 4. **Explicit list** (`rounds=`, decision 1): the same order, by kind.
 
-**Shown by default:** the first 3 columns. The others are collapsed behind "Show all rounds" (a GET
-flag, so a link, with no script). A column is never dropped for being empty.
+**Shown by default** (updated 2026-11-25, decision 17): `F` and the rounds before it on the "Main"
+track (the same lineage track as decision 2), latest first. Side feeders of a merge, add-ons and
+regional rounds are behind "Show all rounds" (a GET flag, so a link, with no script), which shows
+every column in the order above. A column is never dropped for being empty.
+
+- **Without track data** (the same guess as decision 2's `F`): from `F`, step to the previous round
+  that gave it the most files (`round_image` membership of the previous round in the next one),
+  then on from that round, back to a root. The header's "guessed" note says so (§2.1 item 3).
+- **WLM 2026** (§7.5): Q-02 → Q-01-nf → Q-01 → Q-00. **WLE 2026** (§7.4): 1952 → 1942 → 1938 →
+  1920.
 
 ### 2.4 What a cell shows (rewritten 2026-11-25: "show, don't pick")
 
@@ -523,8 +535,9 @@ own box, with captions and row headers.
 the 27 KOATUU ids for Ukraine), and nothing else (decision 10). The regions without files get
 `Some(0)` in `RegionScheme.regions`.
 
-**Width:** 3 columns × N thumbnails fit a laptop screen at N = 1; with all columns or a larger N
-the table scrolls sideways in its box, the region column fixed.
+**Width:** the default columns (4 for WLM and WLE 2026) × N thumbnails fit a laptop screen at N = 1;
+with all columns or a larger N the table scrolls sideways in its box, the region column fixed
+(updated 2026-11-25, decision 17).
 
 **A contest without regions** has no monument-id template, or has many countries. The page shows a
 notice only.
@@ -532,7 +545,8 @@ notice only.
 ### 3.3 Export (phase 2) (rewritten 2026-11-25: "show, don't pick")
 
 What is shown, by default the final round's column per region (`export=final`); `export=shown`
-exports every column shown (the first 3, or all with `all=true`). Each file carries its round.
+exports every column shown (the default columns, or all with `all=true`; updated 2026-11-25,
+decision 17). Each file carries its round.
 
 **Wiki text** (`format=wiki`, decision 11): a read-only, Twirl-escaped `<textarea>` to copy, with
 one block per region:
@@ -627,7 +641,8 @@ GROUP BY ri.round_id, ri.region
 
 ### 4.4 Cost *(inf.; the benchmark decides)*
 
-- **Default:** 3 columns × 2 statements, plus the national top k if asked. Each is one GROUP BY of
+- **Default:** the default columns × 2 statements, plus the national top k if asked: 4 columns,
+  so 8 statements, for WLM and WLE 2026 (updated 2026-11-25, decision 17). Each is one GROUP BY of
   a round's votes: the final rounds are small (WLM 2026's Q-02: 507 files × 13 jurors), the early
   ones large (about 38k files × 3 jurors).
 - **All rounds:** 2 statements per column of `A ∪ G ∪ B`: 10 for WLM 2026, 10–15 for future WLM
@@ -652,15 +667,15 @@ GROUP BY ri.round_id, ri.region
 | A region with files not yet voted in a round | Numbers only, "none with a result yet"; the column is "provisional" if the round is open (decision 6) |
 | A region with fewer than N positive files in a round | The cell shows those; earlier columns show the rest |
 | The same file in several columns | Shown in each, with that round's rank and score |
-| A "round 2 not in round 3" round, created after this report | An add-on column before round 2 (§2.3). It never becomes `F` (§2.2) |
-| A review round of round 2's rejected files | An add-on column after round 2 |
+| A "round 2 not in round 3" round, created after this report | An add-on column before round 2, under "Show all rounds" (§2.3). It never becomes `F` (§2.2) |
+| A review round of round 2's rejected files | An add-on column after round 2, under "Show all rounds" |
 | A trial round at round 3's depth (until lineage's Cancel) | Named in the ambiguity warning; `F` is the larger id, and the organizer can pick the other |
-| A regional round created in the app | A column placed by depth (decision 5); blank cells for regions outside its filter |
+| A regional round created in the app | Under "Show all rounds", placed by depth (decision 5); blank cells for regions outside its filter |
 | A regional round copied by hand (2025, no edge) | Named under "unlinked rounds" for regions with no file in any column (§2.4 item 3). It can be added with `rounds=` |
 | WLE rounds without `previous` | The only column is `F`. Regions with no file name the unlinked rounds, and the header warns about the small root (§2.4 item 5) |
 | A chain round with a filter of all regions | Not regional (lineage rule 4) |
 | Rounds with different scales | Each column on its own scale; scores are never compared across columns |
-| A merge | All feeders are columns, after the merge |
+| A merge | The feeder on the Main track (without track data: the one that gave the most files) is a default column; the other feeders are under "Show all rounds" (updated 2026-11-25, decision 17) |
 | Score rule changed after the announcement | The current rule is shown and named |
 | Stopped jurors | Their votes count (§1.3) |
 | Disqualified files, and files deleted while their round was open | Out |
@@ -772,7 +787,9 @@ Phase 0 also records each query's time on the copy, as a first cost figure.
   - a nomination root is excluded from the default `F`;
   - a listed round in `X` is dropped and named;
   - a cycle, and a ghost id;
-  - the first 3 columns shown, the rest only with `all`;
+  - the default columns: `F` and the Main track's rounds before it; without track data, the path
+    through the round that gave the most files, with the "guessed" note; side feeders, add-ons and
+    regional rounds only with `all` (updated 2026-11-25, decision 17);
   - a region with no file in any column → unlinked rounds named; no files at all; the small-root
     warning;
   - the stored `top_binary_order` is used, else the default;
@@ -811,7 +828,7 @@ Phase 0 also records each query's time on the copy, as a first cost figure.
 - **Fixture:** the Gatling fixture (38k images, 20 jurors, a yes/no and a rated round). The run
   creates a third round through the round form (a top-N of the rated round, so that regions drop out)
   instead of changing `GatlingDbSetup.load`, which would need a `FixtureVersion` bump *(inf.)*.
-- **What is measured:** the page with the default 3 columns and with all columns (updated
+- **What is measured:** the page with the default columns and with all columns (updated
   2026-11-25: "show, don't pick"), in absolute milliseconds and with the run variation. SQL debug
   logging is off.
 - **No paired comparison** is needed, because no existing path changes. One small pilot, extended
@@ -882,9 +899,10 @@ what-if; about 0.5 s each, including `docker exec`.
   final round's column today (updated 2026-11-25: "show, don't pick"). Per
   region, 1 (18) to 55 (63) files; **3 regions have fewer than N = 3** (18: 1; 35, 85: 2).
 - **Columns** (updated 2026-11-25: "show, don't pick"): Q-02 first, then by depth Q-00-1.5,
-  Qn-00-1-nf, Q-01-nf, Q-00-1-nf, Qn-00-1, Q-00-1, Q-01, Qn-00, Q-00. The 3 shown by default are
-  Q-02 and two small feeders of the merge (6 and 7 of Q-02's files); Q-01-nf, which gave 494 of its
-  507, is the fourth.
+  Qn-00-1-nf, Q-01-nf, Q-00-1-nf, Qn-00-1, Q-00-1, Q-01, Qn-00, Q-00. By depth alone, the first 3
+  would be Q-02 and two small feeders of the merge (6 and 7 of Q-02's files). Resolved by decision
+  17 (updated 2026-11-25, decision 17): the default columns follow the Main track, guessed here as
+  Q-02 → Q-01-nf (494 of Q-02's 507 files) → Q-01 → Q-00; the rest are under "Show all rounds".
 - **"Positive":** every Q-02 file has a mark above 0; in the yes/no feeders whole regions have
   files but no yes (Q-00-1.5: 105 files, 6 positive).
 - **Open round (decision 6):** 13 jurors, each assigned every file; 1,689 of 6,591 marks cast (3.3
@@ -991,6 +1009,9 @@ column like any other chain round. The only remaining question is where its colu
 *Recommendation: (a): one order for all columns. With (a), a shallow regional backtrack can fall
 outside the first 3 columns and be collapsed by default; (b) keeps it in view but breaks the
 depth order.*
+
+**Settled by the default-columns decision (2026-11-25)**: regional rounds appear under "Show all
+rounds" in lineage-depth order.
 
 **6. Open rounds.**
 - (a) Valid sources, with a "provisional" badge.
@@ -1124,6 +1145,15 @@ Regional winners phase 1 builds on it; lineage's track part comes first or toget
 **Recommendation: (a)** now. Reasons:
 - (b) and (c) need a table, a migration, CSRF writes and an audit trail;
 - revisit (b) if organizers bookmark long URLs.
+
+**17. Default columns (new, 2026-11-25).**
+
+**Decided (maintainer, 2026-11-25)**: default columns are the final round and the rounds before it
+on the "Main" track (the same lineage track as decision 2), latest first. Side feeders, add-ons and
+regional rounds are behind "Show all rounds".
+
+Without track data, the path is guessed like decision 2's `F`: through the previous round that gave
+the next one the most files, with the same "guessed" note (§2.3).
 
 ---
 
