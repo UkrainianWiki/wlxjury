@@ -1,6 +1,6 @@
 # UI-path testing: offered actions that match allowed actions
 
-**Status:** draft, for the maintainer's decisions (§5); Q1, Q4, Q5, Q6 and the setup steps (§4 step 1, superseding Q10) decided 2026-11-25 **[user]**. Written 2026-11-25 from the maintainer's
+**Status:** draft, for the maintainer's decisions (§5); Q1–Q7 and the setup steps (§4 step 1, superseding Q10) decided 2026-11-25 **[user]**. Written 2026-11-25 from the maintainer's
 request of the same day: "we have been consistently seeing inconsistent UI paths". Read-only survey
 of master at `5d72c4d8` (after the 26.11.16 build); no code changed, no test run. References are to
 files and functions; line numbers are of that commit and drift.
@@ -274,7 +274,7 @@ Order, fitting the queue:
      - The build includes screenshots of steps 1–3 at 1366 and 390 px wide, for review.
    - Smallest wins from §2: on a round in review the Rounds list hides Start and shows "Distribute
      to jurors" in its place; a correct message for a retired contest's round.
-   - **Add juror on stopped rounds** (§5 Q5, [user] 2026-11-25), its own PR, about 1–2 days:
+   - **Add juror on stopped rounds** (§5 Q5, [user] 2026-11-25), built in PR #196:
      - "Add juror…" and "Start with a fair share" are allowed on stopped rounds too. The add-juror
        job moves unrated files without pausing (the round is already closed to jurors), and the
        round stays stopped; when it is started again every juror has a fair share.
@@ -287,6 +287,12 @@ Order, fitting the queue:
        unchanged.
      - Offered == allowed. Specs include the negative cases: a round being set up, frozen by
        another job, a legacy round.
+   - **Round lineage links** (the maintainer, a separate small PR, in progress): each round's page
+     shows "Created from" (its previous rounds) and "Rounds created from it", so the path between
+     rounds is reachable from either end.
+   - Refusal PR, decided details: errors next to their fields plus a linked list at the top (Q2);
+     `form_refused` / `resubmit_dropped` (Q3); a wait refusal shows the blocking job's live
+     progress and enables Save when it ends (Q7).
 2. **Lineage slice A** (being built: track label, chip, filter) adds no round action; it should
    not wait. Its new chip/filter links are views only. The checklist item (e) applies to it from
    its review on.
@@ -313,12 +319,13 @@ page (§0 row 7).
    yes, after 26.11.17, as one refactor PR with its specs (§4 step 3).
 2. **What should a refused round-form save look like?** Options: the same form in the same mode
    with the error next to its field (needs field-keyed errors for the form-level checks), or the
-   same form with all errors listed at the top. Recommendation: same mode, all errors at the top
-   now (26.11.17), field placement as part of (a).
+   same form with all errors listed at the top. **[user] Decided 2026-11-25:** both: each error
+   next to its field (its section opened), plus a linked list of all errors at the top; the form
+   in the same mode. In the 26.11.17 refusal PR.
 3. **Log refused saves?** A line per refused round save with the message keys (no input text):
    `form_refused`, and `resubmit_dropped`, as the problem-monitoring plan (#191, slice M-1)
-   defines them. Recommendation: yes, in the 26.11.17 refusal PR; it is what would have explained
-   the 11 × 400.
+   defines them. **[user] Decided 2026-11-25:** yes, in the 26.11.17 refusal PR (#191 slice M-1);
+   it is what would have explained the 11 × 400.
 4. **Round in review on the rounds list: hide Start and show "Distribute to jurors" in its place?**
    **[user] Decided 2026-11-25** (PR #192): no Start on rounds not yet distributed, truthful
    refusal messages, one Distribute action per row as its primary button. The step wording of §4
@@ -327,7 +334,7 @@ page (§0 row 7).
    them offered with the page explaining? **[user] Decided 2026-11-25:** allow both on stopped
    rounds too (the job moves the unrated files without pausing; the round stays stopped, and every
    juror has a fair share when it starts again); hide them on rounds being set up (jurors are
-   chosen in step 3); running rounds unchanged. Built as its own 26.11.17 PR (§4 step 1).
+   chosen in step 3); running rounds unchanged. Built as its own 26.11.17 PR (§4 step 1): PR #196.
    **This revises D3 of [`2026-11-16-round-editing.md`](2026-11-16-round-editing.md)** ("running
    rounds only").
 6. **Back after saving a new round.** **[user] Decided 2026-11-25:** the stale create form is never
@@ -341,8 +348,10 @@ page (§0 row 7).
    happened to their round. To verify in Chrome, Firefox and Safari (bfcache, `no-store`), with a
    Playwright check (§4 step 1).
 7. **Waits shown as errors** (`exclude.rounds.busy`, `previous.round.rebalancing`): keep refusing,
-   or accept the save and let the job wait? Recommendation: keep refusing for 26.11.17, but say
-   "wait for job X (link), then save again" and keep the form; decide queuing later.
+   or accept the save and let the job wait? **[user] Decided 2026-11-25:** keep refusing, but the
+   refused form (kept as entered) shows the blocking job's live progress, linked to it; when the
+   job finishes it says "Round 3 has finished. You can save now." and Save is enabled. In the
+   26.11.17 refusal PR.
 8. **Playwright journeys: how many, which engines?** Recommendation: two journeys (§4.5), Chromium
    only in CI, the others on release.
 9. **Add the checklist item (e) now?** Recommendation: yes; it costs one line and applies to
