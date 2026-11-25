@@ -12,6 +12,12 @@ Deploy dates come from production's migration history, as described at the end.
 
 ## Unreleased (on master, not yet deployed)
 
+Merged after the 26.11.17 build, for the release after it:
+
+**Fixes**
+
+- Round form: a screen reader now reads the category choice's error ("More category options") with its radio buttons, and announces the group as invalid.
+
 For the next release, 26.11.17.
 
 **Features**
