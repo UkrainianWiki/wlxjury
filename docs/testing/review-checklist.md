@@ -38,6 +38,10 @@ For every change with tests, and every change that should have them. Each line p
 - [ ] Every assertion fails when its element is missing: no conditional checks, no assertion over
   a possibly empty selection (§6.2).
 - [ ] Permission changes have the refused roles and other contests' resources as cases (§6.3).
+- [ ] A new action or button → add it to the round action matrix (`RoundActions`, once it exists)
+  and both specs: offered == allowed, and every page showing a round offers its next step; until
+  the matrix exists, check by hand ([UI-path testing plan](../plans/2026-11-25-ui-path-testing.md)
+  §3 a, b, e).
 - [ ] New message keys are in all four files with the same placeholders;
   `MessagesCompletenessSpec` knows any new helper or built key (§6.4).
 
