@@ -35,6 +35,7 @@ that one case (§0). This plan proposes one source of truth per action and a tab
 | 4 | Criteria UI shown where criteria can't be edited | `3fdff615` (archive #355, 26.11.11): an existing yes/no or comments-only round's form has no criteria and no worst mark (`unratedRound`); `9362cfe5` (archive #386, 26.11.14, "A started round's criteria can no longer be changed"): a rated round running or with a vote lists its criteria read only (`lockedCriteria` → `RoundCriterion.started`), and `RoundCriterion.update` refuses a change | `RoundEditPageSpec.scala:476`, `:498`, `:511` (also on the form shown again with an error), `:528`; `RoundCriteriaSpec.scala:232`, `:406`, `:436`, `:464` (running, or frozen while active: locked; editable again once stopped before a vote), `:365` (re-apply) | • **In review:** criteria editable (not started) but the rating type locked (`editRound.scala.html`: `rates` readonly by `noEdit = !newRound`): #184.<br>• **Paused by a job (frozen while active):** covered.<br>• **Re-apply:** criteria written in its transaction, refusal covered.<br>• **After a refused re-apply save:** the form comes back without re-apply mode (§0.5), so the filters turn read only and the next press is a plain Save. |
 | 5 | 11 × 400 on `POST /admin/rounds/save` | not fixed (26.11.16 and master unchanged on this path) | none for the form shown after a 400. Individual refusals return 400 in `RoundExcludeRoundsFormSpec`, `RoundWorstMarkFormSpec`, `RoundCriteriaSpec`, `RoundEditPageSpec:183` (top-N below 1) and `RoundReviewJurorsReapplyPageSpec:159`, but they check the status and message only, not the mode, open sections or menus of the form that comes back | see §0.5 |
 | 6 | A successful save isn't confirmed, so a user who still sees form fields can't tell the round was created | not fixed | none | • **Create:** `saveRound`'s `Created` branch redirects to the jurors form ("Choose jurors next", `RoundReviewController.jurors`) or to the rounds list ("Review images first", `toRoundsList`) with **no success flash** in either case. Both pages would render one (`jurorsForm.scala.html:31`, `rounds.scala.html`); nothing sets it. The jurors page's heading is "Round N (description): jurors and file distribution" (`round.jurors.heading`), which doesn't say the round was just created.<br>• **Edit save of an existing round:** `saveEdit` → `flashing()` back to the rounds list also has **no success line**; only side effects flash (conflicts disqualified, distribution errors). A **re-apply** does confirm (`round.reapply.started` on the review page). |
+| 7 | The need to distribute is stated only on the review page: admins don't know a round in review is invisible to jurors until distributed | not fixed | none | What the pages say today:<br>• **Review page** (`roundReviewHead.scala.html:22`): "Images ready: N. The jurors don't see the round until you distribute it." (`round.review.ready`), plus the Distribute button; the only place that says it.<br>• **Rounds list** (`rounds.scala.html:109–113`): "Images ready: N · Review · Distribute to jurors" in the job column, while the Active column shows "No" and a **Start** button (which is refused, §2.1).<br>• **Round statistics** (`roundStat.scala.html:105`): only a "Review images" link.<br>• **Edit round**: only a "Review images" button; nothing about distribution (#186). |
 
 ### 0.5 Which saves return 400, and what the admin sees
 
@@ -245,6 +246,13 @@ Order, fitting the queue:
      - The same next-step box appears on Edit round and on the review page for a round in review
        (this covers #186), and Back after creation lands on Edit round (Q6), where the box is shown
        too.
+     - The box states plainly: "Jurors can't see this round yet. When the files look right,
+       distribute them to jurors." Once the selection has finished, "Distribute images to jurors"
+       is its primary (visually main) action.
+     - On the Rounds list a round in review reads "Not started – waiting for distribution" (not
+       just "in review"), with the Distribute action in place of Start (§5 Q4).
+     - Round statistics and the other pages that show a round in review carry the same one-line
+       state and a link to distribute (§0 row 7).
      - Button labels say what happens to the user's round, not app concepts.
      - The jurors page heading names the round and the step (e.g. "Round 4: choose jurors"), so it
        can't be mistaken for the submitted form.
@@ -273,7 +281,9 @@ Order, fitting the queue:
 
 **Problem monitoring** (refused saves, dead ends and the like recorded in the app and shown to
 root and admins, rather than found in the access log) is its own plan, draft PR #191; this plan
-uses its `form_refused` and `resubmit_dropped` lines (slice M-1).
+uses its `form_refused` and `resubmit_dropped` lines (slice M-1). A candidate pattern for it:
+"a round in review for more than N hours after its selection finished", shown on its Problems
+page (§0 row 7).
 
 ## 5. Questions for the maintainer
 
