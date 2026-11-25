@@ -341,7 +341,7 @@ After steps 1–4, the third-party layer goes from about 102 MB to about 79 MB.
 - **Native parts needed:** `libawt` with `libawt_headless` (the Java2D loops) and `libjavajpeg` (the JDK's JPEG codec, with its own bundled libjpeg). All are inside any JRE that has `java.desktop`.
 - **This doesn't bind the choice:** every option below supports headless decode, scale and encode.
 - **Recommendation:** set `-Djava.awt.headless=true` explicitly in `Universal / javaOptions`. The JDK infers it when `DISPLAY` is unset, but being explicit is safer.
-- Whether resizing is needed at all is the standard-sizes investigation's subject. The user has decided that resizing stays on our own server: one size is fetched from Commons and the others are derived.
+- Whether resizing is needed at all is the subject of the [standard-sizes investigation](2026-11-04-standard-thumb-sizes.md). The user has decided that resizing stays on our own server: one size is fetched from Commons and the others are derived.
 
 **Alternatives:** sizes are amd64 compressed from Docker Hub and gcr.io; uncompressed figures are estimates.
 

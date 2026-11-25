@@ -2,6 +2,8 @@
 
 **Status:** decisions taken by the maintainer, 2026-11-10/11 (§9). Nothing is built.
 
+**Related:** [round tags, the round tree, second looks and NOFOP: brainstorm for the track label and chip (§2.3, decision 4)](2026-11-19-round-tags-brainstorm.md), 2026-11-19. It changes no decision here.
+
 **Revisions:**
 - **v2:** the first review, and the question "HTML table instead of SVG?".
 - **v3:** the second review, and **phase 0**: the track rule run on WLM Ukraine 2025's 61 rounds
