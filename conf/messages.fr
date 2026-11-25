@@ -1082,6 +1082,9 @@ authors.rated.note = Notées : les fichiers avec au moins une note. ✗ : les fi
 # a round's review before distribution (P3: RoundReviewController, roundReviewHead.scala.html)
 round.review = Vérifier les images
 round.review.title = Tour {0} ({1}) : ses images avant la distribution
+round.links.from = Créé à partir de :
+round.links.next = Tours créés à partir de celui-ci :
+round.links.round = Tour {0}
 round.review.ready = Images prêtes : {0}. Les jurés ne voient pas le tour tant que vous ne l''avez pas distribué.
 round.review.filling = Les images du tour sont en cours de sélection.
 round.review.distributing = Les images sont en cours de distribution aux jurés. Le tour leur sera ouvert à la fin.

@@ -70,6 +70,11 @@
                 <h1 class="h3">@Messages("create.round")</h1>
             } else {
                 <h1 class="h3">@Messages("edit.round")</h1>
+                @* the rounds it was created from and those created from it (RoundLineage.links), from the
+                   contest's rounds the page already has *@
+                @for(rid <- editRoundForm("id").value.flatMap(_.toLongOption); round <- rounds.find(_.id.contains(rid))) {
+                    @snippets.roundLinks(services.RoundLineage.links(round, rounds).visibleTo(user))
+                }
             }
 
             @flash.get("error").map { err =>

@@ -145,6 +145,32 @@ object RoundLineage {
 
   def cancelled(round: Round): Boolean = round.status.contains(Round.Status.Cancelled)
 
+  /** A round's edges as its own pages show them (round statistics, review, Edit round): the rounds
+    * it was created from (its `previous` rounds) and the rounds created from it (those with it among
+    * their `previous`), each by id, cancelled creations left out on both sides.
+    */
+  final case class Links(from: Seq[Round], next: Seq[Round]) {
+    def isEmpty: Boolean = from.isEmpty && next.isEmpty
+
+    /** Only the rounds `user` may see the organisers' pages of ([[db.scalikejdbc.User.canViewOrgInfo]]). */
+    def visibleTo(user: db.scalikejdbc.User): Links = Links(from.filter(user.canViewOrgInfo), next.filter(user.canViewOrgInfo))
+  }
+
+  object Links {
+    val empty: Links = Links(Nil, Nil)
+  }
+
+  /** The round's [[Links]], from its contest's rounds as already read (`Round.findByContest`): pure,
+    * no query. A previous round not among them (another contest's, or deleted) is left out.
+    */
+  def links(round: Round, rounds: Seq[Round]): Links = round.id.fold(Links.empty) { id =>
+    val live = rounds.filter(r => r.id.isDefined && !cancelled(r))
+    val previous = round.previousIds.toSet
+    Links(
+      from = live.filter(r => previous.contains(r.getId) && r.getId != id).sortBy(_.getId),
+      next = live.filter(r => r.getId != id && r.previousIds.contains(id)).sortBy(_.getId))
+  }
+
   /** The contest's lineage. */
   def of(rounds: Seq[Round], contest: ContestJury): Lineage = apply(rounds, Context.of(contest))
 

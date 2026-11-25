@@ -97,7 +97,9 @@ class RoundReviewController @Inject() (
               ReapplyDiff(st.imagesAdded, st.removedTotal, st.removedTitles)
             },
             // a re-apply failed or cancelled: its filters saved, its files half chosen (Distribute refuses)
-            reapplyUnfinished = reapplyUnfinished(round, job)
+            reapplyUnfinished = reapplyUnfinished(round, job),
+            // one read of the contest's rounds
+            links = services.RoundLineage.links(round, Round.findByContest(round.contestId)).visibleTo(user)
           )
           Secured.switchingContest(sessionUser, user)(
             Ok(views.html.contestFiles(user, files, pager, view, Some(summary))))
@@ -364,7 +366,9 @@ final case class RoundReview(
     roundJurors: Seq[User] = Nil,
     prevChanged: Boolean = false,
     reapplied: Option[ReapplyDiff] = None,
-    reapplyUnfinished: Boolean = false
+    reapplyUnfinished: Boolean = false,
+    /** The rounds it was created from and those created from it, those the viewer may see. */
+    links: services.RoundLineage.Links = services.RoundLineage.Links.empty
 ) {
   def count(status: String): Int = statusCounts.getOrElse(status, 0)
 }
