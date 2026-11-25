@@ -1170,8 +1170,11 @@ object RoundController {
               else values.sorted)
     }.sortBy(_._1)
     val text = fields.map { case (key, values) => key + "\u0001" + values.mkString("\u0002") }.mkString("\u0000")
-    java.security.MessageDigest.getInstance("SHA-256").digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))
-      .map("%02x".format(_)).mkString
+    // an in-memory equality check, not a secret: two MurmurHash3 seeds and the length (no
+    // MessageDigest outside the password hasher and API tokens, RawSqlSpec)
+    val h1 = scala.util.hashing.MurmurHash3.stringHash(text)
+    val h2 = scala.util.hashing.MurmurHash3.stringHash(text, 0x5f3759df)
+    f"$h1%08x$h2%08x-${text.length}"
   }
 
   /** The hash of the form each token saved a round from ([[postedHash]]), in memory only, for an
