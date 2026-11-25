@@ -23,6 +23,8 @@
 - **v5, after review** (2026-11-11): provenance loads on demand (decision 10+); the maintainer's
   R1–R3 (decision 11's reading, Reinstate, phase 3b); status writers, locks and V103's DDL fixed
   (§2.6). See "Review".
+- **v5, slice A** (2026-11-25): slice A's scope, built first for WLM 2026, and the rule-2 check
+  that meets decision 3's condition (§8.1). No decision changed.
 
 See "Review" at the end.
 
@@ -827,6 +829,95 @@ for the status writes in step and the backfill specs. A 2025-style contest (61 r
 tests) reads badly until its trials are cancelled. **Phase 2 grows by about half a day** for the
 on-demand endpoint, its specs and the benchmark (decision 10+). **Phase 3 is smaller** than v4's:
 the prefill links and the unsaved-form count are left out.
+
+### 8.1 Slice A for WLM 2026 (2026-11-25)
+
+**Why first.** WLM UA 2026 (contest 628) needs regional winners, and special nomination tracks after
+the main final, before early December. The regional winners plan (#181) takes its default final
+round (its decision 2) and default columns (its decision 17) from the "Main" track: the track rule
+plus the manual label (decision 4 here). Its decision 15 builds that shared core first. So the
+maintainer decided to build **slice A** of phase 1 first, the split the round-tags brainstorm
+(`2026-11-19-round-tags-brainstorm.md`, ideas A and B) proposed. Decisions 1–18 are unchanged:
+slice A builds part of them early.
+
+**In slice A:**
+- **`services.RoundLineage` with the track rule** (§2.3, rules 1–7, the common prefix, Main and its
+  feeders, the spine), as decision 3 adopts it. The chip, the menu and regional winners read it,
+  and the map will later; there is no second rule.
+- **`round.track`, the manual label** (decision 4), in a migration of its own, numbered at merge
+  (the next free number). Decision 17's `created_at` change stays with the rest of phase 1.
+- **The label setter on the round form**, also for existing rounds, writing
+  `created_at = created_at`, with a form spec (decision 4).
+- **A coloured Track chip** after the round name on the Rounds page, Round Statistics and the
+  gallery round menu. The colour is a stable hash of the track onto a few `--wlx-*` tokens, checked
+  in both themes; the chip's text carries the meaning.
+- **A Track menu** on Rounds and Statistics, next to Status and Type: `track=` in `RoundsFilter`.
+
+**Logging.** A label change is written to the change log as a new `contest_change` kind, through
+the mechanism #178 adds for round settings (V114), so slice A goes after #178. Cancel and
+Reinstate, if slice B is built, get kinds of their own the same way.
+
+**Shared with regional winners (#181).** Its decision 2: the default final round is the Main
+track's deepest round. Its decision 17: the default columns are that round and the Main-track rounds
+before it. Its decision 15: the shared core comes first. Regional winners phase 1 builds on slice A.
+
+**Entry condition (decision 3): met.** Rule 2 was checked on 2026-11-25 on a local copy of
+production (a dump of 2026-11-25, V113), in read-only transactions:
+- **WLE Ukraine 2024–2026** (contests 574, 593, 619; 33 rounds): no round filters by a
+  nomination's region or monuments. The only region filters are two 2024 test rounds with 14
+  KOATUU regions (rule 4). Files' ids carry only the 27 KOATUU prefixes (2024, 2026; 2025's 7,440
+  files have no id). The WLE Ukraine campaign config defines no nominations, so `byPrefix` is empty
+  and rule 2 never fires there. WLE's nominations (video, nature loss) are media-type or category
+  roots, placed by rule 7.
+- **Every WLM and WLE Ukraine round with a region or monument filter** (114 rounds in 17 contests,
+  2016–2026): every id is KOATUU; none maps to a nomination prefix.
+- **Result:** rule 2 misplaces no round, so §2.3 needs no fix. It stays for contests that filter by
+  a nomination's prefix.
+
+**Rules 1–7 on the same copy** (a script that reproduces §10's 13 tracks for WLM 2025):
+- **WLE 2026:** rule 6 makes Main of the merge of the Quality and Quantity roots: 1937, 1938, 1942,
+  1952, spine 1938 → 1942 → 1952 (1937, an unvoted duplicate, is a fork). That is #181's final
+  round 1952, with no label.
+- **WLM 2026:** Quality 7 rounds, Quantity 3 (Qn-00 → Qn-00-1 → Qn-00-1-nf), Харків 1 (Kha-00,
+  rule 1), Main 1 (Q-02, the merge, rule 6). Quality's spine runs to its deepest round:
+  Q-00 → Q-00-1 → Q-00-1-nf → Q-00-1.5, with Q-01 → Q-01-nf a fork.
+- **Two labels give #181's chain:** "Main" on Q-00, and a label of its own on Q-00-1 (e.g. "Second
+  look"). Main is then Q-00, Q-01, "[delete] Q-00-1", Q-01-nf and Q-02, with the spine
+  Q-00 → Q-01 → Q-01-nf → Q-02 (#181 §7.5). "Main" on Q-00 alone takes the second-look branch into
+  Main, and its spine through Q-00-1.5. "[delete] Q-00-1" stays a fork in Main until it is
+  cancelled (slice B) or labelled.
+- **Gaps for the phase-1 spec** (not decisions):
+  - WLE's roots share no prefix ending in " - " (the nature loss category has another shape), so
+    the Quality and Quantity tracks show full category names until labelled;
+  - WLE 2025's round 1668 names a previous round 1666 that no longer exists (number 5 is missing,
+    9 `round_user` rows remain, no votes): a deleted round (§10.5's question, for WLE 2025). The
+    rule doesn't say which track a round whose only previous round is a ghost takes; the script
+    treated it as a root (rule 7, its name).
+
+**Size:** 3–4 agent days, with review and targeted specs: the unit spec on a synthetic fixture
+(tracks only, including WLM 2026's shape with its two labels), the migration specs, the form spec,
+view specs for the chip and the menu, negative specs for the setter (juror, organizer, non-member)
+and screenshots in both themes.
+
+**Not in slice A:** the map page (decisions 1–2, §2.2), provenance (phase 2), form help and
+warnings (phase 3), Delete (phase 3), phase 3b, SVG lines (phase 4), and phase 1c's grouping of the
+menus (decision 16). Cancel and Reinstate are slice B.
+
+**Open for the maintainer:**
+1. Does slice B (Cancel and Reinstate, 2.5–3.5 days) also ship for December?
+2. May the Track menu go before multi-role? Decision 16 groups the round menus by track after
+   multi-role; the Track menu is a filter on Rounds and Statistics, not that grouping.
+3. The round-tags brainstorm's 5 questions for the WLM UA organizer (§6 there):
+   1. In a "-nf" round, what happens to a photo you mark: dropped for NOFOP, a reject given back,
+      or collected for nomination on Commons?
+   2. When a second look rescues a photo, does it go into the main line's next round (a merge), or
+      along its own line to the end?
+   3. Is one label per round for the line enough, if the tool writes the step itself, or are
+      several typed tags needed?
+   4. Does the second look need new people, or only someone other than the juror who rejected
+      that photo?
+   5. Next year, start from a copy of this year's round setup, or are a note per round and the map
+      enough?
 
 ---
 
