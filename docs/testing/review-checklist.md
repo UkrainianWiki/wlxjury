@@ -56,3 +56,10 @@ For every change with tests, and every change that should have them. Each line p
   listed there as uncovered; a new tag cites a story whose sentence the test shows (§9.4).
 - [ ] A change that adds a test layer, a flag or a guard updates this practices doc in the same PR
   ([workflow](../workflow/practices.md) §8).
+
+## Before merge
+
+- [ ] Every review thread (CodeRabbit's or a person's) has a reply on the thread (fixed in
+  `<commit>`, not applicable because …, or follow-up issue #N) and is resolved; the `master`
+  ruleset blocks the merge otherwise. No CodeRabbit review (rate limit) is no reason to wait
+  ([workflow](../workflow/practices.md) §3.4).

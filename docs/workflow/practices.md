@@ -95,6 +95,14 @@ are paused or disabled. The tools and their limits:
 [`scripts/review/`](../../scripts/review/README.md); the loop's files live outside every checkout
 and its request state is rebuilt from GitHub, so nothing is lost with a session.
 
+**3.4 Every review thread is answered and resolved before merge** (the maintainer's decision of
+2026-11-26), on every PR, CodeRabbit's threads and people's alike. The reply on the thread says
+what happened: fixed in `<commit>`, not applicable because …, or follow-up issue #N; then the
+thread is resolved. Real points go to the PR's builder as fixes. If CodeRabbit posted nothing
+(its rate limit), the PR doesn't wait for it: our own review stays the gate. The `master` ruleset
+requires conversation resolution, so an unresolved thread blocks the merge (§10). *Why:* a point
+left in an open thread is lost at the squash.
+
 ## 4. Worktrees, the sbt lock and the environment
 
 **4.1 One worktree per batch.** `git worktree add ../wlxjury-<name> -b <topic>/<name> origin/master`,
@@ -191,8 +199,8 @@ for people is [CONTRIBUTING.md](../../CONTRIBUTING.md).
 PR targets `master` and keeps to one theme (§2.2). *Why:* a squash makes one commit per PR, which
 is reviewed, bisected and reverted as one change.
 
-**6.2 Squash with GitHub's button.** `master` requires a PR, linear history, no force push and no
-deletion (enforced). Planned, once the maintainer sets them: "Squash and merge" as the only merge
+**6.2 Squash with GitHub's button.** `master` requires a PR, linear history, resolved review
+threads (§3.4), no force push and no deletion (enforced). Planned, once the maintainer sets them: "Squash and merge" as the only merge
 method and head branches deleted after the merge; until then, use "Squash and merge". The PR
 title and description become the commit's message, so the title says what changed and the
 description is a short summary of why (the PR template); long notes, screenshots and logs go in
@@ -372,6 +380,7 @@ it.
 | 4.6 cleanup after a failed agent | the orchestrator | manual |
 | 4.3 no credentials in CI | `TestConfigAnonymousSpec` (workflows) | enforced |
 | 5.3 trailers | review | planned: none |
+| 3.4 review threads resolved before merge | the `master` ruleset (conversation resolution required) | enforced |
 | 6.1, 6.2 PR required, linear history, no force push or deletion on master | the `master` ruleset | enforced |
 | 6.2 squash as the only merge method; head branches deleted after the merge | the repository's merge settings | planned (pending maintainer settings) |
 | 6.4, 6.5 merges, no rebase or force push on PR branches | review | by convention only |

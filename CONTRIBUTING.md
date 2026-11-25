@@ -22,8 +22,9 @@ linked below; this page is the short version.
    PR or an issue.
 3. Fixes during review are new commits on the branch. To take newer master, merge it
    (`git merge origin/master`); don't rebase or force-push a branch others review.
-4. A maintainer merges the PR with GitHub's **Squash and merge**. `master` requires a PR and
-   linear history and refuses force pushes and deletion. Planned, once the maintainer sets
+4. A maintainer merges the PR with GitHub's **Squash and merge**. `master` requires a PR,
+   linear history and resolved review threads (reply on each thread, then resolve it), and
+   refuses force pushes and deletion. Planned, once the maintainer sets
    them: squash as the only merge method, and head branches deleted after the merge. The
    **PR title and description become the commit message** on master, so the title says what
    changed and the description is a short summary of why. Keep long notes, screenshots and
