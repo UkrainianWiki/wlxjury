@@ -2074,3 +2074,48 @@ round.wait.done.rebalancing = Moving jurors’ files in round {0} has finished. 
 round.wait.ended = Round {0}’s job stopped before it finished: retry it from the Rounds list, then save again.
 round.saved.not.distributed = Round {0} is saved. Its new files weren’t distributed:
 round.wait.unknown = Round {0}’s progress can’t be shown here. Save again when it has finished.
+
+# The round form's top N: the cut picker (regional winners plan §10.4): "Choose N", the N list of
+# valid values only, candidate cuts and their reasons, the cut gallery, refusals, the settings log's basis
+top.n.none = No top N: all matching files
+top.n.option = N = {0}
+top.n.target = Target number (optional)
+top.n.target.help = Candidate cuts are looked for between 80% and 125% of the target; without one, among the first 100 places.
+top.n.choose = Choose N
+top.n.choose.again = Update the candidates
+top.n.choose.placeholder = Choose N from the list
+top.n.list.help = Only cuts between different scores are offered, so no tie is split. Files that can be taken: {0}.
+top.n.candidates = Candidate cuts
+top.n.preview.of = Preview (N = {0}):
+top.n.preview = {0} of {1} files, lowest included score {2}.
+top.n.preview.level = {0} of {1} files, the last ones with {2}.
+top.n.changed = The previous rounds’ votes have changed since this round’s top N was chosen: check the candidates again.
+top.n.scales = The previous rounds are on different scales; their scores are compared as they are.
+top.n.gallery = Candidates ranked as the distribution ranks them: {0}; places 1 to {1} shown
+top.n.gallery.levels = Candidates ranked by their yes/no votes as the distribution ranks them: {0}; places 1 to {1} shown
+top.n.tied = tied: places {0}–{1}
+top.n.cut.here = Cut here
+top.n.cut.here.label = Cut here: N = {0}
+top.n.show.more = Show more (to place {0})
+top.n.no.previous = Choose the previous rounds first.
+top.n.no.candidates = No file of the previous rounds matches the filters, so there is no top N to choose.
+top.n.failed = Could not find the candidate cuts: {0}
+top.n.failed.reference = Could not find the candidate cuts. If it happens again, tell the organizers this reference: {0}.
+top.n.not.editable = Round {0}’s files are no longer chosen by its filters, so its top N can’t be changed.
+top.n.in.tie = N = {0} is inside a tie (places {1}–{2}); choose {3} or {4}.
+top.n.in.tie.upper = N = {0} is inside a tie (places {1}–{2}); choose {3}.
+top.n.above.all = N = {0} is more than the files that can be taken ({1}); choose {1} or fewer.
+top.n.reason.drop = scores drop {0} → {1}
+top.n.reason.drop.largest = scores drop {0} → {1}, the largest drop
+top.n.reason.close = the files within {1} of the best score ({2})
+top.n.reason.all = all candidates
+top.n.reason.no.drop = no clear drop between places {0} and {1} (scores {2} to {3})
+top.n.reason.tie.includes = includes the tie at {0} (places {1}–{2})
+top.n.reason.tie.before = before the tie at {0} (places {1}–{2})
+top.n.reason.level = all files with {0}; next: {2}, files: {1}
+top.n.level.approvals = {0} yes, {1} no
+top.n.level.difference = yes minus no: {0}
+top.n.level.yes = {0} yes
+top.n.basis.candidate = chosen from the candidate cuts: {0}
+top.n.basis.list = chosen from the list
+top.n.basis.target = target {0}

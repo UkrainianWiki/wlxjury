@@ -118,7 +118,9 @@ object RoundFormErrors {
   /** Whether the page has the field's element to link to (a crafted post may name another). */
   def onPage(field: String, form: Form[_], shown: Shown): Boolean = base(field) match {
     case "previousRound" | "minJurors" | "rejectedMode" | "rejectedBy" | "minAvgRate" | "excludeRounds" => shown.rounds
-    case "topImages" | "topBinaryOrder" => shown.rounds && form("topImages").value.exists(_.nonEmpty)
+    // the top N's row is on the page with the previous rounds' fields (round/edit/topN)
+    case "topImages" => shown.rounds
+    case "topBinaryOrder" => shown.rounds && form("topImages").value.exists(_.nonEmpty)
     case "regions" | "monumentIds" => shown.regions
     case "specialNomination" => shown.nominations
     case "criteria" | "worstMark" => !shown.unrated

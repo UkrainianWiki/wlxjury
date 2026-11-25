@@ -162,24 +162,33 @@ object RoundChanges {
     case other => Json.obj(side -> other)
   }
 
-  /** The entry's detail: the values compared whole, stored short ([[stored]]). */
-  def detail(round: Round, path: String, changes: Seq[(String, JsValue, JsValue)]): JsObject =
+  /** The detail's key of how a top N was chosen (the cut picker, regional winners plan §10.4):
+    * `services.CutPicker.basis`, beside a change of `topImages` only.
+    */
+  val TopImagesBasis = "topImagesBasis"
+
+  /** The entry's detail: the values compared whole, stored short ([[stored]]); with a changed top N,
+    * how it was chosen (`topImagesBasis`), if given.
+    */
+  def detail(round: Round, path: String, changes: Seq[(String, JsValue, JsValue)],
+      topImagesBasis: Option[JsObject] = None): JsObject =
     Json.obj("round" -> round.getId, "number" -> round.number, "path" -> path,
-      "changed" -> JsObject(changes.map { case (f, from, to) => f -> (stored("from", from) ++ stored("to", to)) }))
+      "changed" -> JsObject(changes.map { case (f, from, to) => f -> (stored("from", from) ++ stored("to", to)) })) ++
+      topImagesBasis.filter(_ => changes.exists(_._1 == "topImages")).fold(Json.obj())(b => Json.obj(TopImagesBasis -> b))
 
   /** Writes the entry, if anything changed and an account did it: its id. A changed track label is
     * an entry of its own ([[ContestChangeJdbc.RoundTrackChanged]], with the same path), after the
     * entry of the other settings, if any: the id of the first written.
     */
-  def record(kind: String, before: Option[Snapshot], round: Round, after: Snapshot, actorId: Option[Long], path: String)(
-      implicit session: DBSession): Option[Long] = {
+  def record(kind: String, before: Option[Snapshot], round: Round, after: Snapshot, actorId: Option[Long], path: String,
+      topImagesBasis: Option[JsObject] = None)(implicit session: DBSession): Option[Long] = {
     require(ContestChangeJdbc.RoundSettingKinds.contains(kind) && kind != ContestChangeJdbc.RoundTrackChanged,
       "not a round settings kind")
     require(Path.All.contains(path), "unknown round change path")
     val (track, others) = diff(before, after).partition(_._1 == TrackField)
     def write(k: String, changes: Seq[(String, JsValue, JsValue)]) =
       actorId.filter(_ => changes.nonEmpty).map { actor =>
-        ContestChangeJdbc.create(Some(round.contestId), None, actor, k, detail = detail(round, path, changes))
+        ContestChangeJdbc.create(Some(round.contestId), None, actor, k, detail = detail(round, path, changes, topImagesBasis))
       }
     val main = write(kind, others)
     val label = write(ContestChangeJdbc.RoundTrackChanged, track)
@@ -190,22 +199,23 @@ object RoundChanges {
     * and an entry of what they changed ([[record]]). The caller holds the round's lock. An
     * exception from `writes` rolls the entry back with them.
     */
-  def logged[A](roundId: Long, actorId: Option[Long], kind: String, path: String)(writes: => A)(implicit
-      session: DBSession): A = {
+  def logged[A](roundId: Long, actorId: Option[Long], kind: String, path: String,
+      topImagesBasis: Option[JsObject] = None)(writes: => A)(implicit session: DBSession): A = {
     val before = actorId.flatMap(_ => snapshot(roundId))
     val result = writes
     for (b <- before; (round, after) <- snapshot(roundId))
-      record(kind, Some(b._2), round, after, actorId, path)
+      record(kind, Some(b._2), round, after, actorId, path, topImagesBasis)
     result
   }
 
   /** A new round's entry ([[ContestChangeJdbc.RoundCreated]]): its settings, read in the creating
     * transaction.
     */
-  def recordCreated(roundId: Long, actorId: Option[Long])(implicit session: DBSession): Option[Long] =
+  def recordCreated(roundId: Long, actorId: Option[Long], topImagesBasis: Option[JsObject] = None)(implicit
+      session: DBSession): Option[Long] =
     actorId.flatMap { _ =>
       snapshot(roundId).flatMap { case (round, after) =>
-        record(ContestChangeJdbc.RoundCreated, None, round, after, actorId, Path.Create)
+        record(ContestChangeJdbc.RoundCreated, None, round, after, actorId, Path.Create, topImagesBasis)
       }
     }
 }

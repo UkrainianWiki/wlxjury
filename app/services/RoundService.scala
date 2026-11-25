@@ -63,7 +63,9 @@ class RoundService @Inject() (
       submitToken: Option[String] = None,
       createdBy: Option[Long] = None,
       titles: Seq[String] = Nil,
-      review: Boolean
+      review: Boolean,
+      // how its top N was chosen (the cut picker): kept with its settings log entry
+      topImagesBasis: Option[JsObject] = None
   ): Submitted =
     submitToken.flatMap(submitted(_, round.contestId)) match {
       case Some(existing) => resubmitted(existing)
@@ -80,7 +82,7 @@ class RoundService @Inject() (
           jurors.isEmpty || round.distribution <= jurors.size,
           s"${round.distribution} jurors per image, but only ${jurors.size} jurors selected"
         )
-        insert(configuredRound, jurors, submitToken, createdBy, titles, review) match {
+        insert(configuredRound, jurors, submitToken, createdBy, titles, review, topImagesBasis) match {
           case Left(existing) => resubmitted(existing)
           case Right((created, job)) =>
             logger.info(
@@ -134,7 +136,8 @@ class RoundService @Inject() (
       submitToken: Option[String],
       createdBy: Option[Long],
       titles: Seq[String],
-      review: Boolean
+      review: Boolean,
+      topImagesBasis: Option[JsObject]
   ): Either[Round, (Round, Job)] = {
     val number = dao.countByContest(round.contestId) + 1
     try
@@ -157,7 +160,7 @@ class RoundService @Inject() (
         // "Create and review images" (D3): a fill that ends in review; else one pass (D4)
         val job = enqueueOrFail(created, completingCreation = true, createdBy, titles, distributeAfter = !review)
         // its settings as written, in the round's settings log (RoundChanges), with the round
-        RoundChanges.recordCreated(created.getId, createdBy)
+        RoundChanges.recordCreated(created.getId, createdBy, topImagesBasis)
         (created, job)
       })
     catch {
@@ -539,7 +542,7 @@ class RoundService @Inject() (
     *                  is queued
     */
   def reapplyFilters(updated: Round, createdBy: Option[Long], titles: Seq[String] = Nil,
-      alsoWrite: DBSession => Unit = _ => ()): RoundService.ReviewDistribution =
+      alsoWrite: DBSession => Unit = _ => (), topImagesBasis: Option[JsObject] = None): RoundService.ReviewDistribution =
     dao.findById(updated.getId) match {
       case None => RoundService.ReviewDistribution.NotInReview
       case Some(stored) =>
@@ -571,7 +574,7 @@ class RoundService @Inject() (
                   // what the filters and the caller's writes change, in the round's settings log
                   // (RoundChanges), committed only with them and the job
                   RoundChanges.logged(roundId, createdBy, ContestChangeJdbc.RoundFiltersReapplied,
-                    RoundChanges.Path.Reapply) {
+                    RoundChanges.Path.Reapply, topImagesBasis) {
                     Round.updateFilters(roundId, configured)(s)
                     // the caller's other changes (the form's name, score rule), committed only with the job
                     alsoWrite(s)
@@ -618,6 +621,30 @@ class RoundService @Inject() (
 
   /** "Count new files": the number of images [[distributeNewFiles]] would add now. */
   def newFilesCount(roundId: Long): Long = distribution.countNew(roundId)
+
+  /** The round form's cut picker (regional winners plan §10.4) of `round` (a stored round, or the
+    * form's settings as posted): the files its top N would take from now, ranked as its distribution
+    * ranks them, with the candidate cuts of `target`, the gallery to `showTo`, and the form's `chosen`
+    * N. `skipDqOf`: a re-apply's round, whose disqualified files take no place. None without previous
+    * rounds. Read only; may read Commons (a category filter's files), as "Count new files" does.
+    */
+  def cutPicker(round: Round, target: Option[Int], chosen: Option[Int], showTo: Option[Int],
+      skipDqOf: Option[Long] = None): Option[CutPicker] = {
+    val canonical = round.withFixedCategories.withCanonicalCategoryRule
+    distribution.topNRanking(canonical, CutPicker.keep(target, showTo), skipDqOf).map { ranking =>
+      // a criteria round's criteria: its score range and its files' scores are their sums
+      val prev = ranking.prevRounds.map { p =>
+        if (!p.hasCriteria) p
+        else {
+          val ids = db.scalikejdbc.RoundCriterion.idsOf(p.getId)
+          p.copy(criterionIds = ids, criteriaCount = ids.size.max(1))
+        }
+      }
+      val ranges = prev.filterNot(_.isBinary).map(p =>
+        CutPicker.range(p, if (p.distribution > 0) p.distribution.toLong else p.numberOfAssignedJurors))
+      CutPicker.build(ranking.copy(prevRounds = prev), ranges, target, chosen, showTo)
+    }
+  }
 
   /** The round's previous rounds, in its order, looked up in the round's own contest
     * only: another contest's rounds would be frozen and their images copied. An id not

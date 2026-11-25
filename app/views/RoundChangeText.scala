@@ -18,7 +18,7 @@ object RoundChangeText {
 
   /** One changed setting as shown: its stored name, label, and old and new values (full and cut). */
   final case class Item(field: String, label: String, from: Option[String], to: String, fromFull: Option[String],
-      toFull: String) {
+      toFull: String, note: Option[String] = None) {
     /** Whether a value is cut: the item then has a title with the whole text. */
     def cut: Boolean = from != fromFull || to != toFull
     def title: String = fromFull.fold(toFull)(f => s"$f → $toFull")
@@ -59,17 +59,35 @@ object RoundChangeText {
 
   private def short(text: String): String = RoundChanges.cut(text, Shown)
 
+  /** How a top N was chosen, from the entry's `topImagesBasis` (the cut picker): its candidate cut's
+    * reasons, or "chosen from the list", and the target. Only the picker's own message keys are read.
+    */
+  def basis(b: JsObject)(implicit messages: Messages): String = {
+    def own(msg: services.TopNCandidates.Msg): Option[services.TopNCandidates.Msg] =
+      Option.when(msg.key.startsWith("top.n."))(msg.copy(args = msg.args.map {
+        case m: services.TopNCandidates.Msg => own(m).fold[Any]("")(services.CutPicker.text)
+        case other => other
+      }))
+    val reasons = (b \ "reasons").asOpt[Seq[JsValue]].getOrElse(Nil).flatMap(services.CutPicker.fromJson).flatMap(own)
+    val how =
+      if ((b \ "how").asOpt[String].contains(services.CutPicker.HowCandidate) && reasons.nonEmpty)
+        messages("top.n.basis.candidate", reasons.map(services.CutPicker.text).mkString("; "))
+      else messages("top.n.basis.list")
+    (Seq(how) ++ (b \ "target").asOpt[Int].map(t => messages("top.n.basis.target", t))).mkString(", ")
+  }
+
   /** The entry's changed settings, known ones first in their order; a creation's without "from". */
   def items(c: ContestChange)(implicit messages: Messages): Seq[Item] = {
     val changed = (c.detail \ "changed").asOpt[JsObject].getOrElse(Json.obj())
     val known = RoundChanges.Fields.filter(changed.keys.contains)
     val order = known ++ changed.keys.toSeq.filterNot(RoundChanges.Fields.contains).sorted
     val created = c.kind == db.scalikejdbc.ContestChangeJdbc.RoundCreated
+    val topBasis = (c.detail \ RoundChanges.TopImagesBasis).asOpt[JsObject].map(basis)
     order.map { f =>
       val entry = changed \ f
       val from = Option.when(!created)(value(f, (entry \ "from").getOrElse(JsNull)))
       val to = value(f, (entry \ "to").getOrElse(JsNull))
-      val item = Item(f, label(f), from.map(short), short(to), from, to)
+      val item = Item(f, label(f), from.map(short), short(to), from, to, topBasis.filter(_ => f == "topImages"))
       // the same text shown for two different values (cut, or a list whose texts hold its commas): each
       // with its hash, the whole value's as stored beside a value cut on writing, else the stored value's
       // (RoundChanges.valueHash: a list's of its JSON, never of the text shown)

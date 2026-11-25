@@ -9,7 +9,10 @@
         regions: Map[String, String] = Map.empty,
         user: User,
         noEdit: Boolean,
-        specialNominations: Seq[SpecialNomination] = Nil
+        specialNominations: Seq[SpecialNomination] = Nil,
+        cutPicker: Option[services.CutPicker] = None,
+        cutTarget: Option[Int] = None,
+        previewUrl: String = ""
 )(implicit messages: Messages)
 @implicitLayout = @{ bs.Layout.horizontal("col-md-4", "col-md-8") }
 @prevIds = @{ editRoundForm("previousRound").indexes.flatMap(i => editRoundForm(s"previousRound[$i]").value) }
@@ -56,7 +59,7 @@
             @* the order that picks a top-N from a yes/no previous round, stored with the round, so
                its page shows which rule picked its files and a later distribution picks the same;
                the legacy rule only for a round from before V72 that has it *@
-            @if(editRoundForm("topImages").value.exists(_.nonEmpty) && topOrderApplies) {
+            @if((editRoundForm("topImages").value.exists(_.nonEmpty) || cutPicker.isDefined) && topOrderApplies) {
                 @bs.select(
                     editRoundForm("topBinaryOrder"),
                     BinaryOrder.all.map(order => (order.param, Messages(order.messageKey))) ++
@@ -107,16 +110,9 @@
             )
             </div>
 
-            @* hidden in 26.11 unless the URL gives ?topImages=N (N > 0; RoundController.editRound
-               maps 0 to none), or the form comes back with one: a number of at least 1, as the
-               form's mapping takes *@
-            @for(topImages <- editRoundForm("topImages").value) {
-                @bs.inputType("number",
-                    editRoundForm("topImages"),
-                    Symbol("_label") -> Messages("top.images"),
-                    Symbol("min") -> 1
-                )
-            }
+            @* the top N (regional winners plan §10.4, the cut picker): no free number box; "Choose N"
+               loads the candidate cuts and an N list of valid values only (round/edit/topN) *@
+            @views.html.round.edit.topN(editRoundForm, cutPicker, cutTarget, noEdit, previewUrl)
         </div>
 
         @* "Leave out files that are in round(s)" (V95): the contest's other rounds; with or without

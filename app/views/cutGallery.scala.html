@@ -1,0 +1,51 @@
+@import services.CutPicker
+@import services.TopNCandidates
+@(p: CutPicker, previewUrl: Option[String])(implicit messages: Messages)
+@* The cut gallery (regional winners plan §10.4; shared, server-rendered, no script): the ranked
+   candidates in rank order from place 1 to the gallery's end (the window's end plus 5; "Show more"),
+   each with its place, thumbnail, title linking to its large view in the round it ranks by, and its
+   score in that round's terms. Files of the same rank key are bracketed as tied and never split by a
+   line: a line is drawn only at a cut position (a valid N), thin, and labelled with "N = n" and its
+   reasons, with "Cut here" (a submit to the preview action, `previewUrl`), at a candidate cut. *@
+@lineText(c: TopNCandidates.Candidate) = @{ Messages("top.n.option", c.n) + " · " + c.reasons.map(CutPicker.text).mkString("; ") }
+<section class="mb-3" id="cut-gallery" aria-labelledby="cut-gallery-heading">
+    @* the gallery's end, kept by the picker's other buttons *@
+    <input type="hidden" name="cutShown" value="@p.shownTo">
+    <h2 class="h6" id="cut-gallery-heading">@Messages(if (p.levels) "top.n.gallery.levels" else "top.n.gallery", p.m, p.shownTo)</h2>
+    <ol class="list-unstyled cut-gallery mb-2">
+    @for((f, idx) <- p.gallery.zipWithIndex) {
+        @defining(idx + 1) { place =>
+        @defining(p.tieOf(place)) { tie =>
+        <li class="cut-file@if(tie.isDefined) { cut-tied}@if(tie.exists(_.from == place)) { cut-tie-first}@if(tie.exists(_.to == place)) { cut-tie-last}"
+            data-place="@place" data-page-id="@f.file.pageId">
+            <span class="cut-place">@place</span>
+            <a class="cut-thumb" href="@controllers.routes.LargeViewController.large(0, f.file.pageId, "all", f.row.roundId)" tabindex="-1" aria-hidden="true">
+                <img alt="" loading="lazy" src="@controllers.Global.resizeTo(f.file.image, 120, 80)">
+            </a>
+            <span class="cut-title"><a href="@controllers.routes.LargeViewController.large(0, f.file.pageId, "all", f.row.roundId)">@f.file.image.title.stripPrefix("File:")</a></span>
+            <span class="cut-score">@p.scoreText(place, f)</span>
+            @for(t <- tie if t.from == place) {<span class="cut-tie-label badge text-bg-light border">@Messages("top.n.tied", t.from, t.to)</span>}
+        </li>
+        @if(place < p.m && p.result.isValid(place)) {
+            @p.result.candidate(place) match {
+                case Some(c) => {
+                <li class="cut-line cut-line-candidate d-flex flex-wrap align-items-center gap-2" data-cut="@place">
+                    <span class="cut-line-label">@lineText(c)</span>
+                    @for(url <- previewUrl) {
+                    <button type="submit" class="btn btn-sm btn-outline-primary" formaction="@url" formnovalidate name="cutPick"
+                        value="@place" aria-label="@Messages("top.n.cut.here.label", place)">@Messages("top.n.cut.here")</button>
+                    }
+                </li>
+                }
+                case None => {<li class="cut-line" data-cut="@place" aria-hidden="true"></li>}
+            }
+        }
+        }
+        }
+    }
+    </ol>
+    @for(next <- p.showMore; url <- previewUrl) {
+        <button type="submit" class="btn btn-sm btn-outline-secondary" id="cut-gallery-more" formaction="@url" formnovalidate
+            name="cutShow" value="@next">@Messages("top.n.show.more", next)</button>
+    }
+</section>

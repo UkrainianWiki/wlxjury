@@ -1,0 +1,122 @@
+@import services.CutPicker
+@(
+        editRoundForm: Form[controllers.EditRound],
+        picker: Option[CutPicker],
+        target: Option[Int],
+        noEdit: Boolean,
+        previewUrl: String
+)(implicit messages: Messages)
+@* The round form's top N (regional winners plan §10.4, place 1: the cut picker). There is no free
+   number box: before "Choose N" the form shows the N it holds (a hidden field) or none; "Choose N"
+   (and a changed target) posts the form to the preview action (RoundController.cutPreview), which
+   shows it again with the candidate cuts, an N list of valid values only (never a value inside a
+   tie: the save refuses one from a crafted post), the preview of the N chosen and the cut gallery.
+   A candidate cut or "Cut here" sets N the same way. Nothing is preselected and nothing is saved
+   but by the form's Save. An existing round whose filters aren't edited shows its N read only. *@
+@implicitLayout = @{ bs.Layout.horizontal("col-md-4", "col-md-8") }
+@field = @{ editRoundForm("topImages") }
+@stored = @{ field.value.map(_.trim).filter(_.nonEmpty) }
+@errors = @{ field.errors.zipWithIndex.map { case (e, i) => (s"topImages_error_$i", Messages(e.messages, e.args: _*)) } }
+@reasonsText(c: services.TopNCandidates.Candidate) = @{ c.reasons.map(CutPicker.text).mkString("; ") }
+@optionText(p: CutPicker, n: Int) = @{
+    Messages("top.n.option", n) + p.result.candidate(n).fold(if (n == p.m) " · " + CutPicker.text(services.TopNCandidates.Msg(services.TopNCandidates.AllKey, Seq(n))) else "")(c => " · " + reasonsText(c))
+}
+@chooseButton(label: String) = {
+    <button type="submit" class="btn btn-outline-primary" id="topImages-choose" formaction="@previewUrl" formnovalidate
+        name="cutLoad" value="1">@Messages(label)</button>
+}
+@targetField = {
+    <div class="row mb-3" id="topImagesTarget_field">
+        <label class="col-md-4 col-form-label" for="topImagesTarget">@Messages("top.n.target")</label>
+        <div class="col-md-8">
+            <div class="d-flex flex-wrap gap-2 align-items-start">
+                <input type="number" class="form-control w-auto" id="topImagesTarget" name="topImagesTarget" min="1"
+                    max="@CutPicker.MaxTarget" value="@target.map(_.toString).getOrElse("")" aria-describedby="topImagesTarget_help">
+                @chooseButton(if (picker.isDefined) "top.n.choose.again" else "top.n.choose")
+            </div>
+            <div class="form-text" id="topImagesTarget_help">@Messages("top.n.target.help")</div>
+        </div>
+    </div>
+}
+@if(noEdit) {
+    @for(n <- stored) {
+    <div class="row mb-3" id="topImages_field">
+        <span class="col-md-4 col-form-label">@Messages("top.images")</span>
+        <div class="col-md-8"><p class="form-control-plaintext" id="topImages">@n</p></div>
+    </div>
+    }
+} else {
+    <div id="top-n">
+    @picker match {
+        case None => {
+            <div class="row mb-3" id="topImages_field">
+                <span class="col-md-4 col-form-label">@Messages("top.images")</span>
+                <div class="col-md-8">
+                    @for(n <- stored) {<input type="hidden" name="topImages" value="@n">}
+                    <p class="form-control-plaintext@if(errors.nonEmpty) { is-invalid}" id="topImages"@if(errors.nonEmpty) { aria-describedby="@errors.map(_._1).mkString(" ")"}>@stored.fold(Messages("top.n.none"))(n => Messages("top.n.option", n))</p>
+                    @for((id, error) <- errors) {<div class="invalid-feedback d-block" id="@id">@error</div>}
+                </div>
+            </div>
+            @targetField
+        }
+        case Some(p) => {
+            @* the N list: valid values only; with an N the list can't hold (inside a tie, refused), its
+               first option asks for a choice *@
+            @if(p.m == 0) {
+                <div class="row mb-3" id="topImages_field">
+                    <span class="col-md-4 col-form-label">@Messages("top.images")</span>
+                    <div class="col-md-8">
+                        <p class="form-control-plaintext" id="topImages">@Messages("top.n.no.candidates")</p>
+                        @for((id, error) <- errors) {<div class="invalid-feedback d-block" id="@id">@error</div>}
+                    </div>
+                </div>
+            } else {
+                @defining(stored.flatMap(_.toIntOption).exists(n => !p.result.isValid(n))) { invalid =>
+                <div class="row mb-3" id="topImages_field">
+                    <label class="col-md-4 col-form-label" for="topImages">@Messages("top.images")</label>
+                    <div class="col-md-8">
+                        <select class="form-select@if(errors.nonEmpty) { is-invalid}" id="topImages" name="topImages"@if(invalid) { required}
+                            aria-describedby="@((Seq("topImages_help") ++ errors.map(_._1)).mkString(" "))"@if(errors.nonEmpty) { aria-invalid="true"}>
+                            @if(invalid) {<option value="" selected>@Messages("top.n.choose.placeholder")</option>}
+                            <option value=""@if(!invalid && stored.isEmpty) { selected}>@Messages("top.n.none")</option>
+                            @for(n <- p.options) {<option value="@n"@if(p.chosenValid.contains(n)) { selected}>@optionText(p, n)</option>}
+                        </select>
+                        <div class="form-text" id="topImages_help">@Messages("top.n.list.help", p.m)</div>
+                        @for((id, error) <- errors) {<div class="invalid-feedback" id="@id">@error</div>}
+                    </div>
+                </div>
+                }
+            }
+            @targetField
+            @if(p.result.candidates.nonEmpty) {
+            <div class="row mb-3" id="top-n-candidates">
+                <span class="col-md-4 col-form-label">@Messages("top.n.candidates")</span>
+                <div class="col-md-8 d-flex flex-wrap gap-2">
+                    @for(c <- p.result.candidates) {
+                    <button type="submit" class="btn btn-sm @if(p.chosenValid.contains(c.n)) {btn-primary} else {btn-outline-secondary} text-start"
+                        formaction="@previewUrl" formnovalidate name="cutPick" value="@c.n"
+                        @if(p.chosenValid.contains(c.n)) { aria-pressed="true"}>@Messages("top.n.option", c.n) · @reasonsText(c)</button>
+                    }
+                </div>
+            </div>
+            }
+            @for(n <- p.chosenValid) {
+            <div class="row mb-3"><div class="col-md-8 offset-md-4">
+                <p class="mb-0" id="top-n-preview">@Messages("top.n.preview.of", n) @CutPicker.text(p.preview(n))</p>
+            </div></div>
+            }
+            @if(p.changedSince) {
+            <div class="row mb-3"><div class="col-md-8 offset-md-4">
+                <div class="alert alert-warning py-2 mb-0" id="top-n-changed">@Messages("top.n.changed")</div>
+            </div></div>
+            }
+            @if(p.mixedScales) {
+            <div class="row mb-3"><div class="col-md-8 offset-md-4">
+                <div class="alert alert-warning py-2 mb-0" id="top-n-scales">@Messages("top.n.scales")</div>
+            </div></div>
+            }
+            @views.html.cutGallery(p, Some(previewUrl))
+        }
+    }
+    </div>
+}

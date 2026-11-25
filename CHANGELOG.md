@@ -38,6 +38,10 @@ For the next release, 26.11.17.
 - Distribute is refused for a round whose settings match no file; the jurors form shows it disabled with the reason.
 - Round form: a save refused because another round's job must finish first (a round to leave out still being distributed, a previous round with a juror being added) keeps the form as entered and shows that job's progress, linked to it; when it has finished the box says "Round N has finished. You can save now." and Save is enabled again.
 
+**Merged after the 26.11.17 build (for 26.11.18)**
+
+- Round form: the number of top files from the previous rounds is chosen with "Choose N" instead of typed: it lists candidate cuts with their reasons (a clear drop in scores, a yes/no vote level, all candidates, the edges of a tie, near an optional target), offers only numbers that don't split a tie, previews "37 of 412 files, lowest included score 7.2" and shows the ranked files with the cut lines. A number inside a tie is refused on save, and how N was chosen is kept in the round's settings log.
+
 ## Deployed releases
 
 ### 26.11.16 (2026-11-25)
