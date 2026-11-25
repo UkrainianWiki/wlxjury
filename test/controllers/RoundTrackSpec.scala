@@ -113,7 +113,13 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         (input must not(beNull)) and (input.attr("maxlength") === "64") and (input.attr("value") === "Second look") and
           (doc.select("datalist#round-track-labels option").eachAttr("value").asScala.toSeq === Seq("Main", "Second look")) and
           (doc.select("input[name=trackShown][type=hidden]").attr("value") === "true") and
-          (doc.getElementById("trackLabel_help").text must contain("Automatic: Quality.")) and {
+          // the automatic track in the field, the help one short line
+          (input.attr("placeholder") === "Automatic: Quality") and
+          (doc.getElementById("trackLabel_help").text ===
+            "Rounds with the same label share a track. Type Main on the main competition's first round.") and
+          // a new round: its automatic track comes once saved
+          (page(app, f.admin, s"/admin/rounds/edit?contestId=${f.contest.getId}").getElementById("trackLabel")
+            .attr("placeholder") === "Automatic") and {
             // Main as the page's language names it
             Round.setTrack(f.q00.getId, Some("Main"))
             page(app, f.admin, s"/admin/rounds/edit?contestId=${f.contest.getId}&id=${f.q00.getId}", "uk")

@@ -146,11 +146,14 @@
                     @bs.text(editRoundForm("name"), Symbol("_label") -> Messages("round.name.optional"))
 
                     @* the round's track label (round lineage decision 4, slice A): empty is the automatic
-                       track; any time, also for an existing round (Round.setTrack); the contest's labels
-                       and Main offered as they are spelled, since identical labels share a track *@
+                       track, named in the field as its placeholder (the chip's name, whole; a new round's
+                       comes from its previous rounds once saved: "Automatic"); any time, also for an
+                       existing round (Round.setTrack); the contest's labels and Main offered as they are
+                       spelled, since identical labels share a track *@
                     @bs.text(trackField, Symbol("_label") -> Messages("round.track.label"),
-                        Symbol("_help") -> (Messages("round.track.help", Messages("round.track.main")) +
-                            automaticTrack.fold("")(t => " " + Messages("round.track.automatic", t))),
+                        Symbol("_help") -> Messages("round.track.help", Messages("round.track.main")),
+                        Symbol("placeholder") -> automaticTrack.fold(Messages("round.track.automatic.new"))(t =>
+                            Messages("round.track.automatic", t)),
                         Symbol("maxlength") -> Round.TrackMaxLength, Symbol("list") -> "round-track-labels",
                         Symbol("autocomplete") -> "off")
                     <datalist id="round-track-labels">
