@@ -132,6 +132,11 @@ object RoundLineage {
       */
     def deepest(track: Track): Option[Round] = spines.get(track).flatMap(_.lastOption).flatMap(rounds.get)
 
+    /** Each track's chip colour ([[colourSlots]]), once for the contest: every chip and Track menu
+      * swatch of a page reads this one assignment.
+      */
+    lazy val colours: Map[Track, Int] = colourSlots(tracks)
+
     /** The merge round alone on the Main track, if so (no other live round on it): its earlier
       * rounds are on their own tracks until an admin labels them "Main" (§8.1: the Rounds page's
       * hint).
@@ -141,6 +146,40 @@ object RoundLineage {
         case Seq(id) if merges.contains(id) => rounds.get(id)
         case _                              => None
       }
+  }
+
+  /** The Track chips' colours other than Main's (views.TrackChip: `--wlx-track-1` … `-6`). */
+  val ColourSlots = 6
+
+  /** A track's own colour slot, 0 until `slots`: a hash of its key, the same for the same track in
+    * any contest and year.
+    */
+  def preferredSlot(track: Track, slots: Int = ColourSlots): Int = Math.floorMod(track.key.hashCode, slots)
+
+  /** The contest's tracks' colour slots, none for Main (its own colour): each track its own slot
+    * ([[preferredSlot]]) unless another track of the contest prefers it too. The tracks are taken
+    * by name (case-insensitive, then exact, then key), never by round ids, so the same tracks get
+    * the same slots every year:
+    *  1. each slot goes to the first track by name that prefers it, so a track no other prefers
+    *     keeps its own;
+    *  2. the others, by name, take the next free slot after their own (+1, +2, … round to 0);
+    *     with none free (more tracks than slots), the next least used one after their own, so
+    *     the two tracks that wanted one slot still differ (WLM 2025's 14 tracks: Quality and
+    *     Quantity), and the repeats are spread evenly.
+    */
+  def colourSlots(tracks: Seq[Track], slots: Int = ColourSlots): Map[Track, Int] = {
+    val named = tracks.filterNot(_.isMain).distinct.sortBy(t => (t.name.toLowerCase(Locale.ROOT), t.name, t.key))
+    val owners = named.groupBy(preferredSlot(_, slots)).view.mapValues(_.head).toMap
+    val used = mutable.Map((0 until slots).map(s => s -> (if (owners.contains(s)) 1 else 0)): _*)
+    named.map { t =>
+      val own = preferredSlot(t, slots)
+      t -> (if (owners(own) == t) own
+            else {
+              val slot = (1 until slots).map(i => (own + i) % slots).minBy(used)
+              used(slot) += 1
+              slot
+            })
+    }.toMap
   }
 
   def cancelled(round: Round): Boolean = round.status.contains(Round.Status.Cancelled)

@@ -18,7 +18,8 @@ import scala.jdk.CollectionConverters._
   * `created_at` kept, "Main" in any case or language, kept by a client without the field, refused
   * unchanged to a juror, an organizer and another contest's admin); the Track chip on the Rounds page,
   * the round statistics and the galleries' round menu (not a juror's); the Track menu on Rounds and
-  * Statistics (`track=`, an unknown one all rounds); the Rounds page's hint for a merge alone on Main
+  * Statistics (`track=`, an unknown one all rounds); each track's own chip colour (two tracks of the
+  * contest on one hash token moved apart), the same on every page and in the Track menu's swatches; the Rounds page's hint for a merge alone on Main
   * and its warning for a missing previous round. Organizers see the chips and the menu read only.
   */
 class RoundTrackSpec extends PlaySpecification with PlayTestDb {
@@ -268,6 +269,33 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
             (labelled.getElementById("rounds-main-hint") must beNull) and
               (rowChips(labelled) === Map("Q-00" -> "Main", "Qn-00" -> "Quantity", "Q-01" -> "Main", "Q-02" -> "Main"))
           }
+      }
+    }
+
+    "give each track its own colour, the same in the Track menu, the statistics and the galleries' menu" in {
+      testDbApp { app =>
+        val f = fixture()
+        // five tracks: Main, its feeders Quality and Quantity, a category root and a nomination
+        roundDao.create(Round(None, 5, Some("F-00"), f.contest.getId, category = Some(Prefix + "Film")))
+        roundDao.create(Round(None, 6, Some("Kha-00"), f.contest.getId, specialNomination = Some("Харків")))
+        def colour(e: Element): String =
+          e.classNames.asScala.filter(c => c.startsWith("wlx-track-") && c != "wlx-track-swatch").mkString(" ")
+        def chipColours(doc: Document, selector: String): Map[String, String] =
+          doc.select(s"$selector .wlx-track").asScala.toSeq.map(c => c.attr("data-track") -> colour(c)).toMap
+        val doc = page(app, f.admin, s"/admin/rounds?contestId=${f.contest.getId}")
+        val chipsByTrack = chipColours(doc, "tbody tr.round-row")
+        val swatches = doc.select("#rounds-track-menu .dropdown-item").asScala.toSeq.flatMap { a =>
+          Option(a.selectFirst(".wlx-track-swatch")).map(s =>
+            java.net.URLDecoder.decode(a.attr("href").replaceAll(".*[?&]track=([^&]*).*", "$1"), "UTF-8") -> colour(s))
+        }.toMap
+        val stat = chipColours(page(app, f.organizer, s"/roundstat/${f.merge.getId}"), "#round-stat-rounds")
+        val gallery = chipColours(page(app, f.organizer, s"/gallery/round/${f.q00.getId}/user/0/page/1"), "#round-menu")
+        // Quality and Quantity share a hash token: Quality (first by name) keeps it, Quantity takes
+        // the next free one, after Film's and Харків's, which keep theirs
+        (chipsByTrack === Map("main" -> "wlx-track-main", "category:Quality" -> "wlx-track-2",
+          "category:Quantity" -> "wlx-track-5", "category:Film" -> "wlx-track-3", "nomination:Харків" -> "wlx-track-4")) and
+          (chipsByTrack.values.toSet.size === 5) and (swatches === chipsByTrack) and
+          (stat === chipsByTrack) and (gallery === chipsByTrack)
       }
     }
 

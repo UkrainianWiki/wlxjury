@@ -858,8 +858,11 @@ slice A builds part of them early.
 - **The label setter on the round form**, also for existing rounds, writing
   `created_at = created_at`, with a form spec (decision 4).
 - **A coloured Track chip** after the round name on the Rounds page, Round Statistics and the
-  gallery round menu. The colour is a stable hash of the track onto a few `--wlx-*` tokens, checked
-  in both themes; the chip's text carries the meaning.
+  gallery round menu. The colour is one of a few `--wlx-*` tokens, checked in both themes; the
+  chip's text carries the meaning. *(Amended 2026-11-26: the hash gave WLM 2026's Quality and
+  Quantity the same colour. Each track keeps its hash colour, so the same track has the same colour
+  every year, and only tracks of one contest on the same token are moved apart: by name, the first
+  keeps it, the others take the next free token.)*
 - **A Track menu** on Rounds and Statistics, next to Status and Type: `track=` in `RoundsFilter`.
 
 **Logging.** A label change is written to the change log as a new `contest_change` kind, through

@@ -7,13 +7,14 @@ import services.RoundLineage.{Kind, Lineage, Track}
 
 /** A round's track as the pages show it (round lineage slice A, §8.1): the Track chip after a
   * round's name on the Rounds page, the round statistics and the galleries' round menu, and the
-  * Track menu's items. The chip's text carries the meaning; its colour is a stable hash of the
-  * track's key onto a few `--wlx-track-*` tokens (theme.css, both themes), Main its own.
+  * Track menu's items. The chip's text carries the meaning; its colour is one of a few
+  * `--wlx-track-*` tokens (theme.css, both themes), Main its own, the others a stable hash of the
+  * track's key, two tracks of one contest on the same token moved apart ([[colour]]).
   */
 object TrackChip {
 
   /** The chip's colours: `wlx-track-1` … `wlx-track-N`, and `wlx-track-main`. */
-  val Colours = 6
+  val Colours: Int = RoundLineage.ColourSlots
 
   /** A chip's longest text, in characters (labels cut by count, without font metrics: §2.3). */
   val MaxLength = 32
@@ -42,9 +43,16 @@ object TrackChip {
   def shown(round: Round, lineage: Lineage): Option[Track] =
     lineage.track(round).filterNot(t => t.kind == Kind.Name && t.name == round.description.trim)
 
-  /** The chip's colour class. */
-  def colour(track: Track): String =
-    if (track.isMain) "wlx-track-main" else s"wlx-track-${Math.floorMod(track.key.hashCode, Colours) + 1}"
+  /** The chip's colour class: Main its own; any other track its slot in the contest
+    * ([[RoundLineage.colourSlots]], computed once per lineage): the hash of its key, as before, unless
+    * another track of the contest has that token, then the next free one. Every page builds the
+    * lineage from all the contest's rounds, so a track has one colour on the Rounds page, the round
+    * statistics, the galleries' round menu and the Track menu's swatch, and the same tracks the same
+    * colours in another year. A track not in the lineage (none today): its hash.
+    */
+  def colour(track: Track, lineage: Lineage): String =
+    if (track.isMain) "wlx-track-main"
+    else s"wlx-track-${lineage.colours.getOrElse(track, RoundLineage.preferredSlot(track)) + 1}"
 
   /** The round's automatic track (its track without its own label), by name: the round form's
     * track field's help. None for a round not among `rounds` (its contest's).
