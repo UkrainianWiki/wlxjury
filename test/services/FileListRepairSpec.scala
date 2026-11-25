@@ -129,6 +129,24 @@ class FileListRepairSpec extends Specification with TestDb with BeforeAll with B
         (a.stays === f.range(1, 5)) and (b.stays === f.range(6, 10)) and (c.stays === f.range(11, 15))
     }
 
+    "keep a contest's round of most of the row ticked when two other contests have whole-list rounds" in {
+      val f = fixture()
+      // B and C fill whole-list rounds; A has a round of files 1-12 (most of the row, of B's and C's files
+      // only some of their own rounds' ones): only the whole-list rounds are mixed
+      def round(contest: org.intracer.wmua.ContestJury, number: Int, pages: Seq[Long]): Long = {
+        val id = Round.create(Round(None, number, Some(s"Round $number"), contest.getId, active = false)).getId
+        pages.foreach(p => VoteJdbc.create(p, 0, f.juror.getId, id))
+        id
+      }
+      val bWhole = round(f.b, 2, f.files)
+      val cWhole = round(f.c, 2, f.files)
+      val aBig = round(f.a, 4, f.range(1, 12))
+      val a = plan(f.a.getId)
+      def mixed(p: FileListRepair.Plan) = p.rounds.filter(_.mixed).map(_.round.getId)
+      (mixed(a) === Seq(f.aWhole)) and (a.counted === Seq(f.a1, f.a2, aBig)) and
+        (mixed(plan(f.b.getId)) === Seq(bWhole)) and (mixed(plan(f.c.getId)) === Seq(cWhole))
+    }
+
     "take a contest already on its own row's files from the shared row its rounds' files were left in" in {
       val f = fixture()
       val p = plan(f.e.getId)
@@ -268,14 +286,18 @@ class FileListRepairSpec extends Specification with TestDb with BeforeAll with B
         (services.distribution.RoundDistributionHandler.SubjectType, f.a1))
       val busyConfirm2 = FileListRepair.confirm(f.a.getId, p.counted, p.hash, r.getId)
       DB.autoCommit(implicit s => sql"UPDATE job SET status = 'done' WHERE id = $distributing".update.apply())
-      // the import before the repair doesn't count against its Undo
-      val repair = FileListRepair.confirm(f.a.getId, p.counted, p.hash, r.getId).toOption.get
+      // the imports before the repair don't count against its Undo
+      val first = FileListRepair.confirm(f.a.getId, p.counted, p.hash, r.getId).toOption.get
+      val undoneDespiteOlder = FileListRepair.undo(first.id, r.getId)
+      val p2 = plan(f.a.getId)
+      val repair = FileListRepair.confirm(f.a.getId, p2.counted, p2.hash, r.getId).toOption.get
       val running = importJob(f.a.getId)
       val busyUndo = FileListRepair.undo(repair.id, r.getId)
       DB.autoCommit(implicit s => sql"UPDATE job SET status = 'done' WHERE id = $running".update.apply())
       // an import since the repair that added nothing: the list's hash is the same, Undo still refused
       val importedSince = FileListRepair.undo(repair.id, r.getId)
-      (busyConfirm must beLeft("list.repair.busy")) and (busyConfirm2 must beLeft("list.repair.busy")) and
+      (undoneDespiteOlder.map(_.id) must beRight(first.id)) and
+        (busyConfirm must beLeft("list.repair.busy")) and (busyConfirm2 must beLeft("list.repair.busy")) and
         (busyUndo must beLeft("list.repair.busy")) and (importedSince must beLeft("list.repair.undo.imported")) and
         (categoryOf(f.a.getId) must beSome(repair.newCategoryId)) and (ListRepairJdbc.findById(repair.id).exists(_.undone) must beFalse)
     }

@@ -330,10 +330,19 @@ object FileListRepair {
   }
 
   /** Of each round (of `shown`: round, its contest, a file of the row), the other contests of whose
-    * files (those any of their rounds show) it shows at least [[MixedShare]].
+    * files it shows at least [[MixedShare]]. Two passes: a contest's files are first those any of
+    * its rounds show, then those its rounds but the ones the first pass found mixed show, so that
+    * another contest's whole-list round doesn't make its files the whole row (a contest's own round
+    * of most of the row would be mixed then, with two such rounds elsewhere).
     */
   def mixedRounds(shown: Seq[(Long, Long, Long)]): Map[Long, Seq[Long]] = {
-    val byContest = shown.groupMap(_._2)(_._3).view.mapValues(_.toSet).toMap
+    val first = mixedPass(shown, Set.empty)
+    mixedPass(shown, first.collect { case (round, others) if others.size >= MixedContests => round }.toSet)
+  }
+
+  /** [[mixedRounds]]' pass: each contest's files those its rounds show, but the `left` ones. */
+  private def mixedPass(shown: Seq[(Long, Long, Long)], left: Set[Long]): Map[Long, Seq[Long]] = {
+    val byContest = shown.filterNot(row => left(row._1)).groupMap(_._2)(_._3).view.mapValues(_.toSet).toMap
     shown.groupBy(_._1).map { case (round, rows) =>
       val contest = rows.head._2
       val files = rows.map(_._3).toSet
@@ -510,7 +519,7 @@ object FileListRepair {
         }
     } catch {
       // another rename took the title meanwhile, or held the rows: nothing changed
-      case e: Throwable if duplicate(e) || lockConflict(e) => Left("list.repair.changed")
+      case e: Throwable if duplicate(e) || lockConflict(e) => Left("list.repair.rename.changed")
     }
     result.foreach(title => log.info(s"list_renamed categoryId=$rowId title=${title.replace(' ', '_')} by=$actorId"))
     result

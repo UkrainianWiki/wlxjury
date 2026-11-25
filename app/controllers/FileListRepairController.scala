@@ -64,7 +64,10 @@ class FileListRepairController @Inject() (cc: ControllerComponents, blocking: Bl
     val shown = form(request).get("shown").flatMap(_.headOption).map(v => rounds(v.split(',').toSeq.map(_.trim)))
     val hash = form(request).get("hash").flatMap(_.headOption).getOrElse("")
     val back = routes.FileListRepairController.repairPage(contestId, counted.toList, chosen = true)
-    if (form(request).get("action").flatMap(_.headOption).contains("recount")) Redirect(back)
+    val action = form(request).get("action").flatMap(_.headOption)
+    if (action.contains("recount")) Redirect(back)
+    // only the page's Confirm button confirms: a post without it is no repair
+    else if (!action.contains("confirm")) BadRequest(views.html.errorPage(Some(user), "error.title", "error.bad.request"))
     else if (shown.exists(_.sorted != counted.sorted))
       Redirect(back).flashing(FileListRepairController.ErrorFlash -> "list.repair.recount.first")
     else

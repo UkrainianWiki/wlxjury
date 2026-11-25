@@ -2043,6 +2043,7 @@ list.repair.undo.changed = The contest''s list changed since this repair (anothe
 list.repair.row.not.found = No such list row.
 list.repair.rename.not.blank = Only an untitled row can be renamed.
 list.repair.rename.in.use = A contest still uses this row as its list: repair it first.
+list.repair.rename.changed = Another rename happened at the same time. Nothing was changed: reload the page and try again.
 list.repair.busy = An import or a round''s distribution of this contest is queued or running. Nothing was changed: wait until it ends.
 list.repair.undo.imported = Files were imported into this contest after the repair. Nothing was undone.
 list.repair.undo.renamed = The old list was renamed "#unnamed legacy import" for audit: the contest can''t go back to it. Nothing was undone.

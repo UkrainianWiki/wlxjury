@@ -62,7 +62,8 @@ class FileListRepairControllerSpec extends PlaySpecification with PlayTestDb {
         val gets = Seq("/admin/file-lists", s"/admin/contests/${f.f.getId}/file-list/repair")
         val posts = Seq(
           s"/admin/contests/${f.f.getId}/file-list/repair" ->
-            (pf.counted.map("round" -> _.toString) ++ Seq("shown" -> pf.counted.mkString(","), "hash" -> pf.hash)),
+            (pf.counted.map("round" -> _.toString) ++ Seq("shown" -> pf.counted.mkString(","), "hash" -> pf.hash,
+              "action" -> "confirm")),
           s"/admin/file-lists/repairs/${repairs.head.id}/undo" -> Nil,
           s"/admin/file-lists/${f.blank}/rename" -> Nil)
 
@@ -158,6 +159,9 @@ class FileListRepairControllerSpec extends PlaySpecification with PlayTestDb {
         status(unrecounted)
         val recount = send(POST, path, Some(root), Seq(f.a1, f.aWhole).map("round" -> _.toString) :+ ("action" -> "recount"): _*)
         status(recount)
+        // a post without the Confirm button confirms nothing
+        val noAction = send(POST, path, Some(root), ticked.map("round" -> _.toString) ++ Seq("shown" -> shown, "hash" -> hash): _*)
+        val noActionStatus = status(noAction)
         // a stale hash is refused
         val stale = send(POST, path, Some(root),
           ticked.map("round" -> _.toString) ++ Seq("shown" -> shown, "hash" -> ("0" * 64), "action" -> "confirm"): _*)
@@ -177,7 +181,7 @@ class FileListRepairControllerSpec extends PlaySpecification with PlayTestDb {
           (page.select("#list-repair-stays-gallery").attr("href") must contain("repair=stays")) and
           (all.select("#list-repair-stays").attr("data-count") === "20") and
           (Seq(staleStatus, confirmedStatus) === Seq(SEE_OTHER, SEE_OTHER)) and
-          (shown === s"${f.a1},${f.a2}") and
+          (shown === s"${f.a1},${f.a2}") and (noActionStatus === BAD_REQUEST) and
           (flash(unrecounted).get(FileListRepairController.ErrorFlash) must beSome("list.repair.recount.first")) and
           (redirectLocation(recount).exists(l => l.startsWith(path) && l.contains(s"round=${f.a1}") &&
             l.contains(s"round=${f.aWhole}") && l.contains("chosen=true")) must beTrue) and

@@ -2027,6 +2027,7 @@ list.repair.undo.changed = La liste du concours a changé depuis cette réparati
 list.repair.row.not.found = Ligne de liste introuvable.
 list.repair.rename.not.blank = Seule une ligne sans titre peut être renommée.
 list.repair.rename.in.use = Un concours utilise encore cette ligne comme liste : réparez-le d''abord.
+list.repair.rename.changed = Un autre renommage a eu lieu au même moment. Rien n''a été modifié : rechargez la page et réessayez.
 list.repair.busy = Un import ou une distribution de tour de ce concours est en attente ou en cours. Rien n''a été modifié : attendez qu''il se termine.
 list.repair.undo.imported = Des fichiers ont été importés dans ce concours après la réparation. Rien n''a été annulé.
 list.repair.undo.renamed = L''ancienne liste a été renommée « #unnamed legacy import » pour l''archive : le concours ne peut pas y revenir. Rien n''a été annulé.
