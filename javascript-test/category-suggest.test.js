@@ -115,6 +115,17 @@ describe("the request and its answer", () => {
 });
 
 describe("categorySuggest", () => {
+    test("the field's hint describes the control typed in, which the label names", () => {
+        const ts = suggest.categorySuggest(field("category", "", ' aria-describedby="source_help"'));
+        expect(ts.control_input.getAttribute("aria-describedby")).toBe("source_help");
+        expect(document.querySelector("label").getAttribute("for")).toBe(ts.control_input.id);
+    });
+
+    test("no description added to a field without one", () => {
+        const ts = suggest.categorySuggest(field());
+        expect(ts.control_input.hasAttribute("aria-describedby")).toBe(false);
+    });
+
     test("asks once typing pauses for 250 ms", () => {
         const ts = suggest.categorySuggest(field());
         type(ts, "Wi");

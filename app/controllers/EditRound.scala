@@ -2,8 +2,9 @@ package controllers
 
 import db.scalikejdbc.{ContestJuryJdbc, CriterionJdbc, MediaType, Round, RoundCriterion, RoundLimits, User}
 import org.scalawiki.wlx.dto.SpecialNomination
-import org.intracer.wmua.{AverageRule, BinaryOrder, CategoryOperation, CategoryRule, Criterion, RejectedMode}
-import play.api.data.{Form, Mapping}
+import org.intracer.wmua.{AverageRule, BinaryOrder, CategoryBoxes, CategoryCombine, CategoryOperation, CategoryRule, Criterion,
+  RejectedMode}
+import play.api.data.{Form, FormError, Mapping}
 import play.api.data.Forms._
 import play.api.data.validation._
 import services.distribution.RoundDistributionHandler
@@ -61,6 +62,10 @@ object EditRound {
     */
   private val categoryOperation = optional(text).verifying(
     "error.category.operation", _.forall(value => CategoryOperation.fromForm(value).isDefined))
+
+  /** What the second category box does (the choice under "More category options"). */
+  private val categoryCombine = optional(text).verifying(
+    "error.category.operation", _.forall(value => CategoryCombine.parse(value).isDefined))
 
   private val validCategories: Constraint[EditRound] = Constraint("constraint.category.rule") { edit =>
     val errors = edit.round.categoryRule.validationErrors
@@ -149,7 +154,9 @@ object EditRound {
     mapping(
       "" -> roundMapping,
       "excludeCoi" -> boolean,
+      // the round form's category boxes send `categoryCombine`; an older client, `categoryClause`
       "categoryClause" -> categoryOperation,
+      "categoryCombine" -> categoryCombine,
       "topBinaryOrder" -> optional(text),
       "rejectedBy" -> optional(text),
       "criteria" -> seq(text),
@@ -170,11 +177,16 @@ object EditRound {
       // "Leave out files that are in round(s)" (V95): round ids, checked by validExcludedRounds
       "excludeRounds" -> seq(text),
       "topUpWaiting" -> boolean
-    )((edit, excludeCoi, selected, topOrder, rejectedBy, criteria, criteriaShown, halfStar, averageRule, worstMark,
+    )((edit, excludeCoi, selected, combine, topOrder, rejectedBy, criteria, criteriaShown, halfStar, averageRule, worstMark,
         worstMarkShown, rejectedMode, excludeRounds, topUpWaiting) => {
-      val configured = selected match {
-        case None => edit.round // Older clients omitted the clause; retain their inference.
-        case Some(value) =>
+      val configured = (selected, combine.flatMap(CategoryCombine.parse)) match {
+        // the round form's two boxes and its choice: the rule they mean, stored as the operation
+        // select stored it (an exclusion's category as the first operand)
+        case (None, Some(choice)) =>
+          val rule = CategoryBoxes(edit.round.category, edit.round.excludeCategory, choice).rule
+          edit.round.copy(category = rule.first, excludeCategory = rule.second, categoryClause = rule.operation.storedValue)
+        case (None, None) => edit.round // Older clients omitted the clause; retain their inference.
+        case (Some(value), _) =>
           val operation = CategoryOperation.fromForm(value).get
           if (operation == CategoryOperation.Unrestricted)
             edit.round.copy(category = None, excludeCategory = None, categoryClause = None)
@@ -191,7 +203,7 @@ object EditRound {
         averageRule = averageRule.flatMap(AverageRule.parse).getOrElse(AverageRule.Default),
         worstMark = worstMark && worstMarkShown, excludeRounds = excludeRoundIdsOf(excludeRounds)),
         averageRuleShown = averageRule.isDefined, worstMarkShown = worstMarkShown, topUpWaiting = topUpWaiting)
-    })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue),
+    })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue), None,
       edit.round.topImages.filter(_ > 0).map(_ => edit.round.topOrderParam), edit.round.rejectedByFilter.map(_.toString),
       edit.round.criterionIds.map(_.toString), edit.criteriaShown, edit.round.halfStar,
       Some(edit.round.averageRule.param), edit.round.worstMark, edit.worstMarkShown,
@@ -204,17 +216,40 @@ object EditRound {
       .verifying(validExcludedRounds)
   )
 
-  /** Keep older submissions meaningful on an error page, where the form has no value. */
-  def categoryDisplay(form: Form[EditRound]): Form[EditRound] = {
+  /** The category boxes as the form shows them: `form` with the boxes' values in `source` and
+    * `excludeCategory`, its errors kept, and the choice under "More category options".
+    */
+  final case class CategoryView(form: Form[EditRound], combine: CategoryCombine) {
+
+    /** A category in either box: the Media filtering section opens by itself. */
+    def hasCategory: Boolean = Seq("source", "excludeCategory").exists(form(_).value.exists(_.trim.nonEmpty))
+
+    /** The errors of the choice, or of an older client's operation: shown under the choice, which is open then. */
+    def choiceErrors: Seq[FormError] = form("categoryCombine").errors ++ form("categoryClause").errors
+  }
+
+  /** The boxes of a form: a round's rule (the form filled from it carries its operation) or an older
+    * client's operation in the boxes it is saved from ([[CategoryBoxes.ofRule]], an exclusion's
+    * category in the second box); the boxes and choice of a refused form as posted; an older
+    * client's boxes without an operation as they were read (its inference); an invalid operation's
+    * boxes as posted, its error shown under the choice.
+    */
+  def categoryBoxes(form: Form[EditRound]): CategoryView = {
+    def value(key: String) = form(key).value.filter(_.trim.nonEmpty)
+    def shown(boxes: CategoryBoxes) = CategoryView(
+      form.copy(data = (form.data -- Seq("source", "excludeCategory")) ++
+        boxes.first.map("source" -> _) ++ boxes.second.map("excludeCategory" -> _)),
+      boxes.combine)
     val selected = form("categoryClause").value.filter(_.nonEmpty)
+    val posted = form("categoryCombine").value.flatMap(CategoryCombine.parse)
     selected.flatMap(CategoryOperation.fromForm) match {
-      case Some(operation) => form.copy(data = form.data.updated("categoryClause", operation.formValue))
-      case None if selected.isDefined => form // Preserve an invalid value and its error.
+      case Some(operation) =>
+        shown(CategoryBoxes.ofRule(CategoryRule(operation,
+          Option.when(operation.requiresFirst)(value("source")).flatten,
+          Option.when(operation.requiresSecond)(value("excludeCategory")).flatten)))
+      case None if selected.isDefined || posted.isDefined => CategoryView(form, posted.getOrElse(CategoryCombine.Default))
       case None =>
-        val rule = CategoryRule.fromStored(form("source").value, form("excludeCategory").value, None)
-        form.copy(data = (form.data -- Seq("source", "excludeCategory")) ++
-          Map("categoryClause" -> rule.operation.formValue) ++
-          rule.first.map("source" -> _) ++ rule.second.map("excludeCategory" -> _))
+        shown(CategoryBoxes.ofRule(CategoryRule.fromStored(form("source").value, form("excludeCategory").value, None)))
     }
   }
 

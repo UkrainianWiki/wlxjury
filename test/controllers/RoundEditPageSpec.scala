@@ -284,6 +284,30 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "keep a locked round's category when its form posts changed boxes and another choice" in {
+      testDbApp { implicit app =>
+        val (contest, admin, previous) = fixture()
+        val jurors = User.findRoundJurors(previous.getId).map(_.getId)
+        val round = roundDao.create(Round(None, 2, Some("Locked"), contest.getId,
+          category = Some("Category:Included"), excludeCategory = Some("Category:Excluded"),
+          categoryClause = Some("minus"), active = true))
+        val before = roundDao.findById(round.getId).get
+        val save = FakeRequest(POST, "/admin/rounds/save")
+          .withSession(Secured.UserName -> admin.email)
+          .withFormUrlEncodedBody(
+            Seq("id" -> round.getId.toString, "number" -> "2", "name" -> "Locked", "contest" -> contest.getId.toString,
+              "roles" -> "jury", "distribution" -> "0", "rates" -> "1", "minMpx" -> "", "minSize" -> "",
+              "mediaType" -> "all", "source" -> "Category:Changed", "excludeCategory" -> "Category:Other",
+              "categoryCombine" -> "or") ++
+              jurors.zipWithIndex.map { case (id, i) => s"jurors[$i]" -> id.toString }: _*)
+          .withCSRFToken
+        val result = route(app, save).get
+        status(result) must_== SEE_OTHER
+        flash(result).get("error") must beNone
+        roundDao.findById(round.getId).map(_.copy(createdAt = before.createdAt)) must beSome(before)
+      }
+    }
+
     "keep a stopped round stopped and a started one started when the form is saved" in {
       testDbApp { implicit app =>
         val (contest, admin, started) = fixture()

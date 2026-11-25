@@ -73,7 +73,12 @@
       refreshThrottle: DELAY_MS, // the pause in typing before the list and a request follow
       loadThrottle: null, // no second delay on top of it
       plugins: ['restore_on_backspace'], // Backspace edits the value instead of dropping it
-      onInitialize: function () { this.wrapper.classList.add('wlx-category-suggest'); },
+      onInitialize: function () {
+        this.wrapper.classList.add('wlx-category-suggest');
+        // the field's hint and errors describe the control typed in too (the input is hidden)
+        var described = input.getAttribute('aria-describedby');
+        if (described) this.control_input.setAttribute('aria-describedby', described);
+      },
       shouldLoad: function (query) { return shouldSuggest(query, mode); },
       load: function (query, callback) {
         var self = this;
