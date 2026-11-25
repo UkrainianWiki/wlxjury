@@ -1,0 +1,30 @@
+@(step: controllers.RoundNextStep, onReviewPage: Boolean, mayAct: Boolean)(implicit messages: Messages)
+@* A round being set up (#186, controllers.RoundNextStep): jurors can't see it yet, and what to do
+   next, on its Edit page and its review page. For its admins (`mayAct`) the three actions: "Change
+   the settings" (the form; Edit round from the review page, which re-applies the filters while
+   in review), "Check the files" (the review page's list), "Distribute to jurors" (the jurors form,
+   where they are chosen and the round distributed): the main action once the matching has
+   finished, else disabled with its reason. Organizers see the line only. *@
+@roundId = @{ step.round.getId }
+<div class="card card-body mb-3" id="round-next-step" data-state="@step.state.id">
+    <p class="mb-2" id="round-next-step-text">@Messages("round.next.hidden")</p>
+    @if(mayAct) {
+    <div class="d-flex flex-wrap align-items-center gap-2" id="@if(onReviewPage) {round-review-distribute} else {round-next-actions}">
+        @if(onReviewPage) {
+            <a class="btn btn-outline-secondary" id="round-next-settings" href="@routes.RoundController.editRound(id = Some(roundId), contestId = step.round.contestId)">@Messages("round.next.settings")</a>
+            <a class="btn btn-outline-secondary" id="round-next-files" href="#round-review-tabs">@Messages("round.next.files")</a>
+        } else {
+            <a class="btn btn-outline-secondary" id="round-next-settings" href="#round-form">@Messages("round.next.settings")</a>
+            <a class="btn btn-outline-secondary" id="round-next-files" href="@routes.RoundReviewController.review(roundId)">@Messages("round.next.files")</a>
+        }
+        @if(step.distributeAllowed) {
+            <a class="btn btn-primary round-next-distribute" id="@if(onReviewPage) {round-review-distribute-link} else {round-next-distribute}" href="@routes.RoundReviewController.jurors(roundId)">@Messages("round.review.distribute")</a>
+        } else {
+            <button type="button" class="btn btn-outline-primary round-next-distribute" id="round-next-distribute" disabled aria-describedby="round-next-distribute-reason">@Messages("round.review.distribute")</button>
+            @for(reason <- step.state.reasonKey) {
+                <span class="form-text mt-0" id="round-next-distribute-reason">@Messages(reason)</span>
+            }
+        }
+    </div>
+    }
+</div>

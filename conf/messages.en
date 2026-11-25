@@ -2033,3 +2033,14 @@ access.denied.series.role = As series admin of {0}, your role here is: {1}.
 account.change.field.series_admin_confirmed = Series admin confirmed
 series.admin.refused.protected = This account is root or a series admin: only root can add it.
 series.admin.refused.account.changed = The account’s email, password, sign-in or joins changed while the grant waited: revoke it, and grant it again if it is the same person.
+# the round form refused and saved (UI-path plan §0.5, rows 6-7; #184, #186)
+round.form.errors = Nothing was saved. Correct the following, then save again:
+round.saved = Round {0} ({1}) is saved.
+round.saved.matching = Round {0} ({1}) is saved. Its matching files are being found. Check them, then choose jurors.
+round.saved.edit.here = Round {0} is saved. You can change its settings here.
+round.next.hidden = Jurors can’t see this round yet. When the files look right, choose jurors and distribute to them.
+round.next.settings = Change the settings
+round.next.files = Check the files
+round.next.matching = Its matching files are still being found.
+round.next.no.files = No file matches the round’s settings, so there is nothing to distribute. Change the settings.
+round.rates.locked = The rating type can’t change any more: the round has votes, a job of it is running, or a later round takes its files. Nothing was saved.

@@ -2017,3 +2017,14 @@ access.denied.series.role = En tant qu’administrateur de la série {0}, votre 
 account.change.field.series_admin_confirmed = Administrateur de la série confirmé
 series.admin.refused.protected = Ce compte est root ou administrateur de série : seul root peut l’ajouter.
 series.admin.refused.account.changed = L’adresse, le mot de passe, la connexion ou les fusions du compte ont changé pendant que l’attribution attendait : retirez-la, puis attribuez-la à nouveau s’il s’agit de la même personne.
+# the round form refused and saved (UI-path plan §0.5, rows 6-7; #184, #186)
+round.form.errors = Rien n’a été enregistré. Corrigez ce qui suit, puis enregistrez à nouveau :
+round.saved = Le tour {0} ({1}) est enregistré.
+round.saved.matching = Le tour {0} ({1}) est enregistré. Ses fichiers correspondants sont en cours de recherche. Vérifiez-les, puis choisissez les jurés.
+round.saved.edit.here = Le tour {0} est enregistré. Vous pouvez modifier ses paramètres ici.
+round.next.hidden = Les jurés ne voient pas encore ce tour. Quand les fichiers vous conviennent, choisissez les jurés et distribuez-leur le tour.
+round.next.settings = Modifier les paramètres
+round.next.files = Vérifier les fichiers
+round.next.matching = Ses fichiers correspondants sont encore en cours de recherche.
+round.next.no.files = Aucun fichier ne correspond aux paramètres du tour : il n’y a rien à distribuer. Modifiez les paramètres.
+round.rates.locked = Le type de notation ne peut plus changer : le tour a des votes, une tâche du tour est en cours, ou un tour suivant prend ses fichiers. Rien n’a été enregistré.

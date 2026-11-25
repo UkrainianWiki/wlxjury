@@ -66,13 +66,14 @@
     <p id="round-review-jurors">@Messages("jurors"): @if(r.roundJurors.isEmpty) {
         <span id="round-review-jurors-none">@Messages("round.review.jurors.none")</span>
     } else { @r.roundJurors.map(_.fullname).mkString(", ") }</p>
-    @* Distribute: the round's jurors form, where its admins choose the jurors and the file
-       distribution (RoundReviewController.jurors) *@
-    @if(r.mayDistribute) {
-        <p id="round-review-distribute">
-            <a class="btn btn-primary" id="round-review-distribute-link" href="@routes.RoundReviewController.jurors(r.round.getId)">@Messages("round.review.distribute")</a>
-            <span class="form-text ms-2">@Messages("round.review.distribute.jurors.help")</span>
-        </p>
+    @* a round being set up: jurors can't see it yet, and its next step (#186); Distribute opens the
+       round's jurors form, where its admins choose the jurors and the file distribution
+       (RoundReviewController.jurors) *@
+    @for(step <- r.nextStep) {
+        @round.nextStep(step, onReviewPage = true, mayAct = r.mayEdit)
+        @if(r.mayEdit && step.distributeAllowed) {
+            <p class="form-text" id="round-review-distribute-help">@Messages("round.review.distribute.jurors.help")</p>
+        }
     }
 
     <ul class="nav nav-tabs mb-2" id="round-review-tabs">

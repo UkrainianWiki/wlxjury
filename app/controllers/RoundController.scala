@@ -83,8 +83,23 @@ class RoundController @Inject() (
     * @param topImages
     * @return
     */
-  def editRound(roundId: Option[Long], contestId: Long, topImages: Option[Int]): EssentialAction =
+  def editRound(roundId: Option[Long], contestId: Long, topImages: Option[Int],
+      submitToken: Option[String] = None): EssentialAction =
     withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, Some(contestId), derived = true)) { user => implicit request =>
+      // the new-round form's history entry (its URL with the form's token, round-form-token.js): once
+      // the form saved a round, Back or a reload lands on that round's Edit page, never on the
+      // stale form (UI-path plan §5 Q6); not saved yet, the form again with the same token
+      val token = submitToken.map(_.trim).filter(t => roundId.isEmpty && RoundController.TokenPattern.matches(t))
+      token.flatMap(Round.findBySubmitToken).filter(_.contestId == contestId) match {
+        case Some(saved) => RoundController.toSavedRound(saved, messagesApi.preferred(request))
+        case None => roundForm(user, roundId, contestId, topImages,
+          token.filter(t => Round.findBySubmitToken(t).isEmpty).getOrElse(RoundController.newSubmitToken()))
+      }
+    }
+
+  /** The round form's page of GET [[editRound]]: a round's, or a new round's with its token. */
+  private def roundForm(user: User, roundId: Option[Long], contestId: Long, topImages: Option[Int], token: String)(
+      implicit request: Request[AnyContent]): Result = {
       val rounds = Round.findByContest(contestId)
 
       // From the permission-checked contest's rounds: a round of another contest gets
@@ -114,12 +129,12 @@ class RoundController @Inject() (
 
       val jurors = withTopImages.id.fold(User.loadJurors(contestId))(User.findRoundJurors).sorted
       val filledRound = editRoundForm.fill(EditRound(withTopImages, jurors.flatMap(_.id), None))
-      Ok(
+      RoundController.formPage(Ok(
         roundFormView(user, withTopImages, filledRound, Some(rounds), Some(jurors),
-          submitToken = Option.when(withTopImages.id.isEmpty)(RoundController.newSubmitToken()),
+          submitToken = Option.when(withTopImages.id.isEmpty)(token),
           storedCriteria = withTopImages.id.map(_ => withTopImages.criterionIds))
-      )
-    }
+      ))
+  }
 
   /** Renders the create/edit round page for `round` with the given (possibly
     * error-carrying) form. Shared by the GET handler and the failure paths of
@@ -143,9 +158,18 @@ class RoundController @Inject() (
     // a round held in review with no vote and no job: its filters editable, "Re-apply filters" (P3-5)
     val stored = round.id.flatMap(id => rounds.find(_.id.contains(id)).orElse(Round.findById(id)))
     val reapply = stored.exists(roundsService.reapplyable)
+    // #184: the rating type of a round being set up is editable (a re-apply's round, no later round
+    // taking its files); then the form is a rated one's as for a new round
+    val ratesEditable = stored.exists(s => reapply && !RoundController.takenFrom(s.getId, rounds))
+    val job = round.id.flatMap(roundsService.distributionJob)
+    // the new-round form's history entry: its URL with the token (round-form-token.js), so Back after
+    // a save lands on the saved round's Edit page (editRound)
+    val resolveUrl = submitToken.filter(_ => round.id.isEmpty).map(t =>
+      RoundsFilter.fromRequest(request).addTo(routes.RoundController.editRound(None, contestId,
+        form("topImages").value.flatMap(_.toIntOption).filter(_ > 0), Some(t)).url))
     views.html.editRound(
       user,
-      form,
+      RoundFormErrors.placed(form),
       round.id.isEmpty,
       rounds,
       Some(contestId),
@@ -154,21 +178,35 @@ class RoundController @Inject() (
       contestsController.regions(contestId),
       contestSpecialNominations(contestId),
       submitToken,
-      round.id.flatMap(roundsService.distributionJob),
+      job,
       Some(coiCounts(contestId, round.id)),
       CriterionJdbc.all(),
       round.id.flatMap(id => RoundController.ScoreRuleWarning.of(id, rounds)),
       // the check is queued by the contest's admins (and root): this page is theirs
       round.id.flatMap(id =>
         JobJdbc.latestBySubjects(RoundImageCheckHandler.Kind, RoundImageCheckHandler.SubjectType, Seq(id)).get(id)),
-      reapply = reapply,
-      // an existing yes/no or comments-only round, by its stored rating (the form's is not
-      // editable): no criteria, no worst mark
-      unratedRound = stored.exists(!_.isRated),
-      lockedCriteria = stored.flatMap(RoundController.lockedCriteria(_, storedCriteria)),
-      // its files waiting for a juror (round-editing plan §7): "Also give out the N waiting files"
-      waiting = stored.flatMap(r => services.distribution.RoundReassign.waitingCount(r)).filter(_ > 0)
+      RoundFormState(
+        reapply = reapply,
+        // an existing yes/no or comments-only round, by its stored rating (the form's is not
+        // editable, unless the round is being set up): no criteria, no worst mark
+        unratedRound = stored.exists(!_.isRated) && !ratesEditable,
+        lockedCriteria = stored.flatMap(RoundController.lockedCriteria(_, storedCriteria)),
+        // its files waiting for a juror (round-editing plan §7): "Also give out the N waiting files"
+        waiting = stored.flatMap(r => services.distribution.RoundReassign.waitingCount(r)).filter(_ > 0),
+        nextStep = stored.flatMap(s => RoundNextStep.of(s, job, RoundNextStep.inCount(s))),
+        ratesEditable = ratesEditable,
+        resolveUrl = resolveUrl)
     )
+  }
+
+  /** A refused save's page: the round form again through [[roundFormView]] (its mode, menus and
+    * jurors as on its GET), answered 400, logged as `form_refused` ([[FormRefusal]]).
+    */
+  private def refusedForm(user: User, round: Round, form: Form[EditRound], submitToken: Option[String])(implicit
+      request: RequestHeader): Result = {
+    val placed = RoundFormErrors.placed(form)
+    RoundController.formPage(FormRefusal.badRequest(RoundController.FormId, user, Some(round.contestId), round.id,
+      placed)(roundFormView(user, round, placed, submitToken = submitToken)))
   }
 
   /** The round form's conflicts of interest: the contest's files that are, the round's too
@@ -315,36 +353,73 @@ class RoundController @Inject() (
 
   }
 
+  /** The round form's save. A new-round form's token that already saved a round is checked first,
+    * before the form is validated (UI-path plan §5 Q6): its round's Edit page, never a second round
+    * nor a refusal of the stale form ([[savedAgain]]). A refused save comes back as the same form
+    * ([[refusedForm]]: its mode, menus and jurors as on its GET, every error listed at the top and
+    * at its field, the sections with an error open), logged as `form_refused`.
+    */
   def saveRound(): EssentialAction =
     withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
+      RoundController.submitToken(request).flatMap(t => Round.findBySubmitToken(t).map(t -> _)) match {
+        case Some((token, saved)) => savedAgain(user, token, saved)
+        case None => bindAndSave(user)
+      }
+    }
+
+  /** A new-round form posted again after it saved a round (Back and Save, a double click): no second
+    * round, and the posted changes not applied; to that round's Edit page with "Round N is saved. You
+    * can change its settings here." A failed distribution of it is resumed, as before. Logged as
+    * `resubmit_dropped`, with whether the posted form was the one saved (`same`, a double click) or
+    * not (`changed`: edits dropped), from [[RoundController.SavedForms]].
+    */
+  private def savedAgain(user: User, token: String, saved: Round)(implicit request: Request[AnyContent]): Result =
+    if (!adminOfRound(user, saved)) onUnAuthorized(user, request, Secured.Denial.round(saved, User.ADMIN_ROLES))
+    else {
+      val messages = messagesApi.preferred(request)
+      // a resumed distribution refused (a round leaving out its files is being filled): said on the page
+      val again: Either[String, RoundService.Resubmitted] =
+        try Right(roundsService.resubmit(saved))
+        catch { case e: IllegalArgumentException if RoundController.refusal(e).isDefined => Left(RoundController.refusal(e).get) }
+      val distribution = again.fold(_ => "refused", r =>
+        if (r.resumed) "resumed" else if (r.givenUp) "given_up" else if (r.job.exists(_.isActive)) "running" else "none")
+      val same = RoundController.SavedForms.same(token, RoundController.postedHash(request))
+      FormRefusal.logger.warn(FormRefusal.resubmitLine(Secured.newReference(), RoundController.FormId, user,
+        saved.contestId, saved.getId, if (same) "same" else "changed", distribution))
+      val problem = again.fold(text => Some(text), r =>
+        Option.when(r.givenUp)(messages("round.distribute.attempts", saved.number, r.reference)))
+      RoundController.toSavedRound(saved, messages, problem.map("error" -> _).toSeq: _*)
+    }
+
+  private def bindAndSave(user: User)(implicit request: Request[AnyContent]): Result =
       editRoundForm
         .bindFromRequest()
         .fold(
           formWithErrors => {
             val contestId: Option[Long] = formWithErrors.data.get("contest").flatMap(_.toLongOption)
+            val roundId = formWithErrors.data.get("id").flatMap(_.toLongOption)
             // the form lists the contest's rounds and jurors: only for its own admins
             if (!contestPermission(User.ADMIN_ROLES, contestId)(user))
               onUnAuthorized(user, request, Secured.Denial.contest(contestId, User.ADMIN_ROLES))
-            else {
-              val rounds = contestId.map(Round.findByContest).getOrElse(Nil)
-              val roundId = formWithErrors.data.get("id").flatMap(_.toLongOption)
-              BadRequest(
-                views.html.editRound(
-                  user,
-                  formWithErrors,
-                  newRound = !formWithErrors.data.get("id").exists(_.nonEmpty),
-                  rounds = rounds,
-                  contestId = contestId,
-                  jurors = contestId.map(User.loadJurors).getOrElse(Nil),
-                  jurorsMapping = jurorsMapping,
-                  // keep the form's token: nothing was created from this submission
-                  submitToken = RoundController.submitToken(request),
-                  criteria = CriterionJdbc.all(),
-                  // an existing yes/no or comments-only round: by its stored rating, as on its page
-                  unratedRound = roundId.flatMap(id => rounds.find(_.id.contains(id))).exists(!_.isRated),
-                  lockedCriteria = roundId.flatMap(id => rounds.find(_.id.contains(id))).flatMap(RoundController.lockedCriteria(_))
-                )
-              )
+            else contestId match {
+              // no contest posted: no form to show again
+              case None =>
+                FormRefusal.badRequest(RoundController.FormId, user, None, roundId, formWithErrors)(
+                  views.html.errorPage(Some(user), "error.title", "error.invalid"))
+              case Some(cid) => roundId match {
+                // keep the form's token: nothing was saved from this submission
+                case None =>
+                  refusedForm(user, new Round(id = None, contestId = cid,
+                    number = formWithErrors.data.get("number").flatMap(_.toLongOption).getOrElse(0L)),
+                    formWithErrors, RoundController.submitToken(request))
+                case Some(id) =>
+                  withAdminRound(user, id, roundNotFound(user), request) {
+                    case stored if stored.contestId != cid =>
+                      onUnAuthorized(user, request,
+                        Secured.Denial.round(stored, User.ADMIN_ROLES).copy(reason = Some("round_in_other_contest")))
+                    case stored => refusedForm(user, stored, formWithErrors, None)
+                  }
+              }
             }
           },
           editForm => {
@@ -362,17 +437,12 @@ class RoundController @Inject() (
             // failure shown as a global form error, so the admin can fix and resubmit
             // instead of losing the page.
             def reRender(r: Round, message: String, args: Any*): Result =
-              BadRequest(
-                roundFormView(
-                  user,
-                  r,
-                  editRoundForm
-                    .fill(EditRound(r, editForm.jurors, editForm.fileList, editForm.newImages, editForm.criteriaShown))
-                    .withGlobalError(message, args: _*),
-                  // a creation rejected before anything was created keeps the form's token
-                  submitToken = RoundController.submitToken(request).filter(_ => r.id.isEmpty)
-                )
-              )
+              refusedForm(user, r,
+                editRoundForm
+                  .fill(EditRound(r, editForm.jurors, editForm.fileList, editForm.newImages, editForm.criteriaShown))
+                  .withGlobalError(message, args: _*),
+                // a creation rejected before anything was created keeps the form's token
+                RoundController.submitToken(request).filter(_ => r.id.isEmpty))
 
             // Our own checks' refusal of the settings is shown as it is; any other failure,
             // whose text may be the database's, only as a logged reference.
@@ -401,6 +471,25 @@ class RoundController @Inject() (
             def unreadableLines: Result =
               reRender(round, "files.list.unreadable", unreadable.size, unreadable.take(5).mkString(" · "))
 
+            // #184: the rating type posted, for a round being set up (a re-apply's round: in review, no
+            // vote, no job; and no later round taking its files): `r` with it, a worst mark dropped if
+            // it isn't a rated one; else `r` with the stored one (its select read only: as before, a
+            // posted other one is ignored)
+            def withRating(stored: Round, r: Round): Round =
+              if (round.rates == stored.rates ||
+                  !(roundsService.reapplyable(stored) && !RoundController.takenFrom(stored.getId, Round.findByContest(contestId))))
+                r.copy(rates = stored.rates)
+              else r.copy(rates = round.rates, worstMark = r.worstMark && round.isRated)
+
+            // the rating of `edited` written, if changed (#184), under the round's lock: refused if a
+            // later round takes its files meanwhile
+            def writeRating(stored: Round, edited: Round)(implicit s: scalikejdbc.DBSession): Unit =
+              if (edited.rates != stored.rates) {
+                if (RoundController.takenFrom(stored.getId, Round.findByContest(contestId)))
+                  throw RoundController.CriteriaRefused(RoundController.RatesLockedKey)
+                Round.updateRates(stored.getId, edited.rates)
+              }
+
             // "Re-apply filters" (P3-5): a round held in review, with no vote and no job, gets the
             // posted filters and a re-apply fill; to its review page, which shows the result. The form's
             // other settings (name, score rule, worst mark, criteria, "Leave out conflicts of interest":
@@ -412,9 +501,9 @@ class RoundController @Inject() (
               val toReview = Redirect(routes.RoundReviewController.review(roundId))
               val messages = messagesApi.preferred(request)
               val previous = if (round.previousIds.isEmpty) Nil else Round.findByIds(contestId, round.previousIds)
-              val edited = round.copy(
+              val edited = withRating(stored, round.copy(
                 averageRule = if (editForm.averageRuleShown) round.averageRule else stored.averageRule,
-                worstMark = if (editForm.worstMarkShown) round.worstMark else stored.worstMark)
+                worstMark = if (editForm.worstMarkShown) round.worstMark else stored.worstMark))
               // "rejected by at least N" needs a previous round whose votes may reject, as for a new round
               if (!EditRound.rejectedByHasSource(round.copy(id = None), previous)) reRender(round, EditRound.RejectedByNoSource)
               else
@@ -426,6 +515,9 @@ class RoundController @Inject() (
                     if (editForm.criteriaShown)
                       RoundCriterion.updateIn(roundId, round.criterionIds)(s).left.foreach(r =>
                         throw RoundController.CriteriaRefused(r.messageKey))
+                    // #184: its rating type, checked again under the lock (the re-apply's checks: in
+                    // review, no vote, no job)
+                    writeRating(stored, edited)(s)
                     Round.updateRound(roundId, edited)(s)
                     if (editForm.trackShown) Round.setTrack(roundId, round.track, trackMainNames)(s)
                     // newly ticked: the conflicts disqualified (dq, code coi, their events) under the held
@@ -463,9 +555,9 @@ class RoundController @Inject() (
               val roundId = stored.getId
               // the score rule and the worst mark as posted; a client without the select (the
               // checkbox) keeps the stored one
-              val edited = round.copy(
+              val edited = withRating(stored, round.copy(
                 averageRule = if (editForm.averageRuleShown) round.averageRule else stored.averageRule,
-                worstMark = if (editForm.worstMarkShown) round.worstMark else stored.worstMark)
+                worstMark = if (editForm.worstMarkShown) round.worstMark else stored.worstMark))
               val saved =
                 try Right(WriteTx.write { implicit s =>
                   Round.lock(Seq(roundId))
@@ -473,6 +565,14 @@ class RoundController @Inject() (
                     if (editForm.criteriaShown)
                       RoundCriterion.updateIn(roundId, round.criterionIds).left.foreach(r =>
                         throw RoundController.CriteriaRefused(r.messageKey))
+                    // #184: its rating type, only while it is being set up, checked under the lock
+                    if (edited.rates != stored.rates) {
+                      val fresh = Round.findById(roundId).getOrElse(stored)
+                      if (!(fresh.inReview && !RoundImageJdbc.hasVotes(roundId) &&
+                          JobJdbc.activeByDedupeKey(RoundDistributionHandler.dedupeKey(roundId)).isEmpty))
+                        throw RoundController.CriteriaRefused(RoundController.RatesLockedKey)
+                    }
+                    writeRating(stored, edited)
                     Round.updateRound(roundId, edited)
                     // the track label (round lineage decision 4), by its own setter; a client without
                     // the field keeps it
@@ -489,9 +589,14 @@ class RoundController @Inject() (
             // files", if asked for; `coi`: the conflicts' messages
             def distributeAfterEdit(stored: Round, coi: Seq[(String, String)]): Result = {
               val roundId = stored.getId
-              // one message per kind: an error of the distribution wins over the removal's
-              def flashing(errors: (String, String)*) =
-                toRoundsList.flashing((coi ++ errors).toMap.toSeq: _*)
+              // one message per kind: an error of the distribution wins over the removal's; the
+              // round saved said first ("Round N (description) is saved.")
+              val savedLine = messagesApi.preferred(request)("round.saved", stored.number,
+                stored.copy(name = round.name).description)
+              def flashing(errors: (String, String)*) = {
+                val all = (coi ++ errors).toMap
+                toRoundsList.flashing((all ++ Map("success" -> (savedLine +: all.get("success").toSeq).mkString(" "))).toSeq: _*)
+              }
               // "Also give out the waiting files" (round-editing plan §7) on its own: the top-up only, no new
               // files; only a distributed round of N > 0 jurors per file has such files (the form shows the tick)
               val topUp = editForm.topUpWaiting && stored.distribution > 0 && !stored.distributing
@@ -544,18 +649,21 @@ class RoundController @Inject() (
                     Nil, RoundController.submitToken(request), user.id, titles, review = true) match {
                     // the selection runs in the background: "Choose jurors next" waits for it on the
                     // round's jurors form; "Review images first", on the rounds list, which shows its progress
+                    // saved: said on the page it lands on (never "created": it has no jurors yet)
                     case created: RoundService.Created =>
+                      RoundController.submitToken(request).foreach(t =>
+                        RoundController.SavedForms.remember(t, RoundController.postedHash(request)))
+                      val saved = "success" -> messagesApi.preferred(request)("round.saved.matching",
+                        created.round.number, created.round.description)
                       if (RoundController.nextPosted(request) == RoundController.NextJurors)
-                        Redirect(routes.RoundReviewController.jurors(created.round.getId))
-                      else toRoundsList
-                    // The same form submitted again (a double click, or Back and Submit):
-                    // no second round; a failed distribution of the first was resumed.
+                        Redirect(routes.RoundReviewController.jurors(created.round.getId)).flashing(saved)
+                      else toRoundsList.flashing(saved)
+                    // the same token saved a round meanwhile (two submits at once; a later one is
+                    // answered by savedAgain before the form is validated): that round's Edit page
                     case resubmitted: RoundService.Resubmitted =>
-                      logger.warn(s"Contest $contestId: ${resubmitted.message}")
-                      toRoundsList.flashing(
-                        "error" -> messagesApi.preferred(request)(
-                          resubmitted.messageKey, resubmitted.round.number, resubmitted.round.description,
-                          resubmitted.reference))
+                      RoundController.submitToken(request).fold(
+                        RoundController.toSavedRound(resubmitted.round, messagesApi.preferred(request)))(t =>
+                        savedAgain(user, t, resubmitted.round))
                   }
                 } catch {
                   // Rejected before anything was created (bad input): keep the form.
@@ -570,15 +678,16 @@ class RoundController @Inject() (
                     onUnAuthorized(user, request,
                       Secured.Denial.round(stored, User.ADMIN_ROLES).copy(reason = Some("round_in_other_contest")))
                   case _ if unreadable.nonEmpty => unreadableLines
-                  // the stored round's rating decides (the form's is not editable), for criteria
-                  // changed, removed ones too: those posted as stored stay, whatever they are (legacy
-                  // rounds). Before the re-apply case, which writes them too
-                  case stored if editForm.criteriaShown && !stored.isRated &&
+                  // the stored round's rating decides (the form's is not editable; #184: a round being
+                  // set up, the posted one), for criteria changed, removed ones too: those posted as
+                  // stored stay, whatever they are (legacy rounds). Before the re-apply case, which
+                  // writes them too
+                  case stored if editForm.criteriaShown && !withRating(stored, stored).isRated &&
                       round.criterionIds != RoundCriterion.idsOf(roundId) =>
                     reRender(round, "error.criteria.rated.only")
                   // the worst mark only in a rated round without criteria, by the stored rating and
                   // the criteria the round has after the edit (a client without the selects keeps them)
-                  case stored if editForm.worstMarkShown && round.worstMark && (!stored.isRated ||
+                  case stored if editForm.worstMarkShown && round.worstMark && (!withRating(stored, stored).isRated ||
                       (if (editForm.criteriaShown) round.criterionIds else RoundCriterion.idsOf(roundId)).nonEmpty) =>
                     reRender(round, EditRound.WorstMarkRatedOnly)
                   // the form in its re-apply state (posted `reapply`): checked under the round's lock,
@@ -591,7 +700,6 @@ class RoundController @Inject() (
             }
           }
         )
-    }
 
   /** Starts or stops a round of a contest the user administers: back to the rounds list, or,
     * with `returnTo=conflicts` (the round's conflicts page's "Stop the round"), to that page
@@ -975,7 +1083,70 @@ object RoundController {
         .sortBy(_.number)
   }
 
-  private val TokenPattern = "[0-9a-fA-F-]{36}".r
+  private[controllers] val TokenPattern = "[0-9a-fA-F-]{36}".r
+
+  /** The round form's id in `form_refused` and `resubmit_dropped` lines. */
+  val FormId = "round"
+
+  /** A rating type change refused: the round left its setup meanwhile (#184). */
+  val RatesLockedKey = "round.rates.locked"
+
+  /** A round form's page: never stored by the browser, so Back asks the server again (the
+    * new-round form's history entry then resolves its token, [[RoundController.editRound]]).
+    */
+  def formPage(result: Result): Result = result.withHeaders("Cache-Control" -> "no-store")
+
+  /** A round saved from a new-round form whose token was posted or opened again: its Edit page,
+    * saying so ("Round N is saved. You can change its settings here."), with `more` flashed too.
+    */
+  def toSavedRound(saved: Round, messages: Messages, more: (String, String)*): Result =
+    play.api.mvc.Results.Redirect(routes.RoundController.editRound(saved.id, saved.contestId))
+      .flashing((("success" -> messages("round.saved.edit.here", saved.number)) +: more): _*)
+
+  /** Whether a round of `rounds` other than `roundId` takes files from it (a previous round of it). */
+  def takenFrom(roundId: Long, rounds: Seq[Round]): Boolean =
+    rounds.exists(r => !r.id.contains(roundId) && r.deletedAt.isEmpty && r.previousIds.contains(roundId))
+
+  /** The posted settings of a round form, as a hash: its fields without the CSRF and submission
+    * tokens and the button pressed, each field's values in order, the "Add files" list's lines
+    * trimmed and sorted. Compared, never stored or logged ([[SavedForms]]).
+    */
+  def postedHash(request: Request[AnyContent]): String = {
+    val data = request.body.asFormUrlEncoded.getOrElse(Map.empty) -- Seq("csrfToken", "submitToken", "next")
+    val fields = data.toSeq.map { case (key, values) =>
+      key -> (if (key == "fileList") values.flatMap(_.split("\r?\n")).map(_.trim).filter(_.nonEmpty).sorted
+              else values.sorted)
+    }.sortBy(_._1)
+    val text = fields.map { case (key, values) => key + "\u0001" + values.mkString("\u0002") }.mkString("\u0000")
+    java.security.MessageDigest.getInstance("SHA-256").digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+      .map("%02x".format(_)).mkString
+  }
+
+  /** The hash of the form each token saved a round from ([[postedHash]]), in memory only, for an
+    * hour, at most [[MaxEntries]]: a repost of the token is a double click (`same`) or edits that
+    * are not applied (`changed`; after a restart, always `changed`, the safe side). Never stored or
+    * logged (problem-monitoring plan §2.3).
+    */
+  object SavedForms {
+    val MaxAgeMillis: Long = 60L * 60 * 1000
+    val MaxEntries = 10000
+    private val hashes = new java.util.concurrent.ConcurrentHashMap[String, (String, Long)]()
+
+    def remember(token: String, hash: String, now: Long = System.currentTimeMillis()): Unit = {
+      hashes.entrySet().removeIf(e => now - e.getValue._2 > MaxAgeMillis)
+      if (hashes.size >= MaxEntries) {
+        import scala.jdk.CollectionConverters._
+        hashes.entrySet().asScala.toSeq.sortBy(_.getValue._2).take(hashes.size - MaxEntries + 1)
+          .foreach(e => hashes.remove(e.getKey))
+      }
+      hashes.put(token, (hash, now))
+    }
+
+    def same(token: String, hash: String, now: Long = System.currentTimeMillis()): Boolean =
+      Option(hashes.get(token)).exists { case (saved, at) => saved == hash && now - at <= MaxAgeMillis }
+
+    def size: Int = hashes.size
+  }
 
   /** A one-time token for a new-round form (see RoundService.submit). */
   def newSubmitToken(): String = java.util.UUID.randomUUID().toString
@@ -988,6 +1159,26 @@ object RoundController {
       .map(_.trim)
       .filter(TokenPattern.matches)
 }
+
+/** The round form's state beyond its form and lists ([[RoundController]], editRound.scala.html).
+  *
+  * @param reapply        a round held in review with no vote and no job: its filters editable, "Re-apply filters"
+  * @param unratedRound   an existing yes/no or comments-only round: no criteria, no worst mark
+  * @param waiting        its files waiting for a juror: "Also give out the N waiting files"
+  * @param lockedCriteria a started rated round's stored criteria, listed read only
+  * @param nextStep       a round being set up: its next step (#186)
+  * @param ratesEditable  a round being set up: its rating type can change (#184)
+  * @param resolveUrl     a new round's form: its URL with its token, for the page's history entry
+  */
+final case class RoundFormState(
+    reapply: Boolean = false,
+    unratedRound: Boolean = false,
+    waiting: Option[Long] = None,
+    lockedCriteria: Option[Seq[Long]] = None,
+    nextStep: Option[RoundNextStep] = None,
+    ratesEditable: Boolean = false,
+    resolveUrl: Option[String] = None
+)
 
 /** The round form's conflict-of-interest counts: the contest's files that are conflicts of
   * interest, an existing round's (`inRound`), and the contest's files without a stored author.
