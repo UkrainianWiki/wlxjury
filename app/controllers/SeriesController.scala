@@ -329,7 +329,8 @@ class SeriesController @Inject() (cc: ControllerComponents, blocking: BlockingEx
       NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))
     ) { contest =>
       val all = SeriesJdbc.findAll()
-      val changes = ContestChangeJdbc.findByContest(contestId, 50)
+      // the latest 50 of the contest's own entries and the latest 50 of its rounds', newest first
+      val changes = ContestChangeJdbc.changeLog(contestId, 50)
       val names = User.findByIds(changes.map(_.actorId).distinct).map(u => u.getId -> u.fullname).toMap
       val reuse = scalikejdbc.DB.readOnly(implicit s => ContestReuse.check(contest, reuseSettings))
       Ok(views.html.series.contestSeries(user, contest, all, ContestSeries.previous(contest),

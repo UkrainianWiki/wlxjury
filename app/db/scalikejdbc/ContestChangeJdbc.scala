@@ -49,13 +49,25 @@ object ContestChangeJdbc {
   val RoundJurorReopened = "round_juror_reopened"
   /** A round closed by creating the next round, by an account that judges it. */
   val RoundJurorClosed = "round_juror_closed"
+  /** A round created by the round form, with its settings ([[RoundChanges]], V114). */
+  val RoundCreated = "round_created"
+  /** A round's settings changed: the round form's edit, a start or a stop, its jurors per file. */
+  val RoundChanged = "round_changed"
+  /** A round held in review given new filters by the round form's "Re-apply filters". */
+  val RoundFiltersReapplied = "round_filters_reapplied"
 
   /** The kinds about a contest or a series (V109); the split kinds are written by CY-4 only. */
   val ContestKinds: Seq[String] =
     Seq(Created, Identity, SeriesAssigned, SeriesUnassigned, SeriesChanged, SplitOut, SplitIn, SplitUndone, Retired, Unretired)
 
-  /** The kinds about a round of the contest (V112): its detail's `round` names it. */
-  val RoundKinds: Seq[String] = Seq(RoundJurorStopped, RoundJurorReopened, RoundJurorClosed)
+  /** A round's open state changed by an account that judges it (V112, [[RoundJurorChanges]]). */
+  val RoundJurorKinds: Seq[String] = Seq(RoundJurorStopped, RoundJurorReopened, RoundJurorClosed)
+
+  /** A round's settings saved (V114, [[RoundChanges]]): what changed, from and to. */
+  val RoundSettingKinds: Seq[String] = Seq(RoundCreated, RoundChanged, RoundFiltersReapplied)
+
+  /** The kinds about a round of the contest: its detail's `round` names it. */
+  val RoundKinds: Seq[String] = RoundJurorKinds ++ RoundSettingKinds
 
   /** The kinds the check allows. */
   val Kinds: Seq[String] = ContestKinds ++ RoundKinds
@@ -106,6 +118,18 @@ object ContestChangeJdbc {
     sql"SELECT $columns FROM contest_change WHERE contest_id = $contestId ORDER BY id DESC LIMIT $limit"
       .map(extract).list.apply()
 
+  /** The contest's entries of these kinds (`except`: of every other kind), the newest first, at
+    * most `limit`: the change log reads its rounds' entries and the others each with a limit of its own.
+    */
+  def findByContestOf(contestId: Long, kinds: Seq[String], limit: Int, except: Boolean = false)(implicit
+      session: DBSession = AutoSession): Seq[ContestChange] =
+    if (kinds.isEmpty) { if (except) findByContest(contestId, limit) else Nil }
+    else {
+      val kindCond = if (except) sqls"kind NOT IN ($kinds)" else sqls"kind IN ($kinds)"
+      sql"SELECT $columns FROM contest_change WHERE contest_id = $contestId AND $kindCond ORDER BY id DESC LIMIT $limit"
+        .map(extract).list.apply()
+    }
+
   def findBySeries(seriesId: Long, limit: Int)(implicit session: DBSession = AutoSession): Seq[ContestChange] =
     sql"SELECT $columns FROM contest_change WHERE series_id = $seriesId ORDER BY id DESC LIMIT $limit"
       .map(extract).list.apply()
@@ -113,11 +137,24 @@ object ContestChangeJdbc {
   def findByBatch(batchId: Long)(implicit session: DBSession = AutoSession): Seq[ContestChange] =
     sql"SELECT $columns FROM contest_change WHERE batch_id = $batchId ORDER BY id".map(extract).list.apply()
 
-  /** A round's entries ([[RoundKinds]]), the newest first, at most `limit`: its statistics page. */
-  def findByRound(contestId: Long, roundId: Long, limit: Int)(implicit session: DBSession = AutoSession): Seq[ContestChange] =
-    sql"""SELECT $columns FROM contest_change WHERE contest_id = $contestId AND kind IN ($RoundKinds)
-          AND CAST(JSON_VALUE(detail, '$$.round') AS UNSIGNED) = $roundId ORDER BY id DESC LIMIT $limit"""
-      .map(extract).list.apply()
+  /** A contest's change log: its latest `perList` entries of its own kinds and its latest `perList`
+    * of its rounds' ([[RoundKinds]]), merged, the newest first: many round entries never push the
+    * contest's own out.
+    */
+  def changeLog(contestId: Long, perList: Int)(implicit session: DBSession = AutoSession): Seq[ContestChange] =
+    (findByContestOf(contestId, RoundKinds, perList, except = true) ++ findByContestOf(contestId, RoundKinds, perList))
+      .sortBy(-_.id)
+
+  /** A round's entries of these kinds (of [[RoundKinds]]), the newest first, at most `limit`: its
+    * statistics page reads its juror entries and its settings entries each with a limit of its own.
+    */
+  def findByRound(contestId: Long, roundId: Long, limit: Int, kinds: Seq[String] = RoundKinds)(implicit
+      session: DBSession = AutoSession): Seq[ContestChange] =
+    if (kinds.isEmpty) Nil
+    else
+      sql"""SELECT $columns FROM contest_change WHERE contest_id = $contestId AND kind IN ($kinds)
+            AND CAST(JSON_VALUE(detail, '$$.round') AS UNSIGNED) = $roundId ORDER BY id DESC LIMIT $limit"""
+        .map(extract).list.apply()
 
   /** The latest change of each of the contests (its id), of the contest's own kinds (not its
     * rounds'), for an undo to tell what changed since.

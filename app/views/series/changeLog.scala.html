@@ -23,7 +23,12 @@
                     <td>@Messages((if (c.contestId.isEmpty) "series.change.series." else "series.change.") + c.kind)@for(b <- c.batchId) { <span class="text-body-secondary">(@Messages("series.batch") #@b)</span>}</td>
                     <td>@for(contest <- c.contestId) {<a href="@routes.SeriesController.contestPage(contest)">#@contest</a>}</td>
                     <td>@names.getOrElse(c.actorId, s"#${c.actorId}")</td>
-                    <td class="small text-break">@play.api.libs.json.Json.stringify(c.detail - "how")@for(text <- c.comment) { — @text}</td>
+                    @* a round's settings entry (RoundChanges): its round and what changed, as on the round's statistics *@
+                    @if(db.scalikejdbc.ContestChangeJdbc.RoundSettingKinds.contains(c.kind)) {
+                        <td class="small text-break">@Messages("round.change.log.round", views.RoundChangeText.number(c))@if(views.RoundChangeText.items(c).nonEmpty) {: @views.html.roundChangeItems(c)}</td>
+                    } else {
+                        <td class="small text-break">@play.api.libs.json.Json.stringify(c.detail - "how")@for(text <- c.comment) { — @text}</td>
+                    }
                 </tr>
             }
         </tbody>

@@ -5,11 +5,15 @@
 @import org.intracer.wmua.CommentJdbc
 @(user: User, round: Round, stat: RoundStat, comments: CommentJdbc.RoundCounts,
   filter: controllers.RoundsFilter = controllers.RoundsFilter.Default, noActiveJuror: Boolean = false,
-  jurorChanges: Seq[(db.scalikejdbc.ContestChange, String)] = Nil)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+  roundChanges: Seq[(db.scalikejdbc.ContestChange, String)] = Nil)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @* the label templates roundstat-counts.js fills in with the counts (`{0}` kept as it is) *@
 @template(key: String) = @{ Messages(key, "{0}") }
 @pluralTemplates(prefix: String, attr: String) = {@for(form <- views.Plural.Forms) { data-@attr-@form="@template(s"$prefix.$form")"}}
+@* a round's entries (the controller reads them for the organiser view only): by a juror of it
+   (RoundJurorChanges), and its settings saved (RoundChanges) *@
+@jurorChanges = @{ roundChanges.filter(c => db.scalikejdbc.ContestChangeJdbc.RoundJurorKinds.contains(c._1.kind)) }
+@settingChanges = @{ roundChanges.filter(c => db.scalikejdbc.ContestChangeJdbc.RoundSettingKinds.contains(c._1.kind)) }
 @* the counts of the authors and conflicts links, loaded after the page by roundstat-counts.js,
    for those who may see all three links: an attribute of each link, with its labels *@
 @countsUrl = @{ Option.when(RoundStatLinks.mayView(user, round))(routes.RoundController.roundStatCounts(round.getId).url) }
@@ -123,6 +127,20 @@
                 <ul class="small">
                 @for((c, name) <- jurorChanges) {
                     <li class="round-juror-change" data-kind="@c.kind">@views.LinkTimes.utc(c.createdAt) — @Messages("round.juror.change." + c.kind, name)@for(next <- (c.detail \ "byRoundNumber").asOpt[Long]) { (@Messages("round.juror.change.by.round", next))}</li>
+                }
+                </ul>
+            </div>
+        }
+
+        @* the round's settings saved by the round form, a start or stop, or its jurors form
+           (RoundChanges), newest first: what changed, from and to, with who and when; for the same
+           viewers as the entries above *@
+        @if(settingChanges.nonEmpty) {
+            <div id="round-setting-changes">
+                <p class="mb-1">@Messages("round.changes")</p>
+                <ul class="small">
+                @for((c, name) <- settingChanges) {
+                    <li class="round-setting-change" data-kind="@c.kind" data-path="@{(c.detail \ "path").asOpt[String].getOrElse("")}">@views.LinkTimes.utc(c.createdAt) — @Messages("round.change." + c.kind, views.RoundChangeText.number(c), name)@if(views.RoundChangeText.items(c).nonEmpty) {: @roundChangeItems(c)}</li>
                 }
                 </ul>
             </div>

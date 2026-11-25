@@ -114,7 +114,8 @@ class MessagesCompletenessSpec extends Specification {
     "link.status." -> Seq("active", "used", "expired", "revoked").flatMap(s => Seq(s, s"$s.at")),
     "link.purpose." -> db.scalikejdbc.AccountTokenJdbc.SetsPassword,                // editUser's set-password links
     "account.change.field." -> db.scalikejdbc.AccountChangeJdbc.Fields,             // accountChangeTable.scala.html
-    "round.juror.change." -> db.scalikejdbc.ContestChangeJdbc.RoundKinds,           // roundStat.scala.html, a round's juror entries
+    "round.juror.change." -> db.scalikejdbc.ContestChangeJdbc.RoundJurorKinds,      // roundStat.scala.html, a round's juror entries
+    "round.change." -> db.scalikejdbc.ContestChangeJdbc.RoundSettingKinds,          // roundStat.scala.html, its settings entries
     "round.state.text." -> services.GalleryService.RoundState.All.map(_.reason),    // roundState.scala.html
     "round.state.title." -> services.GalleryService.RoundState.All.map(_.reason),   // noRoundYet.scala.html
     "health.job.status." -> Seq("queued", "running", "done", "failed", "cancelled"), // contestHealth.scala.html
@@ -133,6 +134,7 @@ class MessagesCompletenessSpec extends Specification {
   private val dynamicKeys: Seq[String] = Seq(
     db.scalikejdbc.ContestChangeJdbc.Kinds.map("series.change." + _),  // series/changeLog.scala.html, a contest's rows
     Seq("created", "identity", "retired", "unretired").map("series.change.series." + _), // and a series' own rows
+    db.scalikejdbc.RoundChanges.Fields.map("round.change.field." + _), // RoundChangeText.label, a settings entry's fields
     User.FORM_ROLES.map("role." + _),                           // every role name, as Messages("role." + r)
     Seq("role." + User.ROOT_ROLE),                              // editUser offers root to root
     MediaType.mediaTypes,
