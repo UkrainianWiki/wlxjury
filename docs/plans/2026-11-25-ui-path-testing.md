@@ -148,8 +148,8 @@ unchecked**: read from the views only, the refusal not traced; the matrix spec (
 | Review page: Distribute | — | O/A (no active job) | — | — | — | — |
 | Jurors form: Distribute | — | O/A; 0 jurors in contest: link to Users | —/R | —/R | —/R | —/R |
 | Statistics: juror Start/Stop | O/R (job) | O/? ⚠ (no jurors yet; to verify) | O/A | O/R "busy" | O/A + warning | O/? |
-| Statistics: Add juror… | O/R ⚠ refuses (not running, frozen or legacy) | O/R ⚠ refuses (not running, frozen or legacy); jurors come from the jurors form | O/A | O/R ⚠ | O/R ⚠ | O/R ⚠ (to verify) |
-| Statistics: stopped juror's "Start with a fair share" | O/R ⚠ | — | O/A | O/R ⚠ | O/R ⚠ | — |
+| Statistics: Add juror… | O/R ⚠ refuses (not running, frozen or legacy) | O/R ⚠ refuses (not running, frozen or legacy); jurors come from the jurors form | O/A | O/R ⚠ | O/R today; decided Q5: allowed (#196) | O/R ⚠ (to verify) |
+| Statistics: stopped juror's "Start with a fair share" | O/R ⚠ | — | O/A | O/R ⚠ | O/R today; decided Q5: allowed (#196) | — |
 | Statistics: Reassign files… | — | — | O/A if ≥ needed receivers | — | — | — |
 | Conflicts: Stop the round / disqualify | — | O/A (disqualify) | O/A (stop) | O/R | O/A | ? |
 | Edit round: check images | O/A | O/A | O/A | O/A | O/A | O/A |
@@ -184,7 +184,8 @@ Offered but refused:
    used for a retired contest's round. Next step should be offered instead of Start: "Distribute
    to jurors".
 2. **Add juror… and "Start with a fair share" on a round that isn't running** (statistics),
-   while Reassign is hidden there: the same page gates two juror actions differently.
+   while Reassign is hidden there: the same page gates two juror actions differently. **Decided:**
+   both are allowed on stopped rounds (Q5, #196); hidden on rounds being set up.
 3. **Juror Start/Stop while a job holds the round**: shown, refused after the press with
    "busy"; the job is visible on the rounds list, not on the statistics.
 4. **"Leave out files in round(s)" offers a round being distributed**, then the save is refused;
