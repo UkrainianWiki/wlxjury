@@ -510,10 +510,10 @@ asked and its recommendation, for the record.
    admins, on its health page, limited to that contest's events (§6.3). Admins would see their own
    jurors' struggles (refused links, a juror on a stopped round) without asking root; the risk is
    noise and showing one member's refusals to the contest's admins, which the health page's member
-   view already allows. **Recommendation: root only for M-4; add the admins' section after a season,
+   view already allows. Recommendation was: root only for M-4; add the admins' section after a season,
    if root finds the problems would have been better handled by the contest's admins.**
 4. **Q4. Which patterns are on by default?** **Decided [user] 2026-11-25: "Everything": all patterns, P10 and the contest-wide denial burst (P12) included, on by default; tuned later via settings.** The question as asked: §4.2's table: P1–P9 and P11 on; P10 (jurors on a stopped
-   round) and denials across a contest off, as likely noise. **Recommendation: as in the table**,
+   round) and denials across a contest off, as likely noise. recommendation was: as in the table,
    tuned after M-2's first weeks of events.
 5. **Q5. Is "seen" shared by all root accounts or per account?** **Decided [user] 2026-11-25: shared, one "seen" state for all root accounts.** The question as asked: Shared: one person marks it, every
    root sees it handled, with who marked it. Per account: each root sees everything once.
