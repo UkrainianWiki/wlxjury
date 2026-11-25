@@ -9,9 +9,7 @@
 recorded regional decisions, an "unclear winner" mark, a cut picker (candidate cuts and a gallery
 to choose N) shared by the round form's top-N and each region of a re-jury, and a re-jury round with its own top-N per region. Decisions
 18, 19 and 21 are the maintainer's **[user]**; the rest of §10 is a proposal, with questions in §11.
-**Status (v5, 2026-11-26): all questions decided (2026-11-26)**, except question 12 (local
-jurors), which keeps its recommendation (a), "nothing in the app now", until the maintainer
-answers it. A clear region's winners are its top k (chosen per region when it is accepted,
+**Status (v5, 2026-11-26): All questions decided (2026-11-26).** A clear region's winners are its top k (chosen per region when it is accepted,
 default 1) in its region round, recorded by an Admin's "Accept region"; a flagged region gets one
 plain line with the next step and goes to a re-jury. No per-file accept/reject, no pasted list,
 no small-region rule.
@@ -84,7 +82,8 @@ replaced by a priority order.)
   inside the top k is a shared place; a tie across place k needs a re-jury, or a k at a tie
   boundary); files the offline jury rejected may come back in a re-jury from an earlier round, with
   no exclusion rule; question 13 (phase 1 → R0/R1 → phase 2 → slice B) and question 14 (the cut
-  picker for main rounds now, in 26.11.18, before the regional report). A pass over the whole plan
+  picker for main rounds now, in 26.11.18, before the regional report); question 12 (local jurors:
+  nothing in the app now). A pass over the whole plan
   for leftovers of dropped ideas.
 
 **Code read:** `911255f7`, a mirror of `stack/105-round-lineage-plan` (PR #288). Inferences are
@@ -2004,7 +2003,9 @@ as the goal (R3); one ordinary round per region as the interim until R3 ships, �
     organizers, jurors, board, auditors, staff and root (`CoiMembers.scala`), so a local juror's own
     photos never reach the re-jury. Decision 12 already keeps them from winning.
   - **Local jurors judging their neighbours** have no data in the app: no juror has a region.
-    Recommended: nothing in the app now; the offline session handles it (question 12). Later, a
+    Nothing in the app now (question 12 **[user]**, 2026-11-26: local bias matters more for the
+    country's top than for regional winners, and choosing a good jury is the organizers' duty).
+    Later, a
     per-juror "abstains for region X" could skip their assignments for that region's files (a table
     and a change in `assign`), at the cost of unequal juror counts per region.
 
@@ -2199,8 +2200,12 @@ One decision each, asked one by one. The recommendation comes last in each.
     - (b) a per-juror "abstains for region X" (a table, a change in the assignment, unequal juror
       counts).
 
-    CoI already removes jurors' own photos. **Recommendation: (a)**, revisited if a juror asks to
-    abstain.
+    CoI already removes jurors' own photos. The recommendation was (a), revisited if a juror asks
+    to abstain.
+    **Decided [user] 2026-11-26: (a)**, nothing in the app now. The maintainer's reasoning: local
+    bias would matter more for the country's top than for regional winners, since each region
+    gets its own winner while the country's winner can come from any region; and choosing a good
+    jury is the organizers' duty (§10.6).
 13. **Priority: the outcomes record or slice B first?** Slice B (Cancel / Reinstate) is decided
     to follow regional winners phase 1 (lineage §8.1). R1 and the accepted export are what the
     final's results need. Slice B tidies trial rounds; meanwhile the report names a trial round
@@ -2219,5 +2224,5 @@ One decision each, asked one by one. The recommendation comes last in each.
 
 **Open points:** none (2026-11-26). The last two were decided **[user]** that day: ties with
 several winners as proposed (§10.2, §10.3), and files the offline jury rejected may come back in a
-re-jury from an earlier round, with no exclusion rule (§10.2). Question 12 still has only a
-recommendation.
+re-jury from an earlier round, with no exclusion rule (§10.2). Question 12 was decided **[user]**
+the same day: (a), nothing in the app now.
