@@ -6,8 +6,8 @@
 **Status:** plan only. Nothing is built. Date: 2026-11-11.
 
 **Status (v4, 2026-11-25):** the report (phases 1–3) is unchanged. v4 adds the re-jury loop (§10):
-recorded regional decisions, an "unclear winner" mark, a suggested N shared by the round form's
-top-N and each region of a re-jury, and a re-jury round with its own top-N per region. Decisions
+recorded regional decisions, an "unclear winner" mark, a cut picker (candidate cuts and a gallery
+to choose N) shared by the round form's top-N and each region of a re-jury, and a re-jury round with its own top-N per region. Decisions
 18, 19 and 21 are the maintainer's **[user]**; the rest of §10 is a proposal, with questions in §11.
 **Priority:** the round improvements of 26.11.17 and 26.11.18 come first (26.11.18 brings the
 numbered setup steps that §10.4–§10.5 build on), then this plan's work in the order of §10.8.
@@ -42,7 +42,7 @@ replaced by a priority order.)
   requires re-jurying when the winner is unclear, or deemed unworthy by an offline jury session.
   The path to select the top 10 fast for the international deadline does not rate each region with
   the same attention, as follow-up rounds' selection." And: "we don't have top-N for main rounds
-  yet, maybe makes sense to have them too." New §10 (decisions record, unclear mark, suggested N,
+  yet, maybe makes sense to have them too." New §10 (decisions record, unclear mark, cut picker,
   re-jury round), §11 (questions); decisions 18–19 added **[user]**, 20–23 proposed; decision 16
   superseded for the final step, 11 and 17 amended (dated notes); §6 and §7 gain rows. The report
   itself still picks nothing automatically.
@@ -137,11 +137,13 @@ photos and tell which round they are from."
 - **An "unclear" mark per region,** computed on each request, never stored: a tie at the top, too
   few votes on the top files, a close score, or a region whose files never reached a closely rated
   round because a contest-wide cut dropped them (§10.3).
-- **A suggested N,** one shared component (§10.4): from a ranked score list it proposes a cut at the
-  largest score gap within bounds, never inside a tie, and says why ("N = 37: scores drop from 7.2
-  to 6.1 after file 37"). Used in two places: the round form's top-N (step 1, "Which files"), for
-  main rounds and the national path (decision 21 **[user]**), and each region's N in a re-jury
-  (decision 19 **[user]**).
+- **A cut picker,** one shared component (§10.4): the app lists several candidate cuts, each with
+  its reason ("N = 7: scores drop 8.4 → 7.1"), and a gallery of the candidates in rank order with
+  the cut lines drawn between files. The admin clicks a cut, or types N, and decides; the chosen N
+  is stored. No single N is proposed (question 1 **[user]**: "show possible numbers and a gallery
+  to view them and decide"). Used in two places: the round form's top-N (step 1, "Which files"),
+  for main rounds and the national path (decision 21 **[user]**), and each region's N in a
+  re-jury (decision 19 **[user]**).
 - **"Re-jury these regions"** on the report (proposal, decision 20): one new round holding each
   selected region's own top N from its own source round, rejected files left out, prefilled into
   the round form's step 1, jurors in step 3, every juror on every file. No manual track label:
@@ -152,8 +154,8 @@ photos and tell which round they are from."
 - **Priority order** (§10.8): the round improvements of 26.11.17 and 26.11.18 first; then lineage
   slice A, report phase 1, the unclear mark (R0), the decisions record (R1) and the export of
   accepted winners. A re-jury until R3 lands is made with today's form, one round per region
-  (§10.8). Suggested N (SN), per-region N in the report (R2) and the combined re-jury round (R3)
-  follow; SN can move ahead of them (§7, §10.8).
+  (§10.8). The cut picker (SN), per-region N in the report (R2) and the combined re-jury round
+  (R3) follow; SN can move ahead of them (§7, §10.8).
 
 ---
 
@@ -760,7 +762,7 @@ GROUP BY ri.round_id, ri.region
 | Multi-role (migration: next free at merge; updated 2026-11-25) | Pre-screening rounds are never columns. Pure pre-screeners get 403 (decisions 2 and 3 there) |
 | Combined juror votes | The report is never shown to jurors |
 | Round images P2b/P3 | The counts path turns on with `roundImage.read`. DQ is already out. `finalized` can drop the "provisional" badge |
-| Per-region top-N for the next round | Not here. It is the preventive fix, and could be a later round-form option *(inf.)*. *(v4, 2026-11-25: now here, as the re-jury round's per-region N, §10.5, and the suggested N, §10.4)* |
+| Per-region top-N for the next round | Not here. It is the preventive fix, and could be a later round-form option *(inf.)*. *(v4, 2026-11-25: now here, as the re-jury round's per-region N, §10.5, chosen with the cut picker, §10.4)* |
 | Lineage slice A (#193, V115) and slice B (v4, added 2026-11-25) | The re-jury round gets no manual label: slice A checks `round.track` before rule 4, so a label would replace its region track; left empty, rule 4 puts it on the track of its region set (§10.5). Slice B's Cancel hides a re-jury round that was a mistake; its decisions stay, as they belong to files, not rounds |
 | Contest change log (#178, V114) (v4) | Regional decisions are logged as `contest_change` kinds of their own (§10.2), shown in the contest's change log and on the report |
 | Contest export, snapshots, copy, archive (`2026-11-25-contest-export-snapshots-copy-archive.md`) (v4) | `regional_decision` is contest data: an export or snapshot carries it, a copy leaves it out (a new contest has no decisions), an archive keeps it. That plan should list the table; not edited here |
@@ -782,8 +784,8 @@ S ≈ ½ day, M ≈ 1–2 days, L ≈ 3+ days of agent work, each with review an
 | R0 (v4) | **Unclear mark** (§10.3): computed from what phase 1 reads, plus the "dropped by a contest-wide cut" check per region; the mark and its reasons in the region cell; unit spec of the rules | S (½–1 d) |
 | R1 (v4) | **Decisions record** (§10.2): migration (table, `contest_change` kinds), DAO, the report's controls (accept with place, reject with note, region needs re-jury / done, clear), CSRF POSTs, change-log entries, the region's state column and filter; specs incl. negative authorization (organizer, juror, other contest's admin, signed out) | M (2–2.5 d) |
 | 2' (v4) | **Exports from accepted winners** (§10.7): `export=accepted`, the default once a contest has a decision; on top of phase 2 | S (+½ d) |
-| SN (v4) | **Suggested N** (§10.4): the pure rule and its explanation (unit spec over rated, yes/no and tie shapes; ½–1 d); the ranked scores read with the fill's own rank key (½ d); the round form's step 1: "Suggest", the reason, the tie choice, the preview "37 of 412 files, lowest included score 7.2", the basis logged with the round's change-log entry (1–1.5 d). No migration | M (2–3 d) |
-| R2 (v4) | **Per-region N in the report** (§10.4–§10.5): the suggested N with its reason in each region's cell, the source round per region, the admin's override, the "Re-jury these regions" form | S–M (1–1.5 d) |
+| SN (v4) | **Cut picker** (§10.4): the pure candidate-cut finder and its reasons (unit spec over rated, yes/no and tie shapes; ½–1 d); the ranked scores read with the fill's own rank key (½ d); the cut gallery (a shared Twirl partial: thumbnails in rank order, scores, tie brackets, labelled cut lines, "Cut here"), on the round form's step 1 with "Show candidate cuts", the preview "37 of 412 files, lowest included score 7.2", the choice logged with the round's change-log entry (1.5–2 d). No migration | M (2.5–3.5 d) |
+| R2 (v4) | **Per-region N in the report** (§10.4–§10.5): each region's candidate cuts with their reasons, its cut gallery page, the source round per region, the "Re-jury these regions" form | S–M (1–1.5 d) |
 | R3 (v4) | **The re-jury round** (§10.5): `round.region_top` (migration at build time), the round form's per-region fieldset and prefill, per-region ranking with an SQL region condition in `DistributionSource.rank`, rejected files left out, the regional track label, the report's re-jury column rule; specs incl. re-apply, resubmit and "Distribute new files" | L (3–4 d) |
 | R4 (v4, if decision Q9 asks for it) | **Pasted results** of the offline session (§10.2): a list of titles with status, previewed before saving | S (½–1 d) |
 
@@ -796,8 +798,8 @@ improvements of 26.11.17 and 26.11.18; dates replaced by a priority order); phas
 lineage phase 1 and multi-role's pre-screening rounds.
 
 **v4 order (proposal, 2026-11-25; §10.8, question 13):** the round improvements of 26.11.17 and
-26.11.18 → slice A → phase 1 → R0 → R1 → phase 2 with 2' → slice B → SN → R2 → R3 (→ R4). v4 adds about 9–12.5 agent days (R0 ½–1,
-R1 2–2.5, 2' ½, SN 2–3, R2 1–1.5, R3 3–4; R4 ½–1 if asked).
+26.11.18 → slice A → phase 1 → R0 → R1 → phase 2 with 2' → slice B → SN → R2 → R3 (→ R4). v4 adds about 9.5–13 agent days (R0 ½–1,
+R1 2–2.5, 2' ½, SN 2.5–3.5, R2 1–1.5, R3 3–4; R4 ½–1 if asked).
 
 ### 7.1 Phase 0 SQL (read-only; V95 schema and later)
 
@@ -1299,16 +1301,23 @@ on amount and quality of candidates". The report suggests an N per region, with 
 the cell, and the admin can override each before creating the re-jury. Design: §10.4–§10.5. The
 rule's details: questions 1–4.
 
+*Refined [user] (maintainer, 2026-11-25, question 1):* not a single suggested N: "show possible
+numbers and a gallery to view them and decide". The report lists each region's candidate cuts with
+their reasons and links its cut gallery; the admin picks N (§10.4).
+
 **20. One re-jury round for all selected regions (proposal, 2026-11-25).** Question 7. §10.5
 recommends one round with each region's own N; one round per region is the alternative (§10.5,
 "Alternative").
 
-**21. A shared suggested N, also for main rounds' top-N (new, 2026-11-25).**
+**21. A shared cut picker, also for main rounds' top-N (new, 2026-11-25).**
 
 **Decided [user] (maintainer, 2026-11-25):** "we don't have top-N for main rounds yet, maybe makes
 sense to have them too." One component (§10.4) for the round form's top-N and for each region's N
-in a re-jury, with the same rule and the same explanation text. The tie at the cut is always shown,
-with a preview, never cut silently. Open details: questions 1, 3, 4 and 14.
+in a re-jury, with the same rules and the same explanation text. The tie at the cut is always shown,
+with a preview, never cut silently. Open details: questions 3, 4 and 14.
+
+*Refined [user] (maintainer, 2026-11-25, question 1):* the component shows candidate cuts and a
+gallery and the admin decides; it proposes no single N (§10.4).
 
 **22. The "unclear" mark: computed, not stored (proposal, 2026-11-25).** §10.3. Its rules:
 question 5.
@@ -1497,10 +1506,10 @@ visible with a "rejected" badge and take no place. The rules, in the order the c
     1952's minimum). U4 for 63 (best in the yes/no 1938), and for 23, 56 and 59 (a yes only in a
     root). U1–U3 can't be told from the kept summary.
   - WLM 2026 today: Q-02 is open with 3.3 of 13 marks per file, so U2 marks every region until its
-    votes are in. Region 18 has one file, which no rule marks; its suggested N is 1, "only one
-    candidate".
+    votes are in. Region 18 has one file, which no rule marks; its only candidate cut is N = 1,
+    "only one candidate".
 - **Phase 0c (to run, read-only, on a local copy; counts and public page ids only).** The top 12
-  files per region of the final round, with their votes, to tune U1–U3 and the suggested N's gap
+  files per region of the final round, with their votes, to tune U1–U3 and the cut picker's gap
   rule (§10.4):
 
   ```sql
@@ -1519,13 +1528,19 @@ visible with a "rejected" badge and take no place. The rules, in the order the c
   region the gap between places 1 and 2, the largest gap within places 3–10, and the votes on the
   top file.
 
-### 10.4 Suggested N: one component, two places (decisions 19 and 21 [user])
+### 10.4 The cut picker: candidate cuts and a gallery, two places (decisions 19 and 21 [user])
 
-**What it does.** From a ranked list of eligible candidates, by the same rank key the fill uses
-(`DistributionSource.rank`: rated rows scored in their round, then by the sum; yes/no rows by the
-`BinaryOrder`), with the same filters (CoI, deleted on Commons, region, rejected), it proposes N,
-says why, and shows the tie at the cut. The same pure code and the same message keys serve the round
-form's top-N and each region's N in a re-jury.
+*(Reworked 2026-11-25 after question 1 **[user]**: "show possible numbers and a gallery to view
+them and decide". The gap rules find and rank candidate cuts; they no longer give one answer.)*
+
+**What it does.**
+- It takes a ranked list of eligible candidates, by the same rank key the fill uses
+  (`DistributionSource.rank`: rated rows scored in their round, then by the sum; yes/no rows by
+  the `BinaryOrder`), with the same filters (CoI, deleted on Commons, region, rejected).
+- It lists **candidate cuts**, each with its reason, and draws them in a **cut gallery**.
+- The admin clicks a cut, or types N, and the chosen N is stored. Nothing is preselected.
+- The same pure code, the same Twirl partial and the same message keys serve the round form's
+  top-N and each region's N in a re-jury.
 
 **The score range** (for the 5% tests here and in U3): the largest score the round's rank key can
 give, from 0, since a ✗ (rate -1) counts as 0, and under `assigned` so does an unrated vote:
@@ -1536,86 +1551,105 @@ give, from 0, since a ✗ (rate -1) counts as 0, and under `assigned` so does an
   jurors per file (`distribution`, or all the round's jurors with 0);
 - yes/no: no range; levels instead (below).
 
-**The rule** (question 1). For eligible scores `s1 ≥ s2 ≥ … ≥ sm`, applied in this order:
-1. **G6, few candidates:** if `m ≤ lo`, N = m. Reason: "N = 1: only one candidate." Stop.
-2. **G4, close to the best** (regions only; "quality"): let `c` be the number of files within 5% of
-   the range of `s1`. If `c > lo`, `lo` becomes `c`, and `hi` becomes `max(hi, c)`, capped at 15.
-   So G4 overrides `hi`, up to 15. Past 15, the cap wins and the reason says so: "15 of 18 files
-   within 0.5 of the best; capped at 15."
-3. **G1, cut positions:** the `k` with `lo ≤ k ≤ hi` and `sk > s(k+1)`, so never inside a tie.
-4. **Bounds yield to ties.** If there is no cut position, a tie spans the whole window: e.g.
-   `lo = hi = 3` with `s3 = s4`, or places 2–12 tied. The cut moves to the tie's two boundaries,
-   `k−` (the last place before the tie, possibly below `lo`) and `k+` (the tie's end, possibly
-   above `hi`). They are offered as the tie choice (below) with the default of question 3. Stop.
-   When `k−` is 0 (places 1 to `hi` all tied), the default is "include all" (the whole tie), since
-   "leave out" would give N = 0.
-5. **G2–G3, the gap:** `gk = sk − s(k+1)` at each cut position; every one is above 0, since ties
-   are not cut positions. A break is clear when the largest `gk` is at least 5% of the range, and
-   also, with 3 or more cut positions, at least twice their median gap. With 1 or 2 cut positions
-   (e.g. `lo = hi`), only the 5% test applies. Clear: N is that `k`, the smaller on equal gaps.
-   Reason: "N = 37: scores drop from 7.2 to 6.1 after file 37."
-6. **G5, no clear break:** N is the cut position nearest the target (national) or the middle of
-   `[lo, hi]` (regions), the smaller when two are equally near. Reason: "N = 6: no clear break
-   between files 3 and 10 (scores 8.1 to 7.4)."
+**Candidate cuts** (decided in principle by question 1 **[user]**). For eligible scores
+`s1 ≥ s2 ≥ … ≥ sm` and a window `[lo, hi]` (below):
+- **Cut positions:** only between different scores (`sk > s(k+1)`), never inside a tie, and never
+  N = 0.
+- **C1, a significant drop:** a cut position in the window whose gap `gk = sk − s(k+1)` is at least
+  5% of the range, and also, with 3 or more cut positions in the window, at least twice their
+  median gap (ties are not cut positions, so every gap counted is above 0). Reason: "N = 7: scores
+  drop 8.4 → 7.1." The largest is marked "largest drop".
+- **C2, close to the best** (regions; "quality"): N = the number of files within 5% of the range
+  of `s1`, when that is at least 2 and at most 15, moved to the end of a tie it falls in. Reason:
+  "N = 6: 6 files within 0.5 of the best (8.3)."
+- **C3, all candidates:** N = m, when `m ≤ hi`. Reason: "N = 3: all 3 candidates."
+- **C4, around the target** (when C1 finds none): the cut positions nearest the target (main
+  rounds) or the middle of `[lo, hi]` (regions), one on each side. Reason: "N = 6: no clear drop
+  between files 3 and 10 (scores 8.1 to 7.4)."
+- **C5, tie boundaries at the window's edge:** when a tie spans `lo` or `hi`, or the whole
+  window (e.g. `lo = hi = 3` with `s3 = s4`), its two boundaries are candidates, even outside the
+  window. Bounds yield to ties. The lower boundary is not offered when it is 0 (places 1 to `hi`
+  all tied); the tie's end is. Reason: "N = 39: includes the tie at 6.8 (files 36–39)" /
+  "N = 35: before the tie at 6.8."
+- **The list:** at most 6 candidates, by N, duplicates merged (one N, several reasons). The gallery
+  draws every cut position as a thin line, and the listed candidates as labelled lines.
 
-**Bounds.**
+**The window.**
 - **A region** ("amount", question 2): `lo = min(3, m)`, `hi = min(10, max(lo, ⌈m / 5⌉))`, where
-  `m` is the region's eligible positive files in its source round (G4 may raise both, up to 15).
-  For WLM 2026's Q-02 (1–55 files per region): region 18 → 1; a region of 12 files → [3, 3];
-  region 63 (55 files) → [3, 10].
-- **The national top-N:** the admin types a target `T` (e.g. 40); the window is `[⌈0.8 T⌉, ⌊1.25 T⌋]`.
-  Without a target, no suggestion.
+  `m` is the region's eligible positive files in its source round. C2 may list a cut above `hi`, up
+  to 15. For WLM 2026's Q-02 (1–55 files per region): region 18 → only N = 1; a region of 12
+  files → [3, 3]; region 63 (55 files) → [3, 10].
+- **Main rounds:** the admin may type a target `T` (e.g. 40), and the window is `[⌈0.8 T⌉,
+  ⌊1.25 T⌋]`. Without a target, the window is the first 100 places, and C1 lists the largest drops
+  in it.
 
-**Ties at the cut** (decision 21 **[user]**: always shown, with a preview; question 3 asks only the
-default). When the typed or suggested N falls inside a tie, the form says so and previews both
-choices. Today the fill would cut the tie by page id, silently (`DistributionSource.rank`):
+**The cut gallery** (a shared Twirl partial; server-rendered, no script needed):
 
 ```
-Files 36–39 share 6.8.  (•) Include them all (N = 39)   ( ) Leave them out (N = 35)
+Round R-03, region 07 Volyn O.: 23 candidates, ranked by average (rated, 1–10)
+  1  [thumb] File:A.jpg   8.70
+  2  [thumb] File:B.jpg   8.40
+ ─── N = 2 · scores drop 8.4 → 7.1 (largest drop) ··························· [Cut here]
+  3  [thumb] File:C.jpg   7.10
+  4  [thumb] File:D.jpg   7.00 ┐ tied
+  5  [thumb] File:E.jpg   7.00 ┘
+ ─── N = 5 · scores drop 7.0 → 6.2 ··········································· [Cut here]
+  6  [thumb] File:F.jpg   6.20
+  …  (shown up to the window's end plus 5; "Show more")
 ```
 
-The choice sets N, and the preview shows the count and lowest score for each. Nothing else is
-stored for it. Recommended default (question 3): include, when that keeps N within `hi`; otherwise
-leave out.
+- Thumbnails in rank order, with place, title, score in the round's terms, the votes cast, and a
+  link to the large view. Ties are bracketed and never split by a line.
+- Every cut position has a thin line; candidate cuts have a labelled line with "Cut here".
+- **Preview** of the current choice: "37 of 412 files, lowest included score 7.2."
+- **Typed N inside a tie** (question 3): the form names the tie and offers its two boundaries;
+  it doesn't save a cut inside a tie. (Today the fill would cut it by page id, silently.)
 
 **Yes/no source rounds** (question 4). The key is the `BinaryOrder` chosen in the form
 (`top.images.binary.order`: approvals then fewest rejections, by default; difference; approvals
 only), or the legacy rule's score for a round without a stored order, exactly as the fill ranks.
-- Scores are counts, so each distinct key is a **level**, and every level boundary is a cut
-  position. G2–G3's gap test doesn't apply. N is the boundary within the bounds nearest the
-  target (national) or the middle of `[lo, hi]` (regions); G4 doesn't apply either.
+- Scores are counts, so each distinct key is a **level**, and every level boundary is a candidate
+  cut in the window. C1's gap test and C2 don't apply.
 - Reason: "N = 37: all files with 3 yes and no no; the next 120 files have 3 yes, 1 no."
-- With no boundary within the bounds, the two nearest are offered as the tie choice.
+- With more than 6 boundaries in the window, those nearest the target or the middle are listed;
+  the gallery draws them all.
 
 **Several previous rounds:** the fill ranks a file by its best row, each scored in its own round,
-so the list mixes rounds. The 5% tests use the largest range among them, and the form warns
+so the list mixes rounds. The 5% tests use the largest range among them, and the gallery warns
 "previous rounds on different scales" when they differ. A round has one `top_binary_order`, so all
 its yes/no previous rounds are ranked by the same order, today and here.
 
 **Code:**
-- `services.TopNSuggestion`: pure, from (keys, bounds, scale, binary?) to (N, reason, tie). Unit
-  tested on rated, yes/no, tie and few-candidate shapes.
+- `services.TopNCandidates`: pure, from (keys, window, range, binary?) to the candidate cuts with
+  their reasons. Unit tested on rated, yes/no, tie and few-candidate shapes.
 - `DistributionSource.rankedScores`: the `rank` method's pages (`ratedPage` / `binaryPage`) with
-  the filters, read up to `hi + 1` plus the tie, so the preview equals what the fill takes.
+  the filters, read up to the gallery's end, so the preview equals what the fill takes.
+- `views.html.cutGallery`: the partial.
 
 **Place 1: the round form, step 1 "Which files"** (UI-path plan's numbered steps). Next to "Number
 of top files from the previous rounds" (`top.images`):
 
 ```
-Number of top files from the previous rounds  [ 37 ]   Target [ 40 ]  [Suggest]
-  Suggested N = 37: scores drop from 7.2 to 6.1 after file 37.
-  Preview: 37 of 412 files, lowest included score 7.2.
+Number of top files from the previous rounds  [    ]   Target (optional) [ 40 ]  [Show candidate cuts]
+  Candidate cuts:  [N = 33 · scores drop 7.6 → 7.2]  [N = 37 · scores drop 7.2 → 6.1, largest drop]
+                   [N = 46 · scores drop 5.9 → 5.5]
+  Preview (N = 37): 37 of 412 files, lowest included score 7.2.
+  (the cut gallery below, from place 1 to 55)
 ```
 
-- "Suggest" posts the form to a preview action that re-renders step 1 with the values and the
-  suggestion. It saves nothing and needs no script; a script may enhance it later.
-- Saving keeps `top_images` as today. The basis (target, suggested N, rule, the two scores, the
-  tie choice) goes into the round's V114 change-log entry as `topImagesBasis`, so the round form and
-  lineage can say "N = 37 suggested on 2026-12-01: scores drop from 7.2 to 6.1". **No migration.**
-- A re-apply, a resubmit or "Distribute new files" ranks with the stored N; it doesn't suggest
+- "Show candidate cuts" posts the form to a preview action that re-renders step 1 with its values,
+  the candidates and the gallery. A candidate or "Cut here" is a submit button that sets N and
+  re-renders the same way. It saves nothing and needs no script; a script may enhance it later.
+- Saving keeps `top_images` as today. The choice (target, the candidates shown, the chosen cut's
+  reason, or "typed") goes into the round's V114 change-log entry as `topImagesBasis`. So the round
+  form and lineage can say "N = 37, chosen 2026-12-01: scores drop 7.2 → 6.1". **No migration.**
+- A re-apply, a resubmit or "Distribute new files" ranks with the stored N; nothing is chosen
   again. If the previous rounds' votes changed since, the preview warns.
 
-**Place 2: each region's N in the report** (R2), as §10.5's form shows.
+**Place 2: each region's N in the report** (R2), as §10.5 shows. Each region's cut gallery is its
+own GET page (`/contest/:id/regional-winners/cuts?round=…&region=…`, Admins and Organizers). Its
+"Cut here" links back to the report with that region's N set in the re-jury section's GET
+parameters, so the report stays read-only.
 
 ### 10.5 The re-jury round (decisions 19 [user] and 20)
 
@@ -1624,16 +1658,18 @@ re-jury* are ticked; unclear ones are listed, unticked:
 
 ```
 Re-jury these regions                                         [Re-jury these regions]
-[x] 07 Volyn O.    from [R-02 ▾]  N [ 5 ]  suggested 5: scores drop from 7.9 to 6.4 after file 5
-[x] 21 Zakarpattia from [R-03 ▾]  N [ 3 ]  suggested 3: only 3 candidates (2 rejected)
-[ ] 63 Kharkiv O.  from [R-03 ▾]  N [ 8 ]  suggested 8: 8 files within 0.5 of the best (8.6)
-    (range 1–10 under `rated`: 5% is 0.5)
+[x] 07 Volyn O.    from [R-02 ▾]  N [ 5 ]  cuts: [2 · drop 8.4 → 7.1] [5 · drop 7.9 → 6.4]  [View gallery]
+[x] 21 Zakarpattia from [R-03 ▾]  N [   ]  cuts: [3 · all 3 candidates (2 rejected)]      [View gallery]
+[ ] 63 Kharkiv O.  from [R-03 ▾]  N [   ]  cuts: [4 · drop 8.1 → 7.5] [8 · within 0.5 of the best (8.6)]
+                                                 [10 · drop 7.0 → 6.6]                  [View gallery]
     Unclear: 1st 8.60, 2nd 8.50
 ```
 
+- **N per region:** empty until the admin clicks a candidate, a "Cut here" in the region's gallery,
+  or types it. A ticked region without N stops the button with "choose N for 21".
 - **Source round per region:** by default the region's deciding column (§10.3), or for U5 the round
-  before the cut, where all its files were rated. Its scale and rank key are the round's own, so N
-  is suggested within one round.
+  before the cut, where all its files were rated. Its scale and rank key are the round's own, so
+  the candidate cuts are found within one round.
 - **The button** opens the round form (GET, no write) at step 1, prefilled:
   `/admin/rounds/edit?contestId=…&rejury=07:5@101,21:3@102` (region, N, source round id; here
   101 is R-02 and 102 is R-03).
@@ -1646,8 +1682,8 @@ Name                [ Regional re-jury 1 ]
 Track               [          ]   (empty: lineage puts the round on its regions' track)
 Rating              [ 1–10 ]
 Regions, each with its own top files:
-  07 Volyn O.     from R-02   top [ 5 ]   suggested 5: scores drop from 7.9 to 6.4 after file 5   [remove]
-  21 Zakarpattia  from R-03   top [ 3 ]   suggested 3: only 3 candidates                         [remove]
+  07 Volyn O.     from R-02   top [ 5 ]   chosen: scores drop 7.9 → 6.4   [View gallery] [remove]
+  21 Zakarpattia  from R-03   top [ 3 ]   chosen: all 3 candidates        [View gallery] [remove]
 [x] Leave out files rejected for their region (2 files)
 [x] Leave out conflicts of interest
 Jurors per file     [ all jurors ]  "Every juror rates every file: each region gets the same attention."
@@ -1684,8 +1720,9 @@ sources among `previous`, N from 1 to 50, at most one entry per region.
 
 ```json
 {"v": 1, "excludeRejected": true,
- "regions": [{"region": "07", "source": 101, "n": 5, "suggested": 5,
-              "basis": {"rule": "gap", "from": 7.9, "to": 6.4, "lo": 3, "hi": 5}}]}
+ "regions": [{"region": "07", "source": 101, "n": 5,
+              "basis": {"chosen": "drop", "from": 7.9, "to": 6.4, "lo": 3, "hi": 5,
+                        "candidates": [2, 5]}}]}
 ```
 
 - It is a round setting, so #178's `RoundChanges` logs it (create, edit, re-apply).
@@ -1713,7 +1750,7 @@ sources among `previous`, N from 1 to 50, at most one entry per region.
   distributed stays in it, with a "rejected" badge on the report; it is never accepted or exported.
 - **"Distribute new files"** ranks again; as today, the files already in the round count in the
   ranking, so N doesn't grow.
-- **Tie at a region's cut:** N is chosen at a tie boundary (§10.4). If the source's votes changed
+- **Tie at a region's cut:** N is chosen at a tie boundary (§10.4: no cut inside a tie). If the source's votes changed
   since, the fill cuts by page id as today, and step 2 says how many tied files were left out.
 
 **In the report:** the re-jury round is a default column, first, for its regions (amended decision
@@ -1781,7 +1818,7 @@ before the first.
 ### 10.8 Priority order
 
 The round improvements of 26.11.17 and 26.11.18 come first: 26.11.18 brings the numbered setup
-steps (UI-path plan, draft PR #189) that the round form's suggested N (§10.4) and the re-jury's
+steps (UI-path plan, draft PR #189) that the round form's cut picker (§10.4) and the re-jury's
 prefilled step 1 (§10.5) build on. Then, one builder at a time (the shared run lock), in this
 order:
 
@@ -1794,7 +1831,7 @@ order:
 | 4 | R1 decisions record | 2–2.5 d | the session's results, the re-jury's input |
 | 5 | Phase 2 exports + 2' accepted | 1–1.5 d | the winners' list |
 | 6 | Lineage slice B (Cancel / Reinstate) | 2.5–3.5 d | decided to follow phase 1 (lineage §8.1); question 13 asks whether before R1 or after 2' |
-| 7 | SN suggested N (main rounds' top-N) | 2–3 d | may move ahead of R1 (question 14) |
+| 7 | SN cut picker (main rounds' top-N) | 2.5–3.5 d | may move ahead of R1 (question 14) |
 | 8 | R2 per-region N in the report | 1–1.5 d | reuses SN |
 | 9 | R3 the re-jury round | 3–4 d | reuses SN, R1 and R2 |
 | 10 | R4 pasted results | ½–1 d | only if question 9 asks for it |
@@ -1810,7 +1847,7 @@ order:
 
 ### 10.9 Tests (v4)
 
-- **`TopNSuggestionSpec`** (unit): G1–G6 on rated lists; yes/no levels under each `BinaryOrder` and
+- **`TopNCandidatesSpec`** (unit): C1–C5 on rated lists, at most 6, duplicates merged, never N = 0; yes/no levels under each `BinaryOrder` and
   the legacy rule; ties at `lo`, at `hi` and across the whole window; few candidates; mixed scales;
   each reason's message arguments.
 - **`RegionalUnclearSpec`** (unit): U1–U6, a region marked done (no mark), a re-jury column as the
@@ -1831,8 +1868,9 @@ order:
   files are left out at the fill and by a re-apply in review; "Distribute new files" doesn't grow N;
   `region_top` with `top_images` is refused; a resubmit and a Retry keep the regions; the region
   SQL condition's query plan uses `images_page_monument_idx` (query-plan checks plan).
-- **Round form (SN):** "Suggest" saves nothing; the preview's count equals the fill's; the tie
-  choice sets N; `topImagesBasis` is logged; a juror and an organizer can't reach the preview.
+- **Round form (SN):** "Show candidate cuts" saves nothing; the preview's count equals the fill's;
+  a candidate and "Cut here" set N; a typed N inside a tie is not saved; the gallery never splits a
+  tie; `topImagesBasis` is logged; a juror and an organizer can't reach the preview.
 - **Migrations:** `FlywayUpgradeSpec` and `MigrationNamingSpec` for each migration, with the undo in
   its comment.
 - **Screenshots** of the report's decision controls, the re-jury section and the prefilled form, in
@@ -1844,33 +1882,26 @@ order:
 
 One decision each, asked one by one. The recommendation comes last in each.
 
-1. **How N is suggested.** Options:
-   - (a) The largest score gap within bounds, never inside a tie, plus "files close to the best are
-     always in" for regions; no clear break gives the target or the middle (§10.4, G1–G6);
-   - (b) a fixed share of the candidates (e.g. the top 20%);
-   - (c) a statistical natural-breaks method (Jenks);
-   - (d) everything within a fixed distance of the best.
-
-   (a) is explainable in one sentence per region and never splits a tie. (b) ignores quality. (c)
-   is hard to explain in a cell. (d) gives 1 file in a region with a clear leader and 30 in a flat
-   one. **Recommendation: (a)**, its 5% thresholds to be checked on phase 0c's data.
-2. **A region's bounds ("amount").** `lo = min(3, m)`, `hi = min(10, max(lo, ⌈m / 5⌉))`; files close
-   to the best may raise N up to 15. The alternative is fixed bounds of 3–10 for every region. The
+1. **How N is chosen.** **Decided [user] (maintainer, 2026-11-25):** not a single suggested N:
+   "show possible numbers and a gallery to view them and decide". The app lists candidate cuts
+   (C1–C5, §10.4), each with its reason, and a cut gallery; the admin clicks a cut or types N; the
+   chosen N is stored. Asked as: (a) the largest gap as one suggested N; (b) a fixed share; (c)
+   natural breaks (Jenks); (d) a fixed distance from the best. The recommendation was (a).
+2. **A region's window ("amount").** `lo = min(3, m)`, `hi = min(10, max(lo, ⌈m / 5⌉))`: where
+   candidate cuts are looked for and how far the gallery opens; C2 may list a cut up to 15. The alternative is fixed bounds of 3–10 for every region. The
    formula keeps a 12-file region from re-jurying 10 of its 12 files, which would be no
    selection. **Recommendation: the formula.**
-3. **The default at a tie on the cut line.** Decided (decision 21 **[user]**): the tie is always
-   shown, with a preview of both choices, and the admin can switch it. Only the preselected choice
-   is open:
-   - (a) "include all" when that keeps N within `hi`, else "leave out";
-   - (b) always "include all";
-   - (c) always "leave out";
-   - (d) nothing preselected: the admin must choose before saving.
+3. **A typed N inside a tie.** Decided (decision 21 **[user]**): the tie is always shown, never cut
+   silently; candidate cuts and "Cut here" lie only at tie boundaries. Open: an N typed inside a
+   tie.
+   - (a) not saved: the form names the tie and offers its two boundaries (the lower one only if
+     above 0);
+   - (b) saved, cut by page id as today, with a warning.
 
-   (b) can double N on a yes/no round, where a level holds many files. (c) can drop a deserving
-   file. (d) adds a click to every tie. **Recommendation: (a).**
+   (b) keeps a silent, arbitrary cut. (a) costs one more click. **Recommendation: (a).**
 4. **Yes/no source rounds.** Options:
-   - (a) suggest at the level boundaries of the chosen `top.images.binary.order` (§10.4);
-   - (b) no suggestion for yes/no sources, only the preview.
+   - (a) candidate cuts at the level boundaries of the chosen `top.images.binary.order` (§10.4);
+   - (b) no candidates for yes/no sources, only the gallery with its level lines and the preview.
 
    With 3 jurors there are few levels, and the "break" is just a level. Still, "all files with 3
    yes and no no: 37" is useful. **Recommendation: (a)**, with the reason naming the level.
@@ -1930,9 +1961,10 @@ One decision each, asked one by one. The recommendation comes last in each.
     final's results need. Slice B tidies trial rounds; meanwhile the report names a trial round
     in its tie warning (decision 3), and the admin can pick the final round.
     **Recommendation: phase 1 → R0 → R1 → phase 2 with 2' → slice B.**
-14. **Where the suggested N goes in the order.** Options:
+14. **Where the cut picker goes in the order.** Options:
     - (a) after slice B, before R2–R3, which reuse it;
     - (b) before R1, if a national top-N cut is still to be made for WLM 2026.
 
-    It is useful on its own for every contest's main rounds; R2–R3 need it in any case.
+    It is useful on its own for every contest's main rounds; R2–R3 need it in any case, and its
+    gallery is now a larger part (2.5–3.5 days).
     **Recommendation: (a), unless WLM 2026 still has a national top-N cut to make.**
