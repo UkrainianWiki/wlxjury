@@ -1533,6 +1533,7 @@ round.track.label = Étiquette de piste (facultatif)
 round.track.help = Les tours de même étiquette partagent une piste. Saisissez {0} sur le premier tour du concours principal.
 round.track.automatic = Automatique : {0}
 round.track.automatic.new = Automatique
+round.track.more = En savoir plus sur les pistes
 round.track.main.hint = Le tour {0} réunit des tours de plusieurs pistes : il ouvre donc seul la piste principale. Pour y montrer les tours précédents du concours principal, donnez l''étiquette Principale à son premier tour, dans le formulaire de ce tour.
 round.track.previous.missing = Le tour précédent {0} n''existe plus : ce tour ouvre sa propre piste.
 rounds.filter.track.all = Toutes les pistes
