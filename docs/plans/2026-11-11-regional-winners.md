@@ -5,8 +5,8 @@
 
 **Status:** plan only. Nothing is built. Date: 2026-11-11.
 
-**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 6–9 and 14
-decided; 1–5, 10–13, 15–16 open; phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5).
+**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 6–10, 12–14
+decided; 1–5, 11, 15–16 open; phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5).
 The maintainer made this the top priority for WLM 2026 Ukraine, whose jury final is at the
 beginning of December.
 
@@ -163,7 +163,8 @@ photos and tell which round they are from."
 
 **Consequence.** In WLM, a file listed under a nomination prefix (`99-…`) never counts for its
 geographic region, because its region is the prefix (`monument.adm0` is the prefix too). The report
-shows nomination prefixes in a separate, collapsed group (decision 10).
+doesn't show nomination prefixes, "Other" prefixes or files without an id: it covers geographic
+regions only (updated 2026-11-25, decision 10).
 
 ### 1.3 Results per round type
 
@@ -381,7 +382,8 @@ because they aren't ancestors of `F`.
 
 ### 2.4 The source of a region, and the reasons
 
-1. **Source:** the first candidate in which `x` has at least one file with a **positive result**
+1. **Source:** the first candidate in which `x` has at least one **eligible** file (§2.5, not
+   excluded under decisions 12–13 (updated 2026-11-25, decisions 12–13)) with a **positive result**
    (decision 4):
    - yes/no: `approvals > 0`;
    - rated and criteria: grade sum > 0 (`rate_sum + rejections`, `RoundImageQuery.GradeSum`, `:189`).
@@ -442,7 +444,19 @@ Every order is fixed: rounds by kind, depth and id; files by the rank key, then 
 
 ### 2.5 Best photos of the source round, and settled points
 
-**Ranking:** the files of `x` in round `R` with a positive result, by `RankKey.of(R, order)`.
+**Ineligible files are excluded first** (updated 2026-11-25, decisions 12–13). A file whose author
+has a conflict of interest (decision 12) or that is deleted on Commons (decision 13) is not among
+the files a winner is chosen from. It is removed from every candidate round's files before anything
+else, so:
+- the source test (§2.4 item 1), the ranks, the tie at the N-th place (decision 8), the fill-up
+  (decision 9) and the national top k (decision 14) all count eligible files only;
+- the next eligible file takes its place;
+- it is not shown on the page and never in the export.
+
+The row's "Why" gives the count only ("2 files excluded: conflict of interest or deleted on
+Commons"), so a region never loses a file without a trace.
+
+**Ranking:** the eligible files of `x` in round `R` with a positive result, by `RankKey.of(R, order)`.
 - **The order of a yes/no `R` is settled** (review point 7). It is the stored `top_binary_order` of
   the round that took its top-N from `R`:
   - the next chain round that has `R` among its previous rounds;
@@ -451,7 +465,8 @@ Every order is fixed: rounds by kind, depth and id; files by the rank key, then 
   It falls back to `BinaryOrder.Default` when none stored one, or `NULL` (legacy). The page names
   the order used.
 - **The rank is within the region.** A parity spec checks that it equals the rank in the round's
-  all-jurors "by rate" gallery with that region and order.
+  all-jurors "by rate" gallery with that region and order, when no file of the region is excluded.
+  With exclusions, the rank is among the eligible files (updated 2026-11-25, decisions 12–13).
 
 **N per region:** the `n` parameter, 1–10, default 1 (updated 2026-11-25, decision 7). **Ties at
 the N-th place:** all tied files are shown (updated 2026-11-25, decision 8), with a link to the
@@ -464,9 +479,10 @@ Ranks are written as ranges (decision 8).
   compared.
 - **Labels:** each file shows its round and its rank within that round. A file from a round other
   than the source also shows "filled from round X".
-- **Badges:** the national-winner mark (decision 14), the CoI and deleted badges (decisions 12–13)
-  and "provisional" (decision 6) apply to filled files as to the source's. A file that is not
-  counted in N under those decisions makes the walk go on to the next file.
+- **Badges:** the national-winner mark (decision 14) and "provisional" (decision 6) apply to filled
+  files as to the source's. Files excluded under decisions 12–13 are left out of the fill-up too,
+  before ranking (updated 2026-11-25, decisions 12–13). A national winner skipped under decision
+  14's per-view option makes the walk go on to the next file.
 
 **Score in the round's own terms:**
 - yes/no: "3 of 3 jurors: yes", plus the rejections;
@@ -476,10 +492,14 @@ Ranks are written as ranges (decision 8).
 The score rule is named as on the round form.
 
 **Files that may not be eligible:**
-- **CoI files** (decision 12): the check is `CoiMembers.forContest` / `matchOf`
-  (`CoiMembers.scala:66, 97`), in memory, on the listed files.
-- **Files deleted on Commons** (decision 13): the check is `images.deleted_at`.
-- **The national winners** (decision 14): the final round's overall top, when asked for.
+- **CoI files** (decision 12): the contest's CoI people come from `CoiMembers.forContest`
+  (`CoiMembers.scala:66`). Authors are stored normalized as its keys are (`:97`), so the queries
+  exclude them before ranking with `i.author NOT IN (<CoI accounts>)` (updated 2026-11-25,
+  decisions 12–13).
+- **Files deleted on Commons** (decision 13): excluded the same way, with `i.deleted_at IS NULL`
+  (updated 2026-11-25, decisions 12–13).
+- **The national winners** (decision 14): the final round's overall top among its eligible files,
+  when asked for (updated 2026-11-25, decisions 12–13).
 
 **Settled, not open** (review point 7):
 - **Pre-screening rounds are never candidates.** Multi-role decision 2 makes a pre-screening round a
@@ -536,7 +556,8 @@ own box, with captions and row headers.
    - **Region:** the name, the contest's file count, and "fallback" and "filled" badges
      (updated 2026-11-25, decision 9).
    - **Best photos:** thumbnails (`Global.resizeTo`, `app/controllers/Global.scala:58`). Each has its
-     rank, title, score and badges (provisional, CoI, deleted, national winner), and links to the
+     rank, title, score and badges (provisional, national winner; no CoI or deleted badge:
+     those files are excluded, updated 2026-11-25, decisions 12–13), and links to the
      large view (`conf/routes:97`). Each also names its round, and a filled one says "filled from
      round X" (updated 2026-11-25, decision 9).
    - **Source round** (and the fill rounds, if any; updated 2026-11-25, decision 9): number and
@@ -545,10 +566,9 @@ own box, with captions and row headers.
    - **Why:** the reasons (§2.4) and the trail, down to the source (with filling, down to the last
      round used; updated 2026-11-25, decision 9): "R-03: 0 files · R-02: 12 files,
      5 selected".
-4. **Collapsed groups** (`<details>`):
-   - nomination prefixes and Other prefixes (decision 10);
-   - files without a monument id (count, with a link to the contest files page);
-   - regions with no files in the contest.
+4. **Regions with no files in the contest,** in a collapsed group (`<details>`). The groups of
+   nomination prefixes, Other prefixes and files without a monument id are removed: the page covers
+   geographic regions only (updated 2026-11-25, decision 10).
 5. **Filters:**
    - "only fallbacks, filled regions and regions without a source" (updated 2026-11-25, decision 9);
    - "hide regions with no files".
@@ -556,8 +576,9 @@ own box, with captions and row headers.
    Both are GET flags. The default shows every region.
 
 **The region list** is every geographic region of the contest's country (`RegionScheme.of(contest)`;
-the 27 KOATUU ids for Ukraine), plus every other id that a candidate round or the contest's files
-have. The regions without files get `Some(0)` in `RegionScheme.regions`.
+the 27 KOATUU ids for Ukraine), and nothing else: other ids that a candidate round or the contest's
+files have are not shown (updated 2026-11-25, decision 10). The regions without files get `Some(0)`
+in `RegionScheme.regions`.
 
 **A contest without regions** has no monument-id template, or has many countries. The page shows a
 notice only.
@@ -580,6 +601,8 @@ File:Example.jpg|1. 8.50 (17 / 2 jurors)
 - **Captions** are numbers and message text only, with no author wikitext. File titles can't contain
   `|`, `[`, `]`, `{` or `}`.
 - **Not listed:** files that may not be eligible (decisions 12–14) are left out of the export.
+  CoI files and files deleted on Commons are never in it, as they are excluded before ranking
+  (updated 2026-11-25, decisions 12–13).
 - **Filled files** name their round in the caption ("filled from round 2") (updated 2026-11-25,
   decision 9).
 
@@ -605,6 +628,11 @@ GROUP BY region ORDER BY NULL
 ```
 
 - `<positive>` is `p.approvals > 0` for yes/no, and `p.grade_sum > 0` for rated.
+- **Eligible files only** (updated 2026-11-25, decisions 12–13): the join on `images` adds
+  `AND i.deleted_at IS NULL AND (i.author IS NULL OR i.author NOT IN (<CoI accounts>))`, and the
+  excluded files are counted per region for the "Why" note.
+- **Geographic regions only** (updated 2026-11-25, decision 10): rows of other prefixes and of files
+  without an id are dropped (`region IN (<the country's regions>)`).
 - `vote` holds only `in` files, because `dq` and `deleted` votes are in `vote_aside`.
 - **Counts path:** used only with `roundImage.read = true` and the proof of §4.3. It is the same
   aggregate over `round_image` with the dirty overlay, filtered on `status = 'in'` and grouped by
@@ -638,6 +666,8 @@ GROUP BY ri.round_id, ri.region
     positive files of `x`. The filter is `rk <= k + s`, where `k` is the number of files still needed and `s` the
     number of already shown files of `x` that this round holds. The rule (Scala) then drops the
     shown files and cuts at `k`, keeping the tie at the cut.
+- **Eligible files only,** with the same condition as §4.1, before the window, so ranks and ties
+  are among eligible files (updated 2026-11-25, decisions 12–13).
 - **Rank key columns:** `RankKey.of(round, order).columns`, translated with
   `RoundImageQuery.translate` (`:213`) on the counts path. A file with no positive result ranks
   below one with it, so filtering after ranking leaves the ranks unchanged.
@@ -703,11 +733,12 @@ GROUP BY ri.round_id, ri.region
 | Score rule changed after the announcement | The current rule is shown and named |
 | Stopped jurors | Their votes count (§1.3) |
 | Disqualified files, and files deleted while their round was open | Out |
-| Deleted on Commons after the round | Decision 13 |
-| A conflict of interest | Decision 12 |
+| Deleted on Commons after the round | Excluded before ranking; the next eligible file takes its place; counted in the "Why" note; never exported (decision 13; updated 2026-11-25, decisions 12–13) |
+| A conflict of interest | Excluded before ranking; the next eligible file takes its place; counted in the "Why" note; never exported (decision 12; updated 2026-11-25, decisions 12–13) |
+| A region whose only positive files in round 3 are excluded | Round 3 doesn't count as present; the region falls back (updated 2026-11-25, decisions 12–13) |
 | A national winner that is also the region's best | Decision 14 |
 | A winner chosen outside the app | Not modelled; facts only (decision 16) |
-| WLM nomination prefixes | Their own collapsed group (decision 10) |
+| WLM nomination prefixes, Other prefixes, files without an id | Not shown (decision 10; updated 2026-11-25, decision 10) |
 | A cycle | Reported; no ranking |
 | A ghost id | Named in the header |
 | A contest without regions | Notice only |
@@ -818,14 +849,23 @@ Phase 0 also records each query's time on the copy, as a first cost figure.
     - a tie at the cut in the last round used → all tied files of that round shown;
     - a yes/no round's files after a rated round's, never interleaved by score;
     - the candidates run out before N → the files found, with the note;
-    - a national winner, a CoI file and a deleted file among the filled files get their badges;
+    - a national winner among the filled files gets its mark; a CoI file and a deleted file are
+      excluded from the fill-up (updated 2026-11-25, decisions 12–13);
     - a filled file not selected in a later round gets the note;
     - WLM 2026 phase 0's region 18 (1 file in Q-02 at `n=3`) fills 2 files from Qn-00 (§7.5);
-  - the stored `top_binary_order` is used, else the default.
+  - the stored `top_binary_order` is used, else the default;
+  - **exclusions** (updated 2026-11-25, decisions 12–13): a CoI file and a deleted file are not
+    shown and the next eligible file takes their place; a region whose only positive files in round
+    3 are excluded falls back; a tie at the N-th place counts eligible files only; the national top
+    k skips them; the "Why" note gives the count;
+  - only geographic regions are rows; nomination prefixes, Other and files without an id are not
+    shown (updated 2026-11-25, decision 10).
 - **`RegionalBestQuerySpec`** (DB, truncate isolation):
   - parity with `RoundList` per region ("by rate", all jurors) for yes/no under each order, rated
     under `rated`, `assigned` and `sum`, criteria, and ✗;
   - `dq` and `deleted` files are out, and stopped jurors are counted;
+  - CoI files and files with `images.deleted_at` are excluded before ranking, with their count per
+    region (updated 2026-11-25, decisions 12–13);
   - both read paths give the same rows (votes; counts with a clean generation), and a dirty
     generation falls back;
   - the unlinked-rounds query;
@@ -837,7 +877,9 @@ Phase 0 also records each query's time on the copy, as a first cost figure.
     (after multi-role's migration; updated 2026-11-25) each get 403;
   - foreign `round` and `rounds` ids are dropped, never `.get`;
   - `n` and `national` are clamped;
-  - no per-juror names or votes on the page.
+  - no per-juror names or votes on the page;
+  - no CoI file, deleted file or non-geographic region on the page or in the export
+    (updated 2026-11-25, decisions 12–13).
 - **Guards:** `RouteAuthSpec` and `SignedOutSpec` cover the route. `RawSqlSpec` is unchanged if the
   SQL stays in `ImageDbNew.scala` / `RoundImageQuery.scala`. `ExportsSpec` changes only in 2b.
 - **The browser story:** from the stats pager to a fallback region, then to the large view.
@@ -1054,6 +1096,9 @@ comes from (not the recommended "one source per region").
 - regional prizes are geographic;
 - (c) hides files that need a decision.
 
+**Decided (maintainer, 2026-11-25): (c)**: geographic regions only. Nomination prefixes, "Other" and
+files without a region id are not shown on this page.
+
 **11. Export.**
 - (a) Wiki text (phase 2); CSV only if asked.
 - (b) None.
@@ -1075,6 +1120,10 @@ round didn't leave such files out).
 - (a) can leave a region with an ineligible winner only;
 - (b) hides why a known photo is missing.
 
+**Decided (maintainer, 2026-11-25)**: files with a conflict of interest are not among the files a
+winner is chosen from. They are excluded from the candidates, so the next eligible file takes their
+place, and they are never in the export.
+
 **13. Files deleted on Commons after their round.**
 - (a) Listed with a "deleted on Commons" badge, not counted in N, and left out of the export.
 - (b) Left out.
@@ -1083,6 +1132,10 @@ round didn't leave such files out).
 **Recommendation: (a).** Reasons:
 - a deleted file can't be published as a winner, so it shouldn't take a slot;
 - hiding it would puzzle organizers who remember it.
+
+**Decided (maintainer, 2026-11-25)**: files deleted on Commons are excluded from the candidates like
+conflict-of-interest files (decision 12): the next eligible file takes their place, they are not
+shown, and they are never in the export.
 
 **14. Can a national winner also be a regional winner?** (Not in the code; the contest's rules
 decide.)
