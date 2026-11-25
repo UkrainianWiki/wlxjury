@@ -217,13 +217,16 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
     "be an entry of its own, from and to, with who; none when the label is unchanged" in {
       testDbApp { app =>
         val f = fixture()
-        val codes = Seq(
-          save(app, f.admin, Some(f.q00), f.contest.getId, "trackLabel" -> "Main", "trackShown" -> "true"),
+        // one save after another: each awaited before the next is sent (sent at once, they ran
+        // concurrently, and their entries came in any order)
+        val codes = Seq[() => Future[Result]](
+          () => save(app, f.admin, Some(f.q00), f.contest.getId, "trackLabel" -> "Main", "trackShown" -> "true"),
           // the same label again: nothing
-          save(app, f.admin, Some(f.q00), f.contest.getId, "trackLabel" -> "main", "trackShown" -> "true"),
+          () => save(app, f.admin, Some(f.q00), f.contest.getId, "trackLabel" -> "main", "trackShown" -> "true"),
           // a name and a label: two entries
-          save(app, f.admin, Some(f.q00), f.contest.getId, "name" -> "Q-00 first", "trackLabel" -> "", "trackShown" -> "true")
-        ).map(status(_))
+          () => save(app, f.admin, Some(f.q00), f.contest.getId, "name" -> "Q-00 first", "trackLabel" -> "",
+            "trackShown" -> "true")
+        ).map(send => status(send()))
         val logged = entries(f, f.q00)
         (codes === Seq(SEE_OTHER, SEE_OTHER, SEE_OTHER)) and
           (logged.map(c => (c.kind, c.actorId, (c.detail \ "path").as[String])) === Seq(
