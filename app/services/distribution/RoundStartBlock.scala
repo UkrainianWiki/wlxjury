@@ -98,13 +98,14 @@ object RoundStartBlock {
     */
   def refusedKey(block: RoundStartBlock, hasJurors: => Boolean, reviewFirst: => Boolean): String = block match {
     case Cancelled | Incomplete if !hasJurors =>
-      if (reviewFirst) block.refusedKey + ".no.jurors" else "round.start.refused.setup.no.jurors"
+      if (reviewFirst) block.refusedKey + ".no.jurors" else block.refusedKey + ".no.jurors.new"
     case _ => block.refusedKey
   }
 
   /** Whether a creation's fill is held in review when it ends ("Review images first"), by its latest
     * distribution job, as [[services.RoundService.distributeNewFiles]] decides it
-    * ([[services.RoundService.creationIntent]] false).
+    * ([[services.RoundService.creationIntent]] false). A job from before P3 (no mode) distributed in one
+    * pass: not review first, as that path takes it too (it would need jurors).
     */
   def reviewFirst(latestJob: Option[Job]): Boolean =
     !services.RoundService.creationIntent(latestJob.filter(_.kind == RoundDistributionHandler.Kind))

@@ -71,10 +71,15 @@ class RoundController @Inject() (
               // open rounds nobody can vote in (no active juror): a warning icon (DG10)
               RoundUser.openWithoutActiveJuror(rounds),
               Some(lineage),
-              // "Find the matching files again" (#194): the jurors read only for a cancelled or unfinished
-              // setup meant for review
-              rounds.filter(r => RoundStartBlock.mayFindFilesAgain(r, jobs.get(r.getId), User.findRoundJurors(r.getId).nonEmpty))
-                .flatMap(_.id).toSet
+              // "Find the matching files again" (#194), from each round's latest distribution job (as the POST
+              // reads it; `jobs` has juror adds too); the jurors read only for a cancelled or unfinished setup
+              // meant for review
+              {
+                val distributions = JobJdbc.latestBySubjects(RoundDistributionHandler.Kind,
+                  RoundDistributionHandler.SubjectType, rounds.flatMap(_.id))
+                rounds.filter(r => RoundStartBlock.mayFindFilesAgain(r, distributions.get(r.getId),
+                  User.findRoundJurors(r.getId).nonEmpty)).flatMap(_.id).toSet
+              }
             )
           )
         }
@@ -817,12 +822,16 @@ class RoundController @Inject() (
         val messages = messagesApi.preferred(request)
         val back = Redirect(RoundsFilter.fromForm(request).addTo(routes.RoundController.rounds(Some(round.contestId)).url))
         def said(key: String, args: Any*) = messages(key, (Seq[Any](round.number, round.description) ++ args): _*)
-        if (!RoundStartBlock.mayFindFilesAgain(round)) back.flashing("error" -> said("round.find.again.refused"))
+        // a job of the round queued or running (a second press while its fill runs): said so, not refused
+        if (JobJdbc.activeByDedupeKey(RoundDistributionHandler.dedupeKey(round.getId)).isDefined)
+          back.flashing("error" -> said("round.find.again.running"))
+        else if (!RoundStartBlock.mayFindFilesAgain(round)) back.flashing("error" -> said("round.find.again.refused"))
         else
           try
             roundsService.distributeNewFiles(round.getId, user.id) match {
               case RoundService.Started(_) | RoundService.Resumed(_) => back.flashing("success" -> said("round.find.again.started"))
               case RoundService.AlreadyRunning(_)                    => back.flashing("error" -> said("round.find.again.running"))
+              // not reached: given up only a failed job, which isn't offered (its Retry is in its row)
               case givenUp: RoundService.GivenUp =>
                 back.flashing("error" -> messages("round.distribute.attempts", round.number, givenUp.reference))
             }

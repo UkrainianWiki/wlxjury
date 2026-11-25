@@ -134,7 +134,41 @@ class RoundFindFilesAgainSpec extends PlaySpecification with PlayTestDb {
         }.reduce(_ and _)
         refusals and
           (flash(start(app, withJuror)).get("error") must beSome(contain("tick “Distribute ? new files”"))) and
+          (flash(start(app, distributeAfter)).get("error") must beSome(contain("its setup was cancelled before it had jurors, " +
+            "and it was meant to be distributed right after"))) and
           (flash(start(app, distributeAfter)).get("error") must beSome(contain("Set up a new round instead")))
+      }
+    }
+
+    "say a job is running, not refuse, while one is queued or running for it (a second press)" in {
+      testDbApp { app =>
+        setUp()
+        val cancelled = settingUp(1, Round.Status.Cancelled, Some("cancelled"))
+        // its fill queued (by the first press), never run here
+        JobJdbc.insert(NewJob(RoundDistributionHandler.Kind, Some(contestId), Some(RoundDistributionHandler.SubjectType),
+          cancelled.id, Some(RoundDistributionHandler.dedupeKey(cancelled.getId)),
+          params = Json.obj("roundId" -> cancelled.getId, "mode" -> RoundDistributionHandler.Mode.Fill,
+            "distributeAfter" -> false, "completingCreation" -> true)), owner = None)
+        val jobsBefore = jobs(cancelled)
+        val result = findAgain(app, "admin@example.com", cancelled)
+        val code = status(result)
+        (code === SEE_OTHER) and (flash(result).get("error") must beSome(contain("already has a job running"))) and
+          (jobs(cancelled) === jobsBefore) and (files(cancelled) === 0) and (offered(roundsPage(app), cancelled) must beFalse)
+      }
+    }
+
+    "not be offered for a fill given up after its attempts: its job's Retry instead, the POST refused" in {
+      testDbApp { app =>
+        setUp()
+        val failed = settingUp(1, Round.Status.Draft, Some("failed"))
+        sql"""UPDATE job SET attempts = 5, error = ${services.jobs.JobError.attemptsExhausted(5, "ref123").encode}
+              WHERE subject_id = ${failed.getId}""".update()
+        val jobsBefore = jobs(failed)
+        val result = findAgain(app, "admin@example.com", failed)
+        val code = status(result)
+        (offered(roundsPage(app), failed) must beFalse) and (code === SEE_OTHER) and
+          (flash(result).get("error") must beSome(contain("can't be found again from here"))) and
+          (jobs(failed) === jobsBefore) and (files(failed) === 0)
       }
     }
 

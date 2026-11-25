@@ -206,8 +206,8 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
           // no jurors: the form's box is read only; meant to be distributed after its fill, nothing finishes
           // it (a new round instead); meant for review, "Find the matching files again" does (#194)
           (error(cancelledNoJurors) must beSome(
-            "Round 6 (Round 6) can't be started: its setup didn't finish, and it has no jurors to give its images " +
-              "to. Set up a new round instead.")) and
+            "Round 6 (Round 6) can't be started: its setup was cancelled before it had jurors, and it was meant to be " +
+              "distributed right after its files were found, which needs jurors. Set up a new round instead.")) and
           (error(unfinished) must beSome(contain("its setup didn't finish, and it has no jurors yet. " +
             "Use “Find the matching files again” in its row"))) and
           (error(unfinished) must beSome(not(contain("Retry")))) and
