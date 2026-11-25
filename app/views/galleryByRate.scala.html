@@ -113,12 +113,14 @@
                 <i class="bi bi-info-circle" aria-hidden="true"></i> @Messages("byrate.changed.hint")</p>
             }
 
+            @* not a Bootstrap .row: its child list, as wide as the row, with ul.gallery's margin
+               went 2 px past the window and scrolled the page sideways (#165) *@
             @if(starsRound.isEmpty) {
-            <div class="row" >
+            <div class="wlx-byrate-list">
             }
             @for(r <- starsRound) {
             @* a round of one criterion's stars rate it (data-stars-criterion, tile-votes.js) *@
-            <div class="row" @voteTexts() data-stars-number="@{r.rates.id / r.starUnits}"
+            <div class="wlx-byrate-list" @voteTexts() data-stars-number="@{r.rates.id / r.starUnits}"
                 data-stars-half="@{r.starUnits == 2}" data-stars-worst="@{r.takesWorstMark && !r.hasCriteria}"@if(r.singleCriterion) { data-stars-criterion="@r.criterionIds.head"} data-changed-title="@Messages("byrate.changed.title")"@if(list.showsVoteTimes) { data-vote-times="true"}>
             }
 

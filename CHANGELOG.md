@@ -12,7 +12,9 @@ Deploy dates come from production's migration history, as described at the end.
 
 ## Unreleased (on master, not yet deployed)
 
-Nothing merged to master after the 26.11.15 build yet.
+**Fixes**
+
+- By-rate pages no longer scroll sideways (#165).
 
 ## Deployed releases
 
