@@ -181,6 +181,24 @@ class CategoryFormSpec extends PlaySpecification {
         Seq("error.category.operation")
     }
 
+    "show an invalid choice's or an older client's operation's error with More open" in {
+      Seq("categoryCombine" -> "xor", "categoryClause" -> "999").map { field =>
+        val form = bind(field, "source" -> "A")
+        val html = categoryHtml(form)
+        val more = """(?s)<details\b[^>]*id="category-more".*?</details>""".r.findFirstIn(html).getOrElse("")
+        (form.errors(field._1).map(_.message) === Seq("error.category.operation")) and
+          (moreOpen(html) must beTrue) and (more must contain("error.category.operation"))
+      }.reduce(_ and _)
+    }
+
+    "let an older client's operation win over a choice posted with it" in {
+      val include = bind("categoryClause" -> "include", "categoryCombine" -> "or", "source" -> "A", "excludeCategory" -> "B")
+      val minus = bind("categoryClause" -> "minus", "categoryCombine" -> "and", "source" -> "A", "excludeCategory" -> "B")
+      (include.hasErrors must beFalse) and
+        (stored(include.value.get.round) === (Some("Category:A"), None, Some("include"))) and
+        (stored(minus.value.get.round) === (Some("Category:A"), Some("Category:B"), Some("minus")))
+    }
+
     "show a refused form's boxes and choice as posted, Media filtering and More open" in {
       val form = EditRound.editRoundForm.bind((base - "rates") ++ Map(
         "categoryCombine" -> "or", "source" -> "Category:A"))

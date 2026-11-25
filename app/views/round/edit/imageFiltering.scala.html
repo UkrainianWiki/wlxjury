@@ -141,7 +141,9 @@
        in either), its label following it (category-filter.js; without the script the server reads
        the choice all the same). A round's stored rule is shown in them (EditRound.categoryBoxes):
        an exclusion's category in the second box. On a round that can't be edited the boxes are
-       readonly and the choice disabled, a hidden input submitting it, as a readonly select's *@
+       readonly and the choice disabled, a hidden input submitting it, as a readonly select's.
+       More is open for a choice other than the default, and for an error of the choice or of an
+       older client's operation, shown in it *@
     @defining(categoryView) { view =>
     <div id="category-first">
     @bs.text(
@@ -164,7 +166,7 @@
 
     <div class="row mb-3" id="category-more_field">
         <div class="@offsetCol">
-            <details id="category-more"@if(view.combine != CategoryCombine.Default) { open}>
+            <details id="category-more"@if(view.combine != CategoryCombine.Default || view.choiceErrors.nonEmpty) { open}>
                 <summary>@Messages("category.more")</summary>
                 <fieldset class="mt-2" id="category-combine">
                     <legend class="form-label fs-6 mb-1">@Messages("category.combine")</legend>
@@ -175,7 +177,7 @@
                     </div>
                     }
                     @if(noEdit) {<input type="hidden" name="categoryCombine" value="@view.combine.value">}
-                    @for(error <- view.form("categoryCombine").errors ++ view.form("categoryClause").errors) {
+                    @for(error <- view.choiceErrors) {
                     <div class="text-danger small">@Messages(error.message, error.args: _*)</div>
                     }
                 </fieldset>

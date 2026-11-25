@@ -4,7 +4,7 @@ import db.scalikejdbc.{ContestJuryJdbc, CriterionJdbc, MediaType, Round, RoundCr
 import org.scalawiki.wlx.dto.SpecialNomination
 import org.intracer.wmua.{AverageRule, BinaryOrder, CategoryBoxes, CategoryCombine, CategoryOperation, CategoryRule, Criterion,
   RejectedMode}
-import play.api.data.{Form, Mapping}
+import play.api.data.{Form, FormError, Mapping}
 import play.api.data.Forms._
 import play.api.data.validation._
 import services.distribution.RoundDistributionHandler
@@ -223,6 +223,9 @@ object EditRound {
 
     /** A category in either box: the Media filtering section opens by itself. */
     def hasCategory: Boolean = Seq("source", "excludeCategory").exists(form(_).value.exists(_.trim.nonEmpty))
+
+    /** The errors of the choice, or of an older client's operation: shown under the choice, which is open then. */
+    def choiceErrors: Seq[FormError] = form("categoryCombine").errors ++ form("categoryClause").errors
   }
 
   /** The boxes of a form: a round's rule (the form filled from it carries its operation) or an older

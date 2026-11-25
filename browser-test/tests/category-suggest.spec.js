@@ -185,7 +185,12 @@ test('the round form sent from its focused category field sends the text typed',
     await expect(page.locator('#source')).toHaveValue('Category:Lakes of Ukraine');
     await control.focus(); // the category becomes the text typed, wholly selected
     await expect(control).toHaveValue('Category:Lakes of Ukraine');
+    // the suggestions asked for the text typed (after the pause in typing) and answered before the
+    // form is sent: a request the submit cut off would be a page error (WebKit)
+    const answered = page.waitForResponse((r) => r.url().startsWith('https://commons.wikimedia.org/w/api.php') &&
+      new URL(r.url()).searchParams.get('pssearch') === 'Rivers of Ukraine');
     await page.keyboard.type('Category:Rivers of Ukraine');
+    await answered;
     // sent from the field itself, still focused (no blur makes the text an item first)
     await control.evaluate((el) => el.form.requestSubmit(document.getElementById('round-form-jurors-next')));
     await expect.poll(() => sent.length).toBe(1);
