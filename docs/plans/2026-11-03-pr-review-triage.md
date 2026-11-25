@@ -27,7 +27,7 @@ of `stack/71-investigations`, `6c00ed6e`); from R202-1 on, the followups tip `b8
 mirror of `stack/77-dependency-updates`, `17e145b3`); from R207-1 on, the top of the stack,
 `stack/90-triage-fixes` (`f339aa13`, #273); from R220-1 on, `stack/101-multi-role-plan`
 (`0f441881`, #284; the followups mirror `6b33abff` has the same tree); from R225-2 on,
-`stack/107-close-2611` (`f816c8e2`, #290; the followups mirror `d3e1fd17` has the same tree).
+`stack/107-close-2611` (`f816c8e2`, #290; the followups mirror `d3e1fd17` has the same tree); from R267-1 on, `stack/193-add-people-from-contest` (`2679e682`, #376).
 R193-4 is the first Medium.
 
 ### R198-1: A job that crashes the JVM is retried forever
@@ -1512,6 +1512,45 @@ whether the cache's counts and registry tell the truth. File:line at the newest 
 - **Placement:** the next triage-fixes PR (small, documents and the bench entrypoint), or with the
   infra plan's server move.
 
+### R267-1: "Selected by at least N" shrinks a rated source's Assigned denominator
+
+- **PR:** #267 (84, tip `83dcc488`). At the top of the stack (`2679e682`, #376):
+  `app/services/distribution/RoundDistributionHandler.scala:330`
+  (`rated = prev.isDefined && round.selectedByFilter.isDefined`, whatever the source's type) and
+  `:1325-1348` (`votesCond` adds the rated-vote condition to every candidate query, so
+  `roundAggregates`' `COUNT(*) c` counts only rated rows); `:356-359` (Assigned uses
+  `Denominator.PerImage`, `t.c` in `ratedPage`, `:1548`).
+- **Severity:** Low (needs the Assigned rule, "selected by at least N" on a rated previous round,
+  and top-N or a minimum average; the round form shows the selected-by control only for a yes/no
+  previous round, `public/javascripts/round-form.js:53-61`, but the hidden select still posts and
+  `EditRound` accepts it without a source check, `EditRound.scala:236`, `:295`).
+- **Failure scenario:** a rated previous round with the Assigned rule and selected-by 1; file A
+  rated 10, 0, 0 and file B 6, 6, 6. The unrated rows of A are dropped, so A scores 10/1 and ranks
+  above B (6), although its Assigned score is 3.3. Top-N and the minimum average pick the wrong
+  files.
+- **Suggested fix (pending maintainer decision, a or b):** either (a) selected-by applies only with a yes/no source
+  (`rated = prevRounds.exists(_.isBinary) && round.selectedByFilter.isDefined`) and the form
+  refuses selected-by without one, as it does for rejected-by; or (b) for grades, keep every row
+  and move the rated test into the aggregate (`HAVING SUM(voted) >= N` per file and round) so that
+  `c` stays the assigned count. A distribution-source spec with the A/B example.
+- **Placement:** distribution follow-ups, next to
+  [R196-1](#r196-1-several-previous-rounds-merge-their-ratings-unevenly).
+
+### R269-1: The users page checks share-link login names one by one
+
+- **PR:** #269 (86, tip `af57eb13`), a review-level nitpick. At the top of the stack (`2679e682`,
+  #376): `app/services/ShareLinkService.scala:141-157` (`mayCreateFor` runs `needRefusal` per
+  candidate; `:115` `loginName`, one `User.byUserName` query per email or wiki name).
+- **Severity:** Nit (performance; limited to the candidates: accounts without a verified email and
+  a usable password, and live invitees).
+- **Failure scenario:** a users page with a few hundred unverified members or invitees makes a few
+  hundred extra queries before it renders.
+- **Suggested fix:** one query for all the candidates' emails and wiki names, counted per name
+  (exactly one live account), with `byUserName`'s normalisation; an existing users-page spec plus
+  a case with two accounts sharing a wiki name.
+- **Placement:** performance follow-ups (users page), with the invitee batching that the fix PR (number pending) does
+  for `UserController.scala:54-55`.
+
 New entries use the format `### R<PR>-<n>: <short title>`, then PR and file:line
 at its tip, severity, whether it is still at the final tip, the failure
 scenario, the suggested fix and the placement (append after an existing plan,
@@ -1816,3 +1855,22 @@ applied on production).
 |---|---|
 | #225 | runbook's schema-66 deploy command: fixed later (#245, historical; deletion in R228-1) |
 | #227 | `ErrorTextSpec` proximity rule: new entry (R227-2); `SourceScan` `//` in strings: accepted, documented (R227-2) |
+
+### CodeRabbit, PRs 234 and 254-273
+
+CodeRabbit's 75 inline comments and 13 review-level remarks on #234, #254-#259, #261 and
+#263-#273 (1, 8, 2, 3, 8, 1, 3, 2, 1, 1, 5, 4, 5, 6, 1, 5, 7, 8 and 4 inline; the remarks: a
+nitpick on #258, an additional comment on #265, a nitpick on #266, 3 outside the diff on #267, 1 on
+#268, 2 outside the diff and 2 nitpicks on #269, 1 outside the diff and a nitpick on #272),
+classified against the top of the stack, `stack/193-add-people-from-contest` (`2679e682`, #376);
+one reply per thread, and the review-level remarks in one comment per PR (#258, #265-#269, #272).
+#260 and #262 were not in this batch. Fixed later: 11 inline comments and 2 remarks (one of them
+partly). Fixed in the fix PR (number pending): 52 inline comments and 10 remarks. Not applicable: 11 inline comments
+(most on the 26.11 deploy's records in the roadmap, done on 2026-11-11) and 1 remark. New entries:
+[R267-1](#r267-1-selected-by-at-least-n-shrinks-a-rated-sources-assigned-denominator) (Low),
+[R269-1](#r269-1-the-users-page-checks-share-link-login-names-one-by-one) (Nit); none Medium or
+above. The one Medium, `run-with-prod-dump.sh`'s unencrypted "TLS" alternative (#273), is fixed in
+the fix PR (number pending). Seven of the fixes correct the 2026-11-04 investigations (records, not planned), which
+stay records.
+
+The per-comment classification table was not recovered.
