@@ -44,11 +44,12 @@ class RoundFindFilesAgainSpec extends PlaySpecification with PlayTestDb {
   /** A round being set up, `status` (draft or cancelled), with its latest fill job ended `jobStatus`
     * (None: no job), meant to be reviewed first unless `distributeAfter`.
     */
-  private def settingUp(number: Int, status: String, jobStatus: Option[String], distributeAfter: Boolean = false): Round = {
-    val round = roundDao.create(Round(None, number, Some(s"R$number"), contestId, distribution = 0, active = false,
+  private def settingUp(number: Int, status: String, jobStatus: Option[String], distributeAfter: Boolean = false,
+      contest: Long = contestId): Round = {
+    val round = roundDao.create(Round(None, number, Some(s"R$number"), contest, distribution = 0, active = false,
       distributing = true, status = Some(status)))
     for (st <- jobStatus) {
-      val id = JobJdbc.insert(NewJob(RoundDistributionHandler.Kind, Some(contestId), Some(RoundDistributionHandler.SubjectType),
+      val id = JobJdbc.insert(NewJob(RoundDistributionHandler.Kind, Some(contest), Some(RoundDistributionHandler.SubjectType),
         round.id, Some(RoundDistributionHandler.dedupeKey(round.getId)),
         params = Json.obj("roundId" -> round.getId, "mode" -> RoundDistributionHandler.Mode.Fill,
           "distributeAfter" -> distributeAfter, "completingCreation" -> true)), owner = None)
@@ -181,6 +182,63 @@ class RoundFindFilesAgainSpec extends PlaySpecification with PlayTestDb {
           status(findAgain(app, e, cancelled)) aka e must_== FORBIDDEN
         }.reduce(_ and _) and (jobs(cancelled) === jobsBefore) and (files(cancelled) === 0) and
           (Round.findById(cancelled.getId).map(_.lifecycle) must beSome(Round.Status.Cancelled))
+      }
+    }
+  }
+
+  "series admins" should {
+
+    "find the files again in their series' contests from their start year on; refused below it and in another series" in {
+      testDbApp { app =>
+        val thisYear = java.time.Year.now().getValue
+        val root = User.create(User("Root", "root@example.com", None, Set(User.ROOT_ROLE), isRoot = true))
+        // series S (2019, last year, this year) and T (this year), each contest with 3 files in its category
+        def series(name: String, years: Int*): (Long, Seq[Long]) = {
+          val id = services.series.ContestSeries.createSeriesTx(name, Some("wlm"), Some(name), None, root.getId).toOption.get
+          id -> years.map { y =>
+            val c = ContestJuryJdbc.create(None, "Wiki Loves Monuments", y, name)
+            services.series.ContestSeries.setSeries(c.getId, Some(id), root.getId, None)
+            val category = TestDb.setSource(c.getId, Some(s"Images from ${c.name}"))
+            val imgs = (1L to 3L).map(i => Image(c.getId * 100 + i, s"File:C${c.getId}-$i.jpg", None, None, 640, 480, Some(s"12-345-$i")))
+            imageDao.batchInsert(imgs)
+            CategoryLinkJdbc.addToCategory(category, imgs)
+            c.getId
+          }
+        }
+        val (s, Seq(sOld, _, sNow)) = series("Nepal", 2019, thisYear - 1, thisYear)
+        val (t, Seq(tNow)) = series("Bhutan", thisYear)
+        // series admins of S (from last year, the default) and of T, with no real row
+        val sa = member("series-s@example.com", "organizer", contest = sNow)
+        val saT = member("series-t@example.com", "organizer", contest = tNow)
+        services.series.SeriesAdmins.grant(root, s, sa.getId, None, None) must beRight
+        services.series.SeriesAdmins.grant(root, t, saT.getId, None, None) must beRight
+        UserContestJdbc.delete(sa.getId, sNow)
+        UserContestJdbc.delete(saT.getId, tNow)
+        val now = settingUp(1, Round.Status.Cancelled, Some("cancelled"), contest = sNow)
+        val old = settingUp(1, Round.Status.Cancelled, Some("cancelled"), contest = sOld)
+        def as(user: User, method: String, path: String, contest: Long) =
+          route(app, FakeRequest(method, path).withSession(Secured.UserName -> user.email,
+            Secured.CurrentContestId -> contest.toString).withCSRFToken).get
+        def page(user: User, contest: Long) = as(user, GET, s"/admin/rounds?contestId=$contest", contest)
+        def post(user: User, r: Round) = as(user, POST, s"/admin/rounds/${r.getId}/find-files-again", r.contestId)
+
+        // another series' admin, and S's admin below their start year: no page, the POST refused, nothing queued
+        val refused = Seq((saT, now), (sa, old)).map { case (user, r) =>
+          val jobsBefore = jobs(r)
+          val shown = page(user, r.contestId)
+          val result = post(user, r)
+          (status(shown) aka s"${user.email} rounds of ${r.contestId}" must_== FORBIDDEN) and
+            (status(result) aka s"${user.email} POST ${r.getId}" must_== FORBIDDEN) and
+            (jobs(r) aka s"${user.email} jobs" must_== jobsBefore) and (files(r) === 0)
+        }.reduce(_ and _)
+        // S's admin in S's current contest: offered, and the POST fills it and holds it in review
+        val shown = page(sa, sNow)
+        val wasOffered = offered(contentAsString(shown), now)
+        val result = post(sa, now)
+        val code = status(result)
+        refused and (status(shown) === OK) and (wasOffered must beTrue) and (code === SEE_OTHER) and
+          (flash(result).get("success") must beSome(contain("finding its matching files again"))) and
+          (Round.findById(now.getId).exists(_.inReview) must beTrue) and (files(now) === 3)
       }
     }
   }
