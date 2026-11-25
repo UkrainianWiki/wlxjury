@@ -429,7 +429,12 @@ class RoundDistributionHandler @Inject() (
     val roundId = roundIdOf(job)
     // locked by end, which runs first
     val distributing = sql"SELECT distributing FROM round WHERE id = $roundId".map(_.boolean(1)).single().getOrElse(false)
-    if (distributing && cancelsCreation(job)) Round.setStatus(roundId, Round.Status.Cancelled, ctx.by)
+    // cancelled by a person (the job page's Cancel): in the round's settings log (RoundChanges), with
+    // the status from and to; a cancel without one (shutdown, a script) writes none
+    if (distributing && cancelsCreation(job))
+      RoundChanges.logged(roundId, ctx.by, ContestChangeJdbc.RoundChanged, RoundChanges.Path.Cancel) {
+        Round.setStatus(roundId, Round.Status.Cancelled, ctx.by)
+      }
     ended
   }
 

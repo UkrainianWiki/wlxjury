@@ -4,15 +4,18 @@ import play.api.libs.json._
 import scalikejdbc._
 
 /** A round's settings saved (the maintainer's decision of 2026-11-25): a `contest_change` entry
-  * ([[ContestChangeJdbc.RoundSettingKinds]], V115) with who (an account id, never an email) and, of
+  * ([[ContestChangeJdbc.RoundSettingKinds]], V114) with who (an account id, never an email) and, of
   * the settings ([[Fields]]) that changed, the old and new values as persisted: read before and
   * after the save in its transaction, under the round's lock, not taken from the form. A save that
   * changes nothing writes none; a save without an account (a job, a script) neither. Shown on the
   * round's statistics page and in the contest's change log.
   *
   * detail: `{"round": id, "number": n, "path": [[Path]], "changed": {field: {"from": old, "to": new}}}`;
-  * a creation's `from` is null, and lists only the settings not left at their defaults. Values stay
-  * short: ids, names, category titles, cut at [[MaxValueLength]] characters; never lists of files.
+  * a creation's `from` is null, and lists only the settings not left at their defaults. Values are
+  * compared whole and stored short: ids, names, category titles, a text cut at [[MaxValueLength]]
+  * code points; never lists of files. A cut text has its whole length and a short hash of it beside
+  * it (`fromLength`, `fromHash`, `toLength`, `toHash`), so two values that differ only past the cut
+  * still read as different.
   */
 object RoundChanges {
 
@@ -30,8 +33,12 @@ object RoundChanges {
     val Stop = "stop"
     /** The round's jurors form, before its distribute: the jurors per file. */
     val Jurors = "jurors"
+    /** "Distribute new files" on a cancelled creation: reinstated (`draft`). */
+    val Reinstate = "reinstate"
+    /** The job page's Cancel of a creation's job: the creation `cancelled`. */
+    val Cancel = "cancel"
 
-    val All: Seq[String] = Seq(Create, Edit, Reapply, Start, Stop, Jurors)
+    val All: Seq[String] = Seq(Create, Edit, Reapply, Start, Stop, Jurors, Reinstate, Cancel)
   }
 
   /** The settings compared, in the order shown. */
@@ -44,25 +51,32 @@ object RoundChanges {
   /** Left out of a creation's entry: every new round starts in the same state. */
   private val Lifecycle = Set("active", "status")
 
-  /** A text value's longest stored length; longer ones are cut, ending in "…". */
+  /** A text value's longest stored length, in code points; longer ones are cut, ending in "…". */
   val MaxValueLength = 200
 
   /** The settings' values, by [[Fields]]' names. */
   type Snapshot = Map[String, JsValue]
 
-  private def short(text: String): String =
-    if (text.length <= MaxValueLength) text else text.take(MaxValueLength - 1) + "…"
+  /** `text` cut to `max` code points (never inside a surrogate pair), ending in "…", if longer. */
+  def cut(text: String, max: Int): String =
+    if (text.codePointCount(0, text.length) <= max) text
+    else text.substring(0, text.offsetByCodePoints(0, max - 1)) + "…"
 
-  /** The round's settings as compared: None and blank texts, and empty lists, are null. */
+  /** The first 8 hex digits of the text's SHA-256: tells two cut values apart. */
+  def hash(text: String): String =
+    java.security.MessageDigest.getInstance("SHA-256").digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+      .take(4).map(b => f"${b & 0xff}%02x").mkString
+
+  /** The round's settings as compared, whole: None and blank texts, and empty lists, are null. */
   def values(r: Round, criteria: Seq[String]): Snapshot = {
-    def text(v: Option[String]): JsValue = v.map(_.trim).filter(_.nonEmpty).fold[JsValue](JsNull)(t => JsString(short(t)))
+    def text(v: Option[String]): JsValue = v.map(_.trim).filter(_.nonEmpty).fold[JsValue](JsNull)(JsString(_))
     def number(v: Option[Int]): JsValue = v.fold[JsValue](JsNull)(JsNumber(_))
     def ids(v: Seq[Long]): JsValue = if (v.isEmpty) JsNull else JsArray(v.map(JsNumber(_)).toIndexedSeq)
     Map(
       "name" -> text(r.name),
       "rates" -> JsString(r.rates.name),
       "halfStar" -> JsBoolean(r.halfStar),
-      "criteria" -> (if (criteria.isEmpty) JsNull else JsArray(criteria.map(c => JsString(short(c))).toIndexedSeq)),
+      "criteria" -> (if (criteria.isEmpty) JsNull else JsArray(criteria.map(JsString(_)).toIndexedSeq)),
       "averageRule" -> JsString(r.averageRule.param),
       "worstMark" -> JsBoolean(r.worstMark),
       "previous" -> ids(r.previousIds),
@@ -113,10 +127,23 @@ object RoundChanges {
         }
     }
 
-  /** The entry's detail. */
+  /** A value as stored: a text cut ([[cut]]), with its whole length and hash under `side`Length and
+    * `side`Hash if it was; a list's texts cut, each.
+    */
+  private def stored(side: String, v: JsValue): JsObject = v match {
+    case JsString(t) if cut(t, MaxValueLength) != t =>
+      Json.obj(side -> cut(t, MaxValueLength), s"${side}Length" -> t.codePointCount(0, t.length), s"${side}Hash" -> hash(t))
+    case JsArray(items) => Json.obj(side -> JsArray(items.map {
+      case JsString(t) => JsString(cut(t, MaxValueLength))
+      case other       => other
+    }))
+    case other => Json.obj(side -> other)
+  }
+
+  /** The entry's detail: the values compared whole, stored short ([[stored]]). */
   def detail(round: Round, path: String, changes: Seq[(String, JsValue, JsValue)]): JsObject =
     Json.obj("round" -> round.getId, "number" -> round.number, "path" -> path,
-      "changed" -> JsObject(changes.map { case (f, from, to) => f -> Json.obj("from" -> from, "to" -> to) }))
+      "changed" -> JsObject(changes.map { case (f, from, to) => f -> (stored("from", from) ++ stored("to", to)) }))
 
   /** Writes the entry, if anything changed and an account did it: its id. */
   def record(kind: String, before: Option[Snapshot], round: Round, after: Snapshot, actorId: Option[Long], path: String)(

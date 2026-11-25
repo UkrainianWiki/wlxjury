@@ -16,7 +16,7 @@ For the next release, 26.11.17.
 
 **Features**
 
-- Saving a round's settings logs who changed what, with the old and new values, on the round's statistics and in the contest's change log (migration V115).
+- Saving a round's settings logs who changed what, with the old and new values, on the round's statistics and in the contest's change log (migration V114).
 
 ## Deployed releases
 

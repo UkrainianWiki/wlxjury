@@ -9,7 +9,7 @@ import scalikejdbc._
 
 import scala.util.Try
 
-/** The round's settings log (RoundChanges, V115) on each write path besides the round form's edit
+/** The round's settings log (RoundChanges, V114) on each write path besides the round form's edit
   * (controllers.RoundChangesSpec): a new round, "Re-apply filters", the jurors form's jurors per
   * file, a start or stop by an account that doesn't judge the round. Each writes its entry in the
   * transaction of its save, with the old and new values of only what changed, none when nothing
@@ -113,6 +113,38 @@ class RoundChangesServiceSpec extends Specification with TestDb with BeforeAll w
         (started must beAnInstanceOf[RoundService.ReviewDistribution.Started]) and
         (logged.map(e => (e.kind, path(e))) === Seq((ContestChangeJdbc.RoundChanged, "jurors"))) and
         (changed(logged.head) === Map("distribution" -> (JsNumber(0), JsNumber(2))))
+    }
+  }
+
+  "a long text value" should {
+
+    "be compared whole: a change past the stored length is logged, its lengths and hashes telling the two apart" in {
+      val (contest, _, admin) = setUp()
+      val r = roundDao.create(Round(None, 1, Some("R"), contest.getId))
+      val long = (1 to 80).map(i => s"14-101-$i").mkString(",") // over 200 code points
+      def setMonuments(value: String, by: Option[Long]): Unit = DB.localTx { implicit s =>
+        Round.lock(Seq(r.getId))
+        RoundChanges.logged(r.getId, by, ContestChangeJdbc.RoundChanged, RoundChanges.Path.Edit) {
+          sql"UPDATE round SET monuments = $value WHERE id = ${r.getId}".update(): Unit
+        }
+      }
+      setMonuments(long, None)
+      setMonuments(long.dropRight(1) + "9", Some(admin.getId))
+      val logged = entries(r)
+      val monuments = logged.headOption.map(e => (e.detail \ "changed" \ "monuments").as[JsObject])
+      def text(key: String) = monuments.flatMap(m => (m \ key).asOpt[String])
+      (long.length must beGreaterThan(RoundChanges.MaxValueLength)) and (logged.size === 1) and
+        (text("from") === text("to")) and (text("from").map(t => t.codePointCount(0, t.length)) ===
+          Some(RoundChanges.MaxValueLength)) and
+        (monuments.flatMap(m => (m \ "fromLength").asOpt[Int]) === Some(long.length)) and
+        (text("fromHash") must not(beEqualTo(text("toHash")))) and (text("fromHash").map(_.length) === Some(8))
+    }
+
+    "be cut at a code point, never inside an emoji" in {
+      val emoji = new String(Character.toChars(0x1F600))
+      val text = "a" * 198 + emoji * 3
+      (RoundChanges.cut(text, RoundChanges.MaxValueLength) === "a" * 198 + emoji + "…") and
+        (RoundChanges.cut("short", RoundChanges.MaxValueLength) === "short")
     }
   }
 

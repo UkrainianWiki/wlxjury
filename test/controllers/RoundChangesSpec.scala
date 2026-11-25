@@ -12,7 +12,7 @@ import play.api.test.{FakeRequest, PlaySpecification}
 import scala.concurrent.Future
 import scala.jdk.CollectionConverters._
 
-/** The round form's saves in the round's settings log (RoundChanges, V115): an edit writes one
+/** The round form's saves in the round's settings log (RoundChanges, V114): an edit writes one
   * `round_changed` entry with who and, of the settings it changed, the old and new values as
   * persisted, and none when it changes nothing; a refused edit saves nothing and logs nothing; a new
   * round writes `round_created` with its settings. The round's statistics show the entries to those
@@ -158,6 +158,42 @@ class RoundChangesSpec extends PlaySpecification with PlayTestDb {
           (lines("organizer@example.com").size === 1) and
           // an admin who judges the open round: their own votes' view, without the entries
           (lines("adminj@example.com").size === 0)
+      }
+    }
+
+    "keep a juror's entry on its statistics however many settings entries follow it (a limit each)" in {
+      testDbApp { app =>
+        val round = setUp()
+        val admin = User.findByEmail("admin@example.com").head
+        scalikejdbc.DB.localTx { implicit s =>
+          ContestChangeJdbc.create(Some(contestId), None, admin.getId, ContestChangeJdbc.RoundJurorStopped,
+            detail = play.api.libs.json.Json.obj("round" -> round.getId, "number" -> 1))
+          (1 to 25).foreach(i => ContestChangeJdbc.create(Some(contestId), None, admin.getId, ContestChangeJdbc.RoundChanged,
+            detail = play.api.libs.json.Json.obj("round" -> round.getId, "number" -> 1, "path" -> "edit",
+              "changed" -> play.api.libs.json.Json.obj("name" -> play.api.libs.json.Json.obj("from" -> s"N$i", "to" -> s"N${i + 1}")))))
+        }
+        val doc = Jsoup.parse(contentAsString(page(app, "admin@example.com", s"/roundstat/${round.getId}")))
+        (doc.select("#round-juror-changes li.round-juror-change").size === 1) and
+          (doc.select("#round-setting-changes li.round-setting-change").size === RoundController.JurorChangesShown)
+      }
+    }
+
+    "show its codes in the viewer's language (uk): status, rating, score rule" in {
+      testDbApp { app =>
+        val uk = app.injector.instanceOf[play.api.i18n.MessagesApi].preferred(Seq(play.api.i18n.Lang("uk")))
+        val entry = ContestChange(1, Some(contestId), None, 1, ContestChangeJdbc.RoundChanged, None,
+          play.api.libs.json.Json.obj("round" -> 1, "number" -> 1, "path" -> "edit", "changed" -> play.api.libs.json.Json.obj(
+            "status" -> play.api.libs.json.Json.obj("from" -> "active", "to" -> "paused"),
+            "rates" -> play.api.libs.json.Json.obj("from" -> "Yes/No", "to" -> "1-5 rating"),
+            "averageRule" -> play.api.libs.json.Json.obj("from" -> "rated", "to" -> "sum"),
+            "mediaType" -> play.api.libs.json.Json.obj("from" -> "unknown-code", "to" -> "video"))),
+          None, java.time.Instant.now)
+        val items = views.RoundChangeText.items(entry)(uk).map(i => s"${i.label}: ${i.fromFull.get} → ${i.toFull}")
+        items === Seq(
+          "Тип оцінювання: Так/Ні → Оцінка: 1-5",
+          s"Оцінка файла: ${uk("round.average.rule.rated")} → ${uk("round.average.rule.sum")}",
+          s"Тип файлів: unknown-code → ${uk("video")}",
+          "Стан: Активний → Неактивний")
       }
     }
 

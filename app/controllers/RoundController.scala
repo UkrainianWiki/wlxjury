@@ -758,11 +758,13 @@ class RoundController @Inject() (
               val noActiveJuror = RoundUser.openWithoutActiveJuror(Seq(round)).nonEmpty
               // the round stopped, started again or closed by a juror of it (RoundJurorChanges), and
               // its settings saved (RoundChanges), with who: for those who see the organiser view,
-              // not a juror of the open round
+              // not a juror of the open round. Two lists, each with its own limit: many settings
+              // entries never push a juror's out
               val roundChanges =
                 if (!services.GalleryService.othersVotesVisible(user, round)) Nil
                 else {
-                  val changes = ContestChangeJdbc.findByRound(round.contestId, round.getId, RoundController.JurorChangesShown)
+                  val changes = Seq(ContestChangeJdbc.RoundJurorKinds, ContestChangeJdbc.RoundSettingKinds).flatMap(kinds =>
+                    ContestChangeJdbc.findByRound(round.contestId, round.getId, RoundController.JurorChangesShown, kinds))
                   val names = User.findByIds(changes.map(_.actorId).distinct).map(u => u.getId -> u.fullname).toMap
                   changes.map(c => c -> names.getOrElse(c.actorId, s"#${c.actorId}"))
                 }
@@ -846,7 +848,9 @@ class RoundController @Inject() (
 
 object RoundController {
 
-  /** The statistics page's latest entries of the round stopped, started again or closed by a juror of it. */
+  /** The statistics page's latest entries of each list: the round stopped, started again or closed
+    * by a juror of it; its settings saved.
+    */
   val JurorChangesShown = 20
 
   /** A rated round's stored criteria if it is started ([[RoundCriterion.started]]: running or

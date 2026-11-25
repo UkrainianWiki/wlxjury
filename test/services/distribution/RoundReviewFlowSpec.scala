@@ -281,6 +281,33 @@ class RoundReviewFlowSpec extends Specification with TestDb with BeforeAll with 
         (RoundImageJdbc.byRound(r).map(_.addedHow).distinct === Seq("fill"))
     }
 
+    "log the cancel by its job page and the reinstating, each with the status from and to, by who did it" in {
+      val (contest, jurors) = setUp(6)
+      val (h, scheduler, service) = failing(chunkRows = 4)
+      h.arm(2) // its fill fails part-way
+      val r = service.submit(newRound(contest, "R"), jurors.map(_.getId), None, review = true).round.getId
+      scheduler.cancel(job(r).id, Some(5L))
+      h.failAt = None
+      service.distributeNewFiles(r, Some(6L))
+      val logged = ContestChangeJdbc.findByRound(contest.getId, r, 10, ContestChangeJdbc.RoundSettingKinds).reverse
+      def changed(c: ContestChange) = (c.detail \ "changed").as[play.api.libs.json.JsObject].fields.map { case (f, v) =>
+        f -> ((v \ "from").as[String], (v \ "to").as[String]) }.toMap
+      (logged.map(e => (e.kind, e.actorId, (e.detail \ "path").as[String])) === Seq(
+        (ContestChangeJdbc.RoundChanged, 5L, "cancel"), (ContestChangeJdbc.RoundChanged, 6L, "reinstate"))) and
+        (changed(logged.head) === Map("status" -> (Round.Status.Draft, Round.Status.Cancelled))) and
+        (changed(logged(1)) === Map("status" -> (Round.Status.Cancelled, Round.Status.Draft)))
+    }
+
+    "log no cancel without a person (a cancel by the scheduler alone)" in {
+      val (contest, jurors) = setUp(6)
+      val (h, scheduler, service) = failing(chunkRows = 4)
+      h.arm(2)
+      val r = service.submit(newRound(contest, "R"), jurors.map(_.getId), None, review = true).round.getId
+      scheduler.cancel(job(r).id)
+      (round(r).status === Some(Round.Status.Cancelled)) and
+        (ContestChangeJdbc.findByRound(contest.getId, r, 10, ContestChangeJdbc.RoundSettingKinds) must beEmpty)
+    }
+
     "distribute after its fill a creation that asked for it (D4)" in {
       val (contest, jurors) = setUp(6)
       val (h, scheduler, service) = failing(chunkRows = 4)
