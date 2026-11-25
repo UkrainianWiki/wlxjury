@@ -1547,6 +1547,8 @@ give, from 0, since a ✗ (rate -1) counts as 0, and under `assigned` so does an
    `lo = hi = 3` with `s3 = s4`, or places 2–12 tied. The cut moves to the tie's two boundaries,
    `k−` (the last place before the tie, possibly below `lo`) and `k+` (the tie's end, possibly
    above `hi`). They are offered as the tie choice (below) with the default of question 3. Stop.
+   When `k−` is 0 (places 1 to `hi` all tied), the default is "include all" (the whole tie), since
+   "leave out" would give N = 0.
 5. **G2–G3, the gap:** `gk = sk − s(k+1)` at each cut position; every one is above 0, since ties
    are not cut positions. A break is clear when the largest `gk` is at least 5% of the range, and
    also, with 3 or more cut positions, at least twice their median gap. With 1 or 2 cut positions
