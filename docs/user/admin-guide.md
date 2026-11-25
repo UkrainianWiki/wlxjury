@@ -830,15 +830,15 @@ Press **Add round**. The page **Create round** has these parts, from the top:
 - **Worst mark**: see [The worst mark](#a-worst-mark).
 - **Criteria**: see [Kinds of rounds](#a-round-kinds).
 
-The form has no jurors: the round's images are selected first, and nothing goes to the jurors
-until you choose them on the round's **jurors form** and distribute it
-([Choosing the jurors](#a-round-jurors)). The form ends with two buttons:
-
-- **Review images first**: you go to the rounds list, where the round shows the selection of its
-  images. The round then waits for you on its review page, hidden from the jurors: see
-  [Reviewing a round's images](#a-review).
-- **Choose jurors next**: you go to the round's jurors form, which shows the selection's progress
-  and then the jurors and the file distribution.
+A new round is set up in numbered steps, shown in a step bar at the top of each page:
+**1 Which files** (this form), **2 Check the matching files** (the round's review page),
+**3 Jurors** (its jurors form), then **Open to jurors**. The form has no jurors: nothing goes to
+the jurors until you choose them on the round's **jurors form** and distribute it
+([Choosing the jurors](#a-round-jurors)). The form ends with one button, **Save and find matching
+files**: the tool picks the contest's files that match the settings, for you to check, which can
+take a few minutes. You land on the round's review page (step 2), which says "Round N is saved.
+Step 2 of 3: its matching files are being found." The round waits there, hidden from the jurors:
+see [Reviewing a round's images](#a-review).
 
 **Cancel** leaves the form without saving anything.
 
@@ -992,9 +992,13 @@ example from another browser tab, tells you that its images are already being di
 ### Reviewing a round's images
 
 A new round's images are selected first and wait on the round's **review page**, so a wrong filter
-is caught before any juror gets a file. When they are ready, the rounds list shows **Images ready:
-N** with **Review** and **Distribute to jurors** (which opens the jurors form); the round form and
-the round's statistics link the page too.
+is caught before any juror gets a file. The page is step 2 of the round's setup: once the files
+are found, its heading says how many match ("12 files match (the contest has 340)") and **Distribute
+to jurors** (which opens the jurors form, step 3) is its main button; while they are being found,
+or if none matches, that button is disabled and says why. The rounds list shows a round being set
+up as **Setting up – step 2 of 3: check files** (with **Check the files**) or **Setting up – step 3
+of 3: choose jurors** (with **Distribute to jurors**) in place of Start; the round form, the
+round's statistics and its conflicts page show the same step with a link to it.
 
 The review page shows the round's files as the contest's files page does (tiles, pages, the place
 menu, the large view), with tabs for the files **In the round**, **Deleted on Commons** and
@@ -1035,9 +1039,9 @@ open the jurors form or re-apply the filters.
 <a id="a-round-jurors"></a>
 ### Choosing the jurors
 
-A round's **jurors form** is where its jurors are chosen and its files given out. It opens from
-**Choose jurors next** on the new-round form, and from **Distribute to jurors** on the review page
-or the rounds list. While the round's images are being selected it shows the progress, and the
+A round's **jurors form** is where its jurors are chosen and its files given out: step 3 of the
+round's setup ("Round 4 – step 3 of 3: jurors"). It opens from **Distribute to jurors** on the
+review page, the round form, the round's statistics or the rounds list, and from the step bar. While the round's images are being selected it shows the progress, and the
 form when that is done.
 
 The form shows the number of images that passed the round's filters and, for a contest with

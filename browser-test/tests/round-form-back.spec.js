@@ -10,7 +10,7 @@
 // off and its Chromium runs without the back/forward cache, so a routed page would pass without
 // either mechanism (testing practices §10.3).
 //
-// It writes to the shared fixture: one round per engine and button, named after it, in review and
+// It writes to the shared fixture: one round per engine, named after it, in review and
 // hidden from every juror (as review.spec.js's), its filter one monument so its fill is small.
 import { test, expect } from '../lib/fixtures.js';
 
@@ -25,7 +25,8 @@ async function newRound(page, contestId, name) {
   await page.locator('#monumentIds').fill(MONUMENT);
 }
 
-for (const [button, landing] of [['Review images first', /^\/admin\/rounds$/], ['Choose jurors next', /^\/admin\/rounds\/\d+\/jurors$/]]) {
+// the form's one button (UI-path plan §4 step 1), landing on the round's review page (step 2)
+for (const [button, landing] of [['Save and find matching files', /^\/admin\/rounds\/\d+\/review$/]]) {
   test(`Back after "${button}" opens the saved round's Edit page, not the stale form`, { tag: ['@A-15', '@A-21'] },
     async ({ routelessAs, fixture, browserName }) => {
       test.setTimeout(120_000);
@@ -41,7 +42,7 @@ for (const [button, landing] of [['Review images first', /^\/admin\/rounds$/], [
         page.waitForResponse((r) => r.request().method() === 'GET' && landing.test(new URL(r.url()).pathname)),
         page.getByRole('button', { name: button }).click(),
       ]);
-      expect(await landed.text()).toMatch(/id="flash-success"[^>]*>\s*Round \d+ \([^)]*\) is saved\. Its matching files are being found\./);
+      expect(await landed.text()).toMatch(/id="flash-success"[^>]*>\s*Round \d+ is saved\. Step 2 of 3: its matching files are being found\./);
       await page.waitForURL((url) => landing.test(url.pathname));
 
       // Back: the saved round's Edit page with its line (in the page as served: the job status script

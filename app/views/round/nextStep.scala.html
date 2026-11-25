@@ -4,9 +4,14 @@
    the settings" (the form; Edit round from the review page, which re-applies the filters while
    in review), "Check the files" (the review page's list), "Distribute to jurors" (the jurors form,
    where they are chosen and the round distributed): the main action once the matching has
-   finished, else disabled with its reason. Organizers see the line only. *@
+   finished, else disabled with its reason. Organizers see the line only. On Edit round, the round's
+   current setup step first ("Setting up – step 2 of 3: check files"), under the step bar. *@
 @roundId = @{ step.round.getId }
-<div class="card card-body mb-3" id="round-next-step" data-state="@step.state.id">
+<div class="card card-body mb-3" id="round-next-step" data-state="@step.state.id" data-step="@step.step">
+    @* on Edit round, the round's current setup step (its review page's heading names its own) *@
+    @if(!onReviewPage) {
+        <p class="mb-1 fw-semibold" id="round-setup-state" data-round="@roundId" data-step="@step.step">@if(step.step == controllers.RoundNextStep.Jurors) {@Messages("round.setup.state.3")} else {@Messages("round.setup.state.2")}</p>
+    }
     <p class="mb-2" id="round-next-step-text">@Messages("round.next.hidden")</p>
     @if(mayAct) {
     <div class="d-flex flex-wrap align-items-center gap-2" id="@if(onReviewPage) {round-review-distribute} else {round-next-actions}">

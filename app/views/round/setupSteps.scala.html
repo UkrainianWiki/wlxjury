@@ -1,0 +1,40 @@
+@import controllers.RoundNextStep
+@(page: Int, step: Option[RoundNextStep], mayAct: Boolean)(implicit messages: Messages)
+@* The step bar of a round being set up (UI-path plan §4 step 1, the maintainer's decision of
+   2026-11-25): 1 "Which files" (the round form) → 2 "Check the matching files" (its review page) →
+   3 "Jurors" (its jurors form, which distributes it) → open to jurors. `page`: the step of the page
+   showing it (aria-current); `step`: the round being set up (None: a new round's form, nothing
+   saved yet), its steps before its current one (RoundNextStep.step) marked done. For its admins
+   (`mayAct`) the other steps' pages are linked, each only when it may be opened: the form and the
+   review page always, the jurors form once its files matched (RoundNextStep.distributeAllowed, as
+   its Distribute is allowed). Organizers see the bar without links. *@
+@reached = @{ step.fold(RoundNextStep.WhichFiles)(_.step) }
+@link(n: Int) = @{
+    step.filter(_ => mayAct && n != page).flatMap { s =>
+        if (n == RoundNextStep.WhichFiles) Some(routes.RoundController.editRound(id = s.round.id, contestId = s.round.contestId).url)
+        else if (n == RoundNextStep.CheckFiles) Some(routes.RoundReviewController.review(s.round.getId).url)
+        else if (n == RoundNextStep.Jurors && s.distributeAllowed) Some(routes.RoundReviewController.jurors(s.round.getId).url)
+        else None
+    }
+}
+@item(n: Int, label: String) = {
+    <li class="wlx-setup-step@if(n == page) { wlx-setup-current}@if(n < reached) { wlx-setup-done}" data-step="@n"@if(n == page) { aria-current="step"}>
+        <span class="wlx-setup-num" aria-hidden="true">@if(n < reached && n != page) {<i class="bi bi-check-lg"></i>} else {@n}</span>
+        @link(n) match {
+            case Some(url) => {<a href="@url" class="wlx-setup-link">@label</a>}
+            case None => {<span>@label</span>}
+        }
+        @if(n < reached) {<span class="visually-hidden">(@Messages("round.setup.step.done"))</span>}
+    </li>
+}
+<nav class="mb-3" id="round-setup-steps" aria-label="@Messages("round.setup.steps")" data-page="@page" data-step="@reached">
+    <ol class="wlx-setup-steps">
+        @item(RoundNextStep.WhichFiles, Messages("round.setup.step.1"))
+        @item(RoundNextStep.CheckFiles, Messages("round.setup.step.2"))
+        @item(RoundNextStep.Jurors, Messages("round.setup.step.3"))
+        <li class="wlx-setup-step wlx-setup-open" data-step="open">
+            <span class="wlx-setup-num" aria-hidden="true"><i class="bi bi-people"></i></span>
+            <span>@Messages("round.setup.step.open")</span>
+        </li>
+    </ol>
+</nav>

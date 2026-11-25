@@ -123,7 +123,7 @@ homepage := Some(url("https://github.com/UkrainianWiki/wlxjury"))
 
 // Calendar version YY.MM (.N for an extra deploy in the same month); the snapshot carries the
 // next release. Release steps: docs/workflow/practices.md §7.4.
-version := "26.11.17"
+version := "26.11.18-SNAPSHOT"
 
 // The same identity is embedded in the app and placed at the ZIP root. The
 // deployment tool compares readiness with this manifest before opening traffic.
