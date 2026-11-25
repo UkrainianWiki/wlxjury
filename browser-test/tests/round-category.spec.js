@@ -86,7 +86,7 @@ test.describe('the new-round form', () => {
 
       // only the first box filled: sent as the boxes and the default choice
       await typeCategory(page, 'source', 'Category:Lakes of Ukraine');
-      await page.locator('#round-form-review-first').click();
+      await page.locator('#round-form-save-find').click();
       await expect.poll(() => sent.length).toBe(1);
       expect(sent[0].get('source')).toBe('Category:Lakes of Ukraine');
       expect(sent[0].get('excludeCategory')).toBe('');
@@ -104,7 +104,7 @@ test.describe('the new-round form', () => {
       await page.getByText('More category options').click();
       await page.getByRole('radio', { name: 'Files may be in either category' }).check();
       // "either" needs the second category: the server refuses and shows the form again
-      await page.locator('#round-form-review-first').click();
+      await page.locator('#round-form-save-find').click();
       await expect(page.locator('.alert-danger')).toContainText('Enter the second category');
       await expect(page.locator('a[href="#collapseImageFiltering"]')).toHaveAttribute('aria-expanded', 'true');
       await expect(page.locator('#category-more')).toHaveAttribute('open', /.*/);
