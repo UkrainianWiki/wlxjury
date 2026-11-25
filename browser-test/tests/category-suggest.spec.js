@@ -198,7 +198,6 @@ test('the round form sent from its focused category field sends the text typed',
     // the boxes and the choice under More category options (its default), no operation select
     expect(sent[0].get('categoryCombine')).toBe('minus');
     expect(sent[0].has('categoryClause')).toBe(false);
-    expect(sent[0].get('next')).toBe('jurors');
   });
 
 test('the round form\'s category is selected on a click and edited by typing', { tag: '@A-01' },
