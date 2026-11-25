@@ -1,14 +1,16 @@
 package graphql
 
 import api.ApiAuth
+import controllers.{ListOrder, VoteFilter}
 import db.scalikejdbc.{ContestJuryJdbc, Round, RoundUser, User}
-import org.intracer.wmua.ContestJury
+import org.intracer.wmua.{ContestJury, Vote}
 import sangria.schema._
 import services.GalleryService
 
-/** The GraphQL schema (plan §6, slice 1): the caller (`me`), their contests and one contest with
-  * its rounds. Its SDL is checked in as `conf/graphql/schema.graphql`, the UI's contract
-  * (`graphql.GraphQLSchemaSpec` fails when the two differ). Who sees what:
+/** The GraphQL schema (plan §6, slices 1 to 3): the caller (`me`), their contests and one contest
+  * with its rounds, one round, its statistics and its files. Its SDL is checked in as
+  * `conf/graphql/schema.graphql`, the UI's contract (`graphql.GraphQLSchemaSpec` fails when the two
+  * differ). Who sees what:
   *
   *  - `contests`: root, every contest (retired ones too); anyone else, the contests where they have
   *    an access role ([[User.ACCESS_ROLES]]) in an active membership of a contest not retired, and
@@ -24,8 +26,10 @@ import services.GalleryService
   *    the conflict-of-interest rule included (a juror of an open round sees only their own votes);
   *  - `me.email`: the caller's own, always; another account's email (a later slice's `users`) only for
   *    root and the Admins of a contest the account is a member of ([[emailVisible]]).
-  *
-  * No vote, count or juror data in this slice.
+  *  - `round(id)`: one round of a contest's `rounds` as the caller sees them; `roundStat(roundId)`: the
+  *    round statistics page's numbers, for those it shows them to ([[RoundQueries]], slice 2);
+  *  - `roundImages` and `image(roundId, pageId)`: a juror's list of a round's files with their votes,
+  *    through the web galleries' checks ([[RoundQueries.galleryAccess]], slice 3).
   */
 object GraphQLSchema {
 
@@ -68,6 +72,9 @@ object GraphQLSchema {
   /** The largest page `contests` gives; a larger `limit` is clamped to it. */
   val MaxPageSize = 200
 
+  /** What a `roundStat` counts as in the complexity budget: a read of every juror's votes in the round. */
+  val RoundStatCost = 200
+
   /** How many rounds a contest's `rounds` counts as in the complexity budget (a contest has a few). */
   val RoundsEstimate = 20
 
@@ -89,8 +96,15 @@ object GraphQLSchema {
   /** The rounds of the contest `view` shows, as its viewer may see them (see the object's doc). */
   def visibleRounds(ctx: GraphQLContext, view: ContestView): Seq[RoundView] = {
     ctx.checkDeadline()
-    val rounds = Round.findByContest(view.contest.getId).filter(_.deletedAt.isEmpty)
-    val viewer = view.viewer
+    roundViews(ctx, view.viewer, Round.findByContest(view.contest.getId).filter(_.deletedAt.isEmpty))
+  }
+
+  /** Of `rounds` (of one contest, none deleted), those `viewer` (the caller in that contest,
+    * [[GraphQLContext.asMemberOf]]) may see, by id: all for those who may see its organiser views
+    * ([[User.canViewOrgInfo]]); a juror, the rounds they are a juror of that are not being created or
+    * reviewed. A contest's `rounds`, and `round(id)` of one round ([[RoundQueries.roundById]]).
+    */
+  def roundViews(ctx: GraphQLContext, viewer: User, rounds: Seq[Round]): Seq[RoundView] = {
     val (staff, others) = rounds.partition(viewer.canViewOrgInfo)
     val juror =
       if (others.isEmpty || !viewer.hasAnyRole(User.VoterRoles)) Nil
@@ -199,6 +213,7 @@ object GraphQLSchema {
     "A judging round of a contest.",
     fields[GraphQLContext, RoundView](
       Field("id", IDType, resolve = _.value.round.getId.toString),
+      Field("contestId", IDType, Some("Its contest's id."), resolve = _.value.round.contestId.toString),
       Field("number", IntType, Some("Its number in the contest."), resolve = _.value.round.number.toInt),
       Field("name", OptionType(StringType), Some("Its name, if it has one."),
         resolve = _.value.round.name.filter(_.trim.nonEmpty)),
@@ -226,6 +241,185 @@ object GraphQLSchema {
           "contest's admins and organizers, except while the round is open if they are one of its jurors " +
           "(conflict of interest: then only their own votes); never a juror."),
         resolve = c => c.value.of.othersVisible(c.value.round.getId))
+    )
+  )
+
+  val JurorStatType: ObjectType[GraphQLContext, RoundQueries.JurorStatView] = ObjectType(
+    "JurorStat",
+    "A juror's row of a round's statistics, as the round statistics page has it.",
+    fields[GraphQLContext, RoundQueries.JurorStatView](
+      Field("id", IDType, Some("The juror's account id."), resolve = _.value.juror.getId.toString),
+      Field("fullname", StringType, resolve = _.value.juror.fullname),
+      Field("email", OptionType(StringType),
+        Some("The juror's email: for root and the contest's Admins only (decision Q6); null for anyone else."),
+        resolve = c => Option.when(c.value.emailVisible)(c.value.juror.email).filter(e => e != null && e.trim.nonEmpty)),
+      Field("status", JurorStatusType, Some("STOPPED when stopped on the round by its admins."),
+        resolve = c => if (c.value.stopped) JurorStatus.Stopped else JurorStatus.Active),
+      Field("files", IntType, Some("Their files in the round."), resolve = _.value.files),
+      Field("unrated", IntType, Some("Their files without a vote yet."), resolve = _.value.unrated),
+      Field("rated", OptionType(IntType),
+        Some("A rated round's files they voted on (any vote: stars, or the cross that is the worst mark); null in a yes/no round."), resolve = _.value.rated),
+      Field("selected", OptionType(IntType),
+        Some("A yes/no round's yes votes; null in a rated round, and for another juror's row while the caller " +
+          "sees only their own votes (the round's othersVotesVisible)."), resolve = _.value.selected),
+      Field("rejected", OptionType(IntType),
+        Some("A yes/no round's no votes; null as for selected."), resolve = _.value.rejected)
+    )
+  )
+
+  val RoundStatType: ObjectType[GraphQLContext, RoundQueries.RoundStatView] = ObjectType(
+    "RoundStat",
+    "A round's statistics, as the round statistics page shows them.",
+    fields[GraphQLContext, RoundQueries.RoundStatView](
+      Field("round", RoundType, resolve = _.value.round),
+      Field("totalFiles", IntType, Some("The round's files."), resolve = _.value.stat.total),
+      Field("selectedFiles", OptionType(IntType),
+        Some("A yes/no round's files with at least one yes vote; null in a rated round and while the caller sees " +
+          "only their own votes."), resolve = _.value.totalByRate(org.intracer.wmua.Vote.Selected)),
+      Field("unratedFiles", OptionType(IntType),
+        Some("A yes/no round's files with at least one vote still to come; null as for selectedFiles."),
+        resolve = _.value.totalByRate(org.intracer.wmua.Vote.Unrated)),
+      Field("rejectedFiles", OptionType(IntType),
+        Some("A yes/no round's files with at least one no vote; null as for selectedFiles."),
+        resolve = _.value.totalByRate(org.intracer.wmua.Vote.Rejected)),
+      Field("deletedFiles", IntType, Some("The round's files deleted on Commons."), resolve = _.value.stat.deletedFiles),
+      Field("deletedFilesCounted", IntType, Some("Of those, the files still in its galleries and results."),
+        resolve = _.value.stat.deletedCounted),
+      Field("commentsInRound", IntType, Some("Comments written in this round on its files."),
+        resolve = c => { c.ctx.checkDeadline(); c.value.comments.roundComments }),
+      Field("commentsAllRounds", IntType, Some("All the contest's comments on the round's files."),
+        resolve = c => { c.ctx.checkDeadline(); c.value.comments.allComments }),
+      Field("noActiveJuror", BooleanType, Some("Open, but none of its jurors can vote in it (all stopped, or none)."),
+        resolve = c => { c.ctx.checkDeadline(); c.value.noActiveJuror }),
+      Field("jurors", ListType(JurorStatType), Some("Its jurors with votes in it, each with their counts."),
+        resolve = _.value.jurors)
+    )
+  )
+
+  // --- slice 3: a round's files, as its galleries list them
+
+  val ImageFilterType: EnumType[VoteFilter] = EnumType(
+    "ImageFilter",
+    Some("Which of a round's files a list has, by its juror's votes: the round's tabs (RATED a rated round's, " +
+      "SELECTED and REJECTED a yes/no round's; another round's is BAD_INPUT)."),
+    List(
+      EnumValue("ALL", Some("All the files."), VoteFilter.All),
+      EnumValue("UNRATED", Some("The files without a vote yet."), VoteFilter.Unrated),
+      EnumValue("RATED", Some("A rated round's files with a vote (stars, or the cross)."), VoteFilter.Rated),
+      EnumValue("SELECTED", Some("A yes/no round's files voted yes."), VoteFilter.Rate(Vote.Selected): VoteFilter),
+      EnumValue("REJECTED", Some("A yes/no round's files voted no."), VoteFilter.Rate(Vote.Rejected): VoteFilter)
+    )
+  )
+
+  val ImageOrderType: EnumType[ListOrder] = EnumType(
+    "ImageOrder",
+    Some("The order of a list's files; files of the same place in it by page id, so that pages are stable."),
+    List(
+      EnumValue("FILE", Some("By monument id, then page id: a vote never moves a file."), ListOrder.FileOrder: ListOrder),
+      EnumValue("RATE", Some("The highest rate first, then in file order."), ListOrder.ByRate: ListOrder),
+      EnumValue("LATEST_VOTE", Some("The latest voted first, the unrated last, then in file order."),
+        ListOrder.LatestVote: ListOrder),
+      EnumValue("OLDEST_VOTE", Some("The oldest voted first, the unrated last, then in file order."),
+        ListOrder.OldestVote: ListOrder)
+    )
+  )
+
+  val ThumbnailSizeType: EnumType[String] = EnumType(
+    "ThumbnailSize",
+    Some("The boxes the web galleries fit thumbnails into."),
+    List(
+      EnumValue("GALLERY", Some("300 x 250: a rated round's gallery."), RoundQueries.Thumbs.Gallery),
+      EnumValue("ROW", Some("250 tall at any width: a yes/no round's gallery."), RoundQueries.Thumbs.Row),
+      EnumValue("STRIP", Some("150 x 120: the large view's strip of files."), RoundQueries.Thumbs.Strip)
+    )
+  )
+
+  val ThumbnailSizeArg: Argument[Option[String]] = Argument("size", OptionInputType(ThumbnailSizeType),
+    "The box; GALLERY if omitted.")
+
+  val ThumbnailType: ObjectType[GraphQLContext, RoundQueries.ThumbnailView] = ObjectType(
+    "Thumbnail",
+    "A file's thumbnail as the web gallery's img has it: through this server's image proxy (a signed-in session's " +
+      "cookie loads it), or the file itself where it is no wider.",
+    fields[GraphQLContext, RoundQueries.ThumbnailView](
+      Field("url", StringType, Some("The src, at 1x: a path on this server, or the file's URL."), resolve = _.value.url),
+      Field("srcset", StringType, Some("The srcset: the 1.5x and 2x sizes."), resolve = _.value.srcset),
+      Field("width", OptionType(IntType), Some("The width it is shown at; null without the file's stored size."),
+        resolve = _.value.size.map(_._1)),
+      Field("height", OptionType(IntType), Some("The height it is shown at; null as for width."),
+        resolve = _.value.size.map(_._2))
+    )
+  )
+
+  val LargeImageType: ObjectType[GraphQLContext, controllers.Global.LargeImage] = ObjectType(
+    "LargeImage",
+    "A file as the large view loads it: from Wikimedia at its sizes for a Commons file, with this server's " +
+      "thumbnail as the fallback.",
+    fields[GraphQLContext, controllers.Global.LargeImage](
+      Field("src", StringType, resolve = _.value.src),
+      Field("srcset", StringType, resolve = _.value.srcset),
+      Field("sizes", OptionType(StringType), Some("The sizes attribute, where known."), resolve = _.value.sizes),
+      Field("fallback", OptionType(StringType), Some("This server's thumbnail, to load if Wikimedia has not the file."),
+        resolve = _.value.fallback),
+      Field("width", OptionType(IntType), Some("The width it is shown at, where known."), resolve = _.value.width)
+    )
+  )
+
+  val VoteType: ObjectType[GraphQLContext, Vote] = ObjectType(
+    "Vote",
+    "A juror's vote on a file in a round.",
+    fields[GraphQLContext, Vote](
+      Field("rate", IntType,
+        Some("A yes/no round: 1 yes, -1 no, 0 not yet. A rated round: the stars in stored units (a half-star " +
+          "round's are halves: halfStars), -1 the cross (the worst mark), 0 not yet. A comments-only round: 0."),
+        resolve = _.value.rate),
+      Field("voted", BooleanType, Some("Whether it is a vote (rate not 0)."), resolve = _.value.isVoted),
+      Field("votedAt", OptionType(StringType),
+        Some("When the rate was last changed (ISO-8601, UTC); null for one not voted yet, or voted before times were kept."),
+        resolve = _.value.votedAt.map(_.toInstant.toString))
+    )
+  )
+
+  val RoundImageType: ObjectType[GraphQLContext, RoundQueries.RoundImageView] = ObjectType(
+    "RoundImage",
+    "A file of a round's list, with the vote of the list's juror on it.",
+    fields[GraphQLContext, RoundQueries.RoundImageView](
+      Field("pageId", IDType, Some("The file's Commons page id."), resolve = _.value.image.pageId.toString),
+      Field("title", StringType, Some("The file's title on Commons (File:...)."), resolve = _.value.image.title),
+      Field("width", IntType, Some("Its stored width; 0 if not known."), resolve = _.value.image.width),
+      Field("height", IntType, Some("Its stored height; 0 if not known."), resolve = _.value.image.height),
+      Field("monumentId", OptionType(StringType), resolve = _.value.image.monumentId.filter(_.trim.nonEmpty)),
+      Field("isVideo", BooleanType, resolve = _.value.image.isVideo),
+      Field("thumbnail", ThumbnailType, Some("Its thumbnail in one of the web galleries' boxes."),
+        arguments = ThumbnailSizeArg :: Nil,
+        resolve = c => RoundQueries.thumbnail(c.value.image, c.arg(ThumbnailSizeArg).getOrElse(RoundQueries.Thumbs.Gallery))),
+      Field("largeImage", LargeImageType, Some("The file as the large view loads it."),
+        resolve = c => controllers.Global.largeImage(c.value.image)),
+      Field("vote", OptionType(VoteType),
+        Some("The vote of the list's juror on it: the caller's own, or the juror's whose list an organizer views."),
+        resolve = _.value.vote)
+    )
+  )
+
+  val PageInfoType: ObjectType[GraphQLContext, RoundQueries.ImagePage] = ObjectType(
+    "PageInfo",
+    "Where a page of a list ends.",
+    fields[GraphQLContext, RoundQueries.ImagePage](
+      Field("endCursor", OptionType(StringType),
+        Some("The cursor after the page's last file, for the next page's after; null for an empty page."),
+        resolve = _.value.endCursor),
+      Field("hasNextPage", BooleanType, resolve = _.value.hasNextPage)
+    )
+  )
+
+  val RoundImageConnectionType: ObjectType[GraphQLContext, RoundQueries.ImagePage] = ObjectType(
+    "RoundImageConnection",
+    "A page of a juror's list of a round's files.",
+    fields[GraphQLContext, RoundQueries.ImagePage](
+      Field("nodes", ListType(RoundImageType), resolve = _.value.nodes),
+      Field("pageInfo", PageInfoType, resolve = _.value),
+      Field("totalCount", IntType, Some("The list's files, all pages (one count, read only if asked)."),
+        resolve = _.value.totalCount)
     )
   )
 
@@ -283,6 +477,18 @@ object GraphQLSchema {
   val OffsetArg: Argument[Int] = Argument("offset", OptionInputType(IntType), "How many contests to skip.", 0)
   val LimitArg: Argument[Int] = Argument("limit", OptionInputType(IntType), "The page size, at most 200.", 100)
   val IdArg: Argument[String] = Argument("id", IDType)
+  val RoundIdArg: Argument[String] = Argument("roundId", IDType)
+  val PageIdArg: Argument[String] = Argument("pageId", IDType)
+  val UserIdArg: Argument[Option[String]] = Argument("userId", OptionInputType(IDType),
+    "Whose list: omitted, the caller's own; a juror of the round's, for root and the contest's admins and organizers " +
+      "who are not a juror of the open round.")
+  val FilterArg: Argument[Option[VoteFilter]] = Argument("filter", OptionInputType(ImageFilterType), "The tab; ALL if omitted.")
+  val OrderArg: Argument[Option[ListOrder]] = Argument("order", OptionInputType(ImageOrderType),
+    "The order; FILE if omitted.")
+  val FirstArg: Argument[Int] = Argument("first", OptionInputType(IntType), "The page size, at most 200.",
+    RoundQueries.DefaultImagePage)
+  val AfterArg: Argument[Option[String]] = Argument("after", OptionInputType(StringType),
+    "The previous page's pageInfo.endCursor; omitted, the first page.")
 
   val QueryType: ObjectType[GraphQLContext, Unit] = ObjectType(
     "Query",
@@ -302,7 +508,35 @@ object GraphQLSchema {
       Field("contest", OptionType(ContestType),
         Some("One contest the caller may see; null with a NOT_FOUND error for any other."),
         arguments = IdArg :: Nil,
-        resolve = c => contestById(c.ctx, c.arg(IdArg)))
+        resolve = c => contestById(c.ctx, c.arg(IdArg))),
+      Field("round", OptionType(RoundType),
+        Some("One round the caller may see (as in its contest's rounds); null with a NOT_FOUND error for any other."),
+        arguments = IdArg :: Nil,
+        resolve = c => RoundQueries.roundById(c.ctx, c.arg(IdArg))),
+      Field("roundStat", OptionType(RoundStatType),
+        Some("A round's statistics, for root and its contest's admins and organizers: null with NOT_FOUND for a " +
+          "round the caller doesn't see (as round(id)), FORBIDDEN for one they see but may not see the statistics of."),
+        arguments = RoundIdArg :: Nil,
+        // each a statistics read (every juror's votes counted): about what a page of files costs
+        complexity = Some((_: GraphQLContext, _: Args, child: Double) => RoundStatCost + child),
+        resolve = c => RoundQueries.roundStat(c.ctx, c.arg(RoundIdArg))),
+      Field("roundImages", OptionType(RoundImageConnectionType),
+        Some("A page of a juror's list of a round's files with their votes, as the round's gallery lists them: " +
+          "the caller's own list (a juror sees only their own votes), or with userId a juror's, for those who may " +
+          "see other jurors' votes there (othersVotesVisible). Keyset pages: pass pageInfo.endCursor as after. " +
+          "Null with NOT_FOUND for a round the caller may not view, FORBIDDEN for another juror's list they may " +
+          "not see, CONFLICT round_closed with extensions.reason for a juror's round not open to them now."),
+        arguments = RoundIdArg :: UserIdArg :: FilterArg :: OrderArg :: FirstArg :: AfterArg :: Nil,
+        complexity = Some((_: GraphQLContext, args: Args, child: Double) =>
+          1 + child * RoundQueries.imagePageSize(args.arg(FirstArg))),
+        resolve = c => RoundQueries.roundImages(c.ctx, c.arg(RoundIdArg), c.arg(UserIdArg),
+          c.arg(FilterArg).getOrElse(VoteFilter.All), c.arg(OrderArg).getOrElse(ListOrder.FileOrder), c.arg(FirstArg),
+          c.arg(AfterArg))),
+      Field("image", OptionType(RoundImageType),
+        Some("One file of the list roundImages gives with the same roundId and userId (whatever its vote), with " +
+          "the vote; the same errors, and NOT_FOUND for a file the list has not."),
+        arguments = RoundIdArg :: PageIdArg :: UserIdArg :: Nil,
+        resolve = c => RoundQueries.image(c.ctx, c.arg(RoundIdArg), c.arg(PageIdArg), c.arg(UserIdArg)))
     )
   )
 

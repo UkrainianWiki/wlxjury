@@ -34,6 +34,22 @@ final case class GraphQLContext(caller: ApiAuth.Caller, request: RequestHeader, 
   private val firstDenial = new java.util.concurrent.atomic.AtomicReference[String](null)
   private val moreDenials = new java.util.concurrent.atomic.AtomicInteger(0)
 
+  /** What a request's resolvers read once per key ([[memo]]). */
+  private val memos = new java.util.concurrent.ConcurrentHashMap[Any, scala.util.Try[Any]]()
+
+  /** `f`'s answer once per request for `key` (a round and the caller's checks in it, a round's
+    * statistics), its failure too (a denial, a round's state: the same error, its line logged once), so
+    * that aliases of a field don't repeat the work. Not atomic: two fields resolved at once may both run
+    * `f`, and the first answer is kept.
+    */
+  def memo[T](key: Any)(f: => T): T = {
+    val answer = Option(memos.get(key)).getOrElse {
+      val tried = scala.util.Try[Any](f)
+      Option(memos.putIfAbsent(key, tried)).getOrElse(tried)
+    }
+    answer.get.asInstanceOf[T]
+  }
+
   /** The caller is root (a caller check, not a target's: `User.isProtectedTarget` is for targets). */
   def callerIsRoot: Boolean = user.hasRole(User.ROOT_ROLE)
 
@@ -68,21 +84,32 @@ final case class GraphQLContext(caller: ApiAuth.Caller, request: RequestHeader, 
     * aliases writes one line, not one per field.
     */
   def contestDenied(contest: ContestJury): GraphQLError =
+    denied(Secured.Denial.contest(contest.id, User.ACCESS_ROLES))
+
+  /** A denial ([[Secured.Denial]]: a contest's, a round's) answered as `error` with the reference,
+    * a missing resource ([[GraphQLError.notFound]]) by default, else e.g. [[GraphQLError.forbidden]]
+    * for a resource the caller sees but may not use so (another juror's votes, a round's statistics
+    * for its juror). The request's first denial is logged on `security.authz`; a later one carries
+    * the same reference and is counted ([[logRepeatedDenials]]). A check answered from [[memo]] (an
+    * alias of a field already denied) doesn't come here again: its repeats aren't counted.
+    */
+  def denied(denial: Secured.Denial, error: String => GraphQLError = GraphQLError.notFound): GraphQLError =
     Option(firstDenial.get) match {
       case Some(reference) =>
         moreDenials.incrementAndGet()
-        GraphQLError.notFound(reference)
+        error(reference)
       case None =>
-        val reference = Secured.logDenial(user, request,
-          Secured.Denial.contest(contest.id, User.ACCESS_ROLES), caller.via.logFields)
-        if (firstDenial.compareAndSet(null, reference)) GraphQLError.notFound(reference)
+        val reference = Secured.logDenial(user, request, denial, caller.via.logFields)
+        if (firstDenial.compareAndSet(null, reference)) error(reference)
         else {
           moreDenials.incrementAndGet()
-          GraphQLError.notFound(firstDenial.get)
+          error(firstDenial.get)
         }
     }
 
-  /** After the run: the denials after the first, counted on the first's line's logger. */
+  /** After the run: the denials after the first, counted on the first's line's logger. Repeats of a
+    * check cached by [[memo]] are not among them (the same denial, not checked again).
+    */
   def logRepeatedDenials(): Unit = {
     val more = moreDenials.get
     if (more > 0)
@@ -108,7 +135,8 @@ object GraphQLContext {
 /** An error a resolver or the endpoint answers with: a message key (never request or exception
   * text), its `extensions.code` and, for a denial or a server error, the reference of its log line.
   */
-final case class GraphQLError(message: String, code: String, reference: Option[String] = None)
+final case class GraphQLError(message: String, code: String, reference: Option[String] = None,
+    reason: Option[String] = None)
     extends Exception(message, null, false, false)
 
 object GraphQLError {
@@ -121,6 +149,12 @@ object GraphQLError {
     val BadInput = "BAD_INPUT"
     val InternalError = "INTERNAL_ERROR"
     val TooManyRequests = "TOO_MANY_REQUESTS"
+
+    /** A round not open to its juror now (stopped, being created, the juror stopped on it, its files
+      * moving): a state, not a denial, as the web gallery's 409. Every `CONFLICT` is the message
+      * `round_closed` with `extensions.reason` (`round_paused` included: [[GraphQLError.roundClosed]]).
+      */
+    val Conflict = "CONFLICT"
   }
 
   private val logger = Logger("graphql")
@@ -138,4 +172,12 @@ object GraphQLError {
   }
 
   def badInput(message: String): GraphQLError = GraphQLError(message, Code.BadInput)
+
+  /** A resource the caller sees but may not use so, with the reference of its denial's log line. */
+  def forbidden(reference: String): GraphQLError = GraphQLError("forbidden", Code.Forbidden, Some(reference))
+
+  /** A juror's round not open to them now: `round_closed` with the state's reason
+    * (`services.GalleryService.RoundState`, e.g. `juror_stopped`) in `extensions.reason`.
+    */
+  def roundClosed(reason: String): GraphQLError = GraphQLError("round_closed", Code.Conflict, reason = Some(reason))
 }

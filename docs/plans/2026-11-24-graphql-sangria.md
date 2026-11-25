@@ -125,7 +125,8 @@ Negative authorization (each must also log one `security.authz` WARN carrying th
 - a juror reads another juror's votes (`userId`), or all jurors (`userId` 0): refused.
 - an organizer asks for votes of a user who is not a juror of the round: not found.
 - a juror lists `users` and sees members or emails of other contests: none.
-- a juror queries a `distributing` round: not found.
+- a juror queries a `distributing` round: not found from `round(id)` and `roundStat`; `roundImages` and `image`
+  answer `CONFLICT` `round_closed` with reason `round_distributing`, as the web gallery's state page tells its juror.
 - a non-admin calls a mutation; a token calls a mutation (queries only for tokens); a session mutation without
   the CSRF token; Bearer plus a session cookie without the CSRF token: refused.
 - signed-out introspection (`__schema`, `__type`) is refused; a signed-in juror may introspect (the schema is not
@@ -181,7 +182,8 @@ the session cookie; the main write path is session plus CSRF, and tokens stay qu
   carries `data-csrf-token`, as the gallery vote does (`voteTexts.scala.html`). Bearer without a session cookie
   is the token path and needs no header.
 - Errors: GraphQL's standard `errors` array with `extensions.code` (`UNAUTHENTICATED`, `FORBIDDEN`,
-  `NOT_FOUND`, `BAD_INPUT`, `INTERNAL_ERROR`, `CSRF`) and `extensions.reference` for the log line; messages are
+  `NOT_FOUND`, `BAD_INPUT`, `CONFLICT` (a juror's round not open to them now: message `round_closed`, always with
+  `extensions.reason`), `INTERNAL_ERROR`, `CSRF`, `TOO_MANY_REQUESTS`) and `extensions.reference` for the log line; messages are
   keys, never exception text. HTTP 401 for no session, 200 with `errors` otherwise.
 - Pagination: cursor connections (`first`, `after`, `pageInfo { endCursor hasNextPage }`, `totalCount`), not
   offset: a 38k-image round paged by offset gets slow and unstable while jurors vote and the order shifts. For
@@ -198,9 +200,9 @@ tests (section 5) apply to every slice. Days include review.
 | Slice | Content | Serves | Days |
 |---|---|---|---|
 | 1 | Foundation and first screens: Play action `POST /api/graphql`, auth, limits, denial logging, SDL file plus the schema-matches-SDL test, codegen config, a section in `docs/api.md`, fixture sign-in; queries `me`, `contests`, `contest(id)` with rounds | #136's first screen, the root contests grid | 3-4 |
-| 2 | `roundStat` (round statistics, juror stats) and `round(id)` | #136's second screen, organizer round statistics | 1-1.5 |
-| 3 | After #129 and the vote-rule extraction: `roundImages` (keyset connection, the viewer's own vote, through `viewerRounds` / `viewAs`), `image(roundId, pageId)` | the juror gallery and large view | 2 |
-| 4 | Mutation `vote(roundId, pageId, rate, criterion?)`, after its rules are extracted into a service (below) | juror voting | 3 |
+| 2 | Done: `roundStat` (round statistics, juror stats) and `round(id)` | #136's second screen, organizer round statistics | 1-1.5 |
+| 3 | Done (Q8 amended): `roundImages` (keyset connection, the viewer's own vote, through `viewerRounds` / `viewAs`), `image(roundId, pageId)` | the juror gallery and large view | 2 |
+| 4 | Mutation `vote(roundId, pageId, rate, criterion?)`, after its rules are extracted into a service (below). `GraphQLContext.memo` (per-request cache of the round and gallery checks) must not carry an access check across a vote mutation in the same request: a mutation checks afresh, and clears or bypasses the cache | juror voting | 3 |
 | 5 | Comments, users, monuments; series fields once #119-#124 are in. Admin and organizer screens come first, so this slice may move ahead of 3-4 | organizer and admin screens | 2 |
 | 6 | Organizer and admin mutations through the services (no `createRound` in the first slices); subscriptions only when a screen needs one | later | open |
 
@@ -230,6 +232,10 @@ contest's round, no CSRF header, a token caller. This is why slice 4 is 3 days a
 - Q7. No `createRound` mutation in the first slices (a later one would only enqueue the distribution job).
 - Q8. Admin and organizer screens first (slices 1, 2, 5); the juror slices 3-4 come after #129 and the
   vote-rule extraction.
+- Q8 amended (maintainer, 2026-11-25): slice 3 no longer waits for #129's gallery build. It follows the paging
+  rules of #129's plan (`2026-11-19-own-gallery-tiles.md` §3.6, keyset continuation: the full sort key with the
+  page id as tie-break, the cursor carrying the last file's key as it was when its page was read, that file left
+  out of the next page). Voting (slice 4) still waits for the vote-rule extraction.
 - CY-2 (#140), a rule coming: a juror of a round sees only their own votes in that round whatever their role.
   The vote and round-image resolvers apply it (section 4, item 5; negative test in section 5).
 

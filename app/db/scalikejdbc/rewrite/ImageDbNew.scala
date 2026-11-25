@@ -254,6 +254,22 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       if (groupWithDetails) withVotes(sql"${files.query(idOnly = true)}".map(_.long(1)).list())
       else sql"${query()}".map(reader).list()
 
+    /** A keyed list's page ([[keyed]], with a [[limit]]), each file with its place in the order: its
+      * values of the order's columns, as a [[Keyset]] of the file and those after it. Read by the
+      * statement that reads the page (the deferred join's ORDER BY columns, [[deferredJoinPage]]), so
+      * that a continuation from the page's last file starts where that file was when the page was
+      * read, whatever votes came after: the own gallery tiles plan's keyset continuation (§3.6), and
+      * GraphQL's `roundImages` cursors. One statement, as [[list]].
+      */
+    def listKeyed()(implicit session: DBSession = autoSession): Seq[(ImageWithRating, Keyset)] = {
+      require(keyed && limit.isDefined, "a page of a juror's list in a round")
+      val columns = "select  " + sqls"""${i.result.*}, ${VoteJdbc.resultAll(s)}""".value +
+        order.indices.map(n => s", k.o$n").mkString
+      sql"${deferredJoinPage(columns)}"
+        .map(rs => Readers.rowReader(rs) -> Keyset(order.indices.map(n => Option(rs.any(s"o$n"))), before = false))
+        .list()
+    }
+
     /** The files of a list with their votes (a file list, CSV), as the list's grouped query
       * orders and pages them: one row per file.
       */

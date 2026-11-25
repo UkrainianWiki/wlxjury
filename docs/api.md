@@ -147,7 +147,7 @@ Errors are JSON, with a fixed code and never the request's text:
 `docs/plans/2026-11-24-graphql-sangria.md`; Sangria). It sits beside the REST endpoints, under the
 same `/api` router, so it takes the same callers, the same `Host` check and the same CSRF rule.
 The schema is the checked-in SDL, [`conf/graphql/schema.graphql`](../conf/graphql/schema.graphql):
-the contract the UI is written against. So far (slice 1) it has queries only:
+the contract the UI is written against. So far (slices 1 to 3) it has queries only:
 
 | Query | Who sees what |
 |---|---|
@@ -157,9 +157,43 @@ the contract the UI is written against. So far (slice 1) it has queries only:
 | a contest's `rounds` | all its rounds for root and its admins and organizers; for a juror, the rounds they are a juror of, once distributed (a round being created or in review is not listed), also one they are stopped in |
 | a round's `myStatus` | the caller as a juror of the round: `ACTIVE`, `STOPPED` (stopped on it by its admins: still listed, no new files, no votes), or null when not one of its jurors |
 | a round's `othersVotesVisible` | whether the caller may see other jurors' votes there, as in its galleries: root and the contest's admins and organizers, but not while the round is open if they are one of its jurors (conflict of interest: their own votes only); never a juror |
+| `round(id)` | one round, if the caller sees it in its contest's `rounds` (above); else null with `NOT_FOUND`, the same for a missing round, a deleted one, one of a contest the caller is not in or of a retired one (root sees those), and (for a juror) one they don't judge or one being created (the denials logged; `roundImages` tells its juror a round being created as `CONFLICT` `round_distributing`, as the web gallery's state page). A round's `contestId` names its contest |
+| `roundStat(roundId)` | the round statistics page's numbers, for those it shows them to: root and the contest's admins and organizers (each `roundStat` counts 200 in the complexity budget). Its `totalFiles`, a yes/no round's files with at least one vote of each kind (`selectedFiles`, `unratedFiles`, `rejectedFiles`), files deleted on Commons, the comments on its files, `noActiveJuror`, and per juror with votes in it (`jurors`): their files, `unrated`, a rated round's `rated`, a yes/no round's `selected` and `rejected`, and `status` (`ACTIVE`, `STOPPED`). A round the caller doesn't see as `round(id)` shows it is null with `NOT_FOUND` (its existence not told); a round they see but may not see the statistics of (a juror's own round) `FORBIDDEN` (the page's 403); both logged |
 
-No vote, count or juror data yet; those come with the round and gallery slices, under the
-own-votes rules (`othersVotesVisible` says which applies).
+`roundStat` keeps the own-votes rule of the page: a viewer who is a juror of the open round sees
+each juror's progress (files, unrated, rated) but another juror's `selected` and `rejected`, and the
+round's files by kind, are null until the round is closed. A juror's `email` follows decision Q6
+(root and the contest's Admins only; the web page shows it to organizers too).
+
+| Query | Who sees what |
+|---|---|
+| `roundImages(roundId, userId, filter, order, first, after)` | a page of one juror's list of the round's files, each with that juror's `vote` (`rate`, `voted`, `votedAt`), as the round's gallery lists them. Without `userId`, the caller's own list (a juror sees only their own votes). With `userId`, that juror's list, for root and the contest's admins and organizers, but not while the round is open if they are one of its jurors (the round's `othersVotesVisible`): else `FORBIDDEN`, logged (`reason=other_users_votes`); a `userId` who is not a juror of the round is `NOT_FOUND` `juror_not_found`; `userId: 0` (all the jurors' votes together) is not served yet (`BAD_INPUT` `all_jurors_not_supported`). `filter`: the round's tabs (`ALL`, `UNRATED`, a rated round's `RATED`, a yes/no round's `SELECTED` and `REJECTED`; another kind's is `BAD_INPUT`); `order`: `FILE` (default), `RATE`, `LATEST_VOTE`, `OLDEST_VOTE`. `first` 50 by default, clamped to 1..200; `totalCount` |
+| `image(roundId, pageId, userId)` | one file of the same list (whatever its vote), with the vote; `NOT_FOUND` for a file the list hasn't |
+
+Both run the web galleries' checks in their order (`GalleryService.refusal` with `viewerRounds`, `pausedFor`,
+`viewAs`): a round the caller may not view (another contest, an inactive membership, a juror's round they don't
+judge) is `NOT_FOUND`, logged; a juror's round not open to them now is a state, not a denial: `CONFLICT` with the
+message `round_closed` and always an `extensions.reason` (`juror_stopped`, `round_stopped`, `round_distributing`
+for a round being created, `round_preparing`, `round_closing`, and `round_paused` while a job moves its files),
+as the gallery's 409 and its state page. A request answers each round's checks once, however many aliases ask.
+
+**Paging `roundImages`** (keyset, the own gallery tiles plan's continuation rules). Pass the page's
+`pageInfo.endCursor` as the next request's `after`, with the same `roundId`, `userId`, `filter` and `order` (a
+cursor of another list is `BAD_INPUT` `bad_cursor`). A cursor carries the page's last file's place in the order
+(the full sort key, ending in the page id) as it was when the page was read: the next page starts right after
+that place, so no file is shown twice or skipped across pages, also among files of the same rate or time, and a
+vote after a page was read (which moves a file in `RATE` or vote-time order, or out of `UNRATED`) never moves the
+place a cursor continues from. A file voted after its page was read can still leave or join a later page, as on
+the web: a file whose vote moves it further on
+is shown again there, so a client drops a page id it already shows, as the gallery's script does. `hasNextPage` false ends the list; a page past it is empty with a null `endCursor`.
+
+**Thumbnails.** A file's `thumbnail(size)` is what the web galleries load: `GALLERY` (300 x 250, a rated round's
+gallery, the default), `ROW` (250 tall, a yes/no round's gallery), `STRIP` (150 x 120, the large view's strip),
+each with `url` (1x), `srcset` (1.5x, 2x) and the size it is shown at. The URLs are paths on this server (the
+image proxy, `/wikipedia/commons/thumb/...`), served to a signed-in session only; where the box is at least as
+wide as the file, the URL is the Commons file itself (`upload.wikimedia.org`), as on the web pages; so a page of the tool (same
+origin, the session cookie) loads them; a token caller gets the paths but can't load them. `largeImage` is the
+large view's: Wikimedia's own sizes for a Commons file, this server's thumbnail as `fallback`.
 
 **Series admins** (contest series plan §3.3, CA7, CA20) get from a **session** the roles the web
 pages give them: derived Admin in their series' live contests from the grant's start year on,
@@ -195,8 +229,8 @@ curl -H "Authorization: Bearer $WLXJURY_TOKEN" -H "Content-Type: application/jso
 ```
 
 **Errors.** GraphQL's `errors` array; each has a message key (never request or exception text),
-`extensions.code` (`UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `BAD_INPUT`, `INTERNAL_ERROR`,
-`CSRF`, `TOO_MANY_REQUESTS`) and, for `NOT_FOUND`, a denial, a CSRF refusal or a server error, `extensions.reference`,
+`extensions.code` (`UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `BAD_INPUT`, `CONFLICT` (a round's state,
+with `extensions.reason`), `INTERNAL_ERROR`, `CSRF`, `TOO_MANY_REQUESTS`) and, for `NOT_FOUND`, a denial, a CSRF refusal or a server error, `extensions.reference`,
 which finds the log line. HTTP 401 (no credentials), 403 (a token's mutation, a read-only token, a
 CSRF refusal), 400 (a body that isn't one request object), 405, 415 and 429 also carry the REST
 API's `error` field; 413 has that field only; the rest are 200 with `errors`. A query that breaks a rule of the language or the schema is `invalid_query` with the
@@ -209,7 +243,8 @@ type lists nested at most twice: `introspection_too_deep`); at most 30 aliases
 (`too_many_aliases`) and 1,000 selections (fields, fragment spreads, inline fragments), fragments
 counted where spread (`query_too_large`); every fragment used (`unused_fragment`), named once
 (`duplicate_fragment`), and nothing but operations and fragments (`non_executable_definition`); a complexity budget of 5,000, each field 1 and a list times its page size
-(`contests` its limit, a contest's `rounds` 20: `query_too_complex`). Everything after reading the
+(`contests` its limit, a contest's `rounds` 20, `roundImages` its `first`, a `roundStat` 200: `query_too_complex`; a page of
+200 files fits with about 20 fields a file). Everything after reading the
 body runs on the blocking pool and is answered within 20 seconds (`timeout`); a run past that stops
 at its next database read, and one that waited for a thread past it does nothing. An account has
 at most 2 runs at once, its tokens' and sessions' together (429 `too_many_requests`): the blocking
@@ -237,7 +272,8 @@ served by the app in this slice. Use the SDL, or introspection from a signed-in 
   root.
 
 **For developers.** `graphql.GraphQLController` (the HTTP part and the checks, in order),
-`graphql.GraphQLSchema` (types and resolvers), `graphql.GraphQLContext` (the caller and
+`graphql.GraphQLSchema` (types and resolvers), `graphql.RoundQueries` (the round queries' resolvers:
+the round loaded first, then the caller judged in its contest), `graphql.GraphQLContext` (the caller and
 `asMemberOf`: the caller judged in the resource's contest by `Secured.checked` with a permission
 that takes a series grant's derived role, as the round pages do, never a contest id taken from the
 query as a permission; root bypasses), `graphql.QueryLimits`. The router (`api.ApiRouter`) mounts
@@ -248,4 +284,5 @@ kind of dependency of the router, another composition of its routes, a non-Tapir
 `Api.routes`, another `conf/routes` entry under `/api`), not a proof: a new route is still reviewed. A resolver loads the resource first, then
 judges the caller in its contest; a contest the caller may not see is logged on `security.authz`
 (`resource=contest:<id>`) with the reference the `NOT_FOUND` error carries. Tests:
-`graphql.GraphQLApiSpec` (through the router and filters) and `graphql.GraphQLSchemaSpec`.
+`graphql.GraphQLApiSpec` (through the router and filters), `graphql.GraphQLRoundsSpec` (the round
+queries, through the router) and `graphql.GraphQLSchemaSpec`.

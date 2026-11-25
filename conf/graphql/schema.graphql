@@ -42,6 +42,67 @@ enum ContestRole {
   JURY
 }
 
+"Which of a round's files a list has, by its juror's votes: the round's tabs (RATED a rated round's, SELECTED and REJECTED a yes/no round's; another round's is BAD_INPUT)."
+enum ImageFilter {
+  "All the files."
+  ALL
+
+  "The files without a vote yet."
+  UNRATED
+
+  "A rated round's files with a vote (stars, or the cross)."
+  RATED
+
+  "A yes/no round's files voted yes."
+  SELECTED
+
+  "A yes/no round's files voted no."
+  REJECTED
+}
+
+"The order of a list's files; files of the same place in it by page id, so that pages are stable."
+enum ImageOrder {
+  "By monument id, then page id: a vote never moves a file."
+  FILE
+
+  "The highest rate first, then in file order."
+  RATE
+
+  "The latest voted first, the unrated last, then in file order."
+  LATEST_VOTE
+
+  "The oldest voted first, the unrated last, then in file order."
+  OLDEST_VOTE
+}
+
+"A juror's row of a round's statistics, as the round statistics page has it."
+type JurorStat {
+  "The juror's account id."
+  id: ID!
+  fullname: String!
+
+  "The juror's email: for root and the contest's Admins only (decision Q6); null for anyone else."
+  email: String
+
+  "STOPPED when stopped on the round by its admins."
+  status: JurorStatus!
+
+  "Their files in the round."
+  files: Int!
+
+  "Their files without a vote yet."
+  unrated: Int!
+
+  "A rated round's files they voted on (any vote: stars, or the cross that is the worst mark); null in a yes/no round."
+  rated: Int
+
+  "A yes/no round's yes votes; null in a rated round, and for another juror's row while the caller sees only their own votes (the round's othersVotesVisible)."
+  selected: Int
+
+  "A yes/no round's no votes; null as for selected."
+  rejected: Int
+}
+
 "The caller's status as a juror of a round."
 enum JurorStatus {
   "A juror of the round, not stopped."
@@ -49,6 +110,21 @@ enum JurorStatus {
 
   "Stopped on the round by its admins: no new files, no votes; its gallery says so."
   STOPPED
+}
+
+"A file as the large view loads it: from Wikimedia at its sizes for a Commons file, with this server's thumbnail as the fallback."
+type LargeImage {
+  src: String!
+  srcset: String!
+
+  "The sizes attribute, where known."
+  sizes: String
+
+  "This server's thumbnail, to load if Wikimedia has not the file."
+  fallback: String
+
+  "The width it is shown at, where known."
+  width: Int
 }
 
 "The caller."
@@ -65,6 +141,13 @@ type Me {
   authMethod: AuthMethod!
 }
 
+"Where a page of a list ends."
+type PageInfo {
+  "The cursor after the page's last file, for the next page's after; null for an empty page."
+  endCursor: String
+  hasNextPage: Boolean!
+}
+
 type Query {
   "The caller."
   me: Me!
@@ -79,11 +162,44 @@ type Query {
 
   "One contest the caller may see; null with a NOT_FOUND error for any other."
   contest(id: ID!): Contest
+
+  "One round the caller may see (as in its contest's rounds); null with a NOT_FOUND error for any other."
+  round(id: ID!): Round
+
+  "A round's statistics, for root and its contest's admins and organizers: null with NOT_FOUND for a round the caller doesn't see (as round(id)), FORBIDDEN for one they see but may not see the statistics of."
+  roundStat(roundId: ID!): RoundStat
+
+  "A page of a juror's list of a round's files with their votes, as the round's gallery lists them: the caller's own list (a juror sees only their own votes), or with userId a juror's, for those who may see other jurors' votes there (othersVotesVisible). Keyset pages: pass pageInfo.endCursor as after. Null with NOT_FOUND for a round the caller may not view, FORBIDDEN for another juror's list they may not see, CONFLICT round_closed with extensions.reason for a juror's round not open to them now."
+  roundImages(roundId: ID!,
+
+    "Whose list: omitted, the caller's own; a juror of the round's, for root and the contest's admins and organizers who are not a juror of the open round."
+    userId: ID,
+
+    "The tab; ALL if omitted."
+    filter: ImageFilter,
+
+    "The order; FILE if omitted."
+    order: ImageOrder,
+
+    "The page size, at most 200."
+    first: Int = 50,
+
+    "The previous page's pageInfo.endCursor; omitted, the first page."
+    after: String): RoundImageConnection
+
+  "One file of the list roundImages gives with the same roundId and userId (whatever its vote), with the vote; the same errors, and NOT_FOUND for a file the list has not."
+  image(roundId: ID!, pageId: ID!,
+
+    "Whose list: omitted, the caller's own; a juror of the round's, for root and the contest's admins and organizers who are not a juror of the open round."
+    userId: ID): RoundImage
 }
 
 "A judging round of a contest."
 type Round {
   id: ID!
+
+  "Its contest's id."
+  contestId: ID!
 
   "Its number in the contest."
   number: Int!
@@ -115,6 +231,43 @@ type Round {
   othersVotesVisible: Boolean!
 }
 
+"A file of a round's list, with the vote of the list's juror on it."
+type RoundImage {
+  "The file's Commons page id."
+  pageId: ID!
+
+  "The file's title on Commons (File:...)."
+  title: String!
+
+  "Its stored width; 0 if not known."
+  width: Int!
+
+  "Its stored height; 0 if not known."
+  height: Int!
+  monumentId: String
+  isVideo: Boolean!
+
+  "Its thumbnail in one of the web galleries' boxes."
+  thumbnail(
+    "The box; GALLERY if omitted."
+    size: ThumbnailSize): Thumbnail!
+
+  "The file as the large view loads it."
+  largeImage: LargeImage!
+
+  "The vote of the list's juror on it: the caller's own, or the juror's whose list an organizer views."
+  vote: Vote
+}
+
+"A page of a juror's list of a round's files."
+type RoundImageConnection {
+  nodes: [RoundImage!]!
+  pageInfo: PageInfo!
+
+  "The list's files, all pages (one count, read only if asked)."
+  totalCount: Int!
+}
+
 "How jurors vote in a round."
 enum RoundKind {
   "Yes or no."
@@ -125,6 +278,41 @@ enum RoundKind {
 
   "No votes, comments only."
   COMMENTS_ONLY
+}
+
+"A round's statistics, as the round statistics page shows them."
+type RoundStat {
+  round: Round!
+
+  "The round's files."
+  totalFiles: Int!
+
+  "A yes/no round's files with at least one yes vote; null in a rated round and while the caller sees only their own votes."
+  selectedFiles: Int
+
+  "A yes/no round's files with at least one vote still to come; null as for selectedFiles."
+  unratedFiles: Int
+
+  "A yes/no round's files with at least one no vote; null as for selectedFiles."
+  rejectedFiles: Int
+
+  "The round's files deleted on Commons."
+  deletedFiles: Int!
+
+  "Of those, the files still in its galleries and results."
+  deletedFilesCounted: Int!
+
+  "Comments written in this round on its files."
+  commentsInRound: Int!
+
+  "All the contest's comments on the round's files."
+  commentsAllRounds: Int!
+
+  "Open, but none of its jurors can vote in it (all stopped, or none)."
+  noActiveJuror: Boolean!
+
+  "Its jurors with votes in it, each with their counts."
+  jurors: [JurorStat!]!
 }
 
 "A round's lifecycle state."
@@ -143,4 +331,43 @@ enum RoundStatus {
 
   "Its creation was cancelled."
   CANCELLED
+}
+
+"A file's thumbnail as the web gallery's img has it: through this server's image proxy (a signed-in session's cookie loads it), or the file itself where it is no wider."
+type Thumbnail {
+  "The src, at 1x: a path on this server, or the file's URL."
+  url: String!
+
+  "The srcset: the 1.5x and 2x sizes."
+  srcset: String!
+
+  "The width it is shown at; null without the file's stored size."
+  width: Int
+
+  "The height it is shown at; null as for width."
+  height: Int
+}
+
+"The boxes the web galleries fit thumbnails into."
+enum ThumbnailSize {
+  "300 x 250: a rated round's gallery."
+  GALLERY
+
+  "250 tall at any width: a yes/no round's gallery."
+  ROW
+
+  "150 x 120: the large view's strip of files."
+  STRIP
+}
+
+"A juror's vote on a file in a round."
+type Vote {
+  "A yes/no round: 1 yes, -1 no, 0 not yet. A rated round: the stars in stored units (a half-star round's are halves: halfStars), -1 the cross (the worst mark), 0 not yet. A comments-only round: 0."
+  rate: Int!
+
+  "Whether it is a vote (rate not 0)."
+  voted: Boolean!
+
+  "When the rate was last changed (ISO-8601, UTC); null for one not voted yet, or voted before times were kept."
+  votedAt: String
 }
