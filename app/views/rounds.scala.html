@@ -17,7 +17,8 @@
         leftFrozen: Map[Long, Int] = Map.empty,
         filter: controllers.RoundsFilter = controllers.RoundsFilter.Default,
         noActiveJuror: Set[Long] = Set.empty,
-        lineage: Option[services.RoundLineage.Lineage] = None
+        lineage: Option[services.RoundLineage.Lineage] = None,
+        findAgain: Set[Long] = Set.empty
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @* The rounds the Status and Type menus keep, in the Order menu's order (RoundsFilter; the
@@ -110,9 +111,11 @@
                                the Yes, its words in the tooltip and for screen readers *@
                             @* a round not yet distributed (RoundStartBlock: in review, its images being selected or
                                distributed, its creation cancelled, failed or not finished) has no Start: its state instead, and for one
-                               waiting in review, its jurors form, where it is distributed (the maintainer, 2026-11-25) *@
+                               waiting in review, its jurors form, where it is distributed (the maintainer, 2026-11-25); for one whose
+                               setup was cancelled or didn't finish, meant for review and with no jurors, "Find the matching files
+                               again" (#194, RoundStartBlock.mayFindFilesAgain, as RoundController.findFilesAgain allows it) *@
                             <td>@RoundStartBlock.of(round, jobs.get(round.getId)) match {
-                                case Some(block) => {<span class="wlx-round-start-state small" data-round="@round.getId" data-state="@block.reason">@Messages(block.stateKey)</span>@if(block == RoundStartBlock.NotDistributed) { <a class="btn btn-primary btn-sm ms-1 round-start-distribute" href="@routes.RoundReviewController.jurors(round.getId)">@Messages("round.review.distribute")</a>}}
+                                case Some(block) => {<span class="wlx-round-start-state small" data-round="@round.getId" data-state="@block.reason">@Messages(block.stateKey)</span>@if(block == RoundStartBlock.NotDistributed) { <a class="btn btn-primary btn-sm ms-1 round-start-distribute" href="@routes.RoundReviewController.jurors(round.getId)">@Messages("round.review.distribute")</a>}@if(findAgain.contains(round.getId)) { <form method="post" action="@routes.RoundController.findFilesAgain(round.getId)" class="d-inline round-find-again" data-round="@round.getId">@csrfField()@filterFields<button type="submit" class="btn btn-primary btn-sm ms-1">@Messages("round.find.again")</button></form>}}
                                 case None => {@snippets.startStop(round.active, round.getId, contest.getId, routes.RoundController.setRound, extraFields = filterFields)@if(noActiveJuror.contains(round.getId)) {<span class="wlx-round-warning text-warning-emphasis ms-1" data-round="@round.getId" title="@Messages("round.warning.nojurors.short")"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i><span class="visually-hidden">, @Messages("round.warning.nojurors.short")</span></span>}}
                             }</td>
                             <td>@roundsStat.getOrElse(round.getId, 0) </td>

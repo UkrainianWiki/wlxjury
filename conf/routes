@@ -215,6 +215,7 @@ POST        /admin/users/:userId/tokens/revoke                                  
 POST        /admin/users/:userId/tokens/:id/revoke                                  @controllers.ApiTokenAdminController.revoke(userId: Long, id: Long)
 POST        /admin/setimages                                                        @controllers.RoundController.setImages(contestId: Option[Long] ?= None)
 POST        /admin/setround                                                         @controllers.RoundController.setRound()
+POST        /admin/rounds/:id/find-files-again                                      @controllers.RoundController.findFilesAgain(id: Long)
 POST        /round/setrounduser                                                     @controllers.RoundController.setRoundUser()
 
 GET         /roundstat                                                              @controllers.RoundController.currentRoundStat(contestId: Option[Long] ?= None)

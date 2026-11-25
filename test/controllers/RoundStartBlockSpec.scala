@@ -203,11 +203,13 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
             "Round 4 (Round 4) can't be started: its creation was cancelled. To create it after all, edit the round, " +
               "tick “Distribute ? new files” and save.")) and
           (error(cancelledOne) must beSome(not(contain("Retry")))) and
-          // no jurors: the form's box is read only, nothing there finishes it
+          // no jurors: the form's box is read only; meant to be distributed after its fill, nothing finishes
+          // it (a new round instead); meant for review, "Find the matching files again" does (#194)
           (error(cancelledNoJurors) must beSome(
-            "Round 6 (Round 6) can't be started: its creation was cancelled before it had jurors, so it can't be " +
-              "reinstated. Create the round again.")) and
-          (error(unfinished) must beSome(contain("its creation didn't finish, and it has no jurors"))) and
+            "Round 6 (Round 6) can't be started: its setup was cancelled before it had jurors, and it was meant to be " +
+              "distributed right after its files were found, which needs jurors. Set up a new round instead.")) and
+          (error(unfinished) must beSome(contain("its setup didn't finish, and it has no jurors yet. " +
+            "Use “Find the matching files again” in its row"))) and
           (error(unfinished) must beSome(not(contain("Retry")))) and
           unchanged(distributing) and unchanged(selecting) and unchanged(failed) and unchanged(cancelledOne) and
           unchanged(unfinished) and unchanged(cancelledNoJurors)

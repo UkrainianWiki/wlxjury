@@ -28,7 +28,8 @@ class SeriesReachGuardSpec extends Specification {
 
   /** Each action that opts in to derived roles, by file: the count of `derived = true`. */
   private val DerivedOptIns: Map[String, (Int, String)] = Map(
-    "app/controllers/RoundController.scala" -> (10, "rounds: list, create, edit, start, stop, statistics, round set"),
+    "app/controllers/RoundController.scala" -> (11, "rounds: list, create, edit, start, stop, statistics, round set; " +
+      "Find the matching files again (saveRound's reinstating path, as the round form)"),
     "app/controllers/RoundJurorsController.scala" -> (4, "a round's jurors"),
     "app/controllers/RoundReviewController.scala" -> (5, "round review"),
     "app/controllers/RoundConflictsController.scala" -> (3, "conflicts of interest"),

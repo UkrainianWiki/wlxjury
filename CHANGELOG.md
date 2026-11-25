@@ -28,6 +28,7 @@ For the next release, 26.11.17.
 
 **Fixes**
 
+- Rounds page: a round whose setup was cancelled or didn't finish, meant to be reviewed first and with no jurors yet, has "Find the matching files again": its files are found again and it waits for review, instead of having to be set up anew. Its refused Start says so (#194).
 - A round stopped while a juror is being added to it no longer makes the add fail: the add completes and the round stays stopped.
 - Rounds page: a round not yet distributed to its jurors has no Start button. It reads "Not started – waiting for distribution" with a "Distribute to jurors" link, or "Images are being distributed" while that runs. Starting it anyway no longer says its images are being distributed when they aren't: the message says what to do.
 - Round form: a refused save comes back as the same form (re-apply mode, regions, nominations, the round's jurors kept), lists every error at the top with a link to its field, shows each at its field, and opens the section that holds it ("Media filtering" stayed closed before, hiding the error). Each refused save is logged as `form_refused` (field names and message keys, never the values).
