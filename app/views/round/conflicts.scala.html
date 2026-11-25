@@ -4,7 +4,8 @@
         round: Round,
         review: RoundConflicts.Review,
         mayEdit: Boolean,
-        reasons: Seq[String]
+        reasons: Seq[String],
+        setupStep: Option[controllers.RoundNextStep] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @* A round's conflicts of interest (RoundConflictsController): the files that are conflicts now,
@@ -28,6 +29,11 @@
         <div class="col-md-10">
             <h1 class="h3">@Messages("coi.round.title.of", round.number, round.name.getOrElse(""))</h1>
             <p>@Messages("coi.round.help")</p>
+            @* a round being set up: its state in one line and a link to its current step (UI-path plan
+               §0 row 7); "Distribute to jurors" for its admins once its files matched *@
+            @for(step <- setupStep) {
+                @setupState(step, mayAct = mayEdit, mayView = true)
+            }
 
             @for(text <- flash.get("success")) {
                 <div class="alert alert-success" role="status">@text</div>

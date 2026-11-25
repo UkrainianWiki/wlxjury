@@ -25,6 +25,7 @@ For the next release, 26.11.17.
 - A round's statistics, review page and Edit round page link the rounds it was created from ("Created from: Round 3 (…)") and the rounds created from it, for its admins and organizers.
 - A round being set up says on its Edit page and its review page that jurors can't see it yet, with "Change the settings", "Check the files" and "Distribute to jurors" (disabled, saying why, while its files are being matched or when none matches) (#186).
 - A round's rating type can be changed while it is being set up (in review, nothing distributed); it is locked once distributed (#184).
+- A new round is set up in numbered steps with a step bar: 1 "Which files" (the form, one button "Save and find matching files"), 2 "Check the matching files" (the review page, "N files match (the contest has M)", then "Distribute to jurors" as its main button), 3 "Jurors" (the jurors form), then open to jurors. The Rounds page reads "Setting up – step 2 of 3: check files" or "… step 3 of 3: choose jurors" with that step's button in place of Start; the round form, statistics and conflicts page show the same step with a link.
 
 **Fixes**
 

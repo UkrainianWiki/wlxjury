@@ -22,8 +22,8 @@ import scala.concurrent.Future
   *     (per status tab), its jurors form and, after distribution, its gallery; the country menu for
   *     the round's staff only (a juror gets none, nor its JSON, and a juror's `country=` is ignored).
   *  2. The jurors form ([[RoundReviewController.jurors]]): the round's admins only; its refusals
-  *     back to it; the new-round form without jurors, file distribution or D4's box, with "Review
-  *     images first" and "Choose jurors next".
+  *     back to it; the new-round form without jurors, file distribution or D4's box, with one button,
+  *     "Save and find matching files" (step 1 of the round's setup), then the round's review page.
   *  3. Staff comments on a round in review: ordinary round comments, which jurors see once it is
   *     distributed, not before.
   */
@@ -279,7 +279,7 @@ class ReviewPlacesJurorsFormSpec extends PlaySpecification with PlayTestDb {
 
   "the new-round form" should {
 
-    "have filters only, with \"Review images first\" and \"Choose jurors next\"" in {
+    "have filters only, with one button, \"Save and find matching files\", then the review page" in {
       testDbApp { app =>
         val f = setUp()
         // each answered before the next
@@ -291,17 +291,18 @@ class ReviewPlacesJurorsFormSpec extends PlaySpecification with PlayTestDb {
           res
         }
         val form = contentAsString(get(app, "admin@example.com", s"/admin/rounds/edit?contestId=$contestId"))
-        val first = create("First", "next" -> "review")
+        val first = create("First")
+        // a form from before the one button posting "Choose jurors next": the review page all the same
         val next = create("Next", "next" -> "jurors")
         // an older page's D4 box and jurors: the round waits in review all the same, without them
         val old = create("Old", "distributeAfter" -> "true", "jurors[0]" -> f.jurors.head.getId.toString, "distribution" -> "1")
         def named(n: String) = Round.findByContest(contestId).find(_.name.contains(n)).get
-        (form must contain("id=\"round-form-review-first\"")) and (form must contain("Review images first")) and
-          (form must contain("id=\"round-form-jurors-next\"")) and (form must contain("Choose jurors next")) and
+        (form must contain("id=\"round-form-save-find\"")) and (form must contain("Save and find matching files")) and
+          (form must not(contain("round-form-review-first"))) and (form must not(contain("round-form-jurors-next"))) and
           (form must not(contain("name=\"distributeAfter\""))) and (form must not(contain("id=\"jurors\""))) and
           (form must not(contain("id=\"distribution\""))) and
-          (redirectLocation(first) must beSome(s"/admin/rounds?contestId=$contestId")) and
-          (redirectLocation(next) must beSome(jurorsForm(named("Next").getId))) and
+          (redirectLocation(first) must beSome(s"/admin/rounds/${named("First").getId}/review")) and
+          (redirectLocation(next) must beSome(s"/admin/rounds/${named("Next").getId}/review")) and
           (named("First").inReview must beTrue) and (named("Next").inReview must beTrue) and
           (status(old) === SEE_OTHER) and (named("Old").inReview must beTrue) and
           (RoundUser.byRoundId(named("Old").getId) must beEmpty) and (VoteJdbc.byRound(named("Old").getId) must beEmpty)
