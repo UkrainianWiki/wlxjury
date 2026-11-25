@@ -16,6 +16,9 @@ Marks: **[user]** decided by the maintainer; a default is this plan's, open to t
 - on production, 2026-11-25 08:05–08:13 CET, an admin got 11 × `POST /admin/rounds/save` → 400 in
   a row before a save succeeded.
 
+Release labels (26.11.11, 26.11.13, 26.11.13.1, 26.11.14) are from `CHANGELOG.md`; the repository's
+git tags start at `26.11.15`, and every fix below is in it.
+
 **What they have in common:** each page decides on its own whether to show an action (a Twirl
 condition), and each controller or service decides on its own whether to allow it (a permission, a
 refusal under the round's lock). The two are written separately, at different times, and nothing
@@ -26,11 +29,11 @@ that one case (§0). This plan proposes one source of truth per action and a tab
 
 | # | Case | Fixed by | Guard spec | Still open |
 |---|---|---|---|---|
-| 1 | "Add juror…" listed people already jurors of the round | `92835218` (#122, 26.11.15): the add page lists only the contest's jurors outside the round; a stopped juror is restarted from Round statistics ("Start with a fair share") | `test/controllers/RoundJurorsAuthorizationSpec.scala:148` ("offer only the contest's jurors outside the round, never an active or a stopped juror"); `test/services/distribution/RoundRebalanceJobSpec.scala:397` (an active juror refused on page and POST) | (a) "Add juror…" is linked for every round its admin sees (`roundStatTable.scala.html:164`, `mayPause` only), also stopped, in review and being created, where the page then refuses ("not running"); Reassign is gated by `running` (line 27). (b) When every contest juror is already in the round the link still shows and the page has nobody to offer (to verify on the page). |
-| 2 | Reassign offered a juror's files to that same juror | `31db48be` (archive #368, 26.11.13): the receivers are the round's other jurors (`RoundRebalanceService.reassignPreview`: `others = j.jurors.filterNot(from)`; `reassignRefusal`: `to = receivers.filterNot(_ == from)`); add-juror donors likewise exclude the juror added (`RoundRebalanceService.preview`) | None that names it: `RoundReassignAuthorizationSpec.scala:102` checks the receivers shown, `:286` refuses other bad receivers, but no example posts `receiver = from` or asserts the juror is absent from the receiver list | (a) A posted `receiver = from` is silently dropped, not refused: harmless, but no spec pins either behaviour. (b) Add an explicit example on page and POST for both reassign (receiver) and add (donor). |
-| 3 | "Reassign files…" offered when no other juror can take the files | `fc5f3ad3` (archive #383, hotfix 26.11.13.1): `RoundReassign.enoughReceivers` (N > 0: at least N other jurors, stopped ones count since a ticked one is restarted; N = 0: at least one other *active* juror); the page, the POST and the job's first step refuse with `AloneKey` | `RoundReassignAuthorizationSpec.scala:164` (alone with N = 1 and N = 0; the other juror with no active jury membership, deleted, or stopped with N = 0; N = 2 with one other) and `:193` (N = 1 with a stopped other, N = 2 with two: offered); `RoundReassignJobSpec.scala:479` (the job's own check) | **One active plus stopped ones:** covered (stopped count for N > 0, not for N = 0). **Stopped round_user row:** covered (`juror2 -> false`); a NULL `active` (before V108) reads as stopped, as everywhere. **Series-derived jurors:** do not exist: series grants derive admin and organizer roles only (`Secured.derivedRoleIn`); receivers are read from real `user_contest` jury rows (`User.contestMembers`), so nothing to cover. **Open:** a receiver whose account is in an account join (J-2) is not among the examples. |
-| 4 | Criteria UI shown where criteria can't be edited | `3fdff615` (archive #355, 26.11.11): an existing yes/no or comments-only round's form has no criteria and no worst mark (`unratedRound`); `9362cfe5` (archive #386, 26.11.14, "A started round's criteria can no longer be changed"): a rated round running or with a vote lists its criteria read only (`lockedCriteria` → `RoundCriterion.started`), and `RoundCriterion.update` refuses a change | `RoundEditPageSpec.scala:476`, `:498`, `:511` (also on the form shown again with an error), `:528`; `RoundCriteriaSpec.scala:232`, `:406`, `:436`, `:464` (running, or frozen while active: locked; editable again once stopped before a vote), `:365` (re-apply) | **In review:** criteria editable (not started) but the rating type locked (`editRound.scala.html`: `rates` readonly by `noEdit = !newRound`): #184. **Paused by a job (frozen while active):** covered. **Re-apply:** criteria written in its transaction, refusal covered. **After a refused re-apply save:** the form comes back without re-apply mode (§0.5, cause A), so the filters turn read only and the next press is a plain Save. |
-| 5 | 11 × 400 on `POST /admin/rounds/save` | not fixed | partial: the 400s are specced one by one (`RoundExcludeRoundsFormSpec`, `RoundWorstMarkFormSpec`, `RoundCriteriaSpec`, `RoundEditPageSpec:183`, `RoundReviewJurorsReapplyPageSpec:159`); none checks what the page offers *after* a 400 | see §0.5 |
+| 1 | "Add juror…" listed people already jurors of the round | `92835218` (#122, 26.11.15): the add page lists only the contest's jurors outside the round; a stopped juror is restarted from Round statistics ("Start with a fair share") | `test/controllers/RoundJurorsAuthorizationSpec.scala:148` ("offer only the contest's jurors outside the round, never an active or a stopped juror"); `test/services/distribution/RoundRebalanceJobSpec.scala:397` (an active juror refused on page and POST) | • "Add juror…" is linked for every round its admin sees (`roundStatTable.scala.html:164`, `mayPause` only), also stopped, in review and being created; the page then refuses (not running, frozen or legacy: `RoundRebalanceHandler.refusal`). Reassign is gated by `running` (line 27).<br>• When every contest juror is already in the round, the link still shows and the page has nobody to offer (**to verify** on the page). |
+| 2 | Reassign offered a juror's files to that same juror | `31db48be` (archive #368, 26.11.13): the receivers are the round's other jurors (`RoundRebalanceService.reassignPreview`: `others = j.jurors.filterNot(from)`; `reassignRefusal`: `to = receivers.filterNot(_ == from)`); add-juror donors likewise exclude the juror added (`RoundRebalanceService.preview`) | None that names it: `RoundReassignAuthorizationSpec.scala:102` checks the receivers shown, `:286` refuses other bad receivers, but no example posts `receiver = from` or asserts the juror is absent from the receiver list | • A posted `receiver = from` is silently dropped, not refused: harmless, but no spec pins either behaviour.<br>• Add an explicit example on page and POST for both reassign (receiver) and add (donor). |
+| 3 | "Reassign files…" offered when no other juror can take the files | `fc5f3ad3` (archive #383, hotfix 26.11.13.1): `RoundReassign.enoughReceivers` (N > 0: at least N other jurors, stopped ones count since a ticked one is restarted; N = 0: at least one other *active* juror); the page, the POST and the job's first step refuse with `AloneKey` | `RoundReassignAuthorizationSpec.scala:164` (alone with N = 1 and N = 0; the other juror with no active jury membership, deleted, or stopped with N = 0; N = 2 with one other) and `:193` (N = 1 with a stopped other, N = 2 with two: offered); `RoundReassignJobSpec.scala:479` (the job's own check) | • **One active plus stopped ones:** covered (stopped count for N > 0, not for N = 0).<br>• **Stopped round_user row:** covered (`juror2 -> false`); a NULL `active` (before V108) reads as stopped, as everywhere.<br>• **Series-derived jurors:** do not exist: series grants derive admin and organizer roles only (`Secured.derivedRoleIn`); receivers are read from real `user_contest` jury rows (`User.contestMembers`), so nothing to cover.<br>• **Open:** a receiver whose account is in an account join (J-2) is not among the examples. |
+| 4 | Criteria UI shown where criteria can't be edited | `3fdff615` (archive #355, 26.11.11): an existing yes/no or comments-only round's form has no criteria and no worst mark (`unratedRound`); `9362cfe5` (archive #386, 26.11.14, "A started round's criteria can no longer be changed"): a rated round running or with a vote lists its criteria read only (`lockedCriteria` → `RoundCriterion.started`), and `RoundCriterion.update` refuses a change | `RoundEditPageSpec.scala:476`, `:498`, `:511` (also on the form shown again with an error), `:528`; `RoundCriteriaSpec.scala:232`, `:406`, `:436`, `:464` (running, or frozen while active: locked; editable again once stopped before a vote), `:365` (re-apply) | • **In review:** criteria editable (not started) but the rating type locked (`editRound.scala.html`: `rates` readonly by `noEdit = !newRound`): #184.<br>• **Paused by a job (frozen while active):** covered.<br>• **Re-apply:** criteria written in its transaction, refusal covered.<br>• **After a refused re-apply save:** the form comes back without re-apply mode (§0.5), so the filters turn read only and the next press is a plain Save. |
+| 5 | 11 × 400 on `POST /admin/rounds/save` | not fixed (26.11.16 and master unchanged on this path) | none for the form shown after a 400. Individual refusals return 400 in `RoundExcludeRoundsFormSpec`, `RoundWorstMarkFormSpec`, `RoundCriteriaSpec`, `RoundEditPageSpec:183` (top-N below 1) and `RoundReviewJurorsReapplyPageSpec:159`, but they check the status and message only, not the mode, open sections or menus of the form that comes back | see §0.5 |
 
 ### 0.5 Which saves return 400, and what the admin sees
 
@@ -55,32 +58,54 @@ that one case (§0). This plan proposes one source of truth per action and a tab
 the form; field errors show under their field (`bs.feedback`), and the category choice's under
 "More category options". A form-level error about the category boxes, the criteria, the
 previous rounds or the rounds to leave out is therefore not next to its control, and a second
-global error is not shown at all. **No 400 of either kind is logged** (only `failed` logs, for
-unexpected exceptions), so production's access log shows the 400s but not why.
+global error is not shown at all. **No binding error and no `reRender` refusal is logged** (only `failed`
+and the service refusals log), so production's access log shows the 400s but not why.
 
-**Likely causes of the 11 failures** (from the code; no production data read):
-- **A. A refused edit of a round in review loses its re-apply mode.** The `formWithErrors` branch
-  passes neither `reapply` nor `regions`, `specialNominations`, `coi`, `waiting`,
-  `distributionJob`, `scoreRuleWarning` or `storedCriteria`, and gives the contest's jurors, not
-  the round's. With `reapply = false` and `newRound = false`, `imageFiltering` renders every
-  filter read only (the category boxes readonly, their values in hidden inputs). The invalid value
-  is posted again on each Save, and can't be corrected on that page: a **loop of 400s** until the
-  admin reopens Edit round from the list (a GET, which restores re-apply mode). This fits "many
-  400s, then success" best. The same holds for any existing round whose *stored* filters no
-  longer pass today's validation (a legacy category rule or title after #170's two boxes): every
-  save of its edit form is refused, with read-only fields.
-- **B. A wait shown as an error.** `error.exclude.rounds.busy` and
-  `error.previous.round.rebalancing` refuse until another round's job finishes (minutes on a large
-  round); the admin presses Save again until it passes. Eight minutes is a plausible job length.
-- **C. Lost menus on a new round.** On a new round's refused form the region and special-nomination
-  menus are missing (`regions = Map.empty`), so a resubmission silently drops those filters; not a
-  400 by itself, but the form the admin fixes is not the one they filled in.
-- **D. A global error far from its control**, e.g. the category rule or mixed previous-round types,
-  read as "nothing happened".
+**What happened** (production access log and app log, 2026-11-25; production ran 26.11.15, and
+26.11.16 and master don't change this path):
+- 08:01:54 the new-round form was saved (303): round 1991 was created then.
+- 08:05:15 a save whose referer was the 08:00 form, with no GET in between: the admin pressed Back
+  and resubmitted the cached new-round form. 400.
+- 08:05–08:13 ten more saves from the 400 page, each 400, each with the original form token. The
+  bodies were large (a long pasted "Add files" list).
+- 08:15:41 a save answered 303, but only by the duplicate-form guard (WARN "already created from
+  this form; not creating it a second time"): nothing was created and **the changes were silently
+  dropped**.
+- 08:36 the admin opened Edit round 1991 and used Re-apply filters, which worked; distributed at 08:52.
 
-These 400s are the action's own, so `ErrorHandler`'s `client_error … status=400` line is not written
-for them; the access log's request lines and the round's state at the time would tell A from B
-(§5 Q6).
+**Why the 400s.** None of the 11 was logged, and every service refusal logs a WARN, so the
+service refusals (including the wait `error.previous.round.rebalancing` and
+`ExcludeRoundsRefused`) are ruled out. What is left are the silent paths: the `formWithErrors`
+branch, `files.list.unreadable` and `error.rejected.by.no.source`. Most likely (medium
+confidence) a **field error inside the "Media filtering" card**: the card is rendered collapsed
+on every render, the 400 included, and holds every filter field (previous rounds, rejected-by,
+top-N, the category boxes, the rounds to leave out, media type). The error showed only inside
+the closed card, so each press of "Create round" came back with the values kept and no visible
+message.
+
+**Other problems of the same branch** (from the code, not seen in this incident):
+- **The form comes back different.** The `formWithErrors` branch passes neither `reapply` nor
+  `regions`, `specialNominations`, `coi`, `waiting`, `distributionJob`, `scoreRuleWarning` or
+  `storedCriteria`, and lists the contest's jurors, not the round's. On a round in review the
+  filters then render read only, the invalid value is posted again on each Save and can't be
+  corrected there; on a new round the region and nomination menus disappear and a resubmission
+  drops those filters.
+- **Stored filters that fail today's validation** (a legacy category rule or title after #170)
+  would refuse every save of that round's edit form, with read-only fields.
+- **Waits shown as errors** (`error.exclude.rounds.busy` as a form error,
+  `error.previous.round.rebalancing` as a refusal) make the admin press Save until a job ends.
+
+**Fix candidates** (all in the 26.11.17 refusal-UX item, §4):
+1. Open every section that contains an error, and put a linked error summary at the top (every
+   error, each linking to its field).
+2. Render the error branch through `roundFormView`, so the form keeps its mode, menus and jurors.
+3. Log each refused save once (WARN, message keys only, no input text).
+4. Check the form token before validating: "Round N was already created from this form – edit
+   it" with a link, which also covers Back from the browser cache.
+5. On a duplicate resubmit, offer to apply the changes to the round created (or say they were not
+   applied) instead of dropping them silently.
+6. Catch bad input up front: unreadable list lines on paste; min and required hints for top-N and
+   the category boxes.
 
 ## 1. Inventory: round and juror actions by state, role and condition
 
@@ -93,7 +118,8 @@ action: `derived = true`; all the actions below opt in, and `Secured.administers
 derived role too), organizer (read only + comments), juror.
 
 Cells: **O/A** offered and allowed; **O/R** offered, refused with a message; **—/A** allowed but not
-offered on that page; **—** neither. ⚠ marks a mismatch (§2).
+offered on that page; **—** neither. ⚠ marks a mismatch (§2). **Cells with "?" or "to verify" are
+unchecked**: read from the views only, the refusal not traced; the matrix spec (§3 a) settles them.
 
 ### 1.1 Admin (root and series admin the same, unless noted)
 
@@ -110,7 +136,7 @@ offered on that page; **—** neither. ⚠ marks a mismatch (§2).
 | Review page: Distribute | — | O/A (no active job) | — | — | — | — |
 | Jurors form: Distribute | — | O/A; 0 jurors in contest: link to Users | —/R | —/R | —/R | —/R |
 | Statistics: juror Start/Stop | O/R (job) | O/? ⚠ (no jurors yet; to verify) | O/A | O/R "busy" | O/A + warning | O/? |
-| Statistics: Add juror… | O/R ⚠ | O/R ⚠ (jurors come from the jurors form) | O/A | O/R ⚠ | O/R ⚠ | O/R ⚠ |
+| Statistics: Add juror… | O/R ⚠ refuses (not running, frozen or legacy) | O/R ⚠ refuses (not running, frozen or legacy); jurors come from the jurors form | O/A | O/R ⚠ | O/R ⚠ | O/R ⚠ (to verify) |
 | Statistics: stopped juror's "Start with a fair share" | O/R ⚠ | — | O/A | O/R ⚠ | O/R ⚠ | — |
 | Statistics: Reassign files… | — | — | O/A if ≥ needed receivers | — | — | — |
 | Conflicts: Stop the round / disqualify | — | O/A (disqualify) | O/A (stop) | O/R | O/A | ? |
@@ -152,7 +178,7 @@ Offered but refused:
 4. **"Leave out files in round(s)" offers a round being distributed**, then the save is refused;
    same for a previous round with a running add/reassign. Both are waits, presented as errors on
    a full form re-render.
-5. **Every refused save comes back as a different form** than the one sent (§0.5 A, C): the
+5. **Every refused save comes back as a different form** than the one sent (§0.5): the
    `formWithErrors` branch bypasses `roundFormView`.
 
 Allowed but not offered:
@@ -188,13 +214,18 @@ Order, fitting the queue:
    - #186: Edit round of a round in review gets "Distribute to jurors →" (the jurors form) beside
      Re-apply; spec: the review state offers it on Edit, the rounds list and the review page.
    - #184: rating type editable in review (no votes, no job, no later round using it).
-   - A separate **refusal UX** PR (d) for the round form: the `formWithErrors` branch goes
-     through `roundFormView` (keeps re-apply mode, menus, the round's jurors); all global errors
-     shown; one WARN log line per refused save (`round_save_refused contestId roundId keys=…`).
-     Spec: a refused re-apply comes back in re-apply mode with editable filters; a new round's
-     refused form keeps its regions. This addresses cause A of the 11 × 400.
-   - Smallest wins from §2: no Start button on a round in review (show "Distribute to jurors"),
-     and a correct message for a retired contest's round; Add juror… gated like Reassign.
+   - A separate **refusal UX** PR (d) for the round form, with the six fix candidates of §0.5:
+     sections with an error open and a linked error summary; the error branch through
+     `roundFormView`; one WARN log line per refused save (`round_save_refused contestId roundId
+     keys=…`); the form token checked before validation, with "already created – edit it"; a
+     duplicate resubmit that offers to apply the changes instead of dropping them; up-front input
+     checks. Specs: a field error in Media filtering comes back with the card open and in the
+     summary; a refused re-apply comes back in re-apply mode with editable filters; a new round's
+     refused form keeps its regions; a Back-resubmit of a created round's form gets the link,
+     not a 400. This addresses the 11 × 400 of 2026-11-25.
+   - Smallest wins from §2: on a round in review the Rounds list hides Start and shows "Distribute
+     to jurors" in its place; a correct message for a retired contest's round; Add juror… gated
+     like Reassign.
 2. **Lineage slice A** (being built: track label, chip, filter) adds no round action; it should
    not wait. Its new chip/filter links are views only. The checklist item (e) applies to it from
    its review on.
@@ -208,6 +239,10 @@ Order, fitting the queue:
    → vote → stop → next round" and "running round: add juror → reassign → stop juror", with a
    generic dead-end check, after (3), so their checks can read the same expected matrix.
 
+**Problem monitoring** (refused saves, dead ends and the like recorded in the app and shown to
+root and admins, rather than found in the access log) will be a separate plan; this plan only
+adds the log line.
+
 ## 5. Questions for the maintainer
 
 1. **Adopt the action matrix (`RoundActions`) for round and juror actions?** It centralises the
@@ -220,15 +255,16 @@ Order, fitting the queue:
 3. **Log refused saves?** A WARN line per refused round save with the message keys (no input text),
    like `security.authz`'s denial line. Recommendation: yes, in the 26.11.17 refusal PR; it is
    what would have explained the 11 × 400.
-4. **Round in review on the rounds list: replace Start with "Distribute to jurors"?** Start there
-   can only be refused. Recommendation: hide Start for review, draft and cancelled rounds; the
-   review line already has Distribute.
+4. **Round in review on the rounds list: hide Start and show "Distribute to jurors" in its place?**
+   Start there can only be refused. Recommendation: yes for rounds in review (in the Start
+   column, besides the review line's link); hide Start also for draft and cancelled rounds.
 5. **Gate "Add juror…" and "Start with a fair share" like Reassign (running rounds only)**, or keep
    them offered with the page explaining? Recommendation: gate them, with a one-line hint
    "Start the round to add jurors" on a stopped round, and none in review (the jurors form does it).
-6. **Look at production for the 11 × 400?** A read-only look at the access log lines and the
-   round's state then would confirm cause A or B. Recommendation: yes, one read by the maintainer
-   (the agents have no DB login); the fix in Q2/Q3 doesn't depend on it.
+6. **On a duplicate resubmit of a created round's form, apply the changes or only link to the
+   round?** On 2026-11-25 the resubmit's changes were dropped silently. Recommendation: link to
+   Edit round with "nothing was changed: make the changes there" for 26.11.17; applying them
+   automatically needs the edit rules (re-apply only in review) and is a later decision.
 7. **Waits shown as errors** (`exclude.rounds.busy`, `previous.round.rebalancing`): keep refusing,
    or accept the save and let the job wait? Recommendation: keep refusing for 26.11.17, but say
    "wait for job X (link), then save again" and keep the form; decide queuing later.
