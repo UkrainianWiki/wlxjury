@@ -13,12 +13,20 @@ object Guide {
 
   val Repository = "https://github.com/UkrainianWiki/wlxjury"
 
+  /** The branch a link falls back to without a build identity. */
+  val Fallback = "master"
+
+  /** A build identity's version (`wlxjury-build.json`'s `version`), if it has one. */
+  def versionOf(manifest: String): Option[String] =
+    Try((Json.parse(manifest) \ "version").as[String]).toOption.map(_.trim).filter(_.nonEmpty)
+
   /** The build's version, the release tag (`26.11.17.1`). */
   lazy val version: String = Try {
     val stream = getClass.getClassLoader.getResourceAsStream("wlxjury-build.json")
-    try (Json.parse(stream) \ "version").as[String] finally stream.close()
-  }.toOption.filter(_.nonEmpty).getOrElse("master")
+    try new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8) finally stream.close()
+  }.toOption.flatMap(versionOf).getOrElse(Fallback)
 
-  /** The admin guide at `anchor` (an `<a id>` in docs/user/admin-guide.md). */
-  def admin(anchor: String): String = s"$Repository/blob/$version/docs/user/admin-guide.md#$anchor"
+  /** The admin guide at `anchor` (an `<a id>` in docs/user/admin-guide.md), as of `version`. */
+  def admin(anchor: String, version: String = version): String =
+    s"$Repository/blob/$version/docs/user/admin-guide.md#$anchor"
 }

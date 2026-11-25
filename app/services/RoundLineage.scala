@@ -67,8 +67,9 @@ object RoundLineage {
       realRegions: Set[String] = Set.empty,
       // how the pages name a region track's regions
       scheme: RegionScheme = RegionScheme(None),
-      // the contest's own words (its name, year, country, images category), lower case: what a root
-      // category's name drops at its ends when the roots share no start or end ([[scopeNames]])
+      // the contest's own words (its name, year, country, its images category's main part), lower
+      // case: what a root category's name drops at its ends when the roots share no start or end
+      // ([[scopeNames]], [[Context.boilerplateOf]])
       boilerplate: Set[String] = Set.empty
   )
 
@@ -88,10 +89,20 @@ object RoundLineage {
       )
     }
 
-    /** The contest's words: those of its name, year, country and images category, lower case. */
-    def boilerplateOf(contest: ContestJury): Set[String] =
-      (Seq(contest.name, contest.year.toString, contest.country) ++ contest.images.map(categoryName))
-        .flatMap(tokens).map(_.word).filter(_.nonEmpty).toSet
+    /** The contest's words, lower case: those of its name, year and country, and of its images
+      * category up to its first " - " or "/" (the campaign's own name, as "Images from Wiki Science
+      * Competition 2025 in Bangladesh" where the contest is "Wiki Loves Science"). Not the rest of
+      * that category: it may be a subcategory ("… in Serbia - protected species (final)") whose
+      * words name other rounds' tracks ("protected species", "final round").
+      */
+    def boilerplateOf(contest: ContestJury): Set[String] = {
+      val images = contest.images.map(categoryName).map { c =>
+        val ts = tokens(c)
+        ts.takeWhile(t => !Dashes.contains(t.text) && t.text != "/")
+      }.getOrElse(Nil)
+      (Seq(contest.name, contest.year.toString, contest.country).flatMap(tokens) ++ images)
+        .map(_.word).filter(_.nonEmpty).toSet
+    }
   }
 
   /** The graph's tracks.
@@ -245,8 +256,8 @@ object RoundLineage {
     *     dropped (each keeping a word): "Wiki Loves Monuments in Ukraine 2025 - Quality" and
     *     "… - Quantity": "Quality" and "Quantity"; a single category: up to its last " - ";
     *  2. if that dropped nothing (the roots share no start or end, as in Wiki Loves Earth Ukraine),
-    *     the contest's own words (`boilerplate`: its name, year, country, images category, in any
-    *     case), years, [[CommonWords]] and separators dropped at each end, where they make a run
+    *     the contest's own words (`boilerplate`: its name, year, country and images category's main
+    *     part, in any case), years, [[CommonWords]] and separators dropped at each end, where they make a run
     *     of three words or more or end at a separator: "Wiki Loves Earth Ukraine 2026 -
     *     Quality": "Quality", "Images from Wiki Loves Earth 2026 Nature Loss Special Category":
     *     "Nature Loss Special Category";
@@ -361,11 +372,11 @@ object RoundLineage {
     def rootCategory(r: Round): Option[String] =
       r.category.flatMap(categoryOf).filter(c => !contestCategory.exists(_.equalsIgnoreCase(c)))
 
-    // the roots that rule 7 places by category: their names, the part that tells them apart
+    // the roots' categories' names, the part that tells them apart: from all the roots' categories,
+    // so that labelling a root (as the Main hint asks), or giving it a nomination or regions,
+    // doesn't rename another root's category track (nor change its key and colour)
     val roots = rounds.filter(r => previous(r.getId).isEmpty)
-    val scopes = scopeNames(
-      roots.filter(r => label(r).isEmpty && ownNomination(r).isEmpty && regionSubset(r).isEmpty).flatMap(rootCategory),
-      context.boilerplate)
+    val scopes = scopeNames(roots.flatMap(rootCategory), context.boilerplate)
 
     // a media type names a track only if it tells the roots apart: the roots have more than one,
     // none set counting as all (a video round beside the others); one alone (WLE international's

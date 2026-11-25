@@ -102,6 +102,28 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
       (text, a.select(".wlx-menu-count").text, a.attr("href"))
     }
 
+  /** The build identity's version, as the test classpath has it (build.sbt's `version`). */
+  private lazy val buildVersion: String = {
+    val stream = getClass.getClassLoader.getResourceAsStream("wlxjury-build.json")
+    try (play.api.libs.json.Json.parse(stream) \ "version").as[String] finally stream.close()
+  }
+
+  "the admin guide's link (views.Guide)" should {
+
+    "point at the guide as of a version tag" in {
+      (views.Guide.admin("a-tracks", "26.11.17.1") ===
+        "https://github.com/UkrainianWiki/wlxjury/blob/26.11.17.1/docs/user/admin-guide.md#a-tracks") and
+        (views.Guide.versionOf("""{"buildId":"26.11.17.1-02474aa68d91","version":"26.11.17.1","schemaVersion":"115"}""") ===
+          Some("26.11.17.1")) and
+        (views.Guide.versionOf("{}") must beNone) and (views.Guide.versionOf("not json") must beNone)
+    }
+
+    "take the build's version, not the fallback, when the build identity is there" in {
+      (buildVersion must not(beEmpty)) and (views.Guide.version === buildVersion) and
+        (views.Guide.version !== views.Guide.Fallback)
+    }
+  }
+
   "the round form's track label" should {
 
     "be offered to an admin, with the contest's labels and Main, and the round's automatic track in its help" in {
@@ -113,13 +135,15 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         (input must not(beNull)) and (input.attr("maxlength") === "64") and (input.attr("value") === "Second look") and
           (doc.select("datalist#round-track-labels option").eachAttr("value").asScala.toSeq === Seq("Main", "Second look")) and
           (doc.select("input[name=trackShown][type=hidden]").attr("value") === "true") and
-          // the automatic track in the field, the help one short line
-          (input.attr("placeholder") === "Automatic: Quality") and
+          // the automatic track in the field (Q-01's from its previous round), the help one short line
+          (input.attr("placeholder") === "Automatic: Quality, from its previous rounds") and
+          (page(app, f.admin, s"/admin/rounds/edit?contestId=${f.contest.getId}&id=${f.qn00.getId}").getElementById("trackLabel")
+            .attr("placeholder") === "Automatic: Quantity") and
           (doc.getElementById("trackLabel_help").ownText.trim ===
             "Rounds with the same label share a track. Type Main on the main competition's first round.") and
           // and the admin guide's Tracks section at this version, in a new tab, an anchor the guide has
           (doc.select("#trackLabel_help a#round-track-guide").attr("href") ===
-            s"https://github.com/UkrainianWiki/wlxjury/blob/${views.Guide.version}/docs/user/admin-guide.md#a-tracks") and
+            s"https://github.com/UkrainianWiki/wlxjury/blob/$buildVersion/docs/user/admin-guide.md#a-tracks") and
           (doc.select("#trackLabel_help a#round-track-guide").attr("target") === "_blank") and
           (doc.select("#trackLabel_help a#round-track-guide").text must startWith("More about tracks")) and
           (views.ExternalLinksCheck.newTab(doc.selectFirst("#trackLabel_help a#round-track-guide")) must beTrue) and
