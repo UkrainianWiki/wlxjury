@@ -178,7 +178,6 @@ test('the round form sent from its focused category field sends the text typed',
     const sent = await posts(page, '**/admin/rounds/save**');
     await page.goto(`/admin/rounds/edit?contestId=${fixture.contestId}`);
     await page.locator('a[href="#collapseImageFiltering"]').click();
-    await page.locator('#categoryClause').selectOption('include');
     const control = page.locator('#source-ts-control');
     await control.focus();
     await page.keyboard.type('Category:Lakes of Ukraine');
@@ -191,7 +190,9 @@ test('the round form sent from its focused category field sends the text typed',
     await control.evaluate((el) => el.form.requestSubmit(document.getElementById('round-form-jurors-next')));
     await expect.poll(() => sent.length).toBe(1);
     expect(sent[0].get('source')).toBe('Category:Rivers of Ukraine');
-    expect(sent[0].get('categoryClause')).toBe('include');
+    // the boxes and the choice under More category options (its default), no operation select
+    expect(sent[0].get('categoryCombine')).toBe('minus');
+    expect(sent[0].has('categoryClause')).toBe(false);
     expect(sent[0].get('next')).toBe('jurors');
   });
 
@@ -202,7 +203,6 @@ test('the round form\'s category is selected on a click and edited by typing', {
     await noSuggestions(page);
     await page.goto(`/admin/rounds/edit?contestId=${fixture.contestId}`);
     await page.locator('a[href="#collapseImageFiltering"]').click();
-    await page.locator('#categoryClause').selectOption('include');
     const wrapper = page.locator('#category-first .ts-wrapper');
     const input = page.locator('#source');
     // a category chosen (typed, then the field left) is an item, as one the form comes with

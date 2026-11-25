@@ -885,10 +885,17 @@ A round for all the files takes no filters at all.
 **By the file itself**
 
 - **Media Type**: **All**, **Video** or **Image**.
-- **Category operation**, **Category A** and **Category B**: the Commons categories the file
-  must be in. The operations are **No category filter**, **In category A**, **Not in category A**,
-  **In both A and B**, **In A or B (or both)** and **In A but not B**. Typing in a category
-  field suggests Commons categories.
+- **Only files in category**: a Commons category. Only the contest's files that are directly in
+  it are taken, not the files of its subcategories.
+- **Leave out files in category**: a Commons category whose files are not taken. Fill either
+  box, both or neither: with both, the round takes the files of the first category that are not
+  in the second. Typing in either box suggests Commons categories.
+- **More category options** (closed at first): what the second box does. **Leave its files out**
+  is the default. **Files must be in both categories** takes only the files that are in the two
+  categories, and the second box reads **…and also in category**. **Files may be in either
+  category** takes the files of both, and the second box reads **…or in category**. These two
+  need both boxes filled. The **Media filtering** section opens by itself when the round has a
+  category.
 - **Regions** and **Monument ids (comma separated)**: for contests where the tool knows the
   regions (at present Ukraine's, Wiki Loves Monuments and Wiki Loves Earth alike). Choose one or more
   regions, or list monument ids. A file's region is the first part of its monument id (`07` of
