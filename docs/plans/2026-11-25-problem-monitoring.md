@@ -4,11 +4,11 @@
 (after the 26.11.16 build); no code changed, no test run. References are to files and functions;
 line numbers drift.
 
-**Changes:** 2026-11-26: design corrections from the review of #191, no decision changed: columns for
-outcome, token and task (§3.1); a problem–event table, so one event can count for P1 and P9 (§3.1,
-§4.2); "seen" stores the activity version that was shown (§3.1, §6.2); the flood cap's key gains the
-contest, and a folded repeat moves the row's time (§3.4); a stored scan checkpoint (§4.2); M-3's
-quiet-period test says three refusals (§8).
+**Changes:** 2026-11-26: design corrections from the review of #191, no decision changed: columns
+for outcome, token and task (§3.1); a problem–event table, so one event can count for P1 and P9
+(§3.1, §4.2); "seen" stores the activity version that was shown (§3.1, §6.2); the flood cap folds
+only identical events, and a folded repeat moves the row's time (§3.4); a stored scan checkpoint
+(§4.2); M-3's quiet-period test says three refusals (§8).
 
 **Why.** On production, 2026-11-25 08:05–08:13 CET, an admin's round form was refused 11 times in a
 row (`POST /admin/rounds/save` → 400), and a twelfth save at 08:15 was taken as a resubmit of a
@@ -111,7 +111,7 @@ request.
 | `csrf_refused` | A refused CSRF token | none | `CsrfErrorHandler.handle` | `csrf_failure` |
 | `job_failed` | A step returned `StepResult.Failed`, a job crashed (`job_crashed`), or was given up after its attempts (`job.error.attempts`) | `job_id`, job kind, `round_id` when the job has one, the `JobError` key | `JobScheduler`: the `StepResult.Failed` branch, `fail` (both `job_crashed` sites: the step's and the preparing one, `job_crashed … preparing=true`, and the attempts), `giveUpIfExhausted`, all via one private `recordEnd(job, error)`, so no failure path bypasses it | `job_failed`, `job_crashed` |
 | `job_cancelled` | Cancel (by an account or by a handler) | `job_id`, kind, `by` account | `JobScheduler.cancelOrRefuse` | none (new) |
-| `link_refused` | An invitation, set-password or shared link refused (onboarding is personal and mail-free, so a stuck juror is a real problem) | the refusal reason key, the token's id or prefix as already logged (`token_id`, §3.1) | the `account_token_refused`, `shared_link_refused`, `account_link_share_refused`, `account_link_by_provider_refused` sites | those lines |
+| `link_refused` | An invitation, set-password or shared link refused (onboarding is personal and mail-free, so a stuck juror is a real problem) | the refusal reason key; `token_id` (§3.1) only where the line already logs `tokenId=`: `account_token_refused` for a link that exists (wrong purpose, expired, used, address changed, in a join) and `shared_link_refused`; NULL for an unknown or malformed link (no row) and for `account_link_by_provider_refused` and `account_link_share_refused` (no token; `account_id` only) | the `account_token_refused`, `shared_link_refused`, `account_link_share_refused`, `account_link_by_provider_refused` sites | those lines |
 | `round_access_refused` | A juror refused a stopped, distributing or paused round (support diagnostics D-0b, INFO) | `round_id`, reason | where D-0b logs `round_access_refused` | `round_access_refused` |
 | `task_failed` | A periodic in-app task failed a tick | task name, error class | `RoundCountsTimer.guarded`, `LegacyPasswordRetirementTask`, the problem check itself (§4) | `round_counts_tick_failed`, `legacy_passwords_retire_failed` |
 
@@ -218,7 +218,7 @@ CREATE TABLE support_event (
   fields        VARCHAR(512) NULL,               -- comma-separated field names
   message_keys  VARCHAR(512) NULL,               -- comma-separated message keys
   outcome       VARCHAR(16)  NULL,               -- resubmit_dropped: resumed, distributing, given_up, same, changed
-  token_id      VARCHAR(32)  NULL,               -- link_refused: the token's id or prefix as its line logs it, never the token
+  token_id      BIGINT       NULL,               -- link_refused: the link row's id (tokenId= of its line), never the token; NULL when the line has none (§2.1)
   task          VARCHAR(64)  NULL,               -- task_failed: the task name (its error class goes in reason)
   ref           CHAR(8)      NOT NULL,           -- the log line's reference
   repeat_count  INT          NOT NULL DEFAULT 1, -- §3.4
@@ -259,7 +259,8 @@ CREATE TABLE support_problem (
   account_id     BIGINT       NULL,
   first_event_at DATETIME(3)  NOT NULL,
   last_event_at  DATETIME(3)  NOT NULL,
-  event_count    INT          NOT NULL,          -- sum of the linked events' repeat_count
+  event_count    INT          NOT NULL,          -- purged_count + the linked events' repeat_count
+  purged_count   INT          NOT NULL DEFAULT 0, -- repeat_count of linked events a later cleanup deleted (§3.2)
   detected_at    DATETIME(3)  NOT NULL,
   activity_version INT        NOT NULL DEFAULT 1, -- +1 whenever a tick changes event_count or last_event_at
   seen_version   INT          NULL,              -- the activity_version the root account was shown when marking it
@@ -270,7 +271,8 @@ CREATE TABLE support_problem (
 );
 ```
 
-**Which column each pattern reads.** P2 groups by `outcome`, P8 by `token_id` or `account_id`, P11
+**Which column each pattern reads.** P2 groups by `outcome`, P8 by `token_id` or `account_id` (a
+refusal with neither, an unknown or malformed link, is anyone's guess and makes no P8 problem), P11
 by `task`; the other patterns use the common columns. Fields of §2.1 that no pattern groups by and
 that have no column (a denial's resource and required roles, a job's kind) are in the log line that
 the row's `ref` finds.
@@ -294,10 +296,12 @@ per account (Q5, decided [user] 2026-11-25).
   doesn't lose the season comparison).
 - **A later cleanup stays easy:** `created_at` is indexed and there are no foreign keys, so a purge
   is a batched `DELETE … WHERE created_at < ? LIMIT 5000` run by the problem check (§4), with the
-  events' `support_problem_event` rows deleted with them, and no schema change. Options to choose
-  from then: 90 days, 400 days (one season and the same weeks a year later), or by kind (e.g.
-  `denied` shorter). "The contest's lifetime" doesn't fit: contests are reused across years (support
-  diagnostics H21), and denials and server errors often have no contest.
+  events' `support_problem_event` rows deleted with them, and no schema change. Before deleting, it
+  adds the deleted linked events' `repeat_count` to each problem's `purged_count`, so a problem that
+  is still open across the cutoff keeps its full count (§4.2); the cleanup's spec checks that.
+  Options to choose from then: 90 days, 400 days (one season and the same weeks a year later), or by
+  kind (e.g. `denied` shorter). "The contest's lifetime" doesn't fit: contests are reused across
+  years (support diagnostics H21), and denials and server errors often have no contest.
 
 ### 3.3 Size
 
@@ -316,16 +320,21 @@ passes ~500 MB.
 
 ### 3.4 Flood cap
 
-An in-memory map per `(kind, contest or "-", account or "-", route, form, reason)` allows at most 5
-rows per minute; further events in that minute increment `repeat_count` of the last row and set its
-`last_at` to the event's time and `changed_at` to the database time (one `UPDATE`, done by the
-writer thread after that row's insert), and write no log line beyond a `support_event_capped`
-summary when the minute ends. The contest is in the key because the route template
-(`/admin/rounds/:id`) doesn't tell contests apart: without it a denial in one contest would be
-counted in another contest's row (P12) and anonymous denials of all contests would share one row.
-Moving `last_at` and `changed_at` makes the next tick read the row again (§4.2), so a folded
-repeat after root marked the problem seen raises its `activity_version` and makes it new again
-(§3.1). Restarting the app resets the map; that only lets a few more rows through.
+An in-memory map per **fingerprint** allows at most 5 rows per minute. The fingerprint is every
+stored column of the row except the times, `ref` and `repeat_count`: kind, contest, round (and
+`is_new_round`), job, account, form, route, method, status, reason, fields, message keys, `outcome`,
+`token_id` and `task` (NULL counts as a value). Only identical events fold, so no pattern loses an
+input: five `same` resubmits and a sixth `changed` one are two rows, and P2 sees the `changed`; P8,
+P10, P11 keep their token, round and task apart. Within a fingerprint, further events in that minute
+increment `repeat_count` of the last row and set its `last_at` to the event's time and `changed_at`
+to the database time (one `UPDATE`, done by the writer thread after that row's insert), and write no
+log line beyond a `support_event_capped` summary when the minute ends. The contest is in the
+fingerprint because the route template (`/admin/rounds/:id`) doesn't tell contests apart: without it
+a denial in one contest would be counted in another contest's row (P12) and anonymous denials of all
+contests would share one row. Moving `last_at` and `changed_at` makes the next tick read the row
+again (§4.2), so a folded repeat after root marked the problem seen raises its `activity_version`
+and makes it new again (§3.1). Restarting the app resets the map; that only lets a few more rows
+through.
 
 ### 3.5 Privacy and backups
 
@@ -376,8 +385,16 @@ an outage longer than any pattern window loses no events:
 - A tick takes `U = NOW(3)` and reads the events after the checkpoint in `(changed_at, id)` order:
   `(changed_at, id) > (checkpoint_at, checkpoint_id)` and `changed_at ≤ U − problems.settle`
   (default 2 minutes), at most `problems.batch` rows (default 10,000). The settle margin leaves out
-  rows the writer thread may still be committing (its batches are small and commit in well under
-  a second), so a row is never passed over by a later one that committed first.
+  rows the writer thread is likely still committing.
+- **The scan never passes an open writer transaction.** The writer (§2) reads `NOW(3)` as the first
+  statement of each batch transaction and publishes it in memory as "open since T0" until the
+  commit or rollback returns; every row it writes in that transaction has `changed_at ≥ T0`. The
+  tick's upper bound is the earlier of `U − problems.settle` and just before T0 of an open batch,
+  so a writer that stalls (a slow commit, a lock wait, a long pause) only holds the scan back; its
+  rows are never left behind the checkpoint. The settle margin is then only a cheap first filter.
+  The writer and the check run in one app; if a second instance ever runs (§4.1), this guard has to
+  span instances (the bound also stays before the oldest open writer transaction in
+  `information_schema.INNODB_TRX`, the writers' connections named), built with that instance.
 - The new checkpoint is the last row read, so it only moves forward, never back, and a batch
   that is full advances it even when all its rows share one `changed_at`. A full batch is followed
   at once by the next, each its own transaction, until the backlog is read. A tick that reads no
@@ -388,8 +405,10 @@ an outage longer than any pattern window loses no events:
 - A batch's problem writes, links and new checkpoint are one transaction. A batch that fails rolls
   back and leaves the checkpoint where it was, so the next tick reads the same events again.
 - Reading an event twice changes nothing: a link is `INSERT IGNORE`, and a problem's `event_count`
-  and `last_event_at` are recomputed from its linked events (the sum of `repeat_count`, the latest
-  `last_at`), with `activity_version` raised only when one of them changed.
+  and `last_event_at` are recomputed from its linked events (`purged_count` plus the sum of
+  `repeat_count`; the later of the stored `last_event_at` and the latest `last_at`; `first_event_at`
+  is never recomputed), with `activity_version` raised only when one of them changed. A later
+  cleanup of old events therefore doesn't shrink a problem's count or times (§3.2).
 - **First run:** no checkpoint row yet; the tick starts before the oldest event (M-2 and M-3 ship
   together, so that is a few days of events at most) and creates the row.
 - A folded repeat (§3.4) sets the row's `changed_at` to a later time, so the row comes after the
@@ -536,8 +555,10 @@ database holds the history.
 - **M-2:**
   - `services.monitoring.EventRecorderSpec`: a row per kind with the expected columns; the cap
     (the sixth event in a minute increments `repeat_count` and moves `last_at` and `changed_at`;
-    the same event in two contests makes two rows); `outcome`, `token_id` and `task` are filled for
-    their kinds; a failed insert doesn't throw and logs `support_event_lost`.
+    the same event in two contests makes two rows; five `same` resubmits and then a `changed` one
+    give the `changed` its own row); `outcome` and `task` are filled for their kinds; `token_id` is
+    filled for a refused existing link and a refused shared link, and NULL for an unknown link and
+    for the provider and share refusals; a failed insert doesn't throw and logs `support_event_lost`.
   - `controllers.FormRefusalSpec`: a refused save creates a row with the field names and keys and
     no posted value (the row's every column checked for the value); the filter records a 400 of a
     form without `FormRefusal` once, with `keys=unknown`, and a form with it once, not twice; a
@@ -559,10 +580,11 @@ database holds the history.
   tick after the restart (stored checkpoint); a tick that fails leaves the checkpoint, and the next
   one makes the same problems once, not twice; with `problems.batch = 3`, ten events with one
   `changed_at` are each read once over four batches and the checkpoint never moves back; an event
-  inside the settle margin is read by the first tick after it settles; P2 counts `changed` and
-  `given_up`, not `same`; P5 on a queued job with no running job of its kind and on a stale
-  heartbeat; a disabled pattern makes nothing; a tick that throws leaves the next tick running and
-  trips the watchdog after three intervals.
+  inside the settle margin is read by the first tick after it settles; a writer batch held open past
+  the margin (a test hook) keeps the checkpoint before its T0, and its rows are read after it
+  commits; P2 counts `changed` and `given_up`, not `same`; P5 on a queued job with no running job of
+  its kind and on a stale heartbeat; a disabled pattern makes nothing; a tick that throws leaves the
+  next tick running and trips the watchdog after three intervals.
 - **M-4** (`controllers.ProblemsPageSpec`), with the negative authorization cases:
   - root sees the page, the badge with the right count, and can mark seen and new; a problem
     that got an event after the page was shown stays new when that page's Mark as seen is posted;
