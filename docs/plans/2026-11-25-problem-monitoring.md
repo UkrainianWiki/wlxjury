@@ -17,7 +17,7 @@ application log line, so their cause can only be inferred (the UI-path testing p
 - **Everything runs in the app on the server.** Detection must not depend on a script someone
   runs on a PC (or over ssh, like `wlxjury-diag`) at their discretion.
 - **Nothing is lost when nobody looks.** A fixed 7-day window is not enough, since someone may
-  look weekly or less often. Events are kept (≥ 90 days or the contest's lifetime: §3.3 proposes),
+  look weekly or less often. Events are kept (≥ 90 days or the contest's lifetime: §3.2 proposes),
   and problems are "new since last seen" until marked as seen.
 - **History in the database.** Events live in the database, so they are in the regular backups
   and comparable across seasons, not only in rotated logs. Longer access-log retention is a
@@ -65,8 +65,9 @@ application log line, so their cause can only be inferred (the UI-path testing p
 3. Root **sees** new problems on every page (badge), reads them on one page, follows the links to
    the round, contest, job or log reference, and **marks them as seen**. A problem with new events
    after it was seen becomes new again.
-4. **Logs and database agree:** each recorded event has exactly one structured log line with the
-   same reference.
+4. **Logs and database agree:** every recorded row has its structured log line with the same
+   reference (events folded into a row by the flood cap, §3.4, are summed in one
+   `support_event_capped` line).
 
 **Non-goals.**
 
@@ -79,22 +80,27 @@ application log line, so their cause can only be inferred (the UI-path testing p
 ## 2. What is recorded, and where each hook goes
 
 One recorder, `services.monitoring.EventRecorder.record(event: SupportEvent): Unit`, used by every
-hook. It writes one row and one log line (§5). It never throws into the caller: a failed insert
-(the database may be the cause of a 500) is logged once at WARN (`support_event_lost kind= ref=`,
-error class only) and the request goes on. Rows are written synchronously with `autoSession` (a
-refused save or a denial is not a hot path); a flood is capped in memory first (§3.4).
+hook. It writes the log line (§5) at once, on the caller's thread, and **hands the row to a bounded
+in-memory queue** (1,000 events) drained by one writer thread of its own, which inserts in small
+batches with `autoSession`. A request thread therefore never waits for the database: when the
+database is slow or down (it may be the cause of a 500), the queue fills, further rows are dropped
+and counted, and a `support_event_lost count= kinds=` WARN line (once a minute) says so; the log
+lines are still written. The writer never throws (error class only in its WARN line). On shutdown
+it drains the queue for up to 5 seconds. A flood is capped in memory before the queue (§3.4). In
+tests the recorder writes inline (`problems.mode = manual`), so specs read the row right after the
+request.
 
 ### 2.1 Event kinds
 
 | Kind | When | Fields beyond the common ones (time, kind, contest, account, route template, method, status, ref) | Hook (file / function) | Existing log line |
 |---|---|---|---|---|
 | `form_refused` | A form POST answered 400 (or 409/422) with its form shown again | `form` (stable id, e.g. `round`, `contest`, `user`, `criteria`), `round_id` or "new", the **field names** with errors, the **message keys** (field and global), never the values or the keys' arguments | `controllers.FormRefusal` (new, §2.2), called from each form's error branch; `RefusalFilter` (new, `app/modules/`, next to `SessionLifetimeFilter`) as the fallback for any form that doesn't call it | none today (new `form_refused`) |
-| `resubmit_dropped` | A round form's token was already used: no new round, the posted changes dropped (`RoundService.Resubmitted`) | `round_id`, `outcome` = `resumed` / `distributing` / `given_up` / `dropped` (from `messageKey`) | `RoundController.saveRound`, the `case resubmitted: RoundService.Resubmitted` branch | `Contest N: Round … was already created from this form` (WARN, quotes the round's description unquoted: replaced, §5) |
+| `resubmit_dropped` | A round form's token was already used: no new round, the posted changes dropped (`RoundService.Resubmitted`) | `round_id`, `outcome` = `resumed` / `distributing` / `given_up` / `same` / `changed` (`same` / `changed`: §2.3) | `RoundController.saveRound`, the `case resubmitted: RoundService.Resubmitted` branch | `Contest N: Round … was already created from this form` (WARN, quotes the round's description unquoted: replaced, §5) |
 | `denied` | Every 403 of a signed-in user, page, JSON or API | `resource`, `reason` (`Secured.denialReason`), required roles | `Secured.logDenial` (the single point: `onUnAuthorized`, `onUnAuthorizedJson` and `api.ApiAuth` all go through it) | `authorization_denied` |
 | `server_error` | A 500 | none (the reference finds the stack trace in the log) | `ErrorHandler.onServerError`, after the reference is made | `server_error` |
-| `client_error` | A non-404 client error answered by `ErrorHandler` (a body too large, a malformed POST) for a signed-in session | `status`, `message_key` (the page's key, never Play's message text) | `ErrorHandler.onClientError` | `client_error` (404 stays DEBUG and unrecorded) |
+| `client_error` | A non-404 client error answered by `ErrorHandler` (a body too large, a malformed POST) for a signed-in session | `status`, `message_key` (the page's key, never Play's message text) | `ErrorHandler.onClientError` (marks its result, so `RefusalFilter` skips it) | `client_error` (404 stays DEBUG and unrecorded) |
 | `csrf_refused` | A refused CSRF token | none | `CsrfErrorHandler.handle` | `csrf_failure` |
-| `job_failed` | A step returned `StepResult.Failed`, a job crashed (`job_crashed`), or was given up after its attempts (`job.error.attempts`) | `job_id`, job kind, `round_id` when the job has one, the `JobError` key | `JobScheduler`: the `StepResult.Failed` branch, `fail` (crash and attempts), `giveUpIfExhausted`, via one private `recordEnd(job, error)` | `job_failed`, `job_crashed` |
+| `job_failed` | A step returned `StepResult.Failed`, a job crashed (`job_crashed`), or was given up after its attempts (`job.error.attempts`) | `job_id`, job kind, `round_id` when the job has one, the `JobError` key | `JobScheduler`: the `StepResult.Failed` branch, `fail` (both `job_crashed` sites: the step's and the preparing one, `job_crashed … preparing=true`, and the attempts), `giveUpIfExhausted`, all via one private `recordEnd(job, error)`, so no failure path bypasses it | `job_failed`, `job_crashed` |
 | `job_cancelled` | Cancel (by an account or by a handler) | `job_id`, kind, `by` account | `JobScheduler.cancelOrRefuse` | none (new) |
 | `link_refused` | An invitation, set-password or shared link refused (onboarding is personal and mail-free, so a stuck juror is a real problem) | the refusal reason key, the token's id or prefix as already logged | the `account_token_refused`, `shared_link_refused`, `account_link_share_refused`, `account_link_by_provider_refused` sites | those lines |
 | `round_access_refused` | A juror refused a stopped, distributing or paused round (support diagnostics D-0b, INFO) | `round_id`, reason | where D-0b logs `round_access_refused` | `round_access_refused` |
@@ -103,7 +109,9 @@ refused save or a denial is not a hot path); a flood is capped in memory first (
 Considered and left out: sign-in failures (they carry login names, and belong to the fail2ban
 line); 404s (bots); the vote path's 409 `round_closed` (a juror's race with a stop, already shown
 to them, `vote-errors.js`); Commons and image-cache retries (high volume; the health page's H19
-covers Commons). Each can become a kind later with the same recorder.
+covers Commons); gallery and large-view vote 400s (script calls, §2.2). Each can become a kind
+later with the same recorder. D-3's "empty import" is not an event here: the health page's H4
+already reports an import that found 0 files.
 
 ### 2.2 One helper, so new forms get it for free
 
@@ -126,22 +134,53 @@ Two layers:
    `RoundController.refusal` passes a refusal's text). It records the event, and marks the result
    with a request attribute (`Result.addAttr(FormRefusal.Recorded, ref)`) so the filter below
    doesn't record it twice.
-2. **`RefusalFilter`** (new, registered in `play.filters.enabled`): for a non-GET request of a
-   signed-in session (the session's `AccountId`, as `Secured.accountFields` reads it) whose result
-   is 400, 409 or 422 and has no `FormRefusal.Recorded` attribute, it records `form_refused` with
-   `form = <route's controller.method>` (the route's `HandlerDef`), and `keys = unknown`. A new form
-   is therefore covered on its first deploy; calling `FormRefusal` only adds its field names and
-   keys. A fallback event shows on the Problems page as "fields unknown: add FormRefusal to this
-   form".
+2. **`RefusalFilter`** (new, registered in `play.filters.enabled`), the fallback for a form that
+   doesn't call `FormRefusal`. It records `form_refused` with `form = <route's controller.method>`
+   (the route's `HandlerDef`) and `keys = unknown` only when **all** of these hold:
+   - a POST of a signed-in session (the session's `AccountId`, as `Secured.accountFields` reads it);
+   - **not a script request** (`X-Requested-With` or a non-`navigate` `Sec-Fetch-Mode`, as
+     `Secured.isPageRequest` tells them), so votes, polls and JSON calls never count;
+   - the route is not on the **vote list** (the gallery and large-view vote routes, by
+     `HandlerDef`), a second guard for clients without those headers: the vote path's 409
+     `round_closed` (`GalleryController`) and its 400s are routine juror races, not refused forms;
+   - the result is 400 or 422 with an **HTML** body (`text/html`): a form shown again, not an error
+     code;
+   - the result has no `FormRefusal.Recorded` attribute and was not answered by `ErrorHandler`
+     (which marks its results the same way when it records `client_error`), so one 400 is one
+     event.
 
-**Call sites to convert** (counts of `BadRequest` / `formWithErrors` in `app/controllers` on
-master): `RoundController` (7: the `formWithErrors` branch and `reRender` in `saveRound`; the
-select-round and other small 400s stay fallback-only), `ContestController` (6), `UserController`
-(21), `CriteriaController`, `RoundJurorsController` (2), `AddFromContestController` (2),
+   A new form is therefore covered on its first deploy; calling `FormRefusal` only adds its field
+   names and keys. A fallback event shows on the Problems page as "fields unknown: add
+   FormRefusal to this form" (P9).
+
+**Slices.** In M-1 (no table yet) `FormRefusal` only writes the `form_refused` line; M-2 adds the
+recorder call inside it. `badRequest` and `refused` return the same `Result` in both, so the call
+sites don't change between slices. The filter comes with M-2.
+
+**Call sites to convert** (approximate counts of `BadRequest` / `formWithErrors` lines in
+`app/controllers` on master): `RoundController` (about 11: the `formWithErrors` branch and
+`reRender` in `saveRound`; the select-round and other small 400s stay fallback-only),
+`ContestController` (about 6), `UserController` (about 23), `CriteriaController`, `RoundJurorsController` (2), `AddFromContestController` (2),
 `SeriesController`, `DuplicateAccountsController`, `ImageController` (3), `AccountJoinController`
 (2). `LoginController` (6) is signed out: the filter skips it, and it isn't converted (sign-in
 failures are out of scope). The `GalleryController` and `LargeViewController` 400s are script
-calls (votes): fallback only.
+calls (votes): neither converted nor recorded by the filter.
+
+### 2.3 A dropped resubmit: a double click or a lost edit
+
+`Resubmitted.messageKey` is `round.resubmitted` both for a double click (the same form posted twice)
+and for the 2026-11-25 case (Back, edit, Save: the edits dropped). To tell them apart,
+`RoundController` compares the posted form with the one the round was created from: when a round is
+created from a token, a hash of the posted settings (the bound `EditRound`, with the token and the
+"Add files" list's order normalised) is kept **in memory only** (a bounded map, token → hash,
+1 hour; never stored or logged); on a resubmit with that token the new hash is compared. Equal:
+`outcome=same` (a double click, no problem). Different: `outcome=changed` (edits lost). After a
+restart the hash is gone and the outcome is `changed` (the safe side).
+
+The maintainer decided (UI-path plan, Q6) that Back after creating a round lands on the created
+round's Edit page with "Round N has been created. You can change it here." and never shows the
+stale form. After that fix `changed` should be rare; when it happens the fix has a gap, which is
+exactly what P2 should report.
 
 ## 3. Storage
 
@@ -231,7 +270,7 @@ the retention is revisited if a kind dominates.
 
 ### 3.4 Flood cap
 
-An in-memory map per `(kind, account or "-", route, reason)` allows at most 5 rows per minute;
+An in-memory map per `(kind, account or "-", route, form, reason)` allows at most 5 rows per minute;
 further events in that minute increment `repeat_count` of the last row (one `UPDATE`) and write no
 log line beyond a `support_event_capped` summary when the minute ends. Restarting the app resets
 the map; that only lets a few more rows through.
@@ -285,7 +324,7 @@ each match creates a problem or extends an open one: the same `pattern` and `sco
 | # | Pattern | Default rule | Severity | Default on (Q4) |
 |---|---|---|---|---|
 | P1 | **Refused saves of one form** | ≥ 3 `form_refused` of one form by one account within 15 minutes (the 2026-11-25 case: it fires at the third, 08:06) | warn | on |
-| P2 | **Resubmit dropped** | any `resubmit_dropped` with outcome `dropped` or `given_up` (the 08:15 save) | warn | on |
+| P2 | **Resubmit dropped** | any `resubmit_dropped` with outcome `changed` (the 08:15 save: edits lost; rare once the UI-path Q6 fix ships) or `given_up`; `same` (a double click) makes no problem | warn | on |
 | P3 | **Server errors** | any `server_error`, grouped by route template per 24 hours | fail | on |
 | P4 | **Job failed** | any `job_failed` (failed, crashed, given up after attempts) | fail | on |
 | P5 | **Job stuck** | from the `job` table, no event needed: queued longer than 30 minutes while no job of its kind runs, or running with `heartbeat_at` older than twice the lease. One function with support diagnostics H11 | fail | on |
@@ -304,7 +343,7 @@ events.
 
 ## 5. Logging: one structured line per event
 
-Each event has exactly one WARN line (INFO for `round_access_refused` and `job_cancelled`, as today)
+Each recorded row has its WARN line (INFO for `round_access_refused` and `job_cancelled`, as today)
 with the row's `ref`, key-value, untrusted text through `Secured.logValue`, ids through
 `Secured.accountFields`:
 
@@ -365,7 +404,7 @@ other contests, no `server_error` (root support), the email masked. No badge for
 
 | Slice | Content | Size | When |
 |---|---|---|---|
-| **M-1** | `FormRefusal` (keys and field names, arguments dropped), its use in `RoundController.saveRound` (the `formWithErrors` branch and `reRender`), the `form_refused` and `resubmit_dropped` lines (replacing the unquoted resubmit line). **Log only, no table, no migration**: this is the UI-path plan's refusal-UX log line, generalised | S (≈ 1 day) | **26.11.17**, inside or next to the UI-path refusal-UX PR (d) |
+| **M-1** | `FormRefusal` (keys and field names, arguments dropped), used only in `RoundController.saveRound`'s two refusal branches (`formWithErrors` and `reRender`), and the `resubmit_dropped` line (with §2.3's `same` / `changed`) replacing the unquoted resubmit line. **Log only: no table, no migration, no filter.** The line is named `form_refused`; the UI-path plan (#189) is aligned to that name, and M-1 *is* its refusal-UX log item, not a second logger | S (≈ 1 day) | **26.11.17**, inside the UI-path refusal-UX PR (d) |
 | **M-2** | The migration (both tables), `EventRecorder`, the flood cap, `RefusalFilter`, the hooks of §2.1 (`logDenial`, `ErrorHandler`, `CsrfErrorHandler`, `JobScheduler`, link refusals, timers), `FormRefusal` in the other forms, the daily purge, secure-coding §13/§22, `LogHygieneSpec`. Takes over support diagnostics D-3 | M (2–3 days) | after lineage slice A (its migration number then) |
 | **M-3** | `ProblemCheckTask` and its watchdog, patterns P1–P11 with settings, `problem_detected`; P5 shared with H11 | M (2–3 days) | right after M-2 |
 | **M-4** | Badge, Problems page, mark seen/new, filters, links; negative authorization specs | S–M (2 days) | with M-3 or right after |
