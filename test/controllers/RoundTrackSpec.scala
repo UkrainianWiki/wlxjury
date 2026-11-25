@@ -299,7 +299,7 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "warn of a previous round that no longer exists; no chip repeating a root's own name" in {
+    "warn of a previous round that no longer exists; a root named after itself has its chip as its later rounds do" in {
       testDbApp { app =>
         val f = fixture()
         val orphan = roundDao.create(Round(None, 5, Some("Orphan"), f.contest.getId, previous = Some("987654")))
@@ -311,7 +311,55 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
           contain("Previous round 987654 no longer exists: this round starts a track of its own.")) and
           (doc.select(s".wlx-round-missing-previous[data-round=${half.getId}]").text ===
             "Previous round 987653 no longer exists: it is left out when this round's track is chosen.") and
-          (rowChips(doc).get("Orphan") must beNone) and (rowChips(doc).get("Orphan 2") === Some("Orphan"))
+          (rowChips(doc).get("Orphan") === Some("Orphan")) and (rowChips(doc).get("Orphan 2") === Some("Orphan"))
+      }
+    }
+
+    "show a chip on every round of a contest with two tracks, a root named after itself too" in {
+      testDbApp { app =>
+        val contest = contestDao.create(None, "Wiki Loves Earth", 2026, "Testland")
+        val admin = userDao.create(User("AdminT", "admint@example.com", None, Set("admin"), contestId = contest.id))
+        val first = roundDao.create(Round(None, 1, Some("First round"), contest.getId))
+        roundDao.create(Round(None, 2, Some("Second round"), contest.getId, previous = Some(first.getId.toString)))
+        roundDao.create(Round(None, 3, Some("Video round"), contest.getId))
+        val doc = page(app, admin, s"/admin/rounds?contestId=${contest.getId}")
+        (rowChips(doc) === Map("First round" -> "First round", "Second round" -> "First round",
+          "Video round" -> "Video round")) and (doc.select("#rounds-track-menu").size === 1)
+      }
+    }
+
+    "show no chips and no Track menu in a contest with one track (WLM Nepal 2026, WLE Slovakia 2026, WLE international)" in {
+      testDbApp { app =>
+        def contestOf(name: String, country: String, images: String, rounds: Seq[(String, Boolean, Option[String], Option[String])]) = {
+          val contest = contestDao.create(None, name, 2026, country, Some(images))
+          val admin = userDao.create(User(s"Admin $country", s"admin-${country.toLowerCase}@example.com", None, Set("admin"),
+            contestId = contest.id))
+          val organizer = userDao.create(User(s"Org $country", s"org-${country.toLowerCase}@example.com", None, Set("organizer"),
+            contestId = contest.id))
+          val created = rounds.zipWithIndex.foldLeft(Seq.empty[Round]) { case (done, ((n, fromFirst, category, media), i)) =>
+            done :+ roundDao.create(Round(None, i + 1L, Some(n), contest.getId, category = category, mediaType = media,
+              active = i == rounds.size - 1,
+              previous = Option.when(fromFirst)(done.head.getId.toString)))
+          }
+          (contest, admin, organizer, created)
+        }
+        val shapes = Seq(
+          contestOf("Wiki Loves Monuments", "Nepal", "Category:Images from Wiki Loves Monuments 2026 in Nepal",
+            Seq(("WLM 2026 Primary", false, None, None), ("Round 2", true, None, None))),
+          contestOf("Wiki Loves Earth", "Slovakia", "Category:Images from Wiki Loves Earth 2026 in Slovakia",
+            Seq(("First round", false, Some("Category:Images from Wiki Loves Earth 2026 in Slovakia"), None),
+              ("Second round", true, None, Some("image")), ("Jury round", true, None, None), ("Final round", true, None, Some("image")))),
+          contestOf("Wiki Loves Earth", "International", "Commons:Wiki Loves Earth 2026/Winners",
+            Seq(("1 round: main category", false, None, Some("image")))))
+        forall(shapes) { case (contest, admin, organizer, rounds) =>
+          val list = page(app, admin, s"/admin/rounds?contestId=${contest.getId}")
+          val stat = page(app, organizer, s"/roundstat/${rounds.last.getId}")
+          val gallery = page(app, organizer, s"/gallery/round/${rounds.last.getId}/user/0/page/1")
+          (list.select("tbody tr.round-row").size === rounds.size) and
+            (list.select(".wlx-track").size === 0) and (list.select("#rounds-track-menu").size === 0) and
+            (stat.select(".wlx-track").size === 0) and (stat.select("#rounds-track-menu").size === 0) and
+            (gallery.select(".wlx-track").size === 0)
+        }
       }
     }
   }

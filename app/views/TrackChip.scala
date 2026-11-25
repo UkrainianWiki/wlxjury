@@ -29,18 +29,35 @@ object TrackChip {
     case _ => track.name
   }
 
-  /** The chip's text: the name cut at [[MaxLength]] characters, ending in "…". */
-  def short(track: Track, lineage: Lineage)(implicit messages: Messages): String = {
-    val full = name(track, lineage)
-    if (full.codePointCount(0, full.length) <= MaxLength) full
-    else full.substring(0, full.offsetByCodePoints(0, MaxLength - 1)).trim + "…"
+  /** The chip's text: the name, if longer than [[MaxLength]] characters its start and its end with
+    * "…" between (the whole in the chip's title), so a long name never shows only a beginning that
+    * other tracks' names may share.
+    */
+  def short(track: Track, lineage: Lineage)(implicit messages: Messages): String = cut(name(track, lineage))
+
+  /** `full` in [[MaxLength]] characters at most: up to its first third and the rest from its end,
+    * "…" between, each cut at a word's edge where it has one.
+    */
+  private[views] def cut(full: String): String = {
+    val length = full.codePointCount(0, full.length)
+    if (length <= MaxLength) full
+    else {
+      val headEnd = full.offsetByCodePoints(0, (MaxLength - 1) / 3)
+      val tailStart = full.offsetByCodePoints(0, length - (MaxLength - 1 - (MaxLength - 1) / 3))
+      val head = full.substring(0, headEnd)
+      val tail = full.substring(tailStart)
+      val headWords = if (!full.charAt(headEnd).isWhitespace && head.trim.contains(' ')) head.substring(0, head.lastIndexOf(' ')) else head
+      val tailWords = if (!full.charAt(tailStart - 1).isWhitespace && tail.trim.contains(' ')) tail.substring(tail.indexOf(' ')) else tail
+      headWords.trim + "…" + tailWords.trim
+    }
   }
 
-  /** The round's track, if its chip says something its name doesn't: none for a root whose track
-    * is named after it (rule 7's last case, no category or media type), which would repeat its name.
+  /** The round's track chip, if the pages show tracks (two tracks or more in the contest:
+    * Lineage.chipsShown, the Track menu's rule), then for every round, a root named after itself
+    * too; none in a contest with one track, where it would say nothing.
     */
   def shown(round: Round, lineage: Lineage): Option[Track] =
-    lineage.track(round).filterNot(t => t.kind == Kind.Name && t.name == round.description.trim)
+    if (lineage.chipsShown) lineage.track(round) else None
 
   /** The chip's colour class. */
   def colour(track: Track): String =

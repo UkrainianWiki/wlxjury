@@ -166,18 +166,55 @@ class RoundLineageSpec extends Specification {
       val l = RoundLineage(Seq(
         round(1, "V-00", category = Some("Category:Images_from Wiki Loves Monuments 2026 in Ukraine"), media = Some("video")),
         round(2, "Plain"),
-        round(3, "Interior", category = Some("Category:Something else"))
+        round(3, "Interior", category = Some("Category:Something else"), media = Some("image"))
       ), context)
-      // a single root category: the prefix is all of it up to its last " - " (none here)
+      // a single root category: nothing it shares with others, none of the contest's words at its ends
       (l.trackOf(1) === Track(Kind.Media, "video")) and (l.trackOf(2) === Track(Kind.Name, "Plain")) and
         (l.trackOf(3) === Track(Kind.Category, "Something else"))
     }
 
-    "keep full names when the roots share no prefix ending in \" - \"" in {
-      val l = RoundLineage(Seq(round(1, "A", category = Some("Category:WLE 2026 - Quality")),
-        round(2, "B", category = Some("Category:Nature loss in Ukraine"))), context)
-      (l.trackOf(1) === Track(Kind.Category, "WLE 2026 - Quality")) and
-        (l.trackOf(2) === Track(Kind.Category, "Nature loss in Ukraine"))
+    "name no track after a file list or a Commons: page in the category field (WLE Kyrgyzstan 2026)" in {
+      val kg = Context(contestCategory = Some("Category:Images from Wiki Loves Earth 2026 in Kyrgyzstan"),
+        boilerplate = Set("wiki", "loves", "earth", "2026", "kyrgyzstan", "images", "from", "in"))
+      val l = RoundLineage(Seq(
+        round(1, "Wiki Loves Earth 2026 in Kyrgyzstan 1 round", category = Some("Category:Images from Wiki Loves Earth 2026 in Kyrgyzstan")),
+        round(2, "Wiki Loves Earth 2026 in Kyrgyzstan 2 round",
+          category = Some("Category:Quality images from Wiki Loves Earth 2026 in Kyrgyzstan"), media = Some("image")),
+        round(4, "Финальный раунд", category = Some("Category:File:Beautiful landscapes.jpg File:Кол Укок 4.jpg"),
+          media = Some("image")),
+        round(5, "шорт лист Wiki Loves Earth 2026 in Kyrgyzstan",
+          category = Some("Category:Commons:Wiki Loves Earth 2026 in Kyrgyzstan/Long list")),
+        round(6, "6", category = Some("Category:Wiki Loves Earth 2026 in Kyrgyzstan long list"), media = Some("image")),
+        round(8, "8", category = Some("Category:wiki loves earth 2026 in Kyrgyzstan long list"))), kg)
+      val longList = Track(Kind.Category, "long list")
+      (l.trackOf(1) === Track(Kind.Name, "Wiki Loves Earth 2026 in Kyrgyzstan 1 round")) and
+        (l.trackOf(2) === Track(Kind.Category, "Quality")) and (l.trackOf(4) === Track(Kind.Name, "Финальный раунд")) and
+        (l.trackOf(5) === Track(Kind.Name, "шорт лист Wiki Loves Earth 2026 in Kyrgyzstan")) and
+        // the same category in another case: one track
+        (l.trackOf(6) === longList) and (l.trackOf(8) === longList)
+    }
+
+    "name roots that share no start by what is left of their categories without the contest's words (WLE Ukraine 2026)" in {
+      val wle = Context(contestCategory = Some("Category:Images from Wiki Loves Earth 2026 in Ukraine"),
+        boilerplate = Set("wiki", "loves", "earth", "2026", "ukraine", "images", "from", "in"))
+      val l = RoundLineage(Seq(
+        round(1, "Відео: 0 раунд", media = Some("video")),
+        round(2, "Відсіювання: Кількісна", category = Some("Category:Wiki Loves Earth Ukraine 2026 - Quantity")),
+        round(3, "Відсіювання: Якісна", category = Some("Category:Wiki Loves Earth Ukraine 2026 - Quality")),
+        round(4, "Втрати природи: 0 раунд",
+          category = Some("Category:Images from Wiki Loves Earth 2026 Nature Loss Special Category"))), wle)
+      // the only root with a media type of its own: named by its name
+      (l.trackOf(1) === Track(Kind.Name, "Відео: 0 раунд")) and (l.trackOf(2) === quantity) and (l.trackOf(3) === quality) and
+        (l.trackOf(4) === Track(Kind.Category, "Nature Loss Special Category"))
+    }
+
+    "name a root by its media type only if the roots differ in media type, else by its name" in {
+      // WLE international: one rated image round
+      val one = RoundLineage(Seq(round(1, "1 round: main category", media = Some("image"))), context)
+      // images and video roots
+      val two = RoundLineage(Seq(round(1, "Photos", media = Some("image")), round(2, "Films", media = Some("video"))), context)
+      (one.trackOf(1) === Track(Kind.Name, "1 round: main category")) and
+        (two.trackOf(1) === Track(Kind.Media, "image")) and (two.trackOf(2) === Track(Kind.Media, "video"))
     }
 
     "a round whose previous rounds are all gone is a root, with a warning" in {
@@ -236,11 +273,78 @@ class RoundLineageSpec extends Specification {
     }
   }
 
-  "the common prefix" should {
-    "be cut back to end at \" - \"" in {
-      (RoundLineage.commonPrefix(Seq("WLM 2025 - Interior", "WLM 2025 - Exterior")) === "WLM 2025 - ") and
-        (RoundLineage.commonPrefix(Seq("WLM 2025 - A - B", "WLM 2025 - A - C")) === "WLM 2025 - A - ") and
-        (RoundLineage.commonPrefix(Seq("Alpha", "Alps")) === "") and (RoundLineage.commonPrefix(Nil) === "")
+  "the root categories' names" should {
+    def names(categories: Seq[String], boilerplate: String = ""): Seq[String] = {
+      val words = boilerplate.split(" ").filter(_.nonEmpty).map(_.toLowerCase).toSet
+      val m = RoundLineage.scopeNames(categories.map(RoundLineage.categoryName), words)
+      categories.map(c => m(RoundLineage.categoryName(c)))
+    }
+
+    "drop the words all of them start with (WLM Ukraine)" in {
+      names(Seq("Category:Wiki Loves Monuments in Ukraine 2024 - Film", "Category:Wiki Loves Monuments in Ukraine 2024 - Film - Checked",
+        "Category:Wiki Loves Monuments in Ukraine 2024 - Quality")) === Seq("Film", "Film - Checked", "Quality")
+    }
+
+    "drop the words all of them end with (Wiki Science Competition)" in {
+      names(Seq("Category:General category images from Wiki Science Competition 2025 in Ukraine",
+        "Category:Images of people in science from Wiki Science Competition 2025 in Ukraine",
+        "Category:Microscopy images from Wiki Science Competition 2025 in Ukraine"),
+        "Wiki Science Competition 2025 Ukraine Images from in") ===
+        Seq("General category images", "Images of people in science", "Microscopy images")
+    }
+
+    "drop a shared start and end around a slash (Public Art & Cemeteries, Serbia)" in {
+      names(Seq("Category:Images from Wiki Loves Public Art & Cemeteries 2024 in Serbia/Cemeteries/Prejury selection",
+        "Category:Images from Wiki Loves Public Art & Cemeteries 2024 in Serbia/Public Art/Prejury selection")) ===
+        Seq("Cemeteries", "Public Art")
+    }
+
+    "drop the contest's words at the ends when they share no start or end (WLE Serbia, Kyrgyzstan); one category after its last dash (Moldova)" in {
+      (names(Seq("Category:Images from Wiki Loves Earth 2026 in Serbia - Vojvodina ",
+        "Category:Images from Wiki Loves Earth 2026 in Serbia - protected species",
+        "Category:Videos from Wiki Loves Earth 2026 in Serbia"),
+        "Wiki Loves Earth 2026 Serbia Images from in final round") === Seq("Vojvodina", "protected species", "Videos")) and
+        // one category: after its last " - "
+        (names(Seq("Category:Images from Wiki Loves Monuments 2025 in Moldova - eligible for drone special prize"),
+          "Wiki Loves Monuments 2025 Moldova Images from in eligible for phase I (national)") ===
+          Seq("eligible for drone special prize")) and
+        (names(Seq("Category:Commons:Wiki Loves Earth 2026 in Kyrgyzstan/Long list"),
+          "Wiki Loves Earth 2026 Kyrgyzstan Images from in") === Seq("Long list"))
+    }
+
+    "keep a name with nothing to drop, and leave nothing of a category of the contest's words alone, in any case" in {
+      (names(Seq("Category:Something else")) === Seq("Something else")) and
+        (names(Seq("Category:Images from Wiki Loves Earth 2024 in Ghana"), "Wiki Loves Earth 2024 Ghana WLE videos in") ===
+          Seq("")) and
+        (names(Seq("Category:wiki loves earth 2026 in"), "Wiki Loves Earth 2026 Kyrgyzstan") === Seq("")) and
+        // a year alone is nothing either
+        (names(Seq("Category:Wiki Loves Earth 2025 in Ireland"), "Wiki Loves Earth 2024 Ireland") === Seq(""))
+    }
+
+    "take only Category: pages" in {
+      (RoundLineage.categoryOf("Category:File:A.jpg File:B.jpg") must beNone) and
+        (RoundLineage.categoryOf("Category:Commons:Wiki Loves Earth 2026 in Kyrgyzstan/Long list") must beNone) and
+        (RoundLineage.categoryOf("File:A.jpg") must beNone) and (RoundLineage.categoryOf("Commons:WLE 2026/Winners") must beNone) and
+        (RoundLineage.categoryOf("Category:") must beNone) and
+        (RoundLineage.categoryOf(" category:Images_from WLE ") === Some("Images from WLE")) and
+        (RoundLineage.categoryOf("Category:WLE 2026: winners") === Some("WLE 2026: winners"))
+    }
+
+    "keep one or two such words at an end, which may be part of the name (WSC Bangladesh, WLE Ireland)" in {
+      (names(Seq("Category:Image sets from Wiki Science Competition 2025 in Bangladesh",
+        "Category:Images of people in science from Wiki Science Competition 2025 in Bangladesh (first round)",
+        "Category:Microscopy images from Wiki Science Competition 2025 in Bangladesh"),
+        "Wiki Loves Science 2025 Bangladesh Images from Wiki Science Competition in") ===
+        Seq("Image sets", "Images of people in science from Wiki Science Competition 2025 in Bangladesh (first round)",
+          "Microscopy")) and
+        (names(Seq("Category:Images from Wiki Loves Earth 2025 in Northern Ireland"),
+          "Wiki Loves Earth 2024 Ireland Images from Wiki Loves a Future for Thatch 2026") === Seq("Northern Ireland"))
+    }
+
+    "keep two categories apart that would get one name" in {
+      names(Seq("Category:Images from Wiki Loves Earth 2026 in Ukraine - Quality", "Category:Wiki Loves Earth 2026 Quality"),
+        "Wiki Loves Earth 2026 Ukraine Images from in") ===
+        Seq("Images from Wiki Loves Earth 2026 in Ukraine - Quality", "Wiki Loves Earth 2026 Quality")
     }
   }
 
