@@ -10,7 +10,8 @@ import services.jobs.JobError
 
 import javax.inject.Inject
 
-/** Adding a juror to a running round (docs/plans/2026-11-16-round-editing.md, §5): the page
+/** Adding a juror to a running or a stopped round (docs/plans/2026-11-16-round-editing.md, §5; D3
+  * revised 2026-11-25): the page
   * (GET, `juror` once chosen: the figures and the confirm form) and its POST, which queues a
   * [[RoundRebalanceHandler]] job; reassigning a juror's unrated files (§7), the same way; and root's Release of a round left frozen with no job
   * ([[RoundFreezes]]).
@@ -154,7 +155,7 @@ class RoundJurorsController @Inject() (
     val preview = juror.map(rebalance.preview(round, _, donors))
     val jury = preview.fold(rebalance.jury(round))(_.jury)
     views.html.round.addJuror(user, round, jury, preview, notice, RoundRebalanceService.signature(jury.jurors),
-      Round.isPaused(round.getId))
+      Round.isPaused(round.getId), RoundRebalanceService.createdFrom(round))
   }
 
   private def reassignView(user: User, round: Round, preview: ReassignPreview, notice: Option[String])(implicit

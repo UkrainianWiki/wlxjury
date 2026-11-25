@@ -62,20 +62,24 @@ object ContestSeries {
   /** Why the contest can't be retired now, if so: a round open to jurors (active, or frozen while
     * active: "paused" in the code's sense; `contest.retire.live.round`), or one being created or
     * reviewed, or whose creation failed (`distributing`: `contest.retire.draft.round`, which says
-    * to finish or cancel it on the Rounds page); a cancelled creation doesn't count. `lock`: the
-    * contest's rounds are read `FOR UPDATE` (in the retiring transaction, after the contest's row),
-    * so a round started meanwhile waits for the retirement or is seen by it.
+    * to finish or cancel it on the Rounds page); a cancelled creation doesn't count; then one a job
+    * holds frozen while stopped (`freeze_count > 0`: a juror being added to it, or a distribution
+    * reading it, `contest.retire.busy.round`), so that a job never finds its round's contest retired
+    * between its steps. `lock`: the contest's rounds are read `FOR UPDATE` (in the retiring
+    * transaction, after the contest's row), so a round started meanwhile waits for the retirement or
+    * is seen by it.
     */
   def liveRoundRefusal(contestId: Long, lock: Boolean = false)(implicit session: DBSession = AutoSession): Option[Refusal] = {
     val rows =
-      (if (lock) sql"""SELECT active, freeze_count > 0 AND active_before_freeze = 1, distributing FROM round
+      (if (lock) sql"""SELECT active, freeze_count > 0 AND active_before_freeze = 1, distributing, freeze_count > 0 FROM round
                        WHERE contest_id = $contestId AND (status IS NULL OR BINARY status <> 'cancelled') FOR UPDATE"""
-       else sql"""SELECT active, freeze_count > 0 AND active_before_freeze = 1, distributing FROM round
+       else sql"""SELECT active, freeze_count > 0 AND active_before_freeze = 1, distributing, freeze_count > 0 FROM round
                   WHERE contest_id = $contestId AND (status IS NULL OR BINARY status <> 'cancelled')""")
-        .map(rs => (rs.boolean(1), rs.boolean(2), rs.boolean(3))).list.apply()
-    if (rows.exists { case (active, frozenOpen, distributing) => !distributing && (active || frozenOpen) })
+        .map(rs => (rs.boolean(1), rs.boolean(2), rs.boolean(3), rs.boolean(4))).list.apply()
+    if (rows.exists { case (active, frozenOpen, distributing, _) => !distributing && (active || frozenOpen) })
       Some("contest.retire.live.round")
     else if (rows.exists(_._3)) Some("contest.retire.draft.round")
+    else if (rows.exists(_._4)) Some("contest.retire.busy.round")
     else None
   }
 

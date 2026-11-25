@@ -112,7 +112,7 @@ The **Voting** column shows **Active**, or **Paused** when the admins have pause
 voting in this round: the round is then hidden from that juror, and their votes are kept. Admins
 see pause and resume buttons in this column instead, see [Pausing a
 juror](admin-guide.md#a-pause-juror), can [add a juror](admin-guide.md#a-add-juror) to a
-running round, and can [reassign a juror's unrated files](admin-guide.md#a-reassign-juror) to the
+running or a stopped round, and can [reassign a juror's unrated files](admin-guide.md#a-reassign-juror) to the
 other jurors. While a juror is being added or their files reassigned the round pauses for its
 jurors for a few seconds; you still see its files.
 
