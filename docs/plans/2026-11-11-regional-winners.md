@@ -20,7 +20,7 @@ numbered setup steps that §10.4–§10.5 build on, and now also the cut picker 
 **Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; all decisions made (4
 and 9 replaced by "show, don't pick"); ready to build after lineage slice A. Order of work (v4:
 after the round improvements of 26.11.17 and 26.11.18): lineage slice A → regional winners phase 1
-→ phase 2 (exports) → phase 3. Phase 0 is done for WLE 2026 and WLM 2026 (§7.4, §7.5). The
+→ phase 2 (exports) → phase 3. *(Replaced by §10.8's order, v5, 2026-11-26.)* Phase 0 is done for WLE 2026 and WLM 2026 (§7.4, §7.5). The
 maintainer made this the top priority for WLM 2026 Ukraine's jury final. (v4, 2026-11-25: dates
 replaced by a priority order.)
 
@@ -78,6 +78,11 @@ replaced by a priority order.)
   preselected. K is not a separate setting: it is each region's own top-k, chosen with the same
   "Choose N" control in the region round when the region is accepted, and saved with the outcome;
   the `winners` parameter is dropped (§10.2–§10.5, §10.7, §10.9, §11).
+- **v5, review fixes (2026-11-26):** ties no longer block Accept (k at a tie boundary; default k
+  the smallest valid value); a region's round is the newest round of its chain holding the region,
+  so winners can come from ordinary regional rounds before R3, and the Admin can pick another;
+  deleted-on-Commons winners and the end of "needs re-jury" defined; §3.1 lists R1's POSTs and
+  R2's parameters; phase 3 in §10.8; a composite key ties winners to their outcome's contest.
 - **v5, last decisions of 2026-11-26** **[user]**: ties with several winners as proposed (a tie
   inside the top k is a shared place; a tie across place k needs a re-jury, or a k at a tie
   boundary); files the offline jury rejected may come back in a re-jury from an earlier round, with
@@ -171,17 +176,21 @@ photos and tell which round they are from."
 
 ## Short answer, v4–v5: the re-jury loop (added 2026-11-25; updated 2026-11-26)
 
-- **The report still picks nothing on its own.** A region's **region round** is the newest re-jury
-  round that holds it, else the final round. When the region is clear there, its winners are its
-  top k by the jury's votes, k chosen per region by the Admin when accepting (default 1), and one
-  Admin's "Accept region" records them. An Admin can also accept
+- **The report still picks nothing on its own.** A region's **region round** is, by default, the
+  newest round of its chain that holds it (a regional round or a re-jury round branching from the
+  chain, else the final round); the Admin may pick another (§10.3). When the region is clear
+  there, its winners are its top k by the jury's votes, k chosen per region by the Admin when
+  accepting (default: the smallest valid value, normally 1), and one Admin's "Accept region"
+  records them. An Admin can also accept
   a region with "no winner" (a note is required) or mark it "needs re-jury" (questions 8–9
   **[user]**). One row per region in one new table, numbered at build time; every change goes to
   the contest change log (#178's `contest_change`); Organizers read, Admins write (decision 18
   **[user]**); jurors get no such action (question 6 **[user]**) (§10.2).
 - **A flagged region gets one plain line with the next step,** computed on each request, never
   stored. Four cases: an Admin marked it "needs re-jury"; no photo of the region reached the final
-  round ("its best photos are in round 3"); a tie for 1st place; few votes on the top photo ("2 of 5 jurors voted") (question 5 **[user]**, §10.3).
+  round ("its best photos are in round 3"); a tie for 1st place, or at place k (only the k values
+  inside the tie are refused; k at a tie boundary is a shared place); few votes on the top photo
+  ("2 of 5 jurors voted") (question 5 **[user]**, §10.3).
 - **An offline jury session** votes as normal jury work in a round an Admin creates, for example
   through one juror account voting for the offline jury (question 6 **[user]**, §10.1).
 - **A cut picker,** one shared component (§10.4): the app lists several candidate cuts, each with
@@ -625,10 +634,20 @@ The score rule is named in the column header, as on the round form.
     `round`, `F` is chosen as §2.1 item 3 says for an explicit list (added 2026-11-26);
   - `n` is clamped to 1–10, and `national` to 0–20;
   - `format` is `html`, `wiki` or `csv` (decision 11); `export` is `final` (the final round's
-    column) or `shown` (the columns shown) (updated 2026-11-25: "show, don't pick").
+    column) or `shown` (the columns shown) (updated 2026-11-25: "show, don't pick"), or
+    `accepted` (the accepted winners, the default once the contest has an outcome; phase 2', §10.7);
+  - (R1) `state`: a filter, `notAccepted`, `needsRejury` or `flagged` (§10.7); `regionRound`: a
+    region's round picked for its Accept form, as `07:101,21:102` (§10.3);
+  - (R2) `rejury`: each region's source round and N for the re-jury section, as
+    `07:5@102,21:8@102` (§10.5). Ids go through `Round.findByIds`, N through the valid values;
+    a bad entry is dropped and named.
 - **Contest switch:** it is a page GET, so it switches the session's contest
   (`Secured.switchingContest`, `Secured.scala:889-902`).
-- **Read-only.** No POST, no stored state.
+- **The page itself is a GET and stores nothing.** From R1 on, the region outcomes are written by
+  separate CSRF POSTs (Admins and root; §10.2):
+  `POST /contest/:contestId/regional-winners/:region/accept` (round, k, the state the form was
+  made from), `…/:region/no-winner` (note), `…/:region/needs-rejury` (optional note) and
+  `…/:region/clear`. Each redirects back to the page.
 - **Linked from:**
   - the round stats pager (`roundStat.scala.html`) and the rounds page (admins);
   - later, the lineage map's regions table.
@@ -832,7 +851,7 @@ GROUP BY ri.round_id, ri.region
 | Combined juror votes | The report is never shown to jurors |
 | Round images P2b/P3 | The counts path turns on with `roundImage.read`. DQ is already out. `finalized` can drop the "provisional" badge |
 | Per-region top-N for the next round | Not here. It is the preventive fix, and could be a later round-form option *(inf.)*. *(v4, 2026-11-25: now here, as the re-jury round's per-region N, §10.5, chosen with the cut picker, §10.4)* |
-| Lineage slice A (#193, V115) and slice B (v4, added 2026-11-25) | The re-jury round gets no manual label: slice A checks `round.track` before rule 4, so a label would replace its region track; left empty, rule 4 puts it on the track of its region set (§10.5). Slice B's Cancel hides a re-jury round that was a mistake; an outcome accepted from it stays, and the report says "the top photo changed since it was accepted" (§10.2; v5, 2026-11-26) |
+| Lineage slice A (#193, V115) and slice B (v4, added 2026-11-25) | The re-jury round gets no manual label: slice A checks `round.track` before rule 4, so a label would replace its region track; left empty, rule 4 puts it on the track of its region set (§10.5). Slice B's Cancel hides a re-jury round that was a mistake; an outcome accepted from it stays, and the report says "The top photos changed since they were accepted" (§10.2; v5, 2026-11-26) |
 | Contest change log (#178, V114) (v4) | Regional outcomes are logged as a `contest_change` kind of their own (§10.2), shown in the contest's change log and on the report |
 | Contest export, snapshots, copy, archive (`2026-11-25-contest-export-snapshots-copy-archive.md`) (v4) | `regional_outcome` (v5; v4's `regional_decision`) is contest data: an export or snapshot carries it, a copy leaves it out (a new contest has no outcomes), an archive keeps it. That plan should list the table; not edited here |
 | Conflict of interest (`CoiMembers`, `round.exclude_coi`) (v4) | A re-jury round leaves CoI files out (ticked by default), so a juror's own photo never reaches the re-jury; decision 12 already keeps it from winning. No data says which juror is local to a region (§10.6) |
@@ -851,7 +870,7 @@ S ≈ ½ day, M ≈ 1–2 days, L ≈ 3+ days of agent work, each with review an
 | 2 | **Wiki text** (S) and **CSV** (S), both from the start, with the `ExportsSpec` change (decision 11; updated 2026-11-25, decision 11) | S–M (½–1 d) |
 | 3 | **After lineage phase 1 and multi-role's pre-screening rounds:** pre-screening rounds join `X`; a link from the lineage map. The default `F` from the "Main" track moves to phase 1 (updated 2026-11-25, decision 2). V105's statuses are read in phase 1 already (§2.1) (updated 2026-11-25) | S (½ d) |
 | R0 (v4) | **Flagged regions** (§10.3; v5: four cases, one line each): computed from what phase 1 reads, with the region round and its top photo; the line and its next step in the region's row; unit spec of the cases | S (½–1 d) |
-| R1 (v4) | **Region outcomes** (§10.2; v5: one row per region, no per-file entry): migration (table, `contest_change` kind), DAO, the report's region controls (Accept region with its number of winners, No winner, Needs re-jury, Clear), CSRF POSTs, change-log entries, the region's state and filter; specs incl. negative authorization (organizer, juror, other contest's admin, signed out) | M (1.5–2 d) |
+| R1 (v4) | **Region outcomes** (§10.2; v5: one row per region, no per-file entry): migration (table, `contest_change` kind), DAO, the report's region controls (Accept region with its number of winners, No winner, Needs re-jury, Clear), the region round picker, CSRF POSTs, change-log entries, the region's state and filter; specs incl. allowed cases (an Admin and root may POST; an Organizer sees outcomes read-only) and negative authorization (organizer, juror, other contest's admin, signed out) | M (1.5–2 d) |
 | 2' (v4) | **Exports from accepted winners** (§10.7): `export=accepted`, the default once a contest has an outcome; on top of phase 2 | S (+½ d) |
 | SN (v4; in 26.11.18, question 14 **[user]**) | **Cut picker** (§10.4): the pure candidate-cut finder, its valid values and its reasons (unit spec over rated, yes/no, tie and small-region shapes; ½–1 d); the ranked scores read with the fill's own rank key (½ d); the cut gallery (a shared Twirl partial: thumbnails in rank order, scores, tie brackets, labelled cut lines, "Cut here"), on the round form's step 1 with "Choose N" and an N list of valid values only (v5), the preview "37 of 412 files, lowest included score 7.2", the choice logged with the round's change-log entry (1.5–2 d). No migration | M (2.5–3.5 d) |
 | R2 (v4) | **Per-region N in the report** (§10.4–§10.5): each region's candidate cuts with their reasons, its cut gallery page, the source round per region, the "Re-jury these regions" form | S–M (1–1.5 d) |
@@ -864,7 +883,8 @@ S ≈ ½ day, M ≈ 1–2 days, L ≈ 3+ days of agent work, each with review an
 **Order of work** (updated 2026-11-25, decision 15): lineage slice A → regional winners phase 1 →
 phase 2 (exports) → phase 3. Slice A and phase 1 come first (v4, 2026-11-25: after the round
 improvements of 26.11.17 and 26.11.18; dates replaced by a priority order); phase 3 waits for
-lineage phase 1 and multi-role's pre-screening rounds.
+lineage phase 1 and multi-role's pre-screening rounds. *(Replaced by §10.8's order, v5,
+2026-11-26.)*
 
 **v4–v5 order (decided **[user]** 2026-11-26, questions 13 and 14; §10.8):** the round
 improvements of 26.11.17 and 26.11.18 (26.11.18 with SN, the cut picker for main rounds) → slice A
@@ -1369,7 +1389,8 @@ shown and the walk is not used; `F` is picked as §2.1 item 3 says for a list (�
 doesn't hold; several re-jury rounds go newest first. Without this, a re-jury round, which is off
 the Main track (rule 4 puts it on its regions' track), would sit under "Show all rounds" as a
 regional round (decision 5). *(2026-11-26: decision 20 is decided (question 7 **[user]**), so this
-applies: the re-jury round is the region round for its regions, §10.3.)*
+applies: the re-jury round is the region round for its regions, §10.3, as the newest round
+holding them.)*
 
 **18. Record regional decisions (new, 2026-11-25).**
 
@@ -1489,12 +1510,13 @@ warning when the Admin changes it.
   1. the report shows each region's best files per round. A region that isn't clear gets one plain
      line: what is wrong and the next step (§10.3);
   2. a clear region's winners are its top k photos (k chosen by the Admin for that region, default
-     1) in its **region round**: the newest re-jury round that holds the region, else the final round `F`.
-     An Admin records them with "Accept region" (§10.2);
+     the smallest valid value, normally 1) in its **region round**: by default the newest round of
+     its chain that holds it, else the final round `F`; the Admin may pick another (§10.3). An
+     Admin records them with "Accept region" (§10.2);
   3. the flagged regions go to one re-jury round, each with its own top N ("Re-jury these regions",
      §10.4–§10.6);
-  4. the re-jury round becomes the region round for its regions; back to 1, until every region with
-     files is accepted;
+  4. the re-jury round, the newest round holding its regions, becomes their region round; back to
+     1, until every region with files is accepted;
   5. the exports list the accepted winners (§10.7).
 - **An offline jury session** (question 6 **[user]**, 2026-11-26): "why mix up admin and jury? jury
   does normal jury work in rounds created by admins." If the session's choices go into the app,
@@ -1513,19 +1535,24 @@ top-k, stored as rows with places.)*
 **The number of winners, per region** **[user]**, 2026-11-26: "they can also just choose
 per-region top-k for the latest round and that would be the K." Each region's number of winners
 is the top-k the Admin chooses for it in its region round, with the same "Choose N" control as the
-cut picker (§10.4: valid values only, never inside a tie), default 1. Ukraine has 27 regions and
+cut picker (§10.4: valid values only, never inside a tie), default the smallest valid value
+(normally 1; 3 for a three-way tie for 1st place). Ukraine has 27 regions and
 takes the top-1 of each; a contest with few regions (e.g. Belgium's three upload campaigns,
 Brussels, Flanders and Wallonia) may take 3. The choice is saved with the region's outcome (its
 winner rows), not as a report parameter or a contest setting. It is not the report's `n` (the
 files shown per cell, decision 7).
 
 **What an Admin can do, per region** (in the region's row of the report; Admins only):
-- **Accept region,** with "Winners [1 ▾]" (the region's top-k, valid values only): offered when
-  the region is clear (none of §10.3's cases). It records the region's top k in its region round
-  as its winners, in order, with their places.
+- **Accept region,** with "Round [R-03 ▾]" (the region round, §10.3) and "Winners [1 ▾]" (the
+  region's top-k, valid values only): offered unless the region needs a re-jury, has no photo in
+  its region round, or has too few votes (§10.3). A tie does not block it: it only removes the k
+  values inside the tie. It records the region's top k in the chosen round as its winners, in
+  order, with their places, and the round on the outcome.
 - **No winner…:** accepts the region without a winner. A note is required ("no photo good enough").
 - **Needs re-jury…:** marks the region for the re-jury, with an optional note ("the jury rejected
-  all its candidates"). This is §10.3's first case.
+  all its candidates"). This is §10.3's first case. It ends when an Admin accepts the region, which
+  replaces the mark; Accept is offered again once a round holding the region, created after the
+  mark, has votes. Clear stays available.
 - **Clear:** back to undecided.
 
 A region is *done* when it is accepted: one Admin's click, with a winner or a "no winner" note
@@ -1545,6 +1572,7 @@ CREATE TABLE IF NOT EXISTS regional_outcome (
   decided_by  BIGINT UNSIGNED NOT NULL,          -- users.id, never an email
   decided_at  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   UNIQUE KEY regional_outcome_region (contest_id, region),          -- one row per region
+  UNIQUE KEY regional_outcome_id_contest (id, contest_id),          -- target of the winners' FK
   CONSTRAINT regional_outcome_chk CHECK (
     (status = 'accepted' AND round_id IS NOT NULL) OR                -- with winners
     (status = 'accepted' AND round_id IS NULL AND note IS NOT NULL) OR  -- "no winner"
@@ -1560,7 +1588,8 @@ CREATE TABLE IF NOT EXISTS regional_winner (
   PRIMARY KEY (outcome_id, page_id),
   UNIQUE KEY regional_winner_file (contest_id, page_id),            -- a file wins at most once
   CONSTRAINT regional_winner_place_chk CHECK (place BETWEEN 1 AND 10),
-  CONSTRAINT regional_winner_outcome_fk FOREIGN KEY (outcome_id) REFERENCES regional_outcome (id) ON DELETE CASCADE
+  CONSTRAINT regional_winner_outcome_fk FOREIGN KEY (outcome_id, contest_id)
+    REFERENCES regional_outcome (id, contest_id) ON DELETE CASCADE      -- same contest as its outcome
 ) ENGINE = InnoDB;
 ```
 
@@ -1573,32 +1602,38 @@ CREATE TABLE IF NOT EXISTS regional_winner (
   one winner. Since k is chosen among valid values only, a tie never crosses place k. A tie inside
   the top k is a shared place (two files at place 2, the next at place 4). A tie that would cross
   place k needs a re-jury, or a k at a tie boundary that takes the whole tie as a shared place
-  (§10.3). *(Decided **[user]** 2026-11-26, as proposed.)* The values offered stop at the region's positive files, so a region never
-  gets more winners than it has candidates.
+  (§10.3). *(Decided **[user]** 2026-11-26, as proposed.)* The values offered stop at the region's
+  positive files and at 10, so a region never gets more winners than it has candidates; with no
+  valid value (a tie for 1st place reaching past place 10), the next step is a re-jury.
+- **A winner's contest is its outcome's:** the composite foreign key on `(outcome_id,
+  contest_id)` makes the database refuse a winner row whose `contest_id` differs from its
+  outcome's, so `regional_winner_file` can't be bypassed.
 - **Key types:** `contest_id`, `round_id`, `decided_by` and `outcome_id` are `BIGINT UNSIGNED`,
   as `contest_jury.id` (SERIAL, V4), `round.id`, `users.id` and `regional_outcome.id`, and as the
   foreign keys of V61, V77 and V109. `page_id` is `BIGINT`, the type of `images.page_id` (V5) and
   `round_image.page_id` (V84).
-- **Accept is checked on the server.** The request carries only the region and the state the form
-  was made from. The server computes the region round and the cases of §10.3 as the report does;
-  it refuses if the region is not clear, and takes the winners and their places from its own
-  ranking, never from the request. The request carries k, refused if it is not a valid value (in
-  a tie, above 10, or above the region's positive files).
+- **Accept is checked on the server.** The request carries the region, the round, k and the state
+  the form was made from. The round must be one the Accept form offers (§10.3). The server
+  computes the cases of §10.3 for that round as the report does, refuses if one of them blocks
+  Accept, and takes the winners and their places from its own ranking, never from the request. k
+  is refused if it is not a valid value (in a tie, above 10, or above the region's positive files).
 - **Files the offline jury rejected** are not stored as rejected (decided **[user]** 2026-11-26).
   They may come back in a re-jury taken from an earlier round; there is no exclusion rule. The
   Admin picks the source round per region (§10.5), and if the offline jury voted in the app, its
   own round already ranks them low.
-- **If the winners change after acceptance** (votes still coming in an open round, the region
-  round cancelled, a file disqualified), the region round's top k (k = the stored winners' count)
-  no longer matches the stored winners. Changing what the report shows never does this. The region then shows one line: "The top photos changed
-  since they were accepted. Next: accept again." The stored outcome never changes by itself.
+- **If the winners change after acceptance** (votes still coming in an open round, the stored
+  round cancelled, a file disqualified), the stored round's top k (k = the stored winners' count)
+  no longer matches the stored winners. The region then shows one line: "The top photos changed
+  since they were accepted. Next: accept again." Changing what the report shows never does this,
+  and the stored outcome never changes by itself.
 - **If a winner's region changes** (a corrected monument id), the report shows "accepted under
   07, the file is now in 32. Next: accept again." The outcome counts for neither region until an
   Admin clears it and accepts again (logged).
-- **Files deleted on Commons after acceptance** (decision 13): `export=accepted` leaves them out
-  (`images.deleted_at IS NULL`). The report shows a "deleted on Commons since accepted" badge, and
-  the region's header warns: "an accepted winner was deleted on Commons". The region stays
-  accepted; the export's comment line names it (§10.7).
+- **Winners deleted on Commons after acceptance** (decision 13) stay accepted, with a "deleted on
+  Commons since accepted" badge; the region's header warns: "an accepted winner was deleted on
+  Commons". They are left out of the "top photos changed" check: for it, the stored round is
+  ranked with those files kept in, although §2.5 excludes them from every column. `export=accepted`
+  leaves them out (`images.deleted_at IS NULL`), and its comment line names the region (§10.7).
 - **The change log** (#178's `contest_change`), in the transaction of the write: one kind,
   `regional_outcome_set`, added to `contest_change_kind_chk`. The migration copies the kind list
   from the newest migration at build time, since slice A adds a kind of its own. Detail:
@@ -1630,10 +1665,12 @@ CREATE TABLE IF NOT EXISTS regional_winner (
 **In the report** (R1), Admins see the controls in each region's row; Organizers see the state only:
 
 ```
-| 07 Volyn O. (412 files)    Tie for 1st place: 2 photos at 8.50. Next: re-jury this region. | R-03 (final) ...
-|   [No winner…] [Needs re-jury…]                                                             |
+| 07 Volyn O. (412 files)    Tie for 1st place: 2 photos at 8.50. Next: re-jury this region, or accept both as a shared 1st place. | R-03 (final) ...
+|   Round [ R-03 ▾ ]  Winners [ 2 · shared 1st place ▾ ] [Accept region] [No winner…] [Needs re-jury…] |
 | 21 Zakarpattia (88 files)  Clear: top photo File:Example 3.jpg (R-03, 8.90)                  |
-|   Winners [ 1 ▾ ] [Accept region] [No winner…] [Needs re-jury…]                             |
+|   Round [ R-03 ▾ ]  Winners [ 1 ▾ ] [Accept region] [No winner…] [Needs re-jury…]            |
+| 44 Luhansk O. (61 files)   Only 2 of 5 jurors voted on the top photo. Next: wait for the votes, or re-jury. |
+|   [No winner…] [Needs re-jury…]                                                             |
 | 32 Kyiv O. (240 files)     Accepted 2026-12-02: File:Example 4.jpg (R-03)   [Clear]          |
 ```
 
@@ -1641,25 +1678,37 @@ CREATE TABLE IF NOT EXISTS regional_winner (
 
 *(Simplified 2026-11-26 after question 5 **[user]**: four cases, no rule codes on the page.)*
 
-Computed on each request, never stored, over the region's **region round**: the newest re-jury
-round that holds the region (§10.5), else the final round `F` (§2.1 item 3). A region is **clear**
-when none of the four cases applies; its top k there (k chosen by the Admin, default 1, §10.2)
-are then the winners an Admin can accept. The cases are computed for one winner, the default. A flagged region gets **one** line: what is wrong and the next step. When several cases
-apply, the line is the first that applies, in this order:
+Computed on each request, never stored, over the region's **region round** (v5 review fix: from
+R1 on, so that winners can come from rounds made before R3):
+- **by default, the newest round of the region's chain that holds the region:** among the final
+  round `F` (§2.1 item 3) and the regional rounds branching from the chain (`G`, §2.1 item 5, which
+  includes re-jury rounds with `region_top` once R3 exists, and the ordinary regional rounds an
+  offline session or an interim re-jury votes in), the one with the largest id that holds a file of
+  the region; else `F`;
+- **or the round the Admin picks** in the region's Accept form: any column of the report (shown or
+  hidden) that holds a file of the region. Picking re-renders that region's row for it (the GET
+  parameter `regionRound`, §3.1); Accept stores it on the outcome, and an accepted region is
+  checked against its stored round.
+
+A region is **clear** when none of the four cases applies; its top k there are the winners an
+Admin can accept (k chosen by the Admin, default the smallest valid value, §10.2). The first,
+second and fourth cases block Accept; a tie only removes the k values inside it. A flagged region
+gets **one** line: what is wrong and the next step. When several cases apply, the line is the first
+that applies, in this order:
 
 | Case | When | The line (example) |
 |---|---|---|
-| Needs re-jury | an Admin marked the region "needs re-jury", e.g. the jury rejected all its candidates (§10.2) | "Needs re-jury: the jury rejected all its candidates. Next: add it to a re-jury round." |
+| Needs re-jury | an Admin marked the region "needs re-jury", e.g. the jury rejected all its candidates (§10.2), and no round holding the region, created after the mark, has votes yet | "Needs re-jury: the jury rejected all its candidates. Next: add it to a re-jury round." |
 | Not in the final round | the region round holds no file of the region with a positive result | "No photo from this region reached the final round; its best photos are in round 3. Next: re-jury from round 3." |
-| Tie for 1st place | two or more photos share the best result in the region round (the same rank key) | "Tie for 1st place: 3 photos at 8.50. Next: re-jury this region, or accept all 3 as a shared 1st place." |
-| Few votes | fewer than half of the top photo's jurors voted on it (in an open round, votes still to cast count as not voted); on Accept with k winners, checked on each of them | "Only 2 of 5 jurors voted on the top photo. Next: wait for the votes, or re-jury." |
+| Tie for 1st place, or at place k | photos with the same result (the same rank key) span place k and place k + 1, for k = 1 or the k picked in the Accept form; the k values inside the tie are not offered, and the default k becomes the tie's end | "Tie for 1st place: 3 photos at 8.50. Next: re-jury this region, or accept all 3 as a shared 1st place." |
+| Few votes | fewer than half of the top photo's jurors voted on it (in an open round, votes still to cast count as not voted); with k winners, checked on each of them | "Only 2 of 5 jurors voted on the top photo. Next: wait for the votes, or re-jury." |
 
 - **"Round 3"** in the second line is the newest default column (§2.3) with a positive file of the
   region: the last round it was still in, before the cut. If that round is hidden or not linked to
   the chain, the line says so and links it (§2.4 item 3).
 - **Ties with several winners:** a tie inside the chosen top k (e.g. k = 3, places 2 and 3 tied)
-  is a shared place, and a tie for 1st place can be accepted as a shared 1st place by choosing a
-  k that takes the whole tie. A k inside a tie is never offered (§10.2; decided **[user]**
+  is a shared place, and a tie for 1st place is accepted as a shared 1st place with a k at the
+  tie's end (the default then). A k inside a tie is never offered (§10.2; decided **[user]**
   2026-11-26).
 - **Accepted regions** show "Accepted" and the winners, and no line.
 - **Dropped** (question 5 **[user]**): v4's "close scores" and "only yes/no votes" rules, and the
@@ -1725,7 +1774,7 @@ from 0, since a ✗ (rate -1) counts as 0, and under `assigned` so does an unrat
 **Candidate cuts** (decided in principle by question 1 **[user]**). For eligible scores
 `s1 ≥ s2 ≥ … ≥ sm` and a window `[lo, hi]` (below):
 - **Cut positions:** only between different scores (`sk > s(k+1)`), never inside a tie, and never
-  N = 0. These are the **valid values** of N.
+  N = 0; N = m (after the last file) is always one. These are the **valid values** of N.
 - **C1, a significant drop:** a cut position in the window whose gap `gk = sk − s(k+1)` is at least
   5% of the range, and also, with 3 or more cut positions in the window, at least twice their
   median gap (ties are not cut positions, so every gap counted is above 0). Reason: "N = 7: scores
@@ -1860,7 +1909,8 @@ Organizers). Its "Cut here" links back to the report with that region's N set in
 section's GET parameters, so the report stays read-only.
 
 **Place 3: each region's number of winners** (R1), in the region's Accept form (§10.2): the same N
-list over the region round's ranked files, default 1, with the gallery one click away. SN ships
+list over the region round's ranked files, up to 10, default the smallest valid value, with the
+gallery one click away. SN ships
 first, in 26.11.18 (question 14 **[user]**), so R1 reuses its N list and gallery.
 
 ### 10.5 The re-jury round (decisions 19 [user] and 20 [user])
@@ -2012,7 +2062,7 @@ as the goal (R3); one ordinary round per region as the interim until R3 ships, �
 ### 10.7 The loop's end and the exports
 
 - **The report's header** counts the regions: "27 regions: 19 accepted, 5 need re-jury, 3
-  undecided". A filter shows "not accepted", "needs re-jury" or "flagged".
+  undecided". A filter (`state`, §3.1) shows "not accepted", "needs re-jury" or "flagged".
 - **When every region with files is accepted:** "All regions are done" and the accepted export is
   offered first.
 - **`export=accepted`** (the default once the contest has an outcome; amended decision 11):
@@ -2058,6 +2108,7 @@ time (the shared run lock), in this order (question 13 **[user]**, 2026-11-26):
 | 3 | R0 flagged regions | ½–1 d | small; points the session at the regions to discuss |
 | 4 | R1 region outcomes (Accept region) | 1.5–2 d | the winners, the re-jury's input |
 | 5 | Phase 2 exports + 2' accepted | 1–1.5 d | the winners' list |
+| — | Phase 3 (pre-screening rounds join `X`; link from the lineage map) | ½ d | waits for lineage phase 1 and multi-role's pre-screening rounds, whenever they land (§7) |
 | 6 | Lineage slice B (Cancel / Reinstate) | 2.5–3.5 d | after phase 2 (question 13 **[user]**); decided to follow phase 1 (lineage §8.1) |
 | 7 | R2 per-region N in the report | 1–1.5 d | reuses SN |
 | 8 | R3 the re-jury round | 3–4 d | reuses SN, R1 and R2 |
@@ -2067,12 +2118,14 @@ time (the shared run lock), in this order (question 13 **[user]**, 2026-11-26):
   land after the session, the regions are accepted afterwards from the votes of the session's
   round.
 - **An offline session before R3** votes in an ordinary round the Admin creates (§10.1): one
-  round per region, or one round of several regions with today's region filter.
+  round per region, or one round of several regions with today's region filter, branching from the
+  chain. It is then the newest round holding those regions, so it is their region round by
+  default (§10.3), and R1 accepts winners from it.
 - **A re-jury before R3** (question 7 **[user]**: the interim) uses today's form, one round per
   region: previous = the region's source, the region filter, top N chosen per region,
   all jurors per file, CoI left out, no manual track label (rule 4 gives each its region's track).
-  The report (phase 1) shows these rounds under "Show all rounds" as regional rounds; once R3
-  lands, a re-jury round is the region round for its regions.
+  The report (phase 1) shows these rounds under "Show all rounds" as regional rounds; from R1 on,
+  each is its region's region round by default (§10.3), as an R3 re-jury round is later.
 
 ### 10.9 Tests (v4; updated 2026-11-26)
 
@@ -2083,8 +2136,12 @@ time (the shared run lock), in this order (question 13 **[user]**, 2026-11-26):
   rule, the reason naming the level; ties at `lo`, at `hi` and across the whole window; few
   candidates; mixed scales; each reason's message arguments.
 - **`RegionalFlagSpec`** (unit): each of the four cases, the order when several apply (one line
-  only), a clear region's top k for k = 1 and 3 (a tie inside the top k is a shared place; a tie
-  for 1st accepted as a shared 1st place with k = the tie's end), an accepted region (no line), a re-jury round as the region round,
+  only), which cases block Accept (not the tie), a clear region's top k for k = 1 and 3 (a tie
+  inside the top k is a shared place; a three-way tie for 1st gives the default k = 3, a shared
+  1st place; a tie at place k removes only the k values inside it; no valid k past place 10); the
+  default region round (an ordinary regional round newer than `F`, a re-jury round, else `F`) and
+  a picked one; "needs re-jury" ending once a newer round holding the region has votes; a winner
+  deleted on Commons not counted as a change; an accepted region (no line), a re-jury round as the region round,
   "not in the final round" naming the last round the region was in (and a hidden round), one juror
   of one voting (not flagged), "the top photos changed since they were accepted" (new votes, a
   cancelled round), never because of a report parameter.
@@ -2092,13 +2149,18 @@ time (the shared run lock), in this order (question 13 **[user]**, 2026-11-26):
   - the CHECK refuses an accepted row with neither a round nor a note, and a `needs_rejury` row
     with a round; an accepted row with a round always has winner rows, in place order, a shared
     place stored as equal places; a file wins at most once per contest;
-  - one row per region; Accept on a flagged region is refused; the winners are the server's top k,
-    whatever the request says; a k inside a tie, above 10 or above the region's positive files is
-    refused;
+  - one row per region; Accept is refused when a blocking case applies (needs re-jury, not in
+    the round, few votes) and allowed on a tie with k at its boundary; the winners are the
+    server's top k, whatever the request says; a k inside a tie, above 10 or above the region's
+    positive files is refused, and so is a round the form doesn't offer; Accept replaces a
+    "needs re-jury" mark; the stored round is the picked one;
+  - the composite key refuses a winner row whose contest differs from its outcome's;
   - each write logs `regional_outcome_set` with from and to; Clear;
   - a stale form is refused;
   - a region outside the contest's geographic regions is refused.
-- **Controller (negative authorization):**
+- **Controller (authorization):**
+  - allowed: an Admin of the contest and root may POST each outcome action; an Organizer gets the
+    page with outcomes and notes read-only, without the controls;
   - an organizer, a juror, an admin of another contest and a signed-out request (JSON 401 and the
     login page) are each refused on every outcome POST;
   - an organizer sees outcomes and notes read-only, and a juror gets 403 on the page;
