@@ -12,6 +12,12 @@ Deploy dates come from production's migration history, as described at the end.
 
 ## Unreleased (on master, not yet deployed)
 
+Merged after the 26.11.17 build, for the release after it:
+
+**Fixes**
+
+- Conflicts of interest: a round being set up no longer reads "Round N is open to its jurors: stop it first"; it says the round is being set up and its jurors don't see it yet, with its state as on the Rounds page, and a refused disqualify says the same instead of "its images are being distributed".
+
 For the next release, 26.11.17.
 
 **Features**

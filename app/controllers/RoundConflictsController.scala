@@ -120,6 +120,8 @@ class RoundConflictsController @Inject() (
     val text = outcome match {
       case RoundConflicts.Outcome.Open         => messages("coi.action.open", round.number)
       case RoundConflicts.Outcome.Frozen       => messages("coi.disqualify.frozen", round.number)
+      // being set up (a round in review has no job running): not "its images are being distributed"
+      case RoundConflicts.Outcome.Distributing if round.distributing => messages("coi.action.setup", round.number)
       case RoundConflicts.Outcome.Distributing => messages("coi.remove.distributing", round.number)
       case _                                   => messages("error.round.not.found")
     }

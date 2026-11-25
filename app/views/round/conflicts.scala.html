@@ -12,8 +12,10 @@
    forms, their checkboxes (tied to them by the form attribute) and buttons are its admins'.
    The history (round_image_event, V88) is shown to all who see the page; "Stop the round" to its
    admins while the round is open, through the rounds list's own action (RoundController.setRound),
-   with a confirm (confirm-submit.js). *@
+   with a confirm (confirm-submit.js). A round being set up (`distributing`) isn't open to its jurors:
+   its admins see that, with its state as the Rounds page shows it (RoundStartBlock), instead. *@
 @mayStop = @{ mayEdit && round.active && !round.distributing }
+@setupBlock = @{ if (mayEdit && round.distributing) services.distribution.RoundStartBlock.of(round) else None }
 @historyTime = @{ java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm") }
 @statusText(status: Option[String]) = @{ Messages("coi.status." + status.getOrElse("removed")) }
 @codeText(action: String, code: String) = @{
@@ -39,7 +41,14 @@
             @for(text <- flash.get(controllers.RoundController.WarningFlash)) {
                 <div class="alert alert-warning" role="status" id="flash-warning">@text</div>
             }
-            @if(mayEdit && (round.active || round.distributing)) {
+            @if(mayEdit && round.distributing) {
+                <div class="alert alert-info" id="coi-round-setup">
+                    @Messages("coi.action.setup", round.number)
+                    @for(block <- setupBlock) {
+                        <div class="small mt-1 wlx-round-start-state" data-state="@block.reason">@Messages(block.stateKey)</div>
+                    }
+                </div>
+            } else if(mayEdit && round.active) {
                 <div class="alert alert-warning" id="coi-round-open">
                     @Messages("coi.action.open", round.number)
                     @if(mayStop) {

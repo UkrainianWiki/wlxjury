@@ -228,6 +228,29 @@ class RoundConflictsAuthorizationSpec extends PlaySpecification with PlayTestDb 
       }
     }
 
+    "say a round being set up is being set up, not open to its jurors, with its state; a disqualify refused so" in {
+      testDbApp { app =>
+        val (round, _) = setUp()
+        val r = round.getId
+        // held in review (P3): distributing, paused, no job
+        DB.autoCommit { implicit s =>
+          sql"UPDATE round SET distributing = TRUE, status = ${Round.Status.Paused} WHERE id = $r".update()
+        }
+        val html = contentAsString(get(app, "admin@example.com", page(r)))
+        val doc = org.jsoup.Jsoup.parse(html)
+        val result = post(app, Some("admin@example.com"), disqualify(r), both: _*)
+        val setup = "Round 1 is being set up: its jurors don't see it yet, and files can't be disqualified or requalified " +
+          "here until it has been distributed."
+        (Option(doc.getElementById("coi-round-setup")).map(_.ownText) must beSome(setup)) and
+          (doc.select("#coi-round-setup .wlx-round-start-state").attr("data-state") === "not.distributed") and
+          (doc.select("#coi-round-setup .wlx-round-start-state").text === "Not started – waiting for distribution") and
+          (doc.getElementById("coi-round-open") must beNull) and (html must not(contain("is open to its jurors"))) and
+          (doc.getElementById("coi-round-stop") must beNull) and
+          (flash(result).get("error") must beSome(setup)) and
+          (disqualified(round) must beEmpty) and (voted(round) === Set(1L, 2L, 3L))
+      }
+    }
+
     "refuse a requalify without a known reason, and an empty selection" in {
       testDbApp { app =>
         val (round, _) = setUp()
