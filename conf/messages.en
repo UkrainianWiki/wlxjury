@@ -2052,3 +2052,5 @@ round.wait.link = Round {0} on the Rounds list
 round.wait.done = Round {0} has finished. You can save now.
 round.wait.done.rebalancing = Moving jurors’ files in round {0} has finished. You can save now.
 round.wait.ended = Round {0}’s job stopped before it finished: retry it from the Rounds list, then save again.
+round.saved.not.distributed = Round {0} is saved. Its new files weren’t distributed:
+round.wait.unknown = Round {0}’s progress can’t be shown here. Save again when it has finished.

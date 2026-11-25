@@ -3,11 +3,15 @@
 // switches the session's contest) and shows its progress. While it runs, the form's Save buttons
 // are disabled; when it has finished, the box says so and Save is enabled again, the form as
 // entered (no reload). Failed or cancelled: the box says what to do, Save enabled (the server
-// decides). Signed out or no access: Save enabled, polling stops.
+// decides). Signed out or no access (a series admin: the jobs' JSON answers real admins only), or
+// the network failing again and again (retried slower, up to 30 s apart, MAX_ERRORS times): the box
+// says its progress can't be shown, Save enabled, polling stops.
 (function () {
   'use strict';
 
   var INTERVAL = 3000;
+  var MAX_DELAY = 30000;
+  var MAX_ERRORS = 10;
 
   function active(status) {
     return status === 'queued' || status === 'running';
@@ -22,6 +26,8 @@
     var done = document.getElementById('round-form-wait-done');
     var ended = document.getElementById('round-form-wait-ended');
     var progress = document.getElementById('round-form-wait-progress');
+    var unknown = document.getElementById('round-form-wait-unknown');
+    var errors = 0;
     var template = box.getAttribute('data-progress-text') || '{0} / {1} {2}';
     var lang = document.documentElement.lang || undefined;
 
@@ -45,6 +51,15 @@
       save(!active(status));
     }
 
+    // its progress can't be read: said, Save enabled, no more polls
+    function giveUp() {
+      running.hidden = true;
+      done.hidden = true;
+      ended.hidden = true;
+      if (unknown) unknown.hidden = false;
+      save(true);
+    }
+
     function update() {
       fetch(box.getAttribute('data-src'),
         { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
@@ -54,9 +69,10 @@
         })
         .then(function (p) {
           if (p.denied) {
-            save(true);
+            giveUp();
             return;
           }
+          errors = 0;
           if (progress && p.progressDone != null && p.progressTotal > 0) {
             progress.textContent = template.replace('{0}', count(p.progressDone))
               .replace('{1}', count(p.progressTotal)).replace('{2}', p.progressUnit || '');
@@ -64,7 +80,11 @@
           show(p.status);
           if (active(p.status)) setTimeout(update, INTERVAL);
         })
-        .catch(function () { setTimeout(update, INTERVAL * 2); });
+        .catch(function () {
+          errors += 1;
+          if (errors >= MAX_ERRORS) giveUp();
+          else setTimeout(update, Math.min(INTERVAL * Math.pow(2, errors), MAX_DELAY));
+        });
     }
 
     show(box.getAttribute('data-status'));
@@ -73,7 +93,7 @@
 
   if (typeof module !== 'undefined') {
     // Jest (javascript-test/round-form-wait.test.js): init on its own document
-    module.exports = { init: init, INTERVAL: INTERVAL };
+    module.exports = { init: init, INTERVAL: INTERVAL, MAX_DELAY: MAX_DELAY, MAX_ERRORS: MAX_ERRORS };
   } else if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {

@@ -865,8 +865,19 @@ object Round extends RoundRepo with CRUDMapper[Round] {
             status = $to"""
 
   /** The round created by the submission with this token (see V59), if any. */
+  /** The live round a new-round form's token saved: a deleted round's token answers none (its form
+    * is then saved without the token, [[submitTokenTaken]]).
+    */
   def findBySubmitToken(token: String)(implicit session: DBSession = AutoSession): Option[Round] =
-    where(sqls.eq(r.submitToken, token)).apply().headOption
+    where(sqls.eq(r.submitToken, token).and.isNull(r.deletedAt)).apply().headOption
+
+  /** Whether any round, deleted or not, holds the token (its unique index): a form can't save another with it. */
+  def submitTokenTaken(token: String)(implicit session: DBSession = AutoSession): Boolean =
+    sql"SELECT 1 FROM round WHERE submit_token = $token LIMIT 1".map(_ => true).single().isDefined
+
+  /** The contest's rounds, read in the caller's transaction (e.g. under a round's lock). */
+  def findByContestIn(contest: Long)(implicit session: DBSession): Seq[Round] =
+    where("contestId" -> contest).orderBy(r.id).apply()
 
   def countByContest(contestId: Long): Long =
     countBy(sqls.eq(r.contestId, contestId))

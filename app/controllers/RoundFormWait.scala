@@ -30,8 +30,10 @@ object RoundFormWait {
     * distribution job; else the first posted previous round with a juror add or reassign queued or
     * running. None if the job can't be found (finished meanwhile: the next save may pass).
     */
-  def of(form: Form[_], contestId: Long): Option[RoundFormWait] = {
-    val keys = form.errors.map(FormRefusal.messageKey).toSet
+  def of(form: Form[_], contestId: Long, waitKey: Option[String] = None): Option[RoundFormWait] = {
+    // `waitKey`: a wait named apart from the form's errors (a saved edit's refused distribution,
+    // whose error is "Could not distribute new files: ...")
+    val keys = form.errors.map(FormRefusal.messageKey).toSet ++ waitKey
     if (!keys.exists(Keys)) None
     else {
       def ids(field: String): Seq[Long] =

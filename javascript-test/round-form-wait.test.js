@@ -4,7 +4,7 @@
 "use strict";
 
 // round-form-wait.js: a round form refused to wait for another round's job (UI-path plan Q7).
-const { init, INTERVAL } = require("../public/javascripts/round-form-wait");
+const { init, INTERVAL, MAX_DELAY, MAX_ERRORS } = require("../public/javascripts/round-form-wait");
 
 function page(status) {
     document.body.innerHTML = `
@@ -13,6 +13,7 @@ function page(status) {
         <p id="round-form-wait-running">Round 3 is being distributed: <span id="round-form-wait-progress"></span></p>
         <p id="round-form-wait-done" hidden>Round 3 has finished. You can save now.</p>
         <p id="round-form-wait-ended" hidden>Round 3's job stopped before it finished.</p>
+        <p id="round-form-wait-unknown" hidden>Its progress can't be shown here.</p>
       </div>
       <form id="round-form">
         <input name="name" value="Kept as entered">
@@ -31,8 +32,8 @@ function respond(...bodies) {
 }
 
 /** Runs the poll that is due, and lets its promises settle. */
-async function tick() {
-    jest.advanceTimersByTime(INTERVAL);
+async function tick(ms = INTERVAL) {
+    jest.advanceTimersByTime(ms);
     for (let i = 0; i < 5; i++) await Promise.resolve();
 }
 
@@ -78,14 +79,35 @@ describe("round-form-wait", () => {
         expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
-    test("enables Save and stops when the job can't be read (signed out, no access)", async () => {
+    test("says the progress can't be shown, enables Save and stops when the job can't be read (signed out, no access)", async () => {
         page("running");
         respond({ httpStatus: 404 });
         init();
         await tick();
         expect(buttons().every((b) => !b.disabled)).toBe(true);
+        expect(shown("round-form-wait-unknown")).toBe(true);
+        expect(shown("round-form-wait-running")).toBe(false);
         await tick();
         expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    test("retries a failing network slower, up to 30 s apart, then gives up saying so", async () => {
+        page("running");
+        global.fetch = jest.fn().mockRejectedValue(new Error("offline"));
+        init();
+        await tick();
+        let delays = 0;
+        for (let i = 1; i < MAX_ERRORS; i++) {
+            expect(shown("round-form-wait-unknown")).toBe(false);
+            await tick(MAX_DELAY);
+            delays++;
+        }
+        expect(global.fetch).toHaveBeenCalledTimes(MAX_ERRORS);
+        expect(delays).toBe(MAX_ERRORS - 1);
+        expect(shown("round-form-wait-unknown")).toBe(true);
+        expect(buttons().every((b) => !b.disabled)).toBe(true);
+        await tick(MAX_DELAY);
+        expect(global.fetch).toHaveBeenCalledTimes(MAX_ERRORS);
     });
 
     test("does nothing on a page without the box", () => {

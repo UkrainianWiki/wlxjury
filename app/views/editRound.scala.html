@@ -126,7 +126,8 @@
                 @csrfField()
 
                 @round.edit.errorSummary(editRoundForm, controllers.RoundFormErrors.Shown(rounds = rounds.nonEmpty,
-                    regions = regions.nonEmpty, nominations = specialNominations.nonEmpty, unrated = unratedRound))
+                    regions = regions.nonEmpty, nominations = specialNominations.nonEmpty, unrated = unratedRound),
+                    state.summaryHeading)
 
                 <fieldset>
                     <input type="hidden" id="id" name="id" value='@editRoundForm("id").value' />

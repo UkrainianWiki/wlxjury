@@ -20,7 +20,15 @@ object FormRefusal {
   /** The logger of the support events (M-1: the line only; M-2 records a row with it). */
   val logger: Logger = Logger("support.event")
 
-  /** The reference of the `form_refused` line a result was logged with. */
+  /** A form refused, nothing of it saved. */
+  val FormRefused = "form_refused"
+
+  /** A saved form whose follow-up was refused: the round form's edit saved, its "Distribute new
+    * files" (or list, or top-up) refused. Not a refused form (monitoring P1 doesn't count it).
+    */
+  val DistributionRefused = "distribution_refused"
+
+  /** The reference of the `form_refused` (or `distribution_refused`) line a result was logged with. */
   val Recorded: TypedKey[String] = TypedKey[String]("formRefusal")
 
   /** The page of a refused form, answered 400 and logged with the form's errors. */
@@ -33,20 +41,20 @@ object FormRefusal {
     * fields' names given.
     */
   def refused(form: String, user: User, contestId: Option[Long], roundId: Option[Long], keys: Seq[String],
-      fields: Seq[String] = Nil)(result: Result)(implicit request: RequestHeader): Result = {
+      fields: Seq[String] = Nil, event: String = FormRefused)(result: Result)(implicit request: RequestHeader): Result = {
     val reference = controllers.Secured.newReference()
-    logger.warn(line(reference, form, user, contestId, roundId, result.header.status, keys, fields))
+    logger.warn(line(reference, form, user, contestId, roundId, result.header.status, keys, fields, event))
     result.addAttr(Recorded, reference)
   }
 
   /** The line: key-value fields, the lists comma separated (`-` for none). */
   def line(reference: String, form: String, user: User, contestId: Option[Long], roundId: Option[Long],
-      status: Int, keys: Seq[String], fields: Seq[String]): String = {
+      status: Int, keys: Seq[String], fields: Seq[String], event: String = FormRefused): String = {
     def list(values: Seq[String]) = values.map(identifier).filter(_.nonEmpty).distinct match {
       case Nil  => "-"
       case some => some.mkString(",")
     }
-    s"form_refused ref=$reference form=${identifier(form)} contestId=${contestId.getOrElse("-")} " +
+    s"${identifier(event)} ref=$reference form=${identifier(form)} contestId=${contestId.getOrElse("-")} " +
       s"roundId=${roundId.fold("new")(_.toString)} accountId=${user.id.getOrElse("-")} status=$status " +
       s"fields=${list(fields)} keys=${list(keys)}"
   }

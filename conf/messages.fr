@@ -2036,3 +2036,5 @@ round.wait.link = Le tour {0} dans la liste des tours
 round.wait.done = Le tour {0} est terminé. Vous pouvez enregistrer maintenant.
 round.wait.done.rebalancing = Le déplacement des fichiers de jurés dans le tour {0} est terminé. Vous pouvez enregistrer maintenant.
 round.wait.ended = La tâche du tour {0} s’est arrêtée avant la fin : relancez-la depuis la liste des tours, puis enregistrez à nouveau.
+round.saved.not.distributed = Le tour {0} est enregistré. Ses nouveaux fichiers n’ont pas été distribués :
+round.wait.unknown = L’avancement du tour {0} ne peut pas être affiché ici. Enregistrez à nouveau quand il sera terminé.

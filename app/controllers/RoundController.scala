@@ -92,8 +92,9 @@ class RoundController @Inject() (
       val token = submitToken.map(_.trim).filter(t => roundId.isEmpty && RoundController.TokenPattern.matches(t))
       token.flatMap(Round.findBySubmitToken).filter(_.contestId == contestId) match {
         case Some(saved) => RoundController.toSavedRound(saved, messagesApi.preferred(request))
+        // a token no round holds (a deleted one's or another contest's: a fresh one)
         case None => roundForm(user, roundId, contestId, topImages,
-          token.filter(t => Round.findBySubmitToken(t).isEmpty).getOrElse(RoundController.newSubmitToken()))
+          token.filterNot(Round.submitTokenTaken).getOrElse(RoundController.newSubmitToken()))
       }
     }
 
@@ -151,7 +152,9 @@ class RoundController @Inject() (
       knownRounds: Option[Seq[Round]] = None,
       knownJurors: Option[Seq[User]] = None,
       submitToken: Option[String] = None,
-      storedCriteria: Option[Seq[Long]] = None
+      storedCriteria: Option[Seq[Long]] = None,
+      summaryHeading: Option[String] = None,
+      waitKey: Option[String] = None
   )(implicit request: RequestHeader): Html = {
     val contestId = round.contestId
     val rounds = knownRounds.getOrElse(Round.findByContest(contestId))
@@ -197,7 +200,8 @@ class RoundController @Inject() (
         ratesEditable = ratesEditable,
         resolveUrl = resolveUrl,
         // refused to wait for another round's job (Q7): that job's live progress at the top
-        waitFor = RoundFormWait.of(form, contestId))
+        waitFor = RoundFormWait.of(form, contestId, waitKey),
+        summaryHeading = summaryHeading)
     )
   }
 
@@ -209,6 +213,21 @@ class RoundController @Inject() (
     val placed = RoundFormErrors.placed(form)
     RoundController.formPage(FormRefusal.badRequest(RoundController.FormId, user, Some(round.contestId), round.id,
       placed)(roundFormView(user, round, placed, submitToken = submitToken)))
+  }
+
+  /** The form after a saved edit whose "Distribute new files" (or list, or top-up) was refused: the
+    * round form again, headed "Round N is saved. Its new files weren't distributed:", not "Nothing
+    * was saved"; answered 400, logged as `distribution_refused` (not `form_refused`: the settings
+    * were saved), the result marked as recorded. `waitKey`: a wait for another round's job, whose
+    * progress the form shows (Q7).
+    */
+  private def distributionRefusedForm(user: User, round: Round, form: Form[EditRound], waitKey: Option[String])(implicit
+      request: RequestHeader): Result = {
+    val messages = messagesApi.preferred(request)
+    RoundController.formPage(FormRefusal.refused(RoundController.FormId, user, Some(round.contestId), round.id,
+      form.errors.map(FormRefusal.messageKey) ++ waitKey, event = FormRefusal.DistributionRefused)(
+      BadRequest(roundFormView(user, round, form,
+        summaryHeading = Some(messages("round.saved.not.distributed", round.number)), waitKey = waitKey))))
   }
 
   /** The round form's conflicts of interest: the contest's files that are, the round's too
@@ -413,7 +432,7 @@ class RoundController @Inject() (
                 case None =>
                   refusedForm(user, new Round(id = None, contestId = cid,
                     number = formWithErrors.data.get("number").flatMap(_.toLongOption).getOrElse(0L)),
-                    formWithErrors, RoundController.submitToken(request))
+                    formWithErrors, RoundController.submitToken(request).filterNot(Round.submitTokenTaken))
                 case Some(id) =>
                   withAdminRound(user, id, roundNotFound(user), request) {
                     case stored if stored.contestId != cid =>
@@ -434,43 +453,56 @@ class RoundController @Inject() (
               Redirect(RoundsFilter.fromForm(request).addTo(routes.RoundController.rounds(Some(contestId)).url))
             // "Add files": added by the round's distribution job, after the files its filters choose
             val titles = ImportSource.titles(editForm.fileList.getOrElse(""))
+            // the form's token, unless another (a deleted) round holds it: then no dedupe, as without one
+            val liveToken = RoundController.submitToken(request).filterNot(Round.submitTokenTaken)
 
             // Re-render the same create/edit form with the entered values kept and the
             // failure shown as a global form error, so the admin can fix and resubmit
             // instead of losing the page.
             def reRender(r: Round, message: String, args: Any*): Result =
-              refusedForm(user, r,
-                editRoundForm
-                  .fill(EditRound(r, editForm.jurors, editForm.fileList, editForm.newImages, editForm.criteriaShown))
-                  .withGlobalError(message, args: _*),
-                // a creation rejected before anything was created keeps the form's token
-                RoundController.submitToken(request).filter(_ => r.id.isEmpty))
+              refusedForm(user, r, filledWith(r, message, args), liveToken.filter(_ => r.id.isEmpty))
+
+            def filledWith(r: Round, message: String, args: Seq[Any]): Form[EditRound] =
+              editRoundForm
+                .fill(EditRound(r, editForm.jurors, editForm.fileList, editForm.newImages, editForm.criteriaShown))
+                .withGlobalError(message, args: _*)
+
+            // the edit saved, "Distribute new files" (or the list, or the top-up) refused: the form again,
+            // headed "Round N is saved. Its new files weren't distributed:", logged as
+            // `distribution_refused`; `waitKey`, a wait for another round's job (Q7), shows its box
+            def notDistributed(r: Round, waitKey: Option[String], message: String, args: Any*): Result =
+              distributionRefusedForm(user, r, filledWith(r, message, args), waitKey)
 
             // Our own checks' refusal of the settings is shown as it is; any other failure,
             // whose text may be the database's, only as a logged reference.
-            def failed(r: Round, key: String, referenceKey: String, e: Throwable, what: String): Result =
+            // `saved`: the edit was saved before this failed (Distribute new files): notDistributed
+            def failed(r: Round, key: String, referenceKey: String, e: Throwable, what: String,
+                saved: Boolean = false): Result = {
+              def render(waitKey: Option[String], message: String, args: Any*): Result =
+                if (saved) notDistributed(r, waitKey, message, args: _*) else reRender(r, message, args: _*)
               e match {
                 // the rounds to leave out refused (V95): their message, in the page's language
                 // a wait for another round's job (Q7): its own key, so the form shows that job's progress
-                case refused: RoundDistributionHandler.ExcludeRoundsRefused if RoundFormWait.Keys(refused.refusal.key) =>
+                // (after a saved edit, inside the failure's wrapper, the wait named apart)
+                case refused: RoundDistributionHandler.ExcludeRoundsRefused if RoundFormWait.Keys(refused.refusal.key) && !saved =>
                   logger.warn(s"$what: ${refused.text}")
                   reRender(r, refused.refusal.key, refused.refusal.args: _*)
                 case refused: RoundDistributionHandler.ExcludeRoundsRefused =>
                   logger.warn(s"$what: ${refused.text}")
-                  reRender(r, key, messagesApi.preferred(request)(refused.refusal.key, refused.refusal.args: _*))
-                case _ => failedOtherwise(r, key, referenceKey, e, what)
+                  render(Some(refused.refusal.key).filter(RoundFormWait.Keys), key,
+                    messagesApi.preferred(request)(refused.refusal.key, refused.refusal.args: _*))
+                case _ =>
+                  RoundController.refusal(e) match {
+                    case Some(text) =>
+                      logger.warn(s"$what: $text")
+                      render(None, key, text)
+                    case None =>
+                      val reference = Secured.newReference()
+                      logger.error(s"$what ref=$reference", e)
+                      render(None, referenceKey, reference)
+                  }
               }
-
-            def failedOtherwise(r: Round, key: String, referenceKey: String, e: Throwable, what: String): Result =
-              RoundController.refusal(e) match {
-                case Some(text) =>
-                  logger.warn(s"$what: $text")
-                  reRender(r, key, text)
-                case None =>
-                  val reference = Secured.newReference()
-                  logger.error(s"$what ref=$reference", e)
-                  reRender(r, referenceKey, reference)
-              }
+            }
 
             // "Add files": lines that name no file are shown, not dropped
             val unreadable = FileTitles.unreadable(editForm.fileList.getOrElse(""))
@@ -487,11 +519,21 @@ class RoundController @Inject() (
                 r.copy(rates = stored.rates)
               else r.copy(rates = round.rates, worstMark = r.worstMark && round.isRated)
 
-            // the rating of `edited` written, if changed (#184), under the round's lock: refused if a
-            // later round takes its files meanwhile
+            // #184: the posted rating replaces the stored one (the round is being set up)
+            def ratingChanged(stored: Round): Boolean = withRating(stored, stored).rates != stored.rates
+
+            // the criteria the save writes, if any: none for a round set up as yes/no or comments only
+            // (#184: its stored criteria cleared, whatever the form posted: a script hides their
+            // selects, an older page may post them unchanged); else the posted ones, if the form had them
+            def criteriaToWrite(stored: Round, edited: Round): Option[Seq[Long]] =
+              if (edited.rates != stored.rates && !edited.isRated) Some(Nil)
+              else Option.when(editForm.criteriaShown)(round.criterionIds)
+
+            // the rating of `edited` written, if changed (#184), under the round's lock (held by the
+            // caller, `s`): refused if a later round takes its files, read in the same transaction
             def writeRating(stored: Round, edited: Round)(implicit s: scalikejdbc.DBSession): Unit =
               if (edited.rates != stored.rates) {
-                if (RoundController.takenFrom(stored.getId, Round.findByContest(contestId)))
+                if (RoundController.takenFrom(stored.getId, Round.findByContestIn(contestId)))
                   throw RoundController.CriteriaRefused(RoundController.RatesLockedKey)
                 Round.updateRates(stored.getId, edited.rates)
               }
@@ -518,9 +560,9 @@ class RoundController @Inject() (
                   roundsService.reapplyFilters(round, user.id, titles, alsoWrite = { s =>
                     // a started round's criteria are not changed (running or voted): a re-apply's round
                     // is neither, but a refusal rolls everything back
-                    if (editForm.criteriaShown)
-                      RoundCriterion.updateIn(roundId, round.criterionIds)(s).left.foreach(r =>
-                        throw RoundController.CriteriaRefused(r.messageKey))
+                    criteriaToWrite(stored, edited).foreach(ids =>
+                      RoundCriterion.updateIn(roundId, ids)(s).left.foreach(r =>
+                        throw RoundController.CriteriaRefused(r.messageKey)))
                     // #184: its rating type, checked again under the lock (the re-apply's checks: in
                     // review, no vote, no job)
                     writeRating(stored, edited)(s)
@@ -568,9 +610,9 @@ class RoundController @Inject() (
                 try Right(WriteTx.write { implicit s =>
                   Round.lock(Seq(roundId))
                   RoundChanges.logged(roundId, user.id, ContestChangeJdbc.RoundChanged, RoundChanges.Path.Edit) {
-                    if (editForm.criteriaShown)
-                      RoundCriterion.updateIn(roundId, round.criterionIds).left.foreach(r =>
-                        throw RoundController.CriteriaRefused(r.messageKey))
+                    criteriaToWrite(stored, edited).foreach(ids =>
+                      RoundCriterion.updateIn(roundId, ids).left.foreach(r =>
+                        throw RoundController.CriteriaRefused(r.messageKey)))
                     // #184: its rating type, only while it is being set up, checked under the lock
                     if (edited.rates != stored.rates) {
                       val fresh = Round.findById(roundId).getOrElse(stored)
@@ -629,7 +671,8 @@ class RoundController @Inject() (
                 } catch {
                   case NonFatal(e) =>
                     failed(Round.findById(roundId).getOrElse(round), "round.distribute.failed",
-                      "round.distribute.failed.reference", e, s"Round $roundId: could not start distributing new files")
+                      "round.distribute.failed.reference", e, s"Round $roundId: could not start distributing new files",
+                      saved = true)
                 }
             }
 
@@ -652,13 +695,12 @@ class RoundController @Inject() (
                   // maintainer's decision of 2026-11-16, superseding D4's "Distribute as soon as the
                   // images are ready"): its jurors are chosen on its jurors form, which distributes it
                   roundsService.submit(round.copy(active = true, track = Round.trackLabel(round.track, trackMainNames)),
-                    Nil, RoundController.submitToken(request), user.id, titles, review = true) match {
+                    Nil, liveToken, user.id, titles, review = true) match {
                     // the selection runs in the background: "Choose jurors next" waits for it on the
                     // round's jurors form; "Review images first", on the rounds list, which shows its progress
                     // saved: said on the page it lands on (never "created": it has no jurors yet)
                     case created: RoundService.Created =>
-                      RoundController.submitToken(request).foreach(t =>
-                        RoundController.SavedForms.remember(t, RoundController.postedHash(request)))
+                      liveToken.foreach(t => RoundController.SavedForms.remember(t, RoundController.postedHash(request)))
                       val saved = "success" -> messagesApi.preferred(request)("round.saved.matching",
                         created.round.number, created.round.description)
                       if (RoundController.nextPosted(request) == RoundController.NextJurors)
@@ -667,7 +709,7 @@ class RoundController @Inject() (
                     // the same token saved a round meanwhile (two submits at once; a later one is
                     // answered by savedAgain before the form is validated): that round's Edit page
                     case resubmitted: RoundService.Resubmitted =>
-                      RoundController.submitToken(request).fold(
+                      liveToken.fold(
                         RoundController.toSavedRound(resubmitted.round, messagesApi.preferred(request)))(t =>
                         savedAgain(user, t, resubmitted.round))
                   }
@@ -688,13 +730,16 @@ class RoundController @Inject() (
                   // set up, the posted one), for criteria changed, removed ones too: those posted as
                   // stored stay, whatever they are (legacy rounds). Before the re-apply case, which
                   // writes them too
-                  case stored if editForm.criteriaShown && !withRating(stored, stored).isRated &&
+                  // A rating changed to yes/no or comments only clears them instead (criteriaToWrite)
+                  case stored if editForm.criteriaShown && !withRating(stored, stored).isRated && !ratingChanged(stored) &&
                       round.criterionIds != RoundCriterion.idsOf(roundId) =>
                     reRender(round, "error.criteria.rated.only")
                   // the worst mark only in a rated round without criteria, by the stored rating and
-                  // the criteria the round has after the edit (a client without the selects keeps them)
-                  case stored if editForm.worstMarkShown && round.worstMark && (!withRating(stored, stored).isRated ||
-                      (if (editForm.criteriaShown) round.criterionIds else RoundCriterion.idsOf(roundId)).nonEmpty) =>
+                  // the criteria the round has after the edit (a client without the selects keeps them);
+                  // a rating changed to an unrated one drops it (withRating)
+                  case stored if editForm.worstMarkShown && round.worstMark &&
+                      ((!withRating(stored, stored).isRated && !ratingChanged(stored)) || (withRating(stored, stored).isRated &&
+                        (if (editForm.criteriaShown) round.criterionIds else RoundCriterion.idsOf(roundId)).nonEmpty)) =>
                     reRender(round, EditRound.WorstMarkRatedOnly)
                   // the form in its re-apply state (posted `reapply`): checked under the round's lock,
                   // refused with a message if the round left review or got a vote or a job since; its
@@ -1105,8 +1150,8 @@ object RoundController {
   /** A round saved from a new-round form whose token was posted or opened again: its Edit page,
     * saying so ("Round N is saved. You can change its settings here."), with `more` flashed too.
     */
-  def toSavedRound(saved: Round, messages: Messages, more: (String, String)*): Result =
-    play.api.mvc.Results.Redirect(routes.RoundController.editRound(saved.id, saved.contestId))
+  def toSavedRound(saved: Round, messages: Messages, more: (String, String)*)(implicit request: RequestHeader): Result =
+    play.api.mvc.Results.Redirect(RoundsFilter.fromRequest(request).addTo(routes.RoundController.editRound(saved.id, saved.contestId).url))
       .flashing((("success" -> messages("round.saved.edit.here", saved.number)) +: more): _*)
 
   /** Whether a round of `rounds` other than `roundId` takes files from it (a previous round of it). */
@@ -1176,6 +1221,7 @@ object RoundController {
   * @param ratesEditable  a round being set up: its rating type can change (#184)
   * @param resolveUrl     a new round's form: its URL with its token, for the page's history entry
   * @param waitFor        a save refused to wait for another round's job: that job (Q7)
+  * @param summaryHeading the error summary's heading, if not "Nothing was saved" (a saved edit's refused distribution)
   */
 final case class RoundFormState(
     reapply: Boolean = false,
@@ -1185,7 +1231,8 @@ final case class RoundFormState(
     nextStep: Option[RoundNextStep] = None,
     ratesEditable: Boolean = false,
     resolveUrl: Option[String] = None,
-    waitFor: Option[RoundFormWait] = None
+    waitFor: Option[RoundFormWait] = None,
+    summaryHeading: Option[String] = None
 )
 
 /** The round form's conflict-of-interest counts: the contest's files that are conflicts of

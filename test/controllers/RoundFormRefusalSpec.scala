@@ -301,6 +301,50 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "give another contest's admin, opening their own contest's form with this token, a fresh token" in {
+      testDbApp { implicit app =>
+        val contest = setUp()
+        val t = token()
+        status(save(app, "admin@example.com", newRound(contest, t): _*)) must_== SEE_OTHER
+        val other = User.findByEmail("other-admin@example.com").head
+        val page = get(app, "other-admin@example.com", s"/admin/rounds/edit?contestId=${other.contestId.get}&submitToken=$t")
+        val shownToken = doc(page).select("input[name=submitToken]").attr("value")
+        (status(page) === OK) and (shownToken must not(beEmpty)) and (shownToken !== t)
+      }
+    }
+
+    "not lead to a deleted round: its token gets a fresh form, and its repost saves a new round" in {
+      testDbApp { implicit app =>
+        val contest = setUp()
+        val t = token()
+        status(save(app, "admin@example.com", newRound(contest, t): _*)) must_== SEE_OTHER
+        val deleted = Round.findByContest(contest.getId).head
+        scalikejdbc.DB.autoCommit { implicit s =>
+          scalikejdbc.SQL("UPDATE round SET deleted_at = NOW() WHERE id = ?").bind(deleted.getId).update()
+        }
+        val opened = get(app, "admin@example.com", s"/admin/rounds/edit?contestId=${contest.getId}&submitToken=$t")
+        val shownToken = doc(opened).select("input[name=submitToken]").attr("value")
+        val again = save(app, "admin@example.com", newRound(contest, t, "name" -> "Again"): _*)
+        (status(opened) === OK) and (shownToken !== t) and
+          (status(again) === SEE_OTHER) and (redirectLocation(again).get must startWith("/admin/rounds?")) and
+          (Round.findByContest(contest.getId).exists(r => r.name.contains("Again") && r.deletedAt.isEmpty) must beTrue)
+      }
+    }
+
+    "keep the Rounds page's filter on the way to the saved round's Edit page" in {
+      testDbApp { implicit app =>
+        val contest = setUp()
+        val t = token()
+        status(save(app, "admin@example.com", newRound(contest, t): _*)) must_== SEE_OTHER
+        val saved = Round.findByContest(contest.getId).head
+        val again = route(app, request(POST, "admin@example.com", "/admin/rounds/save?type=binary&order=newest",
+          newRound(contest, t))).get
+        (status(again) === SEE_OTHER) and
+          (redirectLocation(again).get must contain(s"id=${saved.getId}")) and
+          (redirectLocation(again).get must contain("type=binary")) and (redirectLocation(again).get must contain("order=newest"))
+      }
+    }
+
     "refuse an organizer, a juror and another contest's admin, posting or opening it; nothing logged as a form" in {
       testDbApp { implicit app =>
         val contest = setUp()
@@ -497,6 +541,62 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  "a saved edit whose new files' distribution is refused" should {
+
+    "say the settings were saved, show the wait's job, and log distribution_refused, not form_refused" in {
+      testDbApp { implicit app =>
+        val contest = setUp()
+        val jurors = User.findByContest(contest.getId).filter(_.email.startsWith("juror")).flatMap(_.id)
+        val open = roundDao.findById(TestRoundServices.roundService().createNewRound(
+          Round(None, 0, Some("Open"), contest.getId, active = true), jurors).getId).get
+        val busy = roundDao.create(Round(None, 2, Some("Busy"), contest.getId, distributing = true))
+        val jobId = runningJob(contest, busy, services.distribution.RoundDistributionHandler.Kind)
+        scalikejdbc.DB.autoCommit { implicit s =>
+          scalikejdbc.SQL("UPDATE round SET exclude_rounds = ? WHERE id = ?").bind(busy.getId.toString, open.getId).update()
+        }
+        val (refused, lines) = supportLines {
+          val r = save(app, "admin@example.com", edit(open, "name" -> "Renamed", "newImages" -> "true"): _*)
+          status(r)
+          r
+        }
+        val page = doc(refused)
+        (status(refused) === BAD_REQUEST) and (Round.findById(open.getId).get.name must beSome("Renamed")) and
+          (page.select("#round-form-errors h2").text === "Round 1 is saved. Its new files weren\u2019t distributed:") and
+          (page.select("#round-form-errors li").text must contain("Could not distribute new files")) and
+          (page.select("#round-form-wait").attr("data-src") === s"/admin/jobs/$jobId") and
+          (lines.filter(_.startsWith("distribution_refused ")).map(_.contains(s"roundId=${open.getId}")) === Seq(true)) and
+          (lines.filter(_.startsWith("distribution_refused ")).head must contain("error.exclude.rounds.busy")) and
+          (lines.filter(_.startsWith("form_refused ")) must beEmpty)
+      }
+    }
+  }
+
+  "a series admin's wait box" should {
+
+    "be shown, and degrade (the jobs' JSON answers the contest's real admins only)" in {
+      testDbApp { implicit app =>
+        val contest = setUp()
+        val root = User.create(User("Root", "root@example.com", None, Set(User.ROOT_ROLE), isRoot = true))
+        val series = services.series.ContestSeries.createSeriesTx("Ukraine WLM", Some("wlm"), Some("Ukraine WLM"), None,
+          root.getId).toOption.get
+        services.series.ContestSeries.setSeries(contest.getId, Some(series), root.getId, None) must beRight
+        val sa = User.create(User("Series", "series@example.com", None, Set("organizer"), Some("hash"), contest.id))
+        services.series.SeriesAdmins.grant(root, series, sa.getId, None, None) must beRight
+        UserContestJdbc.delete(sa.getId, contest.getId)
+        val busy = roundDao.create(Round(None, 1, Some("Busy"), contest.getId, distributing = true))
+        val jobId = runningJob(contest, busy, services.distribution.RoundDistributionHandler.Kind)
+        val session = Seq(Secured.UserName -> sa.email, Secured.CurrentContestId -> contest.getId.toString)
+        val refused = route(app, FakeRequest(POST, "/admin/rounds/save").withSession(session: _*)
+          .withFormUrlEncodedBody(newRound(contest, token(), "excludeRounds[0]" -> busy.getId.toString): _*).withCSRFToken).get
+        val poll = route(app, FakeRequest(GET, s"/admin/jobs/$jobId").withSession(session: _*)
+          .withHeaders("X-Requested-With" -> "XMLHttpRequest")).get
+        (status(refused) === BAD_REQUEST) and (doc(refused).select("#round-form-wait-unknown").size === 1) and
+          (doc(refused).select("#round-form-wait").attr("data-src") === s"/admin/jobs/$jobId") and
+          (status(poll) === NOT_FOUND)
+      }
+    }
+  }
+
   "the rating type (#184)" should {
 
     "be editable while the round is being set up, saved and re-applied, and locked once distributed" in {
@@ -520,6 +620,35 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
         (editable === 0) and (savedStatus === SEE_OTHER) and (ratesAfterSave === 5) and
           (reappliedStatus === SEE_OTHER) and (ratesAfterReapply === 0) and
           (distributed.openToJurors must beTrue) and (locked === 1) and (Round.findById(round.getId).get.rates.id === 0)
+      }
+    }
+
+    "clear the criteria when a criteria round being set up becomes yes/no, as the page posts it and as an older page does" in {
+      testDbApp { implicit app =>
+        val contest = setUp()
+        val Seq(a, b) = CriterionJdbc.all().take(2).map(_.id)
+        def criteriaRound(name: String) = {
+          val r = inReview(contest, Round(None, 0, Some(name), contest.getId, active = true, rates = Round.ratesById(5)))
+          scalikejdbc.DB.localTx { implicit s => RoundCriterion.updateIn(r.getId, Seq(a, b)) must beRight }
+          Round.findById(r.getId).get
+        }
+        val scripted = criteriaRound("Scripted")
+        val older = criteriaRound("Older")
+        val reapplied = criteriaRound("Reapplied")
+        // the page's script hides the criteria selects: not sent, the hidden criteriaShown is
+        val bySelects = save(app, "admin@example.com", edit(scripted, "rates" -> "1", "criteriaShown" -> "true"): _*)
+        val bySelectsStatus = status(bySelects)
+        // an older page or no script: the criteria posted unchanged
+        val unchanged = save(app, "admin@example.com", edit(older, "rates" -> "1", "criteriaShown" -> "true",
+          "criteria[0]" -> a.toString, "criteria[1]" -> b.toString): _*)
+        val unchangedStatus = status(unchanged)
+        val reapply = save(app, "admin@example.com", edit(reapplied, "rates" -> "1", "criteriaShown" -> "true",
+          "reapply" -> "true"): _*)
+        val reapplyStatus = status(reapply)
+        (bySelectsStatus === SEE_OTHER) and (unchangedStatus === SEE_OTHER) and (reapplyStatus === SEE_OTHER) and
+          forall(Seq(scripted, older, reapplied)) { r =>
+            (Round.findById(r.getId).get.rates.id === 1) and (RoundCriterion.idsOf(r.getId) must beEmpty)
+          }
       }
     }
 
