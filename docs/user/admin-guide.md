@@ -1127,7 +1127,7 @@ rounds (the rounds it was created from), checks these in order, and takes the fi
    Wiki Loves Earth 2026 Nature Loss Special Category"). Only a category names a track: a list of
    files or a Commons page in the category field doesn't. Without a category of its own, it is
    named after its media type if the first rounds use more than one (for example **Video** next to
-   **Image**); otherwise after the round's own name. First rounds with the same category share a
+   rounds of all media); otherwise after the round's own name. First rounds with the same category share a
    track, also when it is written in other capitals.
 
 **An example**, from Wiki Loves Monuments in Ukraine:
@@ -1142,8 +1142,9 @@ rounds (the rounds it was created from), checks these in order, and takes the fi
   (rule 4).
 
 **The track label.** The round form has a field **Track label (optional)** under the round's name,
-on a new round and on an existing one, at any time. On an existing round, its help says which
-track the tool would pick by itself ("Automatic: …"). Leave it empty to keep the automatic track.
+on a new round and on an existing one, at any time. Empty, it shows the track the tool picks by
+itself ("Automatic: Quality"; on a new round just "Automatic", since its track comes from its
+previous rounds once it is saved). Leave it empty to keep the automatic track.
 
 - A label names the round's track. Later rounds created from it, without a label of their own,
   take the same track, as they would an automatic one.
