@@ -132,6 +132,12 @@ object RoundLineage {
       */
     def deepest(track: Track): Option[Round] = spines.get(track).flatMap(_.lastOption).flatMap(rounds.get)
 
+    /** Whether none of the round's previous rounds exists ([[missingPrevious]]): it is then placed as a
+      * round with no previous round (rule 7). With some left, its track comes as theirs would.
+      */
+    def allPreviousMissing(roundId: Long): Boolean =
+      missingPrevious.get(roundId).exists(gone => rounds.get(roundId).exists(_.previousIds.forall(gone.contains)))
+
     /** The merge round alone on the Main track, if so (no other live round on it): its earlier
       * rounds are on their own tracks until an admin labels them "Main" (§8.1: the Rounds page's
       * hint).
@@ -226,11 +232,11 @@ object RoundLineage {
     val cycle = rounds.map(_.getId).filterNot(placed.contains)
     val sequence = order.toSeq ++ cycle
 
-    // a label groups by exact match after trimming (case and accents count, as round.track compares
-    // them, utf8mb4_bin): "second look" and "Second look" are two tracks, each named as spelled;
-    // only Main is matched in any case
+    // a label groups by exact match after trimming (case, accents and inner white space count, as
+    // round.track compares them, utf8mb4_bin, and Round.trackLabel stores them): "second look" and
+    // "Second look" are two tracks, each named as spelled; only Main is matched in any case
     def label(r: Round): Option[Track] =
-      r.track.map(_.trim.replaceAll("\\s+", " ")).filter(_.nonEmpty).map { l =>
+      r.track.map(_.trim).filter(_.nonEmpty).map { l =>
         if (l.equalsIgnoreCase(MainLabel)) Track.Main else Track(Kind.Label, l)
       }
 
@@ -255,10 +261,10 @@ object RoundLineage {
     def rootCategory(r: Round): Option[String] =
       r.category.map(categoryName).filter(c => c.nonEmpty && !contestCategory.exists(_.equalsIgnoreCase(c)))
 
-    // the roots that rule 7 places by category: their common prefix
+    // the contest's common prefix (§2.3): of all the roots' categories, so that labelling a root (or
+    // giving it a nomination or regions) doesn't change another root's category track
     val roots = rounds.filter(r => previous(r.getId).isEmpty)
-    val prefix = commonPrefix(
-      roots.filter(r => label(r).isEmpty && ownNomination(r).isEmpty && regionSubset(r).isEmpty).flatMap(rootCategory))
+    val prefix = commonPrefix(roots.flatMap(rootCategory))
 
     def rootScope(r: Round): Track =
       rootCategory(r).map { c =>

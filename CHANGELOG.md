@@ -16,6 +16,10 @@ Merged after the 26.11.17 build, for the release after it:
 
 **Fixes**
 
+- Round form: a track label that is too long is listed at the top as "Track label (optional): …" with a link to the field; a label of emoji or other characters outside the basic plane can be typed up to its 64 characters (the browser no longer counted them twice).
+- Track labels: spaces inside a label are kept as typed, so labels share a track only when they are identical, as the form's help says.
+- Track labels: labelling a first round (or giving it a nomination or regions) no longer changes the category track names of the other first rounds.
+- Rounds page: a round with one of several previous rounds deleted no longer says it "starts a track of its own"; it says the deleted round is left out when its track is chosen.
 - Round form: a screen reader now reads the category choice's error ("More category options") with its radio buttons, and announces the group as invalid.
 
 For the next release, 26.11.17.
@@ -31,6 +35,7 @@ For the next release, 26.11.17.
 - A round's statistics, review page and Edit round page link the rounds it was created from ("Created from: Round 3 (…)") and the rounds created from it, for its admins and organizers.
 - A round being set up says on its Edit page and its review page that jurors can't see it yet, with "Change the settings", "Check the files" and "Distribute to jurors" (disabled, saying why, while its files are being matched or when none matches) (#186).
 - A round's rating type can be changed while it is being set up (in review, nothing distributed); it is locked once distributed (#184).
+- A new round is set up in numbered steps with a step bar: 1 "Which files" (the form, one button "Save and find matching files"), 2 "Check the matching files" (the review page, "N files match (the contest has M)", then "Distribute to jurors" as its main button), 3 "Jurors" (the jurors form), then open to jurors. The Rounds page reads "Setting up – step 2 of 3: check files" or "… step 3 of 3: choose jurors" with that step's button in place of Start; the round form, statistics and conflicts page show the same step with a link.
 
 **Fixes**
 

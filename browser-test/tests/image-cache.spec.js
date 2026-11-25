@@ -20,7 +20,11 @@ async function prepare(page, statusId) {
   await expect(button).toBeVisible();
   // the page's own first status poll done, so that only the click's refresh writes the status
   await page.waitForLoadState('networkidle');
-  await button.evaluate((b) => b.scrollIntoView({ block: 'center' }));
+  // At once: Bootstrap's `scroll-behavior: smooth` would animate it, and Firefox starts that
+  // animation late, so the click's own scrolling cut it short with the button at the window's
+  // bottom edge, where the status filled in above pushed it partly out (#201).
+  await button.evaluate((b) => b.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  await expect(button).toBeInViewport({ ratio: 1 });
   await page.evaluate((id) => {
     window.wlxNotReloaded = true;
     document.getElementById(id).textContent = '';

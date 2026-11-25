@@ -98,6 +98,16 @@
                 }
             }
 
+            @* a round's setup in numbered steps (UI-path plan §4 step 1): a new round's form is step 1;
+               a round being set up shows its step bar and its current step here too *@
+            @if(newRound) {
+                @round.setupSteps(controllers.RoundNextStep.WhichFiles, None, mayAct = true)
+            } else {
+                @for(step <- nextStep) {
+                    @round.setupSteps(controllers.RoundNextStep.WhichFiles, Some(step), mayAct = true)
+                }
+            }
+
             @flash.get("success").map { msg =>
                 <div class="alert alert-info" id="flash-success">@msg</div>
             }
@@ -147,11 +157,14 @@
 
                     @* the round's track label (round lineage decision 4, slice A): empty is the automatic
                        track; any time, also for an existing round (Round.setTrack); the contest's labels
-                       and Main offered as they are spelled, since identical labels share a track *@
+                       and Main offered as they are spelled, since identical labels share a track. No native
+                       maxlength (false: not the one its maxLength constraint would add): it counts UTF-16 units,
+                       so an emoji would count twice; the form refuses more than Round.TrackMaxLength code points,
+                       its error at the field and at the top *@
                     @bs.text(trackField, Symbol("_label") -> Messages("round.track.label"),
                         Symbol("_help") -> (Messages("round.track.help", Messages("round.track.main")) +
                             automaticTrack.fold("")(t => " " + Messages("round.track.automatic", t))),
-                        Symbol("maxlength") -> Round.TrackMaxLength, Symbol("list") -> "round-track-labels",
+                        Symbol("maxlength") -> false, Symbol("list") -> "round-track-labels",
                         Symbol("autocomplete") -> "off")
                     <datalist id="round-track-labels">
                         <option value="@Messages("round.track.main")"></option>
@@ -347,17 +360,15 @@
                     }
                 </fieldset>
 
-                @* a new round's images are selected first, nothing distributed (the maintainer's decision
-                   of 2026-11-16): then its review page ("Review images first", the rounds list showing the
-                   selection) or its jurors form ("Choose jurors next", which waits for the selection);
-                   the button pressed is posted as `next` (RoundController.saveRound) *@
+                @* a new round is saved and its matching files found (step 1 of its setup; the maintainer's
+                   decision of 2026-11-25, superseding "Review images first" and "Choose jurors next"): one
+                   button, then its review page, step 2 (RoundController.saveRound) *@
                 @if(newRound) {
-                    <p class="form-text" id="round-form-next-help">@Messages("round.form.next.help")</p>
+                    <p class="form-text" id="round-form-next-help">@Messages("round.form.save.find.help")</p>
                 }
                 <div class="form-actions mt-2">
                     @if(newRound) {
-                        <button type="submit" name="next" value="@controllers.RoundController.NextReview" class="btn btn-primary form-action-wide me-2" id="round-form-review-first">@Messages("round.form.review.first")</button>
-                        <button type="submit" name="next" value="@controllers.RoundController.NextJurors" class="btn btn-primary form-action-wide me-2" id="round-form-jurors-next">@Messages("round.form.jurors.next")</button>
+                        <button type="submit" class="btn btn-primary form-action-wide me-2" id="round-form-save-find">@Messages("round.form.save.find")</button>
                     } else {
                     @snippets.submit(if (reapply) "round.form.reapply" else "save")
                     }

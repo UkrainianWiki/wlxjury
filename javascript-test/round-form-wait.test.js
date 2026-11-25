@@ -17,8 +17,7 @@ function page(status) {
       </div>
       <form id="round-form">
         <input name="name" value="Kept as entered">
-        <button type="submit" name="next" value="review">Review images first</button>
-        <button type="submit" name="next" value="jurors">Choose jurors next</button>
+        <button type="submit" id="round-form-save-find">Save and find matching files</button>
       </form>`;
 }
 

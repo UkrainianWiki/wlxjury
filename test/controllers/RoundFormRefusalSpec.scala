@@ -22,7 +22,7 @@ import scala.jdk.CollectionConverters._
   *  - a token that already saved a round, posted or opened again: that round's Edit page with
   *    "Round N is saved. You can change its settings here.", no second round, `resubmit_dropped`
   *    logged (same or changed); the form's pages are `no-store`;
-  *  - the confirmation on both landing pages and after an edit save, never "created";
+  *  - the confirmation on the review page it lands on and after an edit save, never "created";
   *  - the next-step box (matching, ready, no files) and Distribute allowed only when offered;
   *  - the rating type editable while the round is being set up, locked once distributed;
   *  - an organizer, a juror and another contest's admin refused (403), nothing logged as a form.
@@ -270,7 +270,7 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
         val editPage = contentAsString(route(app, FakeRequest(GET, edit).withSession(Secured.UserName -> "admin@example.com")
           .withFlash(flash(again).data.toSeq: _*).withCSRFToken).get)
         def dropped(lines: Seq[String]) = lines.filter(_.startsWith("resubmit_dropped "))
-        (firstFlash must beSome("Round 1 (Final) is saved. Its matching files are being found. Check them, then choose jurors.")) and
+        (firstFlash must beSome("Round 1 is saved. Step 2 of 3: its matching files are being found. Check them, then choose jurors.")) and
           (status(again) === SEE_OTHER) and (redirectLocation(again) must beSome(edit)) and
           (flash(again).get("success") must beSome("Round 1 is saved. You can change its settings here.")) and
           (status(changed) === SEE_OTHER) and (redirectLocation(changed) must beSome(edit)) and
@@ -333,7 +333,7 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
         (status(opened) === OK) and (shownToken !== t) and
           (status(refused) === BAD_REQUEST) and (refusedToken must beMatching("[0-9a-f-]{36}")) and (refusedToken !== t) and
           (status(unreadable) === BAD_REQUEST) and (unreadableToken must beMatching("[0-9a-f-]{36}")) and (unreadableToken !== t) and
-          (status(again) === SEE_OTHER) and (redirectLocation(again).get must startWith("/admin/rounds?")) and
+          (status(again) === SEE_OTHER) and (redirectLocation(again).get must beMatching("/admin/rounds/[0-9]+/review")) and
           (Round.findByContest(contest.getId).exists(r => r.name.contains("Again") && r.deletedAt.isEmpty) must beTrue)
       }
     }
@@ -371,24 +371,18 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
 
   "a saved round" should {
 
-    "be confirmed on the jurors form (Choose jurors next) and on the rounds list, never as created" in {
+    "be confirmed on its review page, step 2 of its setup, never as created or ready" in {
       testDbApp { implicit app =>
         val contest = setUp()
-        val jurorsNext = save(app, "admin@example.com", newRound(contest, token(), "next" -> "jurors"): _*)
-        status(jurorsNext) must_== SEE_OTHER
-        val reviewFirst = save(app, "admin@example.com", newRound(contest, token(), "name" -> "Other"): _*)
-        status(reviewFirst) must_== SEE_OTHER
-        val Seq(first, second) = Round.findByContest(contest.getId).sortBy(_.getId)
-        def shown(path: String, flashed: Future[Result]) = doc(route(app, FakeRequest(GET, path)
-          .withSession(Secured.UserName -> "admin@example.com").withFlash(flash(flashed).data.toSeq: _*).withCSRFToken).get)
+        val saved = save(app, "admin@example.com", newRound(contest, token()): _*)
+        status(saved) must_== SEE_OTHER
+        val round = Round.findByContest(contest.getId).head
+        val onReview = doc(route(app, FakeRequest(GET, redirectLocation(saved).get)
+          .withSession(Secured.UserName -> "admin@example.com").withFlash(flash(saved).data.toSeq: _*).withCSRFToken).get)
           .select("#flash-success").text
-        val onJurors = shown(redirectLocation(jurorsNext).get, jurorsNext)
-        val onList = shown(redirectLocation(reviewFirst).get, reviewFirst)
-        (redirectLocation(jurorsNext) must beSome(s"/admin/rounds/${first.getId}/jurors")) and
-          (onJurors === "Round 1 (Final) is saved. Its matching files are being found. Check them, then choose jurors.") and
-          (redirectLocation(reviewFirst).get must startWith("/admin/rounds?")) and
-          (onList === s"Round ${second.number} (Other) is saved. Its matching files are being found. Check them, then choose jurors.") and
-          ((onJurors + onList) must not(contain("created")))
+        (redirectLocation(saved) must beSome(s"/admin/rounds/${round.getId}/review")) and
+          (onReview === "Round 1 is saved. Step 2 of 3: its matching files are being found. Check them, then choose jurors.") and
+          (onReview must not(contain("created"))) and (onReview must not(contain("ready")))
       }
     }
 
@@ -449,7 +443,7 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
           None, None, None, None, 0, None, None, java.time.Instant.now(), None, None, None, None)
       val draft = round.copy(status = Some(Round.Status.Draft))
       (RoundNextStep.of(round, Some(job("running", "fill", reapply = true)), 5).map(_.state.id) must beSome(RoundNextStep.Matching.id)) and
-        (RoundNextStep.of(draft, None, 0).map(_.state.id) must beSome(RoundNextStep.Matching.id)) and
+        (RoundNextStep.of(draft, Some(job("running", "fill")), 0).map(_.state.id) must beSome(RoundNextStep.Matching.id)) and
         (RoundNextStep.of(round, Some(job("done", "fill")), 5).map(_.distributeAllowed) must beSome(true)) and
         (RoundNextStep.of(round, Some(job("done", "fill")), 0).map(_.state.id) must beSome(RoundNextStep.NoFiles.id)) and
         (RoundNextStep.of(round, Some(job("failed", "fill", reapply = true)), 5).map(_.state.id) must beSome(RoundNextStep.Unfinished.id)) and
