@@ -18,6 +18,10 @@ Deploy dates come from production's migration history, as described at the end.
 - GraphQL: `me.email` shows the caller's own email, for every role.
 - GraphQL: a round's `myStatus` shows a juror stopped in it; `othersVotesVisible` follows the own-votes rule.
 
+**Fixes**
+
+- By-rate pages no longer scroll sideways (#165).
+
 **Security**
 
 - Every non-REST route under `/api` needs a signed-in caller before it runs (a guard in the API router).

@@ -244,3 +244,42 @@ test('on a phone: the bar scrolls away with the page, its menus inside the windo
   }
   await context.close();
 });
+
+// The by-rate lists don't scroll sideways (#165): their list of files was a Bootstrap .row's
+// child, as wide as the row, and ul.gallery's 2 px margin put its right edge 2 px past the
+// window (scrollWidth 1451 for a clientWidth of 1448 at 175 %). The all jurors' list, a juror's
+// own (its stars' wrapper, data-stars-number) and a yes/no round's, at two widths, and in
+// Chromium at a device pixel ratio of 1.75 too.
+test.describe('the by-rate lists do not scroll sideways', () => {
+  const lists = (fixture) => [
+    ['organizer', `/byrate/round/${fixture.roundRatingId}/user/0/page/1`],
+    ['juror', `/byrate/round/${fixture.roundRatingId}/user/${fixture.accounts.juror.id}/page/1`],
+    ['organizer', `/byrate/round/${fixture.roundBinaryId}/user/0/page/1`],
+  ];
+  const sizes = [
+    { width: 1280, height: 800 },
+    { width: 1463, height: 800 },
+    { width: 1463, height: 800, deviceScaleFactor: 1.75 },
+  ];
+  for (const size of sizes) {
+    const name = `${size.width}×${size.height}${size.deviceScaleFactor ? ` at ${size.deviceScaleFactor}x` : ''}`;
+    test(`at ${name}`, { tag: ['@O-02', '@J-17'] }, async ({ contextAs, fixture, browserName }) => {
+      test.skip(!!size.deviceScaleFactor && browserName !== 'chromium', 'the device pixel ratio case: Chromium');
+      const { deviceScaleFactor, ...viewport } = size;
+      for (const [role, url] of lists(fixture)) {
+        const context = await contextAs(role, { viewport, ...(deviceScaleFactor ? { deviceScaleFactor } : {}) });
+        const page = await context.newPage();
+        await page.goto(url);
+        await page.waitForLoadState('load');
+        await expect(page.locator('li.gallerybox').first(), `${url}: files listed`).toBeVisible();
+        if (role === 'juror') await expect(page.locator('[data-stars-number]'), `${url}: the stars' wrapper`).toHaveCount(1);
+        const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+          scrollWidth: document.documentElement.scrollWidth,
+          clientWidth: document.documentElement.clientWidth,
+        }));
+        expect(scrollWidth - clientWidth, `${url} as ${role}: sideways overflow at ${name}`).toBe(0);
+        await context.close();
+      }
+    });
+  }
+});
