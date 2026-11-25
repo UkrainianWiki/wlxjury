@@ -167,17 +167,23 @@ class ImageController @Inject() (
   private def startImport(contest: ContestJury, source: String, list: String, action: String, user: User)(implicit
       request: RequestHeader): Result = {
     // the import runs in the background: the files page shows its progress
-    val jobs =
-      if (action == "import.files") Seq(imageService.importFiles(contest, source, list, user.id))
-      else if (action == "update.monuments") imageService.updateMonuments(contest, source, user.id)
-      else Nil
+    val (jobs, listCopy) =
+      if (action == "import.files") {
+        val (job, copy) = imageService.importFilesWithList(contest, source, list, user.id)
+        (Seq(job), copy)
+      } else if (action == "update.monuments") (imageService.updateMonuments(contest, source, user.id), ImageService.ListCopy.Own)
+      else (Nil, ImageService.ListCopy.Own)
     // the source's identity warning (DG10) with the queued job: also for a send without the script
     val warning = Option.when(list.trim.isEmpty || action == "update.monuments")(source)
       .flatMap(s => ContestHealth.sourceWarning(contest, s.take(ImageController.MaxSourceLength)))
       .map(ImageController.identityWarningText(contest, _)(messagesApi.preferred(request)))
     val back = Redirect(routes.ImageController.images(contest.getId))
     jobs.collect { case Left(running) => running } match {
-      case Nil => warning.fold(back)(w => back.flashing(ImageController.SourceWarningFlash -> w))
+      case Nil =>
+        // the old list was blank-titled or another contest's too: not copied, as the import decided
+        val notCopied = Option.when(listCopy == ImageService.ListCopy.NotCopied)(ImageController.ListNotCopiedFlash -> "1")
+        val pairs = (warning.map(ImageController.SourceWarningFlash -> _) ++ notCopied).toSeq
+        if (pairs.isEmpty) back else back.flashing(pairs: _*)
       case running =>
         back.flashing("error" ->
           running.map(j => messagesApi.preferred(request)("import.already.running", imageService.title(j))).mkString(" "))
@@ -255,6 +261,11 @@ object ImageController {
 
   /** The flash key of the identity warning shown with a queued import (DG10). */
   val SourceWarningFlash = "sourceWarning"
+
+  /** The flash key of the notice that an import left the contest's previous list of files behind
+    * ([[services.ImageService.ListCopy.NotCopied]]).
+    */
+  val ListNotCopiedFlash = "listNotCopied"
 
   /** The longest source the identity check reads (a Commons title is at most 255 bytes). */
   val MaxSourceLength = 512

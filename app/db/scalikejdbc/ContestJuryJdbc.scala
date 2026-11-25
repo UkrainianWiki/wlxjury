@@ -35,14 +35,19 @@ object ContestJuryJdbc extends CRUDMapper[ContestJury] {
     retired = rs.anyOpt(c.column("retired_at")).isDefined
   )
 
-  /** Sets the contest's source of files, and its category (by the source's title, unless
-    * the caller has looked it up).
+  /** Sets the contest's source of files: the text only. Its category (its list of files) is
+    * never looked up by the source's title: that made contests with the same source, or with none
+    * (the empty title), share one list. Only an import sets it, to the contest's own
+    * ([[setCategory]], services.ImageService.importFiles).
     */
-  def setImagesSource(id: Long, images: Option[String], categoryId: Option[Long] = None)(implicit
-      session: DBSession = AutoSession
-  ): Int =
-    updateById(id)
-      .withAttributes("images" -> images, "categoryId" -> categoryId.orElse(images.map(CategoryJdbc.findOrInsert)))
+  def setImagesSource(id: Long, images: Option[String])(implicit session: DBSession = AutoSession): Int =
+    updateById(id).withAttributes("images" -> images)
+
+  /** Sets the contest's category, its list of files: its own (services.ImageService.ownCategory),
+    * as its import makes it.
+    */
+  def setCategory(id: Long, categoryId: Long)(implicit session: DBSession = AutoSession): Int =
+    updateById(id).withAttributes("categoryId" -> categoryId)
 
   def updateGreeting(id: Long, greeting: Greeting): Int =
     updateById(id)

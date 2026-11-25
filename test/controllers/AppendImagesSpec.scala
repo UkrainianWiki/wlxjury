@@ -3,6 +3,7 @@ package controllers
 import db.scalikejdbc.{CategoryJdbc, ImageJdbc, Round, SharedTestDb, TestDb}
 import org.intracer.wmua.{ContestJury, Image, JuryTestHelpers}
 import org.specs2.mutable.Specification
+import org.specs2.specification.core.Fragment
 import org.specs2.specification.{BeforeAll, BeforeEach}
 import services.{ImageService, TestImportServices}
 import scalikejdbc.{DB, scalikejdbcSQLInterpolationImplicitDef}
@@ -56,6 +57,11 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
     val job = services.imageService.importFiles(contest, source, titles).toOption.get
     JobJdbc.findById(job.id).get
   }
+
+  /** Imports `images` from a pasted list: what became of the contest's previous list. */
+  def importListed(images: Seq[Image], contest: ContestJury): ImageService.ListCopy =
+    new TestImportServices(new FakeCommonsSource(images.map(file)), Some(50)).imageService
+      .importFilesWithList(contest, category, images.map(_.title).mkString(System.lineSeparator))._2
 
   "importFiles" should {
 
@@ -144,15 +150,40 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       val listed = image(21).copy(monumentId = None)
       val contest = createContest()
       // as before own categories: the contest's category is its source's, by title
-      contestDao.setImagesSource(contest.getId, Some(category))
       val shared = CategoryJdbc.findOrInsert(category)
+      contestDao.setCategory(contest.getId, shared)
       imageDao.batchInsert(images)
       db.scalikejdbc.CategoryLinkJdbc.addToCategory(shared, images)
       stored(contest) === images
 
-      importFiles(Seq(listed), contest, titles = listed.title)
+      importListed(Seq(listed), contest) === ImageService.ListCopy.Copied(CategoryJdbc.findOrInsert(ImageService.ownCategory(contest.getId)))
       stored(contest) === images :+ listed
       imageDao.findByCategory(shared).map(_.pageId).sorted === images.map(_.pageId) // left as it was
+    }
+
+    "not start a contest's own category from a blank-titled one, nor from one of several contests" in {
+      val images = (11 to 13).map(id => image(id).copy(monumentId = None))
+      val listed = image(21).copy(monumentId = None)
+      imageDao.batchInsert(images)
+      // the row every unnamed import once shared (production's category 248), and a category two
+      // contests have as theirs (a source set by title)
+      val blank = DB.autoCommit(implicit s => sql"INSERT INTO category (title) VALUES ('')".updateAndReturnGeneratedKey.apply())
+      val shared = CategoryJdbc.findOrInsert(category)
+      Seq(blank, shared).foreach(db.scalikejdbc.CategoryLinkJdbc.addToCategory(_, images))
+      val (a, b, c) = (createContest(), createContest(id = Some(contestId + 1)), createContest(id = Some(contestId + 2)))
+      contestDao.setCategory(a.getId, blank)
+      contestDao.setCategory(b.getId, shared)
+      contestDao.setCategory(c.getId, shared)
+
+      forall(Seq(a, b)) { contest =>
+        importListed(Seq(listed), contest) === ImageService.ListCopy.NotCopied
+        stored(contest) === Seq(listed) // only what it imports: the old list is not copied
+        contestDao.findById(contest.getId).get.categoryId === Some(CategoryJdbc.findOrInsert(ImageService.ownCategory(contest.getId)))
+        importListed(Seq(listed), contest) === ImageService.ListCopy.Own // its own list now
+      }
+      // the old rows are left as they were, and so is the contest still on the shared one
+      Seq(blank, shared).map(imageDao.findByCategory(_).map(_.pageId).sorted) === Seq.fill(2)(images.map(_.pageId))
+      stored(c) === images
     }
 
     "fetch a step's files in one request when the account has apihighlimits" in {
@@ -318,6 +349,49 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       val commons = new MwCommonsSource(Global.commons, CommonsLogin.anonymous(Global.commons))
       new TestImportServices(commons).imageService.importFiles(contest, page, "")
       stored(contest).size must be_>=(350)
+    }
+  }
+
+  // Contests once shared one category: every import with no source the row of the empty title
+  // (production's category 248), a source set by title or V24's "Images from <name> <year> in
+  // <country>" its category. Each contest's import now gives it its own, and copies nothing from a
+  // row another contest has too.
+  "imports into two contests" should {
+    val wle = ("WLE", 2017, "Ukraine")
+    val wlm = ("WLM", 2018, "Armenia")
+    // (case, the category both contests had before, if any, the import's source, the contests)
+    val cases = Seq(
+      ("with no source name, from the blank-titled row", Some(""), "", Seq(wle, wlm)),
+      ("of the same Commons source, from its category", Some(category), category, Seq(wle, wlm)),
+      ("of the same name, year and country, from its V24 category", Some("Images from WLE 2017 in Ukraine"), category,
+        Seq(wle, wle)),
+      ("of the same Commons source, with no category before", None, category, Seq(wle, wlm))
+    )
+    Fragment.foreach(cases) { case (name, before, source, identities) =>
+      s"give each its own category, $name" in {
+        val old = (1 to 3).map(id => image(id).copy(monumentId = None))
+        imageDao.batchInsert(old)
+        val shared = before.map { title =>
+          val id = DB.autoCommit(implicit s => sql"INSERT INTO category (title) VALUES ($title)".updateAndReturnGeneratedKey.apply())
+          db.scalikejdbc.CategoryLinkJdbc.addToCategory(id, old)
+          id
+        }
+        val contests = identities.zipWithIndex.map { case ((n, y, c), i) =>
+          contestDao.create(Some(contestId + i), n, y, c, images = Some(source))
+        }
+        shared.foreach(id => contests.foreach(c => contestDao.setCategory(c.getId, id)))
+
+        val imported = contests.zipWithIndex.map { case (contest, i) =>
+          val added = image(21 + i).copy(monumentId = None)
+          importFiles(Seq(added), contest, source = source, titles = if (source.isEmpty) added.title else "")
+          added
+        }
+        val categories = contests.map(c => contestDao.findById(c.getId).get.categoryId)
+        categories === contests.map(c => Some(CategoryJdbc.findOrInsert(ImageService.ownCategory(c.getId))))
+        categories.distinct must haveSize(2)
+        contests.map(stored) === imported.map(Seq(_)) // nothing copied from the row they had
+        shared.map(imageDao.findByCategory(_).map(_.pageId).sorted) === shared.map(_ => old.map(_.pageId))
+      }
     }
   }
 

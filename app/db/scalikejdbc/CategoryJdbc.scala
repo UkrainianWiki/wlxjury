@@ -21,7 +21,18 @@ object CategoryJdbc extends CRUDMapper[Category] {
     title = rs.string(c.title)
   )
 
+  /** A title naming no category: empty, whitespace or underscores only (NULL too). Every import
+    * with no source once found or added the row of the empty title: one row of mixed files,
+    * the category of unrelated contests.
+    */
+  def isBlank(title: String): Boolean = title == null || title.replace('_', ' ').isBlank
+
+  /** The id of the category of `title`, added if there is none: in the app only a contest's own
+    * (services.ImageService.ownCategory; security.CategoryOwnershipGuardSpec). A blank title is
+    * refused ([[isBlank]]): it would find, or add, one row for unrelated contests.
+    */
   def findOrInsert(title: String)(implicit session: DBSession = AutoSession): Long = {
+    require(!isBlank(title), "a category needs a title")
     // a title saved with underscores is the same category as its normalised form
     val exact = where("title" -> title).apply().headOption
     exact.orElse(where(sqls"REPLACE(title, '_', ' ') = ${title.replace('_', ' ')}").orderBy(sqls"id").apply().headOption).map(_.id).getOrElse {
@@ -49,10 +60,38 @@ object CategoryLinkJdbc extends SQLSyntaxSupport[CategoryLink] {
         .batch(pageIds.map(id => Seq(categoryId, id)): _*)
         .apply()
 
-  /** Puts the pages of category `from` in category `to` too, skipping the links that exist. */
-  def copyIgnore(from: Long, to: Long)(implicit session: DBSession): Unit =
-    sql"""INSERT IGNORE INTO category_members (category_id, page_id)
-          SELECT $to, page_id FROM category_members WHERE category_id = $from""".update.apply()
+  /** Whether contest `contestId`'s own list may be started from category `id` ([[copyIgnore]]):
+    * it exists, has a title ([[CategoryJdbc.isBlank]]) and no other contest has it, as the old
+    * code would have given it: as its category; as its source (`images`, which set the category of
+    * that very title, underscores as spaces); or by V24's name for it ("Images from <name> <year>
+    * in <country>", the title with or without a `Category:` prefix, any case). A contest that left
+    * a shared row for its own still has its source. A blank one holds the files of every unnamed
+    * import; another contest's holds its files too (a source set by title once gave a 2026 contest
+    * a 2020 category).
+    */
+  def mayCopyFrom(id: Long, contestId: Long)(implicit session: DBSession): Boolean =
+    sql"""SELECT c.title, (
+            SELECT COUNT(*) FROM contest_jury cj
+            WHERE cj.id <> $contestId
+              AND (cj.category_id = c.id
+                OR REPLACE(TRIM(cj.images), '_', ' ') = REPLACE(TRIM(c.title), '_', ' ')
+                OR CONCAT('Images from ', cj.name, ' ', cj.year, ' in ', cj.country) =
+                  REPLACE(IF(LOWER(LEFT(TRIM(c.title), 9)) = 'category:', SUBSTRING(TRIM(c.title), 10), TRIM(c.title)),
+                    '_', ' ')))
+          FROM category c WHERE c.id = $id"""
+      .map(rs => (rs.stringOpt(1), rs.long(2))).single.apply()
+      .exists { case (title, others) => !CategoryJdbc.isBlank(title.orNull) && others == 0 }
+
+  /** Puts the pages of category `from` in contest `contestId`'s own category `to` too, skipping
+    * the links that exist; nothing if `from` may not be copied ([[mayCopyFrom]]).
+    * @return whether it copied
+    */
+  def copyIgnore(from: Long, to: Long, contestId: Long)(implicit session: DBSession): Boolean =
+    mayCopyFrom(from, contestId) && {
+      sql"""INSERT IGNORE INTO category_members (category_id, page_id)
+            SELECT $to, page_id FROM category_members WHERE category_id = $from""".update.apply()
+      true
+    }
 
   /** Puts each page in its country category (`(page id, category title)`, a contest's,
     * services.imports.ContestCountries), adding the category if there is none. Never takes a
@@ -63,11 +102,12 @@ object CategoryLinkJdbc extends SQLSyntaxSupport[CategoryLink] {
   def addCountries(countries: Seq[(Long, String)])(implicit session: DBSession): Seq[Long] =
     if (countries.isEmpty) Nil
     else {
-      val ids = countries.map(_._2).distinct.map { title =>
+      // a blank title names no country: never the one row of unrelated files (CategoryJdbc.isBlank)
+      val ids = countries.map(_._2).distinct.filterNot(CategoryJdbc.isBlank).map { title =>
         sql"INSERT IGNORE INTO category (title) VALUES ($title)".update.apply()
         title -> sql"SELECT id FROM category WHERE title = $title".map(_.long(1)).single.apply().get
       }.toMap
-      val links = countries.map { case (pageId, title) => ids(title) -> pageId }.distinct
+      val links = countries.collect { case (pageId, title) if ids.contains(title) => ids(title) -> pageId }.distinct
       sql"INSERT IGNORE INTO category_members (category_id, page_id) VALUES (?, ?)"
         .batch(links.map { case (c, p) => Seq(c, p) }: _*)
         .apply()

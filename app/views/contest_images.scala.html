@@ -29,6 +29,10 @@
         @flash.get(ImageController.SourceWarningFlash).map { w =>
             <div class="alert alert-warning" id="import-identity-flash" role="status">@w</div>
         }
+        @* the contest's previous list was blank-titled or another contest's too: not copied *@
+        @flash.get(ImageController.ListNotCopiedFlash).map { _ =>
+            <div class="alert alert-warning" id="import-list-not-copied" role="status">@Messages("import.list.not.copied")</div>
+        }
         @snippets.formError(importImagesForm)
 
         @* the imports run in the background: their progress, with Retry and Cancel *@

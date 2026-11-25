@@ -89,7 +89,7 @@ object PlanSeed {
   /** Creates the contests, accounts, rounds and votes; returns the corner and the timings. */
   def seed(c: Connection, mode: Mode = SeedMode, fillerRounds: Int = FillerRounds): (Corner, Timings) = {
     val contest = ContestJuryJdbc.create(None, "Query plans: corner", 2026, "Corner")
-    ContestJuryJdbc.setImagesSource(contest.getId, Some("Category:Query plan corner"))
+    db.scalikejdbc.TestDb.setSource(contest.getId, Some("Category:Query plan corner"))
     val fillerContest = ContestJuryJdbc.create(None, "Query plans: filler", 2026, "Filler")
 
     val juror = User.create(User("Corner juror", "corner-juror@plans.test", None, Set("jury"), contestId = contest.id))

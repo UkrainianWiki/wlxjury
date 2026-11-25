@@ -111,7 +111,7 @@ class LocalImageCacheServiceDockerSpec extends Specification with CommonsImageFe
 
         // Create contest + link images so startDownload finds them
         ContestJuryJdbc.create(Some(contestId), "WLE E2E", 2025, "Bolivia")
-        ContestJuryJdbc.setImagesSource(contestId,
+        db.scalikejdbc.TestDb.setSource(contestId,
           Some("Category:Images from Wiki Loves Earth 2025 in Bolivia"))
         val updatedContest = ContestJuryJdbc.findById(contestId).get
         val categoryId = updatedContest.categoryId.get

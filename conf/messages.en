@@ -409,6 +409,7 @@ import.source.check.both.send=The category is chosen, as usual. Check that it is
 import.source.check.neither=There is no page or category named “{0}” on Commons. Check the name, or add Category: in front of a category''s name.
 import.source.check.unreachable=Commons could not be reached to check this name, so nothing was started. Try again later, or add Category: in front of a category''s name.
 import.found.no.files=This import found no files to add. Check the source''s name on Commons; a page''s files are added only if they are in this contest''s country categories.
+import.list.not.copied=This contest''s earlier list of files was untitled or also another contest''s, so it was not copied into the contest''s own list: from now on the list holds only the files imported into this contest. To add the earlier files, import their source or list again. The rounds keep their files.
 import.not.in.countries=This import left out {0} files: they are in no country category of this contest. The source may be another contest''s or another year''s.
 none.selected=None selected
 all.selected=All selected
