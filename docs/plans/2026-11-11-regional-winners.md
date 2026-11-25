@@ -9,14 +9,15 @@
 recorded regional decisions, an "unclear winner" mark, a cut picker (candidate cuts and a gallery
 to choose N) shared by the round form's top-N and each region of a re-jury, and a re-jury round with its own top-N per region. Decisions
 18, 19 and 21 are the maintainer's **[user]**; the rest of §10 is a proposal, with questions in §11.
-**Status (v5, 2026-11-26):** the maintainer decided questions 2–10 (§11). A clear region's winner
-is its top-1 in its region round, recorded by an Admin's "Accept region"; a flagged region gets one
-plain line with the next step and goes to a re-jury. No per-file accept/reject, no pasted list.
-Questions 11–14 stay open. (Later on 2026-11-26: question 11 decided; K winners per region,
-default 1; the round form's top-N box replaced by "Choose N". Then: no small-region rule `S`;
-K is each region's own top-k, chosen when it is accepted.)
-**Priority:** the round improvements of 26.11.17 and 26.11.18 come first (26.11.18 brings the
-numbered setup steps that §10.4–§10.5 build on), then this plan's work in the order of §10.8.
+**Status (v5, 2026-11-26): all questions decided (2026-11-26)**, except question 12 (local
+jurors), which keeps its recommendation (a), "nothing in the app now", until the maintainer
+answers it. A clear region's winners are its top k (chosen per region when it is accepted,
+default 1) in its region round, recorded by an Admin's "Accept region"; a flagged region gets one
+plain line with the next step and goes to a re-jury. No per-file accept/reject, no pasted list,
+no small-region rule.
+**Priority:** the round improvements of 26.11.17 and 26.11.18 come first. 26.11.18 brings the
+numbered setup steps that §10.4–§10.5 build on, and now also the cut picker for main rounds' top-N
+(SN, question 14 **[user]**). Then this plan's work in the order of §10.8.
 
 **Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; all decisions made (4
 and 9 replaced by "show, don't pick"); ready to build after lineage slice A. Order of work (v4:
@@ -79,6 +80,12 @@ replaced by a priority order.)
   preselected. K is not a separate setting: it is each region's own top-k, chosen with the same
   "Choose N" control in the region round when the region is accepted, and saved with the outcome;
   the `winners` parameter is dropped (§10.2–§10.5, §10.7, §10.9, §11).
+- **v5, last decisions of 2026-11-26** **[user]**: ties with several winners as proposed (a tie
+  inside the top k is a shared place; a tie across place k needs a re-jury, or a k at a tie
+  boundary); files the offline jury rejected may come back in a re-jury from an earlier round, with
+  no exclusion rule; question 13 (phase 1 → R0/R1 → phase 2 → slice B) and question 14 (the cut
+  picker for main rounds now, in 26.11.18, before the regional report). A pass over the whole plan
+  for leftovers of dropped ideas.
 
 **Code read:** `911255f7`, a mirror of `stack/105-round-lineage-plan` (PR #288). Inferences are
 marked *(inf.)*. No DB or server was queried for the plan itself. (updated 2026-11-25) File:line
@@ -155,7 +162,8 @@ photos and tell which round they are from."
   fact.
 - **Size:** about 3.5–4.5 agent days, after lineage's slice A (3–4 days). Order of work (decision
   15): lineage slice A → regional winners phase 1 → phase 2 (exports) → phase 3, the first two
-  first in priority, after the round improvements of 26.11.17 and 26.11.18 (v4, 2026-11-25).
+  first in priority, after the round improvements of 26.11.17 and 26.11.18 (v4, 2026-11-25; v5:
+  the full order, with R0/R1 and slice B, is §10.8).
   - **Phase 0** (S): done for WLE 2026 and WLM 2026 (§7.4, §7.5).
   - **Phase 1** (M, 2.5–3 days) is the page, on lineage's slice A.
   - **Phase 2** (S–M) is the export, as wiki text and as CSV (decision 11).
@@ -194,11 +202,12 @@ photos and tell which round they are from."
   on the region track of its regions (§10.5). It becomes the region round for its regions.
 - **The loop:** report → accept the clear regions → re-jury the flagged ones → report again, until
   every region is accepted. The exports (wiki text, CSV) then list the winners (§10.7).
-- **Priority order** (§10.8): the round improvements of 26.11.17 and 26.11.18 first; then lineage
-  slice A, report phase 1, the flagged regions (R0), the region outcomes (R1) and the export of
-  accepted winners. A re-jury until R3 lands is made with today's form, one round per region
-  (§10.8). The cut picker (SN), per-region N in the report (R2) and the combined re-jury round
-  (R3) follow; SN can move ahead of them (§7, §10.8).
+- **Priority order** (§10.8; questions 13–14 **[user]**): the round improvements of 26.11.17 and
+  26.11.18 first, 26.11.18 now with the cut picker for main rounds (SN); then lineage slice A,
+  report phase 1, the flagged regions and region outcomes (R0/R1), phase 2 with the export of
+  accepted winners, then lineage slice B. Per-region N in the report (R2) and the combined re-jury
+  round (R3) follow. A re-jury until R3 lands is made with today's form, one round per region
+  (§10.8).
 
 ---
 
@@ -845,7 +854,7 @@ S ≈ ½ day, M ≈ 1–2 days, L ≈ 3+ days of agent work, each with review an
 | R0 (v4) | **Flagged regions** (§10.3; v5: four cases, one line each): computed from what phase 1 reads, with the region round and its top photo; the line and its next step in the region's row; unit spec of the cases | S (½–1 d) |
 | R1 (v4) | **Region outcomes** (§10.2; v5: one row per region, no per-file entry): migration (table, `contest_change` kind), DAO, the report's region controls (Accept region with its number of winners, No winner, Needs re-jury, Clear), CSRF POSTs, change-log entries, the region's state and filter; specs incl. negative authorization (organizer, juror, other contest's admin, signed out) | M (1.5–2 d) |
 | 2' (v4) | **Exports from accepted winners** (§10.7): `export=accepted`, the default once a contest has an outcome; on top of phase 2 | S (+½ d) |
-| SN (v4) | **Cut picker** (§10.4): the pure candidate-cut finder, its valid values and its reasons (unit spec over rated, yes/no, tie and small-region shapes; ½–1 d); the ranked scores read with the fill's own rank key (½ d); the cut gallery (a shared Twirl partial: thumbnails in rank order, scores, tie brackets, labelled cut lines, "Cut here"), on the round form's step 1 with "Choose N" and an N list of valid values only (v5), the preview "37 of 412 files, lowest included score 7.2", the choice logged with the round's change-log entry (1.5–2 d). No migration | M (2.5–3.5 d) |
+| SN (v4; in 26.11.18, question 14 **[user]**) | **Cut picker** (§10.4): the pure candidate-cut finder, its valid values and its reasons (unit spec over rated, yes/no, tie and small-region shapes; ½–1 d); the ranked scores read with the fill's own rank key (½ d); the cut gallery (a shared Twirl partial: thumbnails in rank order, scores, tie brackets, labelled cut lines, "Cut here"), on the round form's step 1 with "Choose N" and an N list of valid values only (v5), the preview "37 of 412 files, lowest included score 7.2", the choice logged with the round's change-log entry (1.5–2 d). No migration | M (2.5–3.5 d) |
 | R2 (v4) | **Per-region N in the report** (§10.4–§10.5): each region's candidate cuts with their reasons, its cut gallery page, the source round per region, the "Re-jury these regions" form | S–M (1–1.5 d) |
 | R3 (v4) | **The re-jury round** (§10.5): `round.region_top` (migration at build time), the round form's per-region fieldset and prefill, per-region ranking with an SQL region condition in `DistributionSource.rank`, the regional track label, the report's re-jury column rule; specs incl. re-apply, resubmit and "Distribute new files" | L (3–4 d) |
 | ~~R4~~ (v4) | ~~Pasted results~~: dropped (question 9 **[user]**, 2026-11-26: results come from the votes in the region round) | — |
@@ -858,8 +867,9 @@ phase 2 (exports) → phase 3. Slice A and phase 1 come first (v4, 2026-11-25: a
 improvements of 26.11.17 and 26.11.18; dates replaced by a priority order); phase 3 waits for
 lineage phase 1 and multi-role's pre-screening rounds.
 
-**v4 order (proposal, 2026-11-25; §10.8, question 13):** the round improvements of 26.11.17 and
-26.11.18 → slice A → phase 1 → R0 → R1 → phase 2 with 2' → slice B → SN → R2 → R3. v4 adds about
+**v4–v5 order (decided **[user]** 2026-11-26, questions 13 and 14; §10.8):** the round
+improvements of 26.11.17 and 26.11.18 (26.11.18 with SN, the cut picker for main rounds) → slice A
+→ phase 1 → R0/R1 → phase 2 with 2' → slice B → R2 → R3. v4 adds about
 9–12.5 agent days (R0 ½–1, R1 1.5–2, 2' ½, SN 2.5–3.5, R2 1–1.5, R3 3–4; v5, 2026-11-26: R1 smaller,
 R4 dropped).
 
@@ -1098,7 +1108,7 @@ limited to the contest's Admins and Organizers, and a yes/no round's order comes
 (v4, 2026-11-25) Decisions 18, 19 and 21 are the maintainer's **[user]**; 20, 22 and 23 are
 proposals, asked in §11. Decision 16 is superseded for the final step; 11 and 17 are amended
 (dated notes under each). (v5, 2026-11-26) 20 and 22 are now **[user]** (questions 7 and 5); 18,
-19 and 21 are refined by questions 2–4, 6, 8 and 9; 23 is still a proposal (question 11).
+19 and 21 are refined by questions 2–4, 6, 8 and 9; 23 is **[user]** too (question 11).
 
 **1. Which rounds are candidates.**
 - (a) The chain, plus the regional rounds and add-ons that branch from it.
@@ -1375,7 +1385,9 @@ report itself still picks nothing automatically. Design: §10.2. Open details: q
 the region round (the re-jury or the final round). A clear region's winner is its top-1 there,
 recorded by one Admin's "Accept region"; the other outcomes are "no winner" (with a note) and
 "needs re-jury". No per-file accept/reject and no pasted list; rejected files are no longer stored,
-so a re-jury no longer leaves them out. An offline session votes as jury in a round an Admin
+so a re-jury no longer leaves them out (accepted **[user]** 2026-11-26: they may come back in a
+re-jury from an earlier round; the Admin picks the source round, and the offline jury's own round
+ranks them low). An offline session votes as jury in a round an Admin
 creates; no Organizer or juror grant (§10.1–§10.2). Later that day **[user]**: several winners
 per region, each region's own top-k chosen when it is accepted (default 1), stored as winner rows
 with places.
@@ -1421,8 +1433,8 @@ Yes/no sources get candidate cuts at level boundaries, the reason naming the lev
 Confirmed **[user]** later that day: "Choose N" replaces the round form's free top-N box, for main
 rounds and regions.
 
-**22. The "unclear" mark: computed, not stored (proposal, 2026-11-25).** §10.3. Its rules:
-question 5.
+**22. The "unclear" mark: computed, not stored (proposal, 2026-11-25; v5: "flagged regions").**
+§10.3. Its rules: question 5.
 
 **Decided [user] (maintainer, 2026-11-26, question 5), simplified:** no rule codes; a flagged
 region gets one plain line with the next step. Four cases: needs re-jury (an Admin's mark); no
@@ -1561,8 +1573,8 @@ CREATE TABLE IF NOT EXISTS regional_winner (
   the round's rank key; k is the number of winner rows, so no other column stores it. With k = 1,
   one winner. Since k is chosen among valid values only, a tie never crosses place k. A tie inside
   the top k is a shared place (two files at place 2, the next at place 4). A tie that would cross
-  place k needs a re-jury, or a k that takes the whole tie as a shared place (§10.3). *(Proposal;
-  an open point, §11.)* The values offered stop at the region's positive files, so a region never
+  place k needs a re-jury, or a k at a tie boundary that takes the whole tie as a shared place
+  (§10.3). *(Decided **[user]** 2026-11-26, as proposed.)* The values offered stop at the region's positive files, so a region never
   gets more winners than it has candidates.
 - **Key types:** `contest_id`, `round_id`, `decided_by` and `outcome_id` are `BIGINT UNSIGNED`,
   as `contest_jury.id` (SERIAL, V4), `round.id`, `users.id` and `regional_outcome.id`, and as the
@@ -1573,6 +1585,10 @@ CREATE TABLE IF NOT EXISTS regional_winner (
   it refuses if the region is not clear, and takes the winners and their places from its own
   ranking, never from the request. The request carries k, refused if it is not a valid value (in
   a tie, above 10, or above the region's positive files).
+- **Files the offline jury rejected** are not stored as rejected (decided **[user]** 2026-11-26).
+  They may come back in a re-jury taken from an earlier round; there is no exclusion rule. The
+  Admin picks the source round per region (§10.5), and if the offline jury voted in the app, its
+  own round already ranks them low.
 - **If the winners change after acceptance** (votes still coming in an open round, the region
   round cancelled, a file disqualified), the region round's top k (k = the stored winners' count)
   no longer matches the stored winners. Changing what the report shows never does this. The region then shows one line: "The top photos changed
@@ -1644,8 +1660,8 @@ apply, the line is the first that applies, in this order:
   the chain, the line says so and links it (§2.4 item 3).
 - **Ties with several winners:** a tie inside the chosen top k (e.g. k = 3, places 2 and 3 tied)
   is a shared place, and a tie for 1st place can be accepted as a shared 1st place by choosing a
-  k that takes the whole tie. A k inside a tie is never offered (§10.2; a proposal, an open point
-  in §11).
+  k that takes the whole tie. A k inside a tie is never offered (§10.2; decided **[user]**
+  2026-11-26).
 - **Accepted regions** show "Accepted" and the winners, and no line.
 - **Dropped** (question 5 **[user]**): v4's "close scores" and "only yes/no votes" rules, and the
   minimum of 3 votes. Without that minimum, a round in which one juror account votes for an offline
@@ -1845,9 +1861,8 @@ Organizers). Its "Cut here" links back to the report with that region's N set in
 section's GET parameters, so the report stays read-only.
 
 **Place 3: each region's number of winners** (R1), in the region's Accept form (§10.2): the same N
-list over the region round's ranked files, default 1, with the gallery one click away. R1 comes
-before SN (§10.8), so R1 ships the N list alone (valid values from the region round's ranking,
-which R0 already reads); the gallery link follows with SN.
+list over the region round's ranked files, default 1, with the gallery one click away. SN ships
+first, in 26.11.18 (question 14 **[user]**), so R1 reuses its N list and gallery.
 
 ### 10.5 The re-jury round (decisions 19 [user] and 20 [user])
 
@@ -1978,8 +1993,8 @@ as the goal (R3); one ordinary round per region as the interim until R3 ships, �
 
 - **Every juror on every file** (decision 23, question 11 **[user]**, 2026-11-26): the form
   defaults to all jurors per file (`distribution = 0`). The Admin may change it, with no warning
-  (`DistributeImages.assign` is region-blind, so with k per file regions may get different
-  jurors). A re-jury is small (27 regions ×
+  (`DistributeImages.assign` is region-blind, so with fewer jurors per file regions may get
+  different jurors). A re-jury is small (27 regions ×
   about 5 files ≈ 135 files), so all jurors on all files is affordable.
 - **One scale** for all regions, as it is one rated round.
 - **The report shows votes per region** in the re-jury column ("07: 5 files, 13 of 13 jurors
@@ -2029,21 +2044,22 @@ as the goal (R3); one ordinary round per region as the interim until R3 ships, �
 
 The round improvements of 26.11.17 and 26.11.18 come first: 26.11.18 brings the numbered setup
 steps (UI-path plan, draft PR #189) that the round form's cut picker (§10.4) and the re-jury's
-prefilled step 1 (§10.5) build on. Then, one builder at a time (the shared run lock), in this
-order:
+prefilled step 1 (§10.5) build on, and the cut picker for main rounds itself (SN; question 14
+**[user]**, 2026-11-26: "now, in 26.11.18, before the regional report"). Then, one builder at a
+time (the shared run lock), in this order (question 13 **[user]**, 2026-11-26):
 
 | Priority | Work | Size | Why here |
 |---|---|---|---|
 | 0 | Round improvements 26.11.17 and 26.11.18 (incl. the numbered setup steps) | (their own plans) | §10.4–§10.5 build on the setup steps |
+| 0' | SN cut picker (main rounds' top-N), in 26.11.18 | 2.5–3.5 d | question 14 **[user]**: now, before the regional report; R1–R3 reuse it |
 | 1 | Lineage slice A (#193, being built) | 3–4 d | the report's default final round and columns (decision 15) |
 | 2 | Report phase 1 | 2.5–3 d | what the jury final needs first |
 | 3 | R0 flagged regions | ½–1 d | small; points the session at the regions to discuss |
 | 4 | R1 region outcomes (Accept region) | 1.5–2 d | the winners, the re-jury's input |
 | 5 | Phase 2 exports + 2' accepted | 1–1.5 d | the winners' list |
-| 6 | Lineage slice B (Cancel / Reinstate) | 2.5–3.5 d | decided to follow phase 1 (lineage §8.1); question 13 asks whether before R1 or after 2' |
-| 7 | SN cut picker (main rounds' top-N) | 2.5–3.5 d | may move ahead of R1 (question 14) |
-| 8 | R2 per-region N in the report | 1–1.5 d | reuses SN |
-| 9 | R3 the re-jury round | 3–4 d | reuses SN, R1 and R2 |
+| 6 | Lineage slice B (Cancel / Reinstate) | 2.5–3.5 d | after phase 2 (question 13 **[user]**); decided to follow phase 1 (lineage §8.1) |
+| 7 | R2 per-region N in the report | 1–1.5 d | reuses SN |
+| 8 | R3 the re-jury round | 3–4 d | reuses SN, R1 and R2 |
 | — | ~~R4 pasted results~~ | — | dropped: question 9 **[user]**, results come from votes |
 
 - **The jury final needs the report (phase 1) first.** R0, R1 and the exports follow. If they
@@ -2189,20 +2205,19 @@ One decision each, asked one by one. The recommendation comes last in each.
     to follow regional winners phase 1 (lineage §8.1). R1 and the accepted export are what the
     final's results need. Slice B tidies trial rounds; meanwhile the report names a trial round
     in its tie warning (decision 3), and the admin can pick the final round.
-    **Recommendation: phase 1 → R0 → R1 → phase 2 with 2' → slice B.**
+    The recommendation was phase 1 → R0 → R1 → phase 2 with 2' → slice B.
+    **Decided [user] 2026-11-26:** phase 1 → R0/R1 → phase 2 (with 2') → slice B (§10.8).
 14. **Where the cut picker goes in the order.** Options:
     - (a) after slice B, before R2–R3, which reuse it;
     - (b) before R1, if a national top-N cut is still to be made for WLM 2026.
 
     It is useful on its own for every contest's main rounds; R2–R3 need it in any case, and its
     gallery is now a larger part (2.5–3.5 days).
-    **Recommendation: (a), unless WLM 2026 still has a national top-N cut to make.**
+    The recommendation was (a), unless WLM 2026 still had a national top-N cut to make.
+    **Decided [user] 2026-11-26:** the cut picker for main rounds now, in 26.11.18, before the
+    regional report (§10.8).
 
-**Open points to confirm** (2026-11-26; each is written into the plan as shown, one line each;
-the small-region rule and the K setting were resolved **[user]** the same day):
-- **Files the offline jury rejected return in a re-jury** taken from an earlier round, since
-  rejections are no longer stored per file; from the offline session's own round, their ✗ votes
-  rank them low (§10.2, decision 18).
-- **Ties with several winners** (proposal): a tie inside the chosen top k is accepted as a shared
-  place; a tie across place k sends the region to a re-jury, unless the Admin chooses a k that
-  takes the whole tie (§10.2, §10.3).
+**Open points:** none (2026-11-26). The last two were decided **[user]** that day: ties with
+several winners as proposed (§10.2, §10.3), and files the offline jury rejected may come back in a
+re-jury from an earlier round, with no exclusion rule (§10.2). Question 12 still has only a
+recommendation.
