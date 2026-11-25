@@ -13,7 +13,8 @@
    action once the matching has ended. *@
 <div id="round-review">
     @* a round being set up: step 2 of its setup (UI-path plan §4 step 1), its step bar and heading;
-       once its matching has ended, "N of the contest's M files match" *@
+       once its matching has ended, "N files match (the contest has M)", by N's plural form (N may
+       exceed M: "Add files" adds files from outside the contest's category) *@
     @r.nextStep match {
         case Some(step) => {
             @round.setupSteps(controllers.RoundNextStep.CheckFiles, Some(step), mayAct = r.mayEdit)
@@ -29,7 +30,7 @@
     @flash.get("error").map { msg => <div class="alert alert-danger" id="flash-error">@msg</div> }
 
     @if(r.nextStep.exists(_.state != controllers.RoundNextStep.Matching)) {
-        <h3 class="h5" id="round-review-match" data-in="@r.count(RoundImageJdbc.Status.In)" data-files="@r.contestFiles">@Messages("round.review.match", r.count(RoundImageJdbc.Status.In), r.contestFiles)</h3>
+        <h3 class="h5" id="round-review-match" data-in="@r.count(RoundImageJdbc.Status.In)" data-files="@r.contestFiles">@Messages("round.review.match." + views.Plural.form(r.count(RoundImageJdbc.Status.In), messages.lang.language), r.count(RoundImageJdbc.Status.In), r.contestFiles)</h3>
     } else {
     <p id="round-review-state">@{
         if (r.job.exists(_.isActive) && r.round.distributing && r.round.lifecycle == Round.Status.Draft) Messages("round.review.filling")

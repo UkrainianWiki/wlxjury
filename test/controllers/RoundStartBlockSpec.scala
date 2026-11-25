@@ -202,8 +202,8 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
 
         (status(result) === SEE_OTHER) and
           (flash(result).get("error") must beSome(
-            "Round 2 (Round 2) hasn't been distributed to jurors yet. Choose its jurors and distribute its images first: " +
-              "“Distribute to jurors” in its row.")) and
+            "Round 2 (Round 2) hasn't been distributed to jurors yet: it is still being set up. Its row shows the next " +
+              "step: “Check the files”, then “Distribute to jurors”.")) and
           unchanged(review)
       }
     }

@@ -443,7 +443,7 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
           None, None, None, None, 0, None, None, java.time.Instant.now(), None, None, None, None)
       val draft = round.copy(status = Some(Round.Status.Draft))
       (RoundNextStep.of(round, Some(job("running", "fill", reapply = true)), 5).map(_.state.id) must beSome(RoundNextStep.Matching.id)) and
-        (RoundNextStep.of(draft, None, 0).map(_.state.id) must beSome(RoundNextStep.Matching.id)) and
+        (RoundNextStep.of(draft, Some(job("running", "fill")), 0).map(_.state.id) must beSome(RoundNextStep.Matching.id)) and
         (RoundNextStep.of(round, Some(job("done", "fill")), 5).map(_.distributeAllowed) must beSome(true)) and
         (RoundNextStep.of(round, Some(job("done", "fill")), 0).map(_.state.id) must beSome(RoundNextStep.NoFiles.id)) and
         (RoundNextStep.of(round, Some(job("failed", "fill", reapply = true)), 5).map(_.state.id) must beSome(RoundNextStep.Unfinished.id)) and

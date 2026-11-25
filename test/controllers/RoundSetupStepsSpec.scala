@@ -20,14 +20,17 @@ import scala.jdk.CollectionConverters._
   * → 3 "Jurors" (the jurors form) → open to jurors.
   *  - the new-round form is step 1, with one button, "Save and find matching files", and its help;
   *  - the save lands on step 2 saying "Round N is saved. Step 2 of 3: …", its step bar there, its
-  *    heading "N of the contest's M files match", "Distribute to jurors" its main action;
+  *    heading "N files match (the contest has M)" by N's plural form, "Distribute to jurors" its
+  *    main action;
   *  - while its files are being matched, that action is disabled with its reason, step 3 isn't
   *    linked, and Distribute is refused (offered == allowed);
   *  - step 3's heading names the round and the step; Edit round of a round being set up has the
   *    step bar and its current step; round statistics and the conflicts page the one-line state
   *    and a link to the current step (for an organizer the review page only, no action);
   *  - an open round has none of it, and its edit save is confirmed on the Rounds page;
-  *  - a juror sees none of these pages; nothing calls the round "created" or "ready".
+  *  - a juror sees none of these pages; nothing calls the round "created" or "ready";
+  *  - a round whose job opens it by itself when done, and a creation that failed, was cancelled or
+  *    didn't finish, are not "being set up": no step, as the Rounds page shows them.
   */
 class RoundSetupStepsSpec extends PlaySpecification with PlayTestDb {
 
@@ -145,7 +148,7 @@ class RoundSetupStepsSpec extends PlaySpecification with PlayTestDb {
             ("2", true, true, None), ("3", false, false, Some(s"/admin/rounds/$r/jurors")), ("open", false, false, None))) and
           (text(review.selectFirst("#round-review-title")) === "Round 1 (Final) – step 2 of 3: check the matching files") and
           (review.select("#round-review-match").first().tagName === "h3") and
-          (text(review.selectFirst("#round-review-match")) === "2 of the contest’s 8 files match") and
+          (text(review.selectFirst("#round-review-match")) === "2 files match (the contest has 8)") and
           (text(review.selectFirst("#round-next-step-text")) ===
             "Jurors can’t see this round yet. When the files look right, choose jurors and distribute to them.") and
           (text(main) === "Distribute to jurors") and (main.attr("href") === s"/admin/rounds/$r/jurors") and
@@ -237,10 +240,80 @@ class RoundSetupStepsSpec extends PlaySpecification with PlayTestDb {
         val review = page(app, "admin@example.com", s"/admin/rounds/$r/review")
         val stat = page(app, "admin@example.com", s"/roundstat/$r")
         val list = page(app, "admin@example.com", s"/admin/rounds?contestId=${contest.getId}")
-        (text(review.selectFirst("#round-review-match")) === "0 of the contest’s 8 files match") and
+        (text(review.selectFirst("#round-review-match")) === "0 files match (the contest has 8)") and
           (review.select("button#round-next-distribute[disabled]").size === 1) and
           (text(stat.selectFirst("#round-setup-state")) === "Setting up – step 2 of 3: check files · Check the files") and
           (list.select(s"tr[data-round=$r] a.round-start-check-files").attr("href") === s"/admin/rounds/$r/review")
+      }
+    }
+  }
+
+  "a round not set up step by step" should {
+
+    "have no setup step: a job that opens it when done, a creation failed, cancelled or unfinished" in {
+      val round = Round(Some(1L), 1, Some("R"), 1L, distributing = true, status = Some(Round.Status.Draft))
+      def job(status: String, params: (String, play.api.libs.json.Json.JsValueWrapper)*) =
+        services.jobs.Job(1L, RoundDistributionHandler.Kind, Some(1L), Some("round"), Some(1L), None, status,
+          Json.obj(params: _*), Json.obj(), None, None, None, None, 0, None, None, java.time.Instant.now(), None, None,
+          None, None)
+      val fill: (String, Json.JsValueWrapper) = "mode" -> RoundDistributionHandler.Mode.Fill
+      // a creation's fill that queues the distribute ("Distribute new files" reinstating an old creation, its Retry)
+      val opensItself = job("running", fill, "distributeAfter" -> true)
+      // a one-pass job from before P3 (no mode)
+      val onePass = job("running")
+      val cancelled = round.copy(status = Some(Round.Status.Cancelled))
+      (RoundNextStep.of(round, Some(opensItself), 5) must beNone) and
+        (services.distribution.RoundStartBlock.of(round, Some(opensItself)) must
+          beSome(services.distribution.RoundStartBlock.Distributing: services.distribution.RoundStartBlock)) and
+        (RoundNextStep.of(round, Some(onePass), 5) must beNone) and
+        // a held fill running: matching, as the Rounds page's "selecting"
+        (RoundNextStep.of(round, Some(job("running", fill, "distributeAfter" -> false)), 0).map(_.state) must
+          beSome(RoundNextStep.Matching: RoundNextStep.State)) and
+        (services.distribution.RoundStartBlock.of(round, Some(job("running", fill, "distributeAfter" -> false))) must
+          beSome(services.distribution.RoundStartBlock.Selecting: services.distribution.RoundStartBlock)) and
+        // no job running: failed, cancelled, unfinished (no job at all)
+        (RoundNextStep.of(round, Some(job("failed", fill)), 5) must beNone) and
+        (RoundNextStep.of(cancelled, Some(job("cancelled", fill)), 5) must beNone) and
+        (RoundNextStep.of(round, None, 5) must beNone)
+    }
+
+    "show no setup state on its statistics while a job distributes it, as the Rounds page" in {
+      testDbApp { implicit app =>
+        val contest = setUp()
+        val round = roundDao.create(Round(None, 1, Some("Legacy"), contest.getId, active = false,
+          distributing = true, status = Some(Round.Status.Draft)))
+        scalikejdbc.DB.autoCommit { implicit s =>
+          services.jobs.JobJdbc.insert(services.jobs.NewJob(RoundDistributionHandler.Kind, contest.id,
+            Some(RoundDistributionHandler.SubjectType), round.id, Some(RoundDistributionHandler.dedupeKey(round.getId)),
+            params = Json.obj("mode" -> RoundDistributionHandler.Mode.Fill, "distributeAfter" -> true)), owner = Some("spec"))
+        }
+        val r = round.getId
+        val stat = page(app, "admin@example.com", s"/roundstat/$r")
+        val edit = page(app, "admin@example.com", s"/admin/rounds/edit?id=$r&contestId=${contest.getId}")
+        val list = page(app, "admin@example.com", s"/admin/rounds?contestId=${contest.getId}")
+        (stat.select("#round-setup-state").size === 0) and
+          (edit.select("#round-setup-steps, #round-setup-state").size === 0) and
+          (list.select(s"tr[data-round=$r] .wlx-round-start-state").attr("data-state") === "distributing")
+      }
+    }
+  }
+
+  "the matching files' heading" should {
+
+    "say N by its plural form, true also when N exceeds the contest's files" in {
+      testDbApp { implicit app =>
+        val api = app.injector.instanceOf[play.api.i18n.MessagesApi]
+        def heading(lang: String, n: Int, m: Long) = {
+          val messages = api.preferred(Seq(play.api.i18n.Lang(lang)))
+          messages(s"round.review.match.${views.Plural.form(n, lang)}", n, m)
+        }
+        (heading("en", 1, 40) === "1 file matches (the contest has 40)") and
+          (heading("en", 45, 40) === "45 files match (the contest has 40)") and
+          (heading("ru", 1, 40) === "Подходит 1 файл (всего в конкурсе 40)") and
+          (heading("ru", 22, 40) === "Подходят 22 файла (всего в конкурсе 40)") and
+          (heading("ru", 45, 40) === "Подходят 45 файлов (всего в конкурсе 40)") and
+          (heading("uk", 21, 40) === "Відповідає 21 файл (усього в конкурсі 40)") and
+          (heading("fr", 1, 40) === "1 fichier correspond (le concours en a 40)")
       }
     }
   }

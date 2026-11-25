@@ -103,8 +103,9 @@ class RoundReviewController @Inject() (
             links = services.RoundLineage.links(round, Round.findByContest(round.contestId)).visibleTo(user),
             // being set up: its next step, and Distribute's state (#186)
             nextStep = nextStep,
-            // step 2's heading, "N of the contest's M files match": the contest's files, read only then
-            contestFiles = if (nextStep.isDefined) ImageJdbc.countByContest(view.contest) else 0L
+            // step 2's heading once the matching has ended: the contest's files (a count over its
+            // category), read only then, not on each view while the files are being matched
+            contestFiles = if (nextStep.exists(_.state != RoundNextStep.Matching)) ImageJdbc.countByContest(view.contest) else 0L
           )
           Secured.switchingContest(sessionUser, user)(
             Ok(views.html.contestFiles(user, files, pager, view, Some(summary))))

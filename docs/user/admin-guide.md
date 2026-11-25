@@ -993,7 +993,7 @@ example from another browser tab, tells you that its images are already being di
 
 A new round's images are selected first and wait on the round's **review page**, so a wrong filter
 is caught before any juror gets a file. The page is step 2 of the round's setup: once the files
-are found, its heading says how many match ("12 of the contest's 340 files match") and **Distribute
+are found, its heading says how many match ("12 files match (the contest has 340)") and **Distribute
 to jurors** (which opens the jurors form, step 3) is its main button; while they are being found,
 or if none matches, that button is disabled and says why. The rounds list shows a round being set
 up as **Setting up – step 2 of 3: check files** (with **Check the files**) or **Setting up – step 3

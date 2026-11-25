@@ -2,7 +2,7 @@
 // "Choosing the jurors"), as the contest's admin. The round is set up in numbered steps (UI-path plan
 // §4 step 1, the maintainer's decision of 2026-11-25): the new-round form (step 1) has filters only and
 // one button, "Save and find matching files", which holds the round in review and lands on its review
-// page (step 2), "N of the contest's M files match" once they are found; its "Distribute to jurors"
+// page (step 2), "N files match (the contest has M)" once they are found; its "Distribute to jurors"
 // opens the round's jurors form (step 3), which refuses with no juror; Edit the round offers "Re-apply filters", whose narrower monument
 // filter (ids separated by ", ") takes files out and the review page shows by how many; a comment in
 // the review's large view; two jurors picked, one per file, Distribute opens the round.
@@ -19,7 +19,7 @@ const BOTH = '73-250-0001, 21-104-0001';
 const ONE = '73-250-0001';
 
 /** Reloads the review page of a round being set up until its matching has ended; returns the
-  * number of its files that match ("N of the contest's M files match"). */
+  * number of its files that match ("N files match (the contest has M)"). */
 async function matched(page, roundId) {
   const heading = page.locator('#round-review-match');
   await expect(async () => {
