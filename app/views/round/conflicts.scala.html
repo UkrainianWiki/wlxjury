@@ -14,9 +14,11 @@
    The history (round_image_event, V88) is shown to all who see the page; "Stop the round" to its
    admins while the round is open, through the rounds list's own action (RoundController.setRound),
    with a confirm (confirm-submit.js). A round being set up (`distributing`) isn't open to its jurors:
-   its admins see that, with its state as the Rounds page shows it (RoundStartBlock), instead. *@
+   its admins see that instead. Its state is its setup step's line at the top (`setupStep`, when it
+   has one) or, with none (being distributed, its creation failed, cancelled or unfinished), its
+   RoundStartBlock state under that text: one state, as the Rounds page pairs them. *@
 @mayStop = @{ mayEdit && round.active && !round.distributing }
-@setupBlock = @{ if (mayEdit && round.distributing) services.distribution.RoundStartBlock.of(round) else None }
+@setupBlock = @{ if (mayEdit && round.distributing && setupStep.isEmpty) services.distribution.RoundStartBlock.of(round) else None }
 @historyTime = @{ java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm") }
 @statusText(status: Option[String]) = @{ Messages("coi.status." + status.getOrElse("removed")) }
 @codeText(action: String, code: String) = @{
