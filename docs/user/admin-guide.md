@@ -1142,9 +1142,13 @@ by itself ("Automatic: …"). Leave it empty to keep that track.
 
 - A label names the round's track. Later rounds created from it, without a label of their own,
   take the same track, as they would an automatic one.
-- Rounds with the same label share a track. Type it exactly the same way, capital letters
-  included: the field suggests the contest's labels as they are spelled. Spaces at the start and
-  the end are dropped. A label has at most 64 characters.
+- Rounds with the same label share a track. Type it exactly the same way, capital letters and
+  spaces between words included ("Second look" and "Second  look" are two tracks): the field
+  suggests the contest's labels as they are spelled. Only spaces at the start and the end are
+  dropped. A label has at most 64 characters.
+- If the contest's first rounds' categories share no start (common in Wiki Loves Earth), their
+  tracks show the categories' full names. Give each such track its own label (for example
+  "Quality" and "Quantity"): labelling one first round doesn't shorten the others' names.
 - **Main** puts the round on the Main track. It is understood in any capitals and in the tool's
   other languages (Основний, Основной, Principale), and stored as Main.
 - Each label change is recorded and shown under **Changes to this round's settings** on the
