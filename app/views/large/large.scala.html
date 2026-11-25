@@ -16,7 +16,8 @@
         commentCounts: Map[Long, Int] = Map.empty,
         commentRounds: Map[Long, String] = Map.empty,
         showsCommentRounds: Boolean = true,
-        monumentLine: Option[MonumentLine] = None)(
+        monumentLine: Option[MonumentLine] = None,
+        regions: Option[services.regions.RegionScheme] = None)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 
     @defining(list.round) { round =>
@@ -70,7 +71,7 @@
                         @if(user.canViewOrgInfo(round)){
                             @authorInfo(image, round.contestId, Some(list))
                         }
-                        @monumentInfo(image, monument, Some(round.contestId), round.id, monumentLine, list.monument)
+                        @monumentInfo(image, monument, Some(round.contestId), round.id, monumentLine, list.monument, regions)
                         @fullSizeUrl(image, round)
                         @juryStat(votes, list, jurorCriteria)
                     }

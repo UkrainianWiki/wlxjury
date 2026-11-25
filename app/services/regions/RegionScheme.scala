@@ -54,6 +54,25 @@ final case class RegionScheme(
           }
       }
 
+  /** The region a file's monument card names for its monument id ([[views.html.large.monumentInfo]]):
+    * for an id a special nomination gives its own monuments (`92-232-4801`), the nomination's
+    * name ([[region]]) and, where the id's second part starts with one of the country's region
+    * codes (its `23`), that region as [[region]] names it: "Болгарська спадщина, Запорізька".
+    * For any other id its prefix as the messages have it (the card's text before
+    * nominations were named), so other regions and other countries read as they did.
+    */
+  def monumentRegion(monumentId: String)(implicit messages: Messages): String = {
+    val parts  = monumentId.trim.split("-")
+    val prefix = parts.head
+    val named  = region(prefix, None)
+    if (named.kind != Region.Nomination) messages(prefix)
+    else {
+      val geographicRegion = parts.lift(1).filter(_.matches("[0-9]{3}")).map(_.take(2))
+        .map(region(_, None)).filter(_.kind == Region.Geographic).map(_.name)
+      (named.name +: geographicRegion.toSeq).mkString(", ")
+    }
+  }
+
   /** The regions, by id, with their names and file counts if known: the country's regions
     * in id order (with `subRegions`, adm1 ids, Kyiv's sub-regions as one region, in name
     * order), then the nominations in Ukrainian alphabetical order, then the others by id.

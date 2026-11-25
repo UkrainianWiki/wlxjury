@@ -24,6 +24,7 @@ Merged after the 26.11.17 build, for the release after it.
 - Track labels: spaces inside a label are kept as typed, so labels share a track only when they are identical, as the form's help says (#209).
 - Track labels: labelling a first round (or giving it a nomination or regions) no longer changes the category track names of the other first rounds (#209).
 - Rounds page: a round with one of several previous rounds deleted no longer says it "starts a track of its own"; it says the deleted round is left out when its track is chosen (#209).
+- Large views and the round review's file page: the monument card of a special nomination's own monument (an id like `92-232-4801`) names the nomination and the region its id carries ("Болгарська спадщина, Запорізька") in place of the bare "92"; other monuments read as before.
 
 ## Deployed releases
 
