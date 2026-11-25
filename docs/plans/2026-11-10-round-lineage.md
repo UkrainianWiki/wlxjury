@@ -350,8 +350,10 @@ With no such prefix, the full category name stays. For WLM UA 2025 that is
 with the words all the roots' categories **end** with too ("… from Wiki Science Competition 2025
 in Ukraine"). When the roots share neither (Wiki Loves Earth Ukraine: "Wiki Loves Earth Ukraine
 2026 - Quality", "Images from Wiki Loves Earth 2026 Nature Loss Special Category"), the contest's
-own words (its name, year, country and images category, in any case), years, "images", "from",
-"in" and separators are dropped at each end: "Quality", "Nature Loss Special Category".
+own words (its name, year and country, and its images category up to its first " - " or "/", in
+any case; not the rest of that category, which may be a subcategory naming other tracks), years, "images", "from", "in" and separators are dropped at each
+end: "Quality", "Nature Loss Special Category". All the roots' categories count, labelled ones too,
+so a label doesn't rename another track.
 Categories that differ only in case are one track; two that would get one name keep longer
 names. Only a "Category:" page names a track: a file list or a "Commons:" page pasted into the
 field is no category. With nothing left the root is named by its media type, **only if the roots

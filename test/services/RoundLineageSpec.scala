@@ -1,6 +1,7 @@
 package services
 
 import db.scalikejdbc.Round
+import org.intracer.wmua.ContestJury
 import org.specs2.mutable.Specification
 import services.RoundLineage.{Context, Kind, Track}
 
@@ -305,10 +306,10 @@ class RoundLineageSpec extends Specification {
       (names(Seq("Category:Images from Wiki Loves Earth 2026 in Serbia - Vojvodina ",
         "Category:Images from Wiki Loves Earth 2026 in Serbia - protected species",
         "Category:Videos from Wiki Loves Earth 2026 in Serbia"),
-        "Wiki Loves Earth 2026 Serbia Images from in final round") === Seq("Vojvodina", "protected species", "Videos")) and
+        "Wiki Loves Earth 2026 Serbia Images from in") === Seq("Vojvodina", "protected species", "Videos")) and
         // one category: after its last " - "
         (names(Seq("Category:Images from Wiki Loves Monuments 2025 in Moldova - eligible for drone special prize"),
-          "Wiki Loves Monuments 2025 Moldova Images from in eligible for phase I (national)") ===
+          "Wiki Loves Monuments 2025 Moldova Images from in") ===
           Seq("eligible for drone special prize")) and
         (names(Seq("Category:Commons:Wiki Loves Earth 2026 in Kyrgyzstan/Long list"),
           "Wiki Loves Earth 2026 Kyrgyzstan Images from in") === Seq("Long list"))
@@ -341,6 +342,42 @@ class RoundLineageSpec extends Specification {
           "Microscopy")) and
         (names(Seq("Category:Images from Wiki Loves Earth 2025 in Northern Ireland"),
           "Wiki Loves Earth 2024 Ireland Images from Wiki Loves a Future for Thatch 2026") === Seq("Northern Ireland"))
+    }
+
+    "take the contest's words from its name, year, country and its images category's main part only (WLE Serbia 2024)" in {
+      val contest = ContestJury(Some(570), "Wiki Loves Earth", 2024, "Serbia",
+        Some("Category:Images from Wiki Loves Earth 2024 in Serbia - protected species (final)"))
+      val words = Context.boilerplateOf(contest)
+      val serbia = Context(contestCategory = contest.images, boilerplate = words)
+      val p = "Category:Images from Wiki Loves Earth 2024 in Serbia - "
+      val l = RoundLineage(Seq(
+        round(1, "Proba", category = Some("Category:Ineligible submissions for WLE 2024 in Serbia")),
+        round(2, "Videos PROBA", category = Some("Category:Videos from Wiki Loves Earth 2024 in Serbia")),
+        round(3, "Landscape", category = Some(p + "landscape")),
+        round(4, "Detail", category = Some(p + "detail")),
+        round(5, "Final", category = Some(p + "final round")),
+        round(6, "Species", category = Some(p + "protected species")),
+        round(7, "Vojvodina", category = Some(p + "Vojvodina")),
+        round(8, "Species final", category = Some(p + "protected species (final)"))), serbia)
+      (words === Set("wiki", "loves", "earth", "2024", "serbia", "images", "from", "in")) and
+        ((1L to 7L).map(l.trackOf(_).name) === Seq("Ineligible submissions for WLE", "Videos", "landscape", "detail",
+          "final round", "protected species", "Vojvodina")) and
+        // the contest's own category: no category track
+        (l.trackOf(8) === Track(Kind.Name, "Species final"))
+    }
+
+    "not rename another root's track when a root is labelled" in {
+      val wsc = Context(boilerplate = Set("wiki", "science", "competition", "2025", "ukraine", "images", "from", "in"))
+      // labelled, Non-photographic media would leave the others sharing "images from …" too
+      def rounds(label: Option[String]) = Seq(
+        round(1, "Media: Screening", category = Some("Category:Non-photographic media from Wiki Science Competition 2025 in Ukraine"),
+          track = label),
+        round(2, "Microscopy: Screening", category = Some("Category:Microscopy images from Wiki Science Competition 2025 in Ukraine")),
+        round(3, "General: Screening", category = Some("Category:General category images from Wiki Science Competition 2025 in Ukraine")))
+      val plain = RoundLineage(rounds(None), wsc)
+      val labelled = RoundLineage(rounds(Some("Main")), wsc)
+      (plain.trackOf(2) === Track(Kind.Category, "Microscopy images")) and (labelled.trackOf(2) === plain.trackOf(2)) and
+        (labelled.trackOf(1) === Track.Main)
     }
 
     "keep two categories apart that would get one name" in {
