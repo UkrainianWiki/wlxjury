@@ -4,6 +4,12 @@
 (after the 26.11.16 build); no code changed, no test run. References are to files and functions;
 line numbers drift.
 
+**Changes:** 2026-11-26: design corrections from the review of #191, no decision changed: columns for
+outcome, token and task (§3.1); a problem–event table, so one event can count for P1 and P9 (§3.1,
+§4.2); "seen" stores the activity version that was shown (§3.1, §6.2); the flood cap's key gains the
+contest, and a folded repeat moves the row's time (§3.4); a stored scan checkpoint (§4.2); M-3's
+quiet-period test says three refusals (§8).
+
 **Why.** On production, 2026-11-25 08:05–08:13 CET, an admin's round form was refused 11 times in a
 row (`POST /admin/rounds/save` → 400), and a twelfth save at 08:15 was taken as a resubmit of a
 round already created at 08:01, so its changes were dropped (production logs, 2026-11-25). Nobody
@@ -105,7 +111,7 @@ request.
 | `csrf_refused` | A refused CSRF token | none | `CsrfErrorHandler.handle` | `csrf_failure` |
 | `job_failed` | A step returned `StepResult.Failed`, a job crashed (`job_crashed`), or was given up after its attempts (`job.error.attempts`) | `job_id`, job kind, `round_id` when the job has one, the `JobError` key | `JobScheduler`: the `StepResult.Failed` branch, `fail` (both `job_crashed` sites: the step's and the preparing one, `job_crashed … preparing=true`, and the attempts), `giveUpIfExhausted`, all via one private `recordEnd(job, error)`, so no failure path bypasses it | `job_failed`, `job_crashed` |
 | `job_cancelled` | Cancel (by an account or by a handler) | `job_id`, kind, `by` account | `JobScheduler.cancelOrRefuse` | none (new) |
-| `link_refused` | An invitation, set-password or shared link refused (onboarding is personal and mail-free, so a stuck juror is a real problem) | the refusal reason key, the token's id or prefix as already logged | the `account_token_refused`, `shared_link_refused`, `account_link_share_refused`, `account_link_by_provider_refused` sites | those lines |
+| `link_refused` | An invitation, set-password or shared link refused (onboarding is personal and mail-free, so a stuck juror is a real problem) | the refusal reason key, the token's id or prefix as already logged (`token_id`, §3.1) | the `account_token_refused`, `shared_link_refused`, `account_link_share_refused`, `account_link_by_provider_refused` sites | those lines |
 | `round_access_refused` | A juror refused a stopped, distributing or paused round (support diagnostics D-0b, INFO) | `round_id`, reason | where D-0b logs `round_access_refused` | `round_access_refused` |
 | `task_failed` | A periodic in-app task failed a tick | task name, error class | `RoundCountsTimer.guarded`, `LegacyPasswordRetirementTask`, the problem check itself (§4) | `round_counts_tick_failed`, `legacy_passwords_retire_failed` |
 
@@ -191,7 +197,7 @@ exactly what P2 should report.
 
 One migration, `V<next>__Support_events_and_problems.sql`. **The number is assigned at build
 time:** master is at V113, #178 takes V114, lineage slice A may take V115, so this is likely V116.
-Both tables are InnoDB (operations §3.1a) and carry **no foreign keys** (an event outlives a
+All four tables are InnoDB (operations §3.1a) and carry **no foreign keys** (an event outlives a
 deleted round or a retired account; a purge must not wait on other tables' locks).
 
 ```sql
@@ -211,15 +217,34 @@ CREATE TABLE support_event (
   reason        VARCHAR(64)  NULL,               -- denial reason, JobError key, refusal reason key
   fields        VARCHAR(512) NULL,               -- comma-separated field names
   message_keys  VARCHAR(512) NULL,               -- comma-separated message keys
+  outcome       VARCHAR(16)  NULL,               -- resubmit_dropped: resumed, distributing, given_up, same, changed
+  token_id      VARCHAR(32)  NULL,               -- link_refused: the token's id or prefix as its line logs it, never the token
+  task          VARCHAR(64)  NULL,               -- task_failed: the task name (its error class goes in reason)
   ref           CHAR(8)      NOT NULL,           -- the log line's reference
   repeat_count  INT          NOT NULL DEFAULT 1, -- §3.4
-  problem_id    BIGINT       NULL,
+  last_at       DATETIME(3)  NOT NULL,           -- latest occurrence: created_at, moved by each folded repeat (§3.4)
+  changed_at    DATETIME(3)  NOT NULL,           -- database time of the row's insert or last fold; the scan reads by it (§4.2)
   KEY support_event_created (created_at),
   KEY support_event_kind (kind, created_at),
   KEY support_event_contest (contest_id, created_at),
   KEY support_event_account (account_id, created_at),
-  KEY support_event_problem (problem_id),
+  KEY support_event_changed (changed_at),
   KEY support_event_ref (ref)
+);
+
+-- an event can count for more than one problem (a fallback refusal: P1 and P9)
+CREATE TABLE support_problem_event (
+  problem_id    BIGINT       NOT NULL,
+  event_id      BIGINT       NOT NULL,
+  PRIMARY KEY (problem_id, event_id),
+  KEY support_problem_event_event (event_id)
+);
+
+-- one row: where the problem check's scan resumes (§4.2)
+CREATE TABLE support_problem_check (
+  id              TINYINT      PRIMARY KEY,      -- always 1
+  checkpoint      DATETIME(3)  NOT NULL,         -- events with changed_at up to here are processed
+  last_success_at DATETIME(3)  NOT NULL
 );
 
 CREATE TABLE support_problem (
@@ -233,18 +258,30 @@ CREATE TABLE support_problem (
   account_id     BIGINT       NULL,
   first_event_at DATETIME(3)  NOT NULL,
   last_event_at  DATETIME(3)  NOT NULL,
-  event_count    INT          NOT NULL,
+  event_count    INT          NOT NULL,          -- sum of the linked events' repeat_count
   detected_at    DATETIME(3)  NOT NULL,
-  seen_at        DATETIME(3)  NULL,
+  activity_version INT        NOT NULL DEFAULT 1, -- +1 whenever a tick changes event_count or last_event_at
+  seen_version   INT          NULL,              -- the activity_version the root account was shown when marking it
+  seen_at        DATETIME(3)  NULL,              -- when it was marked (display only)
   seen_by        BIGINT       NULL,              -- the root account that marked it
   KEY support_problem_scope (pattern, scope_key, last_event_at),
   KEY support_problem_last (last_event_at)
 );
 ```
 
-A problem is **new** when `seen_at IS NULL OR last_event_at > seen_at`: new events after it was
-seen bring it back, so nothing is lost when nobody looks. Seen is shared by all root accounts
-(`seen_by` shows who), not per account (Q5, decided [user] 2026-11-25).
+**Which column each pattern reads.** P2 groups by `outcome`, P8 by `token_id` or `account_id`, P11
+by `task`; the other patterns use the common columns. Fields of §2.1 that no pattern groups by and
+that have no column (a denial's resource and required roles, a job's kind) are in the log line that
+the row's `ref` finds.
+
+A problem is **new** when `seen_version IS NULL OR activity_version > seen_version`. Mark as seen
+posts the `activity_version` the page showed, and the server stores the smaller of it and the current
+one; a tick that adds events or folded repeats after that page was rendered raises
+`activity_version`, so the problem stays new although root marked it later. A time comparison
+(`last_event_at > seen_at`) would not do: an event that arrives between rendering and the click is
+older than the click, and would count as seen. New events after it was seen bring it back, so
+nothing is lost when nobody looks. Seen is shared by all root accounts (`seen_by` shows who), not
+per account (Q5, decided [user] 2026-11-25).
 
 ### 3.2 Retention (Q2, decided)
 
@@ -255,9 +292,9 @@ seen bring it back, so nothing is lost when nobody looks. Seen is shared by all 
 - **Problems: kept** (a few per week; each keeps its counts and times, so a later purge of events
   doesn't lose the season comparison).
 - **A later cleanup stays easy:** `created_at` is indexed and there are no foreign keys, so a purge
-  is a batched `DELETE … WHERE created_at < ? LIMIT 5000` run by the problem check (§4), with no
-  schema change. Options to choose from then: 90 days, 400 days (one season and the same weeks a
-  year later), or by kind (e.g. `denied` shorter). "The contest's lifetime" doesn't fit: contests
+  is a batched `DELETE … WHERE created_at < ? LIMIT 5000` run by the problem check (§4), with the
+  events' `support_problem_event` rows deleted with them, and no schema change. Options to choose
+  from then: 90 days, 400 days (one season and the same weeks a year later), or by kind (e.g. `denied` shorter). "The contest's lifetime" doesn't fit: contests
   are reused across years (support diagnostics H21), and denials and server errors often have no
   contest.
 
@@ -278,10 +315,16 @@ passes ~500 MB.
 
 ### 3.4 Flood cap
 
-An in-memory map per `(kind, account or "-", route, form, reason)` allows at most 5 rows per minute;
-further events in that minute increment `repeat_count` of the last row (one `UPDATE`) and write no
-log line beyond a `support_event_capped` summary when the minute ends. Restarting the app resets
-the map; that only lets a few more rows through.
+An in-memory map per `(kind, contest or "-", account or "-", route, form, reason)` allows at most 5
+rows per minute; further events in that minute increment `repeat_count` of the last row and set its
+`last_at` to the event's time and `changed_at` to the database time (one `UPDATE`, done by the
+writer thread after that row's insert), and write no log line beyond a `support_event_capped`
+summary when the minute ends. The contest is in the key because the route template
+(`/admin/rounds/:id`) doesn't tell contests apart: without it a denial in one contest would be
+counted in another contest's row (P12) and anonymous denials of all contests would share one row.
+Moving `last_at` and `changed_at` makes the next tick read the row again (§4.2), so a folded
+repeat after root marked the problem seen raises its `activity_version` and makes it new again
+(§3.1). Restarting the app resets the map; that only lets a few more rows through.
 
 ### 3.5 Privacy and backups
 
@@ -290,7 +333,7 @@ the map; that only lets a few more rows through.
   agent, no request or exception text. Secure-coding §13 and §22 gain the table; `LogHygieneSpec`
   gains the new lines.
 - **Who reads it:** root only (§6; Q3 decided).
-- **Backups:** both tables are in the nightly dump and in each release's pre-migration dump
+- **Backups:** the tables are in the nightly dump and in each release's pre-migration dump
   (operations §3.1), so history survives a restore and a server move. At ~40 MB a year they don't
   change the dump time noticeably. A restore brings back the events up to the dump; the gap since
   is in the application log.
@@ -314,8 +357,9 @@ with nothing to cancel or retry. And the check must see **jobs that are stuck or
 job scheduler itself stops claiming (a poll failing, a lease never released), a check that is a job
 would stop with it. A separate timer keeps it independent, as the round-counts recompute is.
 
-**It watches itself.** Each tick records its end time in memory. If the last successful tick is
-older than three intervals, the root badge shows "Problem check not running" instead of a count,
+**It watches itself.** Each tick records its end time in memory (and a successful one in
+`support_problem_check.last_success_at`, so the page knows it after a restart). If the last
+successful tick is older than three intervals, the root badge shows "Problem check not running" instead of a count,
 and the Problems page says when it last ran. A failed tick records a `task_failed` event (if the
 database takes it).
 
@@ -324,10 +368,31 @@ One server runs the app today. If a second instance ever runs, the tick takes a
 
 ### 4.2 Patterns
 
-Each tick reads events since the last tick (minus the longest window) and the `job` table, and for
-each match creates a problem or extends an open one: the same `pattern` and `scope_key` with
-`last_event_at` within 24 hours → `last_event_at`, `event_count` updated, its events'
-`problem_id` set. A match after 24 hours of quiet is a new problem.
+**Where a tick starts: a stored checkpoint.** The scan position is kept in the database
+(`support_problem_check.checkpoint`, §3.1), not in memory, so a restart or an outage longer than
+any pattern window loses no events:
+
+- A tick takes `U = NOW(3)` and reads the events with `checkpoint − 2 minutes < changed_at ≤ U`
+  (at most 10,000, oldest first; a larger backlog continues in the next tick from the last row
+  read). The 2 minutes cover rows that the writer thread was still committing at the last tick.
+- For each event read, a windowed pattern also reads the earlier events of the same scope within
+  its window (P1: the same form and account in the 15 minutes before). The windows bound the
+  matching only; they are not where the scan starts.
+- The problem writes, the links and the new checkpoint (`U`, or the last row's `changed_at` when the
+  batch was cut) are one transaction. A tick that fails rolls back and leaves the checkpoint where
+  it was, so the next tick reads the same events again.
+- Reading an event twice changes nothing: a link is `INSERT IGNORE`, and a problem's `event_count`
+  and `last_event_at` are recomputed from its linked events (the sum of `repeat_count`, the latest
+  `last_at`), with `activity_version` raised only when one of them changed.
+- **First run:** no checkpoint row yet; the tick starts from the oldest event (M-2 and M-3 ship
+  together, so that is a few days of events at most) and creates the row.
+
+For each match the tick creates a problem or extends an open one: the same `pattern` and
+`scope_key` with `last_event_at` within 24 hours → the event linked in `support_problem_event`,
+`event_count` and `last_event_at` recomputed. **An event can belong to several problems:** a
+fallback refusal is a `form_refused` of one form and account, so it counts for P1 and is also P9;
+each problem gets its own link and lists the event. A match after 24 hours of quiet is a new
+problem. The `job` table (P5) is read as it is at the tick, with no checkpoint.
 
 | # | Pattern | Default rule | Severity | Default (Q4, decided: all on) |
 |---|---|---|---|---|
@@ -357,7 +422,7 @@ with the row's `ref`, key-value, untrusted text through `Secured.logValue`, ids 
 
 ```
 form_refused ref=3f9a02c1 form=round contestId=631 roundId=new accountId=1234 status=400 fields=categoryBox1,topImages keys=error.category.first.required,error.min
-resubmit_dropped ref=0b77e5d2 form=round contestId=631 roundId=1991 accountId=1234 outcome=dropped
+resubmit_dropped ref=0b77e5d2 form=round contestId=631 roundId=1991 accountId=1234 outcome=changed
 ```
 
 - **Existing lines stay as they are** (`authorization_denied`, `server_error`, `csrf_failure`,
@@ -395,8 +460,9 @@ not running" replaces it when §4.1's watchdog trips. N comes from
   for P1 the field names and message keys **with the field labels** from the form's messages
   ("Media filtering → Category 1: required"), and the log references.
 - **Its events**, expandable: time, kind, route, status, keys, reference.
-- **Mark as seen** per problem and "Mark all shown as seen" (POSTs with the CSRF token, `seen_at`,
-  `seen_by`). **Mark as new** undoes it.
+- **Mark as seen** per problem and "Mark all shown as seen" (POSTs with the CSRF token; each
+  problem's id with the `activity_version` the page showed, stored as `seen_version`, with
+  `seen_at` and `seen_by`; §3.1). **Mark as new** undoes it (`seen_version` back to NULL).
 - **Events tab:** the raw events with the same filters, for kinds that make no problem (jobs
   cancelled, a single denial).
 - A line at the top: when the check last ran, and the retention ("events are kept; no cleanup yet").
@@ -413,7 +479,7 @@ other contests, no `server_error` (root support), the email masked. No badge for
 | Slice | Content | Size | When |
 |---|---|---|---|
 | **M-1** | `FormRefusal` (keys and field names, arguments dropped), used only in `RoundController.saveRound`'s two refusal branches (`formWithErrors` and `reRender`), and the `resubmit_dropped` line with §2.3's in-memory form hash (`same` / `changed`), replacing the unquoted resubmit line. **Log only: no table, no migration, no filter.** The line is named `form_refused`; the UI-path plan (#189) is aligned to that name, and M-1 *is* its refusal-UX log item, not a second logger | S (≈ 1 day) | **26.11.17**, inside the UI-path refusal-UX PR (d) |
-| **M-2** | The migration (both tables), `EventRecorder`, the flood cap, `RefusalFilter`, the hooks of §2.1 (`logDenial`, `ErrorHandler`, `CsrfErrorHandler`, `JobScheduler`, link refusals, timers), `FormRefusal` in the other forms, secure-coding §13/§22, `LogHygieneSpec`. Takes over support diagnostics D-3 | M (2–3 days) | after 26.11.18, before regional winners (Q6, decided); its migration number then |
+| **M-2** | The migration (`support_event`, `support_problem`, `support_problem_event`, `support_problem_check`), `EventRecorder`, the flood cap, `RefusalFilter`, the hooks of §2.1 (`logDenial`, `ErrorHandler`, `CsrfErrorHandler`, `JobScheduler`, link refusals, timers), `FormRefusal` in the other forms, secure-coding §13/§22, `LogHygieneSpec`. Takes over support diagnostics D-3 | M (2–3 days) | after 26.11.18, before regional winners (Q6, decided); its migration number then |
 | **M-3** | `ProblemCheckTask` and its watchdog, patterns P1–P12 with settings, all on by default (Q4), `problem_detected`; P5 shared with H11 | M (2–3 days) | right after M-2 |
 | **M-4** | Badge, Problems page, mark seen/new, filters, links; negative authorization specs | S–M (2 days) | with M-3 or right after |
 | **M-5** | Runbook: Apache access-log retention for the jury vhosts (below); operations §5 "What is watched" gains the Problems page | S (half a day + the maintainer's sudo step) | any time; best before the next season |
@@ -460,8 +526,9 @@ database holds the history.
   `resubmit_dropped` and not the description.
 - **M-2:**
   - `services.monitoring.EventRecorderSpec`: a row per kind with the expected columns; the cap
-    (the sixth event in a minute increments `repeat_count`); a failed insert doesn't throw and logs
-    `support_event_lost`.
+    (the sixth event in a minute increments `repeat_count` and moves `last_at` and `changed_at`;
+    the same event in two contests makes two rows); `outcome`, `token_id` and `task` are filled for
+    their kinds; a failed insert doesn't throw and logs `support_event_lost`.
   - `controllers.FormRefusalSpec`: a refused save creates a row with the field names and keys and
     no posted value (the row's every column checked for the value); the filter records a 400 of a
     form without `FormRefusal` once, with `keys=unknown`, and a form with it once, not twice; a
@@ -476,12 +543,18 @@ database holds the history.
     the recorder writes with `autoSession` (CLAUDE.md, Database Tests).
 - **M-3** (`services.monitoring.ProblemCheckSpec`): three refused saves of one form by one account
   within 15 minutes make one P1 problem, two don't, three by two accounts don't; a fourth extends
-  it; one after 24 hours of quiet makes a new one; a seen problem with a new event is new again;
-  P5 on a queued job with no running job of its kind and on a stale heartbeat; a disabled pattern
-  makes nothing; a tick that throws leaves the next tick running and trips the watchdog after three
+  it; after 24 hours of quiet one refusal makes nothing and three new refusals within 15 minutes
+  make a new one; a seen problem with a new event is new again, and so is one whose event gets a
+  folded repeat (§3.4); three fallback refusals make a P1 and a P9 problem, each listing all three
+  events; events recorded while the check was stopped for more than 24 hours are found by the
+  first tick after the restart (stored checkpoint); a tick that fails leaves the checkpoint, and the
+  next one makes the same problems once, not twice; P2 counts `changed` and `given_up`, not
+  `same`; P5 on a queued job with no running job of its kind and on a stale heartbeat; a disabled
+  pattern makes nothing; a tick that throws leaves the next tick running and trips the watchdog after three
   intervals.
 - **M-4** (`controllers.ProblemsPageSpec`), with the negative authorization cases:
-  - root sees the page, the badge with the right count, and can mark seen and new;
+  - root sees the page, the badge with the right count, and can mark seen and new; a problem
+    that got an event after the page was shown stays new when that page's Mark as seen is posted;
   - **an admin, an organizer and a juror** each get **403** on `GET /admin/problems` and on the
     mark-seen POST, with a `denied` row; signed out gets the login redirect (page) or 401 (script);
   - no badge on any page for admin, organizer or juror (rendered navbar checked);
