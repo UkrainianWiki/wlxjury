@@ -110,7 +110,8 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         Round.setTrack(f.q01.getId, Some("Second look"))
         val doc = page(app, f.admin, s"/admin/rounds/edit?contestId=${f.contest.getId}&id=${f.q01.getId}")
         val input = doc.getElementById("trackLabel")
-        (input must not(beNull)) and (input.attr("maxlength") === "64") and (input.attr("value") === "Second look") and
+        // no native maxlength (it counts UTF-16 units, the server code points)
+        (input must not(beNull)) and (input.hasAttr("maxlength") must beFalse) and (input.attr("value") === "Second look") and
           (doc.select("datalist#round-track-labels option").eachAttr("value").asScala.toSeq === Seq("Main", "Second look")) and
           (doc.select("input[name=trackShown][type=hidden]").attr("value") === "true") and
           (doc.getElementById("trackLabel_help").text must contain("Automatic: Quality.")) and {
@@ -130,7 +131,7 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         def createdAt(r: Round) = DB.readOnly(implicit s =>
           sql"SELECT created_at FROM round WHERE id = ${r.getId}".map(_.timestamp(1)).single())
         (status(save(app, f.admin, Some(f.merge), f.contest.getId, "trackLabel" -> "  Final   line ", "trackShown" -> "true")) ===
-          SEE_OTHER) and (label(f.merge) === Some("Final line")) and (createdAt(f.merge) === Some(created)) and
+          SEE_OTHER) and (label(f.merge) === Some("Final   line")) and (createdAt(f.merge) === Some(created)) and
           (status(save(app, f.admin, Some(f.q00), f.contest.getId, "trackLabel" -> "main", "trackShown" -> "true")) === SEE_OTHER) and
           (label(f.q00) === Some("Main")) and
           (status(save(app, f.admin, Some(f.q01), f.contest.getId, "trackLabel" -> "Основний", "trackShown" -> "true")) ===
@@ -142,6 +143,21 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
           // longer than 64 characters: refused, the form again
           (status(save(app, f.admin, Some(f.q01), f.contest.getId, "trackLabel" -> "x" * 65, "trackShown" -> "true")) ===
             BAD_REQUEST) and (label(f.q01) must beNone)
+      }
+    }
+
+    "count code points, not UTF-16 units: 64 emoji saved; over 64 refused with the field's label and link at the top" in {
+      testDbApp { app =>
+        val f = fixture()
+        val emoji = new String(Character.toChars(0x1F600))
+        val saved = status(save(app, f.admin, Some(f.q01), f.contest.getId, "trackLabel" -> emoji * 64, "trackShown" -> "true"))
+        val refused = save(app, f.admin, Some(f.q01), f.contest.getId, "trackLabel" -> ("y" * 65), "trackShown" -> "true")
+        val doc = Jsoup.parse(contentAsString(refused))
+        val line = doc.select("#round-form-errors li").asScala.find(_.text.contains("64"))
+        (saved === SEE_OTHER) and (label(f.q01) === Some(emoji * 64)) and (status(refused) === BAD_REQUEST) and
+          (line.map(_.text) must beSome(startWith("Track label (optional): "))) and
+          (line.map(_.select("a").attr("href")) must beSome("#trackLabel_field")) and
+          (doc.getElementById("trackLabel_field") must not(beNull)) and (label(f.q01) === Some(emoji * 64))
       }
     }
 
@@ -288,9 +304,13 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         val orphan = roundDao.create(Round(None, 5, Some("Orphan"), f.contest.getId, previous = Some("987654")))
         val next = roundDao.create(Round(None, 6, Some("Orphan 2"), f.contest.getId, previous = Some(orphan.getId.toString)))
+        // one of two previous rounds gone: its track comes from the other, so it starts none of its own
+        val half = roundDao.create(Round(None, 7, Some("Half"), f.contest.getId, previous = Some(s"${f.q00.getId},987653")))
         val doc = page(app, f.admin, s"/admin/rounds?contestId=${f.contest.getId}")
         (doc.select(s".wlx-round-missing-previous[data-round=${orphan.getId}]").text must
-          contain("Previous round 987654 no longer exists")) and
+          contain("Previous round 987654 no longer exists: this round starts a track of its own.")) and
+          (doc.select(s".wlx-round-missing-previous[data-round=${half.getId}]").text ===
+            "Previous round 987653 no longer exists: it is left out when this round's track is chosen.") and
           (rowChips(doc).get("Orphan") must beNone) and (rowChips(doc).get("Orphan 2") === Some("Orphan"))
       }
     }

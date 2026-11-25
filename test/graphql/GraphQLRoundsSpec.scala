@@ -138,9 +138,9 @@ class GraphQLRoundsSpec extends PlaySpecification with PlayTestDb {
   /** `field` is null with one error of `code`, whose reference is on exactly one `security.authz` line. */
   private def deniedAs(field: String, code: String)(result: => Future[Result]) = {
     val (r, lines) = withLog("security.authz")(result)
-    (data(r, field) === JsNull) and (codes(r) === Seq(code)) and
-      (lines.filter(_.contains(s"ref=${reference(r)}")) must haveSize(1)) and
-      (lines.head must startWith("WARN"))
+    val withRef = lines.filter(_.contains(s"ref=${reference(r)}"))
+    (data(r, field) === JsNull) and (codes(r) === Seq(code)) and (withRef must haveSize(1)) and
+      (withRef.head must startWith("WARN"))
   }
 
   /** `field` is null with `NOT_FOUND`, a reference, and no denial logged (a missing resource). */
@@ -517,27 +517,41 @@ class GraphQLRoundsSpec extends PlaySpecification with PlayTestDb {
         pageIdsOf(page1) === before.take(4)
         DB.autoCommit(implicit s =>
           sql"UPDATE vote SET rate = -1 WHERE round_id = ${round.getId} AND page_id = ${before(3)}".update.apply())
+        // the next pages up to the last: each with a page of files and a new cursor while there are more, at most
+        // one request per file of the round and one more (a cursor that doesn't advance fails, never loops)
         def rest(after: Option[String], order: String, filter: Option[String] = None): Seq[Long] = {
+          val bound = before.size + 1
+          // fails the example here, ending the loop
+          def stop(why: String): Nothing = throw org.specs2.execute.FailureException(org.specs2.execute.Failure(why))
           var cursor = after
           val ids = Seq.newBuilder[Long]
           var more = true
+          var requests = 0
           while (more) {
+            requests += 1
+            if (requests > bound) stop(s"more than $bound requests: the cursor never reached the last page")
             val r = images(app, jurorAEmail, round.getId, order = Some(order), filter = filter, first = Some(3), after = cursor,
               query = idsQuery)
-            ids ++= pageIdsOf(r)
+            val page = pageIdsOf(r)
+            ids ++= page
             val (end, hasNext) = pageInfo(r)
+            if (hasNext && (page.isEmpty || end.isEmpty || end == cursor))
+              stop(s"a page with more after it gave no file or no new cursor (after $cursor: $page, $end)")
             cursor = end
             more = hasNext
           }
           ids.result()
         }
-        // nothing skipped; the moved file not on the next page, only again at its new place further on (a client
-        // drops a page id it already shows, as the web gallery's script does)
+        // nothing skipped; the moved file not on the next page, but again at its new place further on (a client
+        // drops a page id it already shows, as the web gallery's script does): the list as it is now, less the
+        // page's files before it
         val moved = before(3)
+        val now = wholeList(round, a, VoteFilter.All, ListOrder.ByRate)
         val continued = rest(pageInfo(page1)._1, "RATE")
-        continued.filterNot(_ == moved) === before.drop(4)
+        now.indexOf(moved) must be_>(3)
+        continued === now.filterNot(before.take(3).contains)
         continued.take(3) must not(contain(moved))
-        continued.count(_ == moved) must be_<=(1)
+        continued.count(_ == moved) === 1
 
         // the unrated tab: its first page voted, the next page starts at the next unrated file
         val unrated = wholeList(round, a, VoteFilter.Unrated, ListOrder.FileOrder)
@@ -577,8 +591,20 @@ class GraphQLRoundsSpec extends PlaySpecification with PlayTestDb {
         val list = wholeList(round, userId(jurorAEmail), VoteFilter.All, ListOrder.FileOrder).toSet
         pageIdsOf(slice).filterNot(list) must beEmpty
         pageIdsOf(images(app, jurorAEmail, round.getId, first = Some(0), query = idsQuery)) must haveSize(1)
-        val big = images(app, jurorAEmail, round.getId, first = Some(1000), query = idsQuery)
-        (pageIdsOf(big).size, pageInfo(big)._2) === ((13, false))
+        // more files than the cap: a page asked of 1000 is 200, with more after it, the rest on the next
+        val juror = User.findByEmail(jurorAEmail).head
+        val large = Round.create(Round(None, 6, Some("large"), 10, rates = Round.ratesById(5), active = true))
+        large.addUsers(Seq(RoundUser(large.getId, juror.getId, "jury", active = true)))
+        val total = RoundQueries.MaxImagePage + 5
+        val files = (1 to total).map(i => Image(5000L + i, s"File:L$i.jpg", None, None, 800, 600, Some(f"80-361-$i%04d")))
+        imageDao.batchInsert(files)
+        selectionDao.batchInsert(files.map(image => Vote(image, juror, large, 0)))
+        val big = images(app, jurorAEmail, large.getId, first = Some(1000), query = idsQuery)
+        val next = images(app, jurorAEmail, large.getId, first = Some(1000), after = pageInfo(big)._1, query = idsQuery)
+        (RoundQueries.MaxImagePage === 200) and (GraphQLSchema.MaxPageSize === 200) and
+          ((pageIdsOf(big).size, pageInfo(big)._2) === ((200, true))) and
+          ((pageIdsOf(next).size, pageInfo(next)._2) === ((5, false))) and
+          ((pageIdsOf(big) ++ pageIdsOf(next)).distinct.size === total)
       }
     }
 

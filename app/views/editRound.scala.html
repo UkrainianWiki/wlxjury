@@ -157,11 +157,14 @@
 
                     @* the round's track label (round lineage decision 4, slice A): empty is the automatic
                        track; any time, also for an existing round (Round.setTrack); the contest's labels
-                       and Main offered as they are spelled, since identical labels share a track *@
+                       and Main offered as they are spelled, since identical labels share a track. No native
+                       maxlength (false: not the one its maxLength constraint would add): it counts UTF-16 units,
+                       so an emoji would count twice; the form refuses more than Round.TrackMaxLength code points,
+                       its error at the field and at the top *@
                     @bs.text(trackField, Symbol("_label") -> Messages("round.track.label"),
                         Symbol("_help") -> (Messages("round.track.help", Messages("round.track.main")) +
                             automaticTrack.fold("")(t => " " + Messages("round.track.automatic", t))),
-                        Symbol("maxlength") -> Round.TrackMaxLength, Symbol("list") -> "round-track-labels",
+                        Symbol("maxlength") -> false, Symbol("list") -> "round-track-labels",
                         Symbol("autocomplete") -> "off")
                     <datalist id="round-track-labels">
                         <option value="@Messages("round.track.main")"></option>
