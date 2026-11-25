@@ -46,8 +46,9 @@ Changes made available before version 26.11, by who notices them.
   contest's files](admin-guide.md#a-import-files).
 - **A double submit no longer creates two rounds.**
 - **New filters on the round form:** special nominations, Wiki Loves Earth regions, and category
-  operations (**In category A**, **Not in category A**, **In both A and B**, **In A or B (or
-  both)**, **In A but not B**). See [Choosing the round's files](admin-guide.md#a-choose-files).
+  filters: only the files in a category, leaving a category's files out, and, under **More
+  category options**, files in both or in either of two categories. See [Choosing the round's
+  files](admin-guide.md#a-choose-files).
 - **Add files to a round from a pasted list.** See [Adding files by
   name](admin-guide.md#a-add-files).
 - **Conflicts of interest:** a round can leave out files by the contest's members, with a count
@@ -129,6 +130,9 @@ Changes made available before version 26.11, by who notices them.
   example](admin-guide.md#a-leave-out-rounds).
 - **Criteria chosen from a shared catalogue** on the round form. See [Kinds of
   rounds](admin-guide.md#a-round-kinds).
+- **The category filter is easier to find** on the round form: two boxes, **Only files in
+  category** and **Leave out files in category**; combining two categories is under **More
+  category options**. See [Choosing the round's files](admin-guide.md#a-choose-files).
 - **Clearer rating type names** on the round form and the rounds list: **+/-** is now
   **Yes/No**, and **1-0 rating** (a comments-only round) is now **Comments only**. See [Kinds of
   rounds](admin-guide.md#a-round-kinds).

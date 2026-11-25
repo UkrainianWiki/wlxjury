@@ -2,7 +2,6 @@ package org.intracer.wmua
 
 sealed abstract class CategoryOperation(
     val value: String,
-    val labelKey: String,
     val requiresFirst: Boolean = true,
     val requiresSecond: Boolean = false
 ) {
@@ -11,12 +10,12 @@ sealed abstract class CategoryOperation(
 }
 
 object CategoryOperation {
-  case object Unrestricted extends CategoryOperation("none", "category.none", requiresFirst = false)
-  case object Include extends CategoryOperation("include", "category.include")
-  case object Exclude extends CategoryOperation("exclude", "category.exclude")
-  case object And extends CategoryOperation("and", "category.and", requiresSecond = true)
-  case object Union extends CategoryOperation("or", "category.union", requiresSecond = true)
-  case object Minus extends CategoryOperation("minus", "category.minus", requiresSecond = true)
+  case object Unrestricted extends CategoryOperation("none", requiresFirst = false)
+  case object Include extends CategoryOperation("include")
+  case object Exclude extends CategoryOperation("exclude")
+  case object And extends CategoryOperation("and", requiresSecond = true)
+  case object Union extends CategoryOperation("or", requiresSecond = true)
+  case object Minus extends CategoryOperation("minus", requiresSecond = true)
 
   // A case object's constructor defaults can initialize this companion first.
   // Wait until that object has finished before retaining its instance in a table.
@@ -69,5 +68,63 @@ object CategoryRule {
         case _ => CategoryRule(Unrestricted, None, None)
       }
     }
+  }
+}
+
+/** What the round form's second category box does, chosen under "More category options": leave
+  * its files out (the default), files in both categories, or files in either. `secondLabelKey` is
+  * that box's label with the choice.
+  */
+sealed abstract class CategoryCombine(val value: String, val labelKey: String, val secondLabelKey: String) {
+  def operation: CategoryOperation
+}
+
+object CategoryCombine {
+  case object LeaveOut extends CategoryCombine("minus", "category.combine.minus", "category.leave.out") {
+    def operation: CategoryOperation = CategoryOperation.Minus
+  }
+  case object InBoth extends CategoryCombine("and", "category.combine.and", "category.also.in") {
+    def operation: CategoryOperation = CategoryOperation.And
+  }
+  case object InEither extends CategoryCombine("or", "category.combine.or", "category.or.in") {
+    def operation: CategoryOperation = CategoryOperation.Union
+  }
+
+  lazy val values: Seq[CategoryCombine] = Seq(LeaveOut, InBoth, InEither)
+  def Default: CategoryCombine = LeaveOut
+  def parse(value: String): Option[CategoryCombine] = values.find(_.value == value)
+}
+
+/** The round form's two category boxes: "Only files in category" (`first`) and the second box,
+  * which `combine` gives its meaning. Every [[CategoryRule]] has its boxes ([[CategoryBoxes.ofRule]])
+  * and they give it back ([[rule]]): an exclusion's one category, stored as the rule's first
+  * operand, is in the second box. Operands are cleaned titles (none empty).
+  */
+case class CategoryBoxes(first: Option[String], second: Option[String], combine: CategoryCombine) {
+  import CategoryOperation._
+
+  /** No filter with both boxes empty, whatever the choice. With "in both" or "in either", that
+    * operation, which needs both boxes (the rule's validation says which is missing); otherwise
+    * only the first category, without the second's files, or the first minus the second.
+    */
+  def rule: CategoryRule = (first, second) match {
+    case (None, None)                             => CategoryRule(Unrestricted, None, None)
+    case _ if combine != CategoryCombine.LeaveOut => CategoryRule(combine.operation, first, second)
+    case (Some(_), None)                          => CategoryRule(Include, first, None)
+    case (None, Some(_))                          => CategoryRule(Exclude, second, None)
+    case (Some(_), Some(_))                       => CategoryRule(Minus, first, second)
+  }
+}
+
+object CategoryBoxes {
+  import CategoryOperation._
+
+  def ofRule(rule: CategoryRule): CategoryBoxes = rule.operation match {
+    case Unrestricted => CategoryBoxes(None, None, CategoryCombine.LeaveOut)
+    case Include      => CategoryBoxes(rule.first, None, CategoryCombine.LeaveOut)
+    case Exclude      => CategoryBoxes(None, rule.first, CategoryCombine.LeaveOut)
+    case Minus        => CategoryBoxes(rule.first, rule.second, CategoryCombine.LeaveOut)
+    case And          => CategoryBoxes(rule.first, rule.second, CategoryCombine.InBoth)
+    case Union        => CategoryBoxes(rule.first, rule.second, CategoryCombine.InEither)
   }
 }

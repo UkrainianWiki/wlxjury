@@ -30,9 +30,9 @@ Ukrainian, Russian and French.
 
 - Contests are built from Commons categories, templates or lists of files.
 - A round is **yes/no** (select or reject) or **rated** (1 to N stars, also by several
-  criteria). A round can be limited by region, category operations (in A, not in A, both, either,
-  A but not B), monument, size, media type or special nomination, and can leave out files by the
-  contest's own members (conflicts of interest).
+  criteria). A round can be limited by region, category (only files in a category, leave out a
+  category's files, or files in both or either of two), monument, size, media type or special
+  nomination, and can leave out files by the contest's own members (conflicts of interest).
 - Rounds are prepared in the background, with progress, Cancel and Retry; **Distribute new
   files** adds files that arrived later. A round stays hidden from jurors until it is ready.
 - Galleries, a large view with keyboard voting, comments, round statistics and results.

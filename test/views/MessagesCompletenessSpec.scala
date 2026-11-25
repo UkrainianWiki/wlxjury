@@ -2,7 +2,7 @@ package views
 
 import controllers.{ListOrder, LoginController, Theme}
 import db.scalikejdbc.{MediaType, User}
-import org.intracer.wmua.{BinaryOrder, CategoryOperation, Criterion}
+import org.intracer.wmua.{BinaryOrder, CategoryCombine, Criterion}
 import org.specs2.mutable.Specification
 import play.api.i18n.Messages.{parse, UrlMessageSource}
 
@@ -136,7 +136,7 @@ class MessagesCompletenessSpec extends Specification {
     User.FORM_ROLES.map("role." + _),                           // every role name, as Messages("role." + r)
     Seq("role." + User.ROOT_ROLE),                              // editUser offers root to root
     MediaType.mediaTypes,
-    CategoryOperation.values.map(_.labelKey),
+    CategoryCombine.values.flatMap(c => Seq(c.labelKey, c.secondLabelKey)), // imageFiltering: the category choice
     BinaryOrder.all.map(_.messageKey),                          // the navbar's and round form's binary orders
     Seq(BinaryOrder.LegacyMessageKey),                          // the round form's top-N of a round from before V72
     LoginController.ErrorPageKeys.toSeq,

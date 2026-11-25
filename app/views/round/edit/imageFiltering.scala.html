@@ -1,7 +1,7 @@
 @import db.scalikejdbc.Round
 @import db.scalikejdbc.User
 @import db.scalikejdbc.MediaType
-@import org.intracer.wmua.{BinaryOrder, CategoryOperation}
+@import org.intracer.wmua.{BinaryOrder, CategoryCombine}
 @import org.scalawiki.wlx.dto.SpecialNomination
 @(
         editRoundForm: Form[controllers.EditRound],
@@ -16,7 +16,11 @@
 @* a top-N's order picks files only from a yes/no previous round: offered until previous rounds
    are chosen, then only with a yes/no one *@
 @topOrderApplies = @{ prevIds.isEmpty || rounds.exists(r => r.isBinary && r.id.exists(id => prevIds.contains(id.toString))) }
-@snippets.collapsible("media.filtering", "headingImageFiltering", "collapseImageFiltering") {
+@* the category boxes as shown (a round's rule, or a refused form's boxes): the section opens by
+   itself when either has a category *@
+@categoryView = @{ controllers.EditRound.categoryBoxes(editRoundForm) }
+@offsetCol = @{ implicitLayout.horizontal.map(_.offsetFieldCol).getOrElse("") }
+@snippets.collapsible("media.filtering", "headingImageFiltering", "collapseImageFiltering", open = categoryView.hasCategory) {
     @if(rounds.nonEmpty) {
         @* Use `disabled` rather than `readonly` for the multi-selects: a readonly
            select (play-bootstrap's then, bs.select's now) adds a live hidden <input name="previousRound[]"> that, for a
@@ -132,18 +136,20 @@
         Symbol("readonly") -> noEdit
     )
 
-    @defining(controllers.EditRound.categoryDisplay(editRoundForm)) { categoryForm =>
-    @bs.select(
-        categoryForm("categoryClause"),
-        CategoryOperation.values.map(operation => (operation.formValue, Messages(operation.labelKey))),
-        Symbol("_label") -> Messages("category.operation"),
-        Symbol("readonly") -> noEdit
-    )
-
+    @* The category filter: two boxes, "Only files in category" and the second box, whose meaning
+       the choice under "More category options" gives (leave its files out, the default; in both;
+       in either), its label following it (category-filter.js; without the script the server reads
+       the choice all the same). A round's stored rule is shown in them (EditRound.categoryBoxes):
+       an exclusion's category in the second box. On a round that can't be edited the boxes are
+       readonly and the choice disabled, a hidden input submitting it, as a readonly select's.
+       More is open for a choice other than the default, and for an error of the choice or of an
+       older client's operation, shown in it *@
+    @defining(categoryView) { view =>
     <div id="category-first">
     @bs.text(
-        categoryForm("source"),
-        Symbol("_label") -> Messages("category.first"),
+        view.form("source"),
+        Symbol("_label") -> Messages("category.only"),
+        Symbol("_help") -> Messages("category.only.help"),
         Symbol("data-category-suggest") -> "category",
         Symbol("readonly") -> noEdit
     )
@@ -151,11 +157,32 @@
 
     <div id="category-second">
     @bs.text(
-        categoryForm("excludeCategory"),
-        Symbol("_label") -> Messages("category.second"),
+        view.form("excludeCategory"),
+        Symbol("_label") -> Messages(view.combine.secondLabelKey),
         Symbol("data-category-suggest") -> "category",
         Symbol("readonly") -> noEdit
     )
+    </div>
+
+    <div class="row mb-3" id="category-more_field">
+        <div class="@offsetCol">
+            <details id="category-more"@if(view.combine != CategoryCombine.Default || view.choiceErrors.nonEmpty) { open}>
+                <summary>@Messages("category.more")</summary>
+                <fieldset class="mt-2" id="category-combine">
+                    <legend class="form-label fs-6 mb-1">@Messages("category.combine")</legend>
+                    @for(choice <- CategoryCombine.values) {
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="categoryCombine" id="categoryCombine-@choice.value" value="@choice.value" data-second-label="@Messages(choice.secondLabelKey)"@if(choice == view.combine) { checked}@if(noEdit) { disabled}>
+                        <label class="form-check-label" for="categoryCombine-@choice.value">@Messages(choice.labelKey)</label>
+                    </div>
+                    }
+                    @if(noEdit) {<input type="hidden" name="categoryCombine" value="@view.combine.value">}
+                    @for(error <- view.choiceErrors) {
+                    <div class="text-danger small">@Messages(error.message, error.args: _*)</div>
+                    }
+                </fieldset>
+            </details>
+        </div>
     </div>
     }
 
