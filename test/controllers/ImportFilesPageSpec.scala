@@ -66,7 +66,9 @@ class ImportFilesPageSpec extends PlaySpecification with PlayTestDb {
         flash(result).get(ImageController.ListNotCopiedFlash) must beSome("1")
         contestDao.findById(contest.getId).get.categoryId must not(beSome(shared))
         // a second import has its own list to add to: nothing to say
-        flash(route(app, importFiles(contest.getId, admin)).get).get(ImageController.ListNotCopiedFlash) must beNone
+        val second = flash(route(app, importFiles(contest.getId, admin)).get)
+        second.get("error") must beNone // started, not refused as running
+        second.get(ImageController.ListNotCopiedFlash) must beNone
 
         val withNotice = FakeRequest(GET, s"/contest/${contest.getId}/images").withSession(Secured.UserName -> admin.email)
           .withFlash(ImageController.ListNotCopiedFlash -> "1").withCSRFToken

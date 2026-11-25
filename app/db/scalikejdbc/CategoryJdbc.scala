@@ -61,24 +61,24 @@ object CategoryLinkJdbc extends SQLSyntaxSupport[CategoryLink] {
         .apply()
 
   /** Whether contest `contestId`'s own list may be started from category `id` ([[copyIgnore]]):
-    * it exists, has a title ([[CategoryJdbc.isBlank]]) and no other contest has it. Another
-    * contest has it as its category, or as its source (`images`, the title with or without
-    * `Category:`), or by V24's name for it ("Images from <name> <year> in <country>"): a contest
-    * that left a shared row for its own still has its source. A blank one holds the files of every
-    * unnamed import; another contest's holds its files too (a source set by title once gave a 2026
-    * contest a 2020 category).
+    * it exists, has a title ([[CategoryJdbc.isBlank]]) and no other contest has it, as the old
+    * code would have given it: as its category; as its source (`images`, which set the category of
+    * that very title, underscores as spaces); or by V24's name for it ("Images from <name> <year>
+    * in <country>", the title with or without a `Category:` prefix, any case). A contest that left
+    * a shared row for its own still has its source. A blank one holds the files of every unnamed
+    * import; another contest's holds its files too (a source set by title once gave a 2026 contest
+    * a 2020 category).
     */
   def mayCopyFrom(id: Long, contestId: Long)(implicit session: DBSession): Boolean =
     sql"""SELECT c.title, (
             SELECT COUNT(*) FROM contest_jury cj
             WHERE cj.id <> $contestId
               AND (cj.category_id = c.id
-                OR REPLACE(TRIM(LEADING 'Category:' FROM TRIM(cj.images)), '_', ' ') = t.name
-                OR CONCAT('Images from ', cj.name, ' ', cj.year, ' in ', cj.country) = t.name))
-          FROM category c
-          JOIN (SELECT REPLACE(TRIM(LEADING 'Category:' FROM TRIM(title)), '_', ' ') AS name
-                FROM category WHERE id = $id) t
-          WHERE c.id = $id"""
+                OR REPLACE(TRIM(cj.images), '_', ' ') = REPLACE(TRIM(c.title), '_', ' ')
+                OR CONCAT('Images from ', cj.name, ' ', cj.year, ' in ', cj.country) =
+                  REPLACE(IF(LOWER(LEFT(TRIM(c.title), 9)) = 'category:', SUBSTRING(TRIM(c.title), 10), TRIM(c.title)),
+                    '_', ' ')))
+          FROM category c WHERE c.id = $id"""
       .map(rs => (rs.stringOpt(1), rs.long(2))).single.apply()
       .exists { case (title, others) => !CategoryJdbc.isBlank(title.orNull) && others == 0 }
 

@@ -17,6 +17,11 @@ import org.specs2.mutable.Specification
   *  - `contest_jury.category_id` is written only by `ContestJuryJdbc` (its `create`, called with
   *    none, and `setCategory`), and `setCategory` is called only by `ImageService` (the import);
   *  - rows of `category` are inserted only by `CategoryJdbc`.
+  *
+  * Every reference to `findOrInsert` and `setCategory` is a call (the 2017 code passed
+  * `CategoryJdbc.findOrInsert` as a method value, `images.map(CategoryJdbc.findOrInsert)`). Known
+  * limit: a text scan can't tell whose own title it is, so
+  * `findOrInsert(ImageService.ownCategory(other.getId))` would still pass.
   */
 class CategoryOwnershipGuardSpec extends Specification {
 
@@ -24,6 +29,12 @@ class CategoryOwnershipGuardSpec extends Specification {
 
   private def counts(pattern: scala.util.matching.Regex): Map[String, Int] =
     SourceScan.hits(sources, pattern).map { case (file, lines) => file.replaceFirst("^.*?(app/)", "$1") -> lines.size }
+
+  /** References to `name` other than its definition that are not calls: a method value
+    * (`images.map(CategoryJdbc.findOrInsert)`), an eta-expansion; by file and line.
+    */
+  private def uncalled(name: String): Map[String, Seq[Int]] =
+    SourceScan.hits(sources, s"""(?<!def )\\b$name\\b(?!\\s*\\()""".r)
 
   /** The text of each call of `name` (not its definition): the file and the call's arguments. */
   private def calls(name: String): Seq[(String, String)] =
@@ -35,6 +46,7 @@ class CategoryOwnershipGuardSpec extends Specification {
   "a contest's category" should {
 
     "be found or added only by a contest's own title" in {
+      uncalled("findOrInsert") must beEmpty
       val found = calls("findOrInsert")
       found.map(_._1) === Seq("app/services/ImageService.scala")
       forall(found) { case (_, args) => args must startWith("ImageService.ownCategory(") }
@@ -47,6 +59,7 @@ class CategoryOwnershipGuardSpec extends Specification {
         Map("app/db/scalikejdbc/ContestJuryJdbc.scala" -> 1, "app/db/scalikejdbc/CategoryJdbc.scala" -> 1)
       counts("""(?is)UPDATE\s+contest_jury\b[^;"]{0,400}?\bcategory_id\s*=""".r) must beEmpty
       counts("""(?is)INSERT\s+(IGNORE\s+)?INTO\s+contest_jury\b[^;"]{0,400}?\bcategory_id\b""".r) must beEmpty
+      uncalled("setCategory") must beEmpty
       calls("setCategory").map(_._1) === Seq("app/services/ImageService.scala")
     }
 

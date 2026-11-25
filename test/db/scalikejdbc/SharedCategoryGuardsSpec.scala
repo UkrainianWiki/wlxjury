@@ -109,17 +109,23 @@ class SharedCategoryGuardsSpec extends Specification with TestDb with BeforeAll 
       members(ownB) must beEmpty
     }
 
-    // the category "Images from WLE 2020 in Malaysia", and what another contest has of it
+    // a category (V24's title, or a source's), and what another contest has of it: as the old code
+    // would have given it the category (as its category, its source's very title, V24's name)
+    val v24 = "Images from WLE 2020 in Malaysia"
+    val source = "Category:Images from WLE 2020 in Malaysia"
     Fragment.foreach(Seq(
-      ("as its category", (c: Long) => contestDao.setCategory(c, categoryOf("Images from WLE 2020 in Malaysia")), false),
-      ("as its source", (c: Long) => contestDao.setImagesSource(c, Some("Category:Images from WLE 2020 in Malaysia")), false),
-      ("as its source, without Category: and with underscores",
-        (c: Long) => contestDao.setImagesSource(c, Some("Images_from_WLE_2020_in_Malaysia")), false),
-      ("by V24's name for it", (_: Long) => (), false),
-      ("not at all: only another source", (c: Long) => contestDao.setImagesSource(c, Some("Category:Other")), true)
-    )) { case (how, give, copies) =>
+      ("as its category", v24, (c: Long) => contestDao.setCategory(c, categoryOf(v24)), false),
+      ("as its source", source, (c: Long) => contestDao.setImagesSource(c, Some(source)), false),
+      ("as its source, with underscores", source,
+        (c: Long) => contestDao.setImagesSource(c, Some("Category:Images_from_WLE_2020_in_Malaysia")), false),
+      ("by V24's name for it", v24, (_: Long) => (), false),
+      ("by V24's name for it, the title with a lowercase category: prefix", "category:" + v24, (_: Long) => (), false),
+      // a legacy contest on its unshared V24 row: the other's source set a category of its own title
+      ("only as a source naming the V24 row, with Category:", v24, (c: Long) => contestDao.setImagesSource(c, Some(source)), true),
+      ("not at all: only another source", v24, (c: Long) => contestDao.setImagesSource(c, Some("Category:Other")), true)
+    )) { case (how, title, give, copies) =>
       s"${if (copies) "copy" else "copy nothing"} when another contest has the category ${how}" in {
-        val category = categoryOf("Images from WLE 2020 in Malaysia")
+        val category = categoryOf(title)
         val contest = contestDao.create(None, "WLE", 2026, "Malaysia", categoryId = Some(category))
         val (name, year) = if (how.startsWith("by V24")) ("WLE", 2020) else ("WLM", 2019)
         val other = contestDao.create(None, name, year, "Malaysia")

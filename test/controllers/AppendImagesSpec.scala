@@ -58,9 +58,10 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
     JobJdbc.findById(job.id).get
   }
 
-  /** Whether an import now would leave the contest's list behind (ImageService.leavesListBehind). */
-  def leavesListBehind(contest: ContestJury): Boolean =
-    new TestImportServices(new FakeCommonsSource(Nil)).imageService.leavesListBehind(contest.getId)
+  /** Imports `images` from a pasted list: what became of the contest's previous list. */
+  def importListed(images: Seq[Image], contest: ContestJury): ImageService.ListCopy =
+    new TestImportServices(new FakeCommonsSource(images.map(file)), Some(50)).imageService
+      .importFilesWithList(contest, category, images.map(_.title).mkString(System.lineSeparator))._2
 
   "importFiles" should {
 
@@ -154,9 +155,8 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       imageDao.batchInsert(images)
       db.scalikejdbc.CategoryLinkJdbc.addToCategory(shared, images)
       stored(contest) === images
-      leavesListBehind(contest) must beFalse
 
-      importFiles(Seq(listed), contest, titles = listed.title)
+      importListed(Seq(listed), contest) === ImageService.ListCopy.Copied(CategoryJdbc.findOrInsert(ImageService.ownCategory(contest.getId)))
       stored(contest) === images :+ listed
       imageDao.findByCategory(shared).map(_.pageId).sorted === images.map(_.pageId) // left as it was
     }
@@ -176,11 +176,10 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       contestDao.setCategory(c.getId, shared)
 
       forall(Seq(a, b)) { contest =>
-        leavesListBehind(contest) must beTrue
-        importFiles(Seq(listed), contest, titles = listed.title)
+        importListed(Seq(listed), contest) === ImageService.ListCopy.NotCopied
         stored(contest) === Seq(listed) // only what it imports: the old list is not copied
         contestDao.findById(contest.getId).get.categoryId === Some(CategoryJdbc.findOrInsert(ImageService.ownCategory(contest.getId)))
-        leavesListBehind(contest) must beFalse
+        importListed(Seq(listed), contest) === ImageService.ListCopy.Own // its own list now
       }
       // the old rows are left as they were, and so is the contest still on the shared one
       Seq(blank, shared).map(imageDao.findByCategory(_).map(_.pageId).sorted) === Seq.fill(2)(images.map(_.pageId))

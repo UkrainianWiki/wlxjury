@@ -3,7 +3,7 @@ package services
 import db.scalikejdbc.{CategoryJdbc, CategoryLinkJdbc, ContestJuryJdbc, ImageJdbc, RegionCountCache}
 import org.intracer.wmua.{ContestJury, Image}
 import play.api.Logging
-import scalikejdbc.{DB, DBSession, scalikejdbcSQLInterpolationImplicitDef}
+import scalikejdbc.{DB, DBSession}
 import services.imports.ImageImportHandler.Mode
 import services.imports.{ImageImportHandler, ImportParams, ImportSource, MonumentListImportHandler}
 import services.jobs.{Job, JobJdbc, JobScheduler}
@@ -30,9 +30,16 @@ class ImageService @Inject() (
     * Another contest with the same source, or a list, never adds to it.
     * @return the new job (Right), or the contest's import that is running already (Left)
     */
-  def importFiles(contest: ContestJury, source: String, titles: String, createdBy: Option[Long] = None): Either[Job, Job] = {
+  def importFiles(contest: ContestJury, source: String, titles: String, createdBy: Option[Long] = None): Either[Job, Job] =
+    importFilesWithList(contest, source, titles, createdBy)._1
+
+  /** [[importFiles]], and what became of the contest's previous list of files, as decided in the
+    * import's transaction ([[ImageService.ListCopy]]): the files page says when it was not copied.
+    */
+  def importFilesWithList(contest: ContestJury, source: String, titles: String,
+      createdBy: Option[Long] = None): (Either[Job, Job], ImageService.ListCopy) = {
     val listed = ImportSource.titles(titles)
-    var copiedTo = Option.empty[Long]
+    var list: ImageService.ListCopy = ImageService.ListCopy.Own
     val started = start { implicit session =>
       val categoryId = CategoryJdbc.findOrInsert(ImageService.ownCategory(contest.getId))
       val params =
@@ -43,10 +50,13 @@ class ImageService @Inject() (
         // A contest that has none yet starts its own with the files it has: those of its
         // previous category, unless that is blank-titled or another contest's too (its files
         // are not all this contest's; CategoryLinkJdbc.mayCopyFrom): then its own list starts
-        // empty, and holds what this import adds ([[leavesListBehind]] says so beforehand).
+        // empty, and holds what this import adds.
         current.flatMap(_.categoryId).filter(_ != categoryId).foreach { from =>
-          if (CategoryLinkJdbc.copyIgnore(from, categoryId, contest.getId)) copiedTo = Some(categoryId)
-          else logger.warn(s"import_list_not_copied contestId=${contest.getId} fromCategoryId=$from")
+          if (CategoryLinkJdbc.copyIgnore(from, categoryId, contest.getId)) list = ImageService.ListCopy.Copied(categoryId)
+          else {
+            list = ImageService.ListCopy.NotCopied
+            logger.warn(s"import_list_not_copied contestId=${contest.getId} fromCategoryId=$from")
+          }
         }
         val images = if (listed.isEmpty) Some(source) else current.flatMap(_.images)
         ContestJuryJdbc.setImagesSource(contest.getId, images)
@@ -54,20 +64,11 @@ class ImageService @Inject() (
       }
       job
     }
-    copiedTo.foreach(RegionCountCache.invalidateCategory(_)) // its files changed, now committed
-    started
-  }
-
-  /** Whether an import into the contest now would leave its current list of files behind: its
-    * category is not its own and may not be copied (blank-titled, or another contest's too;
-    * CategoryLinkJdbc.mayCopyFrom), so its own list would hold only what it imports from then on.
-    * Its rounds keep their files. Asked before [[importFiles]], which changes the category.
-    */
-  def leavesListBehind(contestId: Long): Boolean = DB.readOnly { implicit session =>
-    ContestJuryJdbc.findById(contestId).flatMap(_.categoryId).exists { id =>
-      val title = sql"SELECT title FROM category WHERE id = $id".map(_.stringOpt(1)).single.apply().flatten
-      !title.contains(ImageService.ownCategory(contestId)) && !CategoryLinkJdbc.mayCopyFrom(id, contestId)
+    list match { // its files changed, now committed
+      case ImageService.ListCopy.Copied(to) => RegionCountCache.invalidateCategory(to)
+      case _                                =>
     }
+    (started, if (started.isRight) list else ImageService.ListCopy.Own)
   }
 
   /** Starts, for a contest with a monument id template (its own or its campaign's,
@@ -106,6 +107,23 @@ class ImageService @Inject() (
 }
 
 object ImageService {
+
+  /** What an import did with the contest's previous list of files ([[ImageService.importFilesWithList]]). */
+  sealed trait ListCopy
+
+  object ListCopy {
+
+    /** Nothing to copy: the contest had its own list, or none (or no import was started). */
+    case object Own extends ListCopy
+
+    /** Copied into its own category `to`. */
+    final case class Copied(to: Long) extends ListCopy
+
+    /** Not copied: the previous category was blank-titled or also another contest's
+      * (CategoryLinkJdbc.mayCopyFrom); its own list holds only what it imports from then on.
+      */
+    case object NotCopied extends ListCopy
+  }
 
   /** The title of the contest's own category: the files of all its imports, its only category
     * (security.CategoryOwnershipGuardSpec). A `#` can't be in a page title, so no Commons source

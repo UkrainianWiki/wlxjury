@@ -21,7 +21,7 @@ Deploy dates come from production's migration history, as described at the end.
 **Fixes**
 
 - By-rate pages no longer scroll sideways (#165).
-- An import no longer gives a contest a file list shared with other contests: setting a source never looks a category up by title, a blank category title is refused, and a shared or untitled old list is not copied into the contest's own (the files page says so).
+- An import no longer gives a contest a list of files shared with other contests; if its earlier list was shared, the files page says it was not copied.
 
 **Security**
 

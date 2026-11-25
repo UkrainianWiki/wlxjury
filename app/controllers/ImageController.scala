@@ -167,12 +167,12 @@ class ImageController @Inject() (
   private def startImport(contest: ContestJury, source: String, list: String, action: String, user: User)(implicit
       request: RequestHeader): Result = {
     // the import runs in the background: the files page shows its progress
-    // asked before the import, which gives the contest its own list
-    val leavesList = action == "import.files" && imageService.leavesListBehind(contest.getId)
-    val jobs =
-      if (action == "import.files") Seq(imageService.importFiles(contest, source, list, user.id))
-      else if (action == "update.monuments") imageService.updateMonuments(contest, source, user.id)
-      else Nil
+    val (jobs, listCopy) =
+      if (action == "import.files") {
+        val (job, copy) = imageService.importFilesWithList(contest, source, list, user.id)
+        (Seq(job), copy)
+      } else if (action == "update.monuments") (imageService.updateMonuments(contest, source, user.id), ImageService.ListCopy.Own)
+      else (Nil, ImageService.ListCopy.Own)
     // the source's identity warning (DG10) with the queued job: also for a send without the script
     val warning = Option.when(list.trim.isEmpty || action == "update.monuments")(source)
       .flatMap(s => ContestHealth.sourceWarning(contest, s.take(ImageController.MaxSourceLength)))
@@ -180,9 +180,10 @@ class ImageController @Inject() (
     val back = Redirect(routes.ImageController.images(contest.getId))
     jobs.collect { case Left(running) => running } match {
       case Nil =>
-        // the old list was blank-titled or another contest's too: not copied (ImageService.importFiles)
-        val notCopied = Option.when(leavesList)(ImageController.ListNotCopiedFlash -> "1")
-        back.flashing((warning.map(ImageController.SourceWarningFlash -> _) ++ notCopied).toSeq: _*)
+        // the old list was blank-titled or another contest's too: not copied, as the import decided
+        val notCopied = Option.when(listCopy == ImageService.ListCopy.NotCopied)(ImageController.ListNotCopiedFlash -> "1")
+        val pairs = (warning.map(ImageController.SourceWarningFlash -> _) ++ notCopied).toSeq
+        if (pairs.isEmpty) back else back.flashing(pairs: _*)
       case running =>
         back.flashing("error" ->
           running.map(j => messagesApi.preferred(request)("import.already.running", imageService.title(j))).mkString(" "))
@@ -262,7 +263,7 @@ object ImageController {
   val SourceWarningFlash = "sourceWarning"
 
   /** The flash key of the notice that an import left the contest's previous list of files behind
-    * ([[services.ImageService.leavesListBehind]]).
+    * ([[services.ImageService.ListCopy.NotCopied]]).
     */
   val ListNotCopiedFlash = "listNotCopied"
 

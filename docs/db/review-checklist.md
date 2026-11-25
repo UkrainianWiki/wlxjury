@@ -14,7 +14,7 @@ quotes the lines they checked; each item points to its section of
 - [ ] A find-or-create by natural key has a unique key that is never blank (refused, not
   stored), and never returns a row another owner has: a contest's category is its own
   (`#contest N`), never one found by a Commons title, which once gave ten contests one row of
-  the empty title (`security.CategoryOwnershipGuardSpec`).
+  the empty title (`security.CategoryOwnershipGuardSpec`) (§2.3, §10).
 - [ ] A request value in `LIKE` has `\`, `%`, `_` escaped (§1.3).
 - [ ] `IN` lists from data are distinct, chunked, never empty; sorted if they lock (§1.4).
 - [ ] Case- or space-sensitive comparisons use `BINARY` beside the indexed one (§1.5).
@@ -44,7 +44,7 @@ quotes the lines they checked; each item points to its section of
 - [ ] A migration that builds rows from a non-unique expression (V24's category per
   `CONCAT(name, year, country)`) records in the plan a pre-deploy
   `SELECT … GROUP BY <expression> HAVING COUNT(*) > 1` result on the production copy: each
-  group it returns would become one shared row.
+  group it returns would become one shared row (§8.5).
 
 ## Performance
 
