@@ -116,6 +116,27 @@ class RoundChangesServiceSpec extends Specification with TestDb with BeforeAll w
     }
   }
 
+  "the contest's change log" should {
+
+    "take the latest of its own entries and of its rounds' each up to the limit, merged newest first, once each" in {
+      val (contest, _, admin) = setUp()
+      val ids = DB.localTx { implicit s =>
+        (1 to 60).flatMap { i =>
+          Seq(ContestChangeJdbc.create(Some(contest.getId), None, admin.getId, ContestChangeJdbc.Identity) -> false,
+            ContestChangeJdbc.create(Some(contest.getId), None, admin.getId, ContestChangeJdbc.RoundChanged,
+              detail = play.api.libs.json.Json.obj("round" -> 1, "number" -> 1)) -> true)
+        } ++ (1 to 5).map(_ => ContestChangeJdbc.create(Some(contest.getId), None, admin.getId,
+          ContestChangeJdbc.RoundChanged, detail = play.api.libs.json.Json.obj("round" -> 1, "number" -> 1)) -> true)
+      }
+      val log = ContestChangeJdbc.changeLog(contest.getId, 50)
+      val (rounds, own) = ids.partition(_._2)
+      (log.map(_.id) === log.map(_.id).distinct) and
+        (log.map(_.id) === log.map(_.id).sorted.reverse) and
+        (log.map(_.id).toSet === (own.map(_._1).sorted.takeRight(50) ++ rounds.map(_._1).sorted.takeRight(50)).toSet) and
+        (log.count(_.kind == ContestChangeJdbc.Identity) === 50)
+    }
+  }
+
   "a long text value" should {
 
     "be compared whole: a change past the stored length is logged, its lengths and hashes telling the two apart" in {

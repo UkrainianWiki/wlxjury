@@ -137,6 +137,14 @@ object ContestChangeJdbc {
   def findByBatch(batchId: Long)(implicit session: DBSession = AutoSession): Seq[ContestChange] =
     sql"SELECT $columns FROM contest_change WHERE batch_id = $batchId ORDER BY id".map(extract).list.apply()
 
+  /** A contest's change log: its latest `perList` entries of its own kinds and its latest `perList`
+    * of its rounds' ([[RoundKinds]]), merged, the newest first: many round entries never push the
+    * contest's own out.
+    */
+  def changeLog(contestId: Long, perList: Int)(implicit session: DBSession = AutoSession): Seq[ContestChange] =
+    (findByContestOf(contestId, RoundKinds, perList, except = true) ++ findByContestOf(contestId, RoundKinds, perList))
+      .sortBy(-_.id)
+
   /** A round's entries of these kinds (of [[RoundKinds]]), the newest first, at most `limit`: its
     * statistics page reads its juror entries and its settings entries each with a limit of its own.
     */

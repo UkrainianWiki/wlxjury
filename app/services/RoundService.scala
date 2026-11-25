@@ -377,14 +377,16 @@ class RoundService @Inject() (
                 topUpWaiting = true)
             else {
               // a reinstated creation's status (cancelled to draft, by createdBy) in the round's settings
-              // log (RoundChanges): read under the round's lock, before and after the queueing writes it
+              // log (RoundChanges): read under the round's lock, before and after the queueing writes it,
+              // for any creation not completed (a cancel committed after the read above included); an
+              // unchanged status writes no entry
               var before: Option[RoundChanges.Snapshot] = None
               val queued = enqueueOrFail(round, completingCreation = round.distributing, createdBy, titles,
                 listOnly = titles.nonEmpty && !newFiles && !round.distributing,
                 distributeAfter = distributeAfter, fromReview = round.inReview,
                 // the waiting files are topped up by the distribute after the fill: only a distributed round's
                 topUpWaiting = topUpWaiting && distributeAfter && !round.distributing && round.distribution > 0,
-                underLocks = s => before = if (reinstating) RoundChanges.snapshot(roundId)(s).map(_._2) else None)
+                underLocks = s => before = if (round.distributing) RoundChanges.snapshot(roundId)(s).map(_._2) else None)
               for (b <- before; (r, after) <- RoundChanges.snapshot(roundId))
                 RoundChanges.record(ContestChangeJdbc.RoundChanged, Some(b), r, after, createdBy, RoundChanges.Path.Reinstate)
               queued

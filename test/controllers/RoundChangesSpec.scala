@@ -186,13 +186,14 @@ class RoundChangesSpec extends PlaySpecification with PlayTestDb {
             "status" -> play.api.libs.json.Json.obj("from" -> "active", "to" -> "paused"),
             "rates" -> play.api.libs.json.Json.obj("from" -> "Yes/No", "to" -> "1-5 rating"),
             "averageRule" -> play.api.libs.json.Json.obj("from" -> "rated", "to" -> "sum"),
-            "mediaType" -> play.api.libs.json.Json.obj("from" -> "unknown-code", "to" -> "video"))),
+            // a code that isn't a media type, though a message key: shown as it is
+            "mediaType" -> play.api.libs.json.Json.obj("from" -> "yes", "to" -> "video"))),
           None, java.time.Instant.now)
         val items = views.RoundChangeText.items(entry)(uk).map(i => s"${i.label}: ${i.fromFull.get} → ${i.toFull}")
         items === Seq(
           "Тип оцінювання: Так/Ні → Оцінка: 1-5",
           s"Оцінка файла: ${uk("round.average.rule.rated")} → ${uk("round.average.rule.sum")}",
-          s"Тип файлів: unknown-code → ${uk("video")}",
+          s"Тип файлів: yes → ${uk("video")}",
           "Стан: Активний → Неактивний")
       }
     }

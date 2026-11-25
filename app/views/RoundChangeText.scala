@@ -1,6 +1,6 @@
 package views
 
-import db.scalikejdbc.{ContestChange, Round, RoundChanges}
+import db.scalikejdbc.{ContestChange, MediaType, Round, RoundChanges}
 import org.intracer.wmua.{AverageRule, BinaryOrder, RejectedMode}
 import play.api.i18n.Messages
 import play.api.libs.json._
@@ -41,7 +41,7 @@ object RoundChangeText {
     case "averageRule"      => AverageRule.parse(code).fold(code)(r => known(r.messageKey, code))
     case "prevRejectedMode" => RejectedMode.parse(code).fold(code)(m => known(m.messageKey, code))
     case "topBinaryOrder"   => BinaryOrder.parse(code).fold(code)(o => known(o.messageKey, code))
-    case "mediaType"        => known(code, code)
+    case "mediaType"        => if (MediaType.mediaTypes.contains(code)) known(code, code) else code
     case _                  => code
   }
 
