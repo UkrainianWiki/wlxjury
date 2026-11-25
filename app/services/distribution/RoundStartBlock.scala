@@ -1,7 +1,7 @@
 package services.distribution
 
 import db.scalikejdbc.Round
-import services.jobs.{Job, JobJdbc}
+import services.jobs.{Job, JobJdbc, JobStatus}
 
 /** Why a round can't be started yet: the Rounds page shows its state in place of Start, and
   * RoundController.setRound refuses a start with its own message (never one message for all:
@@ -37,13 +37,20 @@ object RoundStartBlock {
   case object Failed
       extends RoundStartBlock("failed", "round.start.state.failed", "round.start.refused.failed")
 
+  /** Held in review, its filters' re-apply (P3-5) cancelled: its files only partly chosen, and its jurors form
+    * refuses to distribute it ([[services.RoundService.ReapplyUnfinishedKey]]) until the filters are re-applied
+    * again. No Retry for a cancelled job.
+    */
+  case object ReapplyCancelled
+      extends RoundStartBlock("reapply.cancelled", "round.start.state.reapply.cancelled", "round.start.refused.reapply.cancelled")
+
   /** Being created with no job running, none failed nor cancelled: the round form's "Distribute
     * ? new files" completes it.
     */
   case object Incomplete
       extends RoundStartBlock("incomplete", "round.start.state.incomplete", "round.start.refused.incomplete")
 
-  val All: Seq[RoundStartBlock] = Seq(NotDistributed, Distributing, Selecting, Cancelled, Failed, Incomplete)
+  val All: Seq[RoundStartBlock] = Seq(NotDistributed, Distributing, Selecting, Cancelled, Failed, ReapplyCancelled, Incomplete)
 
   /** Whether a job, once done, opens the round to its jurors: a distribute, a one-pass job from
     * before P3, or a fill that queues the distribute (not one queued from the review, which leaves
@@ -54,7 +61,10 @@ object RoundStartBlock {
     distributeMode(job) || modeOf(job).isEmpty || (fillOnly(job) && distributeAfter(job) && !fromReview(job))
   }
 
-  /** The block of a round, None if it may be started (not `distributing`).
+  /** The block of a round, None if it may be started (not `distributing`). A round in review whose latest
+    * job failed (a re-apply or a distribute) is [[Failed]], its Retry the way on, and one whose re-apply was
+    * cancelled is [[ReapplyCancelled]]: its jurors form would refuse to distribute either re-apply
+    * (RoundService.reviewJury), so neither is [[NotDistributed]] with its "Distribute to jurors".
     *
     * @param latestJob the round's latest distribution job (the Rounds page's; any other kind is ignored)
     */
@@ -65,9 +75,11 @@ object RoundStartBlock {
       job.filter(_.isActive) match {
         case Some(j) if opensWhenDone(j)                       => Some(Distributing)
         case Some(_)                                           => Some(Selecting)
-        case None if round.inReview                            => Some(NotDistributed)
         case None if round.lifecycle == Round.Status.Cancelled => Some(Cancelled)
         case None if job.exists(_.isFailed)                    => Some(Failed)
+        case None if round.inReview && job.exists(j => j.status == JobStatus.Cancelled &&
+            RoundDistributionHandler.reapplyMode(j))           => Some(ReapplyCancelled)
+        case None if round.inReview                            => Some(NotDistributed)
         case None                                              => Some(Incomplete)
       }
     }

@@ -255,4 +255,65 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
       }
     }
   }
+
+  "a round in review whose latest job didn't finish" should {
+    /** A job of `round` queued from its review (a re-apply of its filters, or its distribute), ended with `status`. */
+    def endedReviewJob(f: Fixture, round: Round, status: String, params: (String, play.api.libs.json.Json.JsValueWrapper)*) = {
+      val id = job(f, round, params: _*)
+      scalikejdbc.DB.autoCommit { implicit s =>
+        scalikejdbc.SQL("UPDATE job SET status = ? WHERE id = ?").bind(status, id).update.apply()
+      }
+    }
+    def unchanged(round: Round) = {
+      val now = Round.findById(round.getId).get
+      (now.active must beFalse) and (now.distributing must beTrue) and (now.status === round.status)
+    }
+    val reapply = Seq[(String, play.api.libs.json.Json.JsValueWrapper)]("mode" -> RoundDistributionHandler.Mode.Fill,
+      "distributeAfter" -> false, "fromReview" -> true, "reapply" -> true)
+
+    "show a failed re-apply or distribute as failed and a cancelled re-apply as such, with no Distribute to jurors (CodeRabbit #192)" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val failedReapply = inReview(f, 1)
+        endedReviewJob(f, failedReapply, "failed", reapply: _*)
+        val failedDistribute = inReview(f, 2)
+        endedReviewJob(f, failedDistribute, "failed", "mode" -> RoundDistributionHandler.Mode.Distribute)
+        val cancelledReapply = inReview(f, 3)
+        endedReviewJob(f, cancelledReapply, "cancelled", reapply: _*)
+        // a cancelled distribute leaves the round in review, its jurors form distributing it again
+        val cancelledDistribute = inReview(f, 4)
+        endedReviewJob(f, cancelledDistribute, "cancelled", "mode" -> RoundDistributionHandler.Mode.Distribute)
+        val html = contentAsString(roundsPage(app, f, f.admin))
+        def distribute(r: Round) = !row(html, r).select("a.round-start-distribute").isEmpty
+
+        (Seq(failedReapply, failedDistribute, cancelledReapply, cancelledDistribute).map(hasStart(html, _)) ===
+          Seq.fill(4)(false)) and
+          (stateOf(html, failedReapply) must beSome("failed" -> "Not started – its distribution failed")) and
+          (stateOf(html, failedDistribute).map(_._1) must beSome("failed")) and
+          (stateOf(html, cancelledReapply) must beSome(
+            "reapply.cancelled" -> "Not started – re-applying its filters was cancelled")) and
+          (stateOf(html, cancelledDistribute).map(_._1) must beSome("not.distributed")) and
+          (Seq(failedReapply, failedDistribute, cancelledReapply, cancelledDistribute).map(distribute) ===
+            Seq(false, false, false, true))
+      }
+    }
+
+    "refuse a start of a failed re-apply with its Retry and of a cancelled one with a re-apply, nothing changed" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val failedReapply = inReview(f, 1)
+        endedReviewJob(f, failedReapply, "failed", reapply: _*)
+        val cancelledReapply = inReview(f, 2)
+        endedReviewJob(f, cancelledReapply, "cancelled", reapply: _*)
+        def error(r: Round) = flash(setRound(app, f.admin, r, active = true)).get("error")
+
+        (error(failedReapply) must beSome(
+          "Round 1 (Round 1) can't be started: its distribution failed. Retry its job in its row.")) and
+          (error(cancelledReapply) must beSome(
+            "Round 2 (Round 2) can't be started: re-applying its filters was cancelled, so its images are only partly " +
+              "selected. Edit the round and re-apply its filters, then choose its jurors and distribute it.")) and
+          unchanged(failedReapply) and unchanged(cancelledReapply)
+      }
+    }
+  }
 }

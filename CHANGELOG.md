@@ -12,6 +12,12 @@ Deploy dates come from production's migration history, as described at the end.
 
 ## Unreleased (on master, not yet deployed)
 
+Merged after the 26.11.17 build, for the release after it:
+
+**Fixes**
+
+- Rounds page: a round waiting for review whose filters' re-apply or distribution failed reads "Not started – its distribution failed" (its Retry is in its row), and one whose re-apply was cancelled reads "Not started – re-applying its filters was cancelled", instead of "waiting for distribution" with a "Distribute to jurors" link that was then refused.
+
 For the next release, 26.11.17.
 
 **Features**
