@@ -1137,8 +1137,8 @@ rounds (the rounds it was created from), checks these in order, and takes the fi
   (rule 4).
 
 **The track label.** The round form has a field **Track label (optional)** under the round's name,
-on a new round and on an existing one, at any time. Its help says which track the tool would pick
-by itself ("Automatic: …"). Leave it empty to keep that track.
+on a new round and on an existing one, at any time. On an existing round, its help says which
+track the tool would pick by itself ("Automatic: …"). Leave it empty to keep the automatic track.
 
 - A label names the round's track. Later rounds created from it, without a label of their own,
   take the same track, as they would an automatic one.
