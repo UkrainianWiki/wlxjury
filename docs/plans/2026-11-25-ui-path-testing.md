@@ -1,6 +1,6 @@
 # UI-path testing: offered actions that match allowed actions
 
-**Status:** draft, for the maintainer's decisions (§5); Q1 and Q6 decided 2026-11-25 **[user]**. Written 2026-11-25 from the maintainer's
+**Status:** draft, for the maintainer's decisions (§5); Q1, Q4, Q6 and the setup steps (§4 step 1, superseding Q10) decided 2026-11-25 **[user]**. Written 2026-11-25 from the maintainer's
 request of the same day: "we have been consistently seeing inconsistent UI paths". Read-only survey
 of master at `5d72c4d8` (after the 26.11.16 build); no code changed, no test run. References are to
 files and functions; line numbers are of that commit and drift.
@@ -34,7 +34,7 @@ that one case (§0). This plan proposes one source of truth per action and a tab
 | 3 | "Reassign files…" offered when no other juror can take the files | `fc5f3ad3` (archive #383, hotfix 26.11.13.1): `RoundReassign.enoughReceivers` (N > 0: at least N other jurors, stopped ones count since a ticked one is restarted; N = 0: at least one other *active* juror); the page, the POST and the job's first step refuse with `AloneKey` | `RoundReassignAuthorizationSpec.scala:164` (alone with N = 1 and N = 0; the other juror with no active jury membership, deleted, or stopped with N = 0; N = 2 with one other) and `:193` (N = 1 with a stopped other, N = 2 with two: offered); `RoundReassignJobSpec.scala:479` (the job's own check) | • **One active plus stopped ones:** covered (stopped count for N > 0, not for N = 0).<br>• **Stopped round_user row:** covered (`juror2 -> false`); a NULL `active` (before V108) reads as stopped, as everywhere.<br>• **Series-derived jurors:** do not exist: series grants derive admin and organizer roles only (`Secured.derivedRoleIn`); receivers are read from real `user_contest` jury rows (`User.contestMembers`), so nothing to cover.<br>• **Open:** a receiver whose account is in an account join (J-2) is not among the examples. |
 | 4 | Criteria UI shown where criteria can't be edited | `3fdff615` (archive #355, 26.11.11): an existing yes/no or comments-only round's form has no criteria and no worst mark (`unratedRound`); `9362cfe5` (archive #386, 26.11.14, "A started round's criteria can no longer be changed"): a rated round running or with a vote lists its criteria read only (`lockedCriteria` → `RoundCriterion.started`), and `RoundCriterion.update` refuses a change | `RoundEditPageSpec.scala:476`, `:498`, `:511` (also on the form shown again with an error), `:528`; `RoundCriteriaSpec.scala:232`, `:406`, `:436`, `:464` (running, or frozen while active: locked; editable again once stopped before a vote), `:365` (re-apply) | • **In review:** criteria editable (not started) but the rating type locked (`editRound.scala.html`: `rates` readonly by `noEdit = !newRound`): #184.<br>• **Paused by a job (frozen while active):** covered.<br>• **Re-apply:** criteria written in its transaction, refusal covered.<br>• **After a refused re-apply save:** the form comes back without re-apply mode (§0.5), so the filters turn read only and the next press is a plain Save. |
 | 5 | 11 × 400 on `POST /admin/rounds/save` | not fixed (26.11.16 and master unchanged on this path) | none for the form shown after a 400. Individual refusals return 400 in `RoundExcludeRoundsFormSpec`, `RoundWorstMarkFormSpec`, `RoundCriteriaSpec`, `RoundEditPageSpec:183` (top-N below 1) and `RoundReviewJurorsReapplyPageSpec:159`, but they check the status and message only, not the mode, open sections or menus of the form that comes back | see §0.5 |
-| 6 | A successful save isn't confirmed, so a user who still sees form fields can't tell the round was created | not fixed | none | • **Create:** `saveRound`'s `Created` branch redirects to the jurors form ("Choose jurors next", `RoundReviewController.jurors`) or to the rounds list ("Review images first", `toRoundsList`) with **no success flash** in either case. Both pages would render one (`jurorsForm.scala.html:31`, `rounds.scala.html`); nothing sets it. The jurors page's heading is "Round N (description): jurors and file distribution" (`round.jurors.heading`), which doesn't say the round was just created.<br>• **Edit save of an existing round:** `saveEdit` → `flashing()` back to the rounds list also has **no success line**; only side effects flash (conflicts disqualified, distribution errors). A **re-apply** does confirm (`round.reapply.started` on the review page). |
+| 6 | A successful save isn't confirmed, so a user who still sees form fields can't tell the round was saved | not fixed | none | • **Create:** `saveRound`'s `Created` branch redirects to the jurors form ("Choose jurors next", `RoundReviewController.jurors`) or to the rounds list ("Review images first", `toRoundsList`) with **no success flash** in either case. Both pages would render one (`jurorsForm.scala.html:31`, `rounds.scala.html`); nothing sets it. The jurors page's heading is "Round N (description): jurors and file distribution" (`round.jurors.heading`), which doesn't say the round was just saved or which step of its setup this is.<br>• **Edit save of an existing round:** `saveEdit` → `flashing()` back to the rounds list also has **no success line**; only side effects flash (conflicts disqualified, distribution errors). A **re-apply** does confirm (`round.reapply.started` on the review page). |
 | 7 | The need to distribute is stated only on the review page: admins don't know a round in review is invisible to jurors until distributed | not fixed | none | What the pages say today:<br>• **Review page** (`roundReviewHead.scala.html:22`): "Images ready: N. The jurors don't see the round until you distribute it." (`round.review.ready`), plus the Distribute button; the only place that says it.<br>• **Rounds list** (`rounds.scala.html:109–113`): "Images ready: N · Review · Distribute to jurors" in the job column, while the Active column shows "No" and a **Start** button (which is refused, §2.1).<br>• **Round statistics** (`roundStat.scala.html:105`): only a "Review images" link.<br>• **Edit round**: only a "Review images" button; nothing about distribution (#186). |
 
 ### 0.5 Which saves return 400, and what the admin sees
@@ -85,7 +85,7 @@ and a distribution already running. Most likely (medium
 confidence) a **field error inside the "Media filtering" card**: the card is rendered collapsed
 on every render, the 400 included, and holds every filter field (previous rounds, rejected-by,
 top-N, the category boxes, the rounds to leave out, media type). The error showed only inside
-the closed card, so each press of "Create round" came back with the values kept and no visible
+the closed card, so each submit came back with the values kept and no visible
 message.
 
 **Other problems of the same branch** (from the code, not seen in this incident):
@@ -107,14 +107,14 @@ message.
 3. Log each refused save once (message keys only, no input text) as `form_refused`, and a dropped
    resubmit as `resubmit_dropped`: both lines are defined by the problem-monitoring plan (draft
    PR #191, slice M-1), not by a logger of this plan.
-4. **[user] 2026-11-25: the stale create form is never shown again** (§5 Q6). On submit (or on
-   creation) the form page's history entry is replaced by a URL that resolves the form token: if
-   that form already created a round, it redirects to that round's Edit page with one line, "Round
-   N has been created. You can change it here."; if not (the submit was refused), it shows the form
-   as usual. Today validation runs before the token check, so **the server must check the token
+4. **[user] 2026-11-25: the stale new-round form is never shown again** (§5 Q6). On submit (or
+   on saving) the form page's history entry is replaced by a URL that resolves the form token: if
+   that form already saved a round, it redirects to that round's Edit page with one line, "Round N
+   is saved. You can change its settings here."; if not (the submit was refused), it shows the
+   form as usual. Today validation runs before the token check, so **the server must check the token
    first**.
-5. No duplicate can be created this way and nothing is dropped silently: Back lands on the created
-   round's Edit page. Another round is made with the usual "Create round" button.
+5. No duplicate can be made this way and nothing is dropped silently: Back lands on the saved
+   round's Edit page. Another round is started with the usual "Add round" button.
 6. Catch bad input up front: unreadable list lines on paste; min and required hints for top-N and
    the category boxes.
 
@@ -232,37 +232,46 @@ Order, fitting the queue:
      resolves the token ([user], §5 Q6); up-front input checks. Specs: a field error in Media
      filtering comes back with the card open and in the summary; a refused re-apply comes back in
      re-apply mode with editable filters; a new round's refused form keeps its regions; a POST of
-     a token that already created a round redirects to its Edit page with "Round N has been
-     created. You can change it here.", not a 400. **Playwright check:** create a round, press
-     Back, and land on that round's Edit page with the line, not the filled create form. The
+     a token that already saved a round redirects to its Edit page with "Round N is saved. You
+     can change its settings here.", not a 400. **Playwright check:** save a new round, press
+     Back, and land on that round's Edit page with the line, not the filled new-round form. The
      mechanism is **to verify in Chrome, Firefox and Safari** (bfcache, `no-store`). This
      addresses the 11 × 400 of 2026-11-25.
-     **Success confirmation (§0 row 6), same PR:**
-     - The page after Create shows at the top "Round N (description) has been created. Its files
-       are being selected." and a **next-step box** with three actions: "Edit filters again"
-       (opens Edit round; re-apply while in review), "Review images" (the review page) and
-       "Distribute to jurors" (the jurors form). "Distribute to jurors" is shown disabled, with
-       its reason, while the selection runs or if the round has no files.
-     - The same next-step box appears on Edit round and on the review page for a round in review
-       (this covers #186), and Back after creation lands on Edit round (Q6), where the box is shown
-       too.
-     - The box states plainly: "Jurors can't see this round yet. When the files look right,
-       distribute them to jurors." Once the selection has finished, "Distribute images to jurors"
-       is its primary (visually main) action.
-     - On the Rounds list a round in review reads "Not started – waiting for distribution" (not
-       just "in review"), with the Distribute action in place of Start (§5 Q4).
-     - Round statistics and the other pages that show a round in review carry the same one-line
-       state and a link to distribute (§0 row 7).
-     - Button labels say what happens to the user's round, not app concepts.
-     - The jurors page heading names the round and the step (e.g. "Round 4: choose jurors"), so it
-       can't be mistaken for the submitted form.
-     - An edit save of an existing round says it was saved ("Round N (description) has been
-       saved.") on the rounds list.
-     - A spec asserts the confirmation and the box's three actions (Distribute disabled with its
-       reason during selection) on the page after Create (on each redirect while the form keeps
-       two buttons, §5 Q10), and the edit save's confirmation.
-     - The build includes screenshots of the page after Create (each path while there are two) at
-       1366 and 390 px wide, for review.
+     **Setup in numbered steps (§0 rows 6–7), [user] decided 2026-11-25, same PR:**
+     - A new round is **set up in numbered steps**, with a step bar on every setup page:
+       1 "Which files" (the settings form) → 2 "Check the matching files" (the review page) →
+       3 "Jurors" (choose them, then "Distribute to jurors") → open to jurors. After the form is
+       saved the round has no jurors, so it is not "created" or "ready": no page calls it that
+       before it opens to jurors.
+     - The form has **one button, "Save and find matching files"**, with the help line "The app
+       picks the contest's files that match these settings, for you to check. This can take a few
+       minutes." (rejected: "select files", unclear; "gather"/"collect", which sound like fetching
+       from elsewhere: the files are already in the contest's list, the app picks out the matching
+       ones). It replaces "Choose jurors next" and "Review images first".
+     - After saving: "Round 4 is saved. Step 2 of 3: its matching files are being found. Check
+       them, then choose jurors."
+     - **Step 2** (review page) heading shows "N of the contest's M files match"; "Change the
+       settings" goes back to step 1 (Edit round, re-apply while in review). It states plainly:
+       "Jurors can't see this round yet. When the files look right, choose jurors and distribute
+       to them."; once the matching has finished, the step-3 action is its primary (visually main)
+       one; while it runs, or if no file matches, that action is shown disabled with its reason.
+     - **Step 3** (jurors page) heading names the round and the step (e.g. "Round 4 – step 3 of 3:
+       jurors"), so it can't be mistaken for the submitted form; its button stays "Distribute to
+       jurors" (accurate: each juror gets a share).
+     - The step bar and the round's current step also show on Edit round of a round being set up
+       (this covers #186), and Back after saving lands there (Q6).
+     - On the Rounds list a round being set up reads "Setting up – step 2 of 3: check files" or
+       "Setting up – step 3 of 3: choose jurors", with the step's action in place of Start (Q4).
+       PR #192 ships interim wording ("Not started – waiting for distribution"); this replaces it.
+     - Round statistics and the other pages that show a round being set up carry the same one-line
+       state and a link to its current step (§0 row 7).
+     - Labels say what happens to the user's round, not app concepts. The ru, uk and fr wording is
+       settled in translation review at build time.
+     - An edit save of a round already open says it was saved ("Round N (description) is saved.")
+       on the rounds list.
+     - Specs: the after-save line and the step bar on step 2, the disabled step-3 action with its
+       reason while matching, the Rounds list's step states, and the edit save's confirmation.
+     - The build includes screenshots of steps 1–3 at 1366 and 390 px wide, for review.
    - Smallest wins from §2: on a round in review the Rounds list hides Start and shows "Distribute
      to jurors" in its place; a correct message for a retired contest's round; Add juror… gated
      like Reassign.
@@ -299,17 +308,18 @@ page (§0 row 7).
    defines them. Recommendation: yes, in the 26.11.17 refusal PR; it is what would have explained
    the 11 × 400.
 4. **Round in review on the rounds list: hide Start and show "Distribute to jurors" in its place?**
-   Start there can only be refused. Recommendation: yes for rounds in review (in the Start
-   column, besides the review line's link); hide Start also for draft and cancelled rounds.
+   **[user] Decided 2026-11-25** (PR #192): no Start on rounds not yet distributed, truthful
+   refusal messages, one Distribute action per row as its primary button. The step wording of §4
+   replaces #192's interim state text later.
 5. **Gate "Add juror…" and "Start with a fair share" like Reassign (running rounds only)**, or keep
    them offered with the page explaining? Recommendation: gate them, with a one-line hint
    "Start the round to add jurors" on a stopped round, and none in review (the jurors form does it).
-6. **Back after creating a round.** **[user] Decided 2026-11-25:** the stale create form is never
+6. **Back after saving a new round.** **[user] Decided 2026-11-25:** the stale create form is never
    shown again. On submit (or creation) the form page's history entry is replaced by a URL that
    resolves the form token: a token that already created a round redirects to that round's Edit
-   page with one line, "Round N has been created. You can change it here."; a token whose submit
-   was refused shows the form as usual. No duplicate can be created this way; another round is
-   made with the usual "Create round" button. The server checks the token before validating
+   page with one line, "Round N is saved. You can change its settings here."; a token whose
+   submit was refused shows the form as usual. No duplicate can be made this way; another round is
+   started with the usual "Add round" button. The server checks the token before validating
    (today it validates first). Rejected: a stale form with two links, and the label "New round
    form" (it names app logic, not what happened to the user's round): user-facing text says what
    happened to their round. To verify in Chrome, Firefox and Safari (bfcache, `no-store`), with a
@@ -321,8 +331,5 @@ page (§0 row 7).
    only in CI, the others on release.
 9. **Add the checklist item (e) now?** Recommendation: yes; it costs one line and applies to
    lineage slice A's review.
-10. **One "Create round" button on the round form?** With the next-step box after Create (§4
-    step 1), the form's two buttons "Choose jurors next" and "Review images first" choose
-    something the box offers anyway, after the user has seen that the round exists.
-    Recommendation: yes, keep a single "Create round" button, and the box offers the next step.
-    Not decided.
+10. *(Superseded 2026-11-25 by the decided setup steps, §4 step 1: one button, "Save and find
+    matching files".)*
