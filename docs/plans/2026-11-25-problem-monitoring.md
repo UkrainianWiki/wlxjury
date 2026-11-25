@@ -228,7 +228,7 @@ CREATE TABLE support_event (
   KEY support_event_kind (kind, created_at),
   KEY support_event_contest (contest_id, created_at),
   KEY support_event_account (account_id, created_at),
-  KEY support_event_changed (changed_at),
+  KEY support_event_changed (changed_at, id),
   KEY support_event_ref (ref)
 );
 
@@ -243,7 +243,8 @@ CREATE TABLE support_problem_event (
 -- one row: where the problem check's scan resumes (§4.2)
 CREATE TABLE support_problem_check (
   id              TINYINT      PRIMARY KEY,      -- always 1
-  checkpoint      DATETIME(3)  NOT NULL,         -- events with changed_at up to here are processed
+  checkpoint_at   DATETIME(3)  NOT NULL,         -- the last processed event's (changed_at, id);
+  checkpoint_id   BIGINT       NOT NULL,         --   events up to it, in that order, are processed
   last_success_at DATETIME(3)  NOT NULL
 );
 
@@ -294,9 +295,9 @@ per account (Q5, decided [user] 2026-11-25).
 - **A later cleanup stays easy:** `created_at` is indexed and there are no foreign keys, so a purge
   is a batched `DELETE … WHERE created_at < ? LIMIT 5000` run by the problem check (§4), with the
   events' `support_problem_event` rows deleted with them, and no schema change. Options to choose
-  from then: 90 days, 400 days (one season and the same weeks a year later), or by kind (e.g. `denied` shorter). "The contest's lifetime" doesn't fit: contests
-  are reused across years (support diagnostics H21), and denials and server errors often have no
-  contest.
+  from then: 90 days, 400 days (one season and the same weeks a year later), or by kind (e.g.
+  `denied` shorter). "The contest's lifetime" doesn't fit: contests are reused across years (support
+  diagnostics H21), and denials and server errors often have no contest.
 
 ### 3.3 Size
 
@@ -359,9 +360,9 @@ would stop with it. A separate timer keeps it independent, as the round-counts r
 
 **It watches itself.** Each tick records its end time in memory (and a successful one in
 `support_problem_check.last_success_at`, so the page knows it after a restart). If the last
-successful tick is older than three intervals, the root badge shows "Problem check not running" instead of a count,
-and the Problems page says when it last ran. A failed tick records a `task_failed` event (if the
-database takes it).
+successful tick is older than three intervals, the root badge shows "Problem check not running"
+instead of a count, and the Problems page says when it last ran. A failed tick records a
+`task_failed` event (if the database takes it).
 
 One server runs the app today. If a second instance ever runs, the tick takes a
 `GET_LOCK('wlxjury_problem_check', 0)` and skips when another holds it.
@@ -369,23 +370,30 @@ One server runs the app today. If a second instance ever runs, the tick takes a
 ### 4.2 Patterns
 
 **Where a tick starts: a stored checkpoint.** The scan position is kept in the database
-(`support_problem_check.checkpoint`, §3.1), not in memory, so a restart or an outage longer than
-any pattern window loses no events:
+(`support_problem_check.checkpoint_at` and `checkpoint_id`, §3.1), not in memory, so a restart or
+an outage longer than any pattern window loses no events:
 
-- A tick takes `U = NOW(3)` and reads the events with `checkpoint − 2 minutes < changed_at ≤ U`
-  (at most 10,000, oldest first; a larger backlog continues in the next tick from the last row
-  read). The 2 minutes cover rows that the writer thread was still committing at the last tick.
+- A tick takes `U = NOW(3)` and reads the events after the checkpoint in `(changed_at, id)` order:
+  `(changed_at, id) > (checkpoint_at, checkpoint_id)` and `changed_at ≤ U − problems.settle`
+  (default 2 minutes), at most `problems.batch` rows (default 10,000). The settle margin leaves out
+  rows the writer thread may still be committing (its batches are small and commit in well under
+  a second), so a row is never passed over by a later one that committed first.
+- The new checkpoint is the last row read, so it only moves forward, never back, and a batch
+  that is full advances it even when all its rows share one `changed_at`. A full batch is followed
+  at once by the next, each its own transaction, until the backlog is read. A tick that reads no
+  row leaves the checkpoint as it is.
 - For each event read, a windowed pattern also reads the earlier events of the same scope within
   its window (P1: the same form and account in the 15 minutes before). The windows bound the
   matching only; they are not where the scan starts.
-- The problem writes, the links and the new checkpoint (`U`, or the last row's `changed_at` when the
-  batch was cut) are one transaction. A tick that fails rolls back and leaves the checkpoint where
-  it was, so the next tick reads the same events again.
+- A batch's problem writes, links and new checkpoint are one transaction. A batch that fails rolls
+  back and leaves the checkpoint where it was, so the next tick reads the same events again.
 - Reading an event twice changes nothing: a link is `INSERT IGNORE`, and a problem's `event_count`
   and `last_event_at` are recomputed from its linked events (the sum of `repeat_count`, the latest
   `last_at`), with `activity_version` raised only when one of them changed.
-- **First run:** no checkpoint row yet; the tick starts from the oldest event (M-2 and M-3 ship
+- **First run:** no checkpoint row yet; the tick starts before the oldest event (M-2 and M-3 ship
   together, so that is a few days of events at most) and creates the row.
+- A folded repeat (§3.4) sets the row's `changed_at` to a later time, so the row comes after the
+  checkpoint again and is read once more.
 
 For each match the tick creates a problem or extends an open one: the same `pattern` and
 `scope_key` with `last_event_at` within 24 hours → the event linked in `support_problem_event`,
@@ -462,7 +470,8 @@ not running" replaces it when §4.1's watchdog trips. N comes from
 - **Its events**, expandable: time, kind, route, status, keys, reference.
 - **Mark as seen** per problem and "Mark all shown as seen" (POSTs with the CSRF token; each
   problem's id with the `activity_version` the page showed, stored as `seen_version`, with
-  `seen_at` and `seen_by`; §3.1). **Mark as new** undoes it (`seen_version` back to NULL).
+  `seen_at` and `seen_by`; §3.1). **Mark as new** undoes it: `seen_version`, `seen_at` and
+  `seen_by` all go back to NULL, so the problem shows as never seen.
 - **Events tab:** the raw events with the same filters, for kinds that make no problem (jobs
   cancelled, a single denial).
 - A line at the top: when the check last ran, and the retention ("events are kept; no cleanup yet").
@@ -546,12 +555,14 @@ database holds the history.
   it; after 24 hours of quiet one refusal makes nothing and three new refusals within 15 minutes
   make a new one; a seen problem with a new event is new again, and so is one whose event gets a
   folded repeat (§3.4); three fallback refusals make a P1 and a P9 problem, each listing all three
-  events; events recorded while the check was stopped for more than 24 hours are found by the
-  first tick after the restart (stored checkpoint); a tick that fails leaves the checkpoint, and the
-  next one makes the same problems once, not twice; P2 counts `changed` and `given_up`, not
-  `same`; P5 on a queued job with no running job of its kind and on a stale heartbeat; a disabled
-  pattern makes nothing; a tick that throws leaves the next tick running and trips the watchdog after three
-  intervals.
+  events; events recorded while the check was stopped for more than 24 hours are found by the first
+  tick after the restart (stored checkpoint); a tick that fails leaves the checkpoint, and the next
+  one makes the same problems once, not twice; with `problems.batch = 3`, ten events with one
+  `changed_at` are each read once over four batches and the checkpoint never moves back; an event
+  inside the settle margin is read by the first tick after it settles; P2 counts `changed` and
+  `given_up`, not `same`; P5 on a queued job with no running job of its kind and on a stale
+  heartbeat; a disabled pattern makes nothing; a tick that throws leaves the next tick running and
+  trips the watchdog after three intervals.
 - **M-4** (`controllers.ProblemsPageSpec`), with the negative authorization cases:
   - root sees the page, the badge with the right count, and can mark seen and new; a problem
     that got an event after the page was shown stays new when that page's Mark as seen is posted;
