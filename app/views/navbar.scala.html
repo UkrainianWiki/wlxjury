@@ -46,6 +46,9 @@
    toggle below 992 px (whole in its title) and wrapped in the menu on a phone, so both fit (main.css
    #round-menu, wlx-round-item) *@
 @roundMenu(l: RoundList) = {
+    @* each round's Track chip after its name, for those who see the organiser info (round lineage
+       slice A; jurors' menus don't change) *@
+    @defining(views.TrackChip.menuLineage(user, selectedRound, rounds)) { lineage =>
     @defining(if (l.asUserId == 0 || l.asUserId == user.getId) Set.empty[Long]
               else User.roundsJuredIn(l.asUserId, rounds.flatMap(_.id))) { jurorRounds =>
     @* the open rounds the viewer judges open on their own votes (the conflict-of-interest rule) *@
@@ -55,8 +58,10 @@
             l.inRound(r, user.getId, jurorRounds.contains(r.getId), ownOnly.contains(r.getId)).pageUrl(1))),
         l.roundId,
         rounds.map(r => (r.getId, SelectionItem(r.description, localized = false,
-            itemClass = if (r.active) "wlx-round-item" else "wlx-round-item wlx-round-inactive", before = snippets.roundIcon(r), after = snippets.roundSpoken(r))))
+            itemClass = if (r.active) "wlx-round-item" else "wlx-round-item wlx-round-inactive", before = snippets.roundIcon(r),
+            after = play.twirl.api.HtmlFormat.fill(Seq(snippets.roundSpoken(r), snippets.trackChip(r, lineage))))))
     ).toDropDown(truncate = true, menuClass = "wlx-round-menu", id = Some("round-menu")))
+    }
     }
     }
 }
@@ -445,6 +450,20 @@
         hideEmpty = true, alwaysShown = (k: RoundsFilter.Kind) => k == RoundsFilter.Kind.All
     ).toDropDown(id = Some("rounds-type-menu"), label = Some(Messages("rounds.filter.type")),
         labelShown = true))
+    @* the Track menu (round lineage slice A, §8.1, next to Status and Type): the contest's tracks
+       of the rounds listed, in the lineage's order (Main, its feeders, the others), each with its
+       chip's colour as a swatch and its count; shown with two tracks or more, or one chosen *@
+    @for(lineage <- bar.lineage if bar.trackMenuShown) {
+    @(new UiSelectionDto[String](
+        (key: String) => Call("GET", bar.url(bar.filter.withTrack(Option(key).filter(_.nonEmpty)))),
+        bar.filter.track.getOrElse(""),
+        ("" -> SelectionItem("rounds.filter.track.all", count = Some(bar.count(None)))) +:
+          bar.tracks.map(t => t.key -> SelectionItem(views.TrackChip.short(t, lineage), localized = false,
+            count = Some(bar.count(Some(t.key))),
+            before = snippets.trackSwatch(t))),
+        hideEmpty = true, alwaysShown = (key: String) => key.isEmpty
+    ).toDropDown(id = Some("rounds-track-menu"), label = Some(Messages("round.track")), labelShown = true))
+    }
 }
 @roundsOrderMenu(bar: RoundsFilterBar) = {
     @(new UiSelectionDto[RoundsFilter.Order](
