@@ -222,6 +222,12 @@ class SeriesReachGuardSpec extends Specification {
       "each juror's tallies and the totals by vote: the round's stat table only (the edit page's panel and the " +
         "statistics), which hides other jurors' columns and the totals from a juror of the open round (roundStatTable); " +
         "GraphQL's roundStat (RoundQueries), which hides the same behind GalleryService.othersVotesVisible"),
+    // a member import of the reader, after which a plain `roundStat(` call names it (CodeRabbit on #182): only
+    // RoundService's class, which imports its companion's members
+    ("""\bimport\s+(services\.)?RoundService\.([_*]|roundStat\b|\{[^}]*\broundStat\b[^}]*\})""",
+      Set("app/services/RoundService.scala"),
+      "a member import of RoundService.roundStat (or all of RoundService's members), which a plain roundStat( call " +
+        "then names: RoundService's class only, for getRoundStat"),
     ("""\broundUserStat\(""", Set("app/db/RoundRepo.scala", "app/db/scalikejdbc/Round.scala", "app/services/RoundService.scala"),
       "every juror's count per rate: getRoundStat only"),
     ("""\bimageCountsByRate\(""", Set("app/db/RoundRepo.scala", "app/db/scalikejdbc/Round.scala", "app/services/RoundService.scala"),
@@ -252,6 +258,17 @@ class SeriesReachGuardSpec extends Specification {
       forall(AggregateVoteReaders) { case (pattern, allowed, _) =>
         (pattern -> counts(pattern.r).keySet) === (pattern -> allowed)
       }
+    }
+
+    "catch a member import of the aggregate reader, not an import of RoundService itself" in {
+      val importPattern = AggregateVoteReaders.map(_._1).find(_.contains("import")).get.r
+      val caught = Seq("import services.RoundService.roundStat", "import services.RoundService.{getX, roundStat}",
+        "import services.RoundService.{roundStat => stat}", "import services.RoundService._", "import RoundService._",
+        "import services.RoundService.*")
+      val passed = Seq("import services.RoundService", "import services.RoundService.roundStatX",
+        "import services.RoundServiceHelpers._")
+      (caught.filterNot(importPattern.findFirstIn(_).isDefined) must beEmpty) and
+        (passed.filter(importPattern.findFirstIn(_).isDefined) must beEmpty)
     }
   }
 }

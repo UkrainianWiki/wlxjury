@@ -12,11 +12,18 @@ Deploy dates come from production's migration history, as described at the end.
 
 ## Unreleased (on master, not yet deployed)
 
-Merged after the 26.11.17 build.
+Merged after the 26.11.17 build, for the release after it.
 
 **Features**
 
 - A new round is set up in numbered steps with a step bar: 1 "Which files" (the form, one button "Save and find matching files"), 2 "Check the matching files" (the review page, "N files match (the contest has M)", then "Distribute to jurors" as its main button), 3 "Jurors" (the jurors form), then open to jurors. The Rounds page reads "Setting up – step 2 of 3: check files" or "… step 3 of 3: choose jurors" with that step's button in place of Start; the round form, statistics and conflicts page show the same step with a link (#205).
+
+**Fixes**
+
+- Round form: a track label that is too long is listed at the top as "Track label (optional): …" with a link to the field; a label of emoji or other characters outside the basic plane can be typed up to its 64 characters (the browser no longer counted them twice) (#209).
+- Track labels: spaces inside a label are kept as typed, so labels share a track only when they are identical, as the form's help says (#209).
+- Track labels: labelling a first round (or giving it a nomination or regions) no longer changes the category track names of the other first rounds (#209).
+- Rounds page: a round with one of several previous rounds deleted no longer says it "starts a track of its own"; it says the deleted round is left out when its track is chosen (#209).
 
 ## Deployed releases
 
