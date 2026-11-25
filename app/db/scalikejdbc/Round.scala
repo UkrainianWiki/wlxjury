@@ -355,13 +355,14 @@ object Round extends RoundRepo with CRUDMapper[Round] {
   /** The longest track label stored (V115's `round.track`), in characters. */
   val TrackMaxLength = 64
 
-  /** The track label as stored: trimmed, inner runs of white space as one space, at most
-    * [[TrackMaxLength]] characters; None if empty. "Main" in any case, or one of `mainNames` (the
+  /** The track label as stored: trimmed, its inner white space kept as typed (identical labels share a
+    * track, round lineage §2.3, and RoundLineage matches them exactly), at most [[TrackMaxLength]] code
+    * points; None if empty. "Main" in any case, or one of `mainNames` (the
     * Main track's name in the app's languages, as the pages show it), is "Main" (round lineage
     * decision 4: it puts the track in the Main group).
     */
   def trackLabel(label: Option[String], mainNames: Iterable[String] = Nil): Option[String] =
-    label.map(_.trim.replaceAll("\\s+", " ")).filter(_.nonEmpty).map { l =>
+    label.map(_.trim).filter(_.nonEmpty).map { l =>
       if ((mainNames.toSeq :+ services.RoundLineage.MainLabel).exists(_.trim.equalsIgnoreCase(l)))
         services.RoundLineage.MainLabel
       else if (l.codePointCount(0, l.length) <= TrackMaxLength) l

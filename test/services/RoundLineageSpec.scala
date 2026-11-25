@@ -184,7 +184,27 @@ class RoundLineageSpec extends Specification {
       val l = RoundLineage(Seq(round(1, "R1", category = Some(Prefix + "Quality")),
         round(5, "Orphan", Seq(999), category = Some(Prefix + "Quantity")), round(6, "Half", Seq(1, 998))), context)
       (l.missingPrevious === Map(5L -> Seq(999L), 6L -> Seq(998L))) and (l.trackOf(5) === quantity) and
-        (l.trackOf(6) === quality)
+        (l.trackOf(6) === quality) and
+        // all gone: placed as a root; some left: placed by them (the Rounds page's two warnings)
+        (l.allPreviousMissing(5) must beTrue) and (l.allPreviousMissing(6) must beFalse) and
+        (l.allPreviousMissing(1) must beFalse)
+    }
+
+    "take the common prefix from all the roots' categories: labelling a root changes no other root's track" in {
+      val roots = Seq(round(1, "A", category = Some(Prefix + "Quality")), round(2, "B", category = Some(Prefix + "Quantity")),
+        round(3, "C", category = Some("Category:Other photos - Interior")))
+      val plain = RoundLineage(roots, context)
+      // C labelled, or given a nomination or regions: A's and B's tracks stay as they were
+      val changed = Seq(
+        roots.updated(2, roots(2).copy(track = Some("Second look"))),
+        roots.updated(2, roots(2).copy(specialNomination = Some("Jewish heritage"))),
+        roots.updated(2, roots(2).copy(regions = Some("80"))))
+      (plain.trackOf(1) === Track(Kind.Category, "WLM 2026 in Ukraine - Quality")) and
+        (plain.trackOf(2) === Track(Kind.Category, "WLM 2026 in Ukraine - Quantity")) and
+        foreach(changed) { rs =>
+          val l = RoundLineage(rs, context)
+          (l.trackOf(1) === plain.trackOf(1)) and (l.trackOf(2) === plain.trackOf(2)) and (l.trackOf(3) !== plain.trackOf(3))
+        }
     }
 
     "report a cycle and still place every round" in {
@@ -200,11 +220,13 @@ class RoundLineageSpec extends Specification {
       (spine(l, Track.Main) === Seq("M1", "M2", "M4")) and (l.deepest(Track.Main).map(_.description) === Some("M4"))
     }
 
-    "group labels by exact match after trimming: case counts, Main in any case" in {
-      val l = RoundLineage(Seq(round(1, "A", track = Some(" Second  look ")), round(2, "B", track = Some("second look")),
-        round(3, "C", track = Some("Second look")), round(4, "D", track = Some("MAIN"))), context)
+    "group labels by exact match after trimming: case and inner white space count, Main in any case" in {
+      val l = RoundLineage(Seq(round(1, "A", track = Some(" Second look ")), round(2, "B", track = Some("second look")),
+        round(3, "C", track = Some("Second look")), round(4, "D", track = Some("MAIN")),
+        round(5, "E", track = Some("Second  look"))), context)
       (l.trackOf(1) === Track(Kind.Label, "Second look")) and (l.trackOf(3) === l.trackOf(1)) and
-        (l.trackOf(2) === Track(Kind.Label, "second look")) and (l.trackOf(4) === Track.Main)
+        (l.trackOf(2) === Track(Kind.Label, "second look")) and (l.trackOf(4) === Track.Main) and
+        (l.trackOf(5) === Track(Kind.Label, "Second  look"))
     }
 
     "give stable keys, and find a track by its key" in {
@@ -223,8 +245,10 @@ class RoundLineageSpec extends Specification {
   }
 
   "the stored label" should {
-    "be trimmed, Main in any case or language, cut at 64 characters" in {
-      (Round.trackLabel(Some("  Second   look ")) === Some("Second look")) and (Round.trackLabel(Some("  ")) must beNone) and
+    "be trimmed, its inner white space kept, Main in any case or language, cut at 64 code points" in {
+      val emoji = new String(Character.toChars(0x1F600))
+      (Round.trackLabel(Some("  Second   look ")) === Some("Second   look")) and (Round.trackLabel(Some("  ")) must beNone) and
+        (Round.trackLabel(Some(emoji * 70)) === Some(emoji * 64)) and
         (Round.trackLabel(Some("MAIN")) === Some("Main")) and
         (Round.trackLabel(Some("основний"), Seq("Основний")) === Some("Main")) and
         (Round.trackLabel(Some("x" * 70)).map(_.length) === Some(64))

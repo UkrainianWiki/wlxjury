@@ -12,6 +12,15 @@ Deploy dates come from production's migration history, as described at the end.
 
 ## Unreleased (on master, not yet deployed)
 
+Merged after the 26.11.17 build, for the release after it:
+
+**Fixes**
+
+- Round form: a track label that is too long is listed at the top as "Track label (optional): …" with a link to the field; a label of emoji or other characters outside the basic plane can be typed up to its 64 characters (the browser no longer counted them twice).
+- Track labels: spaces inside a label are kept as typed, so labels share a track only when they are identical, as the form's help says.
+- Track labels: labelling a first round (or giving it a nomination or regions) no longer changes the category track names of the other first rounds.
+- Rounds page: a round with one of several previous rounds deleted no longer says it "starts a track of its own"; it says the deleted round is left out when its track is chosen.
+
 For the next release, 26.11.17.
 
 **Features**
