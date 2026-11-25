@@ -346,6 +346,22 @@ out the contest's own category (`ContestJury` images category). Cut it back so i
 With no such prefix, the full category name stays. For WLM UA 2025 that is
 "Category:Wiki Loves Monuments in Ukraine 2025 - ". Phase 0's script hard-codes it (§10.1).
 
+*Amended 2026-11-26 (hotfix 26.11.17.1), after real contests:* the prefix is taken word by word,
+with the words all the roots' categories **end** with too ("… from Wiki Science Competition 2025
+in Ukraine"). When the roots share neither (Wiki Loves Earth Ukraine: "Wiki Loves Earth Ukraine
+2026 - Quality", "Images from Wiki Loves Earth 2026 Nature Loss Special Category"), the contest's
+own words (its name, year and country, and its images category up to its first " - " or "/", in
+any case; not the rest of that category, which may be a subcategory naming other tracks), years, "images", "from", "in" and separators are dropped at each
+end: "Quality", "Nature Loss Special Category". All the roots' categories count, labelled ones too,
+so a label doesn't rename another track.
+Categories that differ only in case are one track; two that would get one name keep longer
+names. Only a "Category:" page names a track: a file list or a "Commons:" page pasted into the
+field is no category. With nothing left the root is named by its media type, **only if the roots
+have more than one** (none set counting as all: a video round beside the others), and otherwise by
+its name. **Chips show only in a contest
+with two tracks or more** (the Track menu's rule), then on every round, a root named after itself
+too. A chip longer than 32 characters shows its start and its end, "…" between.
+
 **Main and its feeders:**
 - Main's rows come first.
 - Directly under them are the tracks that feed Main, in the order they join (the id of the first

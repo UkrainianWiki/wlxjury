@@ -188,10 +188,8 @@ final case class RoundsFilterBar(
   /** The Track menu's tracks, in the lineage's order, those of the rounds listed: shown with two or
     * more of them, or a track chosen.
     */
-  def tracks: Seq[services.RoundLineage.Track] = lineage.fold(Seq.empty[services.RoundLineage.Track]) { l =>
-    val listed = rounds.flatMap(l.track).toSet
-    l.tracks.filter(listed.contains)
-  }
+  def tracks: Seq[services.RoundLineage.Track] = lineage.fold(Seq.empty[services.RoundLineage.Track])(_.tracksOf(rounds))
 
-  def trackMenuShown: Boolean = tracks.sizeIs > 1 || filter.track.isDefined
+  /** With two tracks or more among the rounds listed (the chips' rule, Lineage.showsTracks), or a track chosen. */
+  def trackMenuShown: Boolean = lineage.exists(_.showsTracks(rounds)) || filter.track.isDefined
 }
