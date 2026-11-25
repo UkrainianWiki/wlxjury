@@ -1119,16 +1119,17 @@ rounds (the rounds it was created from), checks these in order, and takes the fi
 5. Its previous rounds are all on one track: it stays on that track.
 6. Its previous rounds are on different tracks: **Main**. This is how the main competition
    usually starts, when the Quality and Quantity rounds come together.
-7. It has no previous round: a track named after the part of its category that tells it apart:
-   without the words all the first rounds' categories start or end with (for example **Quality**
-   for "Category:Wiki Loves Monuments in Ukraine 2025 - Quality"), and, when they share none,
-   without the contest's own name, year and country at either end (**Quality** for "Category:Wiki
-   Loves Earth Ukraine 2026 - Quality", **Nature Loss Special Category** for "Category:Images from
-   Wiki Loves Earth 2026 Nature Loss Special Category"). Only a category names a track: a list of
-   files or a Commons page in the category field doesn't. Without a category of its own, it is
-   named after its media type if the first rounds use more than one (for example **Video** next to
-   rounds of all media); otherwise after the round's own name. First rounds with the same category share a
-   track, also when it is written in other capitals.
+7. It has no previous round: a track named after the part of its category that tells it apart.
+   The contest's own words are dropped: first the words all the first rounds' categories start or
+   end with (**Quality** for "Category:Wiki Loves Monuments in Ukraine 2025 - Quality"), and when
+   they share none, the contest's name, year and country, "Images from" and "in" at either end
+   (**Quality** for "Category:Wiki Loves Earth Ukraine 2026 - Quality", **Nature Loss Special
+   Category** for "Category:Images from Wiki Loves Earth 2026 Nature Loss Special Category"). A
+   category made only of such words counts as no category, and so does a list of files or a
+   Commons page in the category field. Without a category, the round is named after its media type
+   if the first rounds use more than one (for example **Video** next to rounds of all media; two
+   such video rounds share the **Video** track); otherwise after the round's own name. First
+   rounds with the same category share a track, also when it is written in other capitals.
 
 **An example**, from Wiki Loves Monuments in Ukraine:
 
@@ -1154,6 +1155,10 @@ previous rounds once it is saved). Leave it empty to keep the automatic track.
   dropped. A label has at most 64 characters.
 - If an automatic name is still long or unclear, give the track a label of its own (for example
   "Quality" and "Quantity"): labelling one first round doesn't change the others' names.
+- Label a track on its **first** round, or leave the field empty. A label typed on a later round,
+  even the same name as the automatic track (for example "Quality" on Q-01), starts a second track
+  with that name from there: two tracks named alike. On a later round the field shows "Automatic:
+  Quality, from its previous rounds" when it already takes that track.
 - **Main** puts the round on the Main track. It is understood in any capitals and in the tool's
   other languages (Основний, Основной, Principale), and stored as Main.
 - Each label change is recorded and shown under **Changes to this round's settings** on the

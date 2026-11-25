@@ -230,19 +230,21 @@ class RoundLineageSpec extends Specification {
         (l.allPreviousMissing(1) must beFalse)
     }
 
-    "take the common prefix from all the roots' categories: labelling a root changes no other root's track" in {
+    "name the roots from all the roots' categories: labelling a root changes no other root's track" in {
       val roots = Seq(round(1, "A", category = Some(Prefix + "Quality")), round(2, "B", category = Some(Prefix + "Quantity")),
         round(3, "C", category = Some("Category:Other photos - Interior")))
-      val plain = RoundLineage(roots, context)
+      // the contest's words (WLM 2026 in Ukraine), dropped at the ends as no start is shared by all three
+      val wlm = context.copy(boilerplate = Set("wlm", "2026", "ukraine"))
+      val plain = RoundLineage(roots, wlm)
       // C labelled, or given a nomination or regions: A's and B's tracks stay as they were
       val changed = Seq(
         roots.updated(2, roots(2).copy(track = Some("Second look"))),
         roots.updated(2, roots(2).copy(specialNomination = Some("Jewish heritage"))),
         roots.updated(2, roots(2).copy(regions = Some("80"))))
-      (plain.trackOf(1) === Track(Kind.Category, "WLM 2026 in Ukraine - Quality")) and
-        (plain.trackOf(2) === Track(Kind.Category, "WLM 2026 in Ukraine - Quantity")) and
+      (plain.trackOf(1) === Track(Kind.Category, "Quality")) and (plain.trackOf(2) === Track(Kind.Category, "Quantity")) and
+        (plain.trackOf(3) === Track(Kind.Category, "Other photos - Interior")) and
         foreach(changed) { rs =>
-          val l = RoundLineage(rs, context)
+          val l = RoundLineage(rs, wlm)
           (l.trackOf(1) === plain.trackOf(1)) and (l.trackOf(2) === plain.trackOf(2)) and (l.trackOf(3) !== plain.trackOf(3))
         }
     }
