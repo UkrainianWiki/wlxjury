@@ -1,13 +1,14 @@
-<!-- Recovered 2026-11-25 from session transcripts: plan v2 as last edited on 2026-11-11.
+<!-- Recovered 2026-11-25 after its file was lost: plan v2 as last edited on 2026-11-11.
      Changes made on recovery are marked "(updated 2026-11-25)". -->
 
 # Regional winners report (plan v2)
 
 **Status:** plan only. Nothing is built. Date: 2026-11-11.
 
-**Status (updated 2026-11-25):** recovered 2026-11-25 from session transcripts; decisions 1–16 open;
-phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5). The maintainer made this the
-top priority for WLM 2026 Ukraine, whose jury final is at the beginning of December.
+**Status (updated 2026-11-25):** recovered 2026-11-25 after its file was lost; decisions 1–5 and
+7–16 open, 6 decided; phase 0 done for WLE 2026, rerun for WLM 2026 below (§7.4, §7.5). The
+maintainer made this the top priority for WLM 2026 Ukraine, whose jury final is at the beginning
+of December.
 
 **Revisions:**
 - **v1:** the first draft. It was recovered with this plan and is not committed (updated 2026-11-25).
@@ -219,7 +220,7 @@ it.
 - **Cached file totals per round:** `RoundImageCounts.get(ids)(ImageJdbc.imageCountByRounds)`
   (`RoundImageCounts.scala:33`, used at `RoundController.scala:59`). They are totals, not per region.
 - **Cached region counts of the contest's files** per category (`RegionCountCache.category`,
-  `ImageJdbc.categoryRegionCounts`; `GalleryController.scala:55-57`, `ImageJdbc.scala:685`).
+  `ImageJdbc.categoryRegionCounts`; `GalleryController.scala:55-57`, `ImageJdbc.scala:686`).
 
 ### 1.5 Lineage today
 
@@ -598,7 +599,7 @@ GROUP BY ri.round_id, ri.region
 - **Rows** are mapped to grouped `ImageWithRating`, so `rateText`, `criteriaRateString` and `Ranks`
   work unchanged.
 - MariaDB 10.6+ has window functions, and the code already uses them (`RoundImageQuery.scala:160`,
-  `ImageDbNew.scala:131`).
+  `ImageDbNew.scala:130-131`).
 - **The proof (counts path only):** a `fromCounts`-style check per round, the same as
   `RoundList.fromCounts`, reused or factored out. If it fails, the votes are read.
 
@@ -861,6 +862,10 @@ what-if; about 0.5 s each, including `docker exec`.
 - **Prefixes (decision 10):** of 32,531 contest files, 1,884 have non-KOATUU prefixes (`00`, `88`,
   `90`, `92`–`94`, `96`, `99`, `Q12`) and are in no round (the roots' 27-code filter); 14 have no
   id, 13 of them in the roots (3 positive in Q-00), none later.
+- **Reconciliation:** 32,531 = 30,633 KOATUU + 1,884 other prefixes + 14 without an id. The roots
+  are disjoint: 8,840 + 18,443 files in `round_image` (each with 1 set aside as deleted). Kha-00's
+  2,920 overlap them by 2,900 (862 Q-00, 2,038 Qn-00), so 20 are in Kha-00 only. In none of the
+  three: 5,228 (3,343 KOATUU, the 1,884 prefixed, 1 without an id).
 - **Small root:** the chain's roots hold 27.2% and 56.7% of the files (Kha-00, outside it, 9.0%).
 - **`round_image`:** counters populated (`counts_gen = counts_gen_done`) and equal to the votes on
   all 285 (round, region) cells, so the counts path can be checked on this copy.
@@ -938,6 +943,8 @@ comes from the stored `top_binary_order` (§2.5).
 **Recommendation: (a).** Reasons:
 - the report is most useful while round 3 runs;
 - (b) points at round 2 while round 3 still decides.
+
+**Decided (maintainer, 2026-11-25): (a)**: open rounds count, with a "provisional" badge.
 
 **7. Photos per region.**
 - (a) A parameter from 1 to 10, default 3.
