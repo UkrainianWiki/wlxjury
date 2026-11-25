@@ -202,7 +202,7 @@ tests (section 5) apply to every slice. Days include review.
 | 1 | Foundation and first screens: Play action `POST /api/graphql`, auth, limits, denial logging, SDL file plus the schema-matches-SDL test, codegen config, a section in `docs/api.md`, fixture sign-in; queries `me`, `contests`, `contest(id)` with rounds | #136's first screen, the root contests grid | 3-4 |
 | 2 | Done: `roundStat` (round statistics, juror stats) and `round(id)` | #136's second screen, organizer round statistics | 1-1.5 |
 | 3 | Done (Q8 amended): `roundImages` (keyset connection, the viewer's own vote, through `viewerRounds` / `viewAs`), `image(roundId, pageId)` | the juror gallery and large view | 2 |
-| 4 | Mutation `vote(roundId, pageId, rate, criterion?)`, after its rules are extracted into a service (below) | juror voting | 3 |
+| 4 | Mutation `vote(roundId, pageId, rate, criterion?)`, after its rules are extracted into a service (below). `GraphQLContext.memo` (per-request cache of the round and gallery checks) must not carry an access check across a vote mutation in the same request: a mutation checks afresh, and clears or bypasses the cache | juror voting | 3 |
 | 5 | Comments, users, monuments; series fields once #119-#124 are in. Admin and organizer screens come first, so this slice may move ahead of 3-4 | organizer and admin screens | 2 |
 | 6 | Organizer and admin mutations through the services (no `createRound` in the first slices); subscriptions only when a screen needs one | later | open |
 

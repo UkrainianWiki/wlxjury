@@ -90,7 +90,8 @@ final case class GraphQLContext(caller: ApiAuth.Caller, request: RequestHeader, 
     * a missing resource ([[GraphQLError.notFound]]) by default, else e.g. [[GraphQLError.forbidden]]
     * for a resource the caller sees but may not use so (another juror's votes, a round's statistics
     * for its juror). The request's first denial is logged on `security.authz`; a later one carries
-    * the same reference and is counted ([[logRepeatedDenials]]).
+    * the same reference and is counted ([[logRepeatedDenials]]). A check answered from [[memo]] (an
+    * alias of a field already denied) doesn't come here again: its repeats aren't counted.
     */
   def denied(denial: Secured.Denial, error: String => GraphQLError = GraphQLError.notFound): GraphQLError =
     Option(firstDenial.get) match {
@@ -106,7 +107,9 @@ final case class GraphQLContext(caller: ApiAuth.Caller, request: RequestHeader, 
         }
     }
 
-  /** After the run: the denials after the first, counted on the first's line's logger. */
+  /** After the run: the denials after the first, counted on the first's line's logger. Repeats of a
+    * check cached by [[memo]] are not among them (the same denial, not checked again).
+    */
   def logRepeatedDenials(): Unit = {
     val more = moreDenials.get
     if (more > 0)
@@ -148,7 +151,8 @@ object GraphQLError {
     val TooManyRequests = "TOO_MANY_REQUESTS"
 
     /** A round not open to its juror now (stopped, being created, the juror stopped on it, its files
-      * moving): a state, not a denial, as the web gallery's 409 `round_closed` / `round_paused`.
+      * moving): a state, not a denial, as the web gallery's 409. Every `CONFLICT` is the message
+      * `round_closed` with `extensions.reason` (`round_paused` included: [[GraphQLError.roundClosed]]).
       */
     val Conflict = "CONFLICT"
   }

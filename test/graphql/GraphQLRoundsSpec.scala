@@ -610,6 +610,8 @@ class GraphQLRoundsSpec extends PlaySpecification with PlayTestDb {
         println(s"roundImages statements per request (totalCount and the checks included): first 5: $small, " +
           s"first 50: $large, first 50 after a cursor: $next")
         nodes(largeResult) must haveSize(50)
+        // 10 is a deliberate budget (the caller's lookup, the checks, the page, the count): raise it only on
+        // purpose, with the reason in the review
         small must beBetween(1, 10)
         large === small
         next === small
