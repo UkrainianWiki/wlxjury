@@ -277,7 +277,7 @@ class RoundImagesReviewSpec extends PlaySpecification with PlayTestDb {
         val reviewed = create("Reviewed")
         val atOnce = create("At once", "distributeAfter" -> "true")
         def named(n: String) = Round.findByContest(contestId).find(_.name.contains(n)).get
-        (form must not(contain("name=\"distributeAfter\""))) and (form must contain("Review images first")) and
+        (form must not(contain("name=\"distributeAfter\""))) and (form must contain("Save and find matching files")) and
           (status(reviewed) === SEE_OTHER) and (named("Reviewed").inReview must beTrue) and
           (votes(named("Reviewed").getId) === 0) and
           (status(atOnce) === SEE_OTHER) and (named("At once").inReview must beTrue) and

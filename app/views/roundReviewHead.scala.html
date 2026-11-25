@@ -8,14 +8,29 @@
    Distribute, which opens the round's jurors form (RoundReviewController.jurors: the jurors, the file
    distribution and the previous rounds' confirmation, D18, are chosen there); when previous rounds'
    votes changed since the fill, the warning. A re-apply's diff (P3-5). Organizers see the same,
-   without Distribute (D20). *@
+   without Distribute (D20). A round being set up: step 2 of its setup, its step bar, "N of the
+   contest's M files match", and its next step (round/nextStep), "Distribute to jurors" its main
+   action once the matching has ended. *@
 <div id="round-review">
-    <h2 class="h4" id="round-review-title">@Messages("round.review.title", r.round.number, r.round.description)</h2>
+    @* a round being set up: step 2 of its setup (UI-path plan §4 step 1), its step bar and heading;
+       once its matching has ended, "N of the contest's M files match" *@
+    @r.nextStep match {
+        case Some(step) => {
+            @round.setupSteps(controllers.RoundNextStep.CheckFiles, Some(step), mayAct = r.mayEdit)
+            <h2 class="h4" id="round-review-title">@Messages("round.review.setup.title", r.round.number, r.round.description)</h2>
+        }
+        case None => {
+            <h2 class="h4" id="round-review-title">@Messages("round.review.title", r.round.number, r.round.description)</h2>
+        }
+    }
     @snippets.roundLinks(r.links)
 
     @flash.get("success").map { msg => <div class="alert alert-info" id="flash-success">@msg</div> }
     @flash.get("error").map { msg => <div class="alert alert-danger" id="flash-error">@msg</div> }
 
+    @if(r.nextStep.exists(_.state != controllers.RoundNextStep.Matching)) {
+        <h3 class="h5" id="round-review-match" data-in="@r.count(RoundImageJdbc.Status.In)" data-files="@r.contestFiles">@Messages("round.review.match", r.count(RoundImageJdbc.Status.In), r.contestFiles)</h3>
+    } else {
     <p id="round-review-state">@{
         if (r.job.exists(_.isActive) && r.round.distributing && r.round.lifecycle == Round.Status.Draft) Messages("round.review.filling")
         else if (fillRunning && r.round.inReview) Messages("round.review.filling")
@@ -24,6 +39,7 @@
         else if (r.round.distributing) Messages("round.review.filling")
         else Messages("round.review.distributed")
     }</p>
+    }
     @* the job's status with Retry / Cancel (and its poll) for those who may act on it; organizers
        (D20, read only) get the state above, and a failure as text *@
     @for(job <- r.job if !job.isDone) {

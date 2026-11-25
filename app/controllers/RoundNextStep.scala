@@ -16,9 +16,25 @@ final case class RoundNextStep(round: Round, state: RoundNextStep.State) {
 
   /** "Distribute to jurors" is offered, enabled (the jurors form, then its Distribute). */
   def distributeAllowed: Boolean = state == RoundNextStep.Ready
+
+  /** The round's setup step now (UI-path plan §4 step 1, the maintainer's decision of 2026-11-25):
+    * [[RoundNextStep.CheckFiles]] while its matching files are being found, when none matched or a
+    * re-apply didn't finish; [[RoundNextStep.Jurors]] once they are matched, when choosing the jurors
+    * and distributing is what is left (offered exactly when [[distributeAllowed]]). Step 1, the
+    * settings, is behind it: the round is saved.
+    */
+  def step: Int = if (distributeAllowed) RoundNextStep.Jurors else RoundNextStep.CheckFiles
 }
 
 object RoundNextStep {
+
+  /** The setup steps (the step bar, round/setupSteps.scala.html): the settings form, the review
+    * page, the jurors form; then the round is open to its jurors.
+    */
+  val WhichFiles = 1
+  val CheckFiles = 2
+  val Jurors = 3
+  val Steps = 3
 
   sealed abstract class State(val id: String, val reasonKey: Option[String])
 

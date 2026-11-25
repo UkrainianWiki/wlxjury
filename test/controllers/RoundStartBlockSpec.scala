@@ -1,6 +1,7 @@
 package controllers
 
-import db.scalikejdbc.{PlayTestDb, Round, RoundUser, User}
+import db.scalikejdbc.{PlayTestDb, Round, RoundImageJdbc, RoundUser, User, WriteTx}
+import org.intracer.wmua.Image
 import org.jsoup.Jsoup
 import play.api.Application
 import play.api.libs.json.Json
@@ -13,7 +14,10 @@ import services.jobs.{JobJdbc, NewJob}
 import scala.concurrent.Future
 
 /** A round not yet distributed to its jurors has no Start on the Rounds page: its state instead,
-  * and, waiting in review, a link to its jurors form, where it is distributed. A start posted
+  * and, being set up (UI-path plan §4 step 1), its step's action: waiting in review with its files
+  * matched, "Setting up – step 3 of 3: choose jurors" and a link to its jurors form, where it is
+  * distributed; with none matched or its files being matched, "… step 2 of 3: check files" and its
+  * review page. A start posted
   * anyway is refused with a message that says why (in review: not distributed; a job running:
   * being distributed or selected; a creation that didn't finish), and nothing changes. An open or
   * stopped round keeps its Start/Stop. The Rounds page and the start are for the contest's admins
@@ -63,6 +67,15 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
       dedupeKey = Some(RoundDistributionHandler.dedupeKey(round.getId)), params = Json.obj(params: _*)),
       owner = None)(scalikejdbc.AutoSession)
 
+  /** `round`'s files matched: `in` it, as its fill leaves them (two of the contest's files). */
+  private def matched(round: Round): Unit = {
+    imageDao.batchInsert(Seq(1L, 2L).map(i => Image(i, s"File:Image$i.jpg", None, None, 1000, 800, None)))
+    WriteTx.write { implicit s =>
+      Round.lock(Seq(round.getId))
+      RoundImageJdbc.addFilled(round.getId, Seq(1L, 2L), RoundImageJdbc.Origin.Manual)
+    }
+  }
+
   private def roundsPage(app: Application, f: Fixture, user: User): Future[Result] =
     route(app, FakeRequest(GET, s"/admin/rounds?contestId=${f.contestId}")
       .withSession(Secured.UserName -> user.email).withCSRFToken).get
@@ -83,21 +96,43 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
     !row(html, round).select(s"#set-active-form-${round.getId}").isEmpty
 
   "the Rounds page" should {
-    "show a round in review as waiting for distribution, with no Start and a link to its jurors form" in {
+    "show a round in review with its files matched at step 3, with no Start and a link to its jurors form" in {
       testDbApp { implicit app =>
         val f = fixture()
         val review = inReview(f, 2)
+        matched(review)
         val html = contentAsString(roundsPage(app, f, f.admin))
         val link = row(html, review).selectFirst("a.round-start-distribute")
-        // one Distribute per row: the review block keeps its images and Review link only
+        // one Distribute per row: the review block keeps its files and its review page's link only
         val distributes = row(html, review).select(s"a[href='/admin/rounds/${review.getId}/jurors']")
 
         (hasStart(html, review) must beFalse) and
-          (stateOf(html, review) must beSome("not.distributed" -> "Not started – waiting for distribution")) and
+          (stateOf(html, review) must beSome("not.distributed" -> "Setting up – step 3 of 3: choose jurors")) and
+          (row(html, review).selectFirst(".wlx-round-start-state").attr("data-step") === "3") and
           (link.attr("href") === s"/admin/rounds/${review.getId}/jurors") and
           (link.text() === "Distribute to jurors") and
           (distributes.size() === 1) and
-          (row(html, review).select(s"#round-review-${review.getId} a").size() === 1)
+          (row(html, review).select(s"#round-review-${review.getId} a").size() === 1) and
+          (html must not(contain("waiting for distribution")))
+      }
+    }
+
+    "show a round in review with no file matched, or its files being matched, at step 2, with its review page" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val none = inReview(f, 1)
+        val selecting = draft(f, 2)
+        job(f, selecting, "mode" -> RoundDistributionHandler.Mode.Fill, "distributeAfter" -> false)
+        val html = contentAsString(roundsPage(app, f, f.admin))
+        def check(r: Round) = row(html, r).selectFirst("a.round-start-check-files")
+
+        foreach(Seq(none -> "not.distributed", selecting -> "selecting")) { case (r, state) =>
+          (hasStart(html, r) must beFalse) and
+            (stateOf(html, r) must beSome(state -> "Setting up – step 2 of 3: check files")) and
+            (check(r).attr("href") === s"/admin/rounds/${r.getId}/review") and (check(r).text() === "Check the files") and
+            (row(html, r).select("a.round-start-distribute").isEmpty must beTrue) and
+            (row(html, r).select(s"a[href='/admin/rounds/${r.getId}/review']").size() === 1)
+        }
       }
     }
 

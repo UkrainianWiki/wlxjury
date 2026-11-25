@@ -15,7 +15,7 @@ import services.distribution.{RoundDistributionHandler, RoundFreezes, RoundImage
   RoundRebalanceService}
 import services.imports.{FileTitles, ImportSource, WikiTitle}
 import services.distribution.RoundStartBlock
-import services.jobs.JobJdbc
+import services.jobs.{Job, JobJdbc}
 
 import javax.inject.Inject
 import modules.BlockingExecutionContext
@@ -50,6 +50,9 @@ class RoundController @Inject() (
           val lineage = services.RoundLineage.of(rounds, contest)
           // the latest of each round's distribution and juror-add jobs (as a refused start reads them)
           val jobs = RoundStartBlock.latestJobs(rounds.flatMap(_.id))
+          // each round's latest distribution job (`jobs` has juror adds too)
+          val distributions = JobJdbc.latestBySubjects(RoundDistributionHandler.Kind,
+            RoundDistributionHandler.SubjectType, rounds.flatMap(_.id))
           Ok(
             views.html.rounds(
               user,
@@ -72,14 +75,10 @@ class RoundController @Inject() (
               RoundUser.openWithoutActiveJuror(rounds),
               Some(lineage),
               // "Find the matching files again" (#194), from each round's latest distribution job (as the POST
-              // reads it; `jobs` has juror adds too); the jurors read only for a cancelled or unfinished setup
-              // meant for review
-              {
-                val distributions = JobJdbc.latestBySubjects(RoundDistributionHandler.Kind,
-                  RoundDistributionHandler.SubjectType, rounds.flatMap(_.id))
-                rounds.filter(r => RoundStartBlock.mayFindFilesAgain(r, distributions.get(r.getId),
-                  User.findRoundJurors(r.getId).nonEmpty)).flatMap(_.id).toSet
-              }
+              // reads it); the jurors read only for a cancelled or unfinished setup meant for review
+              rounds.filter(r => RoundStartBlock.mayFindFilesAgain(r, distributions.get(r.getId),
+                User.findRoundJurors(r.getId).nonEmpty)).flatMap(_.id).toSet,
+              RoundController.setupSteps(rounds, jobs, distributions)
             )
           )
         }
@@ -706,16 +705,14 @@ class RoundController @Inject() (
                   // images are ready"): its jurors are chosen on its jurors form, which distributes it
                   roundsService.submit(round.copy(active = true, track = Round.trackLabel(round.track, trackMainNames)),
                     Nil, liveToken, user.id, titles, review = true) match {
-                    // the selection runs in the background: "Choose jurors next" waits for it on the
-                    // round's jurors form; "Review images first", on the rounds list, which shows its progress
-                    // saved: said on the page it lands on (never "created": it has no jurors yet)
+                    // "Save and find matching files" (step 1 of its setup, UI-path plan §4 step 1): its
+                    // review page, step 2, which shows the matching's progress; saved, said there (never
+                    // "created" or "ready": it has no jurors yet). A `next` posted by a form from before
+                    // the one button lands there too
                     case created: RoundService.Created =>
                       liveToken.foreach(t => RoundController.SavedForms.remember(t, RoundController.postedHash(request)))
-                      val saved = "success" -> messagesApi.preferred(request)("round.saved.matching",
-                        created.round.number, created.round.description)
-                      if (RoundController.nextPosted(request) == RoundController.NextJurors)
-                        Redirect(routes.RoundReviewController.jurors(created.round.getId)).flashing(saved)
-                      else toRoundsList.flashing(saved)
+                      Redirect(routes.RoundReviewController.review(created.round.getId)).flashing(
+                        "success" -> messagesApi.preferred(request)("round.saved.matching", created.round.number))
                     // the same token saved a round meanwhile (two submits at once; a later one is
                     // answered by savedAgain before the form is validated): that round's Edit page
                     case resubmitted: RoundService.Resubmitted =>
@@ -1014,9 +1011,14 @@ class RoundController @Inject() (
               val lineage = ContestJuryJdbc.findById(round.contestId).map(services.RoundLineage.of(stat.rounds, _))
               val filter = lineage.fold(RoundsFilter.fromRequest(request))(RoundsFilter.fromRequest(request).withLineage(_))
 
+              // being set up: its one-line state and a link to its current step (UI-path plan §0 row 7)
+              val setupStep =
+                if (!round.distributing) None
+                else RoundNextStep.of(round, RoundService.latestJob(round), RoundNextStep.inCount(round))
+
               Secured.switchingContest(sessionUser, user)(
                 Ok(views.html.roundStat(user, round, stat, comments, filter, noActiveJuror,
-                  roundChanges, lineage)))
+                  roundChanges, lineage, setupStep, Secured.administersRound(user, round))))
             }
           }
           .getOrElse {
@@ -1127,26 +1129,27 @@ object RoundController {
   /** A re-apply's criteria refused in its transaction (rolled back): the message key. */
   final case class CriteriaRefused(messageKey: String) extends RuntimeException(messageKey, null, false, false)
 
+  /** The Rounds page's rounds being set up (UI-path plan §4 step 1, replacing #192's interim "Not
+    * started – waiting for distribution"): those waiting in review or whose files are being matched
+    * for it ([[RoundStartBlock.NotDistributed]], [[RoundStartBlock.Selecting]]), each with its setup
+    * step from its latest distribution job (as its Edit and review pages read it) and its matching
+    * files, read for those rounds only. A round being distributed, or whose setup was cancelled,
+    * failed or didn't finish, keeps its own state.
+    *
+    * @param jobs          each round's latest distribution or juror-add job (the page's, RoundStartBlock.latestJobs)
+    * @param distributions each round's latest distribution job
+    */
+  def setupSteps(rounds: Seq[Round], jobs: Map[Long, Job], distributions: Map[Long, Job]): Map[Long, RoundNextStep] =
+    rounds.flatMap { r =>
+      RoundStartBlock.of(r, jobs.get(r.getId))
+        .filter(b => b == RoundStartBlock.NotDistributed || b == RoundStartBlock.Selecting)
+        .flatMap(_ => RoundNextStep.of(r, distributions.get(r.getId), RoundNextStep.inCount(r)))
+        .map(r.getId -> _)
+    }.toMap
+
   /** The round form was posted in its re-apply state (its hidden `reapply` field, P3-5). */
   def reapplyPosted(request: Request[AnyContent]): Boolean =
     request.body.asFormUrlEncoded.flatMap(_.get("reapply")).exists(_.contains("true"))
-
-  /** The new-round form's "Review images first" (`next=review`): the rounds list, then the round's
-    * review page.
-    */
-  val NextReview = "review"
-
-  /** The new-round form's "Choose jurors next" (`next=jurors`): the round's jurors form, which
-    * waits for its images' selection.
-    */
-  val NextJurors = "jurors"
-
-  /** The new-round form's button pressed (`next`): [[NextJurors]], else [[NextReview]] (a client
-    * without the buttons: the rounds list, as before).
-    */
-  def nextPosted(request: Request[AnyContent]): String =
-    request.body.asFormUrlEncoded.flatMap(_.get("next")).flatMap(_.headOption).filter(_ == NextJurors)
-      .getOrElse(NextReview)
 
   /** The text of a refusal by our own checks of a round's settings (`require`, in
     * [[RoundService]] and the distribution), without its prefix; None for any other failure.

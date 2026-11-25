@@ -192,7 +192,7 @@ test('the round form sent from its focused category field sends the text typed',
     await page.keyboard.type('Category:Rivers of Ukraine');
     await answered;
     // sent from the field itself, still focused (no blur makes the text an item first)
-    await control.evaluate((el) => el.form.requestSubmit(document.getElementById('round-form-jurors-next')));
+    await control.evaluate((el) => el.form.requestSubmit(document.getElementById('round-form-save-find')));
     await expect.poll(() => sent.length).toBe(1);
     expect(sent[0].get('source')).toBe('Category:Rivers of Ukraine');
     // the boxes and the choice under More category options (its default), no operation select

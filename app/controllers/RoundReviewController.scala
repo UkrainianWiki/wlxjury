@@ -40,7 +40,7 @@ import javax.inject.Inject
   * under the round's lock ([[RoundService.distributeReviewed]]); read only once the round has a
   * vote (a partial distribution). It shows the number of images that passed the filters, and per
   * place. While the round's fill runs it shows the job, and the page reloads as it ends: a new
-  * round's "Choose jurors next" lands here. A POST without the picker distributes to the round's
+  * round's jurors are chosen here, step 3 of its setup. A POST without the picker distributes to the round's
   * jurors, refused if it has none. The previous rounds' warning (D18, with its confirmation) and
   * an unfinished re-apply show there too.
   */
@@ -82,6 +82,7 @@ class RoundReviewController @Inject() (
           // D18's check reads the previous rounds' votes: once per page view, on the review's main view only
           // (its first page of the round's files in all places), not on every page or place of the list
           val mainView = page <= 1 && region == "all" && country.isEmpty && status == RoundImageJdbc.Status.In
+          val nextStep = RoundNextStep.of(round, job, counts.getOrElse(RoundImageJdbc.Status.In, 0))
           val summary = RoundReview(
             round = round,
             statusCounts = counts,
@@ -101,7 +102,9 @@ class RoundReviewController @Inject() (
             // one read of the contest's rounds
             links = services.RoundLineage.links(round, Round.findByContest(round.contestId)).visibleTo(user),
             // being set up: its next step, and Distribute's state (#186)
-            nextStep = RoundNextStep.of(round, job, counts.getOrElse(RoundImageJdbc.Status.In, 0))
+            nextStep = nextStep,
+            // step 2's heading, "N of the contest's M files match": the contest's files, read only then
+            contestFiles = if (nextStep.isDefined) ImageJdbc.countByContest(view.contest) else 0L
           )
           Secured.switchingContest(sessionUser, user)(
             Ok(views.html.contestFiles(user, files, pager, view, Some(summary))))
@@ -196,6 +199,7 @@ class RoundReviewController @Inject() (
     val filling = job.exists(j => j.isActive && !RoundDistributionHandler.distributeMode(j)) ||
       (round.distributing && !round.inReview && job.forall(_.isActive))
     val ready = round.inReview && !job.exists(_.isActive)
+    val inCount = if (ready) RoundImageJdbc.statusCounts(round.getId).getOrElse(RoundImageJdbc.Status.In, 0) else 0
     val roundJurors = User.distributionJurors(round.getId).sortBy(_.getId)
     val contestJurors = if (ready) User.loadJurors(round.contestId).filter(_.deletedAt.isEmpty) else Nil
     val chosen = if (roundJurors.nonEmpty) roundJurors.flatMap(_.id) else contestJurors.flatMap(_.id)
@@ -208,7 +212,7 @@ class RoundReviewController @Inject() (
       job = job,
       filling = filling,
       ready = ready,
-      inCount = if (ready) RoundImageJdbc.statusCounts(round.getId).getOrElse(RoundImageJdbc.Status.In, 0) else 0,
+      inCount = inCount,
       placeLabel = places.map { case (scheme, _) => PlaceMenu.placeLabel(scheme) },
       places = places.fold(Seq.empty[Place])(_._2),
       roundJurors = roundJurors,
@@ -217,7 +221,9 @@ class RoundReviewController @Inject() (
       prevChanged = ready && RoundService.prevChanged(round),
       reapplyUnfinished = reapplyUnfinished(round, job),
       form = distributeForm.fill(DistributeChoice(jurorsShown = true, chosen.map(_.toString),
-        Some(round.distribution), confirmPrevChanged = false, jury = Some(RoundService.jurySignature(round.getId))))
+        Some(round.distribution), confirmPrevChanged = false, jury = Some(RoundService.jurySignature(round.getId)))),
+      // being set up: step 3's heading and the step bar
+      nextStep = RoundNextStep.of(round, job, inCount)
     )
   }
 
@@ -375,7 +381,9 @@ final case class RoundReview(
     reapplyUnfinished: Boolean = false,
     /** The rounds it was created from and those created from it, those the viewer may see. */
     links: services.RoundLineage.Links = services.RoundLineage.Links.empty,
-    nextStep: Option[RoundNextStep] = None
+    nextStep: Option[RoundNextStep] = None,
+    /** The contest's files (step 2's heading), if it is being set up. */
+    contestFiles: Long = 0L
 ) {
   def count(status: String): Int = statusCounts.getOrElse(status, 0)
 }
@@ -406,5 +414,7 @@ final case class JurorsFormView(
     jurorsEditable: Boolean,
     prevChanged: Boolean,
     reapplyUnfinished: Boolean,
-    form: Form[DistributeChoice]
+    form: Form[DistributeChoice],
+    /** Being set up: its setup step (the step bar, step 3's heading). */
+    nextStep: Option[RoundNextStep] = None
 )
