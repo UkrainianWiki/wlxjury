@@ -1257,11 +1257,13 @@ more files, **Stop** them, then use **Start and give a fair share…**.
   so ("Reload shortly") and their votes are refused meanwhile; then the round is open again.
 - A stopped round stays stopped: its jurors can't vote in it, as before. When it is started again,
   every juror has their share, the new juror too.
-- If the job fails, the round is back as it was (open, or stopped) and **Retry** resumes it.
-  **Cancel** also puts the round back as it was. A juror the job added stays in the round with the files given so far; only if it gave
-  them nothing yet are they stopped again (if they weren't active before).
-- Choosing a juror who is already in the round tops them up: they get only what they are short
-  of. That is also how to finish an add that was cancelled.
+- If the job fails, the round is open or stopped as last set (a Start or Stop pressed meanwhile
+  is kept), and **Retry** resumes it. **Cancel** leaves the round the same way. A juror the job
+  added stays in the round with the files given so far; only if it gave them nothing yet are they
+  stopped again (if they weren't active before).
+- A juror who is already active in the round can't be added again. To give them the rest of a
+  cancelled add, or more files, **Stop** them, then use **Start and give a fair share…**: they get
+  only what they are short of.
 - Rounds from before the rounds' jurors were stored (old rounds) can't take a juror.
 
 <a id="a-reassign-juror"></a>

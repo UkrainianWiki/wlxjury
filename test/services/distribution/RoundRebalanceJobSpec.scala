@@ -1260,6 +1260,33 @@ class RoundRebalanceJobSpec extends Specification with TestDb with BeforeAll wit
         (roundState(r1) === StoppedState) and (roundUser(r1, y1.getId) must beSome(true)) and (rows(r1, y1.getId).size === 2)
     }
 
+    "release the round on a Cancel while it still holds it frozen: back stopped, or back open" in {
+      Seq(true, false).map { stopped =>
+        SharedTestDb.truncateAll()
+        val (_, round0, _, y, admin) = setUp(6)
+        val r = round0.getId
+        val round = if (stopped) stop(r) else round0
+        val h = new TestRebalance(chunkRows = 2)
+        val (service, scheduler) = inline(h)
+        val held = mutable.Buffer.empty[(Boolean, Int, Option[Boolean], String)]
+        // after the first give committed, between steps: the job running, the round frozen by it
+        h.afterGive = Some(1 -> (() => {
+          held += roundState(r)
+          scheduler.cancel(rebalanceJobs().head.id)
+        }))
+        val job = queued(service.add(round, y.getId, admin, signature(round)(service)))
+        (held.toSeq aka s"stopped=$stopped: frozen at Cancel" must_==
+          Seq(if (stopped) FrozenStopped else (false, 1, Some(true), Round.Status.Active))) and
+          (JobJdbc.findById(job.id).map(_.status) must beSome(JobStatus.Cancelled)) and
+          (RoundRebalanceHandler.stateOf(JobJdbc.findById(job.id).get).frozen must beEmpty) and
+          (roundState(r) aka s"stopped=$stopped: after Cancel" must_==
+            (if (stopped) StoppedState else (true, 0, None, Round.Status.Active))) and
+          // given files: the juror stays started with them
+          (roundUser(r, y.getId) must beSome(true)) and (rows(r, y.getId).size === 2) and
+          (RoundImageInvariants.violations(r) must beEmpty)
+      }.reduce(_ and _)
+    }
+
     "stay stopped when another instance takes the job over after its own died mid-job" in {
       val (_, round0, _, y, admin) = setUp(6)
       val r = round0.getId
