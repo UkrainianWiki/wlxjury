@@ -1926,9 +1926,10 @@ is "the best row ≥ X", the row a file ranks by, so the fill is unchanged.)
   the jurors' votes in the picker's order, only between two different scores; the text is the
   server's own). The link is shown only where that view shows the same cut (`CutPicker.viewable` and
   `RoundDistributionHandler.cutViewData`): one previous round; no filter the view doesn't apply
-  (region, monuments, category, rounds left out, conflicts of interest, size, megapixels, media type,
-  special nomination, "selected by", "rejected by"); no deleted file with votes there and no
-  disqualified file of a re-apply (the picker leaves those out, the view lists them); and the same
+  (region, monuments, category, rounds left out, size, megapixels, media type, special nomination,
+  "selected by", "rejected by"); the picker left none of the view's files out (its per-image filters
+  kept every file it read, so "Leave out conflicts of interest", on by default, counts only when it
+  leaves a file out; no deleted file with votes there; no disqualified file of a re-apply); and the same
   order and tie key, which holds for every average rule (`rated`, `assigned`: the view's exact
   `AverageRule.keySql` key; `sum`: the sum), criteria rounds (the vote rate is the criteria's sum in
   both), and each yes/no `BinaryOrder` (the link names it as `sort`). Otherwise no link (not a

@@ -893,8 +893,9 @@ A round for all the files takes no filters at all.
 - **Show this cut in the ratings**: opens the earlier round's ratings in a new tab, on the page with
   the cut, with a line between the last file taken and the first one left out. It is offered only
   when those ratings list the same files in the same order: one earlier round, none of the other
-  filters of this section, and all the jurors' votes visible to you there (not while you are a juror
-  of that round and it is open).
+  filters of this section (leaving out conflicts of interest counts only when one of their files is
+  in that round), and all the jurors' votes visible to you there (not while you are a juror of that
+  round and it is open).
 - A round saved earlier with both a number of top files and a minimum score keeps them. Re-applying
   its filters asks you to choose one cut; a number that now falls inside a tie is explained, and you
   choose another.
