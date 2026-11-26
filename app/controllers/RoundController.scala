@@ -78,7 +78,9 @@ class RoundController @Inject() (
               // reads it); the jurors read only for a cancelled or unfinished setup meant for review
               rounds.filter(r => RoundStartBlock.mayFindFilesAgain(r, distributions.get(r.getId),
                 User.findRoundJurors(r.getId).nonEmpty)).flatMap(_.id).toSet,
-              RoundController.setupSteps(rounds, jobs, distributions)
+              RoundController.setupSteps(rounds, jobs, distributions),
+              // each job's title: its status's label (snippets/jobStatus)
+              jobs.values.map(j => j.id -> roundsService.jobTitle(j)).toMap
             )
           )
         }

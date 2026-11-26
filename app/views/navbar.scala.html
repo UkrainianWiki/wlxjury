@@ -460,7 +460,7 @@
         ("" -> SelectionItem("rounds.filter.track.all", count = Some(bar.count(None)))) +:
           bar.tracks.map(t => t.key -> SelectionItem(views.TrackChip.short(t, lineage), localized = false,
             count = Some(bar.count(Some(t.key))),
-            before = snippets.trackSwatch(t))),
+            before = snippets.trackSwatch(t, lineage))),
         hideEmpty = true, alwaysShown = (key: String) => key.isEmpty
     ).toDropDown(id = Some("rounds-track-menu"), label = Some(Messages("round.track")), labelShown = true))
     }

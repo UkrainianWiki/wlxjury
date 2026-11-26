@@ -1,9 +1,10 @@
 package controllers
 
 import modules.BlockingExecutionContext
-import play.api.libs.json.Json
+import play.api.libs.json.{JsObject, JsString, Json}
 import play.api.mvc.{AbstractController, Action, AnyContent, ControllerComponents, RequestHeader}
 import services.ReadinessCheck
+import services.imports.CommonsLogin
 
 import javax.inject.Inject
 import scala.concurrent.Future
@@ -12,12 +13,13 @@ import scala.util.control.NonFatal
 class ReadinessController @Inject()(
     cc: ControllerComponents,
     check: ReadinessCheck,
+    commons: CommonsLogin,
     ec: BlockingExecutionContext
 ) extends AbstractController(cc) {
   private val identity = {
     val stream = getClass.getClassLoader.getResourceAsStream("wlxjury-build.json")
     require(stream != null, "Missing packaged release identity")
-    try Json.parse(stream) finally stream.close()
+    try Json.parse(stream).as[JsObject] finally stream.close()
   }
 
   def ready: Action[AnyContent] = Action.async { request =>
@@ -34,7 +36,10 @@ class ReadinessController @Inject()(
         if (!isolated)
           ReadinessController.logger.error(s"readiness: the database pool runs at $isolation, not ${ReadinessCheck.RequiredIsolation}: " +
             "set db.default.hikaricp.transactionIsolation = TRANSACTION_READ_COMMITTED")
-        if (isolated && check.schemaVersion().contains(expected)) Ok(identity).withHeaders(CACHE_CONTROL -> "no-store")
+        // "commons": the Commons login's last state, for the post-deploy check; it never makes
+        // the app unready (imports work anonymously) and names no account
+        if (isolated && check.schemaVersion().contains(expected))
+          Ok(identity + ("commons" -> JsString(commons.state))).withHeaders(CACHE_CONTROL -> "no-store")
         else ServiceUnavailable(Json.obj("status" -> "unavailable")).withHeaders(CACHE_CONTROL -> "no-store")
       } catch {
         case NonFatal(_) =>

@@ -69,6 +69,37 @@ describe("formatJobStatus", () => {
     });
 });
 
+describe("formatJobStatus under a label (data-labelled)", () => {
+    const monumentIds = {
+        status: "running", title: "Updating the monument ids of the files from Category:Images from WLM 2025",
+        progressDone: 1034, progressTotal: 38248, progressUnit: "files",
+        details: { inserted: 0, monumentIdsChanged: 33 }
+    };
+
+    test("carries only the progress, not the title the label already shows", () => {
+        const text = formatJobStatus(monumentIds, { labelled: true });
+        expect(text).toBe("1,034 / 38,248 files (2%), 33 monument ids changed…");
+        expect(text).not.toContain("Updating");
+    });
+
+    test("shows a monument list update's pages and monuments without a total", () => {
+        expect(formatJobStatus({ status: "running", title: "Updating the monument lists of WLM 2025",
+            progressDone: 260, progressUnit: "list pages", details: { monuments: 15839 } }, { labelled: true }))
+            .toBe("260 list pages, 15,839 monuments…");
+    });
+
+    test("says Starting before the first step reports progress", () => {
+        expect(formatJobStatus({ status: "running", title: "Distributing", details: {} }, { labelled: true }))
+            .toBe("Starting…");
+    });
+
+    test("leaves the other states as they are", () => {
+        expect(formatJobStatus(Object.assign({}, monumentIds, { status: "failed", error: "Deadlock" }), { labelled: true }))
+            .toBe("Failed at 1,034 / 38,248 files (2%), 33 monument ids changed: Deadlock");
+        expect(formatJobStatus({ status: "queued", queuePosition: 1 }, { labelled: true })).toBe("Queued (1 ahead)");
+    });
+});
+
 describe("formatJobProgress", () => {
     test("caps the percentage at 100 and leaves out an empty total", () => {
         expect(formatJobProgress({ progressDone: 12, progressTotal: 10 })).toBe("12 / 10 (100%)");
@@ -80,9 +111,9 @@ describe("formatJobProgress", () => {
 // pollJobStatus – with a fake element and fetch
 // ---------------------------------------------------------------------------
 
-function fakeElement(status) {
-    const attrs = { "data-src": "/admin/jobs/1", "data-status": status, "data-reload-on-done": "true",
-        "data-denied-text": "No access" };
+function fakeElement(status, extraAttrs) {
+    const attrs = Object.assign({ "data-src": "/admin/jobs/1", "data-status": status, "data-reload-on-done": "true",
+        "data-denied-text": "No access" }, extraAttrs || {});
     const parts = {
         ".job-status-text": { textContent: "" },
         ".job-retry": { style: { display: "none" } },
@@ -113,6 +144,20 @@ describe("pollJobStatus", () => {
         expect(el.parts[".job-retry"].style.display).toBe("inline");
         expect(el.parts[".job-cancel"].style.display).toBe("inline");
         expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    test("under a label, each poll shows only the progress; without one, the title too", async () => {
+        const body = { status: "running", title: "Updating the monument lists of WLM 2025",
+            progressDone: 260, progressUnit: "list pages", details: { monuments: 15839 } };
+        respond(body);
+        const labelled = fakeElement("running", { "data-labelled": "true" });
+        await pollJobStatus(labelled, { reload: jest.fn() });
+        expect(labelled.parts[".job-status-text"].textContent).toBe("260 list pages, 15,839 monuments…");
+        respond(body);
+        const plain = fakeElement("running");
+        await pollJobStatus(plain, { reload: jest.fn() });
+        expect(plain.parts[".job-status-text"].textContent)
+            .toBe("Updating the monument lists of WLM 2025: 260 list pages, 15,839 monuments…");
     });
 
     test("shows Retry but not Cancel for a failed job its handler won't cancel (an account join)", async () => {

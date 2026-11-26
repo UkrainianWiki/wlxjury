@@ -21,14 +21,24 @@ Merged after the 26.11.17 build, for the release after it.
 
 **Fixes**
 
+- Round form: the settings that can't be changed any more are greyed out. The filters and the criteria have a lock-icon line saying why; the rating type, the file distribution and "Distribute new files" show their reason under the field. "Previous rounds", "Leave out files that are in round(s)" and "Regions" list only their chosen rounds or regions, or "None", instead of a dropdown that looked editable (#225).
+- Collapsible sections (the round form's Media filtering, Add files, Jurors and Criteria, and the folded lists on the review, jurors and comments pages) show a chevron before their heading, pointing right while closed and down while open; a round form section's whole header opens and closes it, also with Space or Enter.
+- Tracks: in a contest without a Main track, the track named after its first round (as "Round 1", with the rounds created from it) is shown as **Main** in the chips and first in the Track menu, instead of "Round 1" on every later round; its links stay the same (#232).
 - Round form: a track label that is too long is listed at the top as "Track label (optional): …" with a link to the field; a label of emoji or other characters outside the basic plane can be typed up to its 64 characters (the browser no longer counted them twice) (#209).
 - Track labels: spaces inside a label are kept as typed, so labels share a track only when they are identical, as the form's help says (#209).
 - Track labels: labelling a first round (or giving it a nomination or regions) no longer changes the category track names of the other first rounds (#209).
+- Job progress (imports, monument id and monument list updates, a round's distribution, image checks, author normalization, the Rounds table, a round's jurors form and review, an account join): the job's name is shown once, on its own line without a colon (on the account join page, its heading), and the line under it carries only the progress ("1,034 / 38,248 files (2%), 33 monument ids changed…"), on the first view and after each update.
 - Rounds page: a round with one of several previous rounds deleted no longer says it "starts a track of its own"; it says the deleted round is left out when its track is chosen (#209).
 - Monument page: a special nomination's own monument (an id like `92-232-4801`) links its nomination's list again after "Update the monument lists", also when an earlier import stored it from another nomination's list it has since moved off (the Bulgarian heritage rows once on the German heritage lists). Run "Update the monument lists" once after the deploy to correct the stored pages.
 - Large views and the round review's file page: the monument card of a special nomination's own monument (an id like `92-232-4801`) names the nomination and the region its id carries ("Болгарська спадщина, Запорізька") in place of the bare "92"; other monuments read as before.
 - Round form: a screen reader now reads the category choice's error ("More category options") with its radio buttons, and announces the group as invalid (#211).
 - Conflicts of interest: a round being set up no longer reads "Round N is open to its jurors: stop it first"; it says the round is being set up and its jurors don't see it yet (under its setup step's line, or with its state when it has no step: being distributed, its creation failed, cancelled or unfinished), and a refused disqualify says the same instead of "its images are being distributed" (#210).
+- Imports no longer stay slow for 6 hours after Commons refuses the bot's login once: the login is tried again when an import needs it, after 5 minutes at first, waiting longer (up to 1 hour) only while Commons keeps refusing it.
+- Track chips: tracks of one contest no longer share a colour (Quality and Quantity were alike); each track keeps its name's colour across contests and years where it can, and only a track that collides moves to the next free colour (#220).
+
+**Operations**
+
+- `/health/ready` reports the Commons login as `commons` ("logged in, apihighlimits: yes", "refused at …, next try at …"), checked once in the background when the app starts, so the post-deploy check shows a refused bot password at once; it never makes the app unready.
 
 ## Deployed releases
 

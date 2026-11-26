@@ -44,7 +44,7 @@
             @if(v.filling && !gaveUp) { <p class="mb-1" id="round-jurors-filling">@Messages("round.jurors.filling")</p> }
             @for(job <- v.job if !job.isDone) {
                 <div class="card card-body p-2 mb-3" id="round-jurors-job">
-                    @snippets.jobStatus(job, req.uri)
+                    @snippets.jobStatus(job, req.uri, label = v.jobTitle)
                 </div>
                 <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
             }
@@ -58,7 +58,7 @@
                 <p id="round-jurors-images">@Messages("round.jurors.images")@snippets.count(v.inCount)</p>
                 @for(label <- v.placeLabel if v.places.nonEmpty) {
                     <details class="mb-3" id="round-jurors-places" open>
-                        <summary>@Messages("round.jurors.places", Messages(label))</summary>
+                        <summary class="wlx-disclosure"><i class="bi bi-chevron-right wlx-disclosure-icon" aria-hidden="true"></i>@Messages("round.jurors.places", Messages(label))</summary>
                         <ul class="list-unstyled mb-0 mt-1 round-jurors-places">
                         @for(place <- v.places) {
                             <li data-place="@place.id">@place.name@for(n <- place.count) {@snippets.count(n)}</li>
