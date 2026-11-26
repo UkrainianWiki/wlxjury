@@ -442,6 +442,76 @@ class CommonsLoginSpec extends Specification with JuryTestHelpers {
     }
   }
 
+  "state" should {
+    val start = java.time.Instant.parse("2026-11-26T08:49:00Z")
+
+    /** A login on a monotonic clock and a wall clock that move together. */
+    def clocked(mw: MwBot, clock: Array[Long]) =
+      new CommonsLogin(mw, Some(credentials), recheck = 10.minutes, now = () => clock(0),
+        clock = () => start.plusNanos(clock(0)))
+
+    "say no account is configured" in {
+      CommonsLogin.anonymous(mockBot()).state === "anonymous (no account configured)"
+    }
+
+    "say not checked yet before the first check, and ask nothing for it" in {
+      val mw = mockBot()
+      login(mw).state === "not checked yet"
+      verify(mw, never()).post(any[Map[String, String]])
+      ok
+    }
+
+    "say logged in, with apihighlimits or without, and no account name" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(bot) thenReturns Future.successful(noHighLimits)
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.ensure()
+      l.state === "logged in, apihighlimits: yes"
+      clock(0) += 10.minutes.toNanos
+      l.ensure()
+      (l.state === "logged in, apihighlimits: no") and (l.state must not(contain("Someone")))
+    }
+
+    "say when the login was refused and when it may be tried again" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous)
+      mw.login("ExampleBot@jury", "secret") returns Future.successful("Failed")
+      val clock = Array(0L)
+      val l = clocked(mw, clock)
+      l.ensure()
+      l.state === "refused at 2026-11-26T08:49:00Z, next try at 2026-11-26T08:54:00Z at the earliest"
+      clock(0) += 5.minutes.toNanos
+      l.ensure()
+      l.state === "refused at 2026-11-26T08:54:00Z, next try at 2026-11-26T09:04:00Z at the earliest"
+      clock(0) += 10.minutes.toNanos
+      l.state === "refused at 2026-11-26T08:54:00Z"
+    }
+
+    "say anonymous with the next try after a login that threw" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous)
+      mw.login("ExampleBot@jury", "secret") returns Future.failed(new RuntimeException("<html>503</html>"))
+      val clock = Array(0L)
+      val l = clocked(mw, clock)
+      l.ensure()
+      l.state === "anonymous, next try at 2026-11-26T08:59:00Z at the earliest"
+    }
+
+    "forget a refusal after a successful login" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous) thenReturns
+        Future.successful(anonymous) thenReturns Future.successful(bot)
+      mw.login("ExampleBot@jury", "secret") returns Future.successful("Failed") thenReturns Future.successful("Success")
+      val clock = Array(0L)
+      val l = clocked(mw, clock)
+      l.ensure()
+      clock(0) += 5.minutes.toNanos
+      l.ensure()
+      l.state === "logged in, apihighlimits: yes"
+    }
+  }
+
   "credentials" should {
 
     "need both the user and the password" in {

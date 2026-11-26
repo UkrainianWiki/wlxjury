@@ -30,6 +30,10 @@ Merged after the 26.11.17 build, for the release after it.
 - Conflicts of interest: a round being set up no longer reads "Round N is open to its jurors: stop it first"; it says the round is being set up and its jurors don't see it yet (under its setup step's line, or with its state when it has no step: being distributed, its creation failed, cancelled or unfinished), and a refused disqualify says the same instead of "its images are being distributed" (#210).
 - Imports no longer stay slow for 6 hours after Commons refuses the bot's login once: the login is tried again when an import needs it, after 5 minutes at first, waiting longer (up to 1 hour) only while Commons keeps refusing it.
 
+**Operations**
+
+- `/health/ready` reports the Commons login as `commons` ("logged in, apihighlimits: yes", "refused at …, next try at …"), checked once in the background when the app starts, so the post-deploy check shows a refused bot password at once; it never makes the app unready.
+
 ## Deployed releases
 
 ### 26.11.17.2 (2026-11-26)
