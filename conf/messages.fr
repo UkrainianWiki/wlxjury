@@ -2077,26 +2077,16 @@ round.wait.unknown = L’avancement du tour {0} ne peut pas être affiché ici. 
 # The round form's top N: the cut picker (regional winners plan §10.4): "Choose N", the N list of
 # valid values only, candidate cuts and their reasons, the cut gallery, refusals, the settings log's basis
 top.n.none = Pas de top N : tous les fichiers retenus par les filtres
-top.n.option = N = {0}
 top.n.choose = Choisir N
 top.n.choose.help = Les coupes candidates sont cherchées parmi les 100 premières places ; la liste propose toutes les coupes entre des notes différentes.
 top.n.choose.again = Mettre à jour les candidates
 top.n.choose.placeholder = Choisissez N dans la liste
 top.n.list.help = Seules les coupes entre des notes différentes sont proposées : aucune égalité n’est coupée. Fichiers disponibles : {0}.
 top.n.candidates = Coupes candidates
-top.n.preview.of = Aperçu (N = {0}) :
-top.n.preview = {0} fichiers sur {1}, note la plus basse retenue {2}.
-top.n.preview.level = {0} fichiers sur {1}, les derniers avec {2}.
 top.n.changed = Les votes des tours précédents ont changé depuis le choix du top N de ce tour : vérifiez à nouveau les candidates.
 top.n.scales = Les tours précédents n’ont pas la même échelle ; leurs notes sont comparées telles quelles.
-top.n.gallery = Candidats classés comme la distribution les classe : {0} ; places 1 à {1} affichées
-top.n.gallery.levels = Candidats classés par leurs votes oui/non comme la distribution les classe : {0} ; places 1 à {1} affichées
-top.n.tied = à égalité : places {0}–{1}
-top.n.cut.here = Couper ici
-top.n.cut.here.label = Couper ici : N = {0}
-top.n.show.more = Afficher plus (jusqu’à la place {0})
 top.n.no.previous = Choisissez d’abord les tours précédents.
-top.n.no.candidates = Aucun fichier des tours précédents ne passe les filtres : il n’y a pas de top N à choisir.
+top.n.no.candidates = Aucun fichier des tours précédents ne passe les filtres : il n’y a pas de coupe à choisir. Choisissez « Pas de top N ».
 top.n.failed = Impossible de trouver les coupes candidates : {0}
 top.n.failed.reference = Impossible de trouver les coupes candidates. Si cela se reproduit, donnez cette référence aux organisateurs : {0}.
 top.n.commons.unavailable = Commons n’a pas pu être joint pour lire les fichiers du filtre de catégorie : le top N n’a pas pu être vérifié. Rien n’a été enregistré. Réessayez plus tard.
@@ -2116,6 +2106,20 @@ top.n.level.difference = oui moins non : {0}
 top.n.level.yes = oui : {0}
 top.n.basis.candidate = choisi parmi les coupes candidates : {0}
 top.n.basis.list = choisi dans la liste
+top.n.cut.score = {0} premiers · note ≥ {1}
+top.n.cut.level = {0} premiers · {1}
+top.n.cut.top = {0} premiers
+top.n.cut.others = Autres coupes
+top.n.cut.divider = Coupe : {0}
+top.n.keep = Le tour garde
+top.n.keep.threshold = les fichiers dont la note atteint celle de la coupe
+top.n.keep.top = les N premiers fichiers
+top.n.keep.help = Une note ne peut pas tomber au milieu d’une égalité : les fichiers qui l’atteignent sont pris même si des votes changent plus tard (leur nombre peut alors changer). Les N premiers donnent exactement N fichiers ; si des votes changent et que N tombe au milieu d’une égalité, la préparation du tour s’arrête et demande un nouveau N.
+top.n.show.cut = Voir cette coupe dans les notes
+top.n.held.threshold = fichiers notés au moins {0}
+top.n.held.threshold.none = Ce tour gardait les fichiers notés au moins {0}, et aucun fichier n’atteint cette note maintenant. Choisissez une coupe ou « Pas de top N ».
+top.n.held.both = Ce tour gardait à la fois les {0} premiers et les fichiers notés au moins {1} ({2} fichiers maintenant). Un tour garde désormais une seule coupe : choisissez-la.
+top.n.basis.threshold = {0} fichiers à l’enregistrement
 
 # locked fields on the round form (bs helpers' `_locked`)
 round.filters.locked = Les filtres du tour ne peuvent être modifiés que pendant qu’il attend sa vérification, sans vote ni tâche en cours.

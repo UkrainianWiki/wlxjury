@@ -14,13 +14,16 @@ import services.TestRoundServices
 import scala.concurrent.Future
 import scala.jdk.CollectionConverters._
 
-/** The round form's top N, the cut picker (regional winners plan §10.4 place 1, §10.9 "Round form
-  * (SN)"): no free number box; "Choose N" posts the form to the preview, which saves nothing and
-  * offers an N list of valid values only, the candidate cuts and the gallery; a candidate or "Cut
-  * here" sets N, a crafted value inside a tie does not; a save refuses an N inside a tie next to its
-  * field; a valid N saves with how it was chosen in the round's settings log, and the round takes
-  * the picker's first N files; an existing round's stored N shows read only. Only the contest's
-  * admins reach the preview (an organizer, a juror and another contest's admin are refused).
+/** The round form's one cut control, the cut picker (regional winners plan §10.4 place 1, §10.9 "Round
+  * form (SN)"; decided 2026-11-26): no free number box and no threshold field; "Choose N" posts the form
+  * to the preview, which saves nothing and lists every valid cut ("N / score"), the candidates labelled,
+  * "No top N" always, and for a rated source what the round keeps; a save refuses an N inside a tie next
+  * to its field, and stores a valid cut as kept (a threshold or the top N, never both), with how it was
+  * chosen in the round's settings log; the round takes the picker's first N files. Legacy rounds: a
+  * started round's cut read only, a re-apply's held cut preselected or explained. The link to the rating
+  * view only where it shows the same cut, and not to a juror of the open previous round; the rating
+  * view's divider, its page, and its authorization unchanged. Only the contest's admins reach the
+  * preview (an organizer, a juror and another contest's admin are refused).
   */
 class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
 
@@ -79,6 +82,11 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
   private def selected(page: Document): Seq[String] =
     page.select("select#topImages option[selected]").asScala.toSeq.map(_.attr("value"))
 
+  /** The control's cuts (its options with a value), by N. */
+  private def cuts(page: Document): Seq[String] = options(page).filter(_.nonEmpty).sortBy(_.toInt)
+
+  private def saved(contest: ContestJury, prev: Round): Round = Round.findByContest(contest.getId).find(_.id != prev.id).get
+
   "the new-round form" should {
 
     "have no free top-N box, but the stored N (none) and \"Choose N\" posting to the preview" in {
@@ -98,45 +106,52 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
 
   "\"Choose N\" (the preview)" should {
 
-    "offer only valid values, the candidate cuts and the gallery, nothing chosen, and save nothing" in {
+    "list every valid cut as N and score, the candidates labelled, no top N chosen, and save nothing" in {
       testDbApp { implicit app =>
         val (contest, prev) = setUp()
         val result = preview(app, "admin@example.com", newRound(contest, prev): _*)
         val page = doc(result)
-        val cuts = page.select("#cut-gallery li.cut-line").asScala.toSeq.map(_.attr("data-cut"))
-        val candidates = page.select("#top-n-candidates button[name=cutPick]").asScala.toSeq.map(_.attr("value"))
+        def text(n: String) = page.select(s"select#topImages option[value=$n]").text
         (status(result) === OK) and (header("Cache-Control", result) must beSome("no-store")) and
-          (options(page) === Seq("") ++ Valid) and (selected(page) === Seq("")) and
-          (candidates must not(beEmpty)) and (candidates.forall(Valid.contains) must beTrue) and
-          (page.select("#cut-gallery li.cut-file").size === 8) and
-          // a line only at a cut position: never inside the ties 2–4 and 6–7
-          (cuts === Seq("1", "4", "5", "7")) and
-          (page.select("#cut-gallery .cut-tie-label").asScala.map(_.text).toSeq ===
-            Seq("tied: places 2–4", "tied: places 6–7")) and
-          (page.select("#top-n-preview").size === 0) and
+          (cuts(page) === Valid) and (options(page).head === "") and (selected(page) === Seq("")) and
+          (page.select("select#topImages > option").text === "No top N: all matching files") and
+          (text("4") === "top 4 · score ≥ 8.0") and (text("1") === "top 1 · score ≥ 9.0") and
+          // no drop stands out (every gap 1): all candidates only, labelled
+          (page.select("select#topImages optgroup[label=Candidate cuts] option").asScala.map(_.attr("value")).toSeq === Seq("8")) and
+          (text("8") === "top 8 · score ≥ 5.0 · all candidates") and
+          // a rated source: the round keeps the threshold by default
+          (page.select("input[name=cutKeep][checked]").attr("value") === "threshold") and
+          // the compact box: no gallery, no separate threshold field, no target
+          (page.select("#cut-gallery, [name=cutPick], [name=cutShow], #topImagesTarget, input[name=minAvgRate]").size === 0) and
           (Round.findByContest(contest.getId).size === 1)
       }
     }
 
-    "set N from a candidate or \"Cut here\", with its preview; not from a crafted value inside a tie" in {
+    "preselect a posted valid cut as kept; explain a posted N inside a tie and keep it for the save to refuse" in {
       testDbApp { implicit app =>
         val (contest, prev) = setUp()
-        val picked = doc(preview(app, "admin@example.com", newRound(contest, prev, "cutPick" -> "4"): _*))
-        val crafted = doc(preview(app, "admin@example.com", newRound(contest, prev, "cutPick" -> "3"): _*))
-        (selected(picked) === Seq("4")) and
-          (picked.select("#top-n-preview").text must contain("4 of 8 files, lowest included score 8")) and
-          (selected(crafted) === Seq("")) and (crafted.select("#top-n-preview").size === 0)
+        val picked = doc(preview(app, "admin@example.com", newRound(contest, prev, "topImages" -> "4", "cutKeep" -> "top"): _*))
+        val crafted = doc(preview(app, "admin@example.com", newRound(contest, prev, "topImages" -> "3"): _*))
+        (selected(picked) === Seq("4")) and (picked.select("input[name=cutKeep][checked]").attr("value") === "top") and
+          (selected(crafted) === Seq("3")) and (options(crafted).take(2) === Seq("3", "")) and
+          (crafted.select("#top-n-held").text === "N = 3 is inside a tie (places 2–4); choose 1 or 4.")
       }
     }
 
-    "look for candidates in the first 100 places, with no target (a posted one is ignored)" in {
+    "keep a posted N when no file matches the filters, with \"No top N\" to pick" in {
       testDbApp { implicit app =>
         val (contest, prev) = setUp()
-        val page = doc(preview(app, "admin@example.com", newRound(contest, prev, "topImagesTarget" -> "3"): _*))
-        // no drop stands out (every gap 1): all candidates only; the list offers every valid value
-        (page.select("#topImagesTarget").size === 0) and
-          (page.select("#top-n-candidates button[name=cutPick]").asScala.map(_.attr("value")).toSeq === Seq("8")) and
-          (options(page) === Seq("") ++ Valid)
+        val body = newRound(contest, prev, "regions[0]" -> "99", "topImages" -> "4")
+        val page = doc(preview(app, "admin@example.com", body: _*))
+        val refused = save(app, "admin@example.com", body: _*)
+        val refusedStatus = status(refused)
+        val none = status(save(app, "admin@example.com", newRound(contest, prev, "regions[0]" -> "99", "topImages" -> ""): _*))
+        (options(page) === Seq("4", "")) and (selected(page) === Seq("4")) and
+          (page.select("#topImages_help").text must contain("no cut to choose")) and
+          (refusedStatus === BAD_REQUEST) and
+          (doc(refused).select("#topImages_field .invalid-feedback").text must contain("no cut to choose")) and
+          (none === SEE_OTHER) and (saved(contest, prev).topImages must beNone) and
+          (saved(contest, prev).prevMinAvgRate must beNone)
       }
     }
 
@@ -181,8 +196,9 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
           (page.select("#topImages_field .invalid-feedback").text ===
             "N = 3 is inside a tie (places 2–4); choose 1 or 4.") and
           (page.select("#round-form-errors a[href=#topImages_field]").size === 1) and
-          (options(page) === Seq("", "") ++ Valid) and (selected(page) === Seq("")) and
-          (page.select("select#topImages[required]").size === 1) and
+          // the refused N kept in the placeholder (posted again, refused again: never dropped), the cuts loaded
+          (options(page).take(2) === Seq("3", "")) and (cuts(page).filterNot(_ == "3") === Valid) and
+          (selected(page) === Seq("3")) and (page.select("#top-n-held").size === 0) and
           (Round.findByContest(contest.getId).size === 1)
       }
     }
@@ -190,7 +206,7 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
     "accept exactly the N values the preview offers, and refuse every other one (offered == allowed)" in {
       testDbApp { implicit app =>
         val (contest, prev) = setUp()
-        val offered = options(doc(preview(app, "admin@example.com", newRound(contest, prev): _*))).filter(_.nonEmpty)
+        val offered = cuts(doc(preview(app, "admin@example.com", newRound(contest, prev): _*)))
         // one save per N, awaited before the next: 0 to m + 1
         val accepted = (0 to 9).filter { n =>
           status(save(app, "admin@example.com", newRound(contest, prev, "topImages" -> n.toString): _*)) == SEE_OTHER
@@ -216,9 +232,42 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
           (RoundImageJdbc.countIn(created.getId) === 4L) and
           ((basis \ "chosen").as[Int] === 4) and ((basis \ "target").toOption must beNone) and
           ((basis \ "files").as[Int] === 8) and
+          (created.prevMinAvgRate must beNone) and
           (views.RoundChangeText.items(entry)(play.api.i18n.MessagesImpl(play.api.i18n.Lang("en"),
             app.injector.instanceOf[play.api.i18n.MessagesApi])).find(_.field == "topImages").flatMap(_.note) must
             beSome(contain("chosen from the list")))
+      }
+    }
+
+    "keep a valid cut as its threshold when asked, never both: the same files, no tie check in the job" in {
+      testDbApp { implicit app =>
+        val (contest, prev) = setUp()
+        // a crafted threshold posted beside it is not kept too
+        val result = status(save(app, "admin@example.com",
+          newRound(contest, prev, "topImages" -> "4", "cutKeep" -> "threshold", "minAvgRate" -> "1"): _*))
+        val created = saved(contest, prev)
+        val entry = ContestChangeJdbc.findByRound(contest.getId, created.getId, 10)
+          .find(_.kind == ContestChangeJdbc.RoundCreated).get
+        val basis = (entry.detail \ "topImagesBasis").as[play.api.libs.json.JsObject]
+        val queued = services.jobs.JobJdbc.latestBySubjects(services.distribution.RoundDistributionHandler.Kind,
+          services.distribution.RoundDistributionHandler.SubjectType, Seq(created.getId)).get(created.getId).get
+        val note = views.RoundChangeText.items(entry)(play.api.i18n.MessagesImpl(play.api.i18n.Lang("en"),
+          app.injector.instanceOf[play.api.i18n.MessagesApi])).find(_.field == "prevMinAvgRate").flatMap(_.note)
+        (result === SEE_OTHER) and (created.topImages must beNone) and
+          (created.prevMinAvgRate must beSome(BigDecimal(8))) and (RoundImageJdbc.countIn(created.getId) === 4L) and
+          ((queued.params \ services.distribution.RoundDistributionHandler.TopNCheckedParam).toOption must beNone) and
+          ((basis \ "chosen").as[Int] === 4) and ((basis \ "threshold").as[BigDecimal] === BigDecimal(8)) and
+          (note must beSome(contain("4 files when saved")))
+      }
+    }
+
+    "keep any posted threshold alone (it can't split a tie)" in {
+      testDbApp { implicit app =>
+        val (contest, prev) = setUp()
+        val result = status(save(app, "admin@example.com", newRound(contest, prev, "minAvgRate" -> "7.25"): _*))
+        val created = saved(contest, prev)
+        (result === SEE_OTHER) and (created.prevMinAvgRate must beSome(BigDecimal("7.25"))) and
+          (created.topImages must beNone) and (RoundImageJdbc.countIn(created.getId) === 4L)
       }
     }
   }
@@ -254,6 +303,58 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "show a started round's stored threshold, or both, read only" in {
+      testDbApp { implicit app =>
+        val (contest, prev) = setUp()
+        val both = roundDao.create(Round(None, 2, Some("Old"), contest.getId, rates = Round.ratesById(10),
+          active = true, previous = Some(prev.getId.toString), topImages = Some(5), prevMinAvgRate = Some(BigDecimal("7.5"))))
+        val page = doc(route(app, request(GET, "admin@example.com",
+          s"/admin/rounds/edit?id=${both.getId}&contestId=${contest.getId}", Nil)).get)
+        (page.select("input#topImages.wlx-locked[disabled]").attr("value") === "5") and
+          (page.select("input#minAvgRate.wlx-locked[disabled]").attr("value") === "7.5") and
+          (page.select("#topImages-choose").size === 0)
+      }
+    }
+
+    "on a re-apply, preselect a held threshold's cut, explain a legacy round's two cuts and require one" in {
+      testDbApp { implicit app =>
+        val (contest, prev) = setUp()
+        val held = TestRoundServices.roundService().submit(Round(None, 0, Some("Semi"), contest.getId, active = true,
+          rates = Round.ratesById(10), previous = Some(prev.getId.toString), topImages = Some(4)), Nil, None,
+          review = true).round
+        // a legacy round's both
+        scalikejdbc.DB.autoCommit { implicit s =>
+          scalikejdbc.SQL("UPDATE round SET top_images = 5, prev_min_avg_rate = 7.5 WHERE id = ?").bind(held.getId).update()
+        }
+        val edit = Seq("id" -> held.getId.toString, "number" -> held.number.toString, "name" -> "Semi",
+          "contest" -> contest.getId.toString, "roles" -> "jury", "distribution" -> "0", "rates" -> "10",
+          "minMpx" -> "No", "minSize" -> "No", "mediaType" -> "all", "reapply" -> "true",
+          "previousRound[0]" -> prev.getId.toString)
+        val form = doc(route(app, request(GET, "admin@example.com",
+          s"/admin/rounds/edit?id=${held.getId}&contestId=${contest.getId}", Nil)).get)
+        val both = edit ++ Seq("topImages" -> "5", "minAvgRate" -> "7.5")
+        val explained = doc(preview(app, "admin@example.com", both: _*))
+        val refused = save(app, "admin@example.com", both: _*)
+        val refusedStatus = status(refused)
+        val threshold = doc(preview(app, "admin@example.com", (edit :+ ("minAvgRate" -> "7.5")): _*))
+        // picked as a threshold: the held 7.5 kept (it takes the same 4 files)
+        val reapplied = status(save(app, "admin@example.com",
+          (edit ++ Seq("topImages" -> "4", "cutKeep" -> "threshold", "cutHeldRate" -> "7.5")): _*))
+        val after = roundDao.findById(held.getId).get
+        (form.select("#topImages_field input[type=hidden][name=topImages]").attr("value") === "5") and
+          (form.select("#topImages_field input[type=hidden][name=minAvgRate]").attr("value") === "7.5") and
+          (explained.select("#top-n-held").text ===
+            "This round kept both the top 5 and the files scoring at least 7.5 (4 files now). A round keeps one cut now: choose it.") and
+          (explained.select("select#topImages[required]").size === 1) and (selected(explained) === Seq("")) and
+          (refusedStatus === BAD_REQUEST) and
+          (doc(refused).select("#topImages_field .invalid-feedback").text must contain("A round keeps one cut now")) and
+          (selected(threshold) === Seq("4")) and (threshold.select("input[name=cutKeep][checked]").attr("value") === "threshold") and
+          (threshold.select("input[name=cutHeldRate]").attr("value") === "7.5") and
+          (reapplied === SEE_OTHER) and (after.topImages must beNone) and
+          (after.prevMinAvgRate must beSome(BigDecimal("7.5")))
+      }
+    }
+
     "refuse a re-apply with a stored N inside a tie, until a valid N is chosen" in {
       testDbApp { implicit app =>
         val (contest, prev) = setUp()
@@ -278,6 +379,117 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
           (status(refused) === BAD_REQUEST) and
           (doc(refused).select("#topImages_field .invalid-feedback").text must contain("inside a tie")) and
           (status(reapplied) === SEE_OTHER) and (roundDao.findById(held.getId).get.topImages must beSome(4))
+      }
+    }
+  }
+
+  "the link to the previous round's rating view" should {
+
+    def link(page: Document): Seq[String] = page.select("a#top-n-cut-link").asScala.toSeq.map(_.attr("href"))
+    def hrefs(page: Document): Seq[String] =
+      page.select("select#topImages option[data-cut-href]").asScala.toSeq.map(_.attr("data-cut-href"))
+
+    "follow every cut in the simple case: one previous round, no filter, a viewer who sees its votes" in {
+      testDbApp { implicit app =>
+        val (contest, prev) = setUp()
+        val page = doc(preview(app, "admin@example.com", newRound(contest, prev, "topImages" -> "4", "cutKeep" -> "top"): _*))
+        (link(page) === Seq(s"/byrate/round/${prev.getId}/user/0/page/1?sort=rate&cut=4#cut")) and
+          (page.select("a#top-n-cut-link[target=_blank][rel=noopener]:not([hidden])").size === 1) and
+          (hrefs(page).size === Valid.size)
+      }
+    }
+
+    "be absent for several previous rounds and for each filter the rating view doesn't apply" in {
+      testDbApp { implicit app =>
+        val (contest, prev) = setUp()
+        val second = roundDao.create(Round(None, 3, Some("Rated 2"), contest.getId, rates = Round.ratesById(10), active = false))
+        val other = TestRoundServices.roundService().submit(Round(None, 0, Some("Best"), contest.getId, active = true,
+          rates = Round.ratesById(10), previous = Some(prev.getId.toString), topImages = Some(1)), Nil, None,
+          review = true).round
+        // (a category filter reads Commons: CutPickerViewSpec covers it, with the settings half of the rule)
+        val filters = Seq(Seq("previousRound[1]" -> second.getId.toString), Seq("regions[0]" -> "80"),
+Seq("excludeRounds[0]" -> other.getId.toString),
+          Seq("minMpx" -> "2"), Seq("minSize" -> "1"), Seq("mediaType" -> "image"),
+          Seq("minJurors" -> "1"), Seq("rejectedMode" -> "exclude", "rejectedBy" -> "1"), Seq("monumentIds" -> "80-361-0001"))
+        forall(filters) { extra =>
+          val result = preview(app, "admin@example.com", newRound(contest, prev, extra: _*): _*)
+          (extra -> status(result)) === (extra -> OK) and ((extra -> link(doc(result))) === (extra -> Nil))
+        }
+      }
+    }
+
+    "be there with conflicts of interest left out (the default) when none has a file there, and not when one has" in {
+      testDbApp { implicit app =>
+        val (contest, prev) = setUp()
+        val body = newRound(contest, prev, "topImages" -> "4", "excludeCoi" -> "true")
+        val clean = doc(preview(app, "admin@example.com", body: _*))
+        scalikejdbc.DB.autoCommit { implicit s =>
+          scalikejdbc.SQL("UPDATE images SET author = 'Coiauthor' WHERE page_id = 1").update()
+        }
+        User.setWikiAccount(User.findByEmail("juror1@example.com").head.getId, Some("Coiauthor"))
+        val conflicted = doc(preview(app, "admin@example.com", body: _*))
+        (link(clean).size === 1) and (link(conflicted) === Nil) and (cuts(conflicted).nonEmpty must beTrue)
+      }
+    }
+
+    "be absent for a juror of the open previous round (others' votes hidden there), the cuts still listed" in {
+      testDbApp { implicit app =>
+        val (contest, prev) = setUp()
+        val admin = User.findByEmail("admin@example.com").head
+        prev.addUsers(Seq(RoundUser(prev.getId, admin.getId, "jury", active = true)))
+        Round.setActive(prev.getId, active = true)
+        val page = doc(preview(app, "admin@example.com", newRound(contest, prev, "topImages" -> "4"): _*))
+        (link(page) === Nil) and (hrefs(page) === Nil) and (cuts(page) === Valid)
+      }
+    }
+  }
+
+  "the rating view's cut" should {
+
+    def byRate(app: Application, email: String, round: Round, query: String, page: Int = 1): Future[Result] =
+      route(app, request(GET, email, s"/byrate/round/${round.getId}/user/0/page/$page$query", Nil)).get
+
+    def divider(page: Document): Option[(String, Int)] =
+      Option(page.selectFirst("li.wlx-cut-divider")).map(d =>
+        d.text -> d.parent.children.asScala.indexWhere(_ == d))
+
+    "show the divider after file N, named as the control names it, only at a cut" in {
+      testDbApp { implicit app =>
+        val (_, prev) = setUp()
+        val at4 = doc(byRate(app, "admin@example.com", prev, "?sort=rate&cut=4"))
+        val inTie = doc(byRate(app, "admin@example.com", prev, "?sort=rate&cut=3"))
+        val text = doc(byRate(app, "admin@example.com", prev, "?sort=rate&cut=zz%3Cscript%3E"))
+        (divider(at4) === Some("Cut: top 4 · score ≥ 8.0" -> 4)) and
+          (at4.select("li.wlx-cut-divider[data-file-anchor=cut]").size === 1) and
+          (divider(inTie) must beNone) and (divider(text) must beNone) and
+          (contentAsString(byRate(app, "admin@example.com", prev, "?sort=rate&cut=zz%3Cscript%3E")) must not(contain("zz<script>")))
+      }
+    }
+
+    "show it on the page of file N only" in {
+      testDbApp { implicit app =>
+        val (contest, prev) = setUp()
+        // 20 files more, each scoring less than the last: places 9 to 28
+        val more = (9L to 28L).map(i => Image(i, s"File:More$i.jpg", None, None, 3000, 2000, Some(s"80-361-00$i")))
+        imageDao.batchInsert(more)
+        val jurors = User.findByContest(contest.getId).filter(_.roles.contains("jury"))
+        for (img <- more; j <- jurors) VoteJdbc.create(img.pageId, if (img.pageId <= 18) 4 else 2, j.getId, prev.getId)
+        // 8 + 10 files score at least 4: the cut 18 is on page 2, its 3rd file
+        val url = services.CutPicker.viewUrl(prev.getId, None, 18)
+        val page2 = doc(route(app, request(GET, "admin@example.com", url.stripSuffix("#cut"), Nil)).get)
+        val page1 = doc(byRate(app, "admin@example.com", prev, "?sort=rate&cut=18"))
+        (url must contain("/page/2?")) and (divider(page2).map(_._2) === Some(3)) and
+          (divider(page2).map(_._1) === Some("Cut: top 18 · score ≥ 4.0")) and (divider(page1) must beNone)
+      }
+    }
+
+    "leave the view's authorization as it is" in {
+      testDbApp { implicit app =>
+        val (_, prev) = setUp()
+        forall(Seq("admin@example.com", "organizer@example.com", "juror1@example.com", "other-admin@example.com")) { email =>
+          (email -> status(byRate(app, email, prev, "?sort=rate&cut=4"))) ===
+            (email -> status(byRate(app, email, prev, "?sort=rate")))
+        } and (doc(byRate(app, "juror1@example.com", prev, "?sort=rate&cut=4")).select("li.wlx-cut-divider, li.gallerybox").size === 0)
       }
     }
   }

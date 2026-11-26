@@ -875,11 +875,29 @@ A round for all the files takes no filters at all.
   the filters in at least one of them.
 - **Selected by at least X jurors**: for earlier yes/no rounds. A file is taken when at least X
   jurors selected it (X from 1 to 6). **No filter** takes all the files of the earlier round.
-- **Average file rating is at least**: for earlier rated rounds. A file is taken when its score
-  in the earlier round is at least this number. The score follows that round's
-  [file score](#a-score-rule): with the total of the rates it is a total, and for a round with
-  criteria it is the sum of the criteria's rates, averaged over the jurors. The hint under the
-  field says which applies.
+- **Number of top files from the previous rounds** (the cut): for earlier rated or yes/no rounds.
+  **Choose N** lists every place where the ranked files can be cut, best first, such as
+  **top 88 · score ≥ 8.0** (for a yes/no round, the lowest vote level taken, such as
+  **top 88 · 3 yes, 0 no**). Files with the same score are never split, so only cuts between two
+  different scores are listed. The suggested cuts come first, each with its reason (a clear drop in
+  the scores, all the files, the edge of a tie). **No top N** takes all the matching files. Nothing
+  is saved until you save the form.
+- **The round keeps** (earlier rated rounds): **the files scoring at least the cut's score** (the
+  default) or **the top N files**. A score can't fall inside a tie, so the files scoring at least it
+  are taken even if votes change before the round's files are chosen (their number may then change).
+  The top N takes exactly N files; if votes change so that N falls inside a tie, the round's setup
+  stops and asks for a new N. The score follows the earlier round's [file score](#a-score-rule): with
+  the total of the rates it is a total, and for a round with criteria it is the sum of the criteria's
+  rates, averaged over the jurors. The hint under the choice says which applies. Earlier yes/no
+  rounds always keep the top N.
+- **Show this cut in the ratings**: opens the earlier round's ratings in a new tab, on the page with
+  the cut, with a line between the last file taken and the first one left out. It is offered only
+  when those ratings list the same files in the same order: one earlier round, none of the other
+  filters of this section, and all the jurors' votes visible to you there (not while you are a juror
+  of that round and it is open).
+- A round saved earlier with both a number of top files and a minimum score keeps them. Re-applying
+  its filters asks you to choose one cut; a number that now falls inside a tie is explained, and you
+  choose another.
 - The **rejection filter**: take or drop files by how many jurors rejected them in the earlier
   rounds. See the next section.
 - **Leave out files that are in round(s)**: choose one or more other rounds of the contest. A file

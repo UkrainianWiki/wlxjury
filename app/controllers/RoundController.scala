@@ -228,13 +228,13 @@ class RoundController @Inject() (
       placed)(roundFormView(user, round, placed, submitToken = submitToken, cutPicker = cutPicker)))
   }
 
-  /** "Choose N" of the round form's top N (regional winners plan §10.4, place 1): the form, posted
-    * here, comes back as it was with the candidate cuts of its previous rounds' files, the N list of
-    * valid values only and the cut gallery. A candidate cut or "Cut here" (`cutPick`) sets N first, if
-    * valid; "Show more" (`cutShow`) shows more of the gallery. Saves
-    * nothing (the form's Save does, checking N again). The posted contest's admins (and root) only; an
-    * existing round only while its filters are edited (held in review for a re-apply), else back to
-    * its form. Never switches the session's contest (a POST).
+  /** "Choose N" of the round form's cut (regional winners plan §10.4, place 1; one control, decided
+    * 2026-11-26): the form, posted here, comes back as it was with the control listing every valid cut
+    * of its previous rounds' files ("N / score"), the candidate cuts labelled, and the cut it holds (a
+    * top N, a threshold, or a legacy round's both) preselected or explained ([[services.CutPicker.holding]]).
+    * Saves nothing (the form's Save does, checking the cut again). The posted contest's admins (and root)
+    * only; an existing round only while its filters are edited (held in review for a re-apply), else back
+    * to its form. Never switches the session's contest (a POST).
     */
   def cutPreview(): EssentialAction =
     withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
@@ -269,7 +269,6 @@ class RoundController @Inject() (
     */
   private def cutPreviewPage(user: User, shown: Round, bound: Form[EditRound], token: Option[String],
       skipDqOf: Option[Long])(implicit request: Request[AnyContent]): Result = {
-    val picked = RoundController.CutParams.pick(request)
     def page(form: Form[EditRound], picker: Option[services.CutPicker]): Result =
       RoundController.formPage(Ok(roundFormView(user, shown, RoundFormErrors.placed(form), submitToken = token,
         cutPicker = picker)))
@@ -281,17 +280,17 @@ class RoundController @Inject() (
         val round = edit.round.copy(id = shown.id,
           topBinaryOrder = org.intracer.wmua.BinaryOrder.ofForm(bound.data.get("topBinaryOrder")))
         try {
-          roundsService.cutPicker(round, picked.orElse(edit.round.topImages),
-            RoundController.CutParams.showTo(request), skipDqOf) match {
+          roundsService.cutPicker(round, None, skipDqOf) match {
             case None => page(bound.withError("topImages", "top.n.no.previous"), None)
             case Some(found) =>
-              // a candidate or "Cut here": N set, if a valid value (a crafted one is not)
-              val form = picked.filter(found.result.isValid).fold(bound)(n =>
-                bound.copy(data = bound.data + ("topImages" -> n.toString)))
+              // the cut the form holds: preselected, or explained with a pick required
+              val held = found.copy(heldThreshold = RoundController.CutParams.heldRate(request))
+                .holding(round.topImages, round.prevMinAvgRate, RoundController.CutParams.keep(request))
               // an existing round's N chosen before: warned if its previous rounds' votes changed since
               val basis = shown.id.flatMap(id => ContestChangeJdbc.findByRound(shown.contestId, id, 50)
                 .flatMap(c => (c.detail \ RoundChanges.TopImagesBasis).asOpt[JsObject]).headOption)
-              page(form, Some(found.copy(changedSince = basis.exists(found.differsFrom))))
+              page(bound, Some(withCutLinks(user, round, held.copy(changedSince = basis.exists(held.differsFrom)),
+                skipDqOf)))
           }
         } catch {
           // the rounds to leave out refused (V95): their message, in the page's language, as a save shows it
@@ -316,16 +315,54 @@ class RoundController @Inject() (
     }
   }
 
-  /** A posted top N checked against the files it would take now (§10.4): one inside a tie, above the
-    * candidates, or of none is refused ([[RoundController.TopNRefused]], with the picker to choose
-    * again); else how it was chosen, for the round's settings log. Nothing without a top N.
+  /** The picker with each cut's link to the previous round's rating view, where that view shows the same
+    * cut between the same files ([[services.RoundService.cutViewable]]) and `user` may see other jurors'
+    * votes there: not a juror of that round while it is open (the conflict-of-interest rule,
+    * GalleryService.othersVotesVisible). The picker's own scores are aggregates, shown to every admin of
+    * the round; the rating view shows each juror's votes.
     */
-  private def checkTopN(round: Round, skipDqOf: Option[Long]): Option[JsObject] =
-    round.topImages.filter(_ => round.previousIds.nonEmpty).flatMap { n =>
-      roundsService.cutPicker(round, Some(n), None, skipDqOf).map { picker =>
-        if (picker.result.refusal(n).isDefined) throw RoundController.TopNRefused(picker)
-        picker.basis(n)
-      }
+  private def withCutLinks(user: User, round: Round, picker: services.CutPicker, skipDqOf: Option[Long]): services.CutPicker =
+    picker.ranking.prevRounds match {
+      // the settings first, then the viewer, then the data (a count over the round's votes)
+      case Seq(prev) if prev.id.isDefined && services.CutPicker.viewable(round, picker.ranking) &&
+          services.GalleryService.othersVotesVisible(Secured.inContest(user, prev.contestId), prev) &&
+          roundsService.cutViewable(round, picker, skipDqOf) =>
+        picker.copy(links = picker.options.map(n =>
+          n -> services.CutPicker.viewUrl(prev.getId, picker.ranking.order, n)).toMap)
+      case _ => picker
+    }
+
+  /** A posted cut checked against the files it would take now (§10.4; one control, decided 2026-11-26),
+    * and what the round stores of it (never both): a top N inside a tie, above the candidates or of none
+    * is refused ([[RoundController.TopNRefused]], with the picker to choose again), and so is a legacy
+    * round's two cuts posted as they were (a round keeps one now, chosen in the control); a valid N is
+    * kept as posted (`cutKeep`): the top N, or a rated source's threshold ([[services.CutPicker.stored]]).
+    * A threshold alone is kept as it is: any threshold is a cut (it can't fall inside a tie). With how a
+    * cut was chosen, for the round's settings log; nothing without a top N.
+    */
+  private def checkCut(round: Round, skipDqOf: Option[Long])(implicit
+      request: Request[AnyContent]): (Round, Option[JsObject]) =
+    round.topImages match {
+      case Some(n) if round.previousIds.nonEmpty =>
+        val keep = RoundController.CutParams.keep(request)
+        roundsService.cutPicker(round, Some(n), skipDqOf).fold((round.copy(prevMinAvgRate = None), Option.empty[JsObject])) {
+          found =>
+            val picker = found.copy(heldThreshold = RoundController.CutParams.heldRate(request))
+            // a legacy round's top N and threshold posted as stored (the control not loaded): one is chosen
+            if (round.prevMinAvgRate.isDefined && keep.isEmpty && !picker.levels) {
+              val held = picker.holding(Some(n), round.prevMinAvgRate, None)
+              throw RoundController.TopNRefused(held, held.pick.map(_.msg).getOrElse(
+                services.TopNCandidates.Msg(services.TopNCandidates.NoCandidatesKey)))
+            }
+            picker.result.refusal(n).foreach(msg =>
+              throw RoundController.TopNRefused(picker.holding(Some(n), None, keep), msg))
+            val kept = picker.copy(keep = keep.getOrElse(services.CutPicker.Keep.Top))
+            val (top, threshold) = kept.stored(n)
+            (round.copy(topImages = top, prevMinAvgRate = threshold), Some(kept.basis(n, threshold)))
+        }
+      // no previous rounds: no cut to keep
+      case Some(_) => (round.copy(prevMinAvgRate = None), None)
+      case None    => (round, None)
     }
 
   /** The form after a saved edit whose "Distribute new files" (or list, or top-up) was refused: the
@@ -586,15 +623,12 @@ class RoundController @Inject() (
 
             // a top N the files it would take don't allow (inside a tie, above them): the form again, the
             // refusal next to the N list, which the picker loaded offers valid values only (§10.4)
-            def topNRefused(r: Round, picker: services.CutPicker): Result = {
-              val refusal = r.topImages.flatMap(picker.result.refusal).getOrElse(
-                services.TopNCandidates.Msg(services.TopNCandidates.NoCandidatesKey))
+            def topNRefused(r: Round, picker: services.CutPicker, refusal: services.TopNCandidates.Msg): Result =
               refusedForm(user, r,
                 editRoundForm.fill(EditRound(r, editForm.jurors, editForm.fileList, editForm.newImages, editForm.criteriaShown))
                   .withError("topImages", refusal.key, refusal.args: _*),
                 Option.when(r.id.isEmpty)(RoundController.formToken(liveToken)).flatten,
-                cutPicker = Some(picker))
-            }
+                cutPicker = Some(withCutLinks(user, r, picker, r.id)))
 
             def filledWith(r: Round, message: String, args: Seq[Any]): Form[EditRound] =
               editRoundForm
@@ -691,10 +725,10 @@ class RoundController @Inject() (
               else
                 try {
                   // a top N inside a tie refused, its picker shown (§10.4); ranked without the round's
-                  // disqualified files, as its re-apply ranks
-                  val basis = checkTopN(round, Some(roundId))
+                  // disqualified files, as its re-apply ranks; the cut stored as kept (never both)
+                  val (cutRound, basis) = checkCut(round, Some(roundId))
                   var disqualified = Seq.empty[(Long, String, CoiMembers.Member)]
-                  roundsService.reapplyFilters(round, user.id, titles, topImagesBasis = basis, alsoWrite = { s =>
+                  roundsService.reapplyFilters(cutRound, user.id, titles, topImagesBasis = basis, alsoWrite = { s =>
                     // a started round's criteria are not changed (running or voted): a re-apply's round
                     // is neither, but a refusal rolls everything back
                     criteriaToWrite(stored, edited).foreach(ids =>
@@ -724,7 +758,7 @@ class RoundController @Inject() (
                   }
                 } catch {
                   case RoundController.CriteriaRefused(key) => reRender(round, key)
-                  case RoundController.TopNRefused(picker) => topNRefused(round, picker)
+                  case RoundController.TopNRefused(picker, refusal) => topNRefused(round, picker, refusal)
                   // its top N not checked: Commons didn't give the category filter's files
                   case _: RoundDistributionHandler.CategoryFilesUnavailable =>
                     reRender(round, RoundController.CommonsUnavailableKey)
@@ -832,12 +866,13 @@ class RoundController @Inject() (
                 reRender(round, EditRound.RejectedByNoSource)
               case None =>
                 try {
-                  // a top N inside a tie (or above the candidates) refused, its picker shown (§10.4)
-                  val basis = checkTopN(round, None)
+                  // a top N inside a tie (or above the candidates) refused, its picker shown (§10.4); the
+                  // cut stored as kept (never both)
+                  val (cutRound, basis) = checkCut(round, None)
                   // a new round's images are selected and it waits in review, without jurors (the
                   // maintainer's decision of 2026-11-16, superseding D4's "Distribute as soon as the
                   // images are ready"): its jurors are chosen on its jurors form, which distributes it
-                  roundsService.submit(round.copy(active = true, track = Round.trackLabel(round.track, trackMainNames)),
+                  roundsService.submit(cutRound.copy(active = true, track = Round.trackLabel(round.track, trackMainNames)),
                     Nil, liveToken, user.id, titles, review = true, topImagesBasis = basis) match {
                     // "Save and find matching files" (step 1 of its setup, UI-path plan §4 step 1): its
                     // review page, step 2, which shows the matching's progress; saved, said there (never
@@ -855,7 +890,7 @@ class RoundController @Inject() (
                         savedAgain(user, t, resubmitted.round))
                   }
                 } catch {
-                  case RoundController.TopNRefused(picker) => topNRefused(round, picker)
+                  case RoundController.TopNRefused(picker, refusal) => topNRefused(round, picker, refusal)
                   // its top N not checked: Commons didn't give the category filter's files
                   case _: RoundDistributionHandler.CategoryFilesUnavailable =>
                     reRender(round, RoundController.CommonsUnavailableKey)
@@ -1268,9 +1303,10 @@ object RoundController {
   final case class CriteriaRefused(messageKey: String) extends RuntimeException(messageKey, null, false, false)
 
   /** A posted top N refused by the files it would take (inside a tie, above them, none): the save is
-    * shown again with this picker ([[RoundController.checkTopN]]).
+    * shown again with this picker and the refusal (RoundController.checkCut).
     */
-  final case class TopNRefused(picker: services.CutPicker) extends RuntimeException("top N refused", null, false, false)
+  final case class TopNRefused(picker: services.CutPicker, refusal: services.TopNCandidates.Msg)
+      extends RuntimeException("top N refused", null, false, false)
 
   /** A top N not checked, nor its candidate cuts found: Commons didn't give the category filter's files. */
   val CommonsUnavailableKey = "top.n.commons.unavailable"
@@ -1278,20 +1314,20 @@ object RoundController {
   /** "Count new files" not counted: Commons didn't give the category filter's files. */
   val CountCommonsUnavailableKey = "count.new.files.commons.unavailable"
 
-  /** The cut picker's own fields of the round form, outside its mapping (none is stored): a candidate
-    * cut or "Cut here" (`cutPick`) and "Show more" (`cutShow`). Anything else is none.
+  /** The cut control's own fields of the round form, outside its mapping: what a rated source's round
+    * keeps of the cut (`cutKeep`, [[services.CutPicker.Keep]]; none from a form that didn't load the
+    * control, which keeps a top N as it was), and a legacy round's held threshold, kept if it still takes
+    * the cut's files (`cutHeldRate`, [[services.CutPicker.stored]]). Anything else is none.
     */
   object CutParams {
-    private def number(request: Request[AnyContent], name: String, max: Int): Option[Int] =
-      request.body.asFormUrlEncoded.flatMap(_.get(name)).flatMap(_.headOption).flatMap(_.trim.toIntOption)
-        .filter(n => n >= 1 && n <= max)
+    private def field(request: Request[AnyContent], name: String): Option[String] =
+      request.body.asFormUrlEncoded.flatMap(_.get(name)).flatMap(_.headOption).map(_.trim).filter(_.nonEmpty)
 
-    def pick(request: Request[AnyContent]): Option[Int] = number(request, "cutPick", Int.MaxValue)
+    def keep(request: Request[AnyContent]): Option[services.CutPicker.Keep] =
+      field(request, services.CutPicker.KeepField).flatMap(services.CutPicker.Keep.parse)
 
-    /** "Show more"'s end, else the gallery's end shown (kept by the picker's other buttons). */
-    def showTo(request: Request[AnyContent]): Option[Int] =
-      (number(request, "cutShow", services.CutPicker.MaxShown).toSeq ++
-        number(request, "cutShown", services.CutPicker.MaxShown).toSeq).maxOption
+    def heldRate(request: Request[AnyContent]): Option[BigDecimal] =
+      field(request, services.CutPicker.HeldThresholdField).flatMap(EditRound.threshold)
   }
 
   /** The Rounds page's rounds being set up (UI-path plan §4 step 1, replacing #192's interim "Not

@@ -1010,12 +1010,12 @@ class RoundDistributionHandler @Inject() (
       // (Round.withExplicitTopOrder: a new round and a re-apply never keep the legacy rule)
       val order = c.prevRounds.headOption.filter(_.isBinary).map(_ => round.topBinaryOrder.getOrElse(BinaryOrder.Default))
       val denominators = c.denominators.toMap
-      val (files, summaries) = DistributionSource.rankAll(c.prevRounds.flatMap(_.id), c.votes, c.denominators, c.filter,
+      val (files, summaries, listed) = DistributionSource.rankAll(c.prevRounds.flatMap(_.id), c.votes, c.denominators, c.filter,
         order, c.excluded, skipDqOf, keep) { row =>
         val key = RoundDistributionHandler.tieKey(row, order, denominators)
         (key, if (order.isDefined) 0.0 else key.head)
       }
-      TopNRanking(c.prevRounds, order, files, summaries.map(_._1), summaries.map(_._2))
+      TopNRanking(c.prevRounds, order, files, summaries.map(_._1), summaries.map(_._2), listed)
       }
     }
 
@@ -1118,6 +1118,29 @@ object RoundDistributionHandler {
     }
   }
 
+  /** The data half of whether the cut picker's cuts show in previous round `prevId`'s rating view
+    * (services.CutPicker.viewable has the settings half): the view lists every file with votes there;
+    * the picker's `ranked` files are some of them, without the deleted files (`images.deleted_at`: their
+    * votes are moved aside when the round opens, but a file deleted later keeps them until then), a
+    * re-apply's disqualified files (`skipDqOf`) and the files of the round's conflicts of interest (on by
+    * default for a new round, `exclude_coi`). Both list the same files when the picker leaves none out:
+    * its per-image filters kept every file it read (`ranking.listed`, counted while ranking), no file
+    * with votes there is deleted (an indexed read from the few deleted files, V64's index), and no
+    * file of the re-apply's round is disqualified (an indexed read).
+    */
+  def cutViewData(prevId: Long, skipDqOf: Option[Long], ranking: TopNRanking)(implicit
+      session: DBSession = AutoSession): Boolean = {
+    // the picker's files before its per-image filters (with votes there and an image not deleted) all ranked
+    val unfiltered = ranking.listed == ranking.keys.size
+    lazy val deleted = sql"""SELECT 1 FROM images i JOIN vote s ON s.page_id = i.page_id
+                             WHERE i.deleted_at IS NOT NULL AND s.round_id = $prevId LIMIT 1"""
+      .map(_.int(1)).single().isDefined
+    lazy val disqualified = skipDqOf.exists(id =>
+      sql"SELECT 1 FROM round_image WHERE round_id = $id AND status = ${RoundImageJdbc.Status.Dq} LIMIT 1"
+        .map(_.int(1)).single().isDefined)
+    unfiltered && !deleted && !disqualified
+  }
+
   /** A job's param: its round's top N was checked by the round form (a new round's, a re-apply's), so
     * its Rank step checks it again ([[cutInTie]]).
     */
@@ -1158,7 +1181,8 @@ object RoundDistributionHandler {
     * key ([[tieKey]]: equal keys tie) and score (a rated row's; 0 for a yes/no order's).
     */
   final case class TopNRanking(prevRounds: Seq[Round], order: Option[BinaryOrder],
-      files: Seq[DistributionSource.RankedFile], keys: IndexedSeq[Seq[Double]], scores: IndexedSeq[Double])
+      files: Seq[DistributionSource.RankedFile], keys: IndexedSeq[Seq[Double]], scores: IndexedSeq[Double],
+      listed: Int = -1)
 
 
   val Kind = "round_distribution"
@@ -1914,7 +1938,7 @@ object DistributionSource {
     * skipped, as [[rank]] skips it. The first `keep` files are kept whole (the cut gallery's), their
     * images read in full. Every file is kept only as
     * `summary` of its row (the rank keys the candidate cuts are found in). So a top N of the fill takes
-    * exactly the first N of this list.
+    * exactly the first N of this list. Also the number of files read before the per-image filters.
     */
   def rankAll[K](
       prevIds: Seq[Long],
@@ -1925,7 +1949,7 @@ object DistributionSource {
       excluded: Seq[Long],
       skipDqOf: Option[Long],
       keep: Int
-  )(summary: RankRow => K)(implicit session: DBSession): (Seq[RankedFile], IndexedSeq[K]) = {
+  )(summary: RankRow => K)(implicit session: DBSession): (Seq[RankedFile], IndexedSeq[K], Int) = {
     val rows = rowsWithImages(prevIds, votes, denominators, binaryOrder, excluded, skipDqOf)
     val picked = mutable.HashSet.empty[Long]
     val kept = mutable.ArrayBuffer.empty[RankRow]
@@ -1946,7 +1970,10 @@ object DistributionSource {
     val full = if (kept.isEmpty) Map.empty[Long, Image] else
       sql"SELECT ${i.result.*} FROM images i WHERE i.page_id IN (${kept.map(_.pageId)}) AND i.deleted_at IS NULL"
         .map(rs => ImageJdbc(i)(rs)).list().map(img => img.pageId -> img).toMap
-    (kept.toSeq.flatMap(row => full.get(row.pageId).map(img => RankedFile(rating(row, votes)(img), row))), summaries.result())
+    // the files read, before the filters: the cut link's check (RoundDistributionHandler.cutViewData)
+    val listed = rows.iterator.map(_._1.pageId).distinct.size
+    (kept.toSeq.flatMap(row => full.get(row.pageId).map(img => RankedFile(rating(row, votes)(img), row))), summaries.result(),
+      listed)
   }
 
 }

@@ -2093,26 +2093,16 @@ round.wait.unknown = Round {0}’s progress can’t be shown here. Save again wh
 # The round form's top N: the cut picker (regional winners plan §10.4): "Choose N", the N list of
 # valid values only, candidate cuts and their reasons, the cut gallery, refusals, the settings log's basis
 top.n.none = No top N: all matching files
-top.n.option = N = {0}
 top.n.choose = Choose N
 top.n.choose.help = Candidate cuts are looked for among the first 100 places; the list offers every cut between different scores.
 top.n.choose.again = Update the candidates
 top.n.choose.placeholder = Choose N from the list
 top.n.list.help = Only cuts between different scores are offered, so no tie is split. Files that can be taken: {0}.
 top.n.candidates = Candidate cuts
-top.n.preview.of = Preview (N = {0}):
-top.n.preview = {0} of {1} files, lowest included score {2}.
-top.n.preview.level = {0} of {1} files, the last ones with {2}.
 top.n.changed = The previous rounds’ votes have changed since this round’s top N was chosen: check the candidates again.
 top.n.scales = The previous rounds are on different scales; their scores are compared as they are.
-top.n.gallery = Candidates ranked as the distribution ranks them: {0}; places 1 to {1} shown
-top.n.gallery.levels = Candidates ranked by their yes/no votes as the distribution ranks them: {0}; places 1 to {1} shown
-top.n.tied = tied: places {0}–{1}
-top.n.cut.here = Cut here
-top.n.cut.here.label = Cut here: N = {0}
-top.n.show.more = Show more (to place {0})
 top.n.no.previous = Choose the previous rounds first.
-top.n.no.candidates = No file of the previous rounds matches the filters, so there is no top N to choose.
+top.n.no.candidates = No file of the previous rounds matches the filters, so there is no cut to choose: choose “No top N”.
 top.n.failed = Could not find the candidate cuts: {0}
 top.n.failed.reference = Could not find the candidate cuts. If it happens again, tell the organizers this reference: {0}.
 top.n.commons.unavailable = Commons could not be reached to read the category filter’s files, so the top N could not be checked. Nothing was saved. Try again later.
@@ -2132,6 +2122,20 @@ top.n.level.difference = yes minus no: {0}
 top.n.level.yes = {0} yes
 top.n.basis.candidate = chosen from the candidate cuts: {0}
 top.n.basis.list = chosen from the list
+top.n.cut.score = top {0} · score ≥ {1}
+top.n.cut.level = top {0} · {1}
+top.n.cut.top = top {0}
+top.n.cut.others = Other cuts
+top.n.cut.divider = Cut: {0}
+top.n.keep = The round keeps
+top.n.keep.threshold = the files scoring at least the cut’s score
+top.n.keep.top = the top N files
+top.n.keep.help = A score can’t fall inside a tie, so the files scoring at least it are taken even if votes change later (their number may then change). The top N takes exactly N files; if votes change so that N falls inside a tie, the round’s setup stops and asks for a new N.
+top.n.show.cut = Show this cut in the ratings
+top.n.held.threshold = files scoring at least {0}
+top.n.held.threshold.none = This round kept the files scoring at least {0}, and no file scores that now. Choose a cut or “No top N”.
+top.n.held.both = This round kept both the top {0} and the files scoring at least {1} ({2} files now). A round keeps one cut now: choose it.
+top.n.basis.threshold = {0} files when saved
 
 # locked fields on the round form (bs helpers' `_locked`)
 round.filters.locked = The round''s filters can be changed only while it is waiting for review, with no votes and no job running.

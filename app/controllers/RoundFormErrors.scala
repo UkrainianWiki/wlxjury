@@ -103,6 +103,8 @@ object RoundFormErrors {
     case "criteria"                           => Some("round-criteria")
     case "categoryCombine" | "categoryClause" => Some("category-more_field")
     case "worstMark"                          => Some("round-worst-mark")
+    // the threshold has no field of its own: it is the cut control's (round/edit/topN)
+    case "minAvgRate"                         => Some("topImages_field")
     case f if labelKeyKnown(f)                => Some(f + "_field")
     case _                                    => None
   }

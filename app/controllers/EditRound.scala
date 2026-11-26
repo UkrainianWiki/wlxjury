@@ -150,6 +150,16 @@ object EditRound {
     */
   val NoRejectedFilter = "none"
 
+  /** A posted score threshold ("average file rating at least X", `prev_min_avg_rate`): a number from 0
+    * to DECIMAL(10,4)'s largest (V116), rounded to its 4 places; else none. The round form no longer
+    * shows the field (one cut control, decided 2026-11-26): it carries a stored round's threshold
+    * until the control is loaded, and an older form or a script may post one.
+    */
+  def threshold(text: String): Option[BigDecimal] =
+    Try(BigDecimal(text.trim)).toOption
+      .map(_.setScale(services.CutPicker.ThresholdScale, BigDecimal.RoundingMode.HALF_UP))
+      .filter(x => x >= 0 && x <= services.CutPicker.ThresholdMax)
+
   /** The criteria selects' values: the chosen ones, by position (-1 for a value that is no id). */
   def criterionIdsOf(values: Seq[String]): Seq[Long] =
     values.map(_.trim).filter(_.nonEmpty).map(_.toLongOption.filter(_ > 0).getOrElse(-1L))
@@ -287,7 +297,7 @@ object EditRound {
       "minMpx" -> text,
       "previousRound" -> seq(text),
       "minJurors" -> optional(text),
-      "minAvgRate" -> optional(text),
+      "minAvgRate" -> optional(text.verifying("error.invalid", s => s.trim.isEmpty || EditRound.threshold(s).isDefined)),
       "source" -> services.imports.WikiTitle.optionalMapping,
       "excludeCategory" -> services.imports.WikiTitle.optionalMapping,
       "regions" -> seq(text),
@@ -346,7 +356,7 @@ object EditRound {
       previous = Option.when(previousRoundIds.nonEmpty)(previousRoundIds.mkString(",")),
       // "0", the old form's no filter (old bookmarks or forms), is no filter: None
       prevSelectedBy = prevSelectedBy.flatMap(s => Try(s.toInt).toOption).filter(_ > 0),
-      prevMinAvgRate = prevMinAvgRate.flatMap(s => Try(BigDecimal(s)).toOption),
+      prevMinAvgRate = prevMinAvgRate.flatMap(EditRound.threshold),
       category = category,
       excludeCategory = excludeCategory,
       regions = if (regions.nonEmpty) Some(regions.mkString(",")) else None,
@@ -406,7 +416,7 @@ object EditRound {
         round.minMpx.fold("No")(_.toString),
         round.previousIds.map(_.toString),
         round.selectedByFilter.map(_.toString),
-        round.prevMinAvgRate.map(_.toString),
+        round.prevMinAvgRate.map(_.bigDecimal.stripTrailingZeros.toPlainString),
         categories.first,
         categories.second,
         round.regionIds,

@@ -633,15 +633,16 @@ class RoundService @Inject() (
   def newFilesCount(roundId: Long): Long = distribution.countNew(roundId)
 
   /** The round form's cut picker (regional winners plan §10.4) of `round` (a stored round, or the
-    * form's settings as posted): the files its top N would take from now, ranked as its distribution
-    * ranks them, with the candidate cuts of the main round's window, the gallery to `showTo`, and the
-    * form's `chosen` N. `skipDqOf`: a re-apply's round, whose disqualified files take no place. None without previous
+    * form's settings as posted): the files its cut would take from now, ranked as its distribution
+    * ranks them, with the candidate cuts of the main round's window and the form's `chosen` N. Ranked
+    * without the round's score threshold (`prevMinAvgRate`): it is the cut itself (decided 2026-11-26).
+    * `skipDqOf`: a re-apply's round, whose disqualified files take no place. None without previous
     * rounds. Read only; may read Commons (a category filter's files), as "Count new files" does.
     */
-  def cutPicker(round: Round, chosen: Option[Int], showTo: Option[Int],
-      skipDqOf: Option[Long] = None): Option[CutPicker] = {
-    val canonical = round.withFixedCategories.withCanonicalCategoryRule
-    distribution.topNRanking(canonical, CutPicker.keep(showTo), skipDqOf).map { ranking =>
+  def cutPicker(round: Round, chosen: Option[Int], skipDqOf: Option[Long] = None): Option[CutPicker] = {
+    val canonical = round.copy(prevMinAvgRate = None).withFixedCategories.withCanonicalCategoryRule
+    // no file kept whole: the control shows no file (decided 2026-11-26: no cut gallery)
+    distribution.topNRanking(canonical, keep = 0, skipDqOf).map { ranking =>
       // a criteria round's criteria: its score range and its files' scores are their sums
       val prev = ranking.prevRounds.map { p =>
         if (!p.hasCriteria) p
@@ -652,9 +653,17 @@ class RoundService @Inject() (
       }
       val ranges = prev.filterNot(_.isBinary).map(p =>
         CutPicker.range(p, if (p.distribution > 0) p.distribution.toLong else p.numberOfAssignedJurors))
-      CutPicker.build(ranking.copy(prevRounds = prev), ranges, chosen, showTo)
+      CutPicker.build(ranking.copy(prevRounds = prev), ranges, chosen)
     }
   }
+
+  /** Whether the picker's cuts of `round` may be shown in its previous round's rating view, to `viewer`
+    * ([[CutPicker.viewable]] and the data it can't see, [[RoundDistributionHandler.cutViewData]]): the
+    * caller adds the viewer's rule (GalleryService.othersVotesVisible).
+    */
+  def cutViewable(round: Round, picker: CutPicker, skipDqOf: Option[Long]): Boolean =
+    CutPicker.viewable(round, picker.ranking) &&
+      picker.ranking.prevRounds.headOption.flatMap(_.id).exists(RoundDistributionHandler.cutViewData(_, skipDqOf, picker.ranking))
 
   /** The round's previous rounds, in its order, looked up in the round's own contest
     * only: another contest's rounds would be frozen and their images copied. An id not

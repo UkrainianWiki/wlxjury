@@ -69,9 +69,13 @@ object RoundChangeText {
         case other => other
       }))
     val reasons = (b \ "reasons").asOpt[Seq[JsValue]].getOrElse(Nil).flatMap(services.CutPicker.fromJson).flatMap(own)
-    if ((b \ "how").asOpt[String].contains(services.CutPicker.HowCandidate) && reasons.nonEmpty)
-      messages("top.n.basis.candidate", reasons.map(services.CutPicker.text).mkString("; "))
-    else messages("top.n.basis.list")
+    val how =
+      if ((b \ "how").asOpt[String].contains(services.CutPicker.HowCandidate) && reasons.nonEmpty)
+        messages("top.n.basis.candidate", reasons.map(services.CutPicker.text).mkString("; "))
+      else messages("top.n.basis.list")
+    // kept as a threshold: the files it took when saved first
+    (b \ "threshold").toOption.flatMap(_ => (b \ "chosen").asOpt[Int])
+      .fold(how)(n => messages("top.n.basis.threshold", n) + "; " + how)
   }
 
   /** The entry's changed settings, known ones first in their order; a creation's without "from". */
@@ -80,12 +84,15 @@ object RoundChangeText {
     val known = RoundChanges.Fields.filter(changed.keys.contains)
     val order = known ++ changed.keys.toSeq.filterNot(RoundChanges.Fields.contains).sorted
     val created = c.kind == db.scalikejdbc.ContestChangeJdbc.RoundCreated
-    val topBasis = (c.detail \ RoundChanges.TopImagesBasis).asOpt[JsObject].map(basis)
+    val basisJson = (c.detail \ RoundChanges.TopImagesBasis).asOpt[JsObject]
+    val topBasis = basisJson.map(basis)
+    // beside the setting the cut is kept in: its threshold, or its top N
+    val basisField = if (basisJson.exists(b => (b \ "threshold").toOption.isDefined)) "prevMinAvgRate" else "topImages"
     order.map { f =>
       val entry = changed \ f
       val from = Option.when(!created)(value(f, (entry \ "from").getOrElse(JsNull)))
       val to = value(f, (entry \ "to").getOrElse(JsNull))
-      val item = Item(f, label(f), from.map(short), short(to), from, to, topBasis.filter(_ => f == "topImages"))
+      val item = Item(f, label(f), from.map(short), short(to), from, to, topBasis.filter(_ => f == basisField))
       // the same text shown for two different values (cut, or a list whose texts hold its commas): each
       // with its hash, the whole value's as stored beside a value cut on writing, else the stored value's
       // (RoundChanges.valueHash: a list's of its JSON, never of the text shown)

@@ -5,21 +5,22 @@
         noEdit: Boolean,
         previewUrl: String
 )(implicit messages: Messages)
-@* The round form's top N (regional winners plan §10.4, place 1: the cut picker). There is no free
-   number box and no target (decided 2026-11-26): before "Choose N" the form shows the N it holds (a
-   hidden field) or none; "Choose N" posts the form to the preview action (RoundController.cutPreview), which
-   shows it again with the candidate cuts, an N list of valid values only (never a value inside a
-   tie: the save refuses one from a crafted post), the preview of the N chosen and the cut gallery.
-   A candidate cut or "Cut here" sets N the same way. Nothing is preselected and nothing is saved
-   but by the form's Save. An existing round whose filters aren't edited shows its N read only. *@
+@* The round form's cut (regional winners plan §10.4, place 1; one control, decided 2026-11-26): a top N
+   and "average file rating at least X" are the same cut, so there is no free number box and no
+   separate threshold field. Before "Choose N" the form shows the cut it holds (hidden fields: a top N,
+   a threshold, or a legacy round's both) or none; "Choose N" posts the form to the preview action
+   (RoundController.cutPreview), which shows it again with the control: every valid cut as an "N /
+   score" pair (never a value inside a tie: the save refuses one from a crafted post), the candidate
+   cuts first with their reasons, "No top N" always, and for a rated source what the round keeps (the
+   files scoring at least the cut's score, the default, or the top N). A held cut it can't preselect is
+   explained and needs a pick. Where the previous round's rating view shows the same cut, a link opens it
+   there. Nothing is saved but by the form's Save. An existing round whose filters aren't edited shows
+   its cut read only. *@
 @implicitLayout = @{ bs.Layout.horizontal("col-md-4", "col-md-8") }
 @field = @{ editRoundForm("topImages") }
 @stored = @{ field.value.map(_.trim).filter(_.nonEmpty) }
+@storedRate = @{ editRoundForm("minAvgRate").value.map(_.trim).filter(_.nonEmpty).flatMap(controllers.EditRound.threshold) }
 @errors = @{ field.errors.zipWithIndex.map { case (e, i) => (s"topImages_error_$i", Messages(e.messages, e.args: _*)) } }
-@reasonsText(c: services.TopNCandidates.Candidate) = @{ c.reasons.map(CutPicker.text).mkString("; ") }
-@optionText(p: CutPicker, n: Int) = @{
-    Messages("top.n.option", n) + p.result.candidate(n).fold(if (n == p.m) " · " + CutPicker.text(services.TopNCandidates.Msg(services.TopNCandidates.AllKey, Seq(n))) else "")(c => " · " + reasonsText(c))
-}
 @chooseButton(label: String) = {
     <button type="submit" class="btn btn-outline-primary" id="topImages-choose" formaction="@previewUrl" formnovalidate
         name="cutLoad" value="1">@Messages(label)</button>
@@ -32,13 +33,21 @@
         </div>
     </div>
 }
+@option(p: CutPicker, n: Int) = {
+    <option value="@n"@if(p.pick.isEmpty && p.chosenValid.contains(n)) { selected}@for(href <- p.links.get(n)) { data-cut-href="@href"}>@p.optionText(n)</option>
+}
 @if(noEdit) {
-    @if(stored.nonEmpty) {
     @* the locked look of the section's other fields (the bs helpers' `_locked`, #225), described by
-       its reason line (#round-filters-locked); disabled, as the locked previous-round selects: it
-       submits nothing, a plain edit doesn't write the N *@
+       its reason line (#round-filters-locked); disabled, as the locked previous-round selects: they
+       submit nothing, a plain edit doesn't write the cut. A legacy round may have both *@
+    @if(stored.nonEmpty) {
     @bs.inputType("number", field,
         Symbol("_label") -> Messages("top.images"),
+        Symbol("disabled") -> true, Symbol("_locked") -> true, Symbol("aria-describedby") -> "round-filters-locked")
+    }
+    @if(storedRate.nonEmpty) {
+    @bs.text(editRoundForm("minAvgRate"),
+        Symbol("_label") -> Messages("average.file.rating.is.at.least"),
         Symbol("disabled") -> true, Symbol("_locked") -> true, Symbol("aria-describedby") -> "round-filters-locked")
     }
 } else {
@@ -49,58 +58,69 @@
                 <span class="col-md-4 col-form-label">@Messages("top.images")</span>
                 <div class="col-md-8">
                     @for(n <- stored) {<input type="hidden" name="topImages" value="@n">}
-                    <p class="form-control-plaintext@if(errors.nonEmpty) { is-invalid}" id="topImages"@if(errors.nonEmpty) { aria-describedby="@errors.map(_._1).mkString(" ")"}>@stored.fold(Messages("top.n.none"))(n => Messages("top.n.option", n))</p>
+                    @for(x <- storedRate) {<input type="hidden" name="minAvgRate" value="@x.bigDecimal.stripTrailingZeros.toPlainString">}
+                    <p class="form-control-plaintext@if(errors.nonEmpty) { is-invalid}" id="topImages"@if(errors.nonEmpty) { aria-describedby="@errors.map(_._1).mkString(" ")"}>@if(stored.isEmpty && storedRate.isEmpty) {@Messages("top.n.none")} else {@for(n <- stored) {<span class="d-block">@Messages(CutPicker.TopCutKey, n)</span>}@for(x <- storedRate) {<span class="d-block">@Messages("top.n.held.threshold", CutPicker.fmtThreshold(x))</span>}}</p>
                     @for((id, error) <- errors) {<div class="invalid-feedback d-block" id="@id">@error</div>}
                 </div>
             </div>
             @chooseRow
         }
         case Some(p) => {
-            @* the N list: valid values only; with an N the list can't hold (inside a tie, refused), its
-               first option asks for a choice *@
-            @if(p.m == 0) {
-                <div class="row mb-3" id="topImages_field">
-                    <span class="col-md-4 col-form-label">@Messages("top.images")</span>
-                    <div class="col-md-8">
-                        <p class="form-control-plaintext" id="topImages">@Messages("top.n.no.candidates")</p>
-                        @for((id, error) <- errors) {<div class="invalid-feedback d-block" id="@id">@error</div>}
-                    </div>
-                </div>
-            } else {
-                @defining(stored.flatMap(_.toIntOption).exists(n => !p.result.isValid(n))) { invalid =>
-                <div class="row mb-3" id="topImages_field">
-                    <label class="col-md-4 col-form-label" for="topImages">@Messages("top.images")</label>
-                    <div class="col-md-8">
-                        <select class="form-select@if(errors.nonEmpty) { is-invalid}" id="topImages" name="topImages"@if(invalid) { required}
-                            aria-describedby="@((Seq("topImages_help") ++ errors.map(_._1)).mkString(" "))"@if(errors.nonEmpty) { aria-invalid="true"}>
-                            @if(invalid) {<option value="" selected>@Messages("top.n.choose.placeholder")</option>}
-                            <option value=""@if(!invalid && stored.isEmpty) { selected}>@Messages("top.n.none")</option>
-                            @for(n <- p.options) {<option value="@n"@if(p.chosenValid.contains(n)) { selected}>@optionText(p, n)</option>}
-                        </select>
-                        <div class="form-text" id="topImages_help">@Messages("top.n.list.help", p.m)</div>
-                        @for((id, error) <- errors) {<div class="invalid-feedback" id="@id">@error</div>}
-                    </div>
-                </div>
-                }
+            @* a held cut the control can't preselect: why, unless the save's refusal says it already *@
+            @for(pick <- p.pick if errors.isEmpty) {
+            <div class="row mb-3"><div class="col-md-8 offset-md-4">
+                <div class="alert alert-warning py-2 mb-0" id="top-n-held">@CutPicker.text(pick.msg)</div>
+            </div></div>
             }
-            @chooseRow
-            @if(p.result.candidates.nonEmpty) {
-            <div class="row mb-3" id="top-n-candidates">
-                <span class="col-md-4 col-form-label">@Messages("top.n.candidates")</span>
-                <div class="col-md-8 d-flex flex-wrap gap-2">
-                    @for(c <- p.result.candidates) {
-                    <button type="submit" class="btn btn-sm @if(p.chosenValid.contains(c.n)) {btn-primary} else {btn-outline-secondary} text-start"
-                        formaction="@previewUrl" formnovalidate name="cutPick" value="@c.n"
-                        @if(p.chosenValid.contains(c.n)) { aria-pressed="true"}>@Messages("top.n.option", c.n) · @reasonsText(c)</button>
+            <div class="row mb-3" id="topImages_field">
+                <label class="col-md-4 col-form-label" for="topImages">@Messages("top.images")</label>
+                <div class="col-md-8">
+                    @* "No top N" always; a pick needed: a placeholder first, posting the held N (refused
+                       again, never dropped) or, for a held threshold, nothing (required) *@
+                    <select class="form-select@if(errors.nonEmpty) { is-invalid}" id="topImages" name="topImages"@if(p.pick.exists(_.value.isEmpty)) { required}
+                        aria-describedby="@((Seq("topImages_help") ++ errors.map(_._1)).mkString(" "))"@if(errors.nonEmpty) { aria-invalid="true"}>
+                        @for(pick <- p.pick) {<option value="@pick.value" selected>@Messages("top.n.choose.placeholder")</option>}
+                        <option value=""@if(p.pick.isEmpty && p.chosenValid.isEmpty) { selected}>@Messages("top.n.none")</option>
+                        @if(p.candidateOptions.nonEmpty) {
+                        <optgroup label="@Messages("top.n.candidates")">
+                            @for(n <- p.candidateOptions) {@option(p, n)}
+                        </optgroup>
+                        }
+                        @if(p.otherOptions.nonEmpty) {
+                        <optgroup label="@Messages("top.n.cut.others")">
+                            @for(n <- p.otherOptions) {@option(p, n)}
+                        </optgroup>
+                        }
+                    </select>
+                    <div class="form-text" id="topImages_help">@if(p.m == 0) {@Messages("top.n.no.candidates")} else {@Messages("top.n.list.help", p.m)}</div>
+                    @for((id, error) <- errors) {<div class="invalid-feedback" id="@id">@error</div>}
+                    @for(x <- p.heldThreshold) {<input type="hidden" name="@CutPicker.HeldThresholdField" value="@x.bigDecimal.stripTrailingZeros.toPlainString">}
+                    @* the previous round's rating view with the chosen cut, where it shows the same cut
+                       (CutPicker.viewable): round-form.js follows the choice; hidden without one *@
+                    @if(p.links.nonEmpty) {
+                    <p class="mt-2 mb-0"><a id="top-n-cut-link" href="@p.chosenValid.filter(_ => p.pick.isEmpty).flatMap(p.links.get).getOrElse("#")" target="_blank" rel="noopener"@if(p.pick.nonEmpty || p.chosenValid.isEmpty) { hidden}><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> @Messages("top.n.show.cut")<span class="visually-hidden"> (@Messages("link.new.tab"))</span></a></p>
                     }
                 </div>
             </div>
+            @* a rated source's round keeps the files scoring at least the cut's score (the default) or
+               the top N; a yes/no source's keeps N *@
+            @if(!p.levels && p.m > 0) {
+            <fieldset class="row mb-3" id="cutKeep_field" aria-describedby="cutKeep_help">
+                <legend class="col-md-4 col-form-label pt-0">@Messages("top.n.keep")</legend>
+                <div class="col-md-8">
+                    @for(k <- CutPicker.Keep.all) {
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="@CutPicker.KeepField" id="cutKeep_@k.param" value="@k.param"@if(p.keep == k) { checked}>
+                        <label class="form-check-label" for="cutKeep_@k.param">@Messages(s"top.n.keep.${k.param}")</label>
+                    </div>
+                    }
+                    <div class="form-text" id="cutKeep_help">@Messages("top.n.keep.help")@for(hint <- Seq(
+                        Option.when(p.ranking.prevRounds.exists(r => r.hasCriteria && !r.isBinary))("average.file.rating.criteria.sum"),
+                        Option.when(p.ranking.prevRounds.exists(r => !r.isBinary && r.averageRule == org.intracer.wmua.AverageRule.Sum))("average.file.rating.sum")).flatten) { @Messages(hint)}</div>
+                </div>
+            </fieldset>
             }
-            @for(n <- p.chosenValid) {
-            <div class="row mb-3"><div class="col-md-8 offset-md-4">
-                <p class="mb-0" id="top-n-preview">@Messages("top.n.preview.of", n) @CutPicker.text(p.preview(n))</p>
-            </div></div>
-            }
+            @chooseRow
             @if(p.changedSince) {
             <div class="row mb-3"><div class="col-md-8 offset-md-4">
                 <div class="alert alert-warning py-2 mb-0" id="top-n-changed">@Messages("top.n.changed")</div>
@@ -111,7 +131,6 @@
                 <div class="alert alert-warning py-2 mb-0" id="top-n-scales">@Messages("top.n.scales")</div>
             </div></div>
             }
-            @views.html.cutGallery(p, Some(previewUrl))
         }
     }
     </div>

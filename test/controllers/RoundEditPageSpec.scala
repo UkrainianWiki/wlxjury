@@ -207,7 +207,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         val jurors = User.findRoundJurors(round.getId).map(_.getId)
         // a top N the save takes: the first that doesn't split a tie of the previous round's ranking (§10.4)
         val n = services.TestRoundServices.roundService().cutPicker(Round(None, 0, None, contest.getId,
-          previous = Some(round.getId.toString)), None, None).get.result.validUpTo(1000).head.toString
+          previous = Some(round.getId.toString)), None).get.result.validUpTo(1000).head.toString
         val saved = route(app, saveNewRound(contest.getId, jurors, java.util.UUID.randomUUID().toString, admin,
           Seq("previousRound[0]" -> round.getId.toString, "topImages" -> n, "topBinaryOrder" -> "approvals"))).get
         status(saved) must_== SEE_OTHER
@@ -495,7 +495,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
           (select.hasClass("wlx-locked") must beTrue) and (select.hasAttr("disabled") must beTrue) and
             (select.attr("aria-describedby") must contain("round-filters-locked"))
         }
-        forall(Seq("source", "excludeCategory", "monumentIds", "minAvgRate")) { id =>
+        forall(Seq("source", "excludeCategory", "monumentIds")) { id =>
           val input = doc.getElementById(id)
           (input.hasClass("wlx-locked") must beTrue) and (input.hasAttr("readonly") must beTrue)
         }

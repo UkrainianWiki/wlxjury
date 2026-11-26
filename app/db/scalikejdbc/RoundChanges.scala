@@ -167,6 +167,11 @@ object RoundChanges {
     */
   val TopImagesBasis = "topImagesBasis"
 
+  /** The settings a cut is stored in (one control, decided 2026-11-26): a top N, or a rated source's
+    * threshold. How it was chosen is kept beside a change of either.
+    */
+  val CutFields: Set[String] = Set("topImages", "prevMinAvgRate")
+
   /** The entry's detail: the values compared whole, stored short ([[stored]]); with a changed top N,
     * how it was chosen (`topImagesBasis`), if given.
     */
@@ -174,7 +179,7 @@ object RoundChanges {
       topImagesBasis: Option[JsObject] = None): JsObject =
     Json.obj("round" -> round.getId, "number" -> round.number, "path" -> path,
       "changed" -> JsObject(changes.map { case (f, from, to) => f -> (stored("from", from) ++ stored("to", to)) })) ++
-      topImagesBasis.filter(_ => changes.exists(_._1 == "topImages")).fold(Json.obj())(b => Json.obj(TopImagesBasis -> b))
+      topImagesBasis.filter(_ => changes.exists(c => CutFields(c._1))).fold(Json.obj())(b => Json.obj(TopImagesBasis -> b))
 
   /** Writes the entry, if anything changed and an account did it: its id. A changed track label is
     * an entry of its own ([[ContestChangeJdbc.RoundTrackChanged]], with the same path), after the

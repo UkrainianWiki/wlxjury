@@ -431,21 +431,27 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
 
   "the round form [A-01]" should {
 
-    "say that a criteria round's min average rate is a sum (U7), and not without one" in {
+    "say that a criteria round's score threshold is a sum (U7), and not without one" in {
       testDbApp { app =>
         val f = fixture()
         val contestId = f.round.contestId
-        val html = contentAsString(get(app, f.admin, s"/admin/rounds/edit?contestId=$contestId"))
-        val help = Jsoup.parse(html).getElementById("minAvgRate_help")
-        help must not(beNull)
-        help.text() must contain("a sum of the criteria rates, averaged over the jurors")
+        // the threshold is the cut control's (one control, decided 2026-11-26): its help, once "Choose N"
+        // loaded it from the criteria round
+        def keepHelp(): String = Jsoup.parse(contentAsString(route(app, FakeRequest(POST, "/admin/rounds/cut-preview")
+          .withSession(Secured.UserName -> f.admin.email, Secured.CurrentContestId -> contestId.toString)
+          .withHeaders("Accept" -> "text/html")
+          .withFormUrlEncodedBody("number" -> "0", "name" -> "Next", "contest" -> contestId.toString, "roles" -> "jury",
+            "rates" -> "1", "minMpx" -> "No", "minSize" -> "No", "mediaType" -> "all",
+            "previousRound[0]" -> f.round.getId.toString)
+          .withCSRFToken).get)).select("#cutKeep_help").text
+        val withCriteria = keepHelp()
 
         DB.autoCommit { implicit s =>
           sql"DELETE FROM round_criterion WHERE round_id = ${f.round.getId}".update()
           sql"UPDATE round SET has_criteria = 0 WHERE id = ${f.round.getId}".update()
         }
-        Jsoup.parse(contentAsString(get(app, f.admin, s"/admin/rounds/edit?contestId=$contestId")))
-          .getElementById("minAvgRate_help") must beNull
+        (withCriteria must contain("a sum of the criteria rates, averaged over the jurors")) and
+          (keepHelp() must not(contain("a sum of the criteria rates")))
       }
     }
   }

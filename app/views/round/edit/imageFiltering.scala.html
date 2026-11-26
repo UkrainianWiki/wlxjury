@@ -100,24 +100,10 @@
                 Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy)
             </div>
 
-            <div id="rateFilters"
-            class="@rounds.filterNot(_.isBinary).map(r => "round" + r.getId).mkString(" ")">
-            @* from a criteria round, the average of its files' criteria sums (U7); from a round scored
-               by the sum (AverageRule.Sum), a minimum score, a sum: the hints say so when a round the
-               form offers is one *@
-            @bs.text(
-                editRoundForm("minAvgRate"),
-                Symbol("_label") -> Messages("average.file.rating.is.at.least"),
-                Symbol("_help") -> Seq(
-                    Option.when(rounds.exists(r => r.hasCriteria && !r.isBinary))(Messages("average.file.rating.criteria.sum")),
-                    Option.when(rounds.exists(r => !r.isBinary && r.averageRule == org.intracer.wmua.AverageRule.Sum))(
-                        Messages("average.file.rating.sum"))).flatten.mkString(" "),
-                Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy
-            )
-            </div>
-
-            @* the top N (regional winners plan §10.4, the cut picker): no free number box; "Choose N"
-               loads the candidate cuts and an N list of valid values only (round/edit/topN) *@
+            @* the cut (regional winners plan §10.4, the cut picker): one control for a top N and a
+               rated source's "average file rating at least X", the same cut (decided 2026-11-26): no
+               free number box and no threshold field; "Choose N" loads every valid cut
+               (round/edit/topN) *@
             @views.html.round.edit.topN(editRoundForm, cutPicker, noEdit, previewUrl)
         </div>
 
