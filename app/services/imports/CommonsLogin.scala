@@ -28,8 +28,17 @@ import scala.util.control.NonFatal
   * `recheck`. That includes a login that throws, a login refused for its token
   * ([[TransientLoginResults]]) and one that succeeds but leaves the session anonymous:
   * none of these is a wrong password. A login the wiki refuses otherwise (a wrong or
-  * revoked bot password, a blocked account) is tried again only after `loginRetry`, so as
-  * not to run into the wiki's limit of failed logins.
+  * revoked bot password, a blocked account) is tried again when an import step needs it,
+  * but not before a gap that starts at `loginRetryFirst` (5 minutes) and doubles with each
+  * refusal in a row (5, 10, 20, 40 minutes) up to `loginRetryMax` (1 hour); a successful
+  * login, or a session found logged in, resets it. A refusal may be a one-off (the
+  * password itself is fine), so imports should not stay anonymous (50 ids per request
+  * instead of 500) for long; but repeated or concurrent jobs must not run into the wiki's
+  * limits of failed logins: 150 per 48 hours per IP and 5 per 5 minutes per account. With
+  * a bot password that stays wrong, the worst case is 4 tries in the first 75 minutes and
+  * then one an hour: about 50 in 48 hours, and never more than one in 5 minutes. A login
+  * that throws or is refused for its token, after refusals in a row, waits at least the
+  * current gap too, and no login (not even after an [[invalidate]]) starts before it.
   *
   * One caller checks at a time, and the others don't wait for it: they go on with the last
   * answer. An [[invalidate]] while it checks makes the next [[ensure]] check again, as the
@@ -41,7 +50,8 @@ class CommonsLogin(
     bot: MwBot,
     credentials: Option[CommonsLogin.Credentials],
     recheck: FiniteDuration = CommonsLogin.Recheck,
-    loginRetry: FiniteDuration = CommonsLogin.LoginRetry,
+    loginRetryFirst: FiniteDuration = CommonsLogin.LoginRetryFirst,
+    loginRetryMax: FiniteDuration = CommonsLogin.LoginRetryMax,
     now: () => Long = () => System.nanoTime()
 ) extends Logging {
 
@@ -50,13 +60,17 @@ class CommonsLogin(
   @volatile private var status: Status = Status.Anonymous
   /** When [[ensure]] asks again; None: at the next call. */
   @volatile private var nextCheck: Option[Long] = None
+  /** Logins the wiki refused in a row (not counting [[TransientLoginResults]] or a throw). */
+  @volatile private var refusals: Int = 0
+  /** No login before this time, even when a check finds the session anonymous. */
+  @volatile private var nextLogin: Option[Long] = None
   /** Set while a caller checks. */
   private val checking = new AtomicBoolean(false)
   /** Counts [[invalidate]] calls, so a check knows whether one came while it ran. */
   private val invalidations = new AtomicLong()
 
   /** Who the session is: checked, and logged in again if needed, when the last check is
-    * older than `recheck` (`loginRetry` after a refused login); while another caller
+    * older than `recheck` (the login gap after a refused login); while another caller
     * checks, the last answer. Without credentials, anonymous, and nothing is asked.
     */
   def ensure(): Status = {
@@ -79,6 +93,37 @@ class CommonsLogin(
 
   private def due: Boolean = nextCheck.forall(t => now() - t >= 0)
 
+  /** The gap after `n` refused logins in a row: `loginRetryFirst` doubled `n - 1` times, at
+    * most `loginRetryMax`.
+    */
+  private def refusedGap(n: Int): FiniteDuration =
+    if (n <= 0) Duration.Zero
+    else {
+      val first = loginRetryFirst.toNanos
+      val max = loginRetryMax.toNanos
+      // stop doubling once past the cap, so the Long can't overflow
+      var gap = first
+      var i = 1
+      while (i < n && gap < max) { gap *= 2; i += 1 }
+      math.min(gap, max).nanos
+    }
+
+  /** The wait after a login that threw or was refused for its token: `recheck`, or the
+    * current refused-login gap if longer, so a throw can't shorten that gap.
+    */
+  private def afterFailedLogin(): FiniteDuration = recheck.max(refusedGap(refusals))
+
+  /** Records a login attempt that didn't log in: no login before `gap` from now. */
+  private def noLoginFor(gap: FiniteDuration): FiniteDuration = {
+    nextLogin = Some(now() + gap.toNanos)
+    gap
+  }
+
+  private def loginOk(): Unit = {
+    refusals = 0
+    nextLogin = None
+  }
+
   private def check(): Unit = {
     val invalidated = invalidations.get()
     var retry = recheck
@@ -88,15 +133,32 @@ class CommonsLogin(
       try {
         val current = userInfo()
         answered = true
-        if (!current.anonymous) current
-        else
+        if (!current.anonymous) {
+          loginOk()
+          current
+        } else
           credentials.fold(current) { c =>
-            val result = login(c)
-            if (result == LoginSuccess) loggedIn(c)
-            else {
-              if (!TransientLoginResults(result)) retry = loginRetry
-              logger.warn(s"${bot.host}: login as ${c.user} failed: ${controllers.Secured.logValue(result.toString)}; trying again in $retry")
-              Status.Anonymous
+            nextLogin.map(_ - now()).filter(_ > 0) match {
+              case Some(wait) =>
+                // a login refused or failed recently: no new one before its gap
+                retry = wait.nanos
+                Status.Anonymous
+              case None =>
+                val result = login(c)
+                if (result == LoginSuccess) {
+                  loginOk()
+                  loggedIn(c)
+                } else {
+                  retry =
+                    if (TransientLoginResults(result)) noLoginFor(afterFailedLogin())
+                    else {
+                      refusals += 1
+                      noLoginFor(refusedGap(refusals))
+                    }
+                  logger.warn(s"${bot.host}: login as ${c.user} failed: ${controllers.Secured.logValue(result.toString)}; " +
+                    s"trying again in ${describe(retry)} at the earliest, when an import needs it")
+                  Status.Anonymous
+                }
             }
           }
       } catch {
@@ -105,7 +167,9 @@ class CommonsLogin(
             s"keeping the last answer (${status.describe}), checking again in $recheck")
           status
         case NonFatal(e) =>
-          logger.warn(s"${bot.host}: could not log in the account: ${controllers.Secured.logValue(String.valueOf(e.getMessage))}; trying again in $recheck")
+          retry = noLoginFor(afterFailedLogin())
+          logger.warn(s"${bot.host}: could not log in the account: ${controllers.Secured.logValue(String.valueOf(e.getMessage))}; " +
+            s"trying again in ${describe(retry)} at the earliest, when an import needs it")
           Status.Anonymous
       }
     if (checked != status || nextCheck.isEmpty) logger.info(s"${bot.host}: ${checked.describe}")
@@ -120,7 +184,7 @@ class CommonsLogin(
     val after = userInfo()
     if (after.anonymous)
       logger.warn(s"${bot.host}: logged in as ${c.user}, but the session is still anonymous " +
-        s"(are its cookies kept?); trying again in $recheck")
+        s"(are its cookies kept?); trying again in ${describe(recheck)}")
     after
   }
 
@@ -144,8 +208,16 @@ object CommonsLogin {
 
   val Recheck: FiniteDuration = 10.minutes
 
-  /** The wait after a refused login: well within Wikimedia's 150 failed logins in 48 hours. */
-  val LoginRetry: FiniteDuration = 6.hours
+  /** The gap after a first refused login; it doubles with each refusal in a row, up to
+    * [[LoginRetryMax]]. At most one login in 5 minutes: Wikimedia allows 5 failed logins per
+    * 5 minutes per account.
+    */
+  val LoginRetryFirst: FiniteDuration = 5.minutes
+
+  /** The longest gap between refused logins: about 50 tries in 48 hours with a bot password
+    * that stays wrong, well within Wikimedia's 150 failed logins per 48 hours per IP.
+    */
+  val LoginRetryMax: FiniteDuration = 1.hour
 
   val Timeout: FiniteDuration = 1.minute
 
@@ -156,6 +228,16 @@ object CommonsLogin {
 
   val UserInfoParams: Map[String, String] =
     Map("action" -> "query", "meta" -> "userinfo", "uiprop" -> "rights", "format" -> "json", "utf8" -> "")
+
+  /** A wait for the log: "40 minutes", "1 hour", "90 seconds". */
+  def describe(d: FiniteDuration): String = {
+    def unit(n: Long, name: String) = s"$n $name${if (n == 1) "" else "s"}"
+    val s = math.max(0L, (d.toMillis + 999) / 1000)
+    if (s >= 3600 && s % 3600 == 0) unit(s / 3600, "hour")
+    else if (s >= 60 && s % 60 == 0) unit(s / 60, "minute")
+    else if (s >= 120) unit((s + 59) / 60, "minute")
+    else unit(s, "second")
+  }
 
   /** A bot password. Its `toString` leaves the password out. */
   final case class Credentials(user: String, password: String) {
