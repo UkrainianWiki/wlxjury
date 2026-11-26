@@ -40,9 +40,12 @@
 }
 @if(noEdit) {
     @for(n <- stored) {
+    @* the locked look of the section's other fields (`wlx-locked`, #225), described by its reason line
+       (#round-filters-locked); no name: a plain edit doesn't write the N *@
     <div class="row mb-3" id="topImages_field">
-        <span class="col-md-4 col-form-label">@Messages("top.images")</span>
-        <div class="col-md-8"><p class="form-control-plaintext" id="topImages">@n</p></div>
+        <label class="col-md-4 col-form-label" for="topImages">@Messages("top.images")</label>
+        <div class="col-md-8"><input type="text" class="form-control wlx-locked" id="topImages" value="@n" readonly
+            aria-describedby="round-filters-locked"></div>
     </div>
     }
 } else {

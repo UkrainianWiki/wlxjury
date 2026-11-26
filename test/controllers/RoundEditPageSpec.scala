@@ -251,7 +251,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         (stored.select("[name=topImages]").size === 0) and
           (page("&topImages=0").select("[name=topImages]").size === 0) and
           // no free number box (the cut picker, §10.4): a started round's N read only
-          (page("&topImages=3").select("#topImages_field #topImages").text === "3") and
+          (page("&topImages=3").select("#topImages_field input#topImages.wlx-locked").attr("value") === "3") and
           (page("&topImages=3").select("input[name=topImages]").size === 0) and
           // on a refusal, the form's errors say which field
           (status(result) aka org.jsoup.Jsoup.parse(contentAsString(result))

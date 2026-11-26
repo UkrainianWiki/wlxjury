@@ -204,7 +204,7 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
           s"/admin/rounds/edit?id=${stored.getId}&contestId=${contest.getId}", Nil)).get)
         val sent = preview(app, "admin@example.com", newRound(contest, prev, "id" -> stored.getId.toString,
           "number" -> "2"): _*)
-        (page.select("#topImages_field #topImages").text === "3") and (page.select("select#topImages").size === 0) and
+        (page.select("#topImages_field input#topImages.wlx-locked[readonly]").attr("value") === "3") and (page.select("select#topImages").size === 0) and
           (page.select("#topImages-choose").size === 0) and
           (status(sent) === SEE_OTHER) and (redirectLocation(sent).get must contain(s"id=${stored.getId}"))
       }

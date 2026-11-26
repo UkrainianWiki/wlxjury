@@ -78,7 +78,7 @@ class CutGalleryViewSpec extends Specification {
 
     "show a round's N read only when its filters aren't edited, nothing without one" in {
       val page = render(None, Some(3), noEdit = true)
-      (page.select("#topImages").text === "3") and (page.select("#topImages-choose").size === 0) and
+      (page.select("input#topImages.wlx-locked[readonly]").attr("value") === "3") and (page.select("#topImages-choose").size === 0) and
         (page.select("input[name=topImages]").size === 0) and
         (render(None, None, noEdit = true).select("#topImages_field").size === 0)
     }
