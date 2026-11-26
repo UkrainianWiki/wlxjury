@@ -314,8 +314,9 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
         staff.select(".wlx-nav-filters > li").asScala.map(li => Option(li.id).filter(_.nonEmpty).getOrElse(li.className)).toList must
           containTheSameElementsAs(List("round-menu", "juror-menu", "votes-menu", "comments-menu"))
         val juror = page(app, f.juror, gallery(f.round, f.juror.getId))
-        groups(juror) === Seq("wlx-nav-filters", "wlx-nav-order")
-        juror.select(".wlx-nav-groups > ul").asScala.map(_.attr("aria-label")).toList === List("Filters", "Sorting and view")
+        // the jurors' Help last (HelpLinks)
+        groups(juror) === Seq("wlx-nav-filters", "wlx-nav-order", "wlx-nav-help")
+        juror.select(".wlx-nav-groups > ul").asScala.map(_.attr("aria-label")).toList === List("Filters", "Sorting and view", "Help")
       }
     }
   }
