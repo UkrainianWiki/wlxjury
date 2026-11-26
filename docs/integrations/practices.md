@@ -42,9 +42,12 @@ the bench server passes no Commons environment, CI passes no secrets but `GITHUB
 (`CommonsLogin.HighLimit`), 50 without (`Limit`); import steps take one request's worth
 (`jobs.commonsImport.pageSize`, unset). A session that went anonymous (MediaWiki ends idle
 sessions, and reads then succeed anonymously without an error) is found by the recheck and
-logged in again; a refused login waits `loginRetry` before trying again. *Why:* the wiki limits
-failed logins per account, and a wrong bot password must not become a stream of failed logins.
-An anonymous session still works, in smaller batches.
+logged in again. A refused login is tried again when an import step needs it, but not before a
+gap that starts at 5 minutes and doubles with each refusal in a row up to 1 hour
+(`LoginRetryFirst`, `LoginRetryMax`); a successful login resets it. *Why:* the wiki limits failed
+logins (150 per 48 hours per IP, 5 per 5 minutes per account), and a wrong bot password must not
+become a stream of failed logins: at most about 50 in 48 hours. A one-off refusal must not keep
+imports slow for long either. An anonymous session still works, in smaller batches.
 
 **1.4 Identify the client.** API requests carry scalawiki's User-Agent (`HttpClientPekko`:
 `ScalaWiki/0.7 (https://github.com/UkrainianWiki/scalawiki; ukwikidev@wikimedia.org.ua)`,

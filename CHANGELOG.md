@@ -12,7 +12,9 @@ Deploy dates come from production's migration history, as described at the end.
 
 ## Unreleased (on master, not yet deployed)
 
-Nothing merged to master after the 26.11.17 build yet.
+**Fixes**
+
+- Imports no longer stay slow for 6 hours after Commons refuses the bot's login once: the login is tried again when an import needs it, after 5 minutes at first, waiting longer (up to 1 hour) only while Commons keeps refusing it.
 
 ## Deployed releases
 
