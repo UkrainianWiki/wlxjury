@@ -2,10 +2,12 @@
 @* A round being set up, in one line (UI-path plan §4 step 1, §0 row 7): "Setting up – step 2 of 3:
    check files" or "… step 3 of 3: choose jurors" (RoundNextStep.step), with a link to its current
    step: for its admins (`mayAct`) "Distribute to jurors" (its jurors form) once its files matched,
-   else "Check the files" (its review page); for those who may only see the review page (`mayView`:
+   "Change the settings" (its form, to re-apply) after a re-apply failed or was cancelled, else "Check
+   the files" (its review page); for those who may only see the review page (`mayView`:
    organizers) that page. Round statistics and the conflicts page; the Rounds page has its own
    (rounds.scala.html, its button in place of Start). *@
 @roundId = @{ step.round.getId }
-<p id="round-setup-state" data-round="@roundId" data-step="@step.step">@if(step.step == controllers.RoundNextStep.Jurors) {@Messages("round.setup.state.3")} else {@Messages("round.setup.state.2")}@if(mayAct && step.distributeAllowed) {
-    · <a id="round-setup-state-link" href="@routes.RoundReviewController.jurors(roundId)">@Messages("round.review.distribute")</a>} else {@if(mayAct || mayView) {
-    · <a id="round-setup-state-link" href="@routes.RoundReviewController.review(roundId)">@Messages("round.next.files")</a>}}</p>
+<p id="round-setup-state" data-round="@roundId" data-step="@step.step">@Messages(step.stateKey)@if(mayAct && step.distributeAllowed) {
+    · <a id="round-setup-state-link" href="@routes.RoundReviewController.jurors(roundId)">@Messages("round.review.distribute")</a>} else {@if(mayAct && step.state == controllers.RoundNextStep.Unfinished) {
+    · <a id="round-setup-state-link" href="@routes.RoundController.editRound(id = step.round.id, contestId = step.round.contestId)">@Messages("round.next.settings")</a>} else {@if(mayAct || mayView) {
+    · <a id="round-setup-state-link" href="@routes.RoundReviewController.review(roundId)">@Messages("round.next.files")</a>}}}</p>

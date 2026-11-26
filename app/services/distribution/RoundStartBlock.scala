@@ -37,9 +37,16 @@ object RoundStartBlock {
   case object Failed
       extends RoundStartBlock("failed", "round.start.state.failed", "round.start.refused.failed")
 
+  /** Held in review, its filters' re-apply (P3-5) failed: its files only partly chosen, and its jurors form
+    * refuses to distribute it ([[services.RoundService.ReapplyUnfinishedKey]]) until its job is retried (in
+    * its row) or the filters are re-applied again. Step 2 of its setup (controllers.RoundNextStep.Unfinished).
+    */
+  case object ReapplyFailed
+      extends RoundStartBlock("reapply.failed", "round.start.state.reapply.failed", "round.start.refused.reapply.failed")
+
   /** Held in review, its filters' re-apply (P3-5) cancelled: its files only partly chosen, and its jurors form
     * refuses to distribute it ([[services.RoundService.ReapplyUnfinishedKey]]) until the filters are re-applied
-    * again. No Retry for a cancelled job.
+    * again. No Retry for a cancelled job. Step 2 of its setup (controllers.RoundNextStep.Unfinished).
     */
   case object ReapplyCancelled
       extends RoundStartBlock("reapply.cancelled", "round.start.state.reapply.cancelled", "round.start.refused.reapply.cancelled")
@@ -50,7 +57,8 @@ object RoundStartBlock {
   case object Incomplete
       extends RoundStartBlock("incomplete", "round.start.state.incomplete", "round.start.refused.incomplete")
 
-  val All: Seq[RoundStartBlock] = Seq(NotDistributed, Distributing, Selecting, Cancelled, Failed, ReapplyCancelled, Incomplete)
+  val All: Seq[RoundStartBlock] =
+    Seq(NotDistributed, Distributing, Selecting, Cancelled, Failed, ReapplyFailed, ReapplyCancelled, Incomplete)
 
   /** Whether a job, once done, opens the round to its jurors: a distribute, a one-pass job from
     * before P3, or a fill that queues the distribute (not one queued from the review, which leaves
@@ -61,10 +69,14 @@ object RoundStartBlock {
     distributeMode(job) || modeOf(job).isEmpty || (fillOnly(job) && distributeAfter(job) && !fromReview(job))
   }
 
-  /** The block of a round, None if it may be started (not `distributing`). A round in review whose latest
-    * job failed (a re-apply or a distribute) is [[Failed]], its Retry the way on, and one whose re-apply was
-    * cancelled is [[ReapplyCancelled]]: its jurors form would refuse to distribute either re-apply
-    * (RoundService.reviewJury), so neither is [[NotDistributed]] with its "Distribute to jurors".
+  /** The block of a round, None if it may be started (not `distributing`): the one source of a round's
+    * state, which the Rounds page shows, a refused start says, and controllers.RoundNextStep (the setup step
+    * on the round's other pages) is derived from. A round in review whose latest job is a re-apply (P3-5) that
+    * failed is [[ReapplyFailed]] (its Retry in its row) and one that was cancelled [[ReapplyCancelled]]: its
+    * jurors form refuses to distribute either (RoundService.reviewJury). Any other failed or cancelled job of a
+    * round in review (its distribute, a fill queued from the review) leaves it [[NotDistributed]]: the review's
+    * Distribute distributes it again (RoundService: "retried … by the review's Distribute"); a failed one's
+    * Retry is in its row too.
     *
     * @param latestJob the round's latest distribution job (the Rounds page's; any other kind is ignored)
     */
@@ -72,14 +84,15 @@ object RoundStartBlock {
     if (!round.distributing) None
     else {
       val job = latestJob.filter(_.kind == RoundDistributionHandler.Kind)
+      def reapply(status: String) = job.exists(j => j.status == status && RoundDistributionHandler.reapplyMode(j))
       job.filter(_.isActive) match {
         case Some(j) if opensWhenDone(j)                       => Some(Distributing)
         case Some(_)                                           => Some(Selecting)
         case None if round.lifecycle == Round.Status.Cancelled => Some(Cancelled)
-        case None if job.exists(_.isFailed)                    => Some(Failed)
-        case None if round.inReview && job.exists(j => j.status == JobStatus.Cancelled &&
-            RoundDistributionHandler.reapplyMode(j))           => Some(ReapplyCancelled)
+        case None if round.inReview && reapply(JobStatus.Failed)    => Some(ReapplyFailed)
+        case None if round.inReview && reapply(JobStatus.Cancelled) => Some(ReapplyCancelled)
         case None if round.inReview                            => Some(NotDistributed)
+        case None if job.exists(_.isFailed)                    => Some(Failed)
         case None                                              => Some(Incomplete)
       }
     }

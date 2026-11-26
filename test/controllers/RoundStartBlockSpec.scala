@@ -69,7 +69,8 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
 
   /** `round`'s files matched: `in` it, as its fill leaves them (two of the contest's files). */
   private def matched(round: Round): Unit = {
-    imageDao.batchInsert(Seq(1L, 2L).map(i => Image(i, s"File:Image$i.jpg", None, None, 1000, 800, None)))
+    if (db.scalikejdbc.ImageJdbc.findById(1L).isEmpty)
+      imageDao.batchInsert(Seq(1L, 2L).map(i => Image(i, s"File:Image$i.jpg", None, None, 1000, 800, None)))
     WriteTx.write { implicit s =>
       Round.lock(Seq(round.getId))
       RoundImageJdbc.addFilled(round.getId, Seq(1L, 2L), RoundImageJdbc.Origin.Manual)
@@ -306,30 +307,39 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
     val reapply = Seq[(String, play.api.libs.json.Json.JsValueWrapper)]("mode" -> RoundDistributionHandler.Mode.Fill,
       "distributeAfter" -> false, "fromReview" -> true, "reapply" -> true)
 
-    "show a failed re-apply or distribute as failed and a cancelled re-apply as such, with no Distribute to jurors (CodeRabbit #192)" in {
+    "show a failed or cancelled re-apply at step 2 with Change the settings, a failed or cancelled distribute at step 3 with Distribute (CodeRabbit #192)" in {
       testDbApp { implicit app =>
         val f = fixture()
         val failedReapply = inReview(f, 1)
         endedReviewJob(f, failedReapply, "failed", reapply: _*)
+        // a failed distribute: the review's Distribute distributes it again (RoundService.reviewJury refuses
+        // only an unfinished re-apply)
         val failedDistribute = inReview(f, 2)
+        matched(failedDistribute)
         endedReviewJob(f, failedDistribute, "failed", "mode" -> RoundDistributionHandler.Mode.Distribute)
         val cancelledReapply = inReview(f, 3)
         endedReviewJob(f, cancelledReapply, "cancelled", reapply: _*)
         // a cancelled distribute leaves the round in review, its jurors form distributing it again
         val cancelledDistribute = inReview(f, 4)
+        matched(cancelledDistribute)
         endedReviewJob(f, cancelledDistribute, "cancelled", "mode" -> RoundDistributionHandler.Mode.Distribute)
+        val all = Seq(failedReapply, failedDistribute, cancelledReapply, cancelledDistribute)
         val html = contentAsString(roundsPage(app, f, f.admin))
         def distribute(r: Round) = !row(html, r).select("a.round-start-distribute").isEmpty
+        def settings(r: Round) = Option(row(html, r).selectFirst("a.round-start-settings")).map(_.attr("href"))
 
-        (Seq(failedReapply, failedDistribute, cancelledReapply, cancelledDistribute).map(hasStart(html, _)) ===
-          Seq.fill(4)(false)) and
-          (stateOf(html, failedReapply) must beSome("failed" -> "Not started – its distribution failed")) and
-          (stateOf(html, failedDistribute).map(_._1) must beSome("failed")) and
+        (all.map(hasStart(html, _)) === Seq.fill(4)(false)) and
+          (stateOf(html, failedReapply) must beSome(
+            "reapply.failed" -> "Setting up – step 2 of 3: re-applying its filters failed")) and
           (stateOf(html, cancelledReapply) must beSome(
-            "reapply.cancelled" -> "Not started – re-applying its filters was cancelled")) and
-          (stateOf(html, cancelledDistribute).map(_._1) must beSome("not.distributed")) and
-          (Seq(failedReapply, failedDistribute, cancelledReapply, cancelledDistribute).map(distribute) ===
-            Seq(false, false, false, true))
+            "reapply.cancelled" -> "Setting up – step 2 of 3: re-applying its filters was cancelled")) and
+          (stateOf(html, failedDistribute) must beSome("not.distributed" -> "Setting up – step 3 of 3: choose jurors")) and
+          (stateOf(html, cancelledDistribute) must beSome("not.distributed" -> "Setting up – step 3 of 3: choose jurors")) and
+          (all.map(distribute) === Seq(false, true, false, true)) and
+          (settings(failedReapply) must beSome(contain(s"/admin/rounds/edit?id=${failedReapply.getId}"))) and
+          (settings(cancelledReapply) must beSome(contain(s"/admin/rounds/edit?id=${cancelledReapply.getId}"))) and
+          // a failed job's Retry in its row
+          (row(html, failedReapply).select(".job-status[data-status=failed] form.job-retry").size === 1)
       }
     }
 
@@ -343,7 +353,8 @@ class RoundStartBlockSpec extends PlaySpecification with PlayTestDb {
         def error(r: Round) = flash(setRound(app, f.admin, r, active = true)).get("error")
 
         (error(failedReapply) must beSome(
-          "Round 1 (Round 1) can't be started: its distribution failed. Retry its job in its row.")) and
+          "Round 1 (Round 1) can't be started: re-applying its filters failed, so its images are only partly selected. " +
+            "Retry its job in its row, or edit the round and re-apply its filters, then choose its jurors and distribute it.")) and
           (error(cancelledReapply) must beSome(
             "Round 2 (Round 2) can't be started: re-applying its filters was cancelled, so its images are only partly " +
               "selected. Edit the round and re-apply its filters, then choose its jurors and distribute it.")) and

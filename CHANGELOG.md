@@ -24,6 +24,7 @@ Merged after the 26.11.17 build, for the release after it.
 - Track labels: spaces inside a label are kept as typed, so labels share a track only when they are identical, as the form's help says (#209).
 - Track labels: labelling a first round (or giving it a nomination or regions) no longer changes the category track names of the other first rounds (#209).
 - Rounds page: a round with one of several previous rounds deleted no longer says it "starts a track of its own"; it says the deleted round is left out when its track is chosen (#209).
+- A round waiting for review whose filters' re-apply failed reads "Setting up – step 2 of 3: re-applying its filters failed" (its Retry is in its row) and one whose re-apply was cancelled "… re-applying its filters was cancelled", each with "Change the settings", instead of a "Distribute to jurors" that was then refused. A failed or cancelled distribute stays at step 3 with "Distribute to jurors", which distributes it again. The Rounds page, Edit round, the review page, the jurors form, the statistics and the conflicts page now show the same state, also for a creation that failed, was cancelled, didn't finish or opens the round by itself (#206).
 
 ## Deployed releases
 
