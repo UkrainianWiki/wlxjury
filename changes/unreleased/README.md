@@ -28,11 +28,12 @@ add it once the PR is open. A migration goes under `Operations` as `- Migrations
 merges all of a release's migrations into one line.
 
 **Check:** `python3 scripts/changelog-fragments.py check` (CI runs it with a guard that fails when
-a PR adds a line under CHANGELOG.md's Unreleased). **Release:**
+a PR adds a line under CHANGELOG.md's Unreleased; rewording a line there passes). **Release:**
 `python3 scripts/changelog-fragments.py fold` adds the lines under their groups in Unreleased,
 after the lines already there, ordered by PR number (fragments without one last, by file name),
 and deletes the fragments; `--into "### 26.11.17.3"` folds into a release block instead,
-`--dry-run` shows the diff. A malformed fragment stops it before anything changes; a line already
+`--dry-run` shows the diff; `--into` names the whole heading up to its date, so
+`### 26.11.1` is not `### 26.11.17`. A malformed fragment stops it before anything changes; a line already
 in CHANGELOG.md is skipped, so a rerun is safe.
 
 This README is not a fragment.

@@ -21,14 +21,16 @@ CHANGELOG.md is skipped (a rerun, or a hotfix's line already in its released blo
 lines merge into the block's one Migrations line. Nothing is written if any fragment is
 malformed, so a rerun after a fix, or after a successful fold, is safe.
 
-`guard` fails when the Unreleased block has a line that it did not have at REV (the PR's base):
-new lines go in fragments. A release moving lines out of Unreleased passes.
+`guard` fails when the Unreleased block has more lines than at REV (the PR's base) and lines it
+did not have there: new lines go in fragments. Rewording a line (same count) and a release moving
+lines out of Unreleased pass; so would replacing one line with another, which review catches.
 
 Exit codes: 0 ok, 1 malformed fragment or a guard failure, 2 usage or CHANGELOG.md structure.
 Standard library only, Python 3.8+.
 """
 import argparse
 import difflib
+import os
 import re
 import subprocess
 import sys
@@ -71,7 +73,7 @@ def parse_fragment(path):
     """A fragment: `section: Name` lines, each followed by one or more `- ` lines; blank lines
     anywhere. Anything else is refused with the file and line number."""
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8-sig")  # Windows PowerShell 5.1 writes a BOM
     except UnicodeDecodeError:
         raise FragmentError(f"{path.name}: not UTF-8 text")
     entries, section, section_line, section_has_lines = [], None, 0, True
@@ -139,9 +141,12 @@ def heading_level(line):
 
 def find_block(lines, heading):
     """(start, end): the heading's line and the index after its block's last line."""
-    matches = [i for i, l in enumerate(lines) if heading_level(l) and l.startswith(heading)]
+    # The heading, then the line's end, a space or "(": "### 26.11.1" is not "### 26.11.17"
+    matches = [i for i, l in enumerate(lines)
+               if heading_level(l) and l.startswith(heading) and l[len(heading):len(heading) + 1] in ("", " ", "(")]
     if len(matches) != 1:
-        raise StructureError(f"CHANGELOG.md has {len(matches)} headings starting with {heading!r}; expected one")
+        raise StructureError(f"CHANGELOG.md has {len(matches)} headings {heading!r} (followed by a space, '(' "
+                             f"or nothing); expected one")
     start = matches[0]
     level = heading_level(lines[start])
     end = start + 1
@@ -255,12 +260,23 @@ def cmd_fold(folder, changelog, heading, dry_run):
         sys.stdout.buffer.flush()
         return 0
     if new_text != text:
-        with changelog.open("w", encoding="utf-8", newline="\n") as f:  # LF, as in the repository
-            f.write(new_text)
+        write_atomically(changelog, new_text)
     for fragment in fragments:
         fragment.path.unlink()
     print(f"Folded {len(fragments)} fragment(s) into {heading!r} of {changelog.name}")
     return 0
+
+
+def write_atomically(path, text):
+    """A temporary file in the same folder, then os.replace: CHANGELOG.md is never half written."""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        with tmp.open("w", encoding="utf-8", newline="\n") as f:  # LF, as in the repository
+            f.write(text)
+        os.replace(str(tmp), str(path))
+    finally:
+        if tmp.exists():
+            tmp.unlink()
 
 
 def cmd_guard(changelog, base):
@@ -273,8 +289,11 @@ def cmd_guard(changelog, base):
 
 
 def guard(base_text, head_text):
-    before = set(unreleased_lines(base_text))
-    added = [l for l in unreleased_lines(head_text) if l not in before]
+    # New lines only when Unreleased has more lines than at the base: rewording a line (a typo
+    # fix) keeps the count and passes; a release moving lines out lowers it.
+    base_lines, head_lines = unreleased_lines(base_text), unreleased_lines(head_text)
+    before = set(base_lines)
+    added = [l for l in head_lines if l not in before] if len(head_lines) > len(base_lines) else []
     if not added:
         print("CHANGELOG.md: no line added under Unreleased")
         return 0

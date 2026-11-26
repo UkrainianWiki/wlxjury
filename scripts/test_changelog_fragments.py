@@ -153,12 +153,34 @@ class FoldTest(unittest.TestCase):
 
     def test_an_unknown_or_ambiguous_heading_is_refused_and_nothing_changes(self):
         self.repo.add("f.md", "section: Fixes\n\n- X (#1).\n")
-        for heading in ["### 27.01", "### 26.11.17"]:
+        for heading in ["### 27.01", "### 26.11", "### 26.11.1", "### 26.11.17."]:
             code, _, err = self.repo.run("fold", "--into", heading)
             self.assertEqual(code, 2, heading)
             self.assertIn("expected one", err)
         self.assertEqual(self.repo.text(), CHANGELOG)
         self.assertEqual(self.repo.fragments(), ["f.md"])
+
+    def test_into_matches_the_whole_version_not_a_prefix(self):
+        # "### 26.11.17" is the 26.11.17 block, not 26.11.17.2 above it
+        self.repo.add("f.md", "section: Fixes\n\n- Into 17 (#251).\n")
+        self.assertEqual(self.repo.run("fold", "--into", "### 26.11.17")[0], 0)
+        self.assertIn("- Older fix (#192).\n- Into 17 (#251).\n", self.repo.text())
+
+    def test_a_fragment_with_a_bom_is_read(self):
+        # Windows PowerShell 5.1's Out-File writes UTF-8 with a BOM
+        (self.repo.folder / "bom.md").write_bytes("section: Fixes\n\n- With BOM (#4).\n".encode("utf-8-sig"))
+        self.assertEqual(self.repo.run("check")[0], 0)
+        self.assertEqual(self.repo.run("fold")[0], 0)
+        self.assertIn("- With BOM (#4).\n", self.unreleased())
+
+    def test_a_failed_write_leaves_the_changelog_and_fragments_as_they_were(self):
+        self.repo.add("f.md", "section: Fixes\n\n- X (#1).\n")
+        with mock.patch.object(mod.os, "replace", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                self.repo.run("fold")
+        self.assertEqual(self.repo.text(), CHANGELOG)
+        self.assertEqual(self.repo.fragments(), ["f.md"])
+        self.assertEqual([p.name for p in self.repo.root.iterdir() if p.name.endswith(".tmp")], [])
 
     def test_idempotent_a_second_fold_changes_nothing(self):
         self.repo.add("f.md", "section: Fixes\n\n- X (#1).\n")
@@ -265,6 +287,15 @@ class GuardTest(unittest.TestCase):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             self.assertEqual(mod.guard(CHANGELOG, head), 1)
+        self.assertIn("Sneaked in", out.getvalue())
+
+    def test_a_reworded_line_passes_and_a_reword_plus_a_new_line_fails(self):
+        typo = CHANGELOG.replace("- Health line.", "- Health line, fixed typo.")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(mod.guard(CHANGELOG, typo), 0)
+            both = typo.replace("- Old feature (#205).\n", "- Old feature (#205).\n- Sneaked in (#300).\n")
+            self.assertEqual(mod.guard(CHANGELOG, both), 1)
         self.assertIn("Sneaked in", out.getvalue())
 
     def test_unchanged_or_lines_moved_out_or_released_blocks_edited_pass(self):

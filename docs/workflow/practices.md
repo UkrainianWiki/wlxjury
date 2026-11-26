@@ -263,8 +263,8 @@ exist; until then from its `release/<version>` branch) gets the squash commit wi
 (pending the maintainer's settings): a ruleset protecting `release/*`. A fix that needs its own
 runbook or data script gets them in the same PR; the hotfix record moves to `docs/history/` and
 is deleted when a release replaces it. Its changelog fragment rides along with the cherry-pick:
-on the release branch `fold --into "### 26.11.13.1"` puts it in the hotfix's block; on master the
-same line is then skipped by the next fold, as it is already in CHANGELOG.md. *Why:* production can't take the untested distance
+on the release branch `fold --into "### 26.11.13.1"` puts it in the hotfix's block, and master
+skips it later only once that block is on master (§7.3). *Why:* production can't take the untested distance
 between its release and master for one fix, and a fix made on master first can't be lost by the
 next release. *Example:* 26.11.13.1, on `release/26.11.13.1` from `release/26.11.13`.
 
@@ -280,7 +280,13 @@ or git tag. A batch adds its line in the same PR as a fragment file,
 `changes/unreleased/<branch-name>.md` ([format](../../changes/unreleased/README.md); decided
 2026-11-26: lines appended under Unreleased made every open PR conflict in CHANGELOG.md, and
 GitHub ran no PR CI until master was merged in). CI's `changelog fragments` check refuses a PR
-that adds a line under Unreleased. The release commit folds the fragments into Unreleased
+that adds a line under Unreleased: one that makes Unreleased longer with a line the base did not
+have. Rewording a line there (a typo fix) passes; a new line always goes in a fragment. The check
+cannot tell a line replaced by an unrelated one from a reword: review catches that. **Hotfixes:**
+the hotfix's released block is ported to master's CHANGELOG.md (its deploy record PR) **before
+master's next fold**; the fold then skips the hotfix's fragment, whose line is already in
+CHANGELOG.md, and deletes it. Folded before the port, the line would land twice, in Unreleased
+and in the hotfix's block. The release commit folds the fragments into Unreleased
 (`python3 scripts/changelog-fragments.py fold`, which deletes them) and moves the block under its
 release heading (§7.4) with its date. Cite only this repository's PRs, as `(#123)`.
 
