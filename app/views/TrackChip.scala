@@ -33,7 +33,46 @@ object TrackChip {
     * "…" between (the whole in the chip's title), so a long name never shows only a beginning that
     * other tracks' names may share.
     */
-  def short(track: Track, lineage: Lineage)(implicit messages: Messages): String = cut(name(track, lineage))
+  def short(track: Track, lineage: Lineage)(implicit messages: Messages): String = {
+    val full = name(track, lineage)
+    val others = lineage.tracks.filter(_ != track).map(name(_, lineage)).filter(_ != full)
+    distinct(full, others)
+  }
+
+  /** `full`'s chip text, told apart from `others`' (the contest's other tracks' names): [[cut]];
+    * where another name would read the same, the start cut at [[MaxLength]] ("Round 1 : Pre
+    * Selection / Cycle 1 : Pré-séléction" and "Round 1 : Pre-selection / …" both cut to "Round
+    * 1 :…1 : Pré-séléction", WLE Canada 2025); where that is the same too, the part around the first
+    * character they differ at, "…" on each cut side.
+    */
+  private[views] def distinct(full: String, others: Seq[String]): String = {
+    def clashes(text: String, of: String => String) = others.exists(o => of(o) == text)
+    val middle = cut(full)
+    if (!clashes(middle, cut)) middle
+    else {
+      val start = prefix(full)
+      if (!clashes(start, prefix)) start
+      else {
+        val differ = others.filter(o => prefix(o) == start).map(o => full.zip(o).takeWhile { case (a, b) => a == b }.size).min
+        window(full, differ)
+      }
+    }
+  }
+
+  /** `full`'s first [[MaxLength]] - 1 characters and "…", or `full` if it fits. */
+  private[views] def prefix(full: String): String =
+    if (full.codePointCount(0, full.length) <= MaxLength) full
+    else full.substring(0, full.offsetByCodePoints(0, MaxLength - 1)).trim + "…"
+
+  /** About [[MaxLength]] characters of `full` around its character `at`, "…" where cut. */
+  private def window(full: String, at: Int): String = {
+    val length = full.codePointCount(0, full.length)
+    val atCp = full.codePointCount(0, at.min(full.length))
+    val from = (atCp - MaxLength / 3).max(0).min((length - (MaxLength - 2)).max(0))
+    val to = (from + MaxLength - 2).min(length)
+    (if (from > 0) "…" else "") + full.substring(full.offsetByCodePoints(0, from), full.offsetByCodePoints(0, to)).trim +
+      (if (to < length) "…" else "")
+  }
 
   /** `full` in [[MaxLength]] characters at most: up to its first third and the rest from its end,
     * "…" between, each cut at a word's edge where it has one.
@@ -52,12 +91,13 @@ object TrackChip {
     }
   }
 
-  /** The round's track chip, if the pages show tracks (two tracks or more in the contest:
-    * Lineage.chipsShown, the Track menu's rule), then for every round, a root named after itself
-    * too; none in a contest with one track, where it would say nothing.
+  /** The round's track chip, if the pages show tracks (two tracks or more in the contest that say
+    * more than a round's own name: Lineage.chipsShown, the Track menu's rule), then for every
+    * round, a first round named after itself too when later rounds are on its track; none for a
+    * round alone on a track named after it (Lineage.selfNamed), which would only repeat its name.
     */
   def shown(round: Round, lineage: Lineage): Option[Track] =
-    if (lineage.chipsShown) lineage.track(round) else None
+    if (lineage.chipsShown && !lineage.selfNamed(round)) lineage.track(round) else None
 
   /** The chip's colour class. */
   def colour(track: Track): String =
