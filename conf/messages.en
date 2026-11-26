@@ -376,6 +376,7 @@ minimum.megapixels=Minimum resolution (Mpx)
 minimum.megabytes=Minimum file size (MB)
 distribute.x.new.files=Distribute {0} new files
 count.new.files=Count
+count.new.files.commons.unavailable = Commons could not be reached to read the category filter’s files, so the new files could not be counted. Try again later.
 add.files=Add files
 add.files.list=Files to add
 add.files.help=One per line: a file name or its Commons URL. The files are added to the round whatever its filters; those already in it are skipped.

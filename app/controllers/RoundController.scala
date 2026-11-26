@@ -415,7 +415,8 @@ class RoundController @Inject() (
     * query Commons), so it runs only when the organizer asks for it. Off the request
     * threads: on one thread of its own ([[RoundController.countContext]]), so a few
     * counts at once queue there instead of holding the blocking dispatcher. Errors are
-    * JSON too, and the request never switches the session's contest.
+    * JSON too (Commons not giving a category filter's files: 503 with the page's message), and the
+    * request never switches the session's contest.
     */
   def newFilesCount(id: Long): EssentialAction =
     Action.async { request =>
@@ -429,6 +430,13 @@ class RoundController @Inject() (
               Future.successful(onUnAuthorizedJson(user, request, Secured.Denial.round(round, User.ADMIN_ROLES)))
             case Some(round) =>
               Future(Ok(Json.obj("count" -> roundsService.newFilesCount(round.getId))))(RoundController.countContext)
+                .recover {
+                  // Commons didn't give the category filter's files: said, in the page's language
+                  case unavailable: RoundDistributionHandler.CategoryFilesUnavailable =>
+                    logger.warn(s"Round ${round.getId}: new files not counted: ${unavailable.getMessage}")
+                    ServiceUnavailable(Json.obj("error" -> "commons",
+                      "message" -> messagesApi.preferred(request)(RoundController.CountCommonsUnavailableKey)))
+                }
           }
       }
     }
@@ -1266,6 +1274,9 @@ object RoundController {
 
   /** A top N not checked, nor its candidate cuts found: Commons didn't give the category filter's files. */
   val CommonsUnavailableKey = "top.n.commons.unavailable"
+
+  /** "Count new files" not counted: Commons didn't give the category filter's files. */
+  val CountCommonsUnavailableKey = "count.new.files.commons.unavailable"
 
   /** The cut picker's own fields of the round form, outside its mapping (none is stored): a candidate
     * cut or "Cut here" (`cutPick`) and "Show more" (`cutShow`). Anything else is none.

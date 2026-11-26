@@ -270,7 +270,11 @@
       $('#new-files-count').text('…');
       $.getJSON(b.data('src'))
         .done(function (r) { $('#new-files-count').text(r.count); })
-        .fail(function () { $('#new-files-count').text('?'); })
+        // a message the server gives (Commons not answering for a category filter), else '?'
+        .fail(function (xhr) {
+          var r = xhr.responseJSON;
+          $('#new-files-count').text(r && typeof r.message === 'string' ? r.message : '?');
+        })
         .always(function () { b.prop('disabled', false); });
     });
   }

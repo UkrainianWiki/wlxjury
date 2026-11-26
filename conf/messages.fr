@@ -363,6 +363,7 @@ minimum.megapixels=Résolution minimale (Mpx)
 minimum.megabytes=Taille minimale du fichier (Mo)
 distribute.x.new.files=Distribuer {0} nouveaux fichiers
 count.new.files=Compter
+count.new.files.commons.unavailable = Commons n’a pas pu être joint pour lire les fichiers du filtre de catégorie : les nouveaux fichiers n’ont pas pu être comptés. Réessayez plus tard.
 add.files=Ajouter des images
 add.files.list=Images à ajouter
 add.files.help=Une par ligne : le nom du fichier ou son URL sur Commons. Les images sont ajoutées au tour quels que soient ses filtres ; celles qui y sont déjà sont ignorées.

@@ -1019,8 +1019,13 @@ class RoundDistributionHandler @Inject() (
   /** The files of `round`'s category rule (its first and second operands) for the cut picker, the
     * save's check of its top N and "Count new files": read from Commons before their database session,
     * kept for a few minutes ([[RoundDistributionHandler.CategoryIdsTtlNanos]]), so the picker's clicks
-    * and the save after them read Commons once. A job's fill reads Commons itself, uncached. Commons
-    * failing: [[RoundDistributionHandler.CategoryFilesUnavailable]].
+    * and the save after them read Commons once. Commons failing:
+    * [[RoundDistributionHandler.CategoryFilesUnavailable]].
+    *
+    * So the picker and the save's check use a category's files up to 5 minutes old, while the job's
+    * fill reads them fresh, uncached. If the category changes in between, the files the job's top N
+    * takes may differ slightly from those the save checked; the job's backstop ([[cutInTie]]) catches
+    * only a tie at N. Accepted (maintainer, 2026-11-26).
     */
   private[distribution] def pickerCategoryIds(round: Round): (Iterable[Long], Iterable[Long]) = {
     val rule = round.categoryRule
@@ -1030,25 +1035,34 @@ class RoundDistributionHandler @Inject() (
 
   private def cachedCategoryIds(category: Option[String]): Iterable[Long] =
     category.map(_.trim).filter(_.nonEmpty).fold[Iterable[Long]](Nil) { name =>
-      val now = System.nanoTime()
-      def fresh(at: Long) = now - at < RoundDistributionHandler.CategoryIdsTtlNanos
-      categoryIdsCache.get(name).filter { case (at, _) => fresh(at) } match {
-        case Some((_, ids)) => ids
+      def fresh(at: Long, now: Long) = now - at < RoundDistributionHandler.CategoryIdsTtlNanos
+      categoryIdsCache.get(name).filter { case (at, _) => fresh(at, System.nanoTime()) } match {
+        case Some((_, ids)) => scala.collection.immutable.ArraySeq.unsafeWrapArray(ids)
         case None =>
           val ids =
-            try distributeImages.categoryFileIds(Some(name)).toSet
+            try distributeImages.categoryFileIds(Some(name)).iterator.toArray.distinct.sorted
             catch { case NonFatal(e) => throw RoundDistributionHandler.CategoryFilesUnavailable(name, e) }
-          // bounded: the expired entries go, then the oldest above the limit
-          categoryIdsCache.filterInPlace { case (_, (at, _)) => fresh(at) }
-          categoryIdsCache.toSeq.sortBy(_._2._1).dropRight(RoundDistributionHandler.CategoryIdsMax - 1)
-            .foreach { case (k, _) => categoryIdsCache.remove(k) }
-          categoryIdsCache.put(name, (now, ids))
-          ids
+          // its time: when the read ended (a long read is kept its full 5 minutes)
+          val read = System.nanoTime()
+          categoryIdsCache.synchronized {
+            // bounded by entries and by ids held: the expired go, then the oldest above either limit
+            categoryIdsCache.filterInPlace { case (_, (at, _)) => fresh(at, read) }
+            categoryIdsCache.remove(name)
+            RoundDistributionHandler.categoryIdsToEvict(
+              categoryIdsCache.toSeq.map { case (k, (at, old)) => (k, at, old.length) }, ids.length)
+              .foreach(categoryIdsCache.remove)
+            // a category larger than the whole cap is used, not kept
+            if (ids.length <= RoundDistributionHandler.CategoryIdsMaxTotal) categoryIdsCache.put(name, (read, ids))
+          }
+          scala.collection.immutable.ArraySeq.unsafeWrapArray(ids)
       }
     }
 
-  /** [[pickerCategoryIds]]' cache: a category's name -> (when read, its files' page ids). */
-  private val categoryIdsCache = TrieMap.empty[String, (Long, Set[Long])]
+  /** [[pickerCategoryIds]]' cache: a category's name -> (when its read ended, its files' page ids,
+    * sorted). Bounded by [[RoundDistributionHandler.CategoryIdsMax]] categories and
+    * [[RoundDistributionHandler.CategoryIdsMaxTotal]] ids in all (8 bytes each: about 4 MB).
+    */
+  private val categoryIdsCache = TrieMap.empty[String, (Long, Array[Long])]
 }
 
 object RoundDistributionHandler {
@@ -1111,6 +1125,24 @@ object RoundDistributionHandler {
 
   /** The categories kept at most. */
   val CategoryIdsMax = 20
+
+  /** The category files' ids kept at most, in all: the oldest categories go first. */
+  val CategoryIdsMaxTotal = 500000
+
+  /** The cached categories (name, when read, ids held) to drop, oldest first, for a new one of
+    * `incoming` ids: until fewer than `maxEntries` remain and their ids plus `incoming` are at most
+    * `maxTotal`.
+    */
+  def categoryIdsToEvict(cached: Seq[(String, Long, Int)], incoming: Int, maxEntries: Int = CategoryIdsMax,
+      maxTotal: Long = CategoryIdsMaxTotal): Seq[String] = {
+    var held = cached.map(_._3.toLong).sum
+    var entries = cached.size
+    cached.sortBy(_._2).takeWhile { case (_, _, n) =>
+      val drop = entries >= maxEntries || held + incoming > maxTotal
+      if (drop) { held -= n; entries -= 1 }
+      drop
+    }.map(_._1)
+  }
 
   /** Commons didn't give a category filter's files (down, slow, refused): the cut picker and the save's
     * check of a top N say so, not a server error.

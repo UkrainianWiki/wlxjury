@@ -266,6 +266,16 @@ class CutPickerRankingSpec extends Specification with TestDb with BeforeAll with
         (again.result.keys === first.result.keys)
     }
 
+    "be kept within the entries' and the ids' limits, the oldest dropped first" in {
+      import RoundDistributionHandler.categoryIdsToEvict
+      val cached = Seq(("b", 2L, 300), ("a", 1L, 300), ("c", 3L, 100))
+      (categoryIdsToEvict(cached, 100, maxEntries = 20, maxTotal = 1000) === Nil) and
+        (categoryIdsToEvict(cached, 400, maxEntries = 20, maxTotal = 1000) === Seq("a")) and
+        (categoryIdsToEvict(cached, 700, maxEntries = 20, maxTotal = 1000) === Seq("a", "b")) and
+        (categoryIdsToEvict(cached, 1, maxEntries = 3, maxTotal = 1000) === Seq("a")) and
+        (categoryIdsToEvict(cached, 2000, maxEntries = 20, maxTotal = 1000) === Seq("a", "b", "c"))
+    }
+
     "say Commons didn't give them, not fail as a server error" in {
       val (contest, jurors) = setUp(8, 3)
       val prev = prevRound(contest, Round.ratesById(10), jurors)(ratedVotes: _*)

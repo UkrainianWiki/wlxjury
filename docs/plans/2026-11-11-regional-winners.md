@@ -1814,6 +1814,10 @@ top-N count they want to use.")*
   fails with the form's message ("N = n is inside a tie …"), adding no file, and the admin picks N
   again. It applies to an N the form has just checked (a new round, a re-apply); "Distribute new
   files" keeps a round's N.
+- **A category filter's files** (accepted 2026-11-26 (maintainer)): the picker, the save's check and
+  "Count new files" read them from Commons once and use them for up to 5 minutes; the job reads them
+  fresh. If the category changes in between, the files the job's top N takes may differ slightly from
+  those the save checked; the backstop catches only a tie at N.
 - It lists **candidate cuts**, each with its reason, and draws them in a **cut gallery**.
 - The admin picks N from the valid values only: a candidate cut, a "Cut here", or the N list,
   which has no value inside a tie (below). The chosen N is stored. Nothing is preselected, for a
@@ -1924,7 +1928,7 @@ exactly as the fill ranks.
   cut in the window. C1's gap test and C2 don't apply.
 - The reason names the level: "N = 37: all files with 3 yes and no no; the next 120 files have
   3 yes, 1 no."
-- With more than 6 boundaries in the window, those nearest the target or the middle are listed;
+- With more than 6 boundaries in the window, those nearest its middle are listed;
   the gallery draws them all, and the N list offers them all.
 
 **Several previous rounds:** the fill ranks a file by its best row, each scored in its own round,
@@ -1948,14 +1952,14 @@ Number of top files from the previous rounds  N [ 37 · scores drop 7.2 → 6.1,
   Candidate cuts:  [N = 33 · scores drop 7.6 → 7.2]  [N = 37 · scores drop 7.2 → 6.1, largest drop]
                    [N = 46 · scores drop 5.9 → 5.5]
   Preview (N = 37): 37 of 412 files, lowest included score 7.2.
-  (the cut gallery below, from place 1 to 55)
+  (the cut gallery below, from place 1 to 105)
 ```
 
-- "Choose N" (and a changed target) posts the form to a preview action that re-renders step 1 with
+- "Choose N" posts the form to a preview action that re-renders step 1 with
   its values, the N list, the candidates and the gallery. A candidate or "Cut here" is a submit
   button that sets N and re-renders the same way. It saves nothing and needs no script; a script
   may enhance it later.
-- Saving keeps `top_images` as today. The choice (target, the candidates shown, the chosen cut's
+- Saving keeps `top_images` as today. The choice (the candidates shown, the chosen cut's
   reason, or "chosen from the list") goes into the round's V114 change-log entry as
   `topImagesBasis`. So the round form and lineage can say "N = 37, chosen 2026-12-01: scores drop
   7.2 → 6.1". **No migration.**
