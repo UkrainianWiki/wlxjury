@@ -408,6 +408,26 @@ class RoundLineageSpec extends Specification {
         "Wiki Loves Earth 2026 Ukraine Images from in") ===
         Seq("Images from Wiki Loves Earth 2026 in Ukraine - Quality", "Wiki Loves Earth 2026 Quality")
     }
+
+    "keep categories apart when a restored full name is another's short name, until all differ" in {
+      // the shared start dropped: "Quality" twice and "Prefix Quality"; the first two restored, the
+      // first would be the third's name and join its track
+      val cs = Seq("Prefix Quality", "Prefix  Quality", "Prefix Prefix Quality")
+      val m = RoundLineage.scopeNames(cs, Set.empty)
+      cs.map(m) === cs
+    }
+
+    "end with every name differing, whatever the categories" in {
+      val words = Seq("Prefix", "prefix", "Quality", "A", "-", "B")
+      val cs = (for { a <- words; b <- words; c <- words } yield s"$a $b $c").distinct
+      (0 until 40).forall { seed =>
+        val pick = cs.zipWithIndex.collect { case (c, i) if (i * 31 + seed * 7) % 29 < 3 => c }
+        val m = RoundLineage.scopeNames(pick, Set.empty)
+        // categories that differ only in case share their name on purpose
+        val named = m.toSeq.groupBy(_._1.toLowerCase).values.map(_.head._2).filter(_.nonEmpty).toSeq
+        named.map(_.toLowerCase).distinct.size == named.size
+      } must beTrue
+    }
   }
 
   "the tracks the pages show (26.11.17.2)" should {
