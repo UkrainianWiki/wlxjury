@@ -1,12 +1,13 @@
 package controllers
 
-import db.scalikejdbc.{MonumentJdbc, Round, RoundCriterion, RoundUser, VoteJdbc, User}
+import db.scalikejdbc.{ContestJuryJdbc, MonumentJdbc, Round, RoundCriterion, RoundUser, VoteJdbc, User}
 import modules.RequestTiming
 import org.intracer.wmua._
 import play.api.Configuration
 import play.api.i18n.I18nSupport
 import play.api.mvc.{ControllerComponents, EssentialAction, Request, Result}
 import services.GalleryService
+import services.regions.RegionScheme
 
 import javax.inject.Inject
 
@@ -207,6 +208,8 @@ class LargeViewController @Inject() (
       if (roundCriteria.isEmpty || votes.isEmpty) Map.empty else CriteriaRate.ratesOfFile(round.getId, pageId))
 
     val monument = hood.file.image.monumentId.flatMap(id => if (id.trim.nonEmpty) MonumentJdbc.find(id) else None)
+    // the card names a nomination's own monument after it (RegionScheme.monumentRegion)
+    val regions = monument.flatMap(_ => ContestJuryJdbc.findById(round.contestId)).map(RegionScheme.of)
     // the monument's files in this list, from the file's monument id even without a monument row
     // (decision 1 = A of the round filters proposal): the card's line into the list filtered by it
     lazy val monumentLine = list.monumentLine(hood.file)
@@ -239,7 +242,8 @@ class LargeViewController @Inject() (
               commentCounts,
               commentRounds,
               LargeViewController.showsCommentRounds(user, round),
-              monumentLine
+              monumentLine,
+              regions
             )
           )
         )
