@@ -1,6 +1,6 @@
 // The round form (editRound.scala.html), once the page is parsed:
 // - its multiple selects (previous rounds, rounds to leave out, regions, jurors) as Tom Select dropdowns
-//   (multi-select.js);
+//   (multi-select.js), a locked one left as rendered (its selected options as text);
 // - the previous rounds' filters: shown with a previous round chosen, a binary round's
 //   selection filters (#selectFilters, which has a class "round<id>" for each binary round)
 //   if any chosen round is binary, else the rates' filters (#rateFilters);
@@ -41,10 +41,14 @@
     }
   }
 
+  /** The multiple selects as Tom Selects, except a locked one (data-wlx-locked: hidden, its
+    * selected options shown as text next to it, bs.select's `_locked`). */
   function initMultiSelects(doc, t) {
     if (!window.wlxMultiSelect) return;
     ['previousRound', 'excludeRounds', 'regions', 'jurors'].forEach(function (id) {
-      window.wlxMultiSelect(doc.getElementById(id), t.multiSelect || {});
+      var select = doc.getElementById(id);
+      if (select && select.hasAttribute('data-wlx-locked')) return;
+      window.wlxMultiSelect(select, t.multiSelect || {});
     });
   }
 

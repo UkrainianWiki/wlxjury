@@ -1,11 +1,21 @@
 @* A select, as b3.select / helper.select: `multiple` submits name[] and selects field.indexes;
-   `readonly` renders it disabled with hidden inputs submitting its value (see FieldView) *@
+   `readonly` renders it disabled with hidden inputs submitting its value (see FieldView); a locked
+   multiple select (`_locked`) is shown as its selected options' texts, the select hidden and
+   disabled *@
 @(field: Field, options: Seq[(String, String)], args: (Symbol, Any)*)(implicit layout: Layout, messages: MessagesProvider)
 @f = @{ new FieldView(field, args, "form-select") }
 @fieldGroup(f) {
-<select id="@f.id" name="@f.selectName" class="@f.inputClass"@if(f.shownDisabled) { disabled} @f.aria @f.attrs("readonly", "disabled")>
+<select id="@f.id" name="@f.selectName" class="@f.inputClass"@if(f.shownDisabled || f.lockedList) { disabled}@if(f.lockedList) { hidden data-wlx-locked} @if(!f.lockedList) {@f.aria} @f.attrs("readonly", "disabled")>
     @for(d <- f.defaultOption) {<option class="blank" value="">@d</option>}
     @for((value, text) <- options) {<option value="@value"@if(f.selectedValues.contains(value)) { selected}@if(f.disabledOptions(value)) { disabled}>@text</option>}
 </select>
+@if(f.lockedList) {
+<div id="@{f.id}_locked" class="form-control @FieldView.LockedClass wlx-locked-values" role="group" aria-label="@f.label.fold("")(_.toString)" @f.aria>
+    @f.lockedTexts(options) match {
+        case Nil => {<span class="wlx-locked-none">@messages.messages("field.locked.none")</span>}
+        case texts => {<ul class="wlx-locked-list">@for(t <- texts) {<li>@t</li>}</ul>}
+    }
+</div>
+}
 @for(v <- f.hiddenValues(options)) {<input type="hidden" name="@f.selectName" value="@v">}
 }

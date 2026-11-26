@@ -2075,3 +2075,9 @@ round.wait.done.rebalancing = Moving jurors’ files in round {0} has finished. 
 round.wait.ended = Round {0}’s job stopped before it finished: retry it from the Rounds list, then save again.
 round.saved.not.distributed = Round {0} is saved. Its new files weren’t distributed:
 round.wait.unknown = Round {0}’s progress can’t be shown here. Save again when it has finished.
+
+# locked fields on the round form (bs helpers' `_locked`)
+round.filters.locked = The round''s filters can be changed only while it is waiting for review, with no votes and no job running.
+round.rates.locked.help = The rating type can be changed only while the round is waiting for review, with no votes and no job running, and no later round takes its files.
+round.distribution.locked = Chosen with the round''s jurors, on its jurors page, before its images are distributed.
+field.locked.none = None

@@ -24,7 +24,7 @@ class BsFormHelpersSpec extends Specification {
   implicit val messages: Messages = MessagesImpl(
     Lang("en"),
     Helpers.stubMessagesApi(
-      Map("en" -> Map("error.required" -> "This field is required", "name.label" -> "Your name"))
+      Map("en" -> Map("error.required" -> "This field is required", "name.label" -> "Your name", "field.locked.none" -> "None"))
     )
   )
 
@@ -228,6 +228,43 @@ class BsFormHelpersSpec extends Specification {
       area.text === "<b>notes</b>"
       classes(area) === Set("form-control")
       one(d, "label").attr("for") === area.id
+    }
+  }
+
+  "a locked field (`_locked`)" should {
+    "have the locked class next to its own, readonly or disabled as given, and none without it" in {
+      val text = one(doc(bs.text(filled("name"), Symbol("readonly") -> true, Symbol("_locked") -> true)), "input")
+      classes(text) === Set("form-control", "wlx-locked")
+      text.hasAttr("readonly") must beTrue
+      text.hasAttr("_locked") must beFalse
+      val select = one(doc(bs.select(filled("choice"), options, Symbol("readonly") -> true, Symbol("_locked") -> true)), "select")
+      (classes(select) === Set("form-select", "wlx-locked")) and (select.hasAttr("disabled") must beTrue)
+      val box = one(doc(bs.checkbox(filled("flag"), Symbol("readonly") -> true, Symbol("_locked") -> true)), "input[type=checkbox]")
+      classes(box) === Set("form-check-input", "wlx-locked")
+      classes(one(doc(bs.text(filled("name"), Symbol("_locked") -> false)), "input")) === Set("form-control")
+    }
+
+    "show a multiple select as its selected options' texts, in the options' order, the select hidden and disabled" in {
+      val d = doc(bs.select(filled("many"), options, Symbol("_label") -> "Many", Symbol("multiple") -> true,
+        Symbol("disabled") -> true, Symbol("_locked") -> true, Symbol("_help") -> "Why", Symbol("aria-describedby") -> "reason"))
+      val select = one(d, "select")
+      (select.hasAttr("hidden") must beTrue) and (select.hasAttr("disabled") must beTrue) and
+        (select.hasAttr("data-wlx-locked") must beTrue) and (select.hasAttr("aria-describedby") must beFalse)
+      d.select("option[selected]").asScala.map(_.attr("value")).toSet === Set("a", "c")
+      val shown = one(d, "#many_locked")
+      classes(shown) === Set("form-control", "wlx-locked", "wlx-locked-values")
+      shown.attr("aria-label") === "Many"
+      shown.attr("aria-describedby") === "reason many_help"
+      shown.select("li").asScala.map(_.text).toSeq === Seq("A", "C")
+      d.select("input[type=hidden]").size === 0
+    }
+
+    "say None for a multiple select with nothing selected, and render no list for an unlocked one" in {
+      val none = doc(bs.select(form("many"), options, Symbol("multiple") -> true, Symbol("disabled") -> true,
+        Symbol("_locked") -> true))
+      (one(none, "#many_locked").text === "None") and (none.select("#many_locked li").size === 0)
+      val open = doc(bs.select(filled("many"), options, Symbol("multiple") -> true))
+      (open.select("#many_locked").size === 0) and (one(open, "select").hasAttr("hidden") must beFalse)
     }
   }
 

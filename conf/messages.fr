@@ -2059,3 +2059,9 @@ round.wait.done.rebalancing = Le déplacement des fichiers de jurés dans le tou
 round.wait.ended = La tâche du tour {0} s’est arrêtée avant la fin : relancez-la depuis la liste des tours, puis enregistrez à nouveau.
 round.saved.not.distributed = Le tour {0} est enregistré. Ses nouveaux fichiers n’ont pas été distribués :
 round.wait.unknown = L’avancement du tour {0} ne peut pas être affiché ici. Enregistrez à nouveau quand il sera terminé.
+
+# locked fields on the round form (bs helpers' `_locked`)
+round.filters.locked = Les filtres du tour ne peuvent être modifiés que pendant qu’il attend sa vérification, sans vote ni tâche en cours.
+round.rates.locked.help = Le type de notation ne peut être modifié que pendant que le tour attend sa vérification, sans vote ni tâche en cours, et tant qu’aucun tour suivant ne prend ses fichiers.
+round.distribution.locked = Choisie avec les jurés du tour, sur sa page des jurés, avant la distribution de ses images.
+field.locked.none = Aucun
