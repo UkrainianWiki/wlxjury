@@ -24,9 +24,21 @@ Merged after the 26.11.17 build, for the release after it.
 - Track labels: spaces inside a label are kept as typed, so labels share a track only when they are identical, as the form's help says (#209).
 - Track labels: labelling a first round (or giving it a nomination or regions) no longer changes the category track names of the other first rounds (#209).
 - Rounds page: a round with one of several previous rounds deleted no longer says it "starts a track of its own"; it says the deleted round is left out when its track is chosen (#209).
+- Monument page: a special nomination's own monument (an id like `92-232-4801`) links its nomination's list again after "Update the monument lists", also when an earlier import stored it from another nomination's list it has since moved off (the Bulgarian heritage rows once on the German heritage lists). Run "Update the monument lists" once after the deploy to correct the stored pages.
 - Conflicts of interest: a round being set up no longer reads "Round N is open to its jurors: stop it first"; it says the round is being set up and its jurors don't see it yet (under its setup step's line, or with its state when it has no step: being distributed, its creation failed, cancelled or unfinished), and a refused disqualify says the same instead of "its images are being distributed" (#210).
 
 ## Deployed releases
+
+### 26.11.17.1 (2026-11-26)
+
+Hotfix of `26.11.17`, no migration.
+
+**Fixes**
+
+- Round tracks: a contest with only one track shows no track chips and no Track menu; with two or more, every round shows its chip. (#216)
+- Round tracks are named after the part of their category that tells them apart, without the contest's name, year and country ("Quality" instead of "Wiki Loves Earth Ukraine 2026 - Quality"); file lists and Commons pages in the category field, and a media type all the first rounds share, no longer name a track; a long track name shows its start and its end. (#216)
+- Because track names change, a track's key and chip colour may change too: a saved link with an old `track=` shows all tracks. (#216)
+- Round form: the Track label field shows the automatic track inside it ("Automatic: …"), with a one-line help and a "More about tracks" link to the admin guide. (#216)
 
 ### 26.11.17 (2026-11-26)
 
