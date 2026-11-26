@@ -191,6 +191,19 @@ class CategoryFormSpec extends PlaySpecification {
       }.reduce(_ and _)
     }
 
+    "tie the choice's errors to its group: ids, aria-describedby and aria-invalid, none without an error (CodeRabbit #170)" in {
+      def group(form: Form[EditRound]) = org.jsoup.Jsoup.parse(categoryHtml(form)).getElementById("category-combine")
+      val invalid = group(bind("categoryCombine" -> "xor", "source" -> "A"))
+      val valid = group(bind("categoryCombine" -> "and", "source" -> "A", "excludeCategory" -> "B"))
+      val described = invalid.attr("aria-describedby").split(" ").toSeq.filter(_.nonEmpty)
+      (invalid.attr("role") === "radiogroup") and (invalid.attr("aria-invalid") === "true") and
+        (described === Seq("category-combine-error-0")) and
+        (described.map(id => Option(invalid.getElementById(id)).map(_.text)) === Seq(Some("error.category.operation"))) and
+        (invalid.ownerDocument.getElementById(invalid.attr("aria-labelledby")).text === "category.combine") and
+        (valid.hasAttr("aria-invalid") must beFalse) and (valid.hasAttr("aria-describedby") must beFalse) and
+        (valid.attr("role") === "radiogroup") and (valid.select("[id^=category-combine-error]").isEmpty must beTrue)
+    }
+
     "let an older client's operation win over a choice posted with it" in {
       val include = bind("categoryClause" -> "include", "categoryCombine" -> "or", "source" -> "A", "excludeCategory" -> "B")
       val minus = bind("categoryClause" -> "minus", "categoryCombine" -> "and", "source" -> "A", "excludeCategory" -> "B")

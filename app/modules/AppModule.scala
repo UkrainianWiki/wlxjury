@@ -32,6 +32,8 @@ class AppModule(environment: Environment, configuration: Configuration)
     bind(classOf[LegacyPasswordRetirementTask]).asEagerSingleton()
     // eager: keeps round_image's counts in line with the votes in the background (P2a, V89)
     bind(classOf[RoundCountsTask]).asEagerSingleton()
+    // eager: checks the Commons login once in the background, for /health/ready's "commons"
+    bind(classOf[CommonsLoginStartupCheck]).asEagerSingleton()
 
     KOATUU.load()
 

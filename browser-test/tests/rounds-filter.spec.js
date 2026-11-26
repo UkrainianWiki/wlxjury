@@ -121,6 +121,8 @@ async function checkIcons(page, mode, scope, expected, backgrounds, what) {
   * (`inactive`, given the inactive look) text and icons grey, its text at 4.5:1 on each background
   * it may have (`backgrounds`), its links in the link colour. */
 async function checkLook(page, mode, { active, inactive, backgrounds, link }) {
+  // no badge: the fixture's rounds are each alone on a track named after it, whose Track chip
+  // would only repeat its name, so no round has one (26.11.17.2)
   await expect(active.locator('.badge')).toHaveCount(0);
   await checkIcons(page, mode, active, COLOURED, backgrounds, 'the active round');
   const grey = await colour(page, 'var(--bs-secondary-color)');
@@ -304,6 +306,7 @@ for (const mode of ['light', 'dark']) {
         // the name and what its icons show read apart (", " for screen readers only,
         // snippets/roundSpoken; the icons hidden from them), the name first
         // (Chromium may put a space before the hidden text, out of the line's flow: "Rating Round , Rated, Active")
+        // and no Track chip: its track has only it, named after it (checkLook)
         await expect(current).toHaveAccessibleName(/^Rating Round ?, Rated, Active$/);
         const otherLink = page.locator(`#round-stat-rounds .page-item[data-round="${fixture.roundBinaryId}"] > .page-link`);
         await otherLink.evaluate((a) => a.classList.add('wlx-round-inactive'));

@@ -66,7 +66,11 @@ object RoundLineage {
       nominationsByPrefix: Map[String, String] = Map.empty,
       realRegions: Set[String] = Set.empty,
       // how the pages name a region track's regions
-      scheme: RegionScheme = RegionScheme(None)
+      scheme: RegionScheme = RegionScheme(None),
+      // the contest's own words (its name, year, country, its images category's main part), lower
+      // case: what a root category's name drops at its ends when the roots share no start or end
+      // ([[scopeNames]], [[Context.boilerplateOf]])
+      boilerplate: Set[String] = Set.empty
   )
 
   object Context {
@@ -80,8 +84,24 @@ object RoundLineage {
         contest.images,
         scheme.byPrefix.map { case (prefix, n) => prefix -> n.name },
         scheme.country.map(_.regionById.keySet.toSet).getOrElse(Set.empty),
-        scheme
+        scheme,
+        boilerplateOf(contest)
       )
+    }
+
+    /** The contest's words, lower case: those of its name, year and country, and of its images
+      * category up to its first " - " or "/" (the campaign's own name, as "Images from Wiki Science
+      * Competition 2025 in Bangladesh" where the contest is "Wiki Loves Science"). Not the rest of
+      * that category: it may be a subcategory ("… in Serbia - protected species (final)") whose
+      * words name other rounds' tracks ("protected species", "final round").
+      */
+    def boilerplateOf(contest: ContestJury): Set[String] = {
+      val images = contest.images.map(categoryName).map { c =>
+        val ts = tokens(c)
+        ts.takeWhile(t => !Dashes.contains(t.text) && t.text != "/")
+      }.getOrElse(Nil)
+      (Seq(contest.name, contest.year.toString, contest.country).flatMap(tokens) ++ images)
+        .map(_.word).filter(_.nonEmpty).toSet
     }
   }
 
@@ -132,11 +152,49 @@ object RoundLineage {
       */
     def deepest(track: Track): Option[Round] = spines.get(track).flatMap(_.lastOption).flatMap(rounds.get)
 
+    /** Each track's chip colour ([[colourSlots]]), once for the contest: every chip and Track menu
+      * swatch of a page reads this one assignment.
+      */
+    lazy val colours: Map[Track, Int] = colourSlots(tracks)
+
     /** Whether none of the round's previous rounds exists ([[missingPrevious]]): it is then placed as a
       * round with no previous round (rule 7). With some left, its track comes as theirs would.
       */
     def allPreviousMissing(roundId: Long): Boolean =
       missingPrevious.get(roundId).exists(gone => rounds.get(roundId).exists(_.previousIds.forall(gone.contains)))
+
+    /** The tracks of these rounds (a page's, e.g. the rounds the viewer sees), in [[tracks]]'s order. */
+    def tracksOf(listed: Seq[Round]): Seq[Track] = {
+      val of = listed.flatMap(track).toSet
+      tracks.filter(of.contains)
+    }
+
+    /** A track named after its round (rule 7's last case: a first round with neither a category
+      * nor a media type that tells it apart) with no round created from another on it: one round,
+      * or unlinked rounds of one name. A chip of it would only repeat the round's name (26.11.17.2).
+      */
+    def selfNamedTrack(track: Track): Boolean = selfNamedTracks.contains(track)
+
+    // the name tracks whose rounds are all first rounds (no previous round in the contest): one
+    // round, or several unlinked rounds of one name (WLA Ghana 2026's two "ROUND 2")
+    private lazy val selfNamedTracks: Set[Track] = trackOf.toSeq.groupMap(_._2)(_._1).collect {
+      case (t, ids) if t.kind == Kind.Name && ids.forall(id => rounds(id).previousIds.forall(p => !rounds.contains(p))) => t
+    }.toSet
+
+    /** The round is alone on a track named after it ([[selfNamedTrack]]). */
+    def selfNamed(round: Round): Boolean = this.track(round).exists(selfNamedTrack)
+
+    /** Whether the pages show tracks at all: with two tracks or more among `listed` (all the
+      * contest's rounds by default) that say more than a round's own name (not [[selfNamedTrack]]). One
+      * such track says nothing, so a contest with fewer, as one whose rounds are unlinked and each
+      * named after itself, has neither the Track chips nor the Track menu
+      * (RoundsFilterBar.trackMenuShown reads this too).
+      */
+    def showsTracks(listed: Seq[Round] = rounds.values.toSeq): Boolean =
+      tracksOf(listed).filterNot(selfNamedTrack).sizeIs > 1
+
+    /** Whether the contest's rounds show their Track chips ([[showsTracks]] of all its rounds). */
+    lazy val chipsShown: Boolean = showsTracks()
 
     /** The merge round alone on the Main track, if so (no other live round on it): its earlier
       * rounds are on their own tracks until an admin labels them "Main" (§8.1: the Rounds page's
@@ -147,6 +205,40 @@ object RoundLineage {
         case Seq(id) if merges.contains(id) => rounds.get(id)
         case _                              => None
       }
+  }
+
+  /** The Track chips' colours other than Main's (views.TrackChip: `--wlx-track-1` … `-6`). */
+  val ColourSlots = 6
+
+  /** A track's own colour slot, 0 until `slots`: a hash of its key, the same for the same track in
+    * any contest and year.
+    */
+  def preferredSlot(track: Track, slots: Int = ColourSlots): Int = Math.floorMod(track.key.hashCode, slots)
+
+  /** The contest's tracks' colour slots, none for Main (its own colour): each track its own slot
+    * ([[preferredSlot]]) unless another track of the contest prefers it too. The tracks are taken
+    * by name (case-insensitive, then exact, then key), never by round ids, so the same tracks get
+    * the same slots every year:
+    *  1. each slot goes to the first track by name that prefers it, so a track no other prefers
+    *     keeps its own;
+    *  2. the others, by name, take the next free slot after their own (+1, +2, … round to 0);
+    *     with none free (more tracks than slots), the next least used one after their own, so
+    *     the two tracks that wanted one slot still differ (WLM 2025's 14 tracks: Quality and
+    *     Quantity), and the repeats are spread evenly.
+    */
+  def colourSlots(tracks: Seq[Track], slots: Int = ColourSlots): Map[Track, Int] = {
+    val named = tracks.filterNot(_.isMain).distinct.sortBy(t => (t.name.toLowerCase(Locale.ROOT), t.name, t.key))
+    val owners = named.groupBy(preferredSlot(_, slots)).view.mapValues(_.head).toMap
+    val used = mutable.Map((0 until slots).map(s => s -> (if (owners.contains(s)) 1 else 0)): _*)
+    named.map { t =>
+      val own = preferredSlot(t, slots)
+      t -> (if (owners(own) == t) own
+            else {
+              val slot = (1 until slots).map(i => (own + i) % slots).minBy(used)
+              used(slot) += 1
+              slot
+            })
+    }.toMap
   }
 
   def cancelled(round: Round): Boolean = round.status.contains(Round.Status.Cancelled)
@@ -186,18 +278,123 @@ object RoundLineage {
     (if (title.toLowerCase(Locale.ROOT).startsWith("category:")) title.substring("category:".length) else title).trim
   }
 
-  /** The contest's common prefix (§2.3): the longest common prefix of the categories, cut back
-    * so it ends at " - "; empty if they share none such.
+  /** Other pages' namespaces: a round's source "Category:File:…" or "Category:Commons:…" (a file list
+    * or a page pasted into the category field) is no category.
     */
-  private[services] def commonPrefix(categories: Seq[String]): String =
-    if (categories.isEmpty) ""
-    else {
-      val lcp = categories.reduce { (a, b) =>
-        a.zip(b).takeWhile { case (x, y) => x == y }.map(_._1).mkString
-      }
-      val cut = lcp.lastIndexOf(" - ")
-      if (cut < 0) "" else lcp.substring(0, cut + 3)
+  private val Namespaces = Set("file", "image", "media", "commons", "user", "user talk", "template", "special",
+    "project", "help", "portal", "wikipedia", "category", "talk", "module", "mediawiki")
+
+  /** A round's category as a track may be named after it ([[categoryName]]): only a "Category:" page
+    * that names no other page; None for anything else (no track name from a file list or a
+    * Commons: page: the root is named by its media type or its name).
+    */
+  private[services] def categoryOf(value: String): Option[String] = {
+    val title = value.trim.replace('_', ' ')
+    Option.when(title.toLowerCase(Locale.ROOT).startsWith("category:"))(categoryName(title)).filter { c =>
+      val colon = c.indexOf(':')
+      c.nonEmpty && (colon < 0 || !Namespaces.contains(c.substring(0, colon).trim.toLowerCase(Locale.ROOT)))
     }
+  }
+
+  /** Words that name no track at a category name's ends, whatever the contest. */
+  private[services] val CommonWords: Set[String] = Set("images", "image", "from", "in", "the", "of", "for", "and", "commons")
+
+  /** A word of a category name: its text where it stands, and its letters and digits in lower case
+    * ([[word]], empty for a separator: "-", "–", ":", "/").
+    */
+  private[services] final case class Token(text: String, start: Int, end: Int) {
+    val word: String = text.replaceAll("^[^\\p{L}\\p{N}]+|[^\\p{L}\\p{N}]+$", "").toLowerCase(Locale.ROOT)
+  }
+
+  private val Dashes = Set("-", "–", "—")
+
+  private val TokenPattern = "[^\\s/:]+|[/:]".r
+
+  private[services] def tokens(name: String): Seq[Token] =
+    TokenPattern.findAllMatchIn(name).map(m => Token(m.matched, m.start, m.end)).toSeq
+
+  /** The root categories' track names (rule 7, §2.3), each category (as [[categoryName]] gives it)
+    * to the part that tells it apart, deterministic for the same categories:
+    *  1. with two categories or more, the words they all start with, and those they all end with,
+    *     dropped (each keeping a word): "Wiki Loves Monuments in Ukraine 2025 - Quality" and
+    *     "… - Quantity": "Quality" and "Quantity"; a single category: up to its last " - ";
+    *  2. if that dropped nothing (the roots share no start or end, as in Wiki Loves Earth Ukraine),
+    *     the contest's own words (`boilerplate`: its name, year, country and images category's main
+    *     part, in any case), years, [[CommonWords]] and separators dropped at each end, where they make a run
+    *     of three words or more or end at a separator: "Wiki Loves Earth Ukraine 2026 -
+    *     Quality": "Quality", "Images from Wiki Loves Earth 2026 Nature Loss Special Category":
+    *     "Nature Loss Special Category";
+    *  3. two categories on one name keep step 1's names, and if still one, their full names.
+    * Categories that differ only in case are one, named after the first in sorted order. Empty
+    * when nothing but such words is left: the root is named by its media type or its name instead.
+    */
+  private[services] def scopeNames(categories: Seq[String], boilerplate: Set[String]): Map[String, String] = {
+    // categories that differ only in case are one ("wiki loves earth 2026 …" and "Wiki Loves Earth 2026 …"),
+    // named after the first of them in sorted order
+    val groups = categories.distinct.groupBy(_.toLowerCase(Locale.ROOT)).values.map(_.sorted).toSeq
+    val names = groups.map(_.head).sorted
+    val toks = names.map(c => c -> tokens(c)).toMap
+    def common(seqs: Seq[Seq[String]]): Int =
+      if (seqs.isEmpty) 0 else (0 until seqs.map(_.size).min).takeWhile(i => seqs.forall(_(i) == seqs.head(i))).size
+    def kept(c: String, pre: Int, suf: Int): Seq[Token] = toks(c).slice(pre, toks(c).size - suf)
+    // a word that names nothing on its own: a separator, a year, the contest's words, the common ones
+    def noise(t: Token) = t.word.isEmpty || t.word.matches("\\d{4}") || boilerplate.contains(t.word) ||
+      CommonWords.contains(t.word)
+    def keepsWord(pre: Int, suf: Int) = names.forall(c => kept(c, pre, suf).exists(!noise(_)))
+    val (pre, suf) =
+      if (names.sizeIs < 2) {
+        // one category: up to its last " - ", as §2.3's prefix of a single category
+        val dash = names.headOption.fold(-1)(c => toks(c).lastIndexWhere(t => Dashes.contains(t.text)))
+        if (dash >= 0 && keepsWord(dash + 1, 0)) (dash + 1, 0) else (0, 0)
+      } else {
+        val texts = names.map(toks(_).map(_.text.toLowerCase(Locale.ROOT)))
+        val (p, s) = (common(texts), common(texts.map(_.reverse)))
+        Seq((p, s), (p, 0), (0, s)).find { case (a, b) => (a > 0 || b > 0) && keepsWord(a, b) }.getOrElse((0, 0))
+      }
+    def text(c: String, ts: Seq[Token]): String =
+      if (!ts.exists(!noise(_))) "" else c.substring(ts.head.start, ts.last.end).trim
+    val shared = names.map(c => c -> text(c, kept(c, pre, suf))).toMap
+    // a run of such words at an end goes if it is a phrase (three words or more) or ends at a
+    // separator: "Images from Wiki Loves Earth 2026 …", "Wiki Loves Earth Ukraine 2026 - …"; one or
+    // two words stay ("Image sets …", "Images of people …")
+    def trimStart(ts: Seq[Token]): Seq[Token] = {
+      val run = ts.takeWhile(noise)
+      if (run.sizeIs >= 3 || run.lastOption.exists(_.word.isEmpty)) ts.drop(run.size) else ts
+    }
+    val first = names.map { c =>
+      c -> (if (pre > 0 || suf > 0) shared(c) else text(c, trimStart(trimStart(kept(c, 0, 0)).reverse).reverse))
+    }
+    def clashing(named: Seq[(String, String)]): Set[String] =
+      named.filter(_._2.nonEmpty).groupBy(_._2.toLowerCase(Locale.ROOT)).values.filter(_.sizeIs > 1).flatten.map(_._1).toSet
+    val clash = clashing(first)
+    val second = first.map { case (c, n) => c -> (if (clash(c)) shared(c) else n) }
+    val still = clashing(second)
+    val named = second.map { case (c, n) => c -> (if (still(c)) c else n) }.toMap
+    groups.flatMap(g => g.map(_ -> named(g.head))).toMap
+  }
+
+  /** The name tracks' names (rule 7's last case): each first round's name without the contest's
+    * own words at its ends, as a category's ([[scopeNames]] step 2: its name, year, country, years,
+    * "in", separators, in any case, where they make a run of three words or more or end at a
+    * separator): "Wiki Loves Earth 2026 in Kyrgyzstan 1 round" → "1 round", "шорт лист Wiki Loves
+    * Earth 2026 in Kyrgyzstan" → "шорт лист". The whole name where nothing else is left, or where
+    * two names would become one.
+    */
+  private[services] def roundNames(names: Seq[String], boilerplate: Set[String]): Map[String, String] = {
+    def noise(t: Token) = t.word.isEmpty || t.word.matches("\\d{4}") || boilerplate.contains(t.word) ||
+      CommonWords.contains(t.word)
+    def trimStart(ts: Seq[Token]): Seq[Token] = {
+      val run = ts.takeWhile(noise)
+      if (run.sizeIs >= 3 || run.lastOption.exists(_.word.isEmpty)) ts.drop(run.size) else ts
+    }
+    val stripped = names.distinct.map { n =>
+      val ts = trimStart(trimStart(tokens(n)).reverse).reverse
+      n -> (if (!ts.exists(!noise(_))) n else n.substring(ts.head.start, ts.last.end).trim)
+    }
+    val clash = stripped.groupBy(_._2.toLowerCase(Locale.ROOT)).values.filter(_.map(_._1).distinct.sizeIs > 1)
+      .flatten.map(_._1).toSet
+    stripped.map { case (n, s) => n -> (if (clash(n)) n else s) }.toMap
+  }
 
   /** A monument or region id's prefix, as a nomination's (`99-141-2306`: `99`), as the files'
     * regions are read ([[db.scalikejdbc.rewrite.ImageDbNew.regionOf]]).
@@ -259,19 +456,33 @@ object RoundLineage {
     // rule 7's category: the round's own, not the contest's
     val contestCategory = context.contestCategory.map(categoryName).filter(_.nonEmpty)
     def rootCategory(r: Round): Option[String] =
-      r.category.map(categoryName).filter(c => c.nonEmpty && !contestCategory.exists(_.equalsIgnoreCase(c)))
+      r.category.flatMap(categoryOf).filter(c => !contestCategory.exists(_.equalsIgnoreCase(c)))
 
-    // the contest's common prefix (§2.3): of all the roots' categories, so that labelling a root (or
-    // giving it a nomination or regions) doesn't change another root's category track
+    // the roots' categories' names, the part that tells them apart: from all the roots' categories,
+    // so that labelling a root (as the Main hint asks), or giving it a nomination or regions,
+    // doesn't rename another root's category track (nor change its key and colour)
     val roots = rounds.filter(r => previous(r.getId).isEmpty)
-    val prefix = commonPrefix(roots.flatMap(rootCategory))
+    val scopes = scopeNames(roots.flatMap(rootCategory), context.boilerplate)
+
+    // a media type names a track only if it tells the roots apart: the roots have more than one,
+    // none set counting as all (a video round beside the others); one alone (WLE international's
+    // one image round) leaves the name
+    // (26.11.17.2:) none set counts as images, as contests' files are: a round set to images among
+    // others with none set tells nothing apart (WLE Kyrgyzstan 2026's "Финальный раунд" was "Image")
+    def mediaOf(r: Round): String =
+      r.mediaType.map(_.trim).filter(m => m.nonEmpty && m != db.scalikejdbc.MediaType.All)
+        .getOrElse(db.scalikejdbc.MediaType.Image)
+    def media(r: Round): Option[String] =
+      r.mediaType.map(_.trim).filter(m => m.nonEmpty && m != db.scalikejdbc.MediaType.All)
+    val severalMedia = roots.map(mediaOf).distinct.sizeIs > 1
+
+    // the name tracks' names: the roots' names without the contest's own words at their ends
+    val names = roundNames(roots.map(_.description.trim), context.boilerplate)
 
     def rootScope(r: Round): Track =
-      rootCategory(r).map { c =>
-        val rest = if (prefix.nonEmpty && c.startsWith(prefix)) c.substring(prefix.length).trim else c
-        Track(Kind.Category, if (rest.isEmpty) c else rest)
-      }.orElse(r.mediaType.filter(m => m.nonEmpty && m != db.scalikejdbc.MediaType.All).map(Track(Kind.Media, _)))
-        .getOrElse(Track(Kind.Name, r.description.trim))
+      rootCategory(r).map(c => scopes.getOrElse(c, c)).filter(_.nonEmpty).map(Track(Kind.Category, _))
+        .orElse(media(r).filter(_ => severalMedia).map(Track(Kind.Media, _)))
+        .getOrElse(Track(Kind.Name, names.getOrElse(r.description.trim, r.description.trim)))
 
     val trackOf = mutable.LinkedHashMap.empty[Long, Track]
     val merges = mutable.Set.empty[Long]
