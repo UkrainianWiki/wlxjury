@@ -17,6 +17,11 @@ import play.twirl.api.{Html, HtmlFormat}
   *    select's selected value, or the option the browser shows when none is selected, the
   *    first one; a multiple select's selected values, none if none is. With `disabled` too,
   *    nothing is submitted);
+  *  - `_locked -> true`: a field that can't be changed in the form's state (given with `readonly` or
+  *    `disabled`, which decide what it submits): the class `wlx-locked`, its look (greyed, its value
+  *    still readable, a not-allowed cursor); a multiple select is shown as its selected options'
+  *    texts, or "None", the select itself kept hidden and disabled (`data-wlx-locked`, which the
+  *    multiple selects' script leaves alone), so no dropdown lists every option;
   *  - `class` is added to the helper's own class (`form-control`, `form-select`,
   *    `form-check-input`), not replacing it; a repeated base class is dropped;
   *  - `aria-describedby` ids are added to those of the help and errors;
@@ -98,13 +103,27 @@ final class FieldView(field: Field, args: Seq[(Symbol, Any)], baseClass: String)
 
   val multiple: Boolean = isTrue("multiple")
 
+  /** `_locked`: see the class comment. */
+  val locked: Boolean = isTrue("_locked")
+
+  /** The label's id, which a locked multiple select's list is labelled by. */
+  def labelId: String = id + "_label"
+
+  /** A locked multiple select: shown as its selected options' texts. */
+  def lockedList: Boolean = locked && multiple
+
+  /** A locked multiple select's selected options' texts, in the options' order. */
+  def lockedTexts(options: Seq[(String, String)]): Seq[String] =
+    options.collect { case (v, text) if selectedValues.contains(v) => text }
+
   val value: Option[String] = field.value.orElse(arg("value").map(_.toString))
 
   val inputClass: String = {
     val extra = arg("class").toSeq
       .flatMap(_.toString.split("\\s+"))
       .filter(c => c.nonEmpty && !FieldView.BaseClasses(c))
-    ((baseClass +: extra) ++ Option.when(hasErrors)("is-invalid")).distinct.mkString(" ")
+    ((baseClass +: extra) ++ Option.when(locked)(FieldView.LockedClass) ++ Option.when(hasErrors)("is-invalid")).distinct
+      .mkString(" ")
   }
 
   // select
@@ -149,6 +168,9 @@ final class FieldView(field: Field, args: Seq[(Symbol, Any)], baseClass: String)
 object FieldView {
 
   private val BaseClasses = Set("form-control", "form-select", "form-check-input")
+
+  /** A locked field's class (`_locked`), styled in codex-theme.css. */
+  val LockedClass = "wlx-locked"
 
   /** Rendered by every helper itself. */
   private val Handled = Set("id", "name", "class", "value", "type", "aria-describedby", "aria-invalid")

@@ -1,6 +1,6 @@
 @import controllers.JurorsFormView
 @import db.scalikejdbc.User
-@(user: User, v: JurorsFormView, waited: Int = 0)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@(user: User, v: JurorsFormView)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @* A round's jurors form (RoundReviewController.jurors; the maintainer's decision of 2026-11-16,
    superseding D4's checkbox): for the round's contest's admins. While its fill runs, the job's
@@ -10,13 +10,7 @@
    #distribution; read only once the round has a vote), the previous rounds' warning and its
    confirmation (D18), and Distribute (a CSRF POST, sent once). Nothing is distributed before. *@
 @implicitLayout = @{ bs.Layout.horizontal("col-md-3", "col-md-9") }
-@noJob = @{ v.filling && !v.job.exists(_.isActive) }
-@polling = @{ noJob && waited < controllers.RoundReviewController.MaxWaits }
-@gaveUp = @{ noJob && !polling }
 @scripts = {
-    @* being selected with no job to poll yet (its row not written, or none running): the page reloads
-       itself, counting its reloads (`waited`), at most RoundReviewController.MaxWaits times *@
-    @if(polling) { <meta http-equiv="refresh" content="@controllers.RoundReviewController.WaitSeconds;url=@routes.RoundReviewController.jurors(v.round.getId, waited + 1)"> }
     <script src="@routes.Assets.versioned("javascripts/submit-once.js")"></script>
     @if(v.ready && v.jurorsEditable && v.contestJurors.nonEmpty) {
         @snippets.multiSelectScripts()
@@ -41,24 +35,33 @@
             @flash.get("success").map { msg => <div class="alert alert-info" id="flash-success">@msg</div> }
             @flash.get("error").map { msg => <div class="alert alert-danger" id="flash-error">@msg</div> }
 
-            @if(v.filling && !gaveUp) { <p class="mb-1" id="round-jurors-filling">@Messages("round.jurors.filling")</p> }
+            @if(v.filling) { <p class="mb-1" id="round-jurors-filling">@Messages("round.jurors.filling")</p> }
             @for(job <- v.job if !job.isDone) {
                 <div class="card card-body p-2 mb-3" id="round-jurors-job">
-                    @snippets.jobStatus(job, req.uri)
+                    @snippets.jobStatus(job, req.uri, label = v.jobTitle)
                 </div>
                 <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
             }
 
-            @* distributed (or being distributed): no form; a failed fill shows its job's Retry above *@
-            @if(gaveUp || (!v.ready && !v.filling && (!v.round.distributing || v.job.exists(j => j.isActive && services.distribution.RoundDistributionHandler.distributeMode(j))))) {
-                <p id="round-jurors-not-in-review">@Messages("round.jurors.not.in.review", v.round.number)</p>
+            @* not in review and its files not being selected: being distributed (or distributed), no form,
+               or its creation failed, was cancelled or didn't finish, said as the Rounds page says it (a failed
+               job's Retry above) *@
+            @if(!v.ready && !v.filling) {
+                @v.block.filter(_ != services.distribution.RoundStartBlock.Distributing) match {
+                    case Some(b) => {
+                        <p id="round-jurors-state" data-state="@b.reason">@Messages(b.stateKey)</p>
+                    }
+                    case _ => {
+                        <p id="round-jurors-not-in-review">@Messages("round.jurors.not.in.review", v.round.number)</p>
+                    }
+                }
             }
 
             @if(v.ready) {
                 <p id="round-jurors-images">@Messages("round.jurors.images")@snippets.count(v.inCount)</p>
                 @for(label <- v.placeLabel if v.places.nonEmpty) {
                     <details class="mb-3" id="round-jurors-places" open>
-                        <summary>@Messages("round.jurors.places", Messages(label))</summary>
+                        <summary class="wlx-disclosure"><i class="bi bi-chevron-right wlx-disclosure-icon" aria-hidden="true"></i>@Messages("round.jurors.places", Messages(label))</summary>
                         <ul class="list-unstyled mb-0 mt-1 round-jurors-places">
                         @for(place <- v.places) {
                             <li data-place="@place.id">@place.name@for(n <- place.count) {@snippets.count(n)}</li>

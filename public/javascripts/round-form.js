@@ -1,9 +1,9 @@
 // The round form (editRound.scala.html), once the page is parsed:
 // - its multiple selects (previous rounds, rounds to leave out, regions, jurors) as Tom Select dropdowns
-//   (multi-select.js);
+//   (multi-select.js), a locked one left as rendered (its selected options as text);
 // - the previous rounds' filters: shown with a previous round chosen, a binary round's
 //   selection filters (#selectFilters, which has a class "round<id>" for each binary round)
-//   if any chosen round is binary, else the rates' filters (#rateFilters);
+//   if any chosen round is binary (a rated round's threshold is the cut control's, #top-n);
 // - the distribution's choices, one per number of jurors a file goes to, from the jurors
 //   chosen;
 // - the conflicts of interest's confirmation, when saving a round with the box ticked would
@@ -22,7 +22,10 @@
 //   saved rule (its data-stored-rule);
 // - the jurors' table, loaded when its panel is first opened (#round-stat-table's data-src),
 //   and the number of new files on request (#count-new-files' data-src): the edit page leaves
-//   out its two expensive parts.
+//   out its two expensive parts;
+// - Space on a card's header toggle (snippets/collapsible.scala.html, an a[role=button] for
+//   Bootstrap's collapse) opens or closes it as on a button, instead of scrolling the page;
+//   Enter already follows the link (initCardToggleKeys).
 // Texts come from the page's <script type="application/json" id="round-form-texts">:
 // { multiSelect: views.JsTexts.multiSelect, distribution: { all, some } }, "some" with $X for
 // the number of jurors.
@@ -41,10 +44,14 @@
     }
   }
 
+  /** The multiple selects as Tom Selects, except a locked one (data-wlx-locked: hidden, its
+    * selected options shown as text next to it, bs.select's `_locked`). */
   function initMultiSelects(doc, t) {
     if (!window.wlxMultiSelect) return;
     ['previousRound', 'excludeRounds', 'regions', 'jurors'].forEach(function (id) {
-      window.wlxMultiSelect(doc.getElementById(id), t.multiSelect || {});
+      var select = doc.getElementById(id);
+      if (select && select.hasAttribute('data-wlx-locked')) return;
+      window.wlxMultiSelect(select, t.multiSelect || {});
     });
   }
 
@@ -52,7 +59,7 @@
   function previousRoundsChanged() {
     var vals = $(this).val() || [];
 
-    $('#selectFilters, #rateFilters, #rejectFilters').hide();
+    $('#selectFilters, #rejectFilters').hide();
     var rejecting = false;
 
     if (vals.length) {
@@ -60,7 +67,7 @@
       var anyBinary = vals.some(function (v) {
         return $('#selectFilters').hasClass('round' + v);
       });
-      (anyBinary ? $('#selectFilters') : $('#rateFilters')).show();
+      if (anyBinary) $('#selectFilters').show();
       // "rejected by at least": a yes/no round's "no" votes, a rated round's ✗ (#rejectFilters
       // has the classes of the rounds whose votes may reject)
       rejecting = anyRejecting(vals);
@@ -263,8 +270,40 @@
       $('#new-files-count').text('…');
       $.getJSON(b.data('src'))
         .done(function (r) { $('#new-files-count').text(r.count); })
-        .fail(function () { $('#new-files-count').text('?'); })
+        // a message the server gives (Commons not answering for a category filter), else '?'
+        .fail(function (xhr) {
+          var r = xhr.responseJSON;
+          $('#new-files-count').text(r && typeof r.message === 'string' ? r.message : '?');
+        })
         .always(function () { b.prop('disabled', false); });
+    });
+  }
+
+  /** The cut control's link to the previous round's rating view (round/edit/topN, #top-n-cut-link):
+    * the chosen cut's (its option's data-cut-href), hidden when none is chosen. */
+  function initCutLink(doc) {
+    var select = doc.getElementById('topImages');
+    var link = doc.getElementById('top-n-cut-link');
+    if (!select || !link || select.tagName !== 'SELECT') return;
+    function update() {
+      var option = select.options[select.selectedIndex];
+      var href = option ? option.getAttribute('data-cut-href') : null;
+      if (href) link.setAttribute('href', href);
+      else link.setAttribute('href', '#');
+      link.hidden = !href;
+    }
+    select.addEventListener('change', update);
+    update();
+  }
+
+  /** Space on a card's toggle: a click, as a role=button promises, and no page scroll. */
+  function initCardToggleKeys(doc) {
+    doc.addEventListener('keydown', function (e) {
+      if (!(e.key === ' ' || e.keyCode === 32) || e.altKey || e.ctrlKey || e.metaKey) return;
+      var t = e.target;
+      if (!t || !t.matches || !t.matches('a[role="button"][data-bs-toggle="collapse"]')) return;
+      e.preventDefault();
+      t.click();
     });
   }
 
@@ -280,6 +319,8 @@
     initWorstMark(doc);
     initScoreRuleWarning(doc);
     initLazyParts();
+    initCutLink(doc);
+    initCardToggleKeys(doc);
   }
 
   if (typeof module !== 'undefined') {

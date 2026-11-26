@@ -1,6 +1,6 @@
 package gatling.simulations
 
-import gatling.setup.{GatlingConfig, GatlingTestFixture, HeapWatcher, ReviewDistribute}
+import gatling.setup.{GatlingConfig, GatlingTestFixture, HeapWatcher, ReviewDistribute, TopNValid}
 import io.gatling.core.Predef._
 import io.gatling.http.Predef._
 import scalikejdbc._
@@ -166,10 +166,12 @@ class RoundDistributionSimulation extends Simulation {
         (n, n * cfg.jurorsPerImage)
       }
 
+    // a top N the form's save takes: not inside a tie of the rated round's ranking (the cut picker)
+    lazy val topN = TopNValid.atLeast(contestId, ratedId, cfg.topImages)
     val createFromRated =
       step("create round: top images of rated round", roundC,
-        newRoundForm(roundC, "previousRound[0]" -> ratedId.toString, "topImages" -> cfg.topImages.toString)) {
-        val n = math.min(cfg.topImages, imageCount(ratedId))
+        newRoundForm(roundC, "previousRound[0]" -> ratedId.toString, "topImages" -> topN.toString)) {
+        val n = math.min(topN, imageCount(ratedId))
         (n, n * cfg.jurorsPerImage)
       }
 

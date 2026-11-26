@@ -6,18 +6,20 @@
 // view already; one in view (the first files) leaves the page at its top, the navbar shown.
 // Not on a reload or Back/Forward to the page, where the browser puts back where the user was.
 // Without script, or in a list without such elements (the tiles), the page opens at its top.
+// A rating view opened from the round form's cut control (`?cut=N#cut`) scrolls the same way to the
+// cut's divider (data-file-anchor="cut", galleryByRate.scala.html).
 // The element's scroll-margin-top (main.css --wlx-file-anchor-offset) and the root's
 // scroll-padding-top are the room kept above it: on a page with the sticky top bar (topbar.js,
 // from 576 px wide) the bar's height and a little more, so that the file lands below the bar.
 (function () {
   'use strict';
 
-  var FRAGMENT = /^#file-(\d+)$/;
+  var FRAGMENT = /^#(?:file-(\d+)|(cut))$/;
 
-  /** The element of the file the URL's fragment names, or null. */
+  /** The element of the file (or the cut) the URL's fragment names, or null. */
   function target(doc, hash) {
     var m = FRAGMENT.exec(hash || '');
-    return m ? doc.querySelector('[data-file-anchor="' + m[1] + '"]') : null;
+    return m ? doc.querySelector('[data-file-anchor="' + (m[1] || m[2]) + '"]') : null;
   }
 
   /** The room kept above the element (its scroll-margin-top and the root's scroll-padding-top,

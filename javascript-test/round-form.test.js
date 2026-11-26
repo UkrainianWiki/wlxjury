@@ -27,7 +27,6 @@ function page({ coiFiles = 0, texts = TEXTS } = {}) {
         </select>
         <div id="prevRoundFilters" style="display: none">
           <div id="selectFilters" class="round1">select</div>
-          <div id="rateFilters">rate</div>
         </div>
         <select id="excludeRounds" name="excludeRounds[]" multiple>
           <option value="1">Round 1 (binary)</option><option value="2">Round 2 (rated)</option>
@@ -78,16 +77,59 @@ describe("the round form", () => {
         expect(document.querySelector(".wlx-multi-summary").textContent).toBe("None selected");
     });
 
-    test("shows a binary previous round's selection filters, a rated one's rate filters, none without", () => {
+    test("leaves a locked multiple select as rendered: no Tom Select, still hidden and disabled", () => {
+        document.body.innerHTML = `
+          <form id="round-form">
+            <select id="previousRound" name="previousRound[]" multiple disabled hidden data-wlx-locked>
+              <option value="1" selected>Round 1 (binary)</option><option value="2">Round 2 (rated)</option>
+            </select>
+            <div id="previousRound_locked" class="form-control wlx-locked wlx-locked-values"><ul class="wlx-locked-list"><li>Round 1 (binary)</li></ul></div>
+            <select id="regions" name="regions[]" multiple disabled hidden data-wlx-locked><option value="07">Volyn</option></select>
+          </form>`;
+        init(document);
+        const prev = document.getElementById("previousRound");
+        expect(document.querySelectorAll(".wlx-multi")).toHaveLength(0);
+        expect(prev.tomselect).toBeUndefined();
+        expect([prev.hidden, prev.disabled]).toEqual([true, true]);
+        expect($("#previousRound").val()).toEqual(["1"]);
+    });
+
+    test("shows a binary previous round's selection filters, a rated one's none (its threshold is the cut control's)", () => {
         page();
         const prev = document.getElementById("previousRound").tomselect;
         prev.addItem("1");
-        expect([shown("prevRoundFilters"), shown("selectFilters"), shown("rateFilters")]).toEqual([true, true, false]);
+        expect([shown("prevRoundFilters"), shown("selectFilters")]).toEqual([true, true]);
         prev.removeItem("1");
         prev.addItem("2");
-        expect([shown("prevRoundFilters"), shown("selectFilters"), shown("rateFilters")]).toEqual([true, false, true]);
+        expect([shown("prevRoundFilters"), shown("selectFilters")]).toEqual([true, false]);
         prev.clear();
         expect(shown("prevRoundFilters")).toBe(false);
+    });
+
+    test("points the cut control's ratings link at the chosen cut, hidden without one", () => {
+        document.body.innerHTML = `
+          <select id="topImages" name="topImages">
+            <option value="" selected>No top N</option>
+            <option value="4" data-cut-href="/byrate/round/2/user/0/page/1?sort=rate&amp;cut=4#cut">top 4</option>
+            <option value="9">top 9</option>
+          </select>
+          <a id="top-n-cut-link" href="#" hidden>Show this cut in the ratings</a>`;
+        init(document);
+        const select = document.getElementById("topImages");
+        const link = document.getElementById("top-n-cut-link");
+        expect(link.hidden).toBe(true);
+        select.value = "4";
+        select.dispatchEvent(new Event("change"));
+        expect([link.hidden, link.getAttribute("href")]).toEqual([false, "/byrate/round/2/user/0/page/1?sort=rate&cut=4#cut"]);
+        select.value = "9";
+        select.dispatchEvent(new Event("change"));
+        expect([link.hidden, link.getAttribute("href")]).toEqual([true, "#"]);
+    });
+
+    test("leaves a page without the cut link, or with the control not loaded, alone", () => {
+        document.body.innerHTML = '<p id="topImages">No top N</p><a id="top-n-cut-link" href="/x">x</a>';
+        expect(() => init(document)).not.toThrow();
+        expect(document.getElementById("top-n-cut-link").getAttribute("href")).toBe("/x");
     });
 
     test("offers one distribution per number of jurors a file goes to, and keeps a choice that still fits", () => {

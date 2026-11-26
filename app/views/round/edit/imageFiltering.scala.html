@@ -9,7 +9,9 @@
         regions: Map[String, String] = Map.empty,
         user: User,
         noEdit: Boolean,
-        specialNominations: Seq[SpecialNomination] = Nil
+        specialNominations: Seq[SpecialNomination] = Nil,
+        cutPicker: Option[services.CutPicker] = None,
+        previewUrl: String = ""
 )(implicit messages: Messages)
 @implicitLayout = @{ bs.Layout.horizontal("col-md-4", "col-md-8") }
 @prevIds = @{ editRoundForm("previousRound").indexes.flatMap(i => editRoundForm(s"previousRound[$i]").value) }
@@ -20,10 +22,17 @@
    itself when either has a category *@
 @categoryView = @{ controllers.EditRound.categoryBoxes(editRoundForm) }
 @offsetCol = @{ implicitLayout.horizontal.map(_.offsetFieldCol).getOrElse("") }
+@* a field that can't be changed (`noEdit`) has its locked look (FieldView `_locked`), described by
+   the section's reason line (#round-filters-locked) *@
+@lockedBy = @{ Option.when(noEdit)("round-filters-locked") }
 @* open when a category is in its boxes, and when one of its fields has an error (a refused save's,
-   RoundFormErrors: shown closed, the 2026-11-25 saves came back with their error out of sight) *@
+   RoundFormErrors: shown closed, the 2026-11-25 saves came back with their error out of sight), and once
+   "Choose N" loaded the top N's candidate cuts (round/edit/topN) *@
 @snippets.collapsible("media.filtering", "headingImageFiltering", "collapseImageFiltering",
-    open = categoryView.hasCategory || controllers.RoundFormErrors.inMediaFiltering(editRoundForm)) {
+    open = categoryView.hasCategory || controllers.RoundFormErrors.inMediaFiltering(editRoundForm) || cutPicker.isDefined) {
+    @if(noEdit) {
+        <p class="form-text wlx-locked-reason" id="round-filters-locked"><i class="bi bi-lock-fill" aria-hidden="true"></i> @Messages("round.filters.locked")</p>
+    }
     @if(rounds.nonEmpty) {
         @* Use `disabled` rather than `readonly` for the multi-selects: a readonly
            select (play-bootstrap's then, bs.select's now) adds a live hidden <input name="previousRound[]"> that, for a
@@ -36,7 +45,7 @@
             Symbol("_label") -> Messages("previous.round"),
             Symbol("_help") -> "",
             Symbol("multiple") -> true,
-            Symbol("disabled") -> noEdit
+            Symbol("disabled") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy
         )
 
         @* shown with previous rounds chosen, or with an error in it *@
@@ -52,18 +61,18 @@
                     Seq("1", "2", "3", "4", "5", "6").map(x => (x, x)),
                 Symbol("value") -> "",
                 Symbol("_label") -> Messages("selected.by.at.least.x.jurors"),
-                Symbol("readonly") -> noEdit)
+                Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy)
             @* the order that picks a top-N from a yes/no previous round, stored with the round, so
                its page shows which rule picked its files and a later distribution picks the same;
                the legacy rule only for a round from before V72 that has it *@
-            @if(editRoundForm("topImages").value.exists(_.nonEmpty) && topOrderApplies) {
+            @if((editRoundForm("topImages").value.exists(_.nonEmpty) || cutPicker.isDefined) && topOrderApplies) {
                 @bs.select(
                     editRoundForm("topBinaryOrder"),
                     BinaryOrder.all.map(order => (order.param, Messages(order.messageKey))) ++
                         Option.when(editRoundForm("topBinaryOrder").value.contains(BinaryOrder.LegacyParam))(
                             BinaryOrder.LegacyParam -> Messages(BinaryOrder.LegacyMessageKey)),
                     Symbol("_label") -> Messages("top.images.binary.order"),
-                    Symbol("readonly") -> noEdit)
+                    Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy)
             }
             </div>
 
@@ -80,7 +89,7 @@
                 Seq(controllers.EditRound.NoRejectedFilter -> Messages("rejected.by.no.filter")) ++
                     org.intracer.wmua.RejectedMode.all.map(m => (m.param, Messages(m.messageKey))),
                 Symbol("_label") -> Messages("rejected.by.mode"),
-                Symbol("readonly") -> noEdit)
+                Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy)
             @bs.select(
                 editRoundForm("rejectedBy"),
                 Seq("" -> Messages("rejected.by.no.filter")) ++
@@ -88,35 +97,14 @@
                 Symbol("value") -> "",
                 Symbol("_label") -> Messages("rejected.by.at.least.x.jurors"),
                 Symbol("_help") -> Messages("rejected.by.help"),
-                Symbol("readonly") -> noEdit)
+                Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy)
             </div>
 
-            <div id="rateFilters"
-            class="@rounds.filterNot(_.isBinary).map(r => "round" + r.getId).mkString(" ")">
-            @* from a criteria round, the average of its files' criteria sums (U7); from a round scored
-               by the sum (AverageRule.Sum), a minimum score, a sum: the hints say so when a round the
-               form offers is one *@
-            @bs.text(
-                editRoundForm("minAvgRate"),
-                Symbol("_label") -> Messages("average.file.rating.is.at.least"),
-                Symbol("_help") -> Seq(
-                    Option.when(rounds.exists(r => r.hasCriteria && !r.isBinary))(Messages("average.file.rating.criteria.sum")),
-                    Option.when(rounds.exists(r => !r.isBinary && r.averageRule == org.intracer.wmua.AverageRule.Sum))(
-                        Messages("average.file.rating.sum"))).flatten.mkString(" "),
-                Symbol("readonly") -> noEdit
-            )
-            </div>
-
-            @* hidden in 26.11 unless the URL gives ?topImages=N (N > 0; RoundController.editRound
-               maps 0 to none), or the form comes back with one: a number of at least 1, as the
-               form's mapping takes *@
-            @for(topImages <- editRoundForm("topImages").value) {
-                @bs.inputType("number",
-                    editRoundForm("topImages"),
-                    Symbol("_label") -> Messages("top.images"),
-                    Symbol("min") -> 1
-                )
-            }
+            @* the cut (regional winners plan §10.4, the cut picker): one control for a top N and a
+               rated source's "average file rating at least X", the same cut (decided 2026-11-26): no
+               free number box and no threshold field; "Choose N" loads every valid cut
+               (round/edit/topN) *@
+            @views.html.round.edit.topN(editRoundForm, cutPicker, noEdit, previewUrl)
         </div>
 
         @* "Leave out files that are in round(s)" (V95): the contest's other rounds; with or without
@@ -129,7 +117,7 @@
                 Symbol("_label") -> Messages("exclude.rounds"),
                 Symbol("_help") -> Messages("exclude.rounds.help"),
                 Symbol("multiple") -> true,
-                Symbol("disabled") -> noEdit
+                Symbol("disabled") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy
             )
         }
     }
@@ -138,7 +126,7 @@
         editRoundForm("mediaType"),
         MediaType.mediaTypes.map(x => (x, Messages(x))),
         Symbol("_label") -> Messages("media.type"),
-        Symbol("readonly") -> noEdit
+        Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy
     )
 
     @* The category filter: two boxes, "Only files in category" and the second box, whose meaning
@@ -156,7 +144,7 @@
         Symbol("_label") -> Messages("category.only"),
         Symbol("_help") -> Messages("category.only.help"),
         Symbol("data-category-suggest") -> "category",
-        Symbol("readonly") -> noEdit
+        Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy
     )
     </div>
 
@@ -165,25 +153,27 @@
         view.form("excludeCategory"),
         Symbol("_label") -> Messages(view.combine.secondLabelKey),
         Symbol("data-category-suggest") -> "category",
-        Symbol("readonly") -> noEdit
+        Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy
     )
     </div>
 
     <div class="row mb-3" id="category-more_field">
         <div class="@offsetCol">
             <details id="category-more"@if(view.combine != CategoryCombine.Default || view.choiceErrors.nonEmpty) { open}>
-                <summary>@Messages("category.more")</summary>
-                <fieldset class="mt-2" id="category-combine">
-                    <legend class="form-label fs-6 mb-1">@Messages("category.combine")</legend>
+                <summary class="wlx-disclosure"><i class="bi bi-chevron-right wlx-disclosure-icon" aria-hidden="true"></i>@Messages("category.more")</summary>
+                @* its errors tied to the group (CodeRabbit #170): a radiogroup, named by its legend, invalid and
+                   described by them while it has any *@
+                <fieldset class="mt-2" id="category-combine" role="radiogroup" aria-labelledby="category-combine-legend"@if(view.choiceErrors.nonEmpty) { aria-invalid="true" aria-describedby="@view.choiceErrors.indices.map(i => s"category-combine-error-$i").mkString(" ")"}>
+                    <legend class="form-label fs-6 mb-1" id="category-combine-legend">@Messages("category.combine")</legend>
                     @for(choice <- CategoryCombine.values) {
                     <div class="form-check">
-                        <input class="form-check-input" type="radio" name="categoryCombine" id="categoryCombine-@choice.value" value="@choice.value" data-second-label="@Messages(choice.secondLabelKey)"@if(choice == view.combine) { checked}@if(noEdit) { disabled}>
+                        <input class="form-check-input@if(noEdit) { wlx-locked}" type="radio" name="categoryCombine" id="categoryCombine-@choice.value" value="@choice.value" data-second-label="@Messages(choice.secondLabelKey)"@if(choice == view.combine) { checked}@if(noEdit) { disabled aria-describedby="round-filters-locked"}>
                         <label class="form-check-label" for="categoryCombine-@choice.value">@Messages(choice.labelKey)</label>
                     </div>
                     }
                     @if(noEdit) {<input type="hidden" name="categoryCombine" value="@view.combine.value">}
-                    @for(error <- view.choiceErrors) {
-                    <div class="text-danger small">@Messages(error.message, error.args: _*)</div>
+                    @for((error, i) <- view.choiceErrors.zipWithIndex) {
+                    <div class="text-danger small" id="category-combine-error-@i">@Messages(error.message, error.args: _*)</div>
                     }
                 </fieldset>
             </details>
@@ -197,13 +187,13 @@
             regions.map { case (k, v) => (k, Messages(k)) }.toSeq.sortBy(_._1),
             Symbol("_label") -> Messages("regions"),
             Symbol("multiple") -> true,
-            Symbol("disabled") -> noEdit
+            Symbol("disabled") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy
         )
 
         @bs.text(
             editRoundForm("monumentIds"),
             Symbol("_label") -> Messages("monument.ids.comma.separated"),
-            Symbol("readonly") -> noEdit
+            Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy
         )
     }
 
@@ -211,14 +201,14 @@
         editRoundForm("minMpx"),
         Seq("No", "1", "2", "3", "4").map(x => (x, Messages(x.toLowerCase))),
         Symbol("_label") -> Messages("minimum.megapixels"),
-        Symbol("readonly") -> noEdit
+        Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy
     )
 
     @bs.select(
         editRoundForm("minSize"),
         Seq("No", "1", "2").map(x => (x, Messages(x.toLowerCase))),
         Symbol("_label") -> Messages("minimum.megabytes"),
-        Symbol("readonly") -> noEdit
+        Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy
     )
 
     @if(specialNominations.nonEmpty) {
@@ -226,7 +216,7 @@
             editRoundForm("specialNomination"),
             Seq(("no.filter", Messages("no.filter"))) ++ specialNominations.map(sn => (sn.name, Messages(sn.name))),
             Symbol("_label") -> Messages("special.nomination"),
-            Symbol("readonly") -> noEdit
+            Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy
         )
     }
 }

@@ -60,7 +60,7 @@ python scripts/agent-check.py --lock --timeout 1800 -- java -Xmx512m -Dfile.enco
 
 ### Changelog entries as an agent
 
-A changelog entry is one short user-facing line per change (a few words, no implementation details); see [CONTRIBUTING.md](CONTRIBUTING.md), "Changelog entries".
+A changelog entry is one short user-facing line per change (a few words, no implementation details); see [CONTRIBUTING.md](CONTRIBUTING.md), "Changelog entries". Add it as a fragment file `changes/unreleased/<branch-name>.md` ([format](changes/unreleased/README.md)); never edit CHANGELOG.md's Unreleased (CI's `changelog fragments` check fails), only a release commit folds fragments in.
 
 ### Plans and decisions as an agent
 

@@ -80,6 +80,19 @@ class RoundSetupStepsSpec extends PlaySpecification with PlayTestDb {
         owner = Some("spec"))
     }
 
+  /** A distribution job of `r` with `params`, ended with `status` (failed, cancelled), never run here. */
+  private def endedJob(contest: ContestJury, r: Round, status: String, params: (String, Json.JsValueWrapper)*): Long =
+    scalikejdbc.DB.autoCommit { implicit s =>
+      val id = services.jobs.JobJdbc.insert(services.jobs.NewJob(RoundDistributionHandler.Kind, contest.id,
+        Some(RoundDistributionHandler.SubjectType), r.id, Some(RoundDistributionHandler.dedupeKey(r.getId)),
+        params = Json.obj(params: _*)), owner = None)
+      scalikejdbc.SQL("UPDATE job SET status = ? WHERE id = ?").bind(status, id).update()
+      id
+    }
+
+  private val Reapply: Seq[(String, Json.JsValueWrapper)] = Seq("mode" -> RoundDistributionHandler.Mode.Fill,
+    "fromReview" -> true, "reapply" -> true)
+
   private def request(method: String, email: String, path: String, body: Seq[(String, String)] = Nil) =
     FakeRequest(method, path).withFormUrlEncodedBody(body: _*).withSession(Secured.UserName -> email).withCSRFToken
 
@@ -294,6 +307,82 @@ class RoundSetupStepsSpec extends PlaySpecification with PlayTestDb {
         (stat.select("#round-setup-state").size === 0) and
           (edit.select("#round-setup-steps, #round-setup-state").size === 0) and
           (list.select(s"tr[data-round=$r] .wlx-round-start-state").attr("data-state") === "distributing")
+      }
+    }
+  }
+
+  "a round's state" should {
+
+    "be the same on the Rounds page, Edit round, statistics and the conflicts page, with the same action" in {
+      testDbApp { implicit app =>
+        val contest = setUp()
+        val failedReapply = inReview(contest, "Failed re-apply")
+        endedJob(contest, failedReapply, "failed", Reapply: _*)
+        val cancelledReapply = inReview(contest, "Cancelled re-apply")
+        endedJob(contest, cancelledReapply, "cancelled", Reapply: _*)
+        val failedDistribute = inReview(contest, "Failed distribute")
+        endedJob(contest, failedDistribute, "failed", "mode" -> RoundDistributionHandler.Mode.Distribute)
+        val list = page(app, "admin@example.com", s"/admin/rounds?contestId=${contest.getId}")
+        def listed(r: Round) = text(list.selectFirst(s"tr[data-round=${r.getId}] .wlx-round-start-state"))
+        def onPage(path: String) = text(page(app, "admin@example.com", path).selectFirst("#round-setup-state"))
+        val expected = Seq(
+          failedReapply -> "Setting up – step 2 of 3: re-applying its filters failed",
+          cancelledReapply -> "Setting up – step 2 of 3: re-applying its filters was cancelled",
+          failedDistribute -> "Setting up – step 3 of 3: choose jurors")
+        foreach(expected) { case (r, state) =>
+          val id = r.getId
+          val stat = page(app, "admin@example.com", s"/roundstat/$id")
+          val review = page(app, "admin@example.com", s"/admin/rounds/$id/review")
+          val reapply = r.getId != failedDistribute.getId
+          (listed(r) === state) and
+            (onPage(s"/admin/rounds/edit?id=$id&contestId=${contest.getId}") === state) and
+            (text(stat.selectFirst("#round-setup-state")) must startWith(state)) and
+            (onPage(s"/admin/rounds/$id/conflicts") must startWith(state)) and
+            (stat.select("#round-setup-state-link").attr("href") must contain(
+              if (reapply) s"/admin/rounds/edit?id=$id" else s"/admin/rounds/$id/jurors")) and
+            // Distribute: disabled with its reason after a re-apply that didn't finish, offered after a failed distribute
+            (review.select("button#round-next-distribute[disabled]").size === (if (reapply) 1 else 0)) and
+            (review.select("a#round-review-distribute-link").size === (if (reapply) 0 else 1))
+        } and {
+          // offered == allowed: the failed distribute's Distribute distributes it again; a failed re-apply's is refused
+          def post(r: Round) = route(app, request(POST, "admin@example.com", s"/admin/rounds/${r.getId}/distribute",
+            Seq("jurorsShown" -> "true", "jurors[0]" -> jurorIds.head.toString, "distribution" -> "0"))).get
+          val refused = post(failedReapply)
+          val again = post(failedDistribute)
+          (flash(refused).get("error") must beSome(contain("re-apply"))) and
+            (redirectLocation(again) must beSome(s"/admin/rounds/${failedDistribute.getId}/review")) and
+            (flash(again).get("error") must beNone)
+        }
+      }
+    }
+
+    "say a creation that failed, didn't finish or opens the round by itself on its review page and jurors form as the Rounds page" in {
+      testDbApp { implicit app =>
+        val contest = setUp()
+        def draft(name: String) = roundDao.create(Round(None, 0, Some(name), contest.getId, active = false,
+          distributing = true, status = Some(Round.Status.Draft)))
+        val failed = draft("Failed")
+        endedJob(contest, failed, "failed", "mode" -> RoundDistributionHandler.Mode.Fill, "distributeAfter" -> false)
+        val unfinished = draft("Unfinished")
+        val opensItself = draft("Opens itself")
+        scalikejdbc.DB.autoCommit { implicit s =>
+          services.jobs.JobJdbc.insert(services.jobs.NewJob(RoundDistributionHandler.Kind, contest.id,
+            Some(RoundDistributionHandler.SubjectType), opensItself.id, Some(RoundDistributionHandler.dedupeKey(opensItself.getId)),
+            params = Json.obj("mode" -> RoundDistributionHandler.Mode.Fill, "distributeAfter" -> true)), owner = Some("spec"))
+        }
+        val list = page(app, "admin@example.com", s"/admin/rounds?contestId=${contest.getId}")
+        def listed(r: Round) = text(list.selectFirst(s"tr[data-round=${r.getId}] .wlx-round-start-state"))
+        def review(r: Round) = text(page(app, "admin@example.com", s"/admin/rounds/${r.getId}/review").selectFirst("#round-review-state"))
+        def jurors(r: Round) = page(app, "admin@example.com", s"/admin/rounds/${r.getId}/jurors")
+        (review(failed) === listed(failed)) and (listed(failed) === "Not started – its distribution failed") and
+          (review(unfinished) === listed(unfinished)) and
+          (review(opensItself) ===
+            "The images are being distributed to the jurors. The round opens to them when it has finished.") and
+          (text(jurors(failed).selectFirst("#round-jurors-state")) === listed(failed)) and
+          (text(jurors(unfinished).selectFirst("#round-jurors-state")) === listed(unfinished)) and
+          (jurors(unfinished).select("#round-jurors-filling, meta[http-equiv=refresh]").size === 0) and
+          (jurors(opensItself).select("#round-jurors-filling").size === 0) and
+          (jurors(opensItself).select("#round-jurors-not-in-review").size === 1)
       }
     }
   }

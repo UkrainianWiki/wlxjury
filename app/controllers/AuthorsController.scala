@@ -46,6 +46,7 @@ class AuthorsController @Inject() (
               .copy(reason = Some(services.GalleryService.OtherUsersVotesReason)))
           case (Some(c), r) =>
             val page = AuthorsPage.of(c, r.flatten, rounds, AuthorsPage.Sort.parse(sort))
+              .copy(lineage = Some(services.RoundLineage.of(rounds, c)), group = RoundsFilter.fromRequest(request).group)
             Ok(views.html.authors(user, page))
         }
     }
@@ -64,7 +65,11 @@ final case class AuthorsPage(
     rows: Seq[AuthorStats.Row],
     withoutAuthor: Int,
     sort: AuthorsPage.Sort,
-    criteriaCount: Int = 1
+    criteriaCount: Int = 1,
+    // the contest's tracks, and the round tabs' grouping as chosen (RoundsFilter.group, the `group`
+    // param; None: the default, by track where the contest shows tracks)
+    lineage: Option[services.RoundLineage.Lineage] = None,
+    group: Option[Boolean] = None
 ) {
   import AuthorsPage._
 
@@ -101,11 +106,19 @@ final case class AuthorsPage(
 
   /** The list with another order: its URL. */
   def sortUrl(column: Column): String =
-    routes.AuthorsController.list(contest.getId, round.flatMap(_.id), Some(sort.toggled(column).param)).url
+    withGroup(routes.AuthorsController.list(contest.getId, round.flatMap(_.id), Some(sort.toggled(column).param)).url)
 
-  /** The list of another round (None: the contest's), in the same order. */
+  /** The list of another round (None: the contest's), in the same order, the tabs grouped alike. */
   def roundUrl(other: Option[Round]): String =
-    routes.AuthorsController.list(contest.getId, other.flatMap(_.id), Some(sort.param)).url
+    withGroup(routes.AuthorsController.list(contest.getId, other.flatMap(_.id), Some(sort.param)).url)
+
+  private def withGroup(url: String): String = RoundsFilter.Default.withGroup(group).addTo(url)
+
+  /** The round tabs (snippets/roundTabs, as the round statistics'): grouped by track as chosen, else
+    * where the contest shows tracks.
+    */
+  def tabs: views.RoundTabs = views.RoundTabs("authors-rounds", rounds, round.flatMap(_.id), r => roundUrl(Some(r)),
+    lineage, RoundsFilter.Default.withGroup(group).grouped(lineage))
 }
 
 object AuthorsPage {

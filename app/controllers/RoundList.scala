@@ -363,10 +363,7 @@ final case class RoundList(
   /** Files to a page: a file list's are rows of a table; the comments report's files have all
     * their comments under them.
     */
-  def pageSize: Int =
-    if (view == GalleryView.FileList) RoundList.FileListPageSize
-    else if (view.comments) RoundList.CommentsPageSize
-    else Pager.pageSize
+  def pageSize: Int = RoundList.pageSizeOf(view)
 
   def query: SelectionQuery =
     SelectionQuery(
@@ -509,6 +506,47 @@ final case class RoundList(
   }
 
   def ranks(files: Seq[ImageWithRating]): Seq[String] = ranks(files, rankCounts())
+
+  /** The cut a rating view shows between its files `n` and n + 1 (`?cut=n`, from the round form's cut
+    * control, services.CutPicker.viewUrl), named as the control names it ("top 88 · score ≥ 8.0"), from
+    * the list's rank `counts` ([[rankCounts]]): only in all the jurors' votes on the round's files, with
+    * no filter, by rate (a yes/no round's by its [[BinaryOrder]]), and only between two different scores
+    * (a rated round's average under its rule, or its sum; a yes/no round's level), where the control
+    * cuts. None for anything else: a parameter of another value, or on another list, shows nothing, and
+    * the text is the server's own (nothing of the request is echoed).
+    */
+  def cutAt(n: Int, counts: Seq[(Seq[Long], Int)]): Option[services.TopNCandidates.Msg] = {
+    val plain = view == GalleryView.ByRate && asUserId == 0 && region.isEmpty && filter == VoteFilter.All &&
+      !commentsOnly && monument.isEmpty && author.isEmpty && country.isEmpty &&
+      (if (round.isBinary) order.isInstanceOf[ListOrder.Binary] else round.isRated && order == ListOrder.ByRate)
+    if (!plain || n < 1) None
+    else {
+      // a file's score from its rank key: a yes/no round's whole level; a rated round's first column, its
+      // average (scaled by AverageRule.KeyScale) or, scored by the sum, the sum
+      val scoreOf: Seq[Long] => Seq[Long] = if (round.isBinary) identity else _.take(1)
+      val averaged = round.averageRule.keySql(org.intracer.wmua.AverageRule.VoteTerms).isDefined
+      def score(key: Seq[Long]): Double = {
+        val k = key.headOption.getOrElse(0L).toDouble
+        if (averaged) k / org.intracer.wmua.AverageRule.KeyScale else k
+      }
+      // runs of one score, in the list's order, with the place of each run's last file
+      val runs = counts.foldLeft(Vector.empty[(Seq[Long], Int)]) { case (acc, (key, c)) =>
+        val s = scoreOf(key)
+        acc.lastOption match {
+          case Some((last, sum)) if last == s => acc.init :+ (last -> (sum + c))
+          case _                              => acc :+ (s -> c)
+        }
+      }
+      val ends = runs.scanLeft(0)(_ + _._2).tail
+      Some(ends.indexOf(n)).filter(_ >= 0).map { i =>
+        if (round.isBinary)
+          services.CutPicker.levelCut(n, services.CutPicker.describe(binaryOrder)(runs(i)._1.map(_.toDouble)))
+        else
+          services.CutPicker.scoreCut(n,
+            services.CutPicker.threshold(score(runs(i)._1), runs.lift(i + 1).map(r => score(r._1))))
+      }
+    }
+  }
 
   /** The file's index in the list, from 0. For a file of the viewer's round that the filter
     * leaves out (one just voted on), where it would be: the number of the list's files before
@@ -993,6 +1031,14 @@ object RoundList {
 
   /** The comments report's files to a page: a round's busiest had 1,542 comments on 321 files. */
   val CommentsPageSize = 20
+
+  /** A list's files to a page, by its view ([[RoundList.pageSize]]); the round form's cut link computes
+    * the rating view's page with it (services.CutPicker.viewUrl).
+    */
+  def pageSizeOf(view: GalleryView): Int =
+    if (view == GalleryView.FileList) FileListPageSize
+    else if (view.comments) CommentsPageSize
+    else Pager.pageSize
 
   /** A list URL's parameter of its monument filter ([[RoundList.monument]]): `monument=<id>`. */
   val MonumentParam = "monument"

@@ -19,7 +19,8 @@
         noActiveJuror: Set[Long] = Set.empty,
         lineage: Option[services.RoundLineage.Lineage] = None,
         findAgain: Set[Long] = Set.empty,
-        setupSteps: Map[Long, controllers.RoundNextStep] = Map.empty
+        setupSteps: Map[Long, controllers.RoundNextStep] = Map.empty,
+        jobTitles: Map[Long, String] = Map.empty
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @* The rounds the Status and Type menus keep, in the Order menu's order (RoundsFilter; the
@@ -28,7 +29,7 @@
 @* this page with another filter; and a link of it to a round's statistics or form, keeping this one *@
 @roundsUrl(f: controllers.RoundsFilter) = @{ f.addTo(routes.RoundController.rounds(contest.id).url) }
 @* a round's start block (RoundStartBlock) and, being set up, its setup step *@
-@startState(round: Round) = @{ (RoundStartBlock.of(round, jobs.get(round.getId)), setupSteps.get(round.getId)) }
+@startState(round: Round) = @{ (setupSteps.get(round.getId).map(_.block).orElse(RoundStartBlock.of(round, jobs.get(round.getId))), setupSteps.get(round.getId)) }
 @filterFields = {@for((name, value) <- filter.params) {<input type="hidden" name="@name" value="@value">}}
 
     @mainAdmin("rounds", adminUser, adminUser.getId,
@@ -121,9 +122,11 @@
                             @* a round being set up (UI-path plan §4 step 1, controllers.RoundController.setupSteps):
                                "Setting up – step 2 of 3: check files" with "Check the files" (its review page), or
                                "… step 3 of 3: choose jurors" with "Distribute to jurors" (its jurors form, allowed then:
-                               RoundNextStep.distributeAllowed), in place of Start *@
+                               RoundNextStep.distributeAllowed), or a re-apply failed or cancelled with "Change the
+                               settings" (its form, to re-apply; a failed one's Retry is in the jobs column), in place
+                               of Start; its state from the same RoundStartBlock as the round's other pages *@
                             <td>@startState(round) match {
-                                case (Some(block), Some(step)) => {<span class="wlx-round-start-state small" data-round="@round.getId" data-state="@block.reason" data-step="@step.step">@if(step.step == controllers.RoundNextStep.Jurors) {@Messages("round.setup.state.3")} else {@Messages("round.setup.state.2")}</span>@if(step.distributeAllowed) { <a class="btn btn-primary btn-sm ms-1 round-start-distribute" href="@routes.RoundReviewController.jurors(round.getId)">@Messages("round.review.distribute")</a>} else { <a class="btn btn-primary btn-sm ms-1 round-start-check-files" href="@routes.RoundReviewController.review(round.getId)">@Messages("round.next.files")</a>}}
+                                case (Some(block), Some(step)) => {<span class="wlx-round-start-state small" data-round="@round.getId" data-state="@block.reason" data-step="@step.step">@Messages(step.stateKey)</span>@if(step.distributeAllowed) { <a class="btn btn-primary btn-sm ms-1 round-start-distribute" href="@routes.RoundReviewController.jurors(round.getId)">@Messages("round.review.distribute")</a>} else {@if(step.state == controllers.RoundNextStep.Unfinished) { <a class="btn btn-primary btn-sm ms-1 round-start-settings" href="@filter.addTo(routes.RoundController.editRound(id = round.id, contestId = contest.getId).url)">@Messages("round.next.settings")</a>} else { <a class="btn btn-primary btn-sm ms-1 round-start-check-files" href="@routes.RoundReviewController.review(round.getId)">@Messages("round.next.files")</a>}}}
                                 case (Some(block), None) => {<span class="wlx-round-start-state small" data-round="@round.getId" data-state="@block.reason">@Messages(block.stateKey)</span>@if(block == RoundStartBlock.NotDistributed) { <a class="btn btn-primary btn-sm ms-1 round-start-distribute" href="@routes.RoundReviewController.jurors(round.getId)">@Messages("round.review.distribute")</a>}@if(findAgain.contains(round.getId)) { <form method="post" action="@routes.RoundController.findFilesAgain(round.getId)" class="d-inline round-find-again" data-round="@round.getId">@csrfField()@filterFields<button type="submit" class="btn btn-primary btn-sm ms-1">@Messages("round.find.again")</button></form>}}
                                 case (None, _) => {@snippets.startStop(round.active, round.getId, contest.getId, routes.RoundController.setRound, extraFields = filterFields)@if(noActiveJuror.contains(round.getId)) {<span class="wlx-round-warning text-warning-emphasis ms-1" data-round="@round.getId" title="@Messages("round.warning.nojurors.short")"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i><span class="visually-hidden">, @Messages("round.warning.nojurors.short")</span></span>}}
                             }</td>
@@ -133,7 +136,7 @@
                                gave, until the round's next job *@
                             <td>@for(job <- jobs.get(round.getId) if !job.isDone || (round.distributing && !round.inReview) ||
                                     job.kind == services.distribution.RoundRebalanceHandler.Kind) {
-                                @snippets.jobStatus(job, req.uri)
+                                @snippets.jobStatus(job, req.uri, label = jobTitles.get(job.id))
                             }
                             @* a round in review (P3): its images ready and to review; its jurors form, where it is
                                distributed, is linked from its state in the Active column (one Distribute per row) *@

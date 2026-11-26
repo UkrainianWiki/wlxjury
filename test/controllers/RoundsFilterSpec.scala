@@ -520,6 +520,33 @@ class RoundsFilterSpec extends PlaySpecification with PlayTestDb {
 
   "the filter [A-28]" should {
 
+    "group by track by default only where a track has two rounds or more (hasLongTrack), as chosen otherwise" in {
+      import services.RoundLineage
+      val prefix = "Category:WLM 2026 in Ukraine - "
+      def r(id: Long, name: String, previous: Seq[Long] = Nil, category: Option[String] = None) =
+        Round(Some(id), id, Some(name), 1, category = category,
+          previous = Option.when(previous.nonEmpty)(previous.mkString(",")))
+      val context = RoundLineage.Context(contestCategory = Some("Category:Images from Wiki Loves Monuments 2026 in Ukraine"))
+      def lineage(rs: Round*) = RoundLineage(rs, context)
+      val q00 = r(1, "Q-00", category = Some(prefix + "Quality"))
+      val qn00 = r(2, "Qn-00", category = Some(prefix + "Quantity"))
+      // Quality has two rounds
+      val long = lineage(q00, qn00, r(3, "Q-01", Seq(1)))
+      // two tracks of one round each
+      val short = lineage(q00, qn00)
+      // two unlinked rounds of one name: a track named after them, which doesn't count
+      val selfNamed = lineage(q00, qn00, r(4, "ROUND 2"), r(5, "ROUND 2"))
+      (RoundsFilter.hasLongTrack(long) must beTrue) and
+        (RoundsFilter.hasLongTrack(short) must beFalse) and
+        (RoundsFilter.hasLongTrack(selfNamed) must beFalse) and
+        (short.showsTracks() must beTrue) and
+        (RoundsFilter.Default.grouped(Some(long)) must beTrue) and
+        (RoundsFilter.Default.grouped(Some(short)) must beFalse) and
+        (RoundsFilter.Default.withGroup(Some(true)).grouped(Some(short)) must beTrue) and
+        (RoundsFilter.Default.withGroup(Some(false)).grouped(Some(long)) must beFalse) and
+        (RoundsFilter.Default.withGroup(Some(true)).grouped(None) must beFalse)
+    }
+
     "list no round beyond the viewer's unfiltered list, for any choice, on each page" in {
       testDbApp { app =>
         val f = fixture()

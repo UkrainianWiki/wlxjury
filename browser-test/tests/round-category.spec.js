@@ -112,4 +112,26 @@ test.describe('the new-round form', () => {
       await expect(page.getByRole('combobox', { name: '…or in category' })).toBeVisible();
       await expect(page.locator('#source')).toHaveValue('Category:Lakes of Ukraine');
     });
+
+  // the card's header is an a[role=button] (snippets/collapsible.scala.html): Space opens and
+  // closes it as on a button, and doesn't scroll the page (round-form.js, initCardToggleKeys)
+  test('opens and closes Media filtering with Space on its header', { tag: '@A-01' },
+    async ({ page, fixture }) => {
+      await page.goto(`/admin/rounds/edit?contestId=${fixture.contestId}`);
+      const toggle = page.locator('a[href="#collapseImageFiltering"]');
+      const panel = page.locator('#collapseImageFiltering');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await toggle.focus();
+      const scrollY = await page.evaluate(() => window.scrollY);
+      await page.keyboard.press('Space');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      await expect(panel).toHaveClass(/\bshow\b/);
+      await expect(panel).not.toHaveClass(/\bcollapsing\b/);
+      expect(await page.evaluate(() => window.scrollY)).toBe(scrollY);
+      await expect(toggle).toBeFocused();
+      await page.keyboard.press('Space');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(panel).not.toHaveClass(/\b(show|collapsing)\b/);
+      expect(await page.evaluate(() => window.scrollY)).toBe(scrollY);
+    });
 });

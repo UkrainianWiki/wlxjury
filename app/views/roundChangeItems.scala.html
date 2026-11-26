@@ -1,4 +1,4 @@
 @(c: db.scalikejdbc.ContestChange)(implicit messages: Messages)
 @* A round's settings entry (RoundChanges): each changed setting as "label: old → new" (a creation's
    "label: value"), "; " between them; a cut value's whole text in its title (RoundChangeText) *@
-@for((item, i) <- views.RoundChangeText.items(c).zipWithIndex) {@if(i > 0) {; }<span class="round-change-item" data-field="@item.field"@if(item.cut) { title="@item.title"}>@item.label: @for(from <- item.from) {@from → }@item.to</span>}
+@for((item, i) <- views.RoundChangeText.items(c).zipWithIndex) {@if(i > 0) {; }<span class="round-change-item" data-field="@item.field"@if(item.cut) { title="@item.title"}>@item.label: @for(from <- item.from) {@from → }@item.to@for(note <- item.note) { <span class="round-change-note">(@note)</span>}</span>}

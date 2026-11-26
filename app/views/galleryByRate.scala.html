@@ -12,7 +12,8 @@
         ranks: Seq[String] = Nil,
         criteria: org.intracer.wmua.CriteriaResults = org.intracer.wmua.CriteriaResults.empty,
         commented: Option[Int] = None,
-        commentCounts: Map[Long, Int] = Map.empty)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+        commentCounts: Map[Long, Int] = Map.empty,
+        cut: Option[(Int, String)] = None)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
     @* the juror rates their own files here with stars as on the gallery's tiles (TileStars) *@
     @starsRound = @{ views.TileStars.round(user, list.asUserId, Some(list.round)) }
@@ -145,6 +146,11 @@
                         @showRateGalery(file, index)
 
                     </li>
+                    @* the cut the round form's control links to (`?cut=N`, RoundList.cutAt): after file N,
+                       scrolled to by file-anchor.js (#cut) *@
+                    @for((after, text) <- cut if after == index) {
+                    <li class="wlx-cut-divider" id="cut-divider" data-file-anchor="cut">@Messages("top.n.cut.divider", text)</li>
+                    }
                 }
 
             </ul>

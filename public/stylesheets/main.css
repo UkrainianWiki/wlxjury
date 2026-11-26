@@ -106,9 +106,22 @@ body.gallery {
 .wlx-round-icon > .wlx-round-no { color: var(--wlx-rejected); }
 .wlx-round-icon > .wlx-round-star { color: var(--wlx-star); }
 .wlx-round-icon.wlx-round-icon-inactive > i { color: var(--bs-secondary-color); }
-.wlx-round-named, .dropdown-item.wlx-round-item, #round-stat-rounds .page-link {
+.wlx-round-named, .dropdown-item.wlx-round-item, .wlx-round-tabs .page-link {
     display: flex; align-items: baseline;
 }
+/* the Rounds table: the name keeps the width beside its icon, and the Track chip goes to a line
+   of its own under it when name and chip don't fit on one line (a long name was squeezed onto a
+   third line by the chip beside it); the name's width is the cell's less the icon slot's
+   (2.15em + .4em, .wlx-round-icon) */
+.wlx-round-named { flex-wrap: wrap; }
+.wlx-round-named > .round-stat-link { max-width: calc(100% - 2.55em); }
+/* a page's round tabs (snippets/roundTabs: the round statistics and the authors pages): wrapped,
+   left-aligned; grouped by track, each group its track's name, small and secondary, then its tabs,
+   the groups apart from each other; no Track chips in the tabs (the track is the tooltip) */
+.wlx-round-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: .375rem 1rem; margin: .5rem 0 .25rem; }
+.wlx-round-tabs .pagination { flex-wrap: wrap; }
+.wlx-round-tabs-group, .wlx-round-tabs-other { display: flex; flex-wrap: wrap; align-items: center; gap: .375rem; }
+.wlx-round-tabs-label { font-size: .8125rem; color: var(--bs-secondary-color); white-space: nowrap; }
 /* a round's Track chip after its name (round lineage slice A, snippets/trackChip): its track's
    colours (theme.css --wlx-track-*), a thin edge of its text colour so a pale chip shows on the
    stripes and the hover grey; never cut or wrapped inside; in the Track menu a swatch before the name */
@@ -130,6 +143,9 @@ body.gallery {
    name too long for the window cut with an ellipsis on a desktop (wlx-item-text,
    dropDownSelection), wrapped on a phone */
 .dropdown-menu.wlx-round-menu { max-width: calc(100vw - 1rem); overflow-x: hidden; }
+/* the round menu grouped by track (dropDownSelection groups): each track's name a small header
+   before its rounds, as the round tabs' labels */
+.dropdown-menu.wlx-round-menu .dropdown-header { font-size: .8125rem; padding-top: .375rem; padding-bottom: .125rem; }
 .dropdown-item.wlx-round-item > .wlx-item-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 575.98px) {
     .dropdown-item.wlx-round-item { white-space: normal; }
@@ -230,8 +246,8 @@ body.gallery {
    overrides the theme's transparent 1px focus outline (codex-theme.css); focused, it turns solid,
    so the focus shows also in forced-colours mode, where the focus ring (a box-shadow) is not
    drawn */
-#round-stat-rounds .page-link.wlx-round-outside { outline: 2px dashed currentColor; outline-offset: -2px; }
-#round-stat-rounds .page-link.wlx-round-outside:focus-visible { outline-style: solid; }
+.wlx-round-tabs .page-link.wlx-round-outside { outline: 2px dashed currentColor; outline-offset: -2px; }
+.wlx-round-tabs .page-link.wlx-round-outside:focus-visible { outline-style: solid; }
 /* the round statistics' icon links (a juror's gallery, file list, by rate; the Total row's) and
    the count beside them, centred on one line (roundStatTable, roundStatLinks): Codex's 28 px
    small buttons (codex-theme.css, #366: min-height 28 px) are taller than their icon and the
@@ -748,6 +764,25 @@ a:has(> .btn) { text-decoration: none; }
 .large-section-toggle .bi { transition: transform .2s; }
 .large-section-toggle.collapsed .bi { transform: rotate(-90deg); }
 @media (prefers-reduced-motion: reduce) { .large-section-toggle .bi { transition: none; } }
+/* one disclosure indicator for the other collapsibles, a Bootstrap collapse's toggle
+   (snippets/collapsible.scala.html, the round form's cards) and a <details>' summary alike: the
+   side sections' chevron (above) before the heading, pointing right while closed and turned down
+   while open. It reads aria-expanded and [open], so it shows what a screen reader is told, and
+   replaces the browser's own triangle on a summary. The whole card header is the toggle, in the
+   text colour with the hover colour; focused, it has codex-theme.css's one focus ring. */
+.wlx-disclosure { cursor: pointer; }
+.wlx-disclosure-icon { display: inline-block; margin-inline-end: .375rem; font-size: .8em; transition: transform .2s; }
+[aria-expanded="true"] > .wlx-disclosure-icon, details[open] > summary > .wlx-disclosure-icon { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .wlx-disclosure-icon { transition: none; } }
+summary.wlx-disclosure { list-style: none; }
+summary.wlx-disclosure::-webkit-details-marker { display: none; }
+.card-header.wlx-card-toggle-header { padding: 0; }
+.wlx-card-toggle {
+    display: flex; align-items: center; padding: var(--bs-card-cap-padding-y) var(--bs-card-cap-padding-x);
+    text-decoration: none;
+}
+.wlx-card-toggle, .wlx-card-toggle:hover, .wlx-card-toggle:focus-visible { color: var(--bs-body-color); text-decoration: none; }
+.wlx-card-toggle:hover { background-color: var(--wlx-hover-bg); }
 
 /* raty's stars (large/raty.scala.html) and the static ones (showStar): Bootstrap Icons in the
    mode's star colour. Ten and the cancel icon fit one line of the side column; more (a 1-11 ..
@@ -1145,4 +1180,18 @@ div.thumb_small.wlx-thumb-failed .wlx-video-mark {
         max-height: min(70vh, calc(100vh - var(--wlx-topbar-height, 0px) - .5rem));
         max-height: min(70dvh, calc(100dvh - var(--wlx-topbar-height, 0px) - .5rem));
     }
+}
+
+/* The cut shown in a round's rating view (galleryByRate.scala.html, `?cut=N` from the round form's cut
+   control): a line across the tiles between file N and N + 1, labelled, the tiles' inline-block row
+   broken by its full width. Theme colours only (light and dark); scrolled to by file-anchor.js (#cut). */
+li.wlx-cut-divider {
+    display: block;
+    width: 100%;
+    list-style: none;
+    margin: .5rem 0;
+    padding: .25rem .5rem 0;
+    border-top: 2px dashed var(--bs-primary);
+    color: var(--bs-primary-text-emphasis);
+    font-weight: 600;
 }

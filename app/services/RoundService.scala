@@ -22,6 +22,9 @@ class RoundService @Inject() (
 
   import RoundService._
 
+  /** A job's title, as its status partial's label (snippets/jobStatus). */
+  def jobTitle(job: Job): String = jobs.title(job)
+
   /** Creates the round and distributes its images, waiting for the distribution (scripts,
     * the API, tests): [[submit]], then the job's end.
     *
@@ -63,7 +66,9 @@ class RoundService @Inject() (
       submitToken: Option[String] = None,
       createdBy: Option[Long] = None,
       titles: Seq[String] = Nil,
-      review: Boolean
+      review: Boolean,
+      // how its top N was chosen (the cut picker): kept with its settings log entry
+      topImagesBasis: Option[JsObject] = None
   ): Submitted =
     submitToken.flatMap(submitted(_, round.contestId)) match {
       case Some(existing) => resubmitted(existing)
@@ -80,7 +85,7 @@ class RoundService @Inject() (
           jurors.isEmpty || round.distribution <= jurors.size,
           s"${round.distribution} jurors per image, but only ${jurors.size} jurors selected"
         )
-        insert(configuredRound, jurors, submitToken, createdBy, titles, review) match {
+        insert(configuredRound, jurors, submitToken, createdBy, titles, review, topImagesBasis) match {
           case Left(existing) => resubmitted(existing)
           case Right((created, job)) =>
             logger.info(
@@ -134,7 +139,8 @@ class RoundService @Inject() (
       submitToken: Option[String],
       createdBy: Option[Long],
       titles: Seq[String],
-      review: Boolean
+      review: Boolean,
+      topImagesBasis: Option[JsObject]
   ): Either[Round, (Round, Job)] = {
     val number = dao.countByContest(round.contestId) + 1
     try
@@ -155,9 +161,10 @@ class RoundService @Inject() (
           logger.info(s"Round ${created.getId}: retired accounts left out of its jurors: ${retired.map(_.getId).mkString(",")}")
         created.addUsersIn(kept.map(u => RoundUser(created.getId, u.getId, u.contestRole.getOrElse(User.JURY_ROLE), active = true)))
         // "Create and review images" (D3): a fill that ends in review; else one pass (D4)
-        val job = enqueueOrFail(created, completingCreation = true, createdBy, titles, distributeAfter = !review)
+        val job = enqueueOrFail(created, completingCreation = true, createdBy, titles, distributeAfter = !review,
+          topNChecked = topImagesBasis.isDefined)
         // its settings as written, in the round's settings log (RoundChanges), with the round
-        RoundChanges.recordCreated(created.getId, createdBy)
+        RoundChanges.recordCreated(created.getId, createdBy, topImagesBasis)
         (created, job)
       })
     catch {
@@ -198,6 +205,9 @@ class RoundService @Inject() (
       requireInReview: Boolean = false,
       reapply: Boolean = false,
       topUpWaiting: Boolean = false,
+      // its top N checked by the round form (the cut picker's `topImagesBasis`): the job's Rank step
+      // checks it again, the votes frozen (RoundDistributionHandler.cutInTie)
+      topNChecked: Boolean = false,
       underLocks: DBSession => Unit = _ => ()
   )(implicit session: DBSession): Job = {
     val distribute = mode == RoundDistributionHandler.Mode.Distribute
@@ -264,7 +274,9 @@ class RoundService @Inject() (
           (if (fromReview) Json.obj("fromReview" -> true) else Json.obj()) ++
           (if (reapply) Json.obj("reapply" -> true) else Json.obj()) ++
           // "Also give out the waiting files" (round-editing plan §7): kept by the distribute it queues
-          (if (topUpWaiting) Json.obj("topUpWaiting" -> true) else Json.obj()) ++ Json.obj(
+          (if (topUpWaiting) Json.obj("topUpWaiting" -> true) else Json.obj()) ++
+          (if (topNChecked && round.topImages.isDefined) Json.obj(RoundDistributionHandler.TopNCheckedParam -> true)
+           else Json.obj()) ++ Json.obj(
           // for the record: the job reads the round, whose settings don't change once created;
           // but prevAverageRule(s) and prevRejectedMode, which the job reads from here
           // (RoundDistributionHandler.context)
@@ -539,7 +551,7 @@ class RoundService @Inject() (
     *                  is queued
     */
   def reapplyFilters(updated: Round, createdBy: Option[Long], titles: Seq[String] = Nil,
-      alsoWrite: DBSession => Unit = _ => ()): RoundService.ReviewDistribution =
+      alsoWrite: DBSession => Unit = _ => (), topImagesBasis: Option[JsObject] = None): RoundService.ReviewDistribution =
     dao.findById(updated.getId) match {
       case None => RoundService.ReviewDistribution.NotInReview
       case Some(stored) =>
@@ -565,13 +577,14 @@ class RoundService @Inject() (
               // at the fill's end (D18) and aren't read
               enqueueOrFail(configured,
                 completingCreation = true, createdBy, titles, fromReview = true, requireInReview = true, reapply = true,
+                topNChecked = topImagesBasis.isDefined,
                 underLocks = { s =>
                   // D16: no file is deleted once the round has a vote
                   if (RoundImageJdbc.hasVotes(roundId)(s)) throw ReviewRefused(ReapplyVotedKey, Seq(stored.number.toString))
                   // what the filters and the caller's writes change, in the round's settings log
                   // (RoundChanges), committed only with them and the job
                   RoundChanges.logged(roundId, createdBy, ContestChangeJdbc.RoundFiltersReapplied,
-                    RoundChanges.Path.Reapply) {
+                    RoundChanges.Path.Reapply, topImagesBasis) {
                     Round.updateFilters(roundId, configured)(s)
                     // the caller's other changes (the form's name, score rule), committed only with the job
                     alsoWrite(s)
@@ -618,6 +631,39 @@ class RoundService @Inject() (
 
   /** "Count new files": the number of images [[distributeNewFiles]] would add now. */
   def newFilesCount(roundId: Long): Long = distribution.countNew(roundId)
+
+  /** The round form's cut picker (regional winners plan §10.4) of `round` (a stored round, or the
+    * form's settings as posted): the files its cut would take from now, ranked as its distribution
+    * ranks them, with the candidate cuts of the main round's window and the form's `chosen` N. Ranked
+    * without the round's score threshold (`prevMinAvgRate`): it is the cut itself (decided 2026-11-26).
+    * `skipDqOf`: a re-apply's round, whose disqualified files take no place. None without previous
+    * rounds. Read only; may read Commons (a category filter's files), as "Count new files" does.
+    */
+  def cutPicker(round: Round, chosen: Option[Int], skipDqOf: Option[Long] = None): Option[CutPicker] = {
+    val canonical = round.copy(prevMinAvgRate = None).withFixedCategories.withCanonicalCategoryRule
+    // no file kept whole: the control shows no file (decided 2026-11-26: no cut gallery)
+    distribution.topNRanking(canonical, keep = 0, skipDqOf).map { ranking =>
+      // a criteria round's criteria: its score range and its files' scores are their sums
+      val prev = ranking.prevRounds.map { p =>
+        if (!p.hasCriteria) p
+        else {
+          val ids = db.scalikejdbc.RoundCriterion.idsOf(p.getId)
+          p.copy(criterionIds = ids, criteriaCount = ids.size.max(1))
+        }
+      }
+      val ranges = prev.filterNot(_.isBinary).map(p =>
+        CutPicker.range(p, if (p.distribution > 0) p.distribution.toLong else p.numberOfAssignedJurors))
+      CutPicker.build(ranking.copy(prevRounds = prev), ranges, chosen)
+    }
+  }
+
+  /** Whether the picker's cuts of `round` may be shown in its previous round's rating view, to `viewer`
+    * ([[CutPicker.viewable]] and the data it can't see, [[RoundDistributionHandler.cutViewData]]): the
+    * caller adds the viewer's rule (GalleryService.othersVotesVisible).
+    */
+  def cutViewable(round: Round, picker: CutPicker, skipDqOf: Option[Long]): Boolean =
+    CutPicker.viewable(round, picker.ranking) &&
+      picker.ranking.prevRounds.headOption.flatMap(_.id).exists(RoundDistributionHandler.cutViewData(_, skipDqOf, picker.ranking))
 
   /** The round's previous rounds, in its order, looked up in the round's own contest
     * only: another contest's rounds would be frozen and their images copied. An id not

@@ -37,6 +37,13 @@ test("finds the fragment's file by data-file-anchor, not by a #<pageId> id", () 
     expect(anchor.target(document, "")).toBeNull();
 });
 
+test("finds a rating view's cut divider by #cut (the round form's ratings link)", () => {
+    document.body.innerHTML = '<ul><li data-file-anchor="7">a</li><li data-file-anchor="cut">Cut</li></ul>';
+    expect(anchor.target(document, "#cut").textContent).toBe("Cut");
+    expect(anchor.target(document, "#cuts")).toBeNull();
+    expect(anchor.target(document, "#file-cut")).toBeNull();
+});
+
 test("leaves the page at its top when the file is wholly in view", () => {
     const win = fakeWindow("#file-7", { top: 120, bottom: 300, left: 10, right: 200 });
     expect(anchor.reveal(win)).toBe(false);

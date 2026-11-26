@@ -1,4 +1,4 @@
-@(dto: UiSelectionDto[Any], iconOnly: Boolean = false, compactIcon: Option[String] = None, menuId: Option[String] = None, label: Option[String] = None, truncate: Boolean = false, leadIcon: Option[String] = None, labelShown: Boolean = false, menuClass: String = "")(implicit messages: Messages)
+@(dto: UiSelectionDto[Any], iconOnly: Boolean = false, compactIcon: Option[String] = None, menuId: Option[String] = None, label: Option[String] = None, truncate: Boolean = false, leadIcon: Option[String] = None, labelShown: Boolean = false, menuClass: String = "", extra: Html = play.twirl.api.HtmlFormat.empty, groups: Seq[(Option[String], Seq[Any])] = Nil, otherLabel: Option[String] = None)(implicit messages: Messages)
 @* A navbar menu: its toggle shows the current item (its icon only if `iconOnly` and it has one,
    the text then read by screen readers and shown as a tooltip), the menu every item, the current
    one marked active with aria-current="page" (each item opens a page; the current one is this
@@ -19,8 +19,24 @@
    readers, snippets/roundIcon and roundSpoken); with markup before it, its text in a span of its
    own (wlx-item-text), which a round menu cuts with an ellipsis where it is too narrow (main.css).
    The toggle is a real button, so Space opens it as Enter does (Bootstrap's dropdown). The items
-   listed are UiSelectionDto.shownValues: a filter menu's (hideEmpty) without those of count 0 *@
+   listed are UiSelectionDto.shownValues: a filter menu's (hideEmpty) without those of count 0.
+   `extra`: the menu's own items after them, as <li>s (the Order menu's "Group by track").
+   `groups`: the items in groups, in their order, instead of the items' own order (the galleries'
+   round menu grouped by track, views.RoundTabs.groups): a labelled group a list of its own with
+   its label as a dropdown header (h6.dropdown-header) naming the list (aria-labelledby), as the
+   round tabs' groups; a group without a label after a divider, unless it is the only one, and
+   then, with `otherLabel`, a list of its own named by it for screen readers only ("Other rounds"). Items
+   not shown (UiSelectionDto.shownValues) are left out. Bootstrap's arrow keys reach the items in
+   the nested lists as in a flat one; the headers are not focusable *@
 @icon(iconClass: String) = {<i class="@iconClass" aria-hidden="true"></i>}
+@item(id: Any, value: SelectionItem) = {
+            <li>
+                <a class="dropdown-item@if(value.count.nonEmpty) { wlx-menu-item}@if(value.itemClass.nonEmpty) { @value.itemClass}@if(id == dto.selectedItemId) { active}" @if(id == dto.selectedItemId) {aria-current="page" }href="@dto.itemUrlFunction(id)">
+                    @value.icon.map { iconClass => @icon(iconClass) }
+                    @value.before@if(value.count.nonEmpty) {<span>@value.localizedText</span>@for(n <- value.count) { <span class="wlx-menu-count">@views.Count.format(n)</span>}} else {@if(value.before.body.nonEmpty) {<span class="wlx-item-text">@value.localizedText</span>} else {@value.localizedText}@value.after}
+                </a>
+            </li>
+}
 <li class="nav-item dropdown"@for(i <- menuId) { id="@i"}>
     <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"
         @if((iconOnly && dto.current.icon.nonEmpty) || compactIcon.nonEmpty || truncate) {title="@dto.current.localizedText"}>
@@ -39,13 +55,40 @@
         }
     </button>
     <ul class="dropdown-menu@if(menuClass.nonEmpty) { @menuClass}">
-        @for((id, value) <- dto.shownValues) {
-            <li>
-                <a class="dropdown-item@if(value.count.nonEmpty) { wlx-menu-item}@if(value.itemClass.nonEmpty) { @value.itemClass}@if(id == dto.selectedItemId) { active}" @if(id == dto.selectedItemId) {aria-current="page" }href="@dto.itemUrlFunction(id)">
-                    @value.icon.map { iconClass => @icon(iconClass) }
-                    @value.before@if(value.count.nonEmpty) {<span>@value.localizedText</span>@for(n <- value.count) { <span class="wlx-menu-count">@views.Count.format(n)</span>}} else {@if(value.before.body.nonEmpty) {<span class="wlx-item-text">@value.localizedText</span>} else {@value.localizedText}@value.after}
-                </a>
+        @if(groups.isEmpty) {
+            @for((id, value) <- dto.shownValues) {@item(id, value)}
+        } else {
+            @defining(dto.shownValues.toMap) { shown =>
+            @for(((label, ids), i) <- groups.zipWithIndex) {
+                @label match {
+                    case Some(text) => {
+            <li class="wlx-menu-group">
+                <h6 class="dropdown-header" id="@menuId.getOrElse("menu")-group-@i">@text</h6>
+                <ul class="list-unstyled mb-0" aria-labelledby="@menuId.getOrElse("menu")-group-@i">
+                    @for(id <- ids; value <- shown.get(id)) {@item(id, value)}
+                </ul>
             </li>
+                    }
+                    case None => {
+            @if(i > 0) {<li><hr class="dropdown-divider"></li>}
+            @otherLabel.filter(_ => i > 0) match {
+                case Some(text) => {
+            <li class="wlx-menu-other">
+                <span class="visually-hidden" id="@menuId.getOrElse("menu")-group-@i">@text</span>
+                <ul class="list-unstyled mb-0" aria-labelledby="@menuId.getOrElse("menu")-group-@i">
+                    @for(id <- ids; value <- shown.get(id)) {@item(id, value)}
+                </ul>
+            </li>
+                }
+                case None => {
+            @for(id <- ids; value <- shown.get(id)) {@item(id, value)}
+                }
+            }
+                    }
+                }
+            }
+            }
         }
+        @extra
     </ul>
 </li>

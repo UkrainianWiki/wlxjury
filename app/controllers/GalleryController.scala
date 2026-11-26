@@ -303,8 +303,17 @@ class GalleryController @Inject() (
         val criteria = criteriaResults(list, files)
         // the by-rate gallery's ranks among all the list's files, as a file list's; none in file
         // order, which they would not follow (RoundList.ranked)
+        // the cut the round form's cut control links to (`?cut=N`), on the page with file N: after that
+        // file, where this list shows it (RoundList.cutAt)
+        val cut = for {
+          n <- request.getQueryString(services.CutPicker.CutParam).flatMap(_.trim.toIntOption)
+          counts <- rankCounts
+          text <- list.cutAt(n, counts)
+          index = n - 1 - pager.offset
+          if index >= 0 && index < files.size
+        } yield index -> services.CutPicker.text(text)
         Ok(RequestTiming.render(views.html.galleryByRate(user, withCriteria(list, criteria), files, pager, rounds, menu,
-          rates, ranks(files), criteria, commented, commentCounts(files))))
+          rates, ranks(files), criteria, commented, commentCounts(files), cut)))
     }
   }
 

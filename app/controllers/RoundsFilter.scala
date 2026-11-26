@@ -8,8 +8,9 @@ import java.nio.charset.StandardCharsets
 
 /** The Status, Type, Track and Order menus of the Rounds page and the Round Statistics page (the
   * maintainer's decisions of 2026-11-18; the Track menu, round lineage slice A, 2026-11-25): which
-  * of the rounds the viewer already sees are listed, and in what order. Kept in the URL (`status`,
-  * `type`, `track`, `order`), only where not the default, so a page with no params is as before (all
+  * of the rounds the viewer already sees are listed, and in what order, and whether the round tabs
+  * are grouped by track (`group`, the Order menu's "Group by track"). Kept in the URL (`status`,
+  * `type`, `track`, `order`, `group`), only where not the default, so a page with no params is as before (all
   * rounds, oldest first); links between the two pages carry them ([[addTo]]). An unknown value is
   * the default, never an error: a track the contest doesn't have too ([[withLineage]]).
   *
@@ -25,6 +26,9 @@ final case class RoundsFilter(
     kind: RoundsFilter.Kind = RoundsFilter.Kind.All,
     order: RoundsFilter.Order = RoundsFilter.Order.Oldest,
     track: Option[String] = None,
+    // the round tabs grouped by track (the Order menu's "Group by track"): None is the default, on
+    // when the contest shows tracks ([[grouped]])
+    group: Option[Boolean] = None,
     // each round's track key, from the contest's lineage ([[withLineage]]); not a choice of the viewer
     trackOf: Map[Long, String] = Map.empty
 ) {
@@ -69,6 +73,14 @@ final case class RoundsFilter(
   def withKind(k: Kind): RoundsFilter = copy(kind = k)
   def withOrder(o: Order): RoundsFilter = copy(order = o)
   def withTrack(t: Option[String]): RoundsFilter = copy(track = t)
+  def withGroup(g: Option[Boolean]): RoundsFilter = copy(group = g)
+
+  /** Whether the round tabs are grouped by track: as chosen, else when the contest shows tracks
+    * (Lineage.showsTracks: two tracks or more) and one of them has two rounds or more (tracks of a
+    * round each, named after it, group nothing); never without its lineage.
+    */
+  def grouped(lineage: Option[services.RoundLineage.Lineage]): Boolean =
+    lineage.exists(l => group.getOrElse(l.showsTracks() && RoundsFilter.hasLongTrack(l)))
 
   def isDefault: Boolean = copy(trackOf = Map.empty) == RoundsFilter.Default
 
@@ -78,7 +90,8 @@ final case class RoundsFilter(
       Option.when(status != Status.All)(StatusParam -> status.param),
       Option.when(kind != Kind.All)(TypeParam -> kind.param),
       track.map(TrackParam -> _),
-      Option.when(order != Order.Oldest)(OrderParam -> order.param)
+      Option.when(order != Order.Oldest)(OrderParam -> order.param),
+      group.map(g => GroupParam -> (if (g) GroupTrack else GroupNone))
     ).flatten
 
   /** `url` with this filter's params added (after its own, if it has a query); as it is for the
@@ -98,8 +111,17 @@ object RoundsFilter {
   val TypeParam = "type"
   val OrderParam = "order"
   val TrackParam = "track"
+  val GroupParam = "group"
+  val GroupTrack = "track"
+  val GroupNone = "none"
 
   val Default: RoundsFilter = RoundsFilter()
+
+  /** Whether one of the contest's tracks has two rounds or more, a track named after its rounds
+    * (Lineage.selfNamedTrack) aside: grouping by track then groups something.
+    */
+  def hasLongTrack(lineage: services.RoundLineage.Lineage): Boolean =
+    lineage.trackOf.values.filterNot(lineage.selfNamedTrack).groupMapReduce(identity)(_ => 1)(_ + _).values.exists(_ > 1)
 
   sealed abstract class Status(val param: String, val messageKey: String) {
     def matches(round: Round): Boolean
@@ -148,7 +170,8 @@ object RoundsFilter {
       param(StatusParam).flatMap(Status.parse).getOrElse(Status.All),
       param(TypeParam).flatMap(Kind.parse).getOrElse(Kind.All),
       param(OrderParam).flatMap(Order.parse).getOrElse(Order.Oldest),
-      param(TrackParam).map(_.trim).filter(_.nonEmpty)
+      param(TrackParam).map(_.trim).filter(_.nonEmpty),
+      param(GroupParam).collect { case GroupTrack => true; case GroupNone => false }
     )
 
   /** From the request's query string. */
@@ -170,8 +193,16 @@ final case class RoundsFilterBar(
     filter: RoundsFilter,
     url: RoundsFilter => String,
     rounds: Seq[Round],
-    lineage: Option[services.RoundLineage.Lineage] = None
+    lineage: Option[services.RoundLineage.Lineage] = None,
+    // the page shows round tabs (views.RoundTabs): its Order menu has "Group by track"
+    tabs: Boolean = false
 ) {
+
+  /** The Order menu's "Group by track": on a page with round tabs, in a contest that shows tracks. */
+  def groupShown: Boolean = tabs && lineage.exists(_.showsTracks())
+
+  /** The round tabs grouped by track ([[RoundsFilter.grouped]]). */
+  def grouped: Boolean = filter.grouped(lineage)
 
   /** How many of the rounds a Status choice keeps, within the current type and track. */
   def count(status: RoundsFilter.Status): Int =
@@ -185,13 +216,19 @@ final case class RoundsFilterBar(
   def count(track: Option[String]): Int =
     rounds.count(r => filter.status.matches(r) && filter.kind.matches(r) && track.forall(filter.onTrack(r, _)))
 
-  /** The Track menu's tracks, in the lineage's order, those of the rounds listed: shown with two or
-    * more of them, or a track chosen.
+  /** The Track menu's tracks, in the lineage's order, those of the rounds listed that show chips: a
+    * track named after its round that no other round continues (Lineage.selfNamedTrack) is left out,
+    * as its chip is (the maintainer's decision for 26.11.17.2), its rounds still under All tracks;
+    * unless it is the chosen one (an old link), which stays listed. The track shown as Main in a
+    * contest without one (Lineage.shownAsMain) comes first, as Main does. Shown with two or more of
+    * them, or a track chosen.
     */
   def tracks: Seq[services.RoundLineage.Track] = lineage.fold(Seq.empty[services.RoundLineage.Track]) { l =>
-    val listed = rounds.flatMap(l.track).toSet
-    l.tracks.filter(listed.contains)
+    val listed = l.tracksOf(rounds).filter(t => !l.selfNamedTrack(t) || filter.track.contains(t.key))
+    val (main, rest) = listed.partition(l.shownAsMain.contains)
+    main ++ rest
   }
 
-  def trackMenuShown: Boolean = tracks.sizeIs > 1 || filter.track.isDefined
+  /** With two tracks or more among the rounds listed (the chips' rule, Lineage.showsTracks), or a track chosen. */
+  def trackMenuShown: Boolean = lineage.exists(_.showsTracks(rounds)) || filter.track.isDefined
 }
