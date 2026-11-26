@@ -435,11 +435,11 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
       testDbApp { app =>
         val f = fixture()
         val contestId = f.round.contestId
-        // the threshold is the cut control's (one control, decided 2026-11-26): its help, once "Choose N"
-        // loaded it from the criteria round
-        def keepHelp(): String = Jsoup.parse(contentAsString(route(app, FakeRequest(POST, "/admin/rounds/cut-preview")
+        // the threshold is the cut control's (one control, decided 2026-11-26): its help, once the cut list
+        // loaded it from the criteria round (in place, by script)
+        def keepHelp(): String = Jsoup.parse(contentAsString(route(app, FakeRequest(POST, "/admin/rounds/cut-list")
           .withSession(Secured.UserName -> f.admin.email, Secured.CurrentContestId -> contestId.toString)
-          .withHeaders("Accept" -> "text/html")
+          .withHeaders("Accept" -> "text/html", "X-Requested-With" -> "XMLHttpRequest")
           .withFormUrlEncodedBody("number" -> "0", "name" -> "Next", "contest" -> contestId.toString, "roles" -> "jury",
             "rates" -> "1", "minMpx" -> "No", "minSize" -> "No", "mediaType" -> "all",
             "previousRound[0]" -> f.round.getId.toString)

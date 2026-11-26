@@ -106,32 +106,6 @@ describe("the round form", () => {
         expect(shown("prevRoundFilters")).toBe(false);
     });
 
-    test("points the cut control's ratings link at the chosen cut, hidden without one", () => {
-        document.body.innerHTML = `
-          <select id="topImages" name="topImages">
-            <option value="" selected>No top N</option>
-            <option value="4" data-cut-href="/byrate/round/2/user/0/page/1?sort=rate&amp;cut=4#cut">top 4</option>
-            <option value="9">top 9</option>
-          </select>
-          <a id="top-n-cut-link" href="#" hidden>Show this cut in the ratings</a>`;
-        init(document);
-        const select = document.getElementById("topImages");
-        const link = document.getElementById("top-n-cut-link");
-        expect(link.hidden).toBe(true);
-        select.value = "4";
-        select.dispatchEvent(new Event("change"));
-        expect([link.hidden, link.getAttribute("href")]).toEqual([false, "/byrate/round/2/user/0/page/1?sort=rate&cut=4#cut"]);
-        select.value = "9";
-        select.dispatchEvent(new Event("change"));
-        expect([link.hidden, link.getAttribute("href")]).toEqual([true, "#"]);
-    });
-
-    test("leaves a page without the cut link, or with the control not loaded, alone", () => {
-        document.body.innerHTML = '<p id="topImages">No top N</p><a id="top-n-cut-link" href="/x">x</a>';
-        expect(() => init(document)).not.toThrow();
-        expect(document.getElementById("top-n-cut-link").getAttribute("href")).toBe("/x");
-    });
-
     test("offers one distribution per number of jurors a file goes to, and keeps a choice that still fits", () => {
         page();
         const jurors = document.getElementById("jurors").tomselect;
