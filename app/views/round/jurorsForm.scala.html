@@ -58,7 +58,7 @@
                 <p id="round-jurors-images">@Messages("round.jurors.images")@snippets.count(v.inCount)</p>
                 @for(label <- v.placeLabel if v.places.nonEmpty) {
                     <details class="mb-3" id="round-jurors-places" open>
-                        <summary>@Messages("round.jurors.places", Messages(label))</summary>
+                        <summary class="wlx-disclosure"><i class="bi bi-chevron-right wlx-disclosure-icon" aria-hidden="true"></i>@Messages("round.jurors.places", Messages(label))</summary>
                         <ul class="list-unstyled mb-0 mt-1 round-jurors-places">
                         @for(place <- v.places) {
                             <li data-place="@place.id">@place.name@for(n <- place.count) {@snippets.count(n)}</li>

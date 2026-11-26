@@ -131,7 +131,7 @@ class CategoryFormSpec extends PlaySpecification {
         (input(html, "source") must contain("""data-category-suggest="category"""")) and
         (input(html, "excludeCategory") must contain("""data-category-suggest="category"""")) and
         (html must not contain "categoryClause") and
-        ("""<summary>category.more</summary>""".r.findFirstIn(html) must beSome) and
+        ("""<summary class="wlx-disclosure"><i [^>]*></i>category.more</summary>""".r.findFirstIn(html) must beSome) and
         ("""<legend[^>]*>category.combine</legend>""".r.findFirstIn(html) must beSome) and
         (checkedChoice(html) === Some("minus")) and (moreOpen(html) must beFalse) and
         (filteringOpen(html) must beFalse) and

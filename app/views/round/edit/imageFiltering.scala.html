@@ -172,7 +172,7 @@
     <div class="row mb-3" id="category-more_field">
         <div class="@offsetCol">
             <details id="category-more"@if(view.combine != CategoryCombine.Default || view.choiceErrors.nonEmpty) { open}>
-                <summary>@Messages("category.more")</summary>
+                <summary class="wlx-disclosure"><i class="bi bi-chevron-right wlx-disclosure-icon" aria-hidden="true"></i>@Messages("category.more")</summary>
                 <fieldset class="mt-2" id="category-combine">
                     <legend class="form-label fs-6 mb-1">@Messages("category.combine")</legend>
                     @for(choice <- CategoryCombine.values) {
