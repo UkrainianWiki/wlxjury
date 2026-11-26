@@ -23,8 +23,13 @@ object TrackChip {
     * without one (Lineage.shownAsMain); a nomination's or media type's translated if the messages
     * have it; a region track's regions by name; else as the rule or label gives it.
     */
-  def name(track: Track, lineage: Lineage)(implicit messages: Messages): String = track.kind match {
-    case _ if lineage.shownAsMain.contains(track) => messages("round.track.main")
+  def name(track: Track, lineage: Lineage)(implicit messages: Messages): String =
+    if (lineage.shownAsMain.contains(track)) messages("round.track.main") else ownName(track, lineage)
+
+  /** The track's own name ([[name]] without Lineage.shownAsMain): what the round form's automatic
+    * track says, so that an admin copying it into the label never makes a real Main of it.
+    */
+  private[views] def ownName(track: Track, lineage: Lineage)(implicit messages: Messages): String = track.kind match {
     case Kind.Main                    => messages("round.track.main")
     case Kind.Nomination | Kind.Media => if (messages.isDefinedAt(track.name)) messages(track.name) else track.name
     case Kind.Region =>
@@ -113,14 +118,15 @@ object TrackChip {
     if (track.isMain) "wlx-track-main"
     else s"wlx-track-${lineage.colours.getOrElse(track, RoundLineage.preferredSlot(track)) + 1}"
 
-  /** The round's automatic track (its track without its own label), by name: the round form's
-    * track field's help. None for a round not among `rounds` (its contest's).
+  /** The round's automatic track (its track without its own label), by its own name ([[ownName]]):
+    * the round form's track field's help. None for a round not among `rounds` (its contest's).
     */
   def automatic(roundId: Long, rounds: Seq[Round])(implicit messages: Messages): Option[String] =
     rounds.find(_.id.contains(roundId)).flatMap { round =>
       ContestJuryJdbc.findById(round.contestId).flatMap { contest =>
         val lineage = RoundLineage.of(rounds.map(r => if (r.id == round.id) r.copy(track = None) else r), contest)
-        lineage.track(roundId).map(name(_, lineage))
+        // its own name, never the one shown as Main: typed as a label, Main would split the track
+        lineage.track(roundId).map(ownName(_, lineage))
       }
     }
 

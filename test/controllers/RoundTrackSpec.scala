@@ -440,7 +440,51 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
           (rows(old) === Seq("Round 1", "Photography, Round 2", "Photography, Final Round 3")) and
           (old.select("#rounds-track-menu .dropdown-item.active").text must contain("Main")) and
           (page(app, admin, s"$path&track=main").select("tbody tr.round-row").size === 6) and
-          (trackMenu(stat).map(_._1).take(2) === Seq("All tracks", "Main"))
+          (trackMenu(stat).map(_._1).take(2) === Seq("All tracks", "Main")) and {
+            // the round form's automatic track keeps its own name: Main copied into the label would
+            // make a real Main of it and split the track
+            def placeholder(r: Round, lang: String = "en") =
+              page(app, admin, s"/admin/rounds/edit?contestId=${contest.getId}&id=${r.getId}", lang)
+                .getElementById("trackLabel").attr("placeholder")
+            (placeholder(r1) === "Automatic: Round 1") and
+              (placeholder(r3) === "Automatic: Round 1, from its previous rounds") and
+              (placeholder(r3, "uk") must not(contain("Основний"))) and
+              (placeholder(r3) must not(contain("Main")))
+          }
+      }
+    }
+
+    "show a category-first contest's chips and Track menu as before, nothing called Main" in {
+      testDbApp { app =>
+        val contest = contestDao.create(None, "Wiki Loves Monuments", 2026, "Testland",
+          Some("Category:Images from Wiki Loves Monuments 2026 in Testland"))
+        val admin = userDao.create(User("AdminC", "adminc@example.com", None, Set("admin"), contestId = contest.id))
+        def round(n: Int, name: String, previous: Option[Round] = None, category: Option[String] = None) =
+          roundDao.create(Round(None, n, Some(name), contest.getId, category = category, previous = previous.map(_.getId.toString)))
+        val q00 = round(1, "Q-00", category = Some(Prefix + "Quality"))
+        round(2, "Q-01", Some(q00))
+        round(3, "Qn-00", category = Some(Prefix + "Quantity"))
+        val video = round(4, "Video round")
+        round(5, "Video final", Some(video))
+        val doc = page(app, admin, s"/admin/rounds?contestId=${contest.getId}")
+        (rowChips(doc) === Map("Q-00" -> "Quality", "Q-01" -> "Quality", "Qn-00" -> "Quantity",
+          "Video round" -> "Video round", "Video final" -> "Video round")) and
+          (trackMenu(doc).map(t => (t._1, t._2)) === Seq("All tracks" -> "5", "Quality" -> "2", "Quantity" -> "1",
+            "Video round" -> "2"))
+      }
+    }
+
+    "show a real-Main contest's name tracks by their own names, Main only for the real one" in {
+      testDbApp { app =>
+        val f = fixture()
+        val r1 = roundDao.create(Round(None, 5, Some("Round 1"), f.contest.getId))
+        roundDao.create(Round(None, 6, Some("Round 2"), f.contest.getId, previous = Some(r1.getId.toString)))
+        val doc = page(app, f.admin, s"/admin/rounds?contestId=${f.contest.getId}")
+        (rowChips(doc) === Map("Q-00" -> "Quality", "Qn-00" -> "Quantity", "Q-01" -> "Quality", "Q-02" -> "Main",
+          "Round 1" -> "Round 1", "Round 2" -> "Round 1")) and
+          (doc.select(".wlx-track[data-track=main]").size === 1) and
+          (trackMenu(doc).map(t => (t._1, t._2)) === Seq("All tracks" -> "6", "Main" -> "1", "Quality" -> "2",
+            "Quantity" -> "1", "Round 1" -> "2"))
       }
     }
 

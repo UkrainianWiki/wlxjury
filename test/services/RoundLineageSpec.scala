@@ -504,6 +504,13 @@ class RoundLineageSpec extends Specification {
       (l.trackOf(30) === Track(Kind.Name, "Main")) and (l.trackOf(30).isMain must beFalse) and (l.shownAsMain must beNone)
     }
 
+    "be none where another track is named Main in another of the app's languages (Основний, Основной, Principale)" in {
+      forall(Seq("Основний", "основной", "Principale")) { main =>
+        val l = thatch(round(30, main), round(31, "Next", Seq(30)))
+        (l.trackOf(30).kind === Kind.Name) and (l.shownAsMain must beNone)
+      } and (RoundLineage.MainNames must contain(allOf("main", "основний", "основной", "principale")))
+    }
+
     "be none where the first round is labelled, or alone in its contest" in {
       val labelled = thatch(round(0, "Screening", track = Some("Second look")), round(40, "Screening 2", Seq(0)))
       val alone = RoundLineage(Seq(round(1, "Round 1"), round(2, "Round 2", Seq(1))), context)

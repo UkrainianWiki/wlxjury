@@ -1135,10 +1135,14 @@ rounds (the rounds it was created from), checks these in order, and takes the fi
    when it is written in other capitals.
 
 In a contest without a Main track (no round joins tracks and none is labelled Main), the chips and
-the **Track** menu call the track of the contest's first round **Main** when that track is named
-after the round (for example "Round 1", with the later rounds created from it), instead of
-repeating "Round 1" on every later round. This changes only the name shown: the track's links stay
-the same, and a first round with its own category or a label keeps its track's name.
+the **Track** menu call one track **Main**: the track of the contest's first round that isn't alone
+on a track named after itself, when that track is named after the round (for example "Round 1",
+with the later rounds created from it), instead of repeating "Round 1" on every later round. It
+doesn't happen when that round's track comes from a category, a label, a special nomination, a
+media type or regions, or when another track is named Main in one of the tool's languages. This
+changes only the name shown: the track's links and colour stay the same, and the round form's
+"Automatic: …" still gives its own name ("Round 1"), so leave the label empty rather than typing
+Main there.
 
 **An example**, from Wiki Loves Monuments in Ukraine:
 
