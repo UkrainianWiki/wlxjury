@@ -62,7 +62,7 @@ roadmap. A plan that takes it up cites it; once nothing is open in it, it follow
 | calls a new external service or changes limits, retries or the scalawiki pin | integrations practices |
 | adds a message key, a page pattern, a script, a theme variable, a vendored patch | UI practices |
 | adds or updates a dependency, action, image or downloaded tool | dependencies practices |
-| ships a user-visible change | CHANGELOG.md "Unreleased" |
+| ships a user-visible change | a fragment in `changes/unreleased/` (folded into CHANGELOG.md at release) |
 | changes a label, a key or what a juror sees or does | the juror guide (`docs/user/juror-guide.md`, §5) |
 | adds or changes a user-visible flow | the story catalogue (`docs/testing/stories.md`): a story ID, its guide section, a tagged test or its uncovered entry (testing §9.4) |
 | starts, lands or decides a batch | the roadmap |

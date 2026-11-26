@@ -112,7 +112,8 @@ sha256sum target/universal/wlxjury-26.11.zip
 ```
 
 Versions are calendar-based, `YY.MM`, with `.N` for another deploy in the same month; the release
-commit sets `version` in `build.sbt` (between releases it is the next one's snapshot). The steps
+commit sets `version` in `build.sbt` (between releases it is the next one's snapshot) and folds
+the changelog fragments into CHANGELOG.md (`python3 scripts/changelog-fragments.py fold`). The steps
 are in [workflow practices](workflow/practices.md) §7.4. A requested build ID is refused if `app`,
 `conf`, `public`, `project` or `build.sbt` has uncommitted **or untracked** changes, and the short
 commit is appended unless the name already contains it, e.g. `26.11-dbedca565807`; without

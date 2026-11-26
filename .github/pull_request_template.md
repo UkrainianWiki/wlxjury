@@ -2,6 +2,10 @@
 short summary of what changed and why. Long notes, screenshots and logs go in comments. Delete
 these comments before merging. -->
 
+Changelog: none
+<!-- Or the fragment file changes/unreleased/<branch-name>.md with the PR number (format in
+changes/unreleased/README.md). Don't edit CHANGELOG.md: the release folds the fragments in. -->
+
 Security: none
 <!-- Or the areas touched (routes/controllers/Secured, roles or accounts, sessions, SQL, views or
 JavaScript, config or deployment, exports, logs, dependencies) and that CONTRIBUTING.md

@@ -262,7 +262,9 @@ exist; until then from its `release/<version>` branch) gets the squash commit wi
 `git cherry-pick -x`, and the hotfix release is built, deployed and tagged there. Planned
 (pending the maintainer's settings): a ruleset protecting `release/*`. A fix that needs its own
 runbook or data script gets them in the same PR; the hotfix record moves to `docs/history/` and
-is deleted when a release replaces it. *Why:* production can't take the untested distance
+is deleted when a release replaces it. Its changelog fragment rides along with the cherry-pick:
+on the release branch `fold --into "### 26.11.13.1"` puts it in the hotfix's block; on master the
+same line is then skipped by the next fold, as it is already in CHANGELOG.md. *Why:* production can't take the untested distance
 between its release and master for one fix, and a fix made on master first can't be lost by the
 next release. *Example:* 26.11.13.1, on `release/26.11.13.1` from `release/26.11.13`.
 
@@ -274,14 +276,21 @@ hosting and server details, refactors, tests-only, docs-only and CI changes. "Un
 (on master, not yet deployed)" comes first, then the release built but not deployed. Deployed releases are dated from their migrations
 (production's `flyway_schema_history.installed_on`, the first migration a deploy applied; a change
 without a migration is dated from a deploy record); earlier releases by their development period
-or git tag. A batch adds its line under Unreleased in the same PR; a deploy moves the block under
-its release heading (§7.4) with its date. Cite only this repository's PRs, as `(#123)`.
+or git tag. A batch adds its line in the same PR as a fragment file,
+`changes/unreleased/<branch-name>.md` ([format](../../changes/unreleased/README.md); decided
+2026-11-26: lines appended under Unreleased made every open PR conflict in CHANGELOG.md, and
+GitHub ran no PR CI until master was merged in). CI's `changelog fragments` check refuses a PR
+that adds a line under Unreleased. The release commit folds the fragments into Unreleased
+(`python3 scripts/changelog-fragments.py fold`, which deletes them) and moves the block under its
+release heading (§7.4) with its date. Cite only this repository's PRs, as `(#123)`.
 
 **7.4 Calendar versions** (decided 2026-11-03). A release is named `YY.MM` for the month it
 ships (`26.11`), with `.N` for an extra deploy in the same month (`26.11.1`, `26.11.2`). Between
 releases `build.sbt` carries the next release as a snapshot (`version := "26.11-SNAPSHOT"`;
 rename it if the release slips to a later month). Releasing:
-1. the release commit sets `version := "26.11"`: a PR to master, squash-merged, then the tag on
+1. the release commit sets `version := "26.11"` and folds the changelog fragments
+   (`python3 scripts/changelog-fragments.py fold`, then the Unreleased lines move under the
+   release's heading, §7.3): a PR to master, squash-merged, then the tag on
    that commit (a hotfix release: on its `release/<version>` branch, §7.2; up to 26.11.14 each
    release commit was on its own `release/<version>` branch);
 2. build with `-Dwlxjury.buildId=26.11` (the ID becomes `26.11-<commit>`, the ZIP

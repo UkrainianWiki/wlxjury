@@ -1,0 +1,37 @@
+# Changelog lines come as fragment files in changes/unreleased/ (changes/unreleased/README.md):
+# every fragment must be well formed, and a PR must not add a line under CHANGELOG.md's
+# "Unreleased" itself, which made open PRs conflict there. A release moving the lines out of
+# Unreleased passes. Standard library only.
+# Actions are pinned by commit SHA, the release as a comment (dependencies practices §2.2).
+name: Changelog
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: changelog-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  fragments:
+    name: changelog fragments
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fragments are well formed
+        run: python3 -B scripts/changelog-fragments.py check
+      - name: No line added under CHANGELOG.md's Unreleased
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 -B scripts/changelog-fragments.py guard --base "$BASE"
