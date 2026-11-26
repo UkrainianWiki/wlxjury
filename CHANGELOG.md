@@ -39,6 +39,7 @@ Merged after the 26.11.17 build, for the release after it.
 **Operations**
 
 - `/health/ready` reports the Commons login as `commons` ("logged in, apihighlimits: yes", "refused at …, next try at …"), checked once in the background when the app starts, so the post-deploy check shows a refused bot password at once; it never makes the app unready.
+- A round waiting for review whose filters' re-apply failed reads "Setting up – step 2 of 3: re-applying its filters failed" (its Retry is in its row) and one whose re-apply was cancelled "… re-applying its filters was cancelled", each with "Change the settings", instead of a "Distribute to jurors" that was then refused. A failed or cancelled distribute stays at step 3 with "Distribute to jurors", which distributes it again. The Rounds page, Edit round, the review page, the jurors form, the statistics and the conflicts page now show the same state, also for a creation that failed, was cancelled, didn't finish or opens the round by itself (#206).
 
 ## Deployed releases
 

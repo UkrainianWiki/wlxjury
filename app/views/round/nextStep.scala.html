@@ -10,7 +10,7 @@
 <div class="card card-body mb-3" id="round-next-step" data-state="@step.state.id" data-step="@step.step">
     @* on Edit round, the round's current setup step (its review page's heading names its own) *@
     @if(!onReviewPage) {
-        <p class="mb-1 fw-semibold" id="round-setup-state" data-round="@roundId" data-step="@step.step">@if(step.step == controllers.RoundNextStep.Jurors) {@Messages("round.setup.state.3")} else {@Messages("round.setup.state.2")}</p>
+        <p class="mb-1 fw-semibold" id="round-setup-state" data-round="@roundId" data-step="@step.step">@Messages(step.stateKey)</p>
     }
     <p class="mb-2" id="round-next-step-text">@Messages("round.next.hidden")</p>
     @if(mayAct) {
