@@ -445,6 +445,99 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  "the round edit page's locked fields" should {
+    import scala.jdk.CollectionConverters._
+
+    val FiltersLocked =
+      "The round's filters can be changed only while it is waiting for review, with no votes and no job running."
+
+    def editPage(app: play.api.Application, contest: ContestJury, admin: User, round: Round) =
+      org.jsoup.Jsoup.parse(contentAsString(route(app,
+        get(s"/admin/rounds/edit?id=${round.getId}&contestId=${contest.getId}", admin)).get))
+
+    /** The fields of the files filters' section that look locked: their ids. */
+    def lockedIn(doc: org.jsoup.nodes.Document, css: String): Seq[String] =
+      doc.select(s"$css .wlx-locked").asScala.toSeq.map(_.id)
+
+    "grey out a started round's filters, rating type and distribution, with their reasons" in {
+      testDbApp { implicit app =>
+        val (contest, admin, previous) = fixture()
+        val round = roundDao.create(Round(None, 2, Some("Started"), contest.getId,
+          previous = Some(previous.getId.toString), regions = Some("12,14"), category = Some("Category:Included"),
+          minMpx = Some(2), active = true))
+        val doc = editPage(app, contest, admin, round)
+        doc.select("#round-filters-locked").text === FiltersLocked
+
+        // the multiple selects: hidden and disabled, their selected options listed, or None
+        forall(Seq("previousRound", "excludeRounds", "regions")) { id =>
+          val select = doc.getElementById(id)
+          (select.hasAttr("hidden") must beTrue) and (select.hasAttr("disabled") must beTrue) and
+            (select.hasAttr("data-wlx-locked") must beTrue) and
+            (doc.getElementById(s"${id}_locked").attr("aria-describedby") must contain("round-filters-locked"))
+        }
+        doc.select("#previousRound_locked li").asScala.map(_.text).toSeq === Seq(previous.description)
+        doc.select("#excludeRounds_locked").text === "None"
+        // each list is labelled by its label, which no longer points at the hidden select
+        forall(Seq("previousRound", "excludeRounds", "regions")) { id =>
+          (doc.getElementById(s"${id}_locked").attr("aria-labelledby") === s"${id}_label") and
+            (doc.select(s"label[for=$id]").size === 0) and (doc.select(s"label#${id}_label").size === 1)
+        }
+        doc.select("#regions_locked li").size === 2
+
+        // the single selects disabled, the text inputs readonly, the choice's radios disabled: all locked
+        forall(Seq("mediaType", "minMpx", "minSize", "minJurors", "rejectedMode", "rejectedBy")) { id =>
+          val select = doc.getElementById(id)
+          (select.hasClass("wlx-locked") must beTrue) and (select.hasAttr("disabled") must beTrue) and
+            (select.attr("aria-describedby") must contain("round-filters-locked"))
+        }
+        forall(Seq("source", "excludeCategory", "monumentIds", "minAvgRate")) { id =>
+          val input = doc.getElementById(id)
+          (input.hasClass("wlx-locked") must beTrue) and (input.hasAttr("readonly") must beTrue)
+        }
+        forall(doc.select("input[name=categoryCombine][type=radio]").asScala.toSeq) { radio =>
+          (radio.hasClass("wlx-locked") must beTrue) and (radio.hasAttr("disabled") must beTrue)
+        }
+        // no Tom Select for them: only the hidden jurors' select is a visible-to-script multiple one
+        doc.select("select[multiple]:not([data-wlx-locked])").asScala.map(_.id).toSeq === Seq("jurors")
+
+        (doc.getElementById("rates").hasClass("wlx-locked") must beTrue) and
+          (doc.select("#rates_help").text must startWith("The rating type can be changed only while")) and
+          (doc.getElementById("distribution").hasClass("wlx-locked") must beTrue) and
+          (doc.select("#distribution_help").text must contain("jurors page"))
+        // a round without jurors: "Distribute new files" locked, with its reason
+        (doc.getElementById("newImages").hasClass("wlx-locked") must beTrue) and
+          (doc.select("#newImages_help").text === "The round has no jurors to give new files to.")
+        // the round's name, track and score rule stay editable
+        lockedIn(doc, "#round-form") must not(containAnyOf(Seq("name", "trackLabel", "averageRule")))
+      }
+    }
+
+    "leave a round waiting for review editable: no locked filter, rating type or reason" in {
+      testDbApp { implicit app =>
+        val (contest, admin, _) = fixture()
+        val created = services.TestRoundServices.roundService()
+          .submit(Round(None, 0, Some("Semi"), contest.getId, active = true), Nil, None, review = true).round
+        val round = roundDao.findById(created.getId).get
+        round.inReview must beTrue
+        val doc = editPage(app, contest, admin, round)
+        doc.select("#round-reapply-help").size === 1
+        doc.select("#round-filters-locked, #rates_help, [data-wlx-locked], [id$=_locked]").size === 0
+        lockedIn(doc, "#collapseImageFiltering") must beEmpty
+        doc.getElementById("previousRound").hasAttr("disabled") must beFalse
+        doc.getElementById("rates").hasAttr("disabled") must beFalse
+      }
+    }
+
+    "lock nothing on the new-round form" in {
+      testDbApp { implicit app =>
+        val (contest, admin, _) = fixture()
+        val doc = org.jsoup.Jsoup.parse(contentAsString(route(app,
+          get(s"/admin/rounds/edit?contestId=${contest.getId}", admin)).get))
+        doc.select(".wlx-locked, .wlx-locked-reason, [data-wlx-locked]").size === 0
+      }
+    }
+  }
+
   "the round edit page's criteria and worst mark, by the round's stored rating" should {
 
     /** The edit page of a round of the contest, parsed. */

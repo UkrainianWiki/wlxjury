@@ -764,6 +764,25 @@ a:has(> .btn) { text-decoration: none; }
 .large-section-toggle .bi { transition: transform .2s; }
 .large-section-toggle.collapsed .bi { transform: rotate(-90deg); }
 @media (prefers-reduced-motion: reduce) { .large-section-toggle .bi { transition: none; } }
+/* one disclosure indicator for the other collapsibles, a Bootstrap collapse's toggle
+   (snippets/collapsible.scala.html, the round form's cards) and a <details>' summary alike: the
+   side sections' chevron (above) before the heading, pointing right while closed and turned down
+   while open. It reads aria-expanded and [open], so it shows what a screen reader is told, and
+   replaces the browser's own triangle on a summary. The whole card header is the toggle, in the
+   text colour with the hover colour; focused, it has codex-theme.css's one focus ring. */
+.wlx-disclosure { cursor: pointer; }
+.wlx-disclosure-icon { display: inline-block; margin-inline-end: .375rem; font-size: .8em; transition: transform .2s; }
+[aria-expanded="true"] > .wlx-disclosure-icon, details[open] > summary > .wlx-disclosure-icon { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .wlx-disclosure-icon { transition: none; } }
+summary.wlx-disclosure { list-style: none; }
+summary.wlx-disclosure::-webkit-details-marker { display: none; }
+.card-header.wlx-card-toggle-header { padding: 0; }
+.wlx-card-toggle {
+    display: flex; align-items: center; padding: var(--bs-card-cap-padding-y) var(--bs-card-cap-padding-x);
+    text-decoration: none;
+}
+.wlx-card-toggle, .wlx-card-toggle:hover, .wlx-card-toggle:focus-visible { color: var(--bs-body-color); text-decoration: none; }
+.wlx-card-toggle:hover { background-color: var(--wlx-hover-bg); }
 
 /* raty's stars (large/raty.scala.html) and the static ones (showStar): Bootstrap Icons in the
    mode's star colour. Ten and the cancel icon fit one line of the side column; more (a 1-11 ..

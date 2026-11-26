@@ -231,13 +231,19 @@
                             Seq(("0", Messages("each.file.to.all.jurors"))) ++
                                     (1 until numJurors).map(x => (x.toString, Messages("each.file.to.i.juror.s", x))),
                             Symbol("_label") -> Messages("file.distribution"),
-                            Symbol("readonly") -> (noEdit || numJurors == 0))
+                            Symbol("_help") -> Messages("round.distribution.locked"),
+                            Symbol("readonly") -> (noEdit || numJurors == 0), Symbol("_locked") -> (noEdit || numJurors == 0))
                         }
 
+                        @* locked unless the round is new or being set up (#184), with its reason *@
+                        @defining(noEdit && !ratesEditable) { ratesLocked =>
                         @bs.select(
                             editRoundForm("rates"),
                             Round.rates.map(x => (x.id.toString, views.RatingType.label(x))),
-                            Symbol("_label") -> Messages("rating.type"), Symbol("readonly") -> (noEdit && !ratesEditable))
+                            Symbol("_label") -> Messages("rating.type"),
+                            Symbol("_help") -> (if (ratesLocked) Messages("round.rates.locked.help") else ""),
+                            Symbol("readonly") -> ratesLocked, Symbol("_locked") -> ratesLocked)
+                        }
 
                         @* how a rated round scores its files (V90, AverageRule): editable on an existing
                            round too, as it changes only how results are shown; a next round's distribution
@@ -294,7 +300,7 @@
                            save keeps them *@
                         <div id="round-criteria">
                         @snippets.collapsible("criteria", "headingCriteria", "collapseCriteria", open = true) {
-                            <p class="form-text" id="round-criteria-locked">@Messages("criteria.locked")</p>
+                            <p class="form-text wlx-locked-reason" id="round-criteria-locked"><i class="bi bi-lock-fill" aria-hidden="true"></i> @Messages("criteria.locked")</p>
                             @criteriaErrors
                             @if(stored.isEmpty) {
                             <p class="form-text" id="round-criteria-none">@Messages("criteria.locked.none")</p>
@@ -349,7 +355,8 @@
                         @if(!newRound && !reapply) {
                             @bs.checkbox(field = editRoundForm("newImages"),
                                 Symbol("_label") -> Messages("distribute.x.new.files", "?"),
-                                Symbol("readonly") -> (numJurors == 0))
+                                Symbol("_help") -> (if (numJurors == 0) Messages("round.new.files.locked") else ""),
+                                Symbol("readonly") -> (numJurors == 0), Symbol("_locked") -> (numJurors == 0))
                             @* the files waiting for a juror (round-editing plan §7): topped up only if ticked,
                                off by default, with "Distribute new files" *@
                             @for(n <- waiting) {

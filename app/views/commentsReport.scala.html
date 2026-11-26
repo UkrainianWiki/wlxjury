@@ -204,7 +204,7 @@
                         @for(msg <- parts._1) { @comment(msg) }
                         @if(others.nonEmpty) {
                             <details class="wlx-comments-others">
-                                <summary class="small text-body-secondary">@Messages(s"comments.report.others.${views.Plural.form(others.size, messages.lang.language)}", others.size)</summary>
+                                <summary class="wlx-disclosure small text-body-secondary"><i class="bi bi-chevron-right wlx-disclosure-icon" aria-hidden="true"></i>@Messages(s"comments.report.others.${views.Plural.form(others.size, messages.lang.language)}", others.size)</summary>
                                 @for(msg <- others) { @comment(msg) }
                             </details>
                         }
