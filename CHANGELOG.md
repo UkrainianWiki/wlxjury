@@ -25,6 +25,7 @@ Merged after the 26.11.17 build, for the release after it.
 - Track labels: labelling a first round (or giving it a nomination or regions) no longer changes the category track names of the other first rounds (#209).
 - Rounds page: a round with one of several previous rounds deleted no longer says it "starts a track of its own"; it says the deleted round is left out when its track is chosen (#209).
 - Monument page: a special nomination's own monument (an id like `92-232-4801`) links its nomination's list again after "Update the monument lists", also when an earlier import stored it from another nomination's list it has since moved off (the Bulgarian heritage rows once on the German heritage lists). Run "Update the monument lists" once after the deploy to correct the stored pages.
+- Large views and the round review's file page: the monument card of a special nomination's own monument (an id like `92-232-4801`) names the nomination and the region its id carries ("Болгарська спадщина, Запорізька") in place of the bare "92"; other monuments read as before.
 - Round form: a screen reader now reads the category choice's error ("More category options") with its radio buttons, and announces the group as invalid (#211).
 
 ## Deployed releases
