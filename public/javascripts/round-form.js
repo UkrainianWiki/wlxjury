@@ -22,7 +22,10 @@
 //   saved rule (its data-stored-rule);
 // - the jurors' table, loaded when its panel is first opened (#round-stat-table's data-src),
 //   and the number of new files on request (#count-new-files' data-src): the edit page leaves
-//   out its two expensive parts.
+//   out its two expensive parts;
+// - Space on a card's header toggle (snippets/collapsible.scala.html, an a[role=button] for
+//   Bootstrap's collapse) opens or closes it as on a button, instead of scrolling the page;
+//   Enter already follows the link (initCardToggleKeys).
 // Texts come from the page's <script type="application/json" id="round-form-texts">:
 // { multiSelect: views.JsTexts.multiSelect, distribution: { all, some } }, "some" with $X for
 // the number of jurors.
@@ -268,6 +271,17 @@
     });
   }
 
+  /** Space on a card's toggle: a click, as a role=button promises, and no page scroll. */
+  function initCardToggleKeys(doc) {
+    doc.addEventListener('keydown', function (e) {
+      if (!(e.key === ' ' || e.keyCode === 32) || e.altKey || e.ctrlKey || e.metaKey) return;
+      var t = e.target;
+      if (!t || !t.matches || !t.matches('a[role="button"][data-bs-toggle="collapse"]')) return;
+      e.preventDefault();
+      t.click();
+    });
+  }
+
   function init(doc) {
     var t = texts(doc);
     initMultiSelects(doc, t);
@@ -280,6 +294,7 @@
     initWorstMark(doc);
     initScoreRuleWarning(doc);
     initLazyParts();
+    initCardToggleKeys(doc);
   }
 
   if (typeof module !== 'undefined') {
