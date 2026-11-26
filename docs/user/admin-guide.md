@@ -806,7 +806,8 @@ With many rounds, the menus in the top bar narrow and order the list:
 - **Order:** **Oldest first** (the order in which the rounds were created), **Newest first**, or
   **Active first** (the started rounds, then the others, each group oldest first).
 - **Track:** **All tracks** or the rounds of one track, when the rounds listed are on two tracks
-  or more. A coloured chip after a round's name names its track. See [Tracks](#a-tracks).
+  or more besides the tracks of a round alone, named after it (those have no chip and no item).
+  A coloured chip after a round's name names its track. See [Tracks](#a-tracks).
 
 Each item shows in grey how many rounds it would list. The choices stay in the page's address, so
 a reload or a link keeps them, and the round's statistics (the round's name, **Statistics** in the
@@ -1119,11 +1120,19 @@ rounds (the rounds it was created from), checks these in order, and takes the fi
 5. Its previous rounds are all on one track: it stays on that track.
 6. Its previous rounds are on different tracks: **Main**. This is how the main competition
    usually starts, when the Quality and Quantity rounds come together.
-7. It has no previous round: a track named after the category it takes its files from, without
-   the start that the contest's first rounds' categories share (for example **Quality** for
-   "Category:Wiki Loves Monuments in Ukraine 2025 - Quality"); without a category of its own,
-   after its media type (for example **Video**); otherwise after the round's own name. First
-   rounds with the same category share a track.
+7. It has no previous round: a track named after the part of its category that tells it apart.
+   The contest's own words are dropped: first the words all the first rounds' categories start or
+   end with (**Quality** for "Category:Wiki Loves Monuments in Ukraine 2025 - Quality"), and when
+   they share none, the contest's name, year and country, "Images from" and "in" at either end
+   (**Quality** for "Category:Wiki Loves Earth Ukraine 2026 - Quality", **Nature Loss Special
+   Category** for "Category:Images from Wiki Loves Earth 2026 Nature Loss Special Category"). A
+   category made only of such words counts as no category, and so does a list of files or a
+   Commons page in the category field. Without a category, the round is named after its media type
+   if the first rounds use more than one, a round with none set counting as images (for example
+   **Video** next to the others; two such video rounds share the **Video** track); otherwise after
+   the round's own name, without the contest's own words at its ends ("Wiki Loves Earth 2026 in
+   Kyrgyzstan 1 round": **1 round**). First rounds with the same category share a track, also
+   when it is written in other capitals.
 
 **An example**, from Wiki Loves Monuments in Ukraine:
 
@@ -1137,8 +1146,9 @@ rounds (the rounds it was created from), checks these in order, and takes the fi
   (rule 4).
 
 **The track label.** The round form has a field **Track label (optional)** under the round's name,
-on a new round and on an existing one, at any time. On an existing round, its help says which
-track the tool would pick by itself ("Automatic: …"). Leave it empty to keep the automatic track.
+on a new round and on an existing one, at any time. Empty, it shows the track the tool picks by
+itself ("Automatic: Quality"; on a new round just "Automatic", since its track comes from its
+previous rounds once it is saved). Leave it empty to keep the automatic track.
 
 - A label names the round's track. Later rounds created from it, without a label of their own,
   take the same track, as they would an automatic one.
@@ -1146,9 +1156,12 @@ track the tool would pick by itself ("Automatic: …"). Leave it empty to keep t
   spaces between words included ("Second look" and "Second  look" are two tracks): the field
   suggests the contest's labels as they are spelled. Only spaces at the start and the end are
   dropped. A label has at most 64 characters.
-- If the contest's first rounds' categories share no start (common in Wiki Loves Earth), their
-  tracks show the categories' full names. Give each such track its own label (for example
-  "Quality" and "Quantity"): labelling one first round doesn't shorten the others' names.
+- If an automatic name is still long or unclear, give the track a label of its own (for example
+  "Quality" and "Quantity"): labelling one first round doesn't change the others' names.
+- Label a track on its **first** round, or leave the field empty. A label typed on a later round,
+  even the same name as the automatic track (for example "Quality" on Q-01), starts a second track
+  with that name from there: two tracks named alike. On a later round the field shows "Automatic:
+  Quality, from its previous rounds" when it already takes that track.
 - **Main** puts the round on the Main track. It is understood in any capitals and in the tool's
   other languages (Основний, Основной, Principale), and stored as Main.
 - Each label change is recorded and shown under **Changes to this round's settings** on the
@@ -1170,10 +1183,12 @@ round with no previous round left starts a track of its own (rule 7).
 **The chip and the Track menu.** A coloured chip after a round's name names its track, on the
 Rounds page, the round's statistics and the galleries' round menu (jurors don't see it). Main has
 a colour of its own; the other colours only tell the tracks apart. A region track's chip names its
-regions, shortened if long: point at it for the full text. A first round whose track is named
-after the round itself has no chip, since it would repeat its name; the later rounds on its track
-show it. The **Track** menu, next to **Status** and **Type** on the Rounds page and the
-statistics, shows when the rounds listed are on two tracks or more: **All tracks**, or one track's
+regions. A long name shows its start and its end: point at the chip for the full text. A round
+on a track named after it that no other round continues has no chip: it would only repeat the
+round's name. Chips show only when the contest's rounds are on two tracks or more besides those,
+and then on every other round; otherwise there are no chips, as in a contest whose rounds were
+each created on their own. The **Track** menu, next to **Status** and
+**Type** on the Rounds page and the statistics, shows by the same rule: **All tracks**, or one track's
 rounds, with a count for each. It lists Main first, then the tracks that lead into Main in the
 order they join it, then the others. The choice stays in the page's address, as the other menus'
 do.

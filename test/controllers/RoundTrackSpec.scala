@@ -102,6 +102,36 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
       (text, a.select(".wlx-menu-count").text, a.attr("href"))
     }
 
+  /** The build identity's version, as the test classpath has it (build.sbt's `version`). */
+  private lazy val buildVersion: String = {
+    val stream = getClass.getClassLoader.getResourceAsStream("wlxjury-build.json")
+    try (play.api.libs.json.Json.parse(stream) \ "version").as[String] finally stream.close()
+  }
+
+  "the admin guide's link (views.Guide)" should {
+
+    "point at the guide as of a version tag" in {
+      (views.Guide.admin("a-tracks", "26.11.17.1") ===
+        "https://github.com/UkrainianWiki/wlxjury/blob/26.11.17.1/docs/user/admin-guide.md#a-tracks") and
+        (views.Guide.versionOf("""{"buildId":"26.11.17.1-02474aa68d91","version":"26.11.17.1","schemaVersion":"115"}""") ===
+          Some("26.11.17.1")) and
+        (views.Guide.versionOf("{}") must beNone) and (views.Guide.versionOf("not json") must beNone)
+    }
+
+    "point a snapshot's link at master, whose tag doesn't exist" in {
+      val snapshot = views.Guide.versionOf("""{"buildId":"26.11.18-SNAPSHOT-0123456789ab","version":"26.11.18-SNAPSHOT"}""")
+      (snapshot must beNone) and
+        (views.Guide.admin("a-tracks", snapshot.getOrElse(views.Guide.Fallback)) ===
+          "https://github.com/UkrainianWiki/wlxjury/blob/master/docs/user/admin-guide.md#a-tracks")
+    }
+
+    "take the build's version when it is a release's, else master" in {
+      val release = buildVersion.matches("""\d+(\.\d+)+""")
+      (buildVersion must not(beEmpty)) and
+        (views.Guide.version === (if (release) buildVersion else "master"))
+    }
+  }
+
   "the round form's track label" should {
 
     "be offered to an admin, with the contest's labels and Main, and the round's automatic track in its help" in {
@@ -114,7 +144,24 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         (input must not(beNull)) and (input.hasAttr("maxlength") must beFalse) and (input.attr("value") === "Second look") and
           (doc.select("datalist#round-track-labels option").eachAttr("value").asScala.toSeq === Seq("Main", "Second look")) and
           (doc.select("input[name=trackShown][type=hidden]").attr("value") === "true") and
-          (doc.getElementById("trackLabel_help").text must contain("Automatic: Quality.")) and {
+          // the automatic track in the field (Q-01's from its previous round), the help one short line
+          (input.attr("placeholder") === "Automatic: Quality, from its previous rounds") and
+          (page(app, f.admin, s"/admin/rounds/edit?contestId=${f.contest.getId}&id=${f.qn00.getId}").getElementById("trackLabel")
+            .attr("placeholder") === "Automatic: Quantity") and
+          (doc.getElementById("trackLabel_help").ownText.trim ===
+            "Rounds with the same label share a track. Type Main on the main competition's first round.") and
+          // and the admin guide's Tracks section at this version, in a new tab, an anchor the guide has
+          (doc.select("#trackLabel_help a#round-track-guide").attr("href") ===
+            s"https://github.com/UkrainianWiki/wlxjury/blob/${views.Guide.version}/docs/user/admin-guide.md#a-tracks") and
+          (doc.select("#trackLabel_help a#round-track-guide").attr("target") === "_blank") and
+          (doc.select("#trackLabel_help a#round-track-guide").text must startWith("More about tracks")) and
+          (views.ExternalLinksCheck.newTab(doc.selectFirst("#trackLabel_help a#round-track-guide")) must beTrue) and
+          (views.ExternalLinksCheck.marked(doc.selectFirst("#trackLabel_help a#round-track-guide")) must beTrue) and
+          (new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get("docs/user/admin-guide.md")), "UTF-8") must
+            contain("<a id=\"a-tracks\"></a>")) and
+          // a new round: its automatic track comes once saved
+          (page(app, f.admin, s"/admin/rounds/edit?contestId=${f.contest.getId}").getElementById("trackLabel")
+            .attr("placeholder") === "Automatic") and {
             // Main as the page's language names it
             Round.setTrack(f.q00.getId, Some("Main"))
             page(app, f.admin, s"/admin/rounds/edit?contestId=${f.contest.getId}&id=${f.q00.getId}", "uk")
@@ -299,7 +346,7 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "warn of a previous round that no longer exists; no chip repeating a root's own name" in {
+    "warn of a previous round that no longer exists; a root named after itself has its chip as its later rounds do" in {
       testDbApp { app =>
         val f = fixture()
         val orphan = roundDao.create(Round(None, 5, Some("Orphan"), f.contest.getId, previous = Some("987654")))
@@ -311,7 +358,106 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
           contain("Previous round 987654 no longer exists: this round starts a track of its own.")) and
           (doc.select(s".wlx-round-missing-previous[data-round=${half.getId}]").text ===
             "Previous round 987653 no longer exists: it is left out when this round's track is chosen.") and
-          (rowChips(doc).get("Orphan") must beNone) and (rowChips(doc).get("Orphan 2") === Some("Orphan"))
+          (rowChips(doc).get("Orphan") === Some("Orphan")) and (rowChips(doc).get("Orphan 2") === Some("Orphan"))
+      }
+    }
+
+    "show a chip on every round of a contest with two tracks, a first round named after itself too, but none for a round alone on a track named after it" in {
+      testDbApp { app =>
+        val contest = contestDao.create(None, "Wiki Loves Earth", 2026, "Testland")
+        val admin = userDao.create(User("AdminT", "admint@example.com", None, Set("admin"), contestId = contest.id))
+        val first = roundDao.create(Round(None, 1, Some("First round"), contest.getId))
+        roundDao.create(Round(None, 2, Some("Second round"), contest.getId, previous = Some(first.getId.toString)))
+        val third = roundDao.create(Round(None, 3, Some("Photo round"), contest.getId))
+        roundDao.create(Round(None, 4, Some("Photo final"), contest.getId, previous = Some(third.getId.toString)))
+        roundDao.create(Round(None, 5, Some("Video round"), contest.getId))
+        val doc = page(app, admin, s"/admin/rounds?contestId=${contest.getId}")
+        (rowChips(doc) === Map("First round" -> "First round", "Second round" -> "First round",
+          "Photo round" -> "Photo round", "Photo final" -> "Photo round")) and
+          (doc.select("#rounds-track-menu").size === 1)
+      }
+    }
+
+    "show no chips and no Track menu where every round is alone on a track named after it (WLM Serbia 2026)" in {
+      testDbApp { app =>
+        val contest = contestDao.create(None, "Wiki Loves Monuments", 2026, "Serbia",
+          Some("Category:Prejury selection for Wiki Loves Monuments 2026 in Serbia/Second round"))
+        val admin = userDao.create(User("AdminS", "admins@example.com", None, Set("admin"), contestId = contest.id))
+        val organizer = userDao.create(User("OrgS", "orgs@example.com", None, Set("organizer"), contestId = contest.id))
+        val rounds = Seq("Гласање за најбољу фотографију: 1", "РУНДА 2", "РУНДА ДРУГА", "Вики воли споменике 2026. - РУНДА 2")
+          .zipWithIndex.map { case (n, i) => roundDao.create(Round(None, i + 1L, Some(n), contest.getId, active = i == 3)) }
+        val list = page(app, admin, s"/admin/rounds?contestId=${contest.getId}")
+        val stat = page(app, organizer, s"/roundstat/${rounds.last.getId}")
+        val gallery = page(app, organizer, s"/gallery/round/${rounds.last.getId}/user/0/page/1")
+        (list.select("tbody tr.round-row").size === 4) and (list.select(".wlx-track").size === 0) and
+          (list.select("#rounds-track-menu").size === 0) and (stat.select(".wlx-track").size === 0) and
+          (stat.select("#rounds-track-menu").size === 0) and (gallery.select(".wlx-track").size === 0)
+      }
+    }
+
+    "drop only the chips of rounds alone on a track named after them (WLE Kyrgyzstan 2026)" in {
+      testDbApp { app =>
+        val contest = contestDao.create(None, "Wiki Loves Earth", 2026, "Kyrgyzstan",
+          Some("Category:Images from Wiki Loves Earth 2026 in Kyrgyzstan"))
+        val admin = userDao.create(User("AdminK", "admink@example.com", None, Set("admin"), contestId = contest.id))
+        def round(n: Int, name: String, category: Option[String] = None, media: Option[String] = None,
+            previous: Option[Round] = None) =
+          roundDao.create(Round(None, n, Some(name), contest.getId, category = category, mediaType = media,
+            previous = previous.map(_.getId.toString)))
+        round(1, "Wiki Loves Earth 2026 in Kyrgyzstan 1 round", Some("Category:Images from Wiki Loves Earth 2026 in Kyrgyzstan"))
+        round(2, "Wiki Loves Earth 2026 in Kyrgyzstan 2 round",
+          Some("Category:Quality images from Wiki Loves Earth 2026 in Kyrgyzstan"), Some("image"))
+        round(3, "Wiki Loves Earth 2026 in Kyrgyzstan real round", Some("Category:Images from Wiki Loves Earth 2026 in Kyrgyzstan"))
+        round(5, "шорт лист Wiki Loves Earth 2026 in Kyrgyzstan", Some("Category:Commons:Wiki Loves Earth 2026 in Kyrgyzstan/Long list"))
+        val longList = round(6, "6", Some("Category:Wiki Loves Earth 2026 in Kyrgyzstan long list"), Some("image"))
+        round(9, "Топ 10 раунд", previous = Some(longList))
+        val doc = page(app, admin, s"/admin/rounds?contestId=${contest.getId}")
+        // the three rounds alone on tracks named after them lose their chips; Quality (a category's
+        // track, of one round) and the long list keep theirs, and the Track menu stays
+        (rowChips(doc) === Map("Wiki Loves Earth 2026 in Kyrgyzstan 2 round" -> "Quality", "6" -> "long list",
+          "Топ 10 раунд" -> "long list")) and (doc.select("#rounds-track-menu").size === 1) and
+          // the Track menu lists only the tracks that show chips; the others' rounds under All tracks
+          (trackMenu(doc).map(t => (t._1, t._2)) === Seq("All tracks" -> "6", "long list" -> "2", "Quality" -> "1")) and {
+            // an old link to a track left out still filters, the menu showing it chosen
+            val old = page(app, admin, s"/admin/rounds?contestId=${contest.getId}&track=name%3A1%20round")
+            (rows(old) === Seq("Wiki Loves Earth 2026 in Kyrgyzstan 1 round")) and
+              (old.select("#rounds-track-menu .dropdown-item.active").text must contain("1 round"))
+          }
+      }
+    }
+
+    "show no chips and no Track menu in a contest with one track (WLM Nepal 2026, WLE Slovakia 2026, WLE international)" in {
+      testDbApp { app =>
+        def contestOf(name: String, country: String, images: String, rounds: Seq[(String, Boolean, Option[String], Option[String])]) = {
+          val contest = contestDao.create(None, name, 2026, country, Some(images))
+          val admin = userDao.create(User(s"Admin $country", s"admin-${country.toLowerCase}@example.com", None, Set("admin"),
+            contestId = contest.id))
+          val organizer = userDao.create(User(s"Org $country", s"org-${country.toLowerCase}@example.com", None, Set("organizer"),
+            contestId = contest.id))
+          val created = rounds.zipWithIndex.foldLeft(Seq.empty[Round]) { case (done, ((n, fromFirst, category, media), i)) =>
+            done :+ roundDao.create(Round(None, i + 1L, Some(n), contest.getId, category = category, mediaType = media,
+              active = i == rounds.size - 1,
+              previous = Option.when(fromFirst)(done.head.getId.toString)))
+          }
+          (contest, admin, organizer, created)
+        }
+        val shapes = Seq(
+          contestOf("Wiki Loves Monuments", "Nepal", "Category:Images from Wiki Loves Monuments 2026 in Nepal",
+            Seq(("WLM 2026 Primary", false, None, None), ("Round 2", true, None, None))),
+          contestOf("Wiki Loves Earth", "Slovakia", "Category:Images from Wiki Loves Earth 2026 in Slovakia",
+            Seq(("First round", false, Some("Category:Images from Wiki Loves Earth 2026 in Slovakia"), None),
+              ("Second round", true, None, Some("image")), ("Jury round", true, None, None), ("Final round", true, None, Some("image")))),
+          contestOf("Wiki Loves Earth", "International", "Commons:Wiki Loves Earth 2026/Winners",
+            Seq(("1 round: main category", false, None, Some("image")))))
+        forall(shapes) { case (contest, admin, organizer, rounds) =>
+          val list = page(app, admin, s"/admin/rounds?contestId=${contest.getId}")
+          val stat = page(app, organizer, s"/roundstat/${rounds.last.getId}")
+          val gallery = page(app, organizer, s"/gallery/round/${rounds.last.getId}/user/0/page/1")
+          (list.select("tbody tr.round-row").size === rounds.size) and
+            (list.select(".wlx-track").size === 0) and (list.select("#rounds-track-menu").size === 0) and
+            (stat.select(".wlx-track").size === 0) and (stat.select("#rounds-track-menu").size === 0) and
+            (gallery.select(".wlx-track").size === 0)
+        }
       }
     }
   }
