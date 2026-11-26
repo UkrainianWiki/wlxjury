@@ -12,6 +12,7 @@
     <div class="row" >
 
         <h1 class="h3">@Messages("import")</h1>
+        @snippets.helpSection("mass-import")
 
         @* after an import with lines not added: what was added, then each of those lines *@
         @result.map { msg =>

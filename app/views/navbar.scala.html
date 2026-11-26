@@ -567,6 +567,23 @@
     @orders
 }
 
+@* The help link of a round's list (help plan §6): the jurors' Help (their contents page of the guide)
+   in the juror's bar, the guide's results section in the organisers' (not on the comments report,
+   whose page has its own); nothing elsewhere *@
+@helpGroup = {
+    @if(user != null && list.isDefined) {
+    @for(round <- selectedRound.toSeq) {
+        @if(jurorBar(round)) {
+            <li class="nav-item small" id="nav-help">@snippets.helpLink("guide")</li>
+        } else {
+            @if(staffBar(round) && !list.exists(_.view.comments)) {
+                <li class="nav-item small" id="nav-help">@snippets.helpLink("results")</li>
+            }
+        }
+    }
+    }
+}
+
 @* whether a group has an item: a list item, not only whitespace or a comment *@
 @nonEmpty(html: Html) = @{ html.body.contains("<li") }
 
@@ -595,6 +612,11 @@
             }
             @if(nonEmpty(pager)) {
             <ul class="navbar-nav flex-wrap align-items-center wlx-nav-pager" aria-label="@Messages("nav.group.pager")">@pager</ul>
+            }
+            @defining(helpGroup) { helpItems =>
+            @if(nonEmpty(helpItems)) {
+            <ul class="navbar-nav flex-wrap align-items-center wlx-nav-help" aria-label="@Messages("nav.group.help")">@helpItems</ul>
+            }
             }
         </div>
         @logged(user, backHere)

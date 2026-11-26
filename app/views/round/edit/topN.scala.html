@@ -29,7 +29,7 @@
     <div class="row mb-3" id="topImages_choose_field">
         <div class="col-md-8 offset-md-4">
             @chooseButton(if (picker.isDefined) "top.n.choose.again" else "top.n.choose")
-            <div class="form-text" id="topImages_choose_help">@Messages("top.n.choose.help")</div>
+            <div class="form-text" id="topImages_choose_help">@Messages("top.n.choose.help") @snippets.helpLink("top-files")</div>
         </div>
     </div>
 }

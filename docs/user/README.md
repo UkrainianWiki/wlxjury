@@ -41,12 +41,15 @@ the same buttons and menus are in the same places in every language.
 
 - [Accounts and roles](accounts.md): one account per person, the roles, who can do what, the
   current contest.
-- [Following the voting](statistics.md): where organizers start, and a round's statistics.
+- [Following the voting](statistics.md): where organizers start, a round's statistics, and the
+  changes to a round.
 - [Results](results.md): the results of all jurors or one, the by-rate gallery, the file list, the
   large view of all jurors, the CSV.
 - [Comments](comments.md): files with comments, the comments report, one person's comments.
-- [Scores and the worst mark](scoring.md): how a rated round scores its files, and the worst mark.
-- [The contest's files](contest-files.md): the contest files page; for admins, importing files.
+- [Scores and the worst mark](scoring.md): how a rated round scores its files, criteria, and the
+  worst mark.
+- [The contest's files](contest-files.md): the contest files page; for admins, importing files and
+  the local image cache.
 - [Monuments and authors](monuments-authors.md): a monument's page, the files' authors and the
   authors list.
 - [Conflicts of interest](conflicts.md): what they are, the conflicts page; for admins, leaving
@@ -64,9 +67,9 @@ the same buttons and menus are in the same places in every language.
 - [Running the judging](rounds.md): a contest's rounds, the kinds of rounds, the life of a round,
   the rounds list, starting and stopping, what jurors see.
 - [Creating and changing a round](round-create.md): the round form, the distribution of files,
-  changing a round.
-- [Choosing a round's files](round-files.md): the filters, earlier rounds' votes, the rejection
-  filter, adding files by name, distributing new files.
+  changing a round, checking a round's images.
+- [Choosing a round's files](round-files.md): the filters, earlier rounds' votes, the top files,
+  the rejection filter, adding files by name, distributing new files.
 - [Reviewing a round's images](round-review.md): checking a new round's files before the jurors
   get them.
 - [A round's jurors](round-jurors.md): choosing them, pausing a juror, adding a juror, reassigning

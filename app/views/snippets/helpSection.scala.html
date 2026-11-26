@@ -1,0 +1,4 @@
+@(key: String)(implicit messages: Messages)
+@* A section link (help plan §6, kind S): the help link of topic `key` on a line of its own, under the
+   heading of the page or section it explains *@
+<p class="wlx-help-section small mb-2">@helpLink(key)</p>

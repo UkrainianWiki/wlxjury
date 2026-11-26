@@ -12,6 +12,7 @@
 @mainAdmin("users", user, user.getId, contestId = contest.id) {
     <div class="row">
         <h1 class="h3">@Messages("account.changes.title")</h1>
+        @snippets.helpSection("account-changes")
         <p class="text-body-secondary">@Messages("contest") @contest.fullName. @Messages("account.changes.explain")</p>
         <p><a href="@routes.UserController.users(contest.id)">@Messages("account.changes.back")</a></p>
 

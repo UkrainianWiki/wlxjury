@@ -22,6 +22,7 @@
 @mainAdmin("users", adminUser, adminUser.getId, contestId = contest.id, head = pageScripts) {
     <div class="row add-from-contest">
         <h1 class="h3">@Messages("users.add.from.title")</h1>
+        @snippets.helpSection("add-from-contest")
         <p>@Messages("users.add.from.intro", contest.fullName)</p>
         <p><a href="@routes.UserController.users(contest.id)">@Messages("account.changes.back")</a></p>
 

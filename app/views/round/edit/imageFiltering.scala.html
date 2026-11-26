@@ -25,11 +25,14 @@
 @* a field that can't be changed (`noEdit`) has its locked look (FieldView `_locked`), described by
    the section's reason line (#round-filters-locked) *@
 @lockedBy = @{ Option.when(noEdit)("round-filters-locked") }
+@* a field's help with its help link after it (help plan §6) *@
+@withHelp(text: String, key: String) = {@if(text.nonEmpty) {@text }@snippets.helpLink(key)}
 @* open when a category is in its boxes, and when one of its fields has an error (a refused save's,
    RoundFormErrors: shown closed, the 2026-11-25 saves came back with their error out of sight), and once
    "Choose N" loaded the top N's candidate cuts (round/edit/topN) *@
 @snippets.collapsible("media.filtering", "headingImageFiltering", "collapseImageFiltering",
     open = categoryView.hasCategory || controllers.RoundFormErrors.inMediaFiltering(editRoundForm) || cutPicker.isDefined) {
+    @snippets.helpSection("choose-files")
     @if(noEdit) {
         <p class="form-text wlx-locked-reason" id="round-filters-locked"><i class="bi bi-lock-fill" aria-hidden="true"></i> @Messages("round.filters.locked")</p>
     }
@@ -82,6 +85,7 @@
                or not); offered when any chosen previous round has one; empty: no filter (NULL) *@
             <div id="rejectFilters"
             class="@rounds.filter(_.rejects).map(r => "round" + r.getId).mkString(" ")">
+            @snippets.helpSection("rejection-filter")
             @* the filter's mode (V93): none, leave out those files, or keep only them (to review the
                rejected files in a round of their own); X below *@
             @bs.select(
@@ -115,7 +119,7 @@
                 editRoundForm("excludeRounds"),
                 rounds.filterNot(r => r.id.map(_.toString) == roundId).map(r => (r.id.map(_.toString).get, r.description)),
                 Symbol("_label") -> Messages("exclude.rounds"),
-                Symbol("_help") -> Messages("exclude.rounds.help"),
+                Symbol("_help") -> withHelp(Messages("exclude.rounds.help"), "leave-out-rounds"),
                 Symbol("multiple") -> true,
                 Symbol("disabled") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy
             )
@@ -142,7 +146,7 @@
     @bs.text(
         view.form("source"),
         Symbol("_label") -> Messages("category.only"),
-        Symbol("_help") -> Messages("category.only.help"),
+        Symbol("_help") -> withHelp(Messages("category.only.help"), "categories"),
         Symbol("data-category-suggest") -> "category",
         Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy
     )

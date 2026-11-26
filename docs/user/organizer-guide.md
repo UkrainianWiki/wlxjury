@@ -37,6 +37,7 @@ See [Kinds of rounds](rounds.md#o-round-kinds) on the page [Running the judging]
 Now on [Following the voting](statistics.md):
 
 - <a id="o-statistics"></a><a id="statistics"></a>[Statistics](statistics.md#o-statistics)
+- <a id="o-round-changes"></a>[Changes to a round](statistics.md#o-round-changes)
 
 ## Results
 

@@ -136,7 +136,9 @@ can move to another page and keep its id. The contents pages keep every anchor o
 single-page guides (their explicit ids and heading slugs) on the entry that links the section's
 new place. The story catalogue links the topic pages' heading slugs; a heading there is renamed
 only together with its links. `scripts/docs-links.py` (a CI step) checks every link, image and
-anchor of `docs/user` and these rules. It is written for
+anchor of `docs/user` and these rules. The tool's help links name a page and an id in one table,
+`views.HelpLinks`; `HelpLinksSpec` fails when one of them is missing, so a section moved or
+renamed updates the table in the same PR. It is written for
 the Translate extension: short paragraphs, headings that stand alone, the interface's labels from
 `conf/messages.en`. The guides link to each other and to their screenshots (`<img>`) with
 relative links, which the release step rewrites for the wiki. A screenshot not made yet is an

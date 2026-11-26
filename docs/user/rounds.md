@@ -39,7 +39,8 @@ If the contest's latest round has criteria, a new round starts with them and wit
 rating type; otherwise it starts as Yes/No without criteria. Choose another rating type, or remove
 the criteria with ×, to drop them. Once a round is started (running, or with a vote), its criteria can't be
 changed: the form lists them, and a round started without criteria can't get any. A round
-stopped before its first vote keeps the full form.
+stopped before its first vote keeps the full form. See [Criteria](scoring.md#a-criteria) for the
+catalogue and how a file's rate is counted.
 
 <a id="o-round-kinds"></a>
 **Organizers:** the admins choose each round's rating type, and it decides what the votes and the

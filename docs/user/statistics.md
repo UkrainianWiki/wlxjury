@@ -101,3 +101,44 @@ A link whose number is 0 is plain text. The numbers of the conflicts and authors
 a moment after the page; until then, the links work without them.
 
 <img src="images/organizer-round-statistics.png" alt="The statistics page: the Status, Type and Order menus in the top bar, the row of rounds with their type icons, and a row for each juror, with the Voting column" width="1280">
+
+<a id="o-round-changes"></a>
+## Changes to a round
+
+At the bottom of a round's statistics, two lists say who changed the round and when, newest
+first, each with the time in UTC. A list shows only when it has entries, and each shows the latest
+20.
+
+**Changes to this round's settings:** every save of the round's settings, with who saved it:
+
+- **Round 3 created by** a name: the settings the round was created with, those not left at their
+  defaults (the rating type always);
+- **Round 3 changed by** a name: a save of the round form, a start or stop on the rounds list, or
+  the jurors per file on the round's jurors form;
+- **Round 3: filters re-applied by** a name: **Re-apply filters** on a round held for
+  [review](round-review.md#a-review);
+- **Round 3: track label changed by** a name, see [Tracks](tracks.md#a-tracks).
+
+Each entry lists the settings that changed, as "setting: old → new", for example "File score:
+Average over the jurors who rated it → Total of the rates". The settings followed are the name, the
+rating type, half stars, the criteria, the file score, the worst mark, the previous rounds and
+their filters (selected by at least, rejected by at least and its mode, the top files, the order of
+a yes/no round's top files and the minimum score), the categories and their combination, the
+regions, the monument ids, the minimum size and resolution, the media type, the special
+nomination, the rounds to leave out, leaving out conflicts of interest, the jurors per file,
+whether the round is open to jurors, its state, and the track label. A save that changes nothing
+adds no entry. The top files say how the cut was chosen, for example "(chosen from the candidate
+cuts: scores drop 8.2 → 7.1)" or "(chosen from the list)", see [The top
+files](round-files.md#a-top-files). A long value is shortened, ending in "…": point at it to read it
+whole. Lists of files are never shown.
+
+**Changed by a juror of this round:** the round stopped, started again, or closed by creating the
+next round, by an account that is also one of this round's jurors (for example an admin who judges
+it too), with that account's name. These are listed apart, so that a juror's own change to the
+round they judge is easy to see.
+
+Who sees the lists: the contest's organizers and admins, and root, as for the rest of the
+statistics page; not someone who is a juror of the round while it is open, who sees only their own
+votes there. A juror never sees them. Root also sees the contest's round changes in the change log
+of the contest's **Series and status** page.
+

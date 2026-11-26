@@ -54,6 +54,7 @@
         filters = bar.fold(play.twirl.api.HtmlFormat.empty)(filterMenus), orders = bar.fold(play.twirl.api.HtmlFormat.empty)(orderMenu), stickyBar = true) {
     @* the page's title, shown; then its two sections: the import, the list *@
     <h1 class="h3">@Messages("contests")</h1>
+    @snippets.helpSection("contest-settings")
     @for(id <- flash.get("contest-duplicate")) {
         <div class="alert alert-warning" role="status" id="contest-duplicate">@Messages("contests.duplicate.warning", id)</div>
     }

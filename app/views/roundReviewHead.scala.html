@@ -18,9 +18,11 @@
         case Some(step) => {
             @round.setupSteps(controllers.RoundNextStep.CheckFiles, Some(step), mayAct = r.mayEdit)
             <h2 class="h4" id="round-review-title">@Messages("round.review.setup.title", r.round.number, r.round.description)</h2>
+            @snippets.helpSection("review")
         }
         case None => {
             <h2 class="h4" id="round-review-title">@Messages("round.review.title", r.round.number, r.round.description)</h2>
+            @snippets.helpSection("review")
         }
     }
     @snippets.roundLinks(r.links)

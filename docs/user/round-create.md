@@ -83,6 +83,49 @@ juror's counts, as the [statistics page](statistics.md#o-statistics) does.
 
 **Cancel** leaves without saving anything.
 
-At the bottom of the form of an existing round there are also the button **Conflicts of
-interest of this round**, and, where the tool's operators have set up a local image cache,
-**Download images locally**, which fills it for this round's files.
+At the bottom of the form of an existing round there are also **Download images locally**, which
+fills the [local image cache](contest-files.md#a-image-cache) with this round's files, the button
+**Conflicts of interest of this round**, and **Check round images**, see [Checking a round's
+images](#a-image-check).
+
+<a id="a-image-check"></a>
+## Checking a round's images
+
+For each round the tool keeps a list of its files, with each file's state in the round (given to
+jurors, deleted on Commons, disqualified), next to the jurors' votes on them. The two should
+always agree. They can drift apart after an upgrade of the tool that changes how the list is kept,
+or after the tool ran an older version for a while; the tool's administrators then say when a check
+is needed. You can also run it when a round's counts look wrong, for example a file that has votes
+but isn't counted in the round.
+
+**Check round images**, at the bottom of an existing round's form, checks that round. It runs in the
+background as a job: the page says "Image check queued (job N)", and shows the job's state under the
+button, with a link to the job, until it is done. While a check of the round is queued or running,
+pressing the button again only says so ("An image check is already queued or running").
+
+The check compares every file of the round with its votes, and **repairs** what it can:
+
+- a file that has votes in the round but is missing from its list is added;
+- a file whose state doesn't match its votes gets the right state;
+- a file whose monument id in the round differs from the file's own monument id gets the file's.
+
+It only **reports**, without changing anything, what it can't safely repair: a file shown in the
+round as deleted on Commons that isn't marked deleted (its votes would have to move), and a
+disqualified file with votes (it stays disqualified; [requalify](conflicts.md#a-disqualify) it to
+take it back). A file with no votes yet is never removed from the list: it is a file given to the
+round and not voted on yet.
+
+When the check is done, its result stays under the button in one line, for example "Image check
+(job 29, 2026-11-12): no mismatches", or the numbers of what it fixed and reported, such as "2 rows
+added, 1 status fixed, 1 row with a mismatch not repaired (reported)". Votes are never changed or
+lost.
+
+A round whose files are being distributed at that moment (its distribution queued or running) is
+**skipped**, because the distribution writes the same list: the result says "1 round skipped
+(distribution running)". Check it again once the distribution has finished.
+
+**Root:** **Check every round's images**, on the rounds page, checks every round of every contest,
+one after another, and then also archives criteria rates that belong to no vote ("orphaned criteria
+rates archived"). Its result counts the rounds checked ("1,823 rounds checked, no mismatches"), and
+shows on the rounds page for root.
+

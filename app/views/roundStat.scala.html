@@ -83,6 +83,12 @@
             </div>
         </div>
 
+        @* the guide's statistics section, and for the round's admins its pausing a juror (the table's
+           Voting buttons) *@
+        @if(user.canViewOrgInfo(round)) {
+            <p class="wlx-help-section small mb-2" id="round-stat-help">@snippets.helpLink("statistics")@if(administers) { · @snippets.helpLink("pause-juror")}</p>
+        }
+
         @* how the round scores its files in its results (V90), for a rated round *@
         @if(round.isRated) {
             <p class="text-muted small" id="round-average-rule">@Messages("round.average.rule.of", Messages(round.averageRule.messageKey))</p>
@@ -133,7 +139,7 @@
            organiser view (the controller reads none for a juror of the open round) *@
         @if(jurorChanges.nonEmpty) {
             <div id="round-juror-changes">
-                <p class="mb-1">@Messages("round.juror.changes")</p>
+                <p class="mb-1">@Messages("round.juror.changes") <span class="small">@snippets.helpLink("round-changes")</span></p>
                 <ul class="small">
                 @for((c, name) <- jurorChanges) {
                     <li class="round-juror-change" data-kind="@c.kind">@views.LinkTimes.utc(c.createdAt) — @Messages("round.juror.change." + c.kind, name)@for(next <- (c.detail \ "byRoundNumber").asOpt[Long]) { (@Messages("round.juror.change.by.round", next))}</li>
@@ -147,7 +153,7 @@
            viewers as the entries above *@
         @if(settingChanges.nonEmpty) {
             <div id="round-setting-changes">
-                <p class="mb-1">@Messages("round.changes")</p>
+                <p class="mb-1">@Messages("round.changes")@if(jurorChanges.isEmpty) { <span class="small">@snippets.helpLink("round-changes")</span>}</p>
                 <ul class="small">
                 @for((c, name) <- settingChanges) {
                     <li class="round-setting-change" data-kind="@c.kind" data-path="@{(c.detail \ "path").asOpt[String].getOrElse("")}">@views.LinkTimes.utc(c.createdAt) — @Messages("round.change." + c.kind, views.RoundChangeText.number(c), name)@if(views.RoundChangeText.items(c).nonEmpty) {: @roundChangeItems(c)}</li>

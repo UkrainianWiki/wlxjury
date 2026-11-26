@@ -59,10 +59,9 @@ contest's or another year's.
 For monuments contests **Update monuments** refreshes the files' monument ids, and for Ukrainian
 contests reads the monument lists on Wikipedia: each monument's name, place, Commons category
 and Wikidata item, which the [monument's page](monuments-authors.md#o-monuments) shows. Monuments
-read before the Wikidata items were stored get theirs the next time it runs. Where the tool's
-operators have set up a local image cache, **Download images locally** fills it. These run as
-background jobs, with their progress. When the download has nothing to fetch, it says whether all
-the files were already cached or there were none, with the time it checked.
+read before the Wikidata items were stored get theirs the next time it runs. It runs in the
+background, with its progress. **Download images locally**, further down the page, fills the
+tool's [local image cache](#a-image-cache).
 
 **Contest health**, under the contest's name, opens a read-only report on the contest: its
 files and import sources, and checks of its rounds (for example empty, frozen or being
@@ -70,3 +69,38 @@ created, and which are open to jurors). Only the contest's admins and root see t
 page.
 
 <img src="images/admin-contest-images.png" alt="The page for importing the contest's files" width="1280">
+
+<a id="a-image-cache"></a>
+## The local image cache
+
+> **For admins.** The section **Local image cache** is at the bottom of the page for importing the
+> contest's files and of an existing round's form.
+
+The tool shows the files' thumbnails from its own server, not straight from Wikimedia Commons. The
+first time a thumbnail is needed, the tool fetches it from Commons and keeps a copy: the **local
+image cache**. Later views of the gallery come from that copy, so they are faster and don't depend
+on Commons answering at that moment. The large view's big images are not kept: they would take most
+of the disk.
+
+The cache is set up by the tool's operators on the server (where it is kept and how fast it may
+download from Commons). Admins don't have to do anything for it to work: a gallery fills it as it is
+viewed. **Download images locally** fills it ahead, so that the jurors' first views are fast too:
+
+- on the page for **importing the contest's files**, for all the contest's files;
+- on an **existing round's form**, for that round's files only, for example just before you start
+  the round.
+
+Press the button once: the download runs in the background and the page stays where it is. The
+line above the button shows the progress, for example "1200 / 4800 downloaded (25%) – 9.8 img/s –
+ETA 6m 7s – running…", and then "– done". It also counts files it couldn't fetch: renamed or
+deleted on Commons, and other errors. A renamed file is fetched again under its new name. You can
+leave the page; the download goes on, and the line shows its state when you come back. Pressing the
+button again while a download runs doesn't start a second one.
+
+When there is **nothing to fetch**, the line says why, with the time it checked: "All 4800 images
+are already cached (checked …)" or "No images to download (checked …)", the second when the
+contest or round has no images to cache (no files yet, or only videos and other files without a
+thumbnail of their own). A download that also found files already cached adds how many ("– 300
+already cached"). **Download failed** means the download couldn't run: try again, and if it fails
+again, tell the tool's administrators.
+
