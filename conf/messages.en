@@ -621,6 +621,7 @@ coi.disqualified = Round {1}: {0} files disqualified as conflicts of interest; t
 coi.disqualify.open = Round {0} is open to its jurors: its later distributions leave its {1} conflicts of interest out. To disqualify them, stop the round, then use its conflicts page:
 coi.disqualify.frozen = Round {0}: a next round''s distribution is reading its votes. Try again once it has finished.
 coi.action.open = Round {0} is open to its jurors: stop it first to disqualify or requalify files.
+coi.action.setup = Round {0} is being set up: its jurors don''t see it yet, and files can''t be disqualified or requalified here until it has been distributed.
 coi.requalified = Round {1}: {0} files requalified, with their votes.
 coi.none.selected = No file selected.
 coi.too.many.selected = More than {0,number,#} files selected: select at most {0,number,#} and repeat for the rest.
