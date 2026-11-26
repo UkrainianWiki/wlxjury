@@ -563,11 +563,12 @@ class RoundDistributionHandler @Inject() (
         def ranked(upTo: Int) = DistributionSource.rankRows(c.prevRounds.flatMap(_.id), c.votes, c.denominators, upTo,
           c.filter, c.topOrder, c.excluded, skipDqOf = Option.when(reapplyMode(job))(roundId))
         val rows = ranked(n + 1)
-        // the backstop of the save's check (decided 2026-11-26): the votes frozen now, an N the form
-        // just checked (a creation's, a re-apply's) must not cut inside a tie (by the score alone,
-        // RoundDistributionHandler.tieKey); else the job fails with the form's message, nothing added,
-        // and N is chosen again. "Distribute new files" keeps a round's N, chosen before the picker too
-        val checked = reapplyMode(job) || (job.params \ "completingCreation").asOpt[Boolean].getOrElse(false)
+        // the backstop of the save's check (decided 2026-11-26): the votes frozen now, an N the round
+        // form just checked (a new round's, a re-apply's: TopNCheckedParam) must not cut inside a tie
+        // (by the score alone, RoundDistributionHandler.tieKey); else the job fails with the form's
+        // message, nothing added, and N is chosen again. "Distribute new files" keeps a round's N,
+        // chosen before the picker too
+        val checked = (job.params \ TopNCheckedParam).asOpt[Boolean].getOrElse(false)
         (if (checked) RoundDistributionHandler.cutInTie(n, rows, ranked, c.topOrder, c.denominators.toMap) else None) match {
           case Some(error) => StepResult.Failed(error, Json.toJsObject(st), progress(st))
           case None =>
@@ -1099,6 +1100,11 @@ object RoundDistributionHandler {
         .map(msg => JobError(msg.key, msg.args.map(_.toString)))
     }
   }
+
+  /** A job's param: its round's top N was checked by the round form (a new round's, a re-apply's), so
+    * its Rank step checks it again ([[cutInTie]]).
+    */
+  val TopNCheckedParam = "topNChecked"
 
   /** How long the cut picker's category files are kept ([[RoundDistributionHandler.pickerCategoryIds]]). */
   val CategoryIdsTtlNanos: Long = 5L * 60 * 1000 * 1000 * 1000
@@ -1739,6 +1745,17 @@ object DistributionSource {
     */
   private def ratedRows(prevIds: Seq[Long], votes: PrevVotes, denominators: Seq[(Long, Denominator)], pageSize: Int,
       offset: Int, excluded: Seq[Long], skipDqOf: Option[Long])(implicit session: DBSession): Seq[RankRow] = {
+    sql"""${ratedQuery(prevIds, votes, denominators, excluded, skipDqOf, images = false)}
+          LIMIT $pageSize OFFSET $offset"""
+      .map(rs => RankRow(rs.long(1), rs.long(2), rs.long(3), rs.long(4), rs.long(5), None))
+      .list()
+  }
+
+  /** [[ratedRows]]' query, in its order, without a limit; with `images`, each row joined to its image
+    * (not deleted: a row without one is left out, as [[rank]] skips it) and its [[ImageColumns]].
+    */
+  private def ratedQuery(prevIds: Seq[Long], votes: PrevVotes, denominators: Seq[(Long, Denominator)],
+      excluded: Seq[Long], skipDqOf: Option[Long], images: Boolean): SQLSyntax = {
     // one row's score in its round (t.round_id), by that round's denominator
     def rowScore(d: Denominator): SQLSyntax = d match {
       case Denominator.Const(n)      => sqls"IF($n = 0, 0, GREATEST(t.rs, 0) * 1e0 / $n)"
@@ -1748,15 +1765,15 @@ object DistributionSource {
     require(denominators.nonEmpty, "a top-N needs previous rounds")
     val cases = denominators.map { case (id, d) => sqls"WHEN $id THEN ${rowScore(d)}" }
     val score = sqls"CASE t.round_id ${sqls.join(cases, sqls" ")} END"
-    sql"""SELECT t.page_id, t.round_id, GREATEST(t.rs, 0) rate_sum, t.c, t.v FROM (
+    val (columns, join) =
+      if (images) (sqls", $ImageColumns", sqls"JOIN images i ON i.page_id = t.page_id AND i.deleted_at IS NULL")
+      else (sqls"", sqls"")
+    sqls"""SELECT t.page_id, t.round_id, GREATEST(t.rs, 0) rate_sum, t.c, t.v $columns FROM (
             SELECT s.page_id, s.round_id, ${roundAggregates(votes)} FROM vote s
             WHERE s.round_id IN ($prevIds) ${votesCond(votes)} ${notInExcluded(excluded, sqls"s.page_id")}
               ${notDqIn(skipDqOf, sqls"s.page_id")}
-            GROUP BY s.page_id, s.round_id) t
-          ORDER BY $score DESC, GREATEST(t.rs, 0) DESC, t.rs DESC, t.page_id ASC, t.round_id ASC
-          LIMIT $pageSize OFFSET $offset"""
-      .map(rs => RankRow(rs.long(1), rs.long(2), rs.long(3), rs.long(4), rs.long(5), None))
-      .list()
+            GROUP BY s.page_id, s.round_id) t $join
+          ORDER BY $score DESC, GREATEST(t.rs, 0) DESC, t.rs DESC, t.page_id ASC, t.round_id ASC"""
   }
 
 
@@ -1770,6 +1787,17 @@ object DistributionSource {
     */
   private def binaryRows(prevIds: Seq[Long], votes: PrevVotes, order: BinaryOrder, pageSize: Int,
       offset: Int, excluded: Seq[Long], skipDqOf: Option[Long])(implicit session: DBSession): Seq[RankRow] = {
+    val (grouped, orderBy) = binaryGrouped(prevIds, votes, order, excluded, skipDqOf)
+    sql"""$grouped
+          ORDER BY $orderBy
+          LIMIT $pageSize OFFSET $offset"""
+      .map(binaryRow)
+      .list()
+  }
+
+  /** [[binaryRows]]' grouped query (without its order) and its order. */
+  private def binaryGrouped(prevIds: Seq[Long], votes: PrevVotes, order: BinaryOrder, excluded: Seq[Long],
+      skipDqOf: Option[Long], extra: SQLSyntax = sqls""): (SQLSyntax, SQLSyntax) = {
     val conditions = Option.when(votes.rated)(sqls"SUM(${VoteSql.positive()}) > 0").toSeq ++
       votes.rejectedBy.map(n => votes.rejectedMode match {
         case RejectedMode.Exclude => sqls"SUM(${VoteSql.rejected()}) < $n"
@@ -1780,19 +1808,54 @@ object DistributionSource {
       (order.columns ++ Seq("s.page_id" -> 1, "s.round_id" -> 1))
         .map { case (column, dir) => column + (if (dir < 0) " DESC" else " ASC") }
         .mkString(", "))
-    sql"""SELECT s.page_id, s.round_id, SUM(${VoteSql.positive()}) approvals, SUM(${VoteSql.rejected()}) rejections,
-            COUNT(*) cnt
+    (sqls"""SELECT s.page_id, s.round_id, SUM(${VoteSql.positive()}) approvals, SUM(${VoteSql.rejected()}) rejections,
+            COUNT(*) cnt $extra
           FROM vote s
           WHERE s.round_id IN ($prevIds) ${notInExcluded(excluded, sqls"s.page_id")} ${notDqIn(skipDqOf, sqls"s.page_id")}
-          GROUP BY s.page_id, s.round_id $having
-          ORDER BY $orderBy
-          LIMIT $pageSize OFFSET $offset"""
-      .map { rs =>
-        val (approvals, rejections) = (rs.int(3), rs.int(4))
-        RankRow(rs.long(1), rs.long(2), approvals.toLong, rs.long(5), approvals.toLong, Some(approvals -> rejections))
-      }
-      .list()
+          GROUP BY s.page_id, s.round_id $having""", orderBy)
   }
+
+  private def binaryRow(rs: WrappedResultSet): RankRow = {
+    val (approvals, rejections) = (rs.int(3), rs.int(4))
+    RankRow(rs.long(1), rs.long(2), approvals.toLong, rs.long(5), approvals.toLong, Some(approvals -> rejections))
+  }
+
+  /** The columns of a file's image the per-image filters read ([[org.intracer.wmua.cmd.DistributeImages.perImageFilters]]:
+    * the monument (its region), the size, width and height (megapixels), the media type and title (a
+    * video), the author (conflicts of interest)); the page id is the row's (a category). Not the
+    * description or URLs. A filter reading another column must be added here and in [[filterImage]].
+    */
+  private val ImageColumns =
+    sqls"i.title, i.width, i.height, i.monument_id, i.size, i.author, i.mime, i.media_type"
+
+  /** A row's image, from its [[ImageColumns]] (after the row's five columns). */
+  private def filterImage(rs: WrappedResultSet): Image =
+    Image(pageId = rs.long(1), title = rs.string(6), width = rs.int(7), height = rs.int(8), monumentId = rs.stringOpt(9),
+      size = rs.intOpt(10), author = rs.stringOpt(11), mime = rs.stringOpt(12), mediaType = rs.stringOpt(13))
+
+  /** Every row of [[ratedRows]] (or, with `order`, [[binaryRows]]), in its order, each with its image's
+    * [[ImageColumns]]; a row without a (not deleted) image left out, as [[rank]] skips it. One query:
+    * a yes/no source's grouped rows are numbered by its order (`ROW_NUMBER() OVER`, the same order as
+    * [[binaryRows]]'), then joined to their images.
+    */
+  private def rowsWithImages(prevIds: Seq[Long], votes: PrevVotes, denominators: Seq[(Long, Denominator)],
+      order: Option[BinaryOrder], excluded: Seq[Long], skipDqOf: Option[Long])(implicit
+      session: DBSession): Seq[(RankRow, Image)] =
+    order match {
+      case None =>
+        sql"${ratedQuery(prevIds, votes, denominators, excluded, skipDqOf, images = true)}"
+          .map(rs => RankRow(rs.long(1), rs.long(2), rs.long(3), rs.long(4), rs.long(5), None) -> filterImage(rs))
+          .list()
+      case Some(o) =>
+        val (_, orderBy) = binaryGrouped(prevIds, votes, o, excluded, skipDqOf)
+        val (grouped, _) = binaryGrouped(prevIds, votes, o, excluded, skipDqOf,
+          extra = sqls", ROW_NUMBER() OVER (ORDER BY $orderBy) rn")
+        sql"""SELECT t.page_id, t.round_id, t.approvals, t.rejections, t.cnt, $ImageColumns
+              FROM ($grouped) t JOIN images i ON i.page_id = t.page_id AND i.deleted_at IS NULL
+              ORDER BY t.rn"""
+          .map(rs => binaryRow(rs) -> filterImage(rs))
+          .list()
+    }
 
   /** A file's aggregate row of one previous round, as the top-N reads it: its rate sum (a rated round's,
     * below 0 as 0; a yes/no round's approvals), its vote rows and its rated rows (a rated round's voted,
@@ -1809,11 +1872,11 @@ object DistributionSource {
   val RankBatch = 1000
 
   /** Every file the fill's [[rank]] would take with no limit, in its order: the same rows (one
-    * aggregate query, [[ratedRows]] or [[binaryRows]], only their ids and counts held), the same
-    * per-image filters, applied to batches of [[RankBatch]] rows, a file by its best row that passes,
-    * a row without a (not deleted) image skipped, as [[rank]] skips it. The images are read once, in
-    * one query, with only the columns the per-image filters read ([[filterImages]]); the first `keep`
-    * files are kept whole (the cut gallery's), their images read in full. Every file is kept only as
+    * aggregate query, [[ratedRows]]' or [[binaryRows]]', each row with the columns of its image the
+    * per-image filters read, [[rowsWithImages]]), the same per-image filters, applied to batches of
+    * [[RankBatch]] rows, a file by its best row that passes, a row without a (not deleted) image
+    * skipped, as [[rank]] skips it. The first `keep` files are kept whole (the cut gallery's), their
+    * images read in full. Every file is kept only as
     * `summary` of its row (the rank keys the candidate cuts are found in). So a top N of the fill takes
     * exactly the first N of this list.
     */
@@ -1827,16 +1890,14 @@ object DistributionSource {
       skipDqOf: Option[Long],
       keep: Int
   )(summary: RankRow => K)(implicit session: DBSession): (Seq[RankedFile], IndexedSeq[K]) = {
-    val rows = binaryOrder.fold(ratedRows(prevIds, votes, denominators, Int.MaxValue, 0, excluded, skipDqOf))(
-      binaryRows(prevIds, votes, _, Int.MaxValue, 0, excluded, skipDqOf))
-    val images = filterImages(prevIds)
+    val rows = rowsWithImages(prevIds, votes, denominators, binaryOrder, excluded, skipDqOf)
     val picked = mutable.HashSet.empty[Long]
     val kept = mutable.ArrayBuffer.empty[RankRow]
     val summaries = IndexedSeq.newBuilder[K]
     summaries.sizeHint(rows.size)
     rows.grouped(RankBatch).foreach { batch =>
-      val byKey = batch.map(row => (row.pageId, row.roundId) -> row).toMap
-      val candidates = batch.flatMap(row => images.get(row.pageId).map(rating(row, votes)))
+      val byKey = batch.map { case (row, _) => (row.pageId, row.roundId) -> row }.toMap
+      val candidates = batch.map { case (row, image) => rating(row, votes)(image) }
       filter(candidates).foreach { file =>
         if (picked.add(file.pageId))
           byKey.get((file.pageId, file.votes.head.roundId)).foreach { row =>
@@ -1852,19 +1913,4 @@ object DistributionSource {
     (kept.toSeq.flatMap(row => full.get(row.pageId).map(img => RankedFile(rating(row, votes)(img), row))), summaries.result())
   }
 
-  /** The images of the previous rounds' files, not deleted, by page id, with only the columns the
-    * per-image filters read ([[org.intracer.wmua.cmd.DistributeImages.perImageFilters]]: the monument
-    * (its region), the size, width and height (megapixels), the media type and title (a video), the
-    * author (conflicts of interest)), the page id itself (a category); not the description or URLs.
-    * One query, for [[rankAll]]: a filter reading another column must be added here.
-    */
-  private def filterImages(prevIds: Seq[Long])(implicit session: DBSession): Map[Long, Image] =
-    sql"""SELECT ${i.pageId}, ${i.title}, ${i.width}, ${i.height}, ${i.monumentId}, ${i.size}, ${i.author},
-                 ${i.mime}, ${i.mediaType}
-          FROM images i
-          WHERE i.deleted_at IS NULL AND ${i.pageId} IN (SELECT v.page_id FROM vote v WHERE v.round_id IN ($prevIds))"""
-      .map(rs => Image(pageId = rs.long(1), title = rs.string(2), width = rs.int(3), height = rs.int(4),
-        monumentId = rs.stringOpt(5), size = rs.intOpt(6), author = rs.stringOpt(7), mime = rs.stringOpt(8),
-        mediaType = rs.stringOpt(9)))
-      .list().iterator.map(img => img.pageId -> img).toMap
 }

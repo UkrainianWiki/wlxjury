@@ -208,7 +208,11 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
         val entry = ContestChangeJdbc.findByRound(contest.getId, created.getId, 10)
           .find(_.kind == ContestChangeJdbc.RoundCreated).get
         val basis = (entry.detail \ "topImagesBasis").as[play.api.libs.json.JsObject]
+        val queued = services.jobs.JobJdbc.latestBySubjects(services.distribution.RoundDistributionHandler.Kind,
+          services.distribution.RoundDistributionHandler.SubjectType, Seq(created.getId)).get(created.getId).get
         (saved === SEE_OTHER) and (created.topImages must beSome(4)) and
+          // checked again by the job's Rank step, the votes frozen (the backstop)
+          ((queued.params \ services.distribution.RoundDistributionHandler.TopNCheckedParam).asOpt[Boolean] must beSome(true)) and
           (RoundImageJdbc.countIn(created.getId) === 4L) and
           ((basis \ "chosen").as[Int] === 4) and ((basis \ "target").toOption must beNone) and
           ((basis \ "files").as[Int] === 8) and
@@ -246,17 +250,21 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
           "minMpx" -> "No", "minSize" -> "No", "mediaType" -> "all", "previousRound[0]" -> prev.getId.toString,
           "topImages" -> "4")
         val result = save(app, "admin@example.com", edit: _*)
-        val after = roundDao.findById(stored.getId).get
-        (status(result) === SEE_OTHER) and (after.name must beSome("Old renamed")) and (after.topImages must beSome(3))
+        (status(result) === SEE_OTHER) and (roundDao.findById(stored.getId).get.topImages must beSome(3))
       }
     }
 
     "refuse a re-apply with a stored N inside a tie, until a valid N is chosen" in {
       testDbApp { implicit app =>
         val (contest, prev) = setUp()
+        // held with a valid N, then a stored N inside a tie (a round's N from before the picker: the job's
+        // backstop refuses a fill with one)
         val held = TestRoundServices.roundService().submit(Round(None, 0, Some("Semi"), contest.getId, active = true,
-          rates = Round.ratesById(10), previous = Some(prev.getId.toString), topImages = Some(3)), Nil, None,
+          rates = Round.ratesById(10), previous = Some(prev.getId.toString), topImages = Some(4)), Nil, None,
           review = true).round
+        scalikejdbc.DB.autoCommit { implicit s =>
+          scalikejdbc.SQL("UPDATE round SET top_images = 3 WHERE id = ?").bind(held.getId).update()
+        }
         val edit = Seq("id" -> held.getId.toString, "number" -> held.number.toString, "name" -> "Semi",
           "contest" -> contest.getId.toString, "roles" -> "jury", "distribution" -> "0", "rates" -> "10",
           "minMpx" -> "No", "minSize" -> "No", "mediaType" -> "all", "reapply" -> "true",

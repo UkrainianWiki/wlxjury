@@ -161,7 +161,8 @@ class RoundService @Inject() (
           logger.info(s"Round ${created.getId}: retired accounts left out of its jurors: ${retired.map(_.getId).mkString(",")}")
         created.addUsersIn(kept.map(u => RoundUser(created.getId, u.getId, u.contestRole.getOrElse(User.JURY_ROLE), active = true)))
         // "Create and review images" (D3): a fill that ends in review; else one pass (D4)
-        val job = enqueueOrFail(created, completingCreation = true, createdBy, titles, distributeAfter = !review)
+        val job = enqueueOrFail(created, completingCreation = true, createdBy, titles, distributeAfter = !review,
+          topNChecked = topImagesBasis.isDefined)
         // its settings as written, in the round's settings log (RoundChanges), with the round
         RoundChanges.recordCreated(created.getId, createdBy, topImagesBasis)
         (created, job)
@@ -204,6 +205,9 @@ class RoundService @Inject() (
       requireInReview: Boolean = false,
       reapply: Boolean = false,
       topUpWaiting: Boolean = false,
+      // its top N checked by the round form (the cut picker's `topImagesBasis`): the job's Rank step
+      // checks it again, the votes frozen (RoundDistributionHandler.cutInTie)
+      topNChecked: Boolean = false,
       underLocks: DBSession => Unit = _ => ()
   )(implicit session: DBSession): Job = {
     val distribute = mode == RoundDistributionHandler.Mode.Distribute
@@ -270,7 +274,9 @@ class RoundService @Inject() (
           (if (fromReview) Json.obj("fromReview" -> true) else Json.obj()) ++
           (if (reapply) Json.obj("reapply" -> true) else Json.obj()) ++
           // "Also give out the waiting files" (round-editing plan §7): kept by the distribute it queues
-          (if (topUpWaiting) Json.obj("topUpWaiting" -> true) else Json.obj()) ++ Json.obj(
+          (if (topUpWaiting) Json.obj("topUpWaiting" -> true) else Json.obj()) ++
+          (if (topNChecked && round.topImages.isDefined) Json.obj(RoundDistributionHandler.TopNCheckedParam -> true)
+           else Json.obj()) ++ Json.obj(
           // for the record: the job reads the round, whose settings don't change once created;
           // but prevAverageRule(s) and prevRejectedMode, which the job reads from here
           // (RoundDistributionHandler.context)
@@ -571,6 +577,7 @@ class RoundService @Inject() (
               // at the fill's end (D18) and aren't read
               enqueueOrFail(configured,
                 completingCreation = true, createdBy, titles, fromReview = true, requireInReview = true, reapply = true,
+                topNChecked = topImagesBasis.isDefined,
                 underLocks = { s =>
                   // D16: no file is deleted once the round has a vote
                   if (RoundImageJdbc.hasVotes(roundId)(s)) throw ReviewRefused(ReapplyVotedKey, Seq(stored.number.toString))

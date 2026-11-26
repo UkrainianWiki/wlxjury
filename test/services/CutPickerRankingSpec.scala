@@ -204,12 +204,16 @@ class CutPickerRankingSpec extends Specification with TestDb with BeforeAll with
   }
 
   "the job's Rank step (the save's backstop)" should {
+    /** How the round form's check records a top N (CutPicker.basis): its presence marks the job. */
+    val Checked = play.api.libs.json.Json.obj("chosen" -> 1)
+
     "fail a new round's fill whose N cuts inside a tie, adding no file, with the form's message" in {
       val (contest, jurors) = setUp(8, 3)
       val prev = prevRound(contest, Round.ratesById(10), jurors)(ratedVotes: _*)
       val service = TestRoundServices.roundService()
-      // N = 3 inside the tie 2–4, posted past the form's check (as votes changing after it would)
-      val held = service.submit(next(contest, prev, _.copy(topImages = Some(3))), Nil, None, review = true).round
+      // N = 3 inside the tie 2–4, checked by the form (its basis) before the votes changed (as if)
+      val held = service.submit(next(contest, prev, _.copy(topImages = Some(3))), Nil, None, review = true,
+        topImagesBasis = Some(Checked)).round
       val failed = job(held.getId)
       (failed.status === JobStatus.Failed) and
         (failed.error.map(JobError.decode) must beSome(JobError(TopNCandidates.InTieKey, Seq("3", "2", "4", "1", "4")))) and
@@ -224,12 +228,17 @@ class CutPickerRankingSpec extends Specification with TestDb with BeforeAll with
           (0 to 2).map(j => (p, j, r))
         }: _*)
       val service = TestRoundServices.roundService()
-      val tied = service.submit(next(contest, prev, _.copy(topImages = Some(2))), Nil, None, review = true).round
+      val tied = service.submit(next(contest, prev, _.copy(topImages = Some(2))), Nil, None, review = true,
+        topImagesBasis = Some(Checked)).round
       val valid = service.submit(next(contest, prev, _.copy(name = Some("Valid"), topImages = Some(7))), Nil, None,
-        review = true).round
+        review = true, topImagesBasis = Some(Checked)).round
+      // not checked by the form (another path, or a round from before the picker): the fill cuts as before
+      val unchecked = service.submit(next(contest, prev, _.copy(name = Some("Unchecked"), topImages = Some(2))), Nil,
+        None, review = true).round
       (job(tied.getId).error.map(JobError.decode) must beSome(JobError(TopNCandidates.InTieKey,
         Seq("2", "2", "7", "1", "7")))) and
-        (job(valid.getId).status === JobStatus.Done) and (inRound(valid.getId) === (1L to 7L).toSet)
+        (job(valid.getId).status === JobStatus.Done) and (inRound(valid.getId) === (1L to 7L).toSet) and
+        (job(unchecked.getId).status === JobStatus.Done) and (inRound(unchecked.getId).size === 2)
     }
   }
 

@@ -94,7 +94,7 @@ object GatlingTestFixture {
         "regions.countCache"                     -> GatlingConfig.regionCountCache
       ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _) ++ timingConfig ++ csrfConfig ++ imagesConfig ++
         cspConfig ++ filtersConfig)
-      .overrides(categoryStub.toSeq: _*)
+      .overrides(categoryStub.map(play.api.inject.guice.GuiceableModule.fromPlayBinding).toSeq: _*)
       .build()
     localApplication = Some(app)
     val server = TestServer(port, app)
