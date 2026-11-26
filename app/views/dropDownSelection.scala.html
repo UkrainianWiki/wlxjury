@@ -1,4 +1,4 @@
-@(dto: UiSelectionDto[Any], iconOnly: Boolean = false, compactIcon: Option[String] = None, menuId: Option[String] = None, label: Option[String] = None, truncate: Boolean = false, leadIcon: Option[String] = None, labelShown: Boolean = false, menuClass: String = "")(implicit messages: Messages)
+@(dto: UiSelectionDto[Any], iconOnly: Boolean = false, compactIcon: Option[String] = None, menuId: Option[String] = None, label: Option[String] = None, truncate: Boolean = false, leadIcon: Option[String] = None, labelShown: Boolean = false, menuClass: String = "", extra: Html = HtmlFormat.empty)(implicit messages: Messages)
 @* A navbar menu: its toggle shows the current item (its icon only if `iconOnly` and it has one,
    the text then read by screen readers and shown as a tooltip), the menu every item, the current
    one marked active with aria-current="page" (each item opens a page; the current one is this
@@ -19,7 +19,8 @@
    readers, snippets/roundIcon and roundSpoken); with markup before it, its text in a span of its
    own (wlx-item-text), which a round menu cuts with an ellipsis where it is too narrow (main.css).
    The toggle is a real button, so Space opens it as Enter does (Bootstrap's dropdown). The items
-   listed are UiSelectionDto.shownValues: a filter menu's (hideEmpty) without those of count 0 *@
+   listed are UiSelectionDto.shownValues: a filter menu's (hideEmpty) without those of count 0.
+   `extra`: the menu's own items after them, as <li>s (the Order menu's "Group by track") *@
 @icon(iconClass: String) = {<i class="@iconClass" aria-hidden="true"></i>}
 <li class="nav-item dropdown"@for(i <- menuId) { id="@i"}>
     <button type="button" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"
@@ -47,5 +48,6 @@
                 </a>
             </li>
         }
+        @extra
     </ul>
 </li>

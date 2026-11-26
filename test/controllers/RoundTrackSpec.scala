@@ -132,6 +132,67 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  /** The round tabs' links' names (without what their icons say) and titles. */
+  private def tabTitles(doc: Document, bar: String): Map[String, String] =
+    doc.select(s"$bar .page-item[data-round] > .page-link").asScala.toSeq.map { a =>
+      val c = a.clone(); c.select(".wlx-round-spoken, .wlx-round-icon").remove()
+      c.text.trim -> a.attr("title")
+    }.toMap
+
+  /** The round tabs' groups: each label and its tabs' names, in order. */
+  private def groups(doc: Document, bar: String): Seq[(String, Seq[String])] =
+    doc.select(s"$bar .wlx-round-tabs-group").asScala.toSeq.map { g =>
+      g.selectFirst(".wlx-round-tabs-label").text -> g.select(".page-link").asScala.toSeq.map { a =>
+        val c = a.clone(); c.select(".wlx-round-spoken, .wlx-round-icon").remove(); c.text.trim
+      }
+    }
+
+  "the round tabs (views.RoundTabs)" should {
+
+    "be grouped or not as the Order menu says, the choice kept in the tabs' and menus' links" in {
+      testDbApp { app =>
+        val f = fixture()
+        val ungrouped = page(app, f.organizer, s"/roundstat/${f.merge.getId}?group=none")
+        val toggle = ungrouped.getElementById("rounds-group-track")
+        (ungrouped.select("#round-stat-rounds .wlx-round-tabs-group").size === 0) and
+          (ungrouped.select("#round-stat-rounds .page-link").asScala.map(_.attr("href")).forall(_.contains("group=none")) must beTrue) and
+          (toggle.attr("data-grouped") === "false") and (toggle.attr("href") must contain("group=track")) and
+          (page(app, f.organizer, s"/roundstat/${f.merge.getId}").getElementById("rounds-group-track").attr("data-grouped") === "true") and
+          // the Rounds page's table has no tabs, and its Order menu no "Group by track"
+          (page(app, f.admin, s"/admin/rounds?contestId=${f.contest.getId}").getElementById("rounds-group-track") must beNull)
+      }
+    }
+
+    "be the authors page's too: \"Whole contest\" first, then the rounds grouped by track, the grouping kept" in {
+      testDbApp { app =>
+        val f = fixture()
+        val doc = page(app, f.organizer, s"/contest/${f.contest.getId}/authors")
+        val flat = page(app, f.organizer, s"/contest/${f.contest.getId}/authors?group=none")
+        (doc.select("#authors-rounds .wlx-round-tabs-lead .page-link").text === "Whole contest") and
+          (groups(doc, "#authors-rounds") === Seq("Main" -> Seq("Q-02"), "Quality" -> Seq("Q-00", "Q-01"),
+            "Quantity" -> Seq("Qn-00"))) and
+          (doc.select("#authors-rounds .wlx-track").size === 0) and
+          (flat.select("#authors-rounds .wlx-round-tabs-group").size === 0) and
+          (flat.select("#authors-rounds .page-link").asScala.map(_.attr("href")).forall(_.contains("group=none")) must beTrue)
+      }
+    }
+
+    "not group a contest with one track, and offer no grouping there" in {
+      testDbApp { app =>
+        val f = fixture()
+        val contest = contestDao.create(None, "Wiki Loves Monuments", 2026, "Nepal")
+        val org = userDao.create(User("OrgN", "orgn@example.com", None, Set("organizer"), contestId = contest.id))
+        val first = roundDao.create(Round(None, 1, Some("WLM 2026 Primary"), contest.getId))
+        val second = roundDao.create(Round(None, 2, Some("Round 2"), contest.getId, previous = Some(first.getId.toString)))
+        val doc = page(app, org, s"/roundstat/${second.getId}")
+        (doc.select("#round-stat-rounds .page-link").size === 2) and
+          (doc.select("#round-stat-rounds .wlx-round-tabs-group").size === 0) and
+          (doc.getElementById("rounds-group-track") must beNull) and
+          (doc.select("#round-stat-rounds .page-link[title]").size === 0)
+      }
+    }
+  }
+
   "the round form's track label" should {
 
     "be offered to an admin, with the contest's labels and Main, and the round's automatic track in its help" in {
@@ -413,13 +474,18 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
 
   "the round statistics" should {
 
-    "show the organizer the chips and the Track menu, read only, filtering the round menu" in {
+    "show the organizer the round tabs grouped by track, each track in its tab's tooltip, and the Track menu, read only" in {
       testDbApp { app =>
         val f = fixture()
         val doc = page(app, f.organizer, s"/roundstat/${f.merge.getId}")
         val main = page(app, f.organizer, s"/roundstat/${f.merge.getId}?track=main")
-        (chips(doc, "#round-stat-rounds .page-link") === Map("Q-00" -> "Quality", "Qn-00" -> "Quantity",
-          "Q-01" -> "Quality", "Q-02" -> "Main")) and
+        // compact tabs: no chip; the track in the link's tooltip
+        (doc.select("#round-stat-rounds .wlx-track").size === 0) and
+          (tabTitles(doc, "#round-stat-rounds") === Map("Q-00" -> "Track: Quality", "Qn-00" -> "Track: Quantity",
+            "Q-01" -> "Track: Quality", "Q-02" -> "Track: Main")) and
+          // grouped by default (the contest shows tracks): Main, then its feeders as they join
+          (groups(doc, "#round-stat-rounds") === Seq("Main" -> Seq("Q-02"), "Quality" -> Seq("Q-00", "Q-01"),
+            "Quantity" -> Seq("Qn-00"))) and
           (trackMenu(doc).map(_._1) === Seq("All tracks", "Main", "Quality", "Quantity")) and
           (trackMenu(doc).find(_._1 == "Quality").get._3 must contain(s"/roundstat/${f.q00.getId}?track=category%3AQuality")) and
           (main.select("#round-stat-rounds .page-link").size === 1) and

@@ -67,10 +67,12 @@ configured yet**.
   A round opened from a saved or shared link whose choices leave it out still shows in the row,
   selected, with a dashed outline: point at it for **Not in the chosen filter**. The choices stay
   in the page's address and when you switch round. The round menu of the galleries shows the same icons and grey names, without these menus.
-- When the contest's rounds are on two tracks or more, a coloured chip after each round's name
-  names its **track**, the line of rounds it belongs to: for example Quality, Quantity, **Main**
-  (the main competition), a region or a special nomination, and the **Track** menu next to **Status**
-  and **Type** narrows the row to one track's rounds. The tool finds each round's track and only
+- When the contest's rounds are on two tracks or more, each round belongs to a **track**, the line
+  of rounds it is on: for example Quality, Quantity, **Main** (the main competition), a region or a
+  special nomination. The row groups the rounds by track, each track's name once before its rounds
+  (point at a round to see its track); **Group by track** at the end of the **Order** menu turns
+  that off and on. The **Track** menu next to **Status** and **Type** narrows the row to one
+  track's rounds. The tool finds each round's track and only
   admins can change it; see [Tracks](admin-guide.md#a-tracks).
 - The pages menu at the start of the top bar (its button the menu icon and the page you are on,
   **Statistics** here) opens the other pages: **Contest files** opens the contest's files, and

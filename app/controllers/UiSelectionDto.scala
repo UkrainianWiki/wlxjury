@@ -46,9 +46,10 @@ class UiSelectionDto[T](val itemUrlFunction: T => Call,
     * the label shown before the current item, as the region menu's (the Rounds and statistics pages'
     * menus); `menuClass`: a class of the menu's list (the round menu's). */
   def toDropDown(iconOnly: Boolean = false, compactIcon: Option[String] = None, id: Option[String] = None,
-      label: Option[String] = None, truncate: Boolean = false, leadIcon: Option[String] = None, labelShown: Boolean = false, menuClass: String = "")(implicit messages: Messages): Html =
+      label: Option[String] = None, truncate: Boolean = false, leadIcon: Option[String] = None, labelShown: Boolean = false, menuClass: String = "",
+      extra: Html = play.twirl.api.HtmlFormat.empty)(implicit messages: Messages): Html =
     views.html
-      .dropDownSelection(this.asInstanceOf[UiSelectionDto[Any]], iconOnly, compactIcon, id, label, truncate, leadIcon, labelShown, menuClass)
+      .dropDownSelection(this.asInstanceOf[UiSelectionDto[Any]], iconOnly, compactIcon, id, label, truncate, leadIcon, labelShown, menuClass, extra)
 }
 
 object UiSelectionDto {

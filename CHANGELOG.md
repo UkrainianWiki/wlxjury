@@ -16,6 +16,7 @@ Merged after the 26.11.17 build, for the release after it.
 
 **Features**
 
+- Round statistics and the authors list show the rounds as the same compact tabs, without track chips (a tab's track is its tooltip), grouped by track where the contest has tracks; "Group by track" in the Order menu turns the groups off and on.
 - A new round is set up in numbered steps with a step bar: 1 "Which files" (the form, one button "Save and find matching files"), 2 "Check the matching files" (the review page, "N files match (the contest has M)", then "Distribute to jurors" as its main button), 3 "Jurors" (the jurors form), then open to jurors. The Rounds page reads "Setting up – step 2 of 3: check files" or "… step 3 of 3: choose jurors" with that step's button in place of Start; the round form, statistics and conflicts page show the same step with a link (#205).
 
 **Fixes**

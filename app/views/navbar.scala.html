@@ -465,13 +465,20 @@
     ).toDropDown(id = Some("rounds-track-menu"), label = Some(Messages("round.track")), labelShown = true))
     }
 }
+@* the Order menu; on a page with round tabs in a contest that shows tracks, its "Group by track"
+   after the orders: the round tabs grouped by track or not (RoundsFilter.group; on by default
+   there), a check before it when on, and "on"/"off" for screen readers *@
+@roundsGroupItem(bar: RoundsFilterBar) = {@if(bar.groupShown) {
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item" id="rounds-group-track" data-grouped="@bar.grouped" href="@bar.url(bar.filter.withGroup(Some(!bar.grouped)))"><i class="bi bi-check2 wlx-group-check@if(!bar.grouped) { invisible}" aria-hidden="true"></i> @Messages("rounds.group.track")<span class="visually-hidden">, @Messages(if (bar.grouped) "rounds.group.on" else "rounds.group.off")</span></a></li>
+}}
 @roundsOrderMenu(bar: RoundsFilterBar) = {
     @(new UiSelectionDto[RoundsFilter.Order](
         (o: RoundsFilter.Order) => Call("GET", bar.url(bar.filter.withOrder(o))),
         bar.filter.order,
         RoundsFilter.Order.values.map(o => o -> SelectionItem(o.messageKey))
     ).toDropDown(id = Some("rounds-order-menu"), label = Some(Messages("rounds.order")),
-        labelShown = true))
+        labelShown = true, extra = roundsGroupItem(bar)))
 }
 
 @* The filter group: which files (the round, the organisers' juror, Votes, Comments, then the
