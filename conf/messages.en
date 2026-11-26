@@ -2102,6 +2102,7 @@ top.n.scales = The previous rounds are on different scales; their scores are com
 top.n.no.previous = Choose the previous rounds first.
 top.n.needs.js = The list of cuts needs JavaScript: turn it on and reload the page.
 top.n.updating = Updating the cuts…
+top.n.saving = Saving once the cuts are updated…
 top.n.cuts.available = Cuts available: {0}
 top.n.load.failed = The cuts could not be loaded. Change a filter to try again, or reload the page.
 top.n.form.invalid = The cuts are listed once the form’s errors are corrected.

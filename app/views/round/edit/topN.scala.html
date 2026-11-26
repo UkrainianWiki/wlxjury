@@ -37,7 +37,7 @@
     }
 } else {
     <div id="top-n" data-cut-url="@listUrl"@if(picker.isDefined) { data-cut-loaded}
-        data-cut-updating="@Messages("top.n.updating")" data-cut-failed="@Messages("top.n.load.failed")"
+        data-cut-updating="@Messages("top.n.updating")" data-cut-saving="@Messages("top.n.saving")" data-cut-failed="@Messages("top.n.load.failed")"
         data-cut-signed-out="@Messages("async.form.error.signed.out")" data-cut-csrf="@Messages("error.csrf")">
         <noscript><div class="row mb-3"><div class="col-md-8 offset-md-4"><p class="form-text mb-0" id="top-n-needs-js">@Messages("top.n.needs.js")</p></div></div></noscript>
         <div id="top-n-box">@topNBox(editRoundForm, picker)</div>

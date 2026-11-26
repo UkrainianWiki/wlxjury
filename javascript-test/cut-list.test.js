@@ -39,7 +39,7 @@ function page({ prev = "", loaded = false, box = '<div data-cut-announce=""><p i
         <button type="submit" id="save">Save</button>
         <button type="submit" id="other"${disabledButton ? " disabled" : ""}>Other</button>
         <div id="top-n" data-cut-url="/admin/rounds/cut-list"${loaded ? " data-cut-loaded" : ""}
-             data-cut-updating="Updating the cuts…" data-cut-failed="The cuts could not be loaded."
+             data-cut-updating="Updating the cuts…" data-cut-saving="Saving once the cuts are updated…" data-cut-failed="The cuts could not be loaded."
              data-cut-signed-out="You have been signed out." data-cut-csrf="This page has expired.">
           <div id="top-n-box">${box}</div>
           <p id="top-n-status" role="status" aria-live="polite"></p>
@@ -66,6 +66,14 @@ function json(obj, status) {
 }
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
+
+/** A submit by `button` (the event's submitter), cancelable as a browser's. */
+function submitBy(button) {
+    const e = new Event("submit", { cancelable: true });
+    Object.defineProperty(e, "submitter", { value: button });
+    document.getElementById("round-form").dispatchEvent(e);
+    return e;
+}
 const status = () => document.getElementById("top-n-status").textContent;
 const select = (id, value) => {
     const el = document.getElementById(id);
@@ -376,51 +384,133 @@ describe("cut-list", () => {
         expect(fetch).toHaveBeenCalledTimes(1);
     });
 
-    test("Save is disabled while a list is pending or loading, a submit held, then enabled again", async () => {
+    test("Save is disabled while a list loads; a save then is held and sent with its button once the list is in", async () => {
         jest.useFakeTimers();
         page({ prev: "1", loaded: true, box: BOX(2), disabledButton: true });
         const { fetch, calls } = deferredFetch();
         create(document, { fetch });
+        const form = document.getElementById("round-form");
+        form.requestSubmit = jest.fn();
         const save = document.getElementById("save");
         const other = document.getElementById("other");
-        expect(save.disabled).toBe(false);
         select("previousRound", "2");
-        expect(save.disabled).toBe(true); // pending (the pause)
+        // the pause: Save stays enabled (a field left by a click on Save changes as the click starts)
+        expect(save.disabled).toBe(false);
         jest.advanceTimersByTime(150);
         expect(fetch).toHaveBeenCalledTimes(1);
         expect(save.disabled).toBe(true); // loading
-        const submit = new Event("submit", { cancelable: true });
-        document.getElementById("round-form").dispatchEvent(submit);
-        expect(submit.defaultPrevented).toBe(true);
-        expect(status()).toBe("Updating the cuts…");
+        // Enter in a field, or a click as the load starts: held, said
+        const held = submitBy(save);
+        expect(held.defaultPrevented).toBe(true);
+        expect(status()).toBe("Saving once the cuts are updated…");
+        expect(form.requestSubmit).not.toHaveBeenCalled();
         jest.useRealTimers();
         calls[0].resolve(html(BOX(2)));
         await flush();
         await flush();
         expect(save.disabled).toBe(false);
         expect(other.disabled).toBe(true); // disabled by the page: left so
-        const after = new Event("submit", { cancelable: true });
-        document.getElementById("round-form").dispatchEvent(after);
-        expect(after.defaultPrevented).toBe(false);
+        expect(form.requestSubmit).toHaveBeenCalledTimes(1);
+        expect(form.requestSubmit).toHaveBeenCalledWith(save);
+        // the save sent again goes through
+        expect(submitBy(save).defaultPrevented).toBe(false);
     });
 
-    test("Save is enabled again after a failure, and when a pause ends with nothing to ask", async () => {
-        jest.useFakeTimers();
-        page({ prev: "1", loaded: true, box: BOX(2) });
+    test("a save held while a list loads is sent after a failure too, without a button if it had none", async () => {
+        page({ prev: "1" });
         const { fetch, calls } = deferredFetch();
         create(document, { fetch });
-        const save = document.getElementById("save");
+        const form = document.getElementById("round-form");
+        form.requestSubmit = jest.fn();
+        expect(submitBy(undefined).defaultPrevented).toBe(true);
+        calls[0].resolve(json({ error: "forbidden" }, 403));
+        await flush();
+        await flush();
+        await flush();
+        expect(status()).toBe("The cuts could not be loaded.");
+        expect(form.requestSubmit).toHaveBeenCalledTimes(1);
+        expect(form.requestSubmit.mock.calls[0]).toEqual([]);
+        expect(document.getElementById("save").disabled).toBe(false);
+    });
+
+    test("a save held while a list loads waits for the list asked again for a cut picked meanwhile", async () => {
+        page({ prev: "1", loaded: true, box: BOX(2) });
+        const { fetch, calls } = deferredFetch();
+        const list = create(document, { fetch });
+        const form = document.getElementById("round-form");
+        form.requestSubmit = jest.fn();
+        list.load();
+        select("topImages", "9");
+        submitBy(document.getElementById("save"));
+        calls[0].resolve(html(`<div data-cut-announce="Cuts available: 1"><select id="topImages" name="topImages">
+          <option value="">No top N</option><option value="4">top 4</option></select></div>`));
+        await flush();
+        await flush();
+        expect(fetch).toHaveBeenCalledTimes(2);
+        expect(form.requestSubmit).not.toHaveBeenCalled();
+        calls[1].resolve(html(`<div data-cut-announce="Cuts available: 1"><select id="topImages" name="topImages">
+          <option value="9" selected>Choose N from the list</option><option value="">No top N</option></select></div>`));
+        await flush();
+        await flush();
+        expect(form.requestSubmit).toHaveBeenCalledWith(document.getElementById("save"));
+    });
+
+    test("a submit during the pause asks for the list at once and is held; with nothing to ask it goes", () => {
+        jest.useFakeTimers();
+        page({ prev: "1", loaded: true, box: BOX(2) });
+        const { fetch } = deferredFetch();
+        create(document, { fetch });
+        const form = document.getElementById("round-form");
+        // a change and its undo: the form as last asked for, so the save goes
         const coi = document.getElementById("excludeCoi");
         coi.checked = false;
         coi.dispatchEvent(new Event("change", { bubbles: true }));
         coi.checked = true;
         coi.dispatchEvent(new Event("change", { bubbles: true }));
-        expect(save.disabled).toBe(true);
-        jest.advanceTimersByTime(150);
-        expect(fetch).not.toHaveBeenCalled(); // the form as last asked for
-        expect(save.disabled).toBe(false);
+        const plain = new Event("submit", { cancelable: true });
+        form.dispatchEvent(plain);
+        expect(plain.defaultPrevented).toBe(false);
+        expect(fetch).not.toHaveBeenCalled();
+        jest.advanceTimersByTime(500);
+        expect(fetch).not.toHaveBeenCalled(); // the pause ended with the submit
+        // a filter typed, then Save: the list asked for now, the save held
+        const source = document.getElementById("source");
+        source.value = "Cats";
+        source.dispatchEvent(new Event("input", { bubbles: true }));
+        form.requestSubmit = jest.fn();
+        const held = submitBy(document.getElementById("save"));
+        expect(held.defaultPrevented).toBe(true);
+        expect(status()).toBe("Saving once the cuts are updated…");
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(new URLSearchParams(fetch.mock.calls[0][1].body).get("source")).toBe("Cats");
+        expect(document.getElementById("save").disabled).toBe(true);
+    });
+
+    test("a new round without a previous round saves at once after typing a filter", () => {
+        jest.useFakeTimers();
+        page();
+        const { fetch } = deferredFetch();
+        create(document, { fetch });
+        const source = document.getElementById("source");
+        source.value = "Cats";
+        source.dispatchEvent(new Event("input", { bubbles: true }));
+        source.dispatchEvent(new Event("change", { bubbles: true }));
+        expect(document.getElementById("save").disabled).toBe(false);
+        const submit = new Event("submit", { cancelable: true });
+        document.getElementById("round-form").dispatchEvent(submit);
+        expect(submit.defaultPrevented).toBe(false);
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
+    test("Save is enabled again after a failure", async () => {
+        jest.useFakeTimers();
+        page({ prev: "1", loaded: true, box: BOX(2) });
+        const { fetch, calls } = deferredFetch();
+        create(document, { fetch });
+        const save = document.getElementById("save");
         select("previousRound", "2");
         jest.advanceTimersByTime(150);
+        expect(save.disabled).toBe(true);
         jest.useRealTimers();
         calls[0].resolve(json({ error: "forbidden" }, 403));
         await flush();

@@ -2086,6 +2086,7 @@ top.n.scales = Les tours précédents n’ont pas la même échelle ; leurs note
 top.n.no.previous = Choisissez d’abord les tours précédents.
 top.n.needs.js = La liste des coupes nécessite JavaScript : activez-le et rechargez la page.
 top.n.updating = Mise à jour des coupes…
+top.n.saving = Enregistrement dès que les coupes sont à jour…
 top.n.cuts.available = Coupes disponibles : {0}
 top.n.load.failed = Les coupes n’ont pas pu être chargées. Modifiez un filtre pour réessayer, ou rechargez la page.
 top.n.form.invalid = Les coupes s’affichent une fois les erreurs du formulaire corrigées.

@@ -24,8 +24,10 @@
 //   or a refused save's control), so a held threshold or a legacy round's two cuts are held again
 //   (preselected or explained), never turned into the count they took before; a cut picked while a
 //   list loads is put back into the new list, or asked for again if the list doesn't have it;
-// - while a list is pending or loading, the form's submit buttons are disabled (and a submit held,
-//   saying "Updating the cuts…"); the save checks the cut again anyway.
+// - while a list is loading, the form's submit buttons are disabled; a submit during the pause after a
+//   change asks for the list at once if the form needs one; a submit while the list loads is held
+//   ("Saving once the cuts are updated…") and sent with its button once the list is in or has failed,
+//   never lost; the save checks the cut again anyway.
 (function () {
   'use strict';
 
@@ -123,6 +125,8 @@
     var touched = false;
     // a cut picked while a list was loading: put back into the list that answer brings
     var pendingPick = null;
+    // a save held while a list loads (its submit button, if any): sent once the list is in or failed
+    var heldSubmit = null;
 
     function text(name) {
       return wrap.getAttribute('data-cut-' + name) || '';
@@ -140,12 +144,8 @@
       status.classList.toggle('text-danger', !!failed);
     }
 
-    function busy() {
-      return loading || timer !== null;
-    }
-
-    /** The form's submit buttons, disabled while a list is pending or loading (the cut shown may be about
-      * to change); only those this script disabled are enabled again. */
+    /** The form's submit buttons, disabled while a list is loading (the cut shown is about to change);
+      * only those this script disabled are enabled again. */
     function guardSave(on) {
       Array.prototype.forEach.call(form.querySelectorAll('button[type="submit"], input[type="submit"]'), function (b) {
         if (on && !b.disabled) {
@@ -206,7 +206,7 @@
       }
       loading = false;
       box.removeAttribute('aria-busy');
-      guardSave(busy());
+      guardSave(false);
       var root = box.firstElementChild;
       say(root ? root.getAttribute('data-cut-announce') || '' : '', false);
       updateCutLink(doc);
@@ -215,13 +215,31 @@
         var again = doc.getElementById(focusId);
         if (again && box.contains(again)) again.focus();
       }
+      releaseSubmit();
+    }
+
+    /** Sends the save held while the list loaded, with the button that sent it: never lost, also after
+      * a failure (the save checks the cut itself). */
+    function releaseSubmit() {
+      if (!heldSubmit) return;
+      var submitter = heldSubmit.submitter;
+      heldSubmit = null;
+      if (submitter && (!form.contains(submitter) || submitter.disabled)) submitter = null;
+      if (typeof form.requestSubmit === 'function') {
+        if (submitter) form.requestSubmit(submitter);
+        else form.requestSubmit();
+      } else if (submitter) {
+        submitter.click();
+      } else {
+        form.submit();
+      }
     }
 
     function fail(httpStatus, json) {
       loading = false;
       pendingPick = null;
       box.removeAttribute('aria-busy');
-      guardSave(busy());
+      guardSave(false);
       lastBody = null; // the same form may be asked for again
       var message;
       if (httpStatus === 401) message = text('signed-out');
@@ -229,6 +247,7 @@
       else if (httpStatus === 409 && json && typeof json.message === 'string') message = json.message;
       else message = text('failed');
       say(message, true);
+      releaseSubmit();
     }
 
     /** Asks for the list of the form as it is now (the cut's fields from `overrides`, if given); the
@@ -290,20 +309,21 @@
         !status.classList.contains('text-danger');
     }
 
-    /** Loads after `delay`, once the changes stop; nothing if the form is as last asked for, or if it
-      * has no previous round while the box has nothing to clear. */
+    /** Whether the form needs a new list: not as last asked for, and a previous round chosen or something
+      * in the box to clear. */
+    function needsLoad() {
+      var encoded = requestBody();
+      return encoded !== lastBody && (hasPrevious(encoded) || !plainBox());
+    }
+
+    /** Loads after `delay`, once the changes stop, if the form needs a new list. Save stays enabled
+      * during the pause: a field left by a click on Save changes as the click starts. */
     function schedule(delay) {
       if (timer) clearTimeout(timer);
       timer = setTimeout(function () {
         timer = null;
-        var encoded = requestBody();
-        if (encoded === lastBody || (!hasPrevious(encoded) && plainBox())) {
-          guardSave(busy());
-          return;
-        }
-        load();
+        if (needsLoad()) load();
       }, delay);
-      guardSave(true);
     }
 
     /** While the box says the form's errors keep the list from loading, any field outside it counts. */
@@ -328,13 +348,20 @@
       if (t && box.contains(t)) return;
       if ((ranks(t) || formInvalid()) && typed(t)) schedule(typingDelay);
     });
-    // a save while the list is pending or loading (Enter in a field, a button not disabled): held until
-    // the list is in, saying so; the save itself checks the cut again
+    // a save during a pause: the list asked for now if the form needs one (else the save goes); a save
+    // while the list is loading: held, saying "Saving once the cuts are updated…", and sent with its
+    // button once the list is in or has failed (never lost). The save itself checks the cut again
     form.addEventListener('submit', function (e) {
-      if (!busy()) return;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+        if (needsLoad()) load();
+      }
+      if (!loading) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      say(text('updating'), false);
+      heldSubmit = { submitter: e.submitter || null };
+      say(text('saving'), false);
     }, true);
 
     // a page restored from the back/forward cache: no load of it is running, so its Save is never left
@@ -346,6 +373,7 @@
         if (timer) clearTimeout(timer);
         timer = null;
         loading = false;
+        heldSubmit = null;
         box.removeAttribute('aria-busy');
         guardSave(false);
       });
