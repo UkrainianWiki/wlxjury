@@ -69,7 +69,7 @@
                         @if(user.canViewAuthors(view.contest.getId)) {
                             @authorInfo(image, view.contest.getId)
                         }
-                        @monumentInfo(image, monument, view.contest.id)
+                        @monumentInfo(image, monument, view.contest.id, regions = Some(services.regions.RegionScheme.of(view.contest)))
 
                         <div class="file-title large-line">
                             <a href="@Global.commonsPageUrl(image)" target="_blank" rel="noopener">@views.ExternalLinks.marked(image.title, Global.commonsPageUrl(image))</a>

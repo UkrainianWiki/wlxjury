@@ -101,6 +101,38 @@ class RegionSchemeSpec extends Specification {
     }
   }
 
+  "RegionScheme.monumentRegion" should {
+    val zaporizhzhia = MessageStub(Map("23" -> "Запорізька", "80" -> "Київ"))
+
+    "name a nomination's own monument by the nomination and the region its id carries" in {
+      // production's 92-232-4801, on the Bulgarian heritage list of Zaporizhzhia Oblast
+      wlm(2026).monumentRegion("92-232-4801")(zaporizhzhia) === "Болгарська спадщина, Запорізька"
+      wlm(2025).monumentRegion("99-801-0001")(zaporizhzhia) === "Єврейська спадщина, Київ"
+      // the region by the country's name where the messages lack it
+      wlm(2026).monumentRegion("92-232-4801")(MessageStub(Map.empty)) === "Болгарська спадщина, " + oblast("23")
+    }
+
+    "name the nomination alone where the id carries no region" in {
+      wlm(2026).monumentRegion("92-000-0001")(zaporizhzhia) === "Болгарська спадщина"
+      wlm(2026).monumentRegion("92-x")(zaporizhzhia) === "Болгарська спадщина"
+      wlm(2026).monumentRegion("92")(zaporizhzhia) === "Болгарська спадщина"
+    }
+
+    "translate the nomination's name if the messages have it" in {
+      wlm(2026).monumentRegion("92-232-4801")(MessageStub(Map("Болгарська спадщина" -> "Bulgarian heritage",
+        "23" -> "Zaporizhia O."))) === "Bulgarian heritage, Zaporizhia O."
+    }
+
+    "name any other monument by its prefix's message, as before" in {
+      // Play's messages give a missing key back
+      val messages = MessageStub(zaporizhzhia.dict ++ other ++ Map("91" -> "91", "92" -> "92"))
+      wlm(2026).monumentRegion("23-248-0004")(messages) === "Запорізька"
+      wlm(2026).monumentRegion("91-232-0001")(messages) === "91"
+      RegionScheme.Ukraine.monumentRegion("92-232-4801")(messages) === "92"
+      RegionScheme.of(contest("contest", "Andorra")).monumentRegion("92-232-4801")(messages) === "92"
+    }
+  }
+
   "RegionScheme.of" should {
 
     "name a WLE Ukraine contest's regions as Ukraine's, without nominations" in {
