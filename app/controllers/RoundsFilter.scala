@@ -219,11 +219,14 @@ final case class RoundsFilterBar(
   /** The Track menu's tracks, in the lineage's order, those of the rounds listed that show chips: a
     * track named after its round that no other round continues (Lineage.selfNamedTrack) is left out,
     * as its chip is (the maintainer's decision for 26.11.17.2), its rounds still under All tracks;
-    * unless it is the chosen one (an old link), which stays listed. Shown with two or more of them,
-    * or a track chosen.
+    * unless it is the chosen one (an old link), which stays listed. The track shown as Main in a
+    * contest without one (Lineage.shownAsMain) comes first, as Main does. Shown with two or more of
+    * them, or a track chosen.
     */
   def tracks: Seq[services.RoundLineage.Track] = lineage.fold(Seq.empty[services.RoundLineage.Track]) { l =>
-    l.tracksOf(rounds).filter(t => !l.selfNamedTrack(t) || filter.track.contains(t.key))
+    val listed = l.tracksOf(rounds).filter(t => !l.selfNamedTrack(t) || filter.track.contains(t.key))
+    val (main, rest) = listed.partition(l.shownAsMain.contains)
+    main ++ rest
   }
 
   /** With two tracks or more among the rounds listed (the chips' rule, Lineage.showsTracks), or a track chosen. */
