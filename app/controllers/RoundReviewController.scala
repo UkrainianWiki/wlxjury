@@ -177,7 +177,9 @@ class RoundReviewController @Inject() (
   /** The jurors form of a round in review: its jurors and file distribution, Distribute. For the
     * round's contest's admins and root (an organizer gets the 403 page). While the round's fill
     * runs, its job's status (the page reloads as it ends); once the round left review, the state
-    * and the way to its review page, without the form.
+    * and the way to its review page, without the form; a creation that failed, was cancelled or didn't
+    * finish (no job: its round and job are written in one transaction), its state as the Rounds page says
+    * it. `waited` is ignored: the old reload count, kept so that its links still open the page.
     */
   def jurors(id: Long, waited: Int): EssentialAction =
     withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { sessionUser => implicit request =>
@@ -188,7 +190,7 @@ class RoundReviewController @Inject() (
           if (!mayDistribute(user, round)) onUnAuthorized(sessionUser, request, Secured.Denial.round(round, User.ADMIN_ROLES))
           else ContestJuryJdbc.findById(round.contestId).fold(notFound(user, "error.contest.not.found")) { contest =>
             Secured.switchingContest(sessionUser, user)(
-              Ok(views.html.round.jurorsForm(user, jurorsView(contest, round), math.max(0, waited))))
+              Ok(views.html.round.jurorsForm(user, jurorsView(contest, round))))
           }
       }
     }
@@ -196,10 +198,11 @@ class RoundReviewController @Inject() (
   /** The jurors form's figures and choices, as the page shows them. */
   private def jurorsView(contest: ContestJury, round: Round)(implicit messages: Messages): JurorsFormView = {
     val job = RoundService.latestJob(round)
-    // its images being selected (a fill or a re-apply running, or a round being created whose job
-    // hasn't started), not a distribute running
-    val filling = job.exists(j => j.isActive && !RoundDistributionHandler.distributeMode(j)) ||
-      (round.distributing && !round.inReview && job.forall(_.isActive))
+    // its state as the Rounds page says it (RoundStartBlock): its images being selected (a fill held for
+    // review running: the page shows the job and reloads as it ends), or, neither that nor in review,
+    // being distributed or its creation failed, cancelled or not finished
+    val block = services.distribution.RoundStartBlock.of(round, job)
+    val filling = block.contains(services.distribution.RoundStartBlock.Selecting)
     val ready = round.inReview && !job.exists(_.isActive)
     val inCount = if (ready) RoundImageJdbc.statusCounts(round.getId).getOrElse(RoundImageJdbc.Status.In, 0) else 0
     val roundJurors = User.distributionJurors(round.getId).sortBy(_.getId)
@@ -226,7 +229,8 @@ class RoundReviewController @Inject() (
       form = distributeForm.fill(DistributeChoice(jurorsShown = true, chosen.map(_.toString),
         Some(round.distribution), confirmPrevChanged = false, jury = Some(RoundService.jurySignature(round.getId)))),
       // being set up: step 3's heading and the step bar
-      nextStep = RoundNextStep.of(round, job, inCount)
+      nextStep = RoundNextStep.of(round, job, inCount),
+      block = block
     )
   }
 
@@ -309,14 +313,6 @@ class RoundReviewController @Inject() (
 }
 
 object RoundReviewController {
-
-  /** The jurors form's reloads while a round is being created with no job to poll: every
-    * [[WaitSeconds]], at most this many times (about a minute), then it says the round isn't
-    * waiting and links the rounds list.
-    */
-  val MaxWaits = 12
-
-  val WaitSeconds = 5
 
   /** Who may open the review pages, in the round's contest (D20): its admins and organizers. */
   val ViewRoles: Set[String] = User.ADMIN_ROLES ++ User.ORG_COM_ROLES
@@ -423,5 +419,7 @@ final case class JurorsFormView(
     reapplyUnfinished: Boolean,
     form: Form[DistributeChoice],
     /** Being set up: its setup step (the step bar, step 3's heading). */
-    nextStep: Option[RoundNextStep] = None
+    nextStep: Option[RoundNextStep] = None,
+    /** Its state as the Rounds page says it (None: open or stopped). */
+    block: Option[services.distribution.RoundStartBlock] = None
 )

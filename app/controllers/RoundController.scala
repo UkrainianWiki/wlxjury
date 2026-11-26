@@ -78,7 +78,7 @@ class RoundController @Inject() (
               // reads it); the jurors read only for a cancelled or unfinished setup meant for review
               rounds.filter(r => RoundStartBlock.mayFindFilesAgain(r, distributions.get(r.getId),
                 User.findRoundJurors(r.getId).nonEmpty)).flatMap(_.id).toSet,
-              RoundController.setupSteps(rounds, jobs, distributions),
+              RoundController.setupSteps(rounds, distributions),
               // each job's title: its status's label (snippets/jobStatus)
               jobs.values.map(j => j.id -> roundsService.jobTitle(j)).toMap
             )
@@ -1284,22 +1284,15 @@ object RoundController {
   }
 
   /** The Rounds page's rounds being set up (UI-path plan §4 step 1, replacing #192's interim "Not
-    * started – waiting for distribution"): those waiting in review or whose files are being matched
-    * for it ([[RoundStartBlock.NotDistributed]], [[RoundStartBlock.Selecting]]), each with its setup
-    * step from its latest distribution job (as its Edit and review pages read it) and its matching
-    * files, read for those rounds only. A round being distributed, or whose setup was cancelled,
-    * failed or didn't finish, keeps its own state.
+    * started – waiting for distribution"): each with its setup step from its latest distribution job,
+    * derived from its [[RoundStartBlock]] as on its other pages ([[RoundNextStep.of]]), its matching files
+    * read only for a round waiting in review. A round being distributed, or whose creation failed, was
+    * cancelled or didn't finish, has none: its block's own state.
     *
-    * @param jobs          each round's latest distribution or juror-add job (the page's, RoundStartBlock.latestJobs)
     * @param distributions each round's latest distribution job
     */
-  def setupSteps(rounds: Seq[Round], jobs: Map[Long, Job], distributions: Map[Long, Job]): Map[Long, RoundNextStep] =
-    rounds.flatMap { r =>
-      RoundStartBlock.of(r, jobs.get(r.getId))
-        .filter(b => b == RoundStartBlock.NotDistributed || b == RoundStartBlock.Selecting)
-        .flatMap(_ => RoundNextStep.of(r, distributions.get(r.getId), RoundNextStep.inCount(r)))
-        .map(r.getId -> _)
-    }.toMap
+  def setupSteps(rounds: Seq[Round], distributions: Map[Long, Job]): Map[Long, RoundNextStep] =
+    rounds.flatMap(r => RoundNextStep.of(r, distributions.get(r.getId), RoundNextStep.inCount(r)).map(r.getId -> _)).toMap
 
   /** The round form was posted in its re-apply state (its hidden `reapply` field, P3-5). */
   def reapplyPosted(request: Request[AnyContent]): Boolean =
