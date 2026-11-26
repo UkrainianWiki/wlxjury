@@ -964,15 +964,18 @@ class RoundDistributionHandler @Inject() (
     * adding it: the same windows and filters as the job, read only.
     */
   def countNew(roundId: Long): Long = {
-    // its category rule's files first, outside the session (Commons may take a while), cached briefly
-    val categoryIds = Round.findById(roundId).map(pickerCategoryIds)
-    countNewIn(roundId, categoryIds)
+    // one read of the round: its category rule's files first, outside the session (Commons may take a
+    // while), cached briefly; its filters from the same round, not one re-read meanwhile
+    val round = Round.findById(roundId).getOrElse(throw new NoSuchElementException(s"Round $roundId not found"))
+    countNewIn(round, pickerCategoryIds(round))
   }
 
-  private def countNewIn(roundId: Long, categoryIds: Option[(Iterable[Long], Iterable[Long])]): Long =
+  private def countNewIn(round: Round, categoryIds: (Iterable[Long], Iterable[Long])): Long =
     DB.readOnly { implicit session =>
+    val roundId = round.getId
     // "Count new files": as a distribution queued now would, by the previous round's rule
-    val c = context(roundId, None, countOnly = true, categoryIds = categoryIds)
+    val c = contextFor(round, None, None, countOnly = true, distribute = false, checkPrevious = true,
+      checkJurors = true, categoryIds = Some(categoryIds))
     if (c.topN.isDefined) {
       val ranked = DistributionSource.rank(c.prevRounds.flatMap(_.id), c.votes, c.denominators, c.topN.get, c.filter,
         c.topOrder, c.excluded)
