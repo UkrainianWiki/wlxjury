@@ -170,8 +170,10 @@
         <div class="@offsetCol">
             <details id="category-more"@if(view.combine != CategoryCombine.Default || view.choiceErrors.nonEmpty) { open}>
                 <summary>@Messages("category.more")</summary>
-                <fieldset class="mt-2" id="category-combine">
-                    <legend class="form-label fs-6 mb-1">@Messages("category.combine")</legend>
+                @* its errors tied to the group (CodeRabbit #170): a radiogroup, named by its legend, invalid and
+                   described by them while it has any *@
+                <fieldset class="mt-2" id="category-combine" role="radiogroup" aria-labelledby="category-combine-legend"@if(view.choiceErrors.nonEmpty) { aria-invalid="true" aria-describedby="@view.choiceErrors.indices.map(i => s"category-combine-error-$i").mkString(" ")"}>
+                    <legend class="form-label fs-6 mb-1" id="category-combine-legend">@Messages("category.combine")</legend>
                     @for(choice <- CategoryCombine.values) {
                     <div class="form-check">
                         <input class="form-check-input" type="radio" name="categoryCombine" id="categoryCombine-@choice.value" value="@choice.value" data-second-label="@Messages(choice.secondLabelKey)"@if(choice == view.combine) { checked}@if(noEdit) { disabled}>
@@ -179,8 +181,8 @@
                     </div>
                     }
                     @if(noEdit) {<input type="hidden" name="categoryCombine" value="@view.combine.value">}
-                    @for(error <- view.choiceErrors) {
-                    <div class="text-danger small">@Messages(error.message, error.args: _*)</div>
+                    @for((error, i) <- view.choiceErrors.zipWithIndex) {
+                    <div class="text-danger small" id="category-combine-error-@i">@Messages(error.message, error.args: _*)</div>
                     }
                 </fieldset>
             </details>

@@ -228,6 +228,44 @@ class RoundConflictsAuthorizationSpec extends PlaySpecification with PlayTestDb 
       }
     }
 
+    "say a round being set up is being set up, not open to its jurors, with one state; a disqualify refused so" in {
+      testDbApp { app =>
+        val (round, _) = setUp()
+        val r = round.getId
+        def setState(status: String) = DB.autoCommit { implicit s =>
+          sql"UPDATE round SET distributing = TRUE, status = $status WHERE id = $r".update()
+        }
+        def pageOf() = {
+          val html = contentAsString(get(app, "admin@example.com", page(r)))
+          (html, org.jsoup.Jsoup.parse(html))
+        }
+        val setup = "Round 1 is being set up: its jurors don't see it yet, and files can't be disqualified or requalified " +
+          "here until it has been distributed."
+        // held in review (P3): distributing, paused, no job, its three files matched (step 3); its setup step's
+        // line (#205) is its state, the alert adds none (never "waiting for distribution" beside the step)
+        setState(Round.Status.Paused)
+        val (html, doc) = pageOf()
+        val result = post(app, Some("admin@example.com"), disqualify(r), both: _*)
+        // a creation that didn't finish, no job: no setup step, its RoundStartBlock state in the alert
+        setState(Round.Status.Draft)
+        val (draftHtml, draft) = pageOf()
+
+        (Option(doc.getElementById("coi-round-setup")).map(_.ownText) must beSome(setup)) and
+          (Option(doc.getElementById("round-setup-state")).map(_.text) must beSome(startWith("Setting up – step 3 of 3: choose jurors"))) and
+          (doc.select("#coi-round-setup .wlx-round-start-state").isEmpty must beTrue) and
+          (html must not(contain("waiting for distribution"))) and
+          (doc.getElementById("coi-round-open") must beNull) and (html must not(contain("is open to its jurors"))) and
+          (doc.getElementById("coi-round-stop") must beNull) and
+          (flash(result).get("error") must beSome(setup)) and
+          (disqualified(round) must beEmpty) and (voted(round) === Set(1L, 2L, 3L)) and
+          (Option(draft.getElementById("coi-round-setup")).map(_.ownText) must beSome(setup)) and
+          (draft.getElementById("round-setup-state") must beNull) and
+          (draft.select("#coi-round-setup .wlx-round-start-state").attr("data-state") === "incomplete") and
+          (draft.select("#coi-round-setup .wlx-round-start-state").text === "Not started – its creation didn't finish") and
+          (draftHtml must not(contain("is open to its jurors")))
+      }
+    }
+
     "refuse a requalify without a known reason, and an empty selection" in {
       testDbApp { app =>
         val (round, _) = setUp()
