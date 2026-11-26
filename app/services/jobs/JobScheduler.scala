@@ -63,6 +63,9 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
 
   def handler(kind: String): Option[JobHandler] = handlers.get(kind)
 
+  /** What the job does (its handler's title, e.g. "Distributing images to round 5"), or its kind. */
+  def title(job: Job): String = handler(job.kind).fold(job.kind)(_.title(job))
+
   private def inline: Boolean = settings.mode == Mode.Inline
 
   // ── background machinery ───────────────────────────────────────────────────

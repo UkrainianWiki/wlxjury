@@ -69,7 +69,8 @@ configured yet**.
   in the page's address and when you switch round. The round menu of the galleries shows the same icons and grey names, without these menus.
 - When the contest's rounds are on two tracks or more, a coloured chip after each round's name
   names its **track**, the line of rounds it belongs to: for example Quality, Quantity, **Main**
-  (the main competition), a region or a special nomination, and the **Track** menu next to **Status**
+  (the main competition; in a contest without one, the track of the first round when it is named
+  after that round, such as "Round 1"), a region or a special nomination, and the **Track** menu next to **Status**
   and **Type** narrows the row to one track's rounds. A round alone on a track named after it
   has no chip and no item in the menu, as the chip would only repeat its name; the chips and the
   menu show only when two tracks or more remain besides those, so a contest whose rounds were each

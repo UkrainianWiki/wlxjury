@@ -132,7 +132,7 @@
 
             @for(job <- distributionJob if !job.isDone) {
                 <div class="card card-body p-2 mb-3">
-                    @Messages("job.status"): @snippets.jobStatus(job, req.uri)
+                    @snippets.jobStatus(job, req.uri, label = Some(Messages("job.status")))
                 </div>
                 <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
             }
