@@ -346,6 +346,7 @@
                         @if(!newRound && !reapply) {
                             @bs.checkbox(field = editRoundForm("newImages"),
                                 Symbol("_label") -> Messages("distribute.x.new.files", "?"),
+                                Symbol("_help") -> (if (numJurors == 0) Messages("round.new.files.locked") else ""),
                                 Symbol("readonly") -> (numJurors == 0), Symbol("_locked") -> (numJurors == 0))
                             @* the files waiting for a juror (round-editing plan §7): topped up only if ticked,
                                off by default, with "Distribute new files" *@

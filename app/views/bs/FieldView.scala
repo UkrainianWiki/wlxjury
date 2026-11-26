@@ -106,6 +106,9 @@ final class FieldView(field: Field, args: Seq[(Symbol, Any)], baseClass: String)
   /** `_locked`: see the class comment. */
   val locked: Boolean = isTrue("_locked")
 
+  /** The label's id, which a locked multiple select's list is labelled by. */
+  def labelId: String = id + "_label"
+
   /** A locked multiple select: shown as its selected options' texts. */
   def lockedList: Boolean = locked && multiple
 

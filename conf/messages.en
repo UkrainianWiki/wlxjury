@@ -2080,4 +2080,5 @@ round.wait.unknown = Round {0}’s progress can’t be shown here. Save again wh
 round.filters.locked = The round''s filters can be changed only while it is waiting for review, with no votes and no job running.
 round.rates.locked.help = The rating type can be changed only while the round is waiting for review, with no votes and no job running, and no later round takes its files.
 round.distribution.locked = Chosen with the round''s jurors, on its jurors page, before its images are distributed.
+round.new.files.locked = The round has no jurors to give new files to.
 field.locked.none = None

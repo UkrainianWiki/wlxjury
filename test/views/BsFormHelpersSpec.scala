@@ -253,7 +253,9 @@ class BsFormHelpersSpec extends Specification {
       d.select("option[selected]").asScala.map(_.attr("value")).toSet === Set("a", "c")
       val shown = one(d, "#many_locked")
       classes(shown) === Set("form-control", "wlx-locked", "wlx-locked-values")
-      shown.attr("aria-label") === "Many"
+      shown.attr("aria-labelledby") === "many_label"
+      val label = one(d, "label")
+      (label.id === "many_label") and (label.hasAttr("for") must beFalse)
       shown.attr("aria-describedby") === "reason many_help"
       shown.select("li").asScala.map(_.text).toSeq === Seq("A", "C")
       d.select("input[type=hidden]").size === 0

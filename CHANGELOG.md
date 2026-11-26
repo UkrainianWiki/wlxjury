@@ -20,7 +20,7 @@ Merged after the 26.11.17 build, for the release after it.
 
 **Fixes**
 
-- Round form: the settings that can't be changed any more look it: greyed with a lock-icon line saying why (the filters, the rating type, the file distribution); "Previous rounds", "Leave out files that are in round(s)" and "Regions" list only their chosen rounds or regions, or "None", instead of a dropdown that looked editable.
+- Round form: the settings that can't be changed any more are greyed out. The filters and the criteria have a lock-icon line saying why; the rating type, the file distribution and "Distribute new files" show their reason under the field. "Previous rounds", "Leave out files that are in round(s)" and "Regions" list only their chosen rounds or regions, or "None", instead of a dropdown that looked editable (#225).
 - Round form: a track label that is too long is listed at the top as "Track label (optional): …" with a link to the field; a label of emoji or other characters outside the basic plane can be typed up to its 64 characters (the browser no longer counted them twice) (#209).
 - Track labels: spaces inside a label are kept as typed, so labels share a track only when they are identical, as the form's help says (#209).
 - Track labels: labelling a first round (or giving it a nomination or regions) no longer changes the category track names of the other first rounds (#209).

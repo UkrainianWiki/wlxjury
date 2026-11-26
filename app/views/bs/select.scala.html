@@ -10,7 +10,7 @@
     @for((value, text) <- options) {<option value="@value"@if(f.selectedValues.contains(value)) { selected}@if(f.disabledOptions(value)) { disabled}>@text</option>}
 </select>
 @if(f.lockedList) {
-<div id="@{f.id}_locked" class="form-control @FieldView.LockedClass wlx-locked-values" role="group" aria-label="@f.label.fold("")(_.toString)" @f.aria>
+<div id="@{f.id}_locked" class="form-control @FieldView.LockedClass wlx-locked-values" role="group"@if(f.label.isDefined) { aria-labelledby="@f.labelId"} @f.aria>
     @f.lockedTexts(options) match {
         case Nil => {<span class="wlx-locked-none">@messages.messages("field.locked.none")</span>}
         case texts => {<ul class="wlx-locked-list">@for(t <- texts) {<li>@t</li>}</ul>}

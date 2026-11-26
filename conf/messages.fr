@@ -2064,4 +2064,5 @@ round.wait.unknown = L’avancement du tour {0} ne peut pas être affiché ici. 
 round.filters.locked = Les filtres du tour ne peuvent être modifiés que pendant qu’il attend sa vérification, sans vote ni tâche en cours.
 round.rates.locked.help = Le type de notation ne peut être modifié que pendant que le tour attend sa vérification, sans vote ni tâche en cours, et tant qu’aucun tour suivant ne prend ses fichiers.
 round.distribution.locked = Choisie avec les jurés du tour, sur sa page des jurés, avant la distribution de ses images.
+round.new.files.locked = Le tour n’a pas de jurés à qui distribuer de nouveaux fichiers.
 field.locked.none = Aucun

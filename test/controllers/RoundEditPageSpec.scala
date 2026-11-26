@@ -477,6 +477,11 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         }
         doc.select("#previousRound_locked li").asScala.map(_.text).toSeq === Seq(previous.description)
         doc.select("#excludeRounds_locked").text === "None"
+        // each list is labelled by its label, which no longer points at the hidden select
+        forall(Seq("previousRound", "excludeRounds", "regions")) { id =>
+          (doc.getElementById(s"${id}_locked").attr("aria-labelledby") === s"${id}_label") and
+            (doc.select(s"label[for=$id]").size === 0) and (doc.select(s"label#${id}_label").size === 1)
+        }
         doc.select("#regions_locked li").size === 2
 
         // the single selects disabled, the text inputs readonly, the choice's radios disabled: all locked
@@ -499,6 +504,9 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
           (doc.select("#rates_help").text must startWith("The rating type can be changed only while")) and
           (doc.getElementById("distribution").hasClass("wlx-locked") must beTrue) and
           (doc.select("#distribution_help").text must contain("jurors page"))
+        // a round without jurors: "Distribute new files" locked, with its reason
+        (doc.getElementById("newImages").hasClass("wlx-locked") must beTrue) and
+          (doc.select("#newImages_help").text === "The round has no jurors to give new files to.")
         // the round's name, track and score rule stay editable
         lockedIn(doc, "#round-form") must not(containAnyOf(Seq("name", "trackLabel", "averageRule")))
       }
