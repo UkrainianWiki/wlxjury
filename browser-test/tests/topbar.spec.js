@@ -136,7 +136,9 @@ test.describe('the sticky top bar on a desktop', () => {
     }));
     const at576 = await read();
     expect(at576.position).toBe('sticky');
-    expect(at576.padding).toBe(`${at576.bar}px`);
+    // the padding follows the bar's height once the bar's last group (the help link) has wrapped:
+    // polled, as WebKit may read it before the padding catches up
+    await expect.poll(async () => { const r = await read(); return r.padding === `${r.bar}px`; }).toBe(true);
     await page.setViewportSize({ width: 575, height: 800 });
     await expect.poll(async () => (await read()).position).not.toBe('sticky');
     // no padding below 576 px: the initial value, computed as auto (or 0px)
