@@ -14,12 +14,13 @@
 @params = @{ services.AccountJoinHandler.paramsOf(job) }
 @mainAdmin("account.join.title", user, user.getId, contestId = contest.flatMap(_.id)) {
     <div class="row account-join-job">
-        <h1 class="h3">@Messages("account.join.job.title", name(joined, params.joinedId), name(kept, params.keptId))</h1>
+        <h1 class="h3" id="account-join-title">@Messages("account.join.job.title", name(joined, params.joinedId), name(kept, params.keptId))</h1>
         @for(e <- flash.get("error")) {
             <div class="alert alert-warning" role="alert">@e</div>
         }
         <div class="mb-3 account-join-status">
-            @snippets.jobStatus(job, routes.AccountJoinController.job(job.id).url, cancellable = !state.roundStepDone)
+            @snippets.jobStatus(job, routes.AccountJoinController.job(job.id).url, cancellable = !state.roundStepDone,
+                labelledBy = Some("account-join-title"))
             <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
         </div>
         @if(state.roundStepDone && !job.isDone && state.abandonedBy.isEmpty) {

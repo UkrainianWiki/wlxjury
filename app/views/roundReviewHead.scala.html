@@ -45,7 +45,7 @@
        (D20, read only) get the state above, and a failure as text *@
     @for(job <- r.job if !job.isDone) {
         @if(r.mayEdit) {
-            @snippets.jobStatus(job, request.uri)
+            @snippets.jobStatus(job, request.uri, label = r.jobTitle)
             <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
         } else {
             @if(job.isFailed) { <p id="round-review-job-failed">@Messages("round.review.job.failed")</p> }
