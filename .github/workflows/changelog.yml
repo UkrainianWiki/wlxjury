@@ -30,8 +30,9 @@ jobs:
           persist-credentials: false
       - name: Fragments are well formed
         run: python3 -B scripts/changelog-fragments.py check
+      # The checkout is GitHub's merge of the PR into its base; its first parent is the base as
+      # merged. Not pull_request.base.sha: that is the base when the PR event fired, so lines
+      # merged to master since then would count as the PR's own.
       - name: No line added under CHANGELOG.md's Unreleased
         if: github.event_name == 'pull_request'
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-        run: python3 -B scripts/changelog-fragments.py guard --base "$BASE"
+        run: python3 -B scripts/changelog-fragments.py guard --base HEAD^1
