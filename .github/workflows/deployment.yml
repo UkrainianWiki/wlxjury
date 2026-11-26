@@ -40,6 +40,13 @@ jobs:
           --mount type=bind,source="$PWD",target=/workspace,readonly
           --workdir /workspace/scripts/deployment
           python:3.8.20-slim python -B -m unittest -v test_deployment
+      # The changelog fragments' fold, check and guard (changes/unreleased/README.md)
+      - name: Changelog fragments tests on Python 3.8
+        run: >-
+          docker run --rm --network none
+          --mount type=bind,source="$PWD",target=/workspace,readonly
+          --workdir /workspace/scripts
+          python:3.8.20-slim python -B -m unittest -v test_changelog_fragments
       # The review tools (scripts/review/README.md): which gh errors a read retries, and each
       # tool's self-test on sample data; no GitHub access.
       - name: Review tools tests on Python 3.8

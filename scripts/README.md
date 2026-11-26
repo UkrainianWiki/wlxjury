@@ -5,6 +5,14 @@ Other folders: [`deployment/`](deployment/) (the release tools and their tests,
 review triage) and [`backfill/`](backfill/) (the one-off `vote.voted_at` backfill from the access
 logs, run on 2026-11-13; its docstring describes it).
 
+## changelog-fragments.py
+
+Folds the changelog fragments in `changes/unreleased/` into CHANGELOG.md at release (`fold`,
+`--into HEADING`, `--dry-run`), validates them (`check`) and refuses a PR that adds a line under
+CHANGELOG.md's Unreleased (`guard --base REV`, the Changelog workflow). The format is in
+[changes/unreleased/README.md](../changes/unreleased/README.md); tests in
+`test_changelog_fragments.py` (Python 3.8, the deployment workflow).
+
 ## run-with-prod-dump.sh
 
 Dumps the production DB, restores it into a local MariaDB 10.6 Docker container on port 3307, and starts the sbt dev server against it — so you can test the current branch against real production data without touching the live database.
