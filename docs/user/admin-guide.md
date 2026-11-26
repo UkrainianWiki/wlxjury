@@ -806,7 +806,8 @@ With many rounds, the menus in the top bar narrow and order the list:
 - **Order:** **Oldest first** (the order in which the rounds were created), **Newest first**, or
   **Active first** (the started rounds, then the others, each group oldest first).
 - **Track:** **All tracks** or the rounds of one track, when the rounds listed are on two tracks
-  or more. A coloured chip after a round's name names its track. See [Tracks](#a-tracks).
+  or more besides the tracks of a round alone, named after it (those have no chip and no item).
+  A coloured chip after a round's name names its track. See [Tracks](#a-tracks).
 
 Each item shows in grey how many rounds it would list. The choices stay in the page's address, so
 a reload or a link keeps them, and the round's statistics (the round's name, **Statistics** in the
