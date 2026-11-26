@@ -150,14 +150,14 @@ class CommonsLogin(
                   case Success(LoginSuccess) =>
                     loginOk()
                     loggedIn(c)
-                  case Success(result) if TransientLoginResults(result) =>
+                  case token @ Success(result) if TransientLoginResults(result) =>
                     retry = noLoginFor(afterFailedLogin())
-                    loginFailed(c, result, retry)
+                    loginFailed(c, token, retry)
                   case failed =>
                     // refused, or thrown after the request may have reached the wiki
                     refusals += 1
                     retry = noLoginFor(refusedGap(refusals))
-                    loginFailed(c, failed.fold(e => s"could not log in: ${String.valueOf(e.getMessage)}", identity), retry)
+                    loginFailed(c, failed, retry)
                 }
             }
           }
@@ -177,8 +177,10 @@ class CommonsLogin(
     nextCheck = if (invalidations.get() != invalidated) None else Some(now() + retry.toNanos)
   }
 
-  private def loginFailed(c: Credentials, why: String, retry: FiniteDuration): Status = {
-    logger.warn(s"${bot.host}: login as ${c.user} failed: ${controllers.Secured.logValue(why)}; " +
+  /** Logs a login that didn't log in: the wiki's answer, or the exception's message. */
+  private def loginFailed(c: Credentials, result: Try[String], retry: FiniteDuration): Status = {
+    logger.warn(s"${bot.host}: login as ${c.user} failed: " +
+      s"${controllers.Secured.logValue(result.fold(e => s"could not log in: ${String.valueOf(e.getMessage)}", identity))}; " +
       s"trying again in ${describe(retry)} at the earliest, when an import needs it")
     Status.Anonymous
   }
