@@ -92,6 +92,15 @@ class CutPickerViewSpec extends Specification {
         (CutPicker.fmtThreshold(BigDecimal(8)) === "8.0") and (CutPicker.fmtThreshold(BigDecimal("9.9090")) === "9.909")
     }
 
+    "take a posted threshold rounded to 4 places in range, and none of an extreme exponent or scale, at once" in {
+      import controllers.EditRound.threshold
+      val started = System.nanoTime()
+      val extreme = Seq("1e100000000", "1e-100000000", "-1e100000000", "abc", "1000000", "-0.0001").map(threshold)
+      ((System.nanoTime() - started) / 1000000 must beLessThan(2000L)) and (extreme.flatten must beEmpty) and
+        (threshold(" 7.25 ") === Some(BigDecimal("7.2500"))) and (threshold("9.90909") === Some(BigDecimal("9.9091"))) and
+        (threshold("-0.00004") === Some(BigDecimal("0.0000"))) and (threshold("999999.99994") === Some(BigDecimal("999999.9999")))
+    }
+
     "keep the threshold by default for a rated source, and N for a yes/no one" in {
       val page = render(Some(picker()))
       (values(page, "input[type=radio][name=cutKeep]", "value") === Seq("threshold", "top")) and

@@ -157,8 +157,15 @@ object EditRound {
     */
   def threshold(text: String): Option[BigDecimal] =
     Try(BigDecimal(text.trim)).toOption
+      // before the rounding, which a huge exponent ("1e100000000") or scale ("1e-100000000") would make
+      // take minutes: a value that can't round into range, or of more places than any form posts, is none
+      // (cheap: compares by exponent); one just outside the range that rounds into it still counts
+      .filter(x => x.scale <= ThresholdMaxScale && x.abs < services.CutPicker.ThresholdMax + 1)
       .map(_.setScale(services.CutPicker.ThresholdScale, BigDecimal.RoundingMode.HALF_UP))
       .filter(x => x >= 0 && x <= services.CutPicker.ThresholdMax)
+
+  /** The decimal places a posted threshold may have before it is rounded to 4 ([[threshold]]). */
+  private val ThresholdMaxScale = 32
 
   /** The criteria selects' values: the chosen ones, by position (-1 for a value that is no id). */
   def criterionIdsOf(values: Seq[String]): Seq[Long] =
