@@ -337,6 +337,20 @@
       say(text('updating'), false);
     }, true);
 
+    // a page restored from the back/forward cache: no load of it is running, so its Save is never left
+    // disabled (the list it shows is the one it had)
+    var view = doc.defaultView;
+    if (view) {
+      view.addEventListener('pageshow', function (e) {
+        if (!e.persisted) return;
+        if (timer) clearTimeout(timer);
+        timer = null;
+        loading = false;
+        box.removeAttribute('aria-busy');
+        guardSave(false);
+      });
+    }
+
     updateCutLink(doc);
     if (!wrap.hasAttribute('data-cut-loaded') && hasPrevious(body(form))) load();
     else lastBody = requestBody();

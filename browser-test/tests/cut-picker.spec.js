@@ -1,4 +1,4 @@
-// The round form's cut control (docs/user/admin-guide.md "Choosing the round's files"; regional winners
+// The round form's cut control (docs/user/round-files.md "Choosing the round's files"; regional winners
 // plan §10.4, one control decided 2026-11-26, loaded in place decided 2026-11-26): choosing the fixture's
 // rated round as the previous round lists every valid cut as "top N · score ≥ X", the candidates
 // labelled, without leaving the page (cut-list.js posts the form to the cut list and fills the box); a

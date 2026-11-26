@@ -185,6 +185,15 @@ jobs:
           python3 scripts/story-coverage.py --self-test
           python3 scripts/story-coverage.py > /dev/null
 
+      # The user guide's links (docs/README.md §5): every relative link, image and #anchor of
+      # docs/user resolves, ids are unique and every topic heading has one. Seconds, no build; in
+      # the first matrix leg only, as the story coverage. Its self-test first.
+      - name: User guide links
+        if: (success() || failure()) && strategy.job-index == 0
+        run: |
+          python3 scripts/docs-links.py --self-test
+          python3 scripts/docs-links.py
+
       - name: End of the log
         if: failure()
         run: tail -n 400 target/checks/*.log

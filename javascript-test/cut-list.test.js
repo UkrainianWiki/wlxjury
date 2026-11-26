@@ -459,6 +459,26 @@ describe("cut-list", () => {
         expect(picked.getAll("cutKeep")).toEqual(["threshold"]);
     });
 
+    test("a page restored from the back/forward cache never keeps Save disabled", () => {
+        page({ prev: "1" });
+        const { fetch } = deferredFetch();
+        create(document, { fetch });
+        const save = document.getElementById("save");
+        expect(save.disabled).toBe(true); // loading as it opened
+        const notRestored = new Event("pageshow");
+        notRestored.persisted = false;
+        window.dispatchEvent(notRestored);
+        expect(save.disabled).toBe(true);
+        const restored = new Event("pageshow");
+        restored.persisted = true;
+        window.dispatchEvent(restored);
+        expect(save.disabled).toBe(false);
+        expect(document.getElementById("top-n-box").hasAttribute("aria-busy")).toBe(false);
+        const submit = new Event("submit", { cancelable: true });
+        document.getElementById("round-form").dispatchEvent(submit);
+        expect(submit.defaultPrevented).toBe(false);
+    });
+
     test("a page without a cut box, or without its URL, is left alone", () => {
         document.body.innerHTML = '<form><p id="topImages">No top N</p></form>';
         expect(create(document, { fetch: jest.fn() })).toBeNull();
