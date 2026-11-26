@@ -195,29 +195,77 @@ class CommonsLoginSpec extends Specification with JuryTestHelpers {
       ok
     }
 
-    "not shorten the refused-login gap after a login that throws" in {
+    "back off the same way after logins that throw (a timeout or an error page)" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous)
+      mw.login("ExampleBot@jury", "secret") returns Future.failed(new java.util.concurrent.TimeoutException("timed out"))
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.ensure()
+      Seq(5, 10, 20, 40, 60, 60).map(_.minutes).zipWithIndex.foreach { case (gap, i) =>
+        clock(0) += gap.toNanos - 1
+        l.invalidate()
+        l.ensure()
+        verify(mw, times(i + 1)).login("ExampleBot@jury", "secret")
+        clock(0) += 1
+        l.ensure()
+        verify(mw, times(i + 2)).login("ExampleBot@jury", "secret")
+      }
+      ok
+    }
+
+    "count refused and throwing logins in one series" in {
       val mw = mockBot()
       mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous)
       mw.login("ExampleBot@jury", "secret") returns Future.successful("Failed") thenReturns
-        Future.successful("Failed") thenReturns Future.successful("Failed") thenReturns
         Future.failed(new RuntimeException("<html>503</html>")) thenReturns Future.successful("Failed")
       val clock = Array(0L)
       val l = login(mw, clock)
       l.ensure() // refused: 5
       clock(0) += 5.minutes.toNanos
-      l.ensure() // refused: 10
-      clock(0) += 10.minutes.toNanos
-      l.ensure() // refused: 20
-      clock(0) += 20.minutes.toNanos
-      l.ensure() // throws: at least 20, not recheck
-      verify(mw, times(4)).login("ExampleBot@jury", "secret")
-      clock(0) += 10.minutes.toNanos
-      l.invalidate()
+      l.ensure() // throws: 10
+      clock(0) += 9.minutes.toNanos
       l.ensure()
-      verify(mw, times(4)).login("ExampleBot@jury", "secret")
+      verify(mw, times(2)).login("ExampleBot@jury", "secret")
+      clock(0) += 1.minute.toNanos
+      l.ensure() // refused: 20
+      verify(mw, times(3)).login("ExampleBot@jury", "secret")
+      clock(0) += 19.minutes.toNanos
+      l.ensure()
+      verify(mw, times(3)).login("ExampleBot@jury", "secret")
+      ok
+    }
+
+    "keep the token-result wait at recheck, not the backoff, and not below the current gap" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous)
+      mw.login("ExampleBot@jury", "secret") returns Future.successful("WrongToken") thenReturns
+        Future.successful("WrongToken") thenReturns Future.successful("WrongToken")
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.ensure()
       clock(0) += 10.minutes.toNanos
-      l.ensure() // refused: 40
-      verify(mw, times(5)).login("ExampleBot@jury", "secret")
+      l.ensure()
+      clock(0) += 10.minutes.toNanos
+      l.ensure()
+      verify(mw, times(3)).login("ExampleBot@jury", "secret")
+      ok
+    }
+
+    "check again after recheck when the check after a successful login throws" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous) thenReturns
+        Future.failed(new java.io.IOException("connection reset")) thenReturns Future.successful(bot)
+      mw.login("ExampleBot@jury", "secret") returns Future.successful("Success")
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.idsPerRequest === 50
+      clock(0) += 9.minutes.toNanos
+      l.idsPerRequest === 50
+      userInfoRequests(mw, 2)
+      clock(0) += 1.minute.toNanos
+      l.idsPerRequest === 500
+      verify(mw, times(1)).login("ExampleBot@jury", "secret")
       ok
     }
 
@@ -255,7 +303,7 @@ class CommonsLoginSpec extends Specification with JuryTestHelpers {
       ok
     }
 
-    "try a login that threw again after recheck" in {
+    "try a login that threw again after the refused-login gap" in {
       val mw = mockBot()
       mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous) thenReturns
         Future.successful(anonymous) thenReturns Future.successful(bot)
@@ -264,7 +312,7 @@ class CommonsLoginSpec extends Specification with JuryTestHelpers {
       val clock = Array(0L)
       val l = login(mw, clock)
       l.idsPerRequest === 50
-      clock(0) += 10.minutes.toNanos
+      clock(0) += 5.minutes.toNanos
       l.idsPerRequest === 500
     }
 

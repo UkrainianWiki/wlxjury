@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.util.control.NonFatal
+import scala.util.{Success, Try}
 
 /** The Commons account behind the app's API requests. With `commons.user` and
   * `commons.password` set (a bot password, `User@name`), it logs the shared [[MwBot]] in.
@@ -24,21 +25,22 @@ import scala.util.control.NonFatal
   * A check the API doesn't answer (a timeout, an error page, an API error) keeps the last
   * answer: it doesn't say the session has ended, and a batch too large for the session is
   * fetched again in smaller ones anyway ([[MwCommonsSource]]). A failed login leaves the
-  * anonymous limits: imports still work, in smaller batches, and the next check is after
-  * `recheck`. That includes a login that throws, a login refused for its token
-  * ([[TransientLoginResults]]) and one that succeeds but leaves the session anonymous:
-  * none of these is a wrong password. A login the wiki refuses otherwise (a wrong or
-  * revoked bot password, a blocked account) is tried again when an import step needs it,
-  * but not before a gap that starts at `loginRetryFirst` (5 minutes) and doubles with each
-  * refusal in a row (5, 10, 20, 40 minutes) up to `loginRetryMax` (1 hour); a successful
-  * login, or a session found logged in, resets it. A refusal may be a one-off (the
-  * password itself is fine), so imports should not stay anonymous (50 ids per request
-  * instead of 500) for long; but repeated or concurrent jobs must not run into the wiki's
-  * limits of failed logins: 150 per 48 hours per IP and 5 per 5 minutes per account. With
-  * a bot password that stays wrong, the worst case is 4 tries in the first 75 minutes and
-  * then one an hour: about 50 in 48 hours, and never more than one in 5 minutes. A login
-  * that throws or is refused for its token, after refusals in a row, waits at least the
-  * current gap too, and no login (not even after an [[invalidate]]) starts before it.
+  * anonymous limits: imports still work, in smaller batches.
+  *
+  * A login the wiki refuses (a wrong or revoked bot password, a blocked account), and one
+  * that throws (a timeout or an error page: the wiki may have counted it as a failed
+  * login), is tried again when an import step needs it, but not before a gap that starts at
+  * `loginRetryFirst` (5 minutes) and doubles with each such failure in a row (5, 10, 20, 40
+  * minutes) up to `loginRetryMax` (1 hour); a successful login, or a session found logged
+  * in, resets it. A refusal may be a one-off (the password itself is fine), so imports
+  * should not stay anonymous (50 ids per request instead of 500) for long; but repeated or
+  * concurrent jobs must not run into the wiki's limits of failed logins: 150 per 48 hours
+  * per IP and 5 per 5 minutes per account. The worst case, a bot password that stays wrong
+  * or a wiki that keeps timing out, is 4 tries in the first 75 minutes and then one an
+  * hour: about 50 in 48 hours. A login refused for its token ([[TransientLoginResults]]:
+  * not a password check) waits `recheck`, or the current gap if longer, and one that
+  * succeeds but leaves the session anonymous waits `recheck`. So no path logs in more than
+  * once in 5 minutes, and no login (not even after an [[invalidate]]) starts before its gap.
   *
   * One caller checks at a time, and the others don't wait for it: they go on with the last
   * answer. An [[invalidate]] while it checks makes the next [[ensure]] check again, as the
@@ -60,7 +62,7 @@ class CommonsLogin(
   @volatile private var status: Status = Status.Anonymous
   /** When [[ensure]] asks again; None: at the next call. */
   @volatile private var nextCheck: Option[Long] = None
-  /** Logins the wiki refused in a row (not counting [[TransientLoginResults]] or a throw). */
+  /** Logins the wiki refused, or that threw, in a row (not counting [[TransientLoginResults]]). */
   @volatile private var refusals: Int = 0
   /** No login before this time, even when a check finds the session anonymous. */
   @volatile private var nextLogin: Option[Long] = None
@@ -108,8 +110,8 @@ class CommonsLogin(
       math.min(gap, max).nanos
     }
 
-  /** The wait after a login that threw or was refused for its token: `recheck`, or the
-    * current refused-login gap if longer, so a throw can't shorten that gap.
+  /** The wait after a login refused for its token: `recheck`, or the current refused-login
+    * gap if longer, so it can't shorten that gap.
     */
   private def afterFailedLogin(): FiniteDuration = recheck.max(refusedGap(refusals))
 
@@ -144,20 +146,18 @@ class CommonsLogin(
                 retry = wait.nanos
                 Status.Anonymous
               case None =>
-                val result = login(c)
-                if (result == LoginSuccess) {
-                  loginOk()
-                  loggedIn(c)
-                } else {
-                  retry =
-                    if (TransientLoginResults(result)) noLoginFor(afterFailedLogin())
-                    else {
-                      refusals += 1
-                      noLoginFor(refusedGap(refusals))
-                    }
-                  logger.warn(s"${bot.host}: login as ${c.user} failed: ${controllers.Secured.logValue(result.toString)}; " +
-                    s"trying again in ${describe(retry)} at the earliest, when an import needs it")
-                  Status.Anonymous
+                Try(login(c)) match {
+                  case Success(LoginSuccess) =>
+                    loginOk()
+                    loggedIn(c)
+                  case Success(result) if TransientLoginResults(result) =>
+                    retry = noLoginFor(afterFailedLogin())
+                    loginFailed(c, result, retry)
+                  case failed =>
+                    // refused, or thrown after the request may have reached the wiki
+                    refusals += 1
+                    retry = noLoginFor(refusedGap(refusals))
+                    loginFailed(c, failed.fold(e => s"could not log in: ${String.valueOf(e.getMessage)}", identity), retry)
                 }
             }
           }
@@ -167,14 +167,20 @@ class CommonsLogin(
             s"keeping the last answer (${status.describe}), checking again in $recheck")
           status
         case NonFatal(e) =>
-          retry = noLoginFor(afterFailedLogin())
-          logger.warn(s"${bot.host}: could not log in the account: ${controllers.Secured.logValue(String.valueOf(e.getMessage))}; " +
-            s"trying again in ${describe(retry)} at the earliest, when an import needs it")
-          Status.Anonymous
+          // only the check after a successful login gets here
+          logger.warn(s"${bot.host}: logged in, but could not check the account: ${controllers.Secured.logValue(String.valueOf(e.getMessage))}; " +
+            s"keeping the last answer (${status.describe}), checking again in ${describe(recheck)}")
+          status
       }
     if (checked != status || nextCheck.isEmpty) logger.info(s"${bot.host}: ${checked.describe}")
     status = checked
     nextCheck = if (invalidations.get() != invalidated) None else Some(now() + retry.toNanos)
+  }
+
+  private def loginFailed(c: Credentials, why: String, retry: FiniteDuration): Status = {
+    logger.warn(s"${bot.host}: login as ${c.user} failed: ${controllers.Secured.logValue(why)}; " +
+      s"trying again in ${describe(retry)} at the earliest, when an import needs it")
+    Status.Anonymous
   }
 
   /** The session after a successful login: anonymous still if it didn't keep the login

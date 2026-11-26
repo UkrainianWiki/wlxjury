@@ -42,7 +42,7 @@ the bench server passes no Commons environment, CI passes no secrets but `GITHUB
 (`CommonsLogin.HighLimit`), 50 without (`Limit`); import steps take one request's worth
 (`jobs.commonsImport.pageSize`, unset). A session that went anonymous (MediaWiki ends idle
 sessions, and reads then succeed anonymously without an error) is found by the recheck and
-logged in again. A refused login is tried again when an import step needs it, but not before a
+logged in again. A refused login (or one that throws: a timeout or an error page) is tried again when an import step needs it, but not before a
 gap that starts at 5 minutes and doubles with each refusal in a row up to 1 hour
 (`LoginRetryFirst`, `LoginRetryMax`); a successful login resets it. *Why:* the wiki limits failed
 logins (150 per 48 hours per IP, 5 per 5 minutes per account), and a wrong bot password must not
