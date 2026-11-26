@@ -1745,17 +1745,17 @@ object DistributionSource {
     */
   private def ratedRows(prevIds: Seq[Long], votes: PrevVotes, denominators: Seq[(Long, Denominator)], pageSize: Int,
       offset: Int, excluded: Seq[Long], skipDqOf: Option[Long])(implicit session: DBSession): Seq[RankRow] = {
-    sql"""${ratedQuery(prevIds, votes, denominators, excluded, skipDqOf, images = false)}
+    sql"""${ratedQuery(prevIds, votes, denominators, excluded, skipDqOf)}
           LIMIT $pageSize OFFSET $offset"""
       .map(rs => RankRow(rs.long(1), rs.long(2), rs.long(3), rs.long(4), rs.long(5), None))
       .list()
   }
 
-  /** [[ratedRows]]' query, in its order, without a limit; with `images`, each row joined to its image
-    * (not deleted: a row without one is left out, as [[rank]] skips it) and its [[ImageColumns]].
+  /** [[ratedRows]]' query, in its order, without a limit; with `numbered`, in no order but each row
+    * with its place in that order (`rn`, `ROW_NUMBER() OVER` the same order), for [[rowsWithImages]].
     */
   private def ratedQuery(prevIds: Seq[Long], votes: PrevVotes, denominators: Seq[(Long, Denominator)],
-      excluded: Seq[Long], skipDqOf: Option[Long], images: Boolean): SQLSyntax = {
+      excluded: Seq[Long], skipDqOf: Option[Long], numbered: Boolean = false): SQLSyntax = {
     // one row's score in its round (t.round_id), by that round's denominator
     def rowScore(d: Denominator): SQLSyntax = d match {
       case Denominator.Const(n)      => sqls"IF($n = 0, 0, GREATEST(t.rs, 0) * 1e0 / $n)"
@@ -1765,15 +1765,14 @@ object DistributionSource {
     require(denominators.nonEmpty, "a top-N needs previous rounds")
     val cases = denominators.map { case (id, d) => sqls"WHEN $id THEN ${rowScore(d)}" }
     val score = sqls"CASE t.round_id ${sqls.join(cases, sqls" ")} END"
-    val (columns, join) =
-      if (images) (sqls", $ImageColumns", sqls"JOIN images i ON i.page_id = t.page_id AND i.deleted_at IS NULL")
-      else (sqls"", sqls"")
-    sqls"""SELECT t.page_id, t.round_id, GREATEST(t.rs, 0) rate_sum, t.c, t.v $columns FROM (
+    val orderBy = sqls"$score DESC, GREATEST(t.rs, 0) DESC, t.rs DESC, t.page_id ASC, t.round_id ASC"
+    val (number, order) = if (numbered) (sqls", ROW_NUMBER() OVER (ORDER BY $orderBy) rn", sqls"") else (sqls"", sqls"ORDER BY $orderBy")
+    sqls"""SELECT t.page_id, t.round_id, GREATEST(t.rs, 0) rate_sum, t.c, t.v $number FROM (
             SELECT s.page_id, s.round_id, ${roundAggregates(votes)} FROM vote s
             WHERE s.round_id IN ($prevIds) ${votesCond(votes)} ${notInExcluded(excluded, sqls"s.page_id")}
               ${notDqIn(skipDqOf, sqls"s.page_id")}
-            GROUP BY s.page_id, s.round_id) t $join
-          ORDER BY $score DESC, GREATEST(t.rs, 0) DESC, t.rs DESC, t.page_id ASC, t.round_id ASC"""
+            GROUP BY s.page_id, s.round_id) t
+          $order"""
   }
 
 
@@ -1828,34 +1827,36 @@ object DistributionSource {
   private val ImageColumns =
     sqls"i.title, i.width, i.height, i.monument_id, i.size, i.author, i.mime, i.media_type"
 
-  /** A row's image, from its [[ImageColumns]] (after the row's five columns). */
+  /** A row's image, from its [[ImageColumns]] (after the row's five columns and its place). */
   private def filterImage(rs: WrappedResultSet): Image =
-    Image(pageId = rs.long(1), title = rs.string(6), width = rs.int(7), height = rs.int(8), monumentId = rs.stringOpt(9),
-      size = rs.intOpt(10), author = rs.stringOpt(11), mime = rs.stringOpt(12), mediaType = rs.stringOpt(13))
+    Image(pageId = rs.long(1), title = rs.string(7), width = rs.int(8), height = rs.int(9), monumentId = rs.stringOpt(10),
+      size = rs.intOpt(11), author = rs.stringOpt(12), mime = rs.stringOpt(13), mediaType = rs.stringOpt(14))
 
   /** Every row of [[ratedRows]] (or, with `order`, [[binaryRows]]), in its order, each with its image's
     * [[ImageColumns]]; a row without a (not deleted) image left out, as [[rank]] skips it. One query:
-    * a yes/no source's grouped rows are numbered by its order (`ROW_NUMBER() OVER`, the same order as
-    * [[binaryRows]]'), then joined to their images.
+    * the grouped rows numbered by that order (`ROW_NUMBER() OVER` it: sorted while they are narrow),
+    * joined to their images in no order, put in order here by their numbers (a sort of the joined, wide
+    * rows by the database took several times longer).
     */
   private def rowsWithImages(prevIds: Seq[Long], votes: PrevVotes, denominators: Seq[(Long, Denominator)],
       order: Option[BinaryOrder], excluded: Seq[Long], skipDqOf: Option[Long])(implicit
-      session: DBSession): Seq[(RankRow, Image)] =
-    order match {
+      session: DBSession): Seq[(RankRow, Image)] = {
+    val (numbered, row): (SQLSyntax, WrappedResultSet => RankRow) = order match {
       case None =>
-        sql"${ratedQuery(prevIds, votes, denominators, excluded, skipDqOf, images = true)}"
-          .map(rs => RankRow(rs.long(1), rs.long(2), rs.long(3), rs.long(4), rs.long(5), None) -> filterImage(rs))
-          .list()
+        (ratedQuery(prevIds, votes, denominators, excluded, skipDqOf, numbered = true),
+          rs => RankRow(rs.long(1), rs.long(2), rs.long(3), rs.long(4), rs.long(5), None))
       case Some(o) =>
         val (_, orderBy) = binaryGrouped(prevIds, votes, o, excluded, skipDqOf)
-        val (grouped, _) = binaryGrouped(prevIds, votes, o, excluded, skipDqOf,
-          extra = sqls", ROW_NUMBER() OVER (ORDER BY $orderBy) rn")
-        sql"""SELECT t.page_id, t.round_id, t.approvals, t.rejections, t.cnt, $ImageColumns
-              FROM ($grouped) t JOIN images i ON i.page_id = t.page_id AND i.deleted_at IS NULL
-              ORDER BY t.rn"""
-          .map(rs => binaryRow(rs) -> filterImage(rs))
-          .list()
+        (binaryGrouped(prevIds, votes, o, excluded, skipDqOf, extra = sqls", ROW_NUMBER() OVER (ORDER BY $orderBy) rn")._1,
+          binaryRow)
     }
+    sql"""SELECT n.*, $ImageColumns
+          FROM ($numbered) n JOIN images i ON i.page_id = n.page_id AND i.deleted_at IS NULL"""
+      .map(rs => (rs.long(6), row(rs), filterImage(rs)))
+      .list()
+      .sortBy(_._1)
+      .map { case (_, r, image) => r -> image }
+  }
 
   /** A file's aggregate row of one previous round, as the top-N reads it: its rate sum (a rated round's,
     * below 0 as 0; a yes/no round's approvals), its vote rows and its rated rows (a rated round's voted,
