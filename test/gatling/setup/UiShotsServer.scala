@@ -478,6 +478,28 @@ object UiShotsServer {
         id
       }
     }
+    // the round tabs grouped by track (round-tabs.spec.js): a contest of its own whose rounds are
+    // on tracks, as WLM Ukraine's: Quality and Quantity first rounds, a second Quality round, the
+    // merge of both (Main) and a special nomination's round; its tabs' ids (round, track)
+    val tracksContest: Option[(Long, Seq[Long])] = Option.when(f.docsPhotos.isEmpty) {
+      import db.scalikejdbc.Round
+      val name = "Round tracks"
+      val contest = db.scalikejdbc.ContestJuryJdbc.findAll().find(c => c.name == name && c.year == 2019).getOrElse {
+        val c = db.scalikejdbc.ContestJuryJdbc.create(None, name, 2019, "Ukraine", Some("Category:Images from Round tracks 2019 in Ukraine"))
+        val prefix = "Category:Round tracks in Ukraine 2019 - "
+        def round(n: Int, name: String, previous: Seq[Round] = Nil, category: Option[String] = None,
+            nomination: Option[String] = None, rates: db.scalikejdbc.Rates = Round.binaryRound) =
+          Round.create(Round(None, n, Some(name), c.getId, rates = rates, category = category, specialNomination = nomination,
+            previous = Option.when(previous.nonEmpty)(previous.map(_.getId).mkString(",")), active = n == 4))
+        val q00 = round(1, "Q-00", category = Some(prefix + "Quality"))
+        val qn00 = round(2, "Qn-00", category = Some(prefix + "Quantity"))
+        val q01 = round(3, "Q-01", Seq(q00))
+        round(4, "Q-02", Seq(q01, qn00), rates = Round.rateRounds(7))
+        round(5, "Kha-00", nomination = Some("Харків"))
+        c
+      }
+      contest.getId -> Round.findByContest(contest.getId).flatMap(_.id).sorted
+    }
     // the guides' screenshots only (-Dui.images=docs): a running round rated by criteria in the
     // fixture's contest, Aesthetics, Technical quality and Usefulness for Wikipedia (V83's 4, 6
     // and 7, as the juror guide names them), five stars each, with the juror above and the
@@ -561,6 +583,7 @@ object UiShotsServer {
          |  "joinPairs": [${joinPairs.mkString(", ")}],
          |  "healthContestId": ${healthContest.getOrElse(0L)},
          |  "roundsContestId": ${roundsContest.getOrElse(0L)},
+         |  "tracksContest": ${tracksContest.fold("null") { case (c, rs) => s"""{"contestId": $c, "roundIds": [${rs.mkString(", ")}]}""" }},
          |  "oneCriterion": $oneCriterion,
          |  "docsCriteria": ${docsCriteria.fold("null") { case (r, p) => s"""{"roundId": $r, "pageId": $p}""" }},
          |  "closedRoundJurors": [${closedRoundJurors.mkString(", ")}],

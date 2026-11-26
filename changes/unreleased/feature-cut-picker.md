@@ -1,0 +1,3 @@
+section: Features
+
+- Round form: the number of top files from the previous rounds is chosen with "Choose N" instead of typed: it lists candidate cuts among the first 100 places with their reasons (a clear drop in scores, a yes/no vote level, all candidates, the edges of a tie), offers only numbers that don't split a tie (files with the same score tie), previews "37 of 412 files, lowest included score 7.2" and shows the ranked files with the cut lines. A number inside a tie is refused on save, and checked again when the files are chosen; how N was chosen is kept in the round's settings log (#237).

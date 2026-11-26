@@ -1191,7 +1191,7 @@ the Rounds page says so under it. The deleted round is not counted when the trac
 round with no previous round left starts a track of its own (rule 7).
 
 **The chip and the Track menu.** A coloured chip after a round's name names its track, on the
-Rounds page, the round's statistics and the galleries' round menu (jurors don't see it). Main has
+Rounds page (jurors don't see it). Main has
 a colour of its own; the other colours only tell the tracks apart. A region track's chip names its
 regions. A long name shows its start and its end: point at the chip for the full text. A round
 on a track named after it that no other round continues has no chip: it would only repeat the
@@ -1202,6 +1202,17 @@ each created on their own. The **Track** menu, next to **Status** and
 rounds, with a count for each. It lists Main first, then the tracks that lead into Main in the
 order they join it, then the others. The choice stays in the page's address, as the other menus'
 do.
+
+**The round tabs.** The round's statistics and the authors list show the contest's rounds as a row
+of tabs, the same on both pages: each tab is the round's type icons and its name, with no chip;
+point at a tab to see its track. Where the contest's rounds are on tracks, the tabs are grouped by
+track: each track's name once, small, before its rounds, Main first, then the tracks that lead
+into it, then the others. **Group by track** at the end of the **Order** menu turns the groups off
+(the tabs then follow the order chosen above it) and on again; the choice stays in the page's
+address, and the tabs' links keep it.
+The galleries' round menu (galleries, by rating, the large view) groups the rounds the same way,
+each track's name as a heading in the menu before its rounds, without chips; jurors' menus are not
+grouped.
 
 <a id="a-score-rule"></a>
 ### The file score

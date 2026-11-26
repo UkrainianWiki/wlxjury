@@ -106,7 +106,7 @@ body.gallery {
 .wlx-round-icon > .wlx-round-no { color: var(--wlx-rejected); }
 .wlx-round-icon > .wlx-round-star { color: var(--wlx-star); }
 .wlx-round-icon.wlx-round-icon-inactive > i { color: var(--bs-secondary-color); }
-.wlx-round-named, .dropdown-item.wlx-round-item, #round-stat-rounds .page-link {
+.wlx-round-named, .dropdown-item.wlx-round-item, .wlx-round-tabs .page-link {
     display: flex; align-items: baseline;
 }
 /* the Rounds table: the name keeps the width beside its icon, and the Track chip goes to a line
@@ -115,6 +115,13 @@ body.gallery {
    (2.15em + .4em, .wlx-round-icon) */
 .wlx-round-named { flex-wrap: wrap; }
 .wlx-round-named > .round-stat-link { max-width: calc(100% - 2.55em); }
+/* a page's round tabs (snippets/roundTabs: the round statistics and the authors pages): wrapped,
+   left-aligned; grouped by track, each group its track's name, small and secondary, then its tabs,
+   the groups apart from each other; no Track chips in the tabs (the track is the tooltip) */
+.wlx-round-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: .375rem 1rem; margin: .5rem 0 .25rem; }
+.wlx-round-tabs .pagination { flex-wrap: wrap; }
+.wlx-round-tabs-group, .wlx-round-tabs-other { display: flex; flex-wrap: wrap; align-items: center; gap: .375rem; }
+.wlx-round-tabs-label { font-size: .8125rem; color: var(--bs-secondary-color); white-space: nowrap; }
 /* a round's Track chip after its name (round lineage slice A, snippets/trackChip): its track's
    colours (theme.css --wlx-track-*), a thin edge of its text colour so a pale chip shows on the
    stripes and the hover grey; never cut or wrapped inside; in the Track menu a swatch before the name */
@@ -136,6 +143,9 @@ body.gallery {
    name too long for the window cut with an ellipsis on a desktop (wlx-item-text,
    dropDownSelection), wrapped on a phone */
 .dropdown-menu.wlx-round-menu { max-width: calc(100vw - 1rem); overflow-x: hidden; }
+/* the round menu grouped by track (dropDownSelection groups): each track's name a small header
+   before its rounds, as the round tabs' labels */
+.dropdown-menu.wlx-round-menu .dropdown-header { font-size: .8125rem; padding-top: .375rem; padding-bottom: .125rem; }
 .dropdown-item.wlx-round-item > .wlx-item-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 575.98px) {
     .dropdown-item.wlx-round-item { white-space: normal; }
@@ -236,8 +246,8 @@ body.gallery {
    overrides the theme's transparent 1px focus outline (codex-theme.css); focused, it turns solid,
    so the focus shows also in forced-colours mode, where the focus ring (a box-shadow) is not
    drawn */
-#round-stat-rounds .page-link.wlx-round-outside { outline: 2px dashed currentColor; outline-offset: -2px; }
-#round-stat-rounds .page-link.wlx-round-outside:focus-visible { outline-style: solid; }
+.wlx-round-tabs .page-link.wlx-round-outside { outline: 2px dashed currentColor; outline-offset: -2px; }
+.wlx-round-tabs .page-link.wlx-round-outside:focus-visible { outline-style: solid; }
 /* the round statistics' icon links (a juror's gallery, file list, by rate; the Total row's) and
    the count beside them, centred on one line (roundStatTable, roundStatLinks): Codex's 28 px
    small buttons (codex-theme.css, #366: min-height 28 px) are taller than their icon and the

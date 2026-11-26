@@ -15,6 +15,9 @@
     </th>
 }
 
+@* the round tabs' first item: the whole contest *@
+@wholeContest = {<li class="page-item@if(page.round.isEmpty){ active}"><a class="page-link" href="@page.roundUrl(None)" @if(page.round.isEmpty){aria-current="page"}>@Messages("authors.whole.contest")</a></li>}
+
 @* a count of the author's files, with its share of them: 12 (86%) *@
 @ofFiles(n: Int, files: Int) = {@n <span class="text-body-secondary small">(@AuthorsPage.percent(AuthorsPage.share(n, files), messages.lang.locale))</span>}
 
@@ -22,15 +25,9 @@
     <div class="container-fluid mt-2" id="authors">
         <h1 class="h4">@Messages("authors.list"): @page.contest.fullName</h1>
 
-        @* the contest, or one of its rounds *@
-        <nav aria-label="@Messages("authors.of")">
-            <ul class="pagination flex-wrap mb-2" id="authors-rounds">
-                <li class="page-item@if(page.round.isEmpty){ active}"><a class="page-link" href="@page.roundUrl(None)" @if(page.round.isEmpty){aria-current="page"}>@Messages("authors.whole.contest")</a></li>
-                @for(r <- page.rounds) {
-                    <li class="page-item@if(page.round.exists(_.id == r.id)){ active}"><a class="page-link" href="@page.roundUrl(Some(r))" @if(page.round.exists(_.id == r.id)){aria-current="page"}>@r.description</a></li>
-                }
-            </ul>
-        </nav>
+        @* the contest, or one of its rounds: the round tabs (snippets/roundTabs, as the round
+           statistics'), "Whole contest" first *@
+        @snippets.roundTabs(page.tabs, Messages("authors.of"), lead = wholeContest)
 
         @* how diverse the authors are: how many, of how many files, and the most of one author *@
         <p id="authors-summary">

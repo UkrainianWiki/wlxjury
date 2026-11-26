@@ -151,8 +151,8 @@ logs or dependencies. For such a change:
 
 ## Releases and hotfixes
 
-From 26.11.15 on, releases are cut from master: a release-commit PR (the version in `build.sbt`
-and the changelog heading), squash-merged, and the tag on that commit. Earlier releases are
+From 26.11.15 on, releases are cut from master: a release-commit PR (the version in `build.sbt`,
+the changelog fragments folded in and the changelog heading), squash-merged, and the tag on that commit. Earlier releases are
 recorded by their `release/<version>` branches. A hotfix goes to master first; then a
 `release/<version>` branch from the last release's tag (once release tags exist; until then from
 its `release/<version>` branch) gets the fix with `git cherry-pick -x`, and the hotfix is built
@@ -160,9 +160,15 @@ and tagged there. Details: [workflow practices](docs/workflow/practices.md) §7.
 
 ### Changelog entries
 
-Add one short line per user-visible change to `CHANGELOG.md` under "Unreleased", grouped as
+Add one short line per user-visible change as a **fragment file**, not in `CHANGELOG.md`: one
+file per PR, `changes/unreleased/<branch-name>.md` (branch `fix/track-names` adds
+`fix-track-names.md`), with a `section:` line and the line(s) exactly as they will read in the
+changelog ([format](changes/unreleased/README.md)). Editing CHANGELOG.md's "Unreleased" made every
+open PR conflict there; CI's `changelog fragments` check refuses a PR that adds a line to it, and
+the release commit folds the fragments in (`scripts/changelog-fragments.py fold`). The sections are
 **Features**, **Fixes**, **Security** or **Operations** (deploy, infrastructure and tooling that
-admins or operators notice; a release's migrations go on one line, "Migrations: V108, V109.").
+admins or operators notice; a migration goes there as "- Migrations: V108.", and the fold merges a
+release's migrations into one line).
 Keep it to a few words in plain language for what a juror, organizer, admin or operator notices
 ("Sticky top bar on desktop."). No class names, file paths, SQL, spec names, decision ids or
 measurements, and no step-by-step behaviour: that belongs in the PR and the git history. Merge
