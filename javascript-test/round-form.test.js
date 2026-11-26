@@ -78,6 +78,23 @@ describe("the round form", () => {
         expect(document.querySelector(".wlx-multi-summary").textContent).toBe("None selected");
     });
 
+    test("leaves a locked multiple select as rendered: no Tom Select, still hidden and disabled", () => {
+        document.body.innerHTML = `
+          <form id="round-form">
+            <select id="previousRound" name="previousRound[]" multiple disabled hidden data-wlx-locked>
+              <option value="1" selected>Round 1 (binary)</option><option value="2">Round 2 (rated)</option>
+            </select>
+            <div id="previousRound_locked" class="form-control wlx-locked wlx-locked-values"><ul class="wlx-locked-list"><li>Round 1 (binary)</li></ul></div>
+            <select id="regions" name="regions[]" multiple disabled hidden data-wlx-locked><option value="07">Volyn</option></select>
+          </form>`;
+        init(document);
+        const prev = document.getElementById("previousRound");
+        expect(document.querySelectorAll(".wlx-multi")).toHaveLength(0);
+        expect(prev.tomselect).toBeUndefined();
+        expect([prev.hidden, prev.disabled]).toEqual([true, true]);
+        expect($("#previousRound").val()).toEqual(["1"]);
+    });
+
     test("shows a binary previous round's selection filters, a rated one's rate filters, none without", () => {
         page();
         const prev = document.getElementById("previousRound").tomselect;
