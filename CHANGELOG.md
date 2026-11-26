@@ -20,6 +20,7 @@ Merged after the 26.11.17 build, for the release after it.
 
 **Fixes**
 
+- Tracks: first rounds with different categories never share a track any more (in rare cases one category's full name could equal another's shortened name, so their rounds were listed as one track), and three or more long track names that start alike no longer show the same chip text; names and chips without such a clash are unchanged.
 - Tracks: in a contest without a Main track, the track named after its first round (as "Round 1", with the rounds created from it) is shown as **Main** in the chips and first in the Track menu, instead of "Round 1" on every later round; its links stay the same (#232).
 - Round form: a track label that is too long is listed at the top as "Track label (optional): …" with a link to the field; a label of emoji or other characters outside the basic plane can be typed up to its 64 characters (the browser no longer counted them twice) (#209).
 - Track labels: spaces inside a label are kept as typed, so labels share a track only when they are identical, as the form's help says (#209).

@@ -43,8 +43,35 @@ object TrackChip {
     */
   def short(track: Track, lineage: Lineage)(implicit messages: Messages): String = {
     val full = name(track, lineage)
-    val others = lineage.tracks.filter(_ != track).map(name(_, lineage)).filter(_ != full)
-    distinct(full, others)
+    texts(lineage.tracks.map(name(_, lineage))).getOrElse(full, cut(full))
+  }
+
+  /** The chip texts of a contest's track names, together: each [[distinct]] from the others; where
+    * two still read the same (three names or more over [[MaxLength]] characters that share their
+    * start: A's and B's part is cut around where C differs), the part of each around where it first
+    * differs from the others that read the same, the part made longer until all differ (at the
+    * longest, the whole name). Names without such a clash keep [[distinct]]'s text.
+    */
+  private[views] def texts(names: Seq[String]): Map[String, String] = {
+    val all = names.distinct
+    val first = all.map(n => n -> distinct(n, all.filter(_ != n))).toMap
+    val longest = all.map(n => n.codePointCount(0, n.length)).maxOption.getOrElse(0)
+    def same(t: Map[String, String]) = t.groupBy(_._2).values.find(_.sizeIs > 1).map(_.keys.toSeq.sorted)
+    // each name its whole at worst: the names differ, so that always ends a clash
+    @scala.annotation.tailrec
+    def settle(t: Map[String, String], left: Int): Map[String, String] = same(t) match {
+      case None                => t
+      case Some(_) if left <= 0 => all.map(n => n -> n).toMap
+      case Some(group) =>
+        def at(n: String) = group.filter(_ != n).map(o => n.zip(o).takeWhile { case (a, b) => a == b }.size).min
+        val rest = t -- group
+        val widths = (MaxLength until longest + 2 by 8) :+ (longest + 2)
+        val fixed = widths.iterator.map(w => group.map(n => n -> window(n, at(n), w)).toMap)
+          .find(c => c.values.toSet.size == group.size && !c.values.exists(rest.values.toSet))
+          .getOrElse(group.map(n => n -> n).toMap)
+        settle(rest ++ fixed, left - 1)
+    }
+    settle(first, all.size)
   }
 
   /** `full`'s chip text, told apart from `others`' (the contest's other tracks' names): [[cut]];
@@ -72,12 +99,12 @@ object TrackChip {
     if (full.codePointCount(0, full.length) <= MaxLength) full
     else full.substring(0, full.offsetByCodePoints(0, MaxLength - 1)).trim + "…"
 
-  /** About [[MaxLength]] characters of `full` around its character `at`, "…" where cut. */
-  private def window(full: String, at: Int): String = {
+  /** About `width` ([[MaxLength]]) characters of `full` around its character `at`, "…" where cut. */
+  private def window(full: String, at: Int, width: Int = MaxLength): String = {
     val length = full.codePointCount(0, full.length)
     val atCp = full.codePointCount(0, at.min(full.length))
-    val from = (atCp - MaxLength / 3).max(0).min((length - (MaxLength - 2)).max(0))
-    val to = (from + MaxLength - 2).min(length)
+    val from = (atCp - width / 3).max(0).min((length - (width - 2)).max(0))
+    val to = (from + width - 2).min(length)
     (if (from > 0) "…" else "") + full.substring(full.offsetByCodePoints(0, from), full.offsetByCodePoints(0, to)).trim +
       (if (to < length) "…" else "")
   }
