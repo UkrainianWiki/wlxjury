@@ -31,6 +31,17 @@ Merged after the 26.11.17 build, for the release after it.
 
 ## Deployed releases
 
+### 26.11.17.2 (2026-11-26)
+
+Hotfix of `26.11.17.1`, no migration.
+
+**Fixes**
+
+- Round tracks: a round alone on a track named after it shows no track chip, which only repeated its name; a contest whose rounds were each created on their own (no previous round, no category) shows no chips and no Track menu. (#224)
+- Round tracks: unlinked rounds of one name (two "ROUND 2") count as rounds named after themselves too: no chip. (#224)
+- Round tracks: two long track names that would read the same on their chips are cut where they differ. (#224)
+- Round tracks: a track named after its first round drops the contest's name, year and country at the name's ends ("1 round"); a first round set to images among rounds with no media type set is no longer an "Image" track. (#224)
+
 ### 26.11.17.1 (2026-11-26)
 
 Hotfix of `26.11.17`, no migration.
