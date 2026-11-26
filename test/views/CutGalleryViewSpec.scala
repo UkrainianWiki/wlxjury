@@ -78,8 +78,12 @@ class CutGalleryViewSpec extends Specification {
 
     "show a round's N read only when its filters aren't edited, nothing without one" in {
       val page = render(None, Some(3), noEdit = true)
-      (page.select("input#topImages.wlx-locked[readonly]").attr("value") === "3") and (page.select("#topImages-choose").size === 0) and
-        (page.select("input[name=topImages]").size === 0) and
+      (page.select("input#topImages.wlx-locked[disabled]").attr("value") === "3") and (page.select("#topImages-choose").size === 0) and
+        // the locked look of #225's helpers, labelled and described by the section's reason line
+        (page.select("label[for=topImages]").size === 1) and
+        (page.select("input#topImages").attr("aria-describedby") must contain("round-filters-locked")) and
+        // nothing submits it
+        (page.select("input[name=topImages]:not([disabled])").size === 0) and
         (render(None, None, noEdit = true).select("#topImages_field").size === 0)
     }
   }

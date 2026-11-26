@@ -65,6 +65,15 @@ class TopNCandidatesSpec extends Specification {
           beSome(Msg(NoCandidatesKey)))
     }
 
+    "accept exactly the valid values: the save's check refuses every other N (offered == allowed)" in {
+      val shapes = Seq(r, ratedResult(Window.main(None), 10, 8, 8, 8, 7), ratedResult(Window.main(None), 10, 5, 5),
+        ratedResult(Window.main(None), 10, 9, 8, 7), levels(Window.main(None), (3, 0), (3, 0), (2, 1), (2, 1), (1, 2)))
+      foreach(shapes) { s =>
+        foreach(-1 to s.m + 2)(n => s.refusal(n).isEmpty must_=== s.isValid(n)) and
+          (s.validUpTo(s.m) must_=== (-1 to s.m + 2).filter(n => s.refusal(n).isEmpty))
+      }
+    }
+
     "offer only the tie's end when the tie starts at place 1 (no N = 0)" in {
       val tied = ratedResult(Window.main(None), 10, 8, 8, 8, 7)
       (tied.refusal(2) must beSome(Msg(InTieUpperKey, Seq(2, 1, 3, 3)))) and (tied.validUpTo(10) === Seq(3, 4)) and

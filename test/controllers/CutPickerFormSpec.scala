@@ -172,6 +172,18 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "accept exactly the N values the preview offers, and refuse every other one (offered == allowed)" in {
+      testDbApp { implicit app =>
+        val (contest, prev) = setUp()
+        val offered = options(doc(preview(app, "admin@example.com", newRound(contest, prev): _*))).filter(_.nonEmpty)
+        // one save per N, awaited before the next: 0 to m + 1
+        val accepted = (0 to 9).filter { n =>
+          status(save(app, "admin@example.com", newRound(contest, prev, "topImages" -> n.toString): _*)) == SEE_OTHER
+        }.map(_.toString)
+        (offered === Valid) and (accepted === Valid)
+      }
+    }
+
     "save a valid N: the round takes the picker's first N, how it was chosen in its settings log" in {
       testDbApp { implicit app =>
         val (contest, prev) = setUp()
@@ -204,7 +216,7 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
           s"/admin/rounds/edit?id=${stored.getId}&contestId=${contest.getId}", Nil)).get)
         val sent = preview(app, "admin@example.com", newRound(contest, prev, "id" -> stored.getId.toString,
           "number" -> "2"): _*)
-        (page.select("#topImages_field input#topImages.wlx-locked[readonly]").attr("value") === "3") and (page.select("select#topImages").size === 0) and
+        (page.select("#topImages_field input#topImages.wlx-locked[disabled]").attr("value") === "3") and (page.select("select#topImages").size === 0) and
           (page.select("#topImages-choose").size === 0) and
           (status(sent) === SEE_OTHER) and (redirectLocation(sent).get must contain(s"id=${stored.getId}"))
       }
