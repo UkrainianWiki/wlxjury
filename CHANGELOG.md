@@ -20,6 +20,7 @@ Merged after the 26.11.17 build, for the release after it.
 
 **Fixes**
 
+- Collapsible sections (the round form's Media filtering, Add files, Jurors and Criteria, and the folded lists on the review, jurors and comments pages) show a chevron before their heading, pointing right while closed and down while open; a round form section's whole header opens and closes it, also with Space or Enter.
 - Tracks: in a contest without a Main track, the track named after its first round (as "Round 1", with the rounds created from it) is shown as **Main** in the chips and first in the Track menu, instead of "Round 1" on every later round; its links stay the same (#232).
 - Round form: a track label that is too long is listed at the top as "Track label (optional): …" with a link to the field; a label of emoji or other characters outside the basic plane can be typed up to its 64 characters (the browser no longer counted them twice) (#209).
 - Track labels: spaces inside a label are kept as typed, so labels share a track only when they are identical, as the form's help says (#209).
