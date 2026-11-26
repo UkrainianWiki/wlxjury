@@ -24,9 +24,10 @@
 @categoryView = @{ controllers.EditRound.categoryBoxes(editRoundForm) }
 @offsetCol = @{ implicitLayout.horizontal.map(_.offsetFieldCol).getOrElse("") }
 @* open when a category is in its boxes, and when one of its fields has an error (a refused save's,
-   RoundFormErrors: shown closed, the 2026-11-25 saves came back with their error out of sight) *@
+   RoundFormErrors: shown closed, the 2026-11-25 saves came back with their error out of sight), and once
+   "Choose N" loaded the top N's candidate cuts (round/edit/topN) *@
 @snippets.collapsible("media.filtering", "headingImageFiltering", "collapseImageFiltering",
-    open = categoryView.hasCategory || controllers.RoundFormErrors.inMediaFiltering(editRoundForm)) {
+    open = categoryView.hasCategory || controllers.RoundFormErrors.inMediaFiltering(editRoundForm) || cutPicker.isDefined) {
     @if(rounds.nonEmpty) {
         @* Use `disabled` rather than `readonly` for the multi-selects: a readonly
            select (play-bootstrap's then, bs.select's now) adds a live hidden <input name="previousRound[]"> that, for a
