@@ -1,4 +1,4 @@
-@(tabs: views.RoundTabs, label: String, lead: Html = HtmlFormat.empty)(implicit messages: Messages)
+@(tabs: views.RoundTabs, label: String, lead: Html = play.twirl.api.HtmlFormat.empty)(implicit messages: Messages)
 @* A page's round tabs (views.RoundTabs; the round statistics and the contest's authors pages): one
    look on every page. Each tab a page link: the round's type icons (snippets/roundIcon), its name
    and what the icons say for screen readers (snippets/roundSpoken); grey if not active; the current

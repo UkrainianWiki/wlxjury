@@ -45,9 +45,19 @@
    menu scrolls inside itself, as the region menu does (main.css); a long name cut in the
    toggle below 992 px (whole in its title) and wrapped in the menu on a phone, so both fit (main.css
    #round-menu, wlx-round-item) *@
+@roundMenuGroups(lineage: Option[services.RoundLineage.Lineage]) = @{
+    val grouped = RoundsFilter.fromRequest(request).grouped(lineage)
+    if (!grouped) Seq.empty[(Option[String], Seq[Long])]
+    else views.RoundTabs.groups(rounds, lineage, grouped).map { case (track, rs) =>
+      (for (t <- track; l <- lineage) yield views.TrackChip.name(t, l)) -> rs.map(_.getId)
+    }
+}
 @roundMenu(l: RoundList) = {
-    @* each round's Track chip after its name, for those who see the organiser info (round lineage
-       slice A; jurors' menus don't change) *@
+    @* for those who see the organiser info, the rounds grouped by track as the round tabs are
+       (views.RoundTabs.groups, the maintainer's decision of 2026-11-26): each track's name once as a
+       dropdown header before its rounds, no Track chip in the items; by default where the contest
+       shows tracks and one has two rounds or more, `group=track|none` honoured
+       (RoundsFilter.grouped). Jurors' menus don't change (no lineage for them) *@
     @defining(views.TrackChip.menuLineage(user, selectedRound, rounds)) { lineage =>
     @defining(if (l.asUserId == 0 || l.asUserId == user.getId) Set.empty[Long]
               else User.roundsJuredIn(l.asUserId, rounds.flatMap(_.id))) { jurorRounds =>
@@ -59,8 +69,9 @@
         l.roundId,
         rounds.map(r => (r.getId, SelectionItem(r.description, localized = false,
             itemClass = if (r.active) "wlx-round-item" else "wlx-round-item wlx-round-inactive", before = snippets.roundIcon(r),
-            after = play.twirl.api.HtmlFormat.fill(Seq(snippets.roundSpoken(r), snippets.trackChip(r, lineage))))))
-    ).toDropDown(truncate = true, menuClass = "wlx-round-menu", id = Some("round-menu")))
+            after = snippets.roundSpoken(r))))
+    ).toDropDown(truncate = true, menuClass = "wlx-round-menu", id = Some("round-menu"),
+        groups = roundMenuGroups(lineage)))
     }
     }
     }

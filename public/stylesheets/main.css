@@ -143,6 +143,9 @@ body.gallery {
    name too long for the window cut with an ellipsis on a desktop (wlx-item-text,
    dropDownSelection), wrapped on a phone */
 .dropdown-menu.wlx-round-menu { max-width: calc(100vw - 1rem); overflow-x: hidden; }
+/* the round menu grouped by track (dropDownSelection groups): each track's name a small header
+   before its rounds, as the round tabs' labels */
+.dropdown-menu.wlx-round-menu .dropdown-header { font-size: .8125rem; padding-top: .375rem; padding-bottom: .125rem; }
 .dropdown-item.wlx-round-item > .wlx-item-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 575.98px) {
     .dropdown-item.wlx-round-item { white-space: normal; }

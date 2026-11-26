@@ -80,7 +80,7 @@ final case class RoundsFilter(
     * round each, named after it, group nothing); never without its lineage.
     */
   def grouped(lineage: Option[services.RoundLineage.Lineage]): Boolean =
-    lineage.exists(l => group.getOrElse(l.showsTracks() && l.sizes.values.exists(_ > 1)))
+    lineage.exists(l => group.getOrElse(l.showsTracks() && RoundsFilter.hasLongTrack(l)))
 
   def isDefault: Boolean = copy(trackOf = Map.empty) == RoundsFilter.Default
 
@@ -116,6 +116,12 @@ object RoundsFilter {
   val GroupNone = "none"
 
   val Default: RoundsFilter = RoundsFilter()
+
+  /** Whether one of the contest's tracks has two rounds or more, a track named after its rounds
+    * (Lineage.selfNamedTrack) aside: grouping by track then groups something.
+    */
+  def hasLongTrack(lineage: services.RoundLineage.Lineage): Boolean =
+    lineage.trackOf.values.filterNot(lineage.selfNamedTrack).groupMapReduce(identity)(_ => 1)(_ + _).values.exists(_ > 1)
 
   sealed abstract class Status(val param: String, val messageKey: String) {
     def matches(round: Round): Boolean

@@ -66,7 +66,7 @@ configured yet**.
   choices keep it, else the first round they list, else the round itself, which says none match.
   A round opened from a saved or shared link whose choices leave it out still shows in the row,
   selected, with a dashed outline: point at it for **Not in the chosen filter**. The choices stay
-  in the page's address and when you switch round. The round menu of the galleries shows the same icons and grey names, without these menus.
+  in the page's address and when you switch round. The round menu of the galleries shows the same icons and grey names, without these menus, and groups the rounds by track as the row does, each track's name as a heading.
 - When the contest's rounds are on two tracks or more, each round belongs to a **track**, the line
   of rounds it is on: for example Quality, Quantity, **Main** (the main competition; in a contest
   without one, the track of the first round when it is named after that round, such as "Round 1"),

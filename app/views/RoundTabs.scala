@@ -30,18 +30,8 @@ final case class RoundTabs(
     outside: Round => Boolean = _ => false
 ) {
 
-  /** The tabs' groups: by track in the lineage's order when grouped, else one group without a
-    * label. A round alone on a track named after it (Lineage.selfNamed), whose label would only
-    * repeat its name, goes to a last group without a label, as a round without a track (none today).
-    */
-  def groups: Seq[(Option[Track], Seq[Round])] = lineage.filter(_ => grouped) match {
-    case Some(l) =>
-      def labelled(r: Round) = l.track(r).filterNot(_ => l.selfNamed(r))
-      val byTrack = l.tracks.map(t => Some(t) -> rounds.filter(labelled(_).contains(t))).filter(_._2.nonEmpty)
-      val rest = rounds.filter(labelled(_).isEmpty)
-      byTrack ++ Option.when(rest.nonEmpty)(None -> rest)
-    case None => Seq(None -> rounds)
-  }
+  /** The tabs' groups ([[RoundTabs.groups]]). */
+  def groups: Seq[(Option[Track], Seq[Round])] = RoundTabs.groups(rounds, lineage, grouped)
 
   def isCurrent(round: Round): Boolean = current.exists(round.id.contains)
 
@@ -50,4 +40,23 @@ final case class RoundTabs(
     */
   def track(round: Round): Option[Track] =
     lineage.filter(_.chipsShown).flatMap(l => l.track(round).filterNot(_ => l.selfNamed(round)))
+}
+
+object RoundTabs {
+
+  /** Rounds grouped by track, the round tabs' and the galleries' round menu's (navbar #round-menu):
+    * by track in the lineage's order when `grouped`, else one group without a label. A round alone
+    * on a track named after it (Lineage.selfNamed), whose label would only repeat its name, goes to
+    * a last group without a label, as a round without a track (none today). Within a group the
+    * rounds keep their order in `rounds`.
+    */
+  def groups(rounds: Seq[Round], lineage: Option[Lineage], grouped: Boolean): Seq[(Option[Track], Seq[Round])] =
+    lineage.filter(_ => grouped) match {
+      case Some(l) =>
+        def labelled(r: Round) = l.track(r).filterNot(_ => l.selfNamed(r))
+        val byTrack = l.tracks.map(t => Some(t) -> rounds.filter(labelled(_).contains(t))).filter(_._2.nonEmpty)
+        val rest = rounds.filter(labelled(_).isEmpty)
+        byTrack ++ Option.when(rest.nonEmpty)(None -> rest)
+      case None => Seq(None -> rounds)
+    }
 }

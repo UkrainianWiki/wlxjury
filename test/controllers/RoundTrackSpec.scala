@@ -17,7 +17,7 @@ import scala.jdk.CollectionConverters._
   * (decision 4: offered to the contest's admins, saved on a new or an existing round at any time with
   * `created_at` kept, "Main" in any case or language, kept by a client without the field, refused
   * unchanged to a juror, an organizer and another contest's admin); the Track chip on the Rounds page,
-  * the round statistics and the galleries' round menu (not a juror's); the Track menu on Rounds and
+  * the round tabs and the galleries' round menu grouped by track (not a juror's); the Track menu on Rounds and
   * Statistics (`track=`, an unknown one all rounds); each track's own chip colour (two tracks of the
   * contest on one hash token moved apart), the same on every page and in the Track menu's swatches; the Rounds page's hint for a merge alone on Main
   * and its warning for a missing previous round. Organizers see the chips and the menu read only.
@@ -396,7 +396,7 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "give each track its own colour, the same in the Track menu, the statistics and the galleries' menu" in {
+    "give each track its own colour, the same in the Track menu's swatches as in the chips" in {
       testDbApp { app =>
         val f = fixture()
         // five tracks: Main, its feeders Quality and Quantity, a category root and a nomination
@@ -412,14 +412,11 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
           Option(a.selectFirst(".wlx-track-swatch")).map(s =>
             java.net.URLDecoder.decode(a.attr("href").replaceAll(".*[?&]track=([^&]*).*", "$1"), "UTF-8") -> colour(s))
         }.toMap
-        val stat = chipColours(page(app, f.organizer, s"/roundstat/${f.merge.getId}"), "#round-stat-rounds")
-        val gallery = chipColours(page(app, f.organizer, s"/gallery/round/${f.q00.getId}/user/0/page/1"), "#round-menu")
         // Quality and Quantity share a hash token: Quality (first by name) keeps it, Quantity takes
         // the next free one, after Film's and Харків's, which keep theirs
         (chipsByTrack === Map("main" -> "wlx-track-main", "category:Quality" -> "wlx-track-2",
           "category:Quantity" -> "wlx-track-5", "category:Film" -> "wlx-track-3", "nomination:Харків" -> "wlx-track-4")) and
-          (chipsByTrack.values.toSet.size === 5) and (swatches === chipsByTrack) and
-          (stat === chipsByTrack) and (gallery === chipsByTrack)
+          (chipsByTrack.values.toSet.size === 5) and (swatches === chipsByTrack)
       }
     }
 
@@ -627,7 +624,7 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
           (list.select("tbody tr.round-row").size === rounds.size) and
             (list.select(".wlx-track").size === 0) and (list.select("#rounds-track-menu").size === 0) and
             (stat.select(".wlx-track").size === 0) and (stat.select("#rounds-track-menu").size === 0) and
-            (gallery.select(".wlx-track").size === 0)
+            (gallery.select(".wlx-track").size === 0) and (gallery.select("#round-menu .dropdown-header").size === 0)
         }
       }
     }
@@ -675,14 +672,30 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
 
   "the galleries' round menu" should {
 
-    "show the chips to an organizer, and none to a juror" in {
+    "group an organizer's rounds by track under dropdown headers, without chips, as the round tabs; a juror's not" in {
       testDbApp { app =>
         val f = fixture()
         val org = page(app, f.organizer, s"/gallery/round/${f.q00.getId}/user/0/page/1")
+        val flat = page(app, f.organizer, s"/gallery/round/${f.q00.getId}/user/0/page/1?group=none")
         val juror = page(app, f.juror, s"/gallery/round/${f.merge.getId}/user/${f.juror.getId}/page/1")
-        def items(d: Document): Seq[Element] = d.select("#round-menu .dropdown-item").asScala.toSeq
-        (items(org).map(i => Option(i.selectFirst(".wlx-track")).map(_.ownText)) ===
-          Seq(Some("Quality"), Some("Quantity"), Some("Quality"), Some("Main"))) and
+        def name(a: Element): String = { val c = a.clone(); c.select(".wlx-round-spoken, .wlx-round-icon").remove(); c.text.trim }
+        def menuGroups(d: Document): Seq[(String, Seq[String])] =
+          d.select("#round-menu .wlx-menu-group").asScala.toSeq.map { g =>
+            val header = g.selectFirst(".dropdown-header")
+            header.text -> g.select(".dropdown-item").asScala.toSeq.map(name)
+          }
+        val labelled = org.select("#round-menu .wlx-menu-group").asScala.toSeq
+          .forall(g => g.selectFirst("ul").attr("aria-labelledby") == g.selectFirst("h6.dropdown-header").id)
+        (menuGroups(org) === Seq("Main" -> Seq("Q-02"), "Quality" -> Seq("Q-00", "Q-01"), "Quantity" -> Seq("Qn-00"))) and
+          (labelled must beTrue) and
+          (org.select("#round-menu .wlx-track").size === 0) and
+          // the current round marked
+          (org.select("#round-menu .dropdown-item.active[aria-current=page]").asScala.map(name) === Seq("Q-00")) and
+          // ?group=none: one flat list in the menu's order, still no chips
+          (flat.select("#round-menu .dropdown-header").size === 0) and
+          (flat.select("#round-menu .dropdown-item").asScala.map(name) === Seq("Q-00", "Qn-00", "Q-01", "Q-02")) and
+          (flat.select("#round-menu .wlx-track").size === 0) and
+          (juror.select("#round-menu .dropdown-header").size === 0) and
           (juror.select("#round-menu .wlx-track").size === 0) and (juror.select(".wlx-track").size === 0) and
           (juror.select("#rounds-track-menu").size === 0)
       }
