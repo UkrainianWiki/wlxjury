@@ -71,7 +71,7 @@
             itemClass = if (r.active) "wlx-round-item" else "wlx-round-item wlx-round-inactive", before = snippets.roundIcon(r),
             after = snippets.roundSpoken(r))))
     ).toDropDown(truncate = true, menuClass = "wlx-round-menu", id = Some("round-menu"),
-        groups = roundMenuGroups(lineage)))
+        groups = roundMenuGroups(lineage), otherLabel = Some(Messages("rounds.group.other"))))
     }
     }
     }

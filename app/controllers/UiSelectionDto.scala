@@ -47,10 +47,11 @@ class UiSelectionDto[T](val itemUrlFunction: T => Call,
     * menus); `menuClass`: a class of the menu's list (the round menu's). */
   def toDropDown(iconOnly: Boolean = false, compactIcon: Option[String] = None, id: Option[String] = None,
       label: Option[String] = None, truncate: Boolean = false, leadIcon: Option[String] = None, labelShown: Boolean = false, menuClass: String = "",
-      extra: Html = play.twirl.api.HtmlFormat.empty, groups: Seq[(Option[String], Seq[T])] = Nil)(implicit messages: Messages): Html =
+      extra: Html = play.twirl.api.HtmlFormat.empty, groups: Seq[(Option[String], Seq[T])] = Nil,
+      otherLabel: Option[String] = None)(implicit messages: Messages): Html =
     views.html
       .dropDownSelection(this.asInstanceOf[UiSelectionDto[Any]], iconOnly, compactIcon, id, label, truncate, leadIcon, labelShown, menuClass, extra,
-        groups.asInstanceOf[Seq[(Option[String], Seq[Any])]])
+        groups.asInstanceOf[Seq[(Option[String], Seq[Any])]], otherLabel)
 }
 
 object UiSelectionDto {

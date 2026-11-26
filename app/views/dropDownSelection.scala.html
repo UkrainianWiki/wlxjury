@@ -1,4 +1,4 @@
-@(dto: UiSelectionDto[Any], iconOnly: Boolean = false, compactIcon: Option[String] = None, menuId: Option[String] = None, label: Option[String] = None, truncate: Boolean = false, leadIcon: Option[String] = None, labelShown: Boolean = false, menuClass: String = "", extra: Html = play.twirl.api.HtmlFormat.empty, groups: Seq[(Option[String], Seq[Any])] = Nil)(implicit messages: Messages)
+@(dto: UiSelectionDto[Any], iconOnly: Boolean = false, compactIcon: Option[String] = None, menuId: Option[String] = None, label: Option[String] = None, truncate: Boolean = false, leadIcon: Option[String] = None, labelShown: Boolean = false, menuClass: String = "", extra: Html = play.twirl.api.HtmlFormat.empty, groups: Seq[(Option[String], Seq[Any])] = Nil, otherLabel: Option[String] = None)(implicit messages: Messages)
 @* A navbar menu: its toggle shows the current item (its icon only if `iconOnly` and it has one,
    the text then read by screen readers and shown as a tooltip), the menu every item, the current
    one marked active with aria-current="page" (each item opens a page; the current one is this
@@ -24,7 +24,8 @@
    `groups`: the items in groups, in their order, instead of the items' own order (the galleries'
    round menu grouped by track, views.RoundTabs.groups): a labelled group a list of its own with
    its label as a dropdown header (h6.dropdown-header) naming the list (aria-labelledby), as the
-   round tabs' groups; a group without a label after a divider, unless it is the only one. Items
+   round tabs' groups; a group without a label after a divider, unless it is the only one, and
+   then, with `otherLabel`, a list of its own named by it for screen readers only ("Other rounds"). Items
    not shown (UiSelectionDto.shownValues) are left out. Bootstrap's arrow keys reach the items in
    the nested lists as in a flat one; the headers are not focusable *@
 @icon(iconClass: String) = {<i class="@iconClass" aria-hidden="true"></i>}
@@ -70,7 +71,19 @@
                     }
                     case None => {
             @if(i > 0) {<li><hr class="dropdown-divider"></li>}
+            @otherLabel.filter(_ => i > 0) match {
+                case Some(text) => {
+            <li class="wlx-menu-other">
+                <span class="visually-hidden" id="@menuId.getOrElse("menu")-group-@i">@text</span>
+                <ul class="list-unstyled mb-0" aria-labelledby="@menuId.getOrElse("menu")-group-@i">
+                    @for(id <- ids; value <- shown.get(id)) {@item(id, value)}
+                </ul>
+            </li>
+                }
+                case None => {
             @for(id <- ids; value <- shown.get(id)) {@item(id, value)}
+                }
+            }
                     }
                 }
             }

@@ -43,6 +43,10 @@ async function readBar(bar) {
       names: tabs.map(name),
       titles: Object.fromEntries(tabs.map((a) => [name(a), a.getAttribute('title')])),
       chips: nav.querySelectorAll('.wlx-track').length,
+      // each group's list named by its label; the tracks said after the tabs' names when ungrouped
+      labelled: [...nav.querySelectorAll('.wlx-round-tabs-group')].every((g) =>
+        g.querySelector('ul').getAttribute('aria-labelledby') === g.querySelector('.wlx-round-tabs-label').id),
+      notes: [...nav.querySelectorAll('.wlx-round-track-note')].map((n) => n.textContent.trim()),
       look: { font: first.fontSize, padding: first.padding, height: Math.round(tabs[0].getBoundingClientRect().height) },
       // left-aligned: the bar's first item (a group's label, a tab) starts at the bar's left edge
       leftGap: Math.round(nav.querySelector('.wlx-round-tabs-label, .page-item').getBoundingClientRect().left - nav.getBoundingClientRect().left),
@@ -64,6 +68,8 @@ for (const mode of ['light', 'dark']) {
       const stat = await readBar(page.locator('#round-stat-rounds'));
       expect(stat.groups).toEqual([['Main', ['Q-02']], ['Quality', ['Q-00', 'Q-01']], ['Quantity', ['Qn-00']], ['Харків', ['Kha-00']]]);
       expect(stat.chips, 'no Track chip inside a tab').toBe(0);
+      expect(stat.labelled, 'each group a list named by its label').toBe(true);
+      expect(stat.notes, 'grouped: the labels say the tracks').toEqual([]);
       expect(stat.titles['Q-01']).toBe('Track: Quality');
       expect(stat.leftGap).toBe(0);
       expect(stat.inPage).toBe(true);
@@ -96,6 +102,8 @@ for (const mode of ['light', 'dark']) {
       const flat = await readBar(page.locator('#round-stat-rounds'));
       expect(flat.groups).toEqual([]);
       expect(flat.names).toEqual(OLDEST_FIRST);
+      expect(flat.notes, 'ungrouped: each tab says its track to screen readers').toEqual(
+        [', track Quality', ', track Quantity', ', track Quality', ', track Main', ', track Харків']);
       expect(flat.look).toEqual(stat.look);
       if (SHOTS) await page.locator('#round-stat-rounds').screenshot({ path: path.join(SHOTS, `roundstat-ungrouped-${mode}.png`) });
       // kept by the tabs' links: another round's statistics stay ungrouped
@@ -174,6 +182,8 @@ for (const mode of ['light', 'dark']) {
       const flat = await read();
       expect(flat.groups).toEqual([]);
       expect(flat.names).toEqual(OLDEST_FIRST);
+      expect(flat.notes, 'ungrouped: each tab says its track to screen readers').toEqual(
+        [', track Quality', ', track Quantity', ', track Quality', ', track Main', ', track Харків']);
       expect(flat.chips).toBe(0);
       await context.close();
     });

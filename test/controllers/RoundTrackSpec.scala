@@ -178,6 +178,56 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "not group by default where every track has one round, the toggle off; ungrouped tabs say their track" in {
+      testDbApp { app =>
+        val contest = contestDao.create(None, "Wiki Loves Monuments", 2026, "Ukraine")
+        TestDb.setSource(contest.getId, Some("Category:Images from Wiki Loves Monuments 2026 in Ukraine"))
+        val org = userDao.create(User("OrgS", "orgs@example.com", None, Set("organizer"), contestId = contest.id))
+        val q = roundDao.create(Round(None, 1, Some("Q-00"), contest.getId, category = Some(Prefix + "Quality")))
+        roundDao.create(Round(None, 2, Some("Qn-00"), contest.getId, category = Some(Prefix + "Quantity"), active = true))
+        val doc = page(app, org, s"/roundstat/${q.getId}")
+        val toggle = doc.getElementById("rounds-group-track")
+        def notes(d: Document) = d.select("#round-stat-rounds .wlx-round-track-note").asScala.map(_.text).toSeq
+        (doc.select("#round-stat-rounds .page-link").size === 2) and
+          (doc.select("#round-stat-rounds .wlx-round-tabs-group").size === 0) and
+          // offered, off
+          (toggle.attr("data-grouped") === "false") and (toggle.text must endWith(", off")) and
+          (toggle.select(".bi-check2.invisible").size === 1) and
+          // ungrouped, each tab's track is said after its name, not only in its tooltip
+          (notes(doc) === Seq(", track Quality", ", track Quantity")) and
+          // grouped on request: the labels show the tracks, the tabs say them no more
+          (notes(page(app, org, s"/roundstat/${q.getId}?group=track")) === Nil)
+      }
+    }
+
+    "label each group's list by its track, and the rounds named after themselves as other rounds, for screen readers" in {
+      testDbApp { app =>
+        val f = fixture()
+        // a round alone on a track named after it: no label of its own, in a last group
+        roundDao.create(Round(None, 5, Some("Solo"), f.contest.getId))
+        def otherOf(d: Document, sel: String, label: String, list: String) = d.select(s"$sel $label").asScala.toSeq.map { g =>
+          val name = g.selectFirst(".visually-hidden")
+          (name.text, g.selectFirst(list).attr("aria-labelledby") == name.id, g.select(".page-link, .dropdown-item").size)
+        }
+        val stat = page(app, f.organizer, s"/roundstat/${f.merge.getId}")
+        val authors = page(app, f.organizer, s"/contest/${f.contest.getId}/authors")
+        val gallery = page(app, f.organizer, s"/gallery/round/${f.q00.getId}/user/0/page/1")
+        val labelled = stat.select("#round-stat-rounds .wlx-round-tabs-group").asScala.toSeq.map { g =>
+          g.selectFirst("ul").attr("aria-labelledby") == g.selectFirst(".wlx-round-tabs-label").id
+        }
+        (groups(stat, "#round-stat-rounds").map(_._1) === Seq("Main", "Quality", "Quantity")) and
+          (labelled === Seq(true, true, true)) and
+          (stat.select("#round-stat-rounds [id]").asScala.map(_.id).toSet.size ===
+            stat.select("#round-stat-rounds [id]").size) and
+          (otherOf(stat, "#round-stat-rounds", ".wlx-round-tabs-other", "ul") === Seq(("Other rounds", true, 1))) and
+          (otherOf(authors, "#authors-rounds", ".wlx-round-tabs-other", "ul") === Seq(("Other rounds", true, 1))) and
+          (otherOf(gallery, "#round-menu", ".wlx-menu-other", "ul") === Seq(("Other rounds", true, 1))) and
+          (gallery.select("#round-menu .dropdown-divider").size === 1) and
+          (page(app, f.organizer, s"/roundstat/${f.merge.getId}", "uk")
+            .select("#round-stat-rounds .wlx-round-tabs-other .visually-hidden").text === "Інші раунди")
+      }
+    }
+
     "not group a contest with one track, and offer no grouping there" in {
       testDbApp { app =>
         val f = fixture()
