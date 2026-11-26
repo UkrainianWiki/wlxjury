@@ -1183,11 +1183,10 @@ round with no previous round left starts a track of its own (rule 7).
 Rounds page, the round's statistics and the galleries' round menu (jurors don't see it). Main has
 a colour of its own; the other colours only tell the tracks apart. A region track's chip names its
 regions. A long name shows its start and its end: point at the chip for the full text. A round
-alone on a track named after it (a first round with no category or media type of its own, from
-which no other round was created) has no chip: it would only repeat the round's name. Chips show
-only when the contest's rounds are on two tracks or more besides those, and then on every other
-round, a first round whose track is named after it included; otherwise there are no chips, as in
-a contest whose rounds were each created on their own. The **Track** menu, next to **Status** and
+on a track named after it that no other round continues has no chip: it would only repeat the
+round's name. Chips show only when the contest's rounds are on two tracks or more besides those,
+and then on every other round; otherwise there are no chips, as in a contest whose rounds were
+each created on their own. The **Track** menu, next to **Status** and
 **Type** on the Rounds page and the statistics, shows by the same rule: **All tracks**, or one track's
 rounds, with a count for each. It lists Main first, then the tracks that lead into Main in the
 order they join it, then the others. The choice stays in the page's address, as the other menus'

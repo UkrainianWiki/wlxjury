@@ -164,9 +164,6 @@ object RoundLineage {
       tracks.filter(of.contains)
     }
 
-    /** Each track's number of rounds. */
-    lazy val sizes: Map[Track, Int] = trackOf.values.groupBy(identity).view.mapValues(_.size).toMap
-
     /** A track named after its round (rule 7's last case: a first round with neither a category
       * nor a media type that tells it apart) with no round created from another on it: one round,
       * or unlinked rounds of one name. A chip of it would only repeat the round's name (26.11.17.2).
