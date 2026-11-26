@@ -28,6 +28,7 @@ Merged after the 26.11.17 build, for the release after it.
 - Large views and the round review's file page: the monument card of a special nomination's own monument (an id like `92-232-4801`) names the nomination and the region its id carries ("Болгарська спадщина, Запорізька") in place of the bare "92"; other monuments read as before.
 - Round form: a screen reader now reads the category choice's error ("More category options") with its radio buttons, and announces the group as invalid (#211).
 - Conflicts of interest: a round being set up no longer reads "Round N is open to its jurors: stop it first"; it says the round is being set up and its jurors don't see it yet (under its setup step's line, or with its state when it has no step: being distributed, its creation failed, cancelled or unfinished), and a refused disqualify says the same instead of "its images are being distributed" (#210).
+- Imports no longer stay slow for 6 hours after Commons refuses the bot's login once: the login is tried again when an import needs it, after 5 minutes at first, waiting longer (up to 1 hour) only while Commons keeps refusing it.
 
 ## Deployed releases
 
