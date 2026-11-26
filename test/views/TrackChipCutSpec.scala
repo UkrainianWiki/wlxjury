@@ -60,6 +60,24 @@ class TrackChipCutSpec extends Specification {
       (t.keySet === names.toSet) and (t.values.toSet.size === names.size)
     }
 
+    "widen a window that would read as another name's text, else show the clashing names whole" in {
+      val (a, b, c) = ("a" * 75 + "X" + "a" * 24, "a" * 75 + "Y" + "a" * 24, "a" * 40 + "Z" + "a" * 59)
+      // a name with "…" in it that reads as A's usual window: A's and B's must be wider
+      val d = TrackChip.window(a, 75)
+      val wide = TrackChip.texts(Seq(a, b, c, d))
+      // with no wider window to try, A and B are shown whole
+      val whole = TrackChip.texts(Seq(a, b, c, d), 4, _ => Seq(TrackChip.MaxLength))
+      (d.codePointCount(0, d.length) <= 32) and (wide(d) === d) and (wide(a) !== d) and (wide(a) must contain("X")) and
+        (wide(a).codePointCount(0, wide(a).length) > 32) and (wide.values.toSet.size === 4) and
+        (whole(a) === a) and (whole(b) === b) and (whole(c) === wide(c)) and (whole(d) === d)
+    }
+
+    "show every name whole once the passes are used up" in {
+      val (a, b, c) = ("a" * 75 + "X" + "a" * 24, "a" * 75 + "Y" + "a" * 24, "a" * 40 + "Z" + "a" * 59)
+      val t = TrackChip.texts(Seq(a, b, c), 0, _ => Seq(TrackChip.MaxLength))
+      t === Map(a -> a, b -> b, c -> c)
+    }
+
     "keep each text as before where no two read the same" in {
       val wleCanada = Seq("Round 1 : Pre Selection / Cycle 1 : Pré-séléction", "Round 1 : Pre-selection / Cycle 1 : Pré-séléction")
       val jury = Seq("Images from Wiki Loves Earth 2026 in Somewhere - jury A - first round - final",

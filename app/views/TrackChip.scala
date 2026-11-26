@@ -43,7 +43,9 @@ object TrackChip {
     */
   def short(track: Track, lineage: Lineage)(implicit messages: Messages): String = {
     val full = name(track, lineage)
-    texts(lineage.tracks.map(name(_, lineage))).getOrElse(full, cut(full))
+    // once per lineage and language: every chip and the Track menu read the same texts
+    lineage.memoized(("TrackChip.texts", messages.lang))(texts(lineage.tracks.map(name(_, lineage))))
+      .getOrElse(full, cut(full))
   }
 
   /** The chip texts of a contest's track names, together: each [[distinct]] from the others; where
@@ -52,7 +54,14 @@ object TrackChip {
     * differs from the others that read the same, the part made longer until all differ (at the
     * longest, the whole name). Names without such a clash keep [[distinct]]'s text.
     */
-  private[views] def texts(names: Seq[String]): Map[String, String] = {
+  private[views] def texts(names: Seq[String]): Map[String, String] =
+    texts(names, names.distinct.size, longest => (MaxLength until longest + 2 by 8) :+ (longest + 2))
+
+  /** [[texts]] with at most `passes` clashes settled (then every name whole) and a clash's windows
+    * tried at `widths(the longest name's length)` (then the clash's names whole): the specs reach
+    * both fallbacks through these.
+    */
+  private[views] def texts(names: Seq[String], passes: Int, widths: Int => Seq[Int]): Map[String, String] = {
     val all = names.distinct
     val first = all.map(n => n -> distinct(n, all.filter(_ != n))).toMap
     val longest = all.map(n => n.codePointCount(0, n.length)).maxOption.getOrElse(0)
@@ -65,13 +74,14 @@ object TrackChip {
       case Some(group) =>
         def at(n: String) = group.filter(_ != n).map(o => n.zip(o).takeWhile { case (a, b) => a == b }.size).min
         val rest = t -- group
-        val widths = (MaxLength until longest + 2 by 8) :+ (longest + 2)
-        val fixed = widths.iterator.map(w => group.map(n => n -> window(n, at(n), w)).toMap)
+        // at the longest width each window is its whole name; whole names clash with no other
+        // name's text unless that text is a widened window equal to it (a name with "…" in it)
+        val fixed = widths(longest).iterator.map(w => group.map(n => n -> window(n, at(n), w)).toMap)
           .find(c => c.values.toSet.size == group.size && !c.values.exists(rest.values.toSet))
           .getOrElse(group.map(n => n -> n).toMap)
         settle(rest ++ fixed, left - 1)
     }
-    settle(first, all.size)
+    settle(first, passes)
   }
 
   /** `full`'s chip text, told apart from `others`' (the contest's other tracks' names): [[cut]];
@@ -100,7 +110,7 @@ object TrackChip {
     else full.substring(0, full.offsetByCodePoints(0, MaxLength - 1)).trim + "…"
 
   /** About `width` ([[MaxLength]]) characters of `full` around its character `at`, "…" where cut. */
-  private def window(full: String, at: Int, width: Int = MaxLength): String = {
+  private[views] def window(full: String, at: Int, width: Int = MaxLength): String = {
     val length = full.codePointCount(0, full.length)
     val atCp = full.codePointCount(0, at.min(full.length))
     val from = (atCp - width / 3).max(0).min((length - (width - 2)).max(0))

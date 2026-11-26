@@ -173,6 +173,14 @@ object RoundLineage {
       */
     lazy val colours: Map[Track, Int] = colourSlots(tracks)
 
+    // what the pages derive from the whole lineage once per key (views.TrackChip's chip texts, per
+    // language): not part of the lineage's equality
+    private val memo = new java.util.concurrent.ConcurrentHashMap[Any, Any]()
+
+    /** `compute`'s value, computed once for this lineage and `key`. */
+    def memoized[A](key: Any)(compute: => A): A =
+      memo.computeIfAbsent(key, _ => compute).asInstanceOf[A]
+
     /** Whether none of the round's previous rounds exists ([[missingPrevious]]): it is then placed as a
       * round with no previous round (rule 7). With some left, its track comes as theirs would.
       */
