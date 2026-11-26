@@ -363,10 +363,7 @@ final case class RoundList(
   /** Files to a page: a file list's are rows of a table; the comments report's files have all
     * their comments under them.
     */
-  def pageSize: Int =
-    if (view == GalleryView.FileList) RoundList.FileListPageSize
-    else if (view.comments) RoundList.CommentsPageSize
-    else Pager.pageSize
+  def pageSize: Int = RoundList.pageSizeOf(view)
 
   def query: SelectionQuery =
     SelectionQuery(
@@ -1034,6 +1031,14 @@ object RoundList {
 
   /** The comments report's files to a page: a round's busiest had 1,542 comments on 321 files. */
   val CommentsPageSize = 20
+
+  /** A list's files to a page, by its view ([[RoundList.pageSize]]); the round form's cut link computes
+    * the rating view's page with it (services.CutPicker.viewUrl).
+    */
+  def pageSizeOf(view: GalleryView): Int =
+    if (view == GalleryView.FileList) FileListPageSize
+    else if (view.comments) CommentsPageSize
+    else Pager.pageSize
 
   /** A list URL's parameter of its monument filter ([[RoundList.monument]]): `monument=<id>`. */
   val MonumentParam = "monument"

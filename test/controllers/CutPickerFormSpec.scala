@@ -270,6 +270,22 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
           (created.topImages must beNone) and (RoundImageJdbc.countIn(created.getId) === 4L)
       }
     }
+
+    "not store a threshold posted alone from a yes/no head previous round, nor without previous rounds" in {
+      testDbApp { implicit app =>
+        val (contest, prev) = setUp()
+        val binary = roundDao.create(Round(None, 3, Some("Yes/no"), contest.getId, rates = Round.binaryRound, active = false))
+        val fromBinary = status(save(app, "admin@example.com",
+          newRound(contest, prev, "name" -> "From yes/no", "previousRound[0]" -> binary.getId.toString, "minAvgRate" -> "7.25"): _*))
+        val withoutPrevious = status(save(app, "admin@example.com",
+          newRound(contest, prev, "name" -> "No previous", "minAvgRate" -> "7.25").filterNot(_._1 == "previousRound[0]"): _*))
+        def named(name: String) = Round.findByContest(contest.getId).find(_.name.contains(name)).get
+        (fromBinary === SEE_OTHER) and (named("From yes/no").prevMinAvgRate must beNone) and
+          (named("From yes/no").previousIds === Seq(binary.getId)) and
+          (withoutPrevious === SEE_OTHER) and (named("No previous").prevMinAvgRate must beNone) and
+          (named("No previous").previousIds must beEmpty)
+      }
+    }
   }
 
   "an existing round's top N" should {

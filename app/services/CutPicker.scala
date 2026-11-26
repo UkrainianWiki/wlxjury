@@ -292,7 +292,8 @@ object CutPicker {
     * picker's order: `sort` the yes/no order, else by rate), scrolled to the cut's divider.
     */
   def viewUrl(prevId: Long, order: Option[BinaryOrder], n: Int): String =
-    controllers.routes.GalleryController.byRate(0, controllers.Pager.pageOf(n - 1), "all", prevId).url +
+    controllers.routes.GalleryController.byRate(0,
+      controllers.Pager.pageOf(n - 1, controllers.RoundList.pageSizeOf(controllers.GalleryView.ByRate)), "all", prevId).url +
       s"?sort=${order.fold(controllers.ListOrder.ByRate.param)(_.param)}&$CutParam=$n$CutFragment"
 
   /** A message's text, its message arguments first. */

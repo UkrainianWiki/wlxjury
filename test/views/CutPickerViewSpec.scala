@@ -201,7 +201,13 @@ class CutPickerViewSpec extends Specification {
     "open the previous round's rating view at the cut's page, in the picker's order" in {
       (CutPicker.viewUrl(7, None, 88) === "/byrate/round/7/user/0/page/6?sort=rate&cut=88#cut") and
         (CutPicker.viewUrl(7, Some(BinaryOrder.Difference), 15) === "/byrate/round/7/user/0/page/1?sort=difference&cut=15#cut") and
-        (CutPicker.viewUrl(7, None, 16) must contain("/page/2?"))
+        (CutPicker.viewUrl(7, None, 16) must contain("/page/2?")) and {
+          // the page the rating view puts file N on, by its own page size
+          val size = RoundList(prev, 0, view = GalleryView.ByRate).pageSize
+          forall(Seq(size, size + 1, 3 * size + 2, 1000)) { n =>
+            CutPicker.viewUrl(7, None, n) must contain(s"/page/${controllers.Pager.pageOf(n - 1, size)}?")
+          } and (CutPicker.viewUrl(7, None, size + 1) must contain("/page/2?"))
+        }
     }
   }
 

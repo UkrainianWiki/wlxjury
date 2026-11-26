@@ -362,7 +362,13 @@ class RoundController @Inject() (
         }
       // no previous rounds: no cut to keep
       case Some(_) => (round.copy(prevMinAvgRate = None), None)
-      case None    => (round, None)
+      // a threshold alone: kept only from a rated head previous round, the one the fill applies it to
+      // (DistributeImages.perImageFilters); none from a yes/no one or without previous rounds, where
+      // it would be shown (the locked form, the contest's health) but never applied
+      case None =>
+        val applies = round.prevMinAvgRate.isDefined &&
+          roundsService.previousRounds(round).headOption.exists(p => !p.isBinary)
+        (if (applies) round else round.copy(prevMinAvgRate = None), None)
     }
 
   /** The form after a saved edit whose "Distribute new files" (or list, or top-up) was refused: the
