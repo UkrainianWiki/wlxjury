@@ -11,7 +11,6 @@
         noEdit: Boolean,
         specialNominations: Seq[SpecialNomination] = Nil,
         cutPicker: Option[services.CutPicker] = None,
-        cutTarget: Option[Int] = None,
         previewUrl: String = ""
 )(implicit messages: Messages)
 @implicitLayout = @{ bs.Layout.horizontal("col-md-4", "col-md-8") }
@@ -119,7 +118,7 @@
 
             @* the top N (regional winners plan §10.4, the cut picker): no free number box; "Choose N"
                loads the candidate cuts and an N list of valid values only (round/edit/topN) *@
-            @views.html.round.edit.topN(editRoundForm, cutPicker, cutTarget, noEdit, previewUrl)
+            @views.html.round.edit.topN(editRoundForm, cutPicker, noEdit, previewUrl)
         </div>
 
         @* "Leave out files that are in round(s)" (V95): the contest's other rounds; with or without

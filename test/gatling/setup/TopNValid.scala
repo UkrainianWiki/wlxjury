@@ -13,7 +13,7 @@ object TopNValid {
     */
   def atLeast(contestId: Long, from: Long, n: Int): Int = {
     val round = Round(None, 0, None, contestId, previous = Some(from.toString))
-    services.TestRoundServices.roundService().cutPicker(round, None, None, None).map(_.result)
+    services.TestRoundServices.roundService().cutPicker(round, None, None).map(_.result)
       .filter(_.m > 0)
       .fold(n)(r => (n to r.m).find(r.isValid).getOrElse(r.m))
   }

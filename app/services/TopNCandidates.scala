@@ -4,16 +4,18 @@ import scala.collection.mutable
 
 /** The cut picker's candidate cuts (regional winners plan §10.4, "SN"): pure, from a ranked list of
   * eligible files to the valid values of a top N and the candidate cuts, each with its reasons. The
-  * list is ranked by the fill's own rank key (`DistributionSource.rank`): files of the same key tie,
-  * and a cut never falls inside a tie, so the fill never has to cut one by page id.
+  * list is in the fill's own order (`DistributionSource.rank`), and each file has its score as its key
+  * (a rated source's score alone, a yes/no source's level): files of the same key tie, even if the
+  * fill orders them by their sums (decided 2026-11-26), and a cut never falls inside a tie, so the fill
+  * never has to cut one by its sum or page id.
   *
   *  - '''Valid values:''' N = k (1 ≤ k < m) where file k and file k + 1 differ in key, and N = m (all
   *    candidates); never N = 0. The round form's N list offers only these, and a save refuses others.
   *  - '''Candidate cuts''' in a window `[lo, hi]` ([[Window]]): C1 a significant drop, C2 close to the
-  *    best (regions only), C3 all candidates, C4 around the target (when C1 finds none), C5 the
-  *    boundaries of a tie at the window's edge; for yes/no sources, every level boundary in the window
-  *    instead of C1, C2 and C4. At most [[MaxCandidates]], by N, one N with all its reasons. Nothing is
-  *    preselected: the admin chooses.
+  *    best (regions only), C3 all candidates, C5 the boundaries of a tie at the window's edge; for
+  *    yes/no sources, every level boundary in the window instead of C1 and C2. At most
+  *    [[MaxCandidates]], by N, one N with all its reasons. Nothing is preselected: the admin chooses,
+  *    from them or from the N list (decided 2026-11-26: no target, and no "around the target" C4).
   */
 object TopNCandidates {
 
@@ -34,18 +36,15 @@ object TopNCandidates {
   /** The window of N the candidate cuts are looked for in: a main round's ([[Window.main]]) or a
     * region's ([[Window.region]]).
     */
-  final case class Window(lo: Int, hi: Int, region: Boolean = false, target: Option[Int] = None) {
-    /** What C4 and the level boundaries are nearest: the target, else the window's middle. */
-    def centre: Double = target.fold((lo + hi) / 2.0)(_.toDouble)
+  final case class Window(lo: Int, hi: Int, region: Boolean = false) {
+    /** What the level boundaries kept first are nearest: the window's middle. */
+    def centre: Double = (lo + hi) / 2.0
   }
 
   object Window {
 
-    /** A main round's: with a target T, `[⌈0.8 T⌉, ⌊1.25 T⌋]`; without, the first 100 places. */
-    def main(target: Option[Int]): Window = target.filter(_ > 0) match {
-      case Some(t) => Window(math.max(1, math.ceil(0.8 * t).toInt), math.max(1, math.floor(1.25 * t).toInt), target = Some(t))
-      case None    => Window(1, MainWithoutTarget)
-    }
+    /** A main round's: the first [[MainWindow]] places (decided 2026-11-26: no target). */
+    val main: Window = Window(1, MainWindow)
 
     /** A region's of `m` candidates (the defaults of question 2): `lo = min(3, m)`, `hi = min(15,
       * max(lo, ⌈m / 3⌉))`.
@@ -56,8 +55,8 @@ object TopNCandidates {
     }
   }
 
-  /** A main round's window without a target: places 1 to 100. */
-  val MainWithoutTarget = 100
+  /** A main round's window: places 1 to 100. */
+  val MainWindow = 100
 
   /** The candidate cuts listed at most. */
   val MaxCandidates = 6
@@ -71,7 +70,7 @@ object TopNCandidates {
   /** The share of the score range a drop (C1) or the distance from the best (C2) is measured in. */
   val RangeShare = 0.05
 
-  /** A candidate cut: N and its reasons, in the order C1–C5. */
+  /** A candidate cut: N and its reasons, in the order C1, C2, C3, C5. */
   final case class Candidate(n: Int, reasons: Seq[Msg])
 
   /** A tie: files `from` to `to` (1-based, `from < to`) of the same key. */
@@ -142,7 +141,6 @@ object TopNCandidates {
   val LargestDropKey = "top.n.reason.drop.largest"
   val CloseToBestKey = "top.n.reason.close"
   val AllKey = "top.n.reason.all"
-  val NoClearDropKey = "top.n.reason.no.drop"
   val TieIncludedKey = "top.n.reason.tie.includes"
   val TieBeforeKey = "top.n.reason.tie.before"
   val LevelKey = "top.n.reason.level"
@@ -160,7 +158,7 @@ object TopNCandidates {
     }
 
   /** The candidate cuts of the files ranked by `keys` (best first; equal keys tie), each file's numeric
-    * score in `scores` (rated: the rank key's first value; yes/no: unused), in `window`.
+    * score in `scores` (rated: its key's one value; yes/no: unused), in `window`.
     */
   def compute(keys: IndexedSeq[Seq[Double]], scores: IndexedSeq[Double], scale: Scale, window: Window): Result = {
     require(keys.size == scores.size, "a score for each key")
@@ -179,7 +177,7 @@ object TopNCandidates {
     val cap = if (window.region) RegionMax else Int.MaxValue
 
     // (N, reason, priority: lower is kept first when more than MaxCandidates are found)
-    val found = mutable.ArrayBuffer.empty[(Int, Int, Msg, Double)] // (n, order C1..C5, reason, priority)
+    val found = mutable.ArrayBuffer.empty[(Int, Int, Msg, Double)] // (n, order C1, C2, C3, C5, reason, priority)
 
     // C3, all candidates
     if ((window.region && m <= RegionMax) || (!window.region && m <= hi))
@@ -200,8 +198,8 @@ object TopNCandidates {
     scale match {
       case Rated(range) =>
         val cuts = inWindow.filter(_ < m)
+        // ties (equal scores) are no cut positions: every gap at a cut is a drop
         val gaps = cuts.map(n => n -> (score(n) - score(n + 1)))
-        // ties are no cut positions; a cut between equal scores (the sum decides) has no drop
         val positive = gaps.filter(_._2 > 0)
         val median = if (positive.sizeIs >= 3) {
           val sorted = positive.map(_._2).sorted
@@ -222,17 +220,8 @@ object TopNCandidates {
             found += ((n, 2, Msg(CloseToBestKey, Seq(n, fmt(RangeShare * range), fmt(score(1)))), 3.0))
         }
 
-        // C4: no clear drop, the cuts nearest the target (or the middle), one on each side
-        if (drops.isEmpty && cuts.nonEmpty) {
-          val c = window.centre
-          val below = cuts.filter(_ <= c).maxOption
-          val above = cuts.filter(_ > c).minOption
-          for (n <- (below.toSeq ++ above.toSeq).distinct)
-            found += ((n, 4, Msg(NoClearDropKey, Seq(lo, hi, fmt(score(lo)), fmt(score(hi)))), 4.0))
-        }
-
       case Levels(describe) =>
-        // every level boundary in the window, those nearest the target (or the middle) first
+        // every level boundary in the window, those nearest its middle first
         for (n <- inWindow if n < m) {
           val next = (n + 1 to m).takeWhile(i => key(i) == key(n + 1)).size
           found += ((n, 1, Msg(LevelKey, Seq(describe(key(n)), next, describe(key(n + 1)))),

@@ -90,7 +90,8 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
           (page.select("select#topImages").size === 0) and
           (page.select("#topImages_field #topImages").text === "No top N: all matching files") and
           (page.select("#topImages-choose").attr("formaction") must contain("/admin/rounds/cut-preview")) and
-          (page.select("input#topImagesTarget[type=number]").size === 1)
+          // no target (decided 2026-11-26): the admin picks from the list
+          (page.select("#topImagesTarget").size === 0)
       }
     }
   }
@@ -128,13 +129,27 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "keep the target and look for candidates around it" in {
+    "look for candidates in the first 100 places, with no target (a posted one is ignored)" in {
       testDbApp { implicit app =>
         val (contest, prev) = setUp()
         val page = doc(preview(app, "admin@example.com", newRound(contest, prev, "topImagesTarget" -> "3"): _*))
-        // window [3, 3] inside the tie 2–4: its boundaries 1 and 4
-        (page.select("#topImagesTarget").attr("value") === "3") and
-          (page.select("#top-n-candidates button[name=cutPick]").asScala.map(_.attr("value")).toSeq === Seq("1", "4"))
+        // no drop stands out (every gap 1): all candidates only; the list offers every valid value
+        (page.select("#topImagesTarget").size === 0) and
+          (page.select("#top-n-candidates button[name=cutPick]").asScala.map(_.attr("value")).toSeq === Seq("8")) and
+          (options(page) === Seq("") ++ Valid)
+      }
+    }
+
+    "answer 403 for another contest's round and 404 for a missing one" in {
+      testDbApp { implicit app =>
+        val (contest, prev) = setUp()
+        val third = contestDao.create(None, "WLM", 2027, "Ukraine")
+        val elsewhere = roundDao.create(Round(None, 1, Some("Elsewhere"), third.getId, rates = Round.ratesById(10),
+          previous = Some(prev.getId.toString)))
+        val other = preview(app, "admin@example.com", newRound(contest, prev, "id" -> elsewhere.getId.toString): _*)
+        val missing = preview(app, "admin@example.com", newRound(contest, prev, "id" -> "999999"): _*)
+        (status(other) === FORBIDDEN) and (contentAsString(other) must not(contain("cut-gallery"))) and
+          (status(missing) === NOT_FOUND)
       }
     }
 
@@ -187,8 +202,7 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
     "save a valid N: the round takes the picker's first N, how it was chosen in its settings log" in {
       testDbApp { implicit app =>
         val (contest, prev) = setUp()
-        val result = save(app, "admin@example.com", newRound(contest, prev, "topImages" -> "4",
-          "topImagesTarget" -> "4"): _*)
+        val result = save(app, "admin@example.com", newRound(contest, prev, "topImages" -> "4"): _*)
         val saved = status(result)
         val created = Round.findByContest(contest.getId).find(_.id != prev.id).get
         val entry = ContestChangeJdbc.findByRound(contest.getId, created.getId, 10)
@@ -196,11 +210,11 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
         val basis = (entry.detail \ "topImagesBasis").as[play.api.libs.json.JsObject]
         (saved === SEE_OTHER) and (created.topImages must beSome(4)) and
           (RoundImageJdbc.countIn(created.getId) === 4L) and
-          ((basis \ "chosen").as[Int] === 4) and ((basis \ "target").as[Int] === 4) and
+          ((basis \ "chosen").as[Int] === 4) and ((basis \ "target").toOption must beNone) and
           ((basis \ "files").as[Int] === 8) and
           (views.RoundChangeText.items(entry)(play.api.i18n.MessagesImpl(play.api.i18n.Lang("en"),
             app.injector.instanceOf[play.api.i18n.MessagesApi])).find(_.field == "topImages").flatMap(_.note) must
-            beSome(contain("target 4")))
+            beSome(contain("chosen from the list")))
       }
     }
   }
@@ -219,6 +233,21 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
         (page.select("#topImages_field input#topImages.wlx-locked[disabled]").attr("value") === "3") and (page.select("select#topImages").size === 0) and
           (page.select("#topImages-choose").size === 0) and
           (status(sent) === SEE_OTHER) and (redirectLocation(sent).get must contain(s"id=${stored.getId}"))
+      }
+    }
+
+    "ignore a crafted N posted on a plain edit of a started round" in {
+      testDbApp { implicit app =>
+        val (contest, prev) = setUp()
+        val stored = roundDao.create(Round(None, 2, Some("Old"), contest.getId, rates = Round.ratesById(10),
+          active = true, previous = Some(prev.getId.toString), topImages = Some(3)))
+        val edit = Seq("id" -> stored.getId.toString, "number" -> "2", "name" -> "Old renamed",
+          "contest" -> contest.getId.toString, "roles" -> "jury", "distribution" -> "0", "rates" -> "10",
+          "minMpx" -> "No", "minSize" -> "No", "mediaType" -> "all", "previousRound[0]" -> prev.getId.toString,
+          "topImages" -> "4")
+        val result = save(app, "admin@example.com", edit: _*)
+        val after = roundDao.findById(stored.getId).get
+        (status(result) === SEE_OTHER) and (after.name must beSome("Old renamed")) and (after.topImages must beSome(3))
       }
     }
 

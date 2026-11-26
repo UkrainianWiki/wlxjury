@@ -94,6 +94,7 @@ object GatlingTestFixture {
         "regions.countCache"                     -> GatlingConfig.regionCountCache
       ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _) ++ timingConfig ++ csrfConfig ++ imagesConfig ++
         cspConfig ++ filtersConfig)
+      .overrides(categoryStub.toSeq: _*)
       .build()
     localApplication = Some(app)
     val server = TestServer(port, app)
@@ -245,6 +246,16 @@ object GatlingTestFixture {
       if (f == "modules.SessionLifetimeFilter" && GatlingConfig.timing) Seq(f, "modules.RequestTimingFilter") else Seq(f)
     })
   }
+
+  /** `-Dgatling.categoryStub=true`: a round's category filter reads its files from the fixture's own
+    * category links ([[StubCategoryFiles]]), not from Commons: a measurement of the cut picker with a
+    * category filter stays offline. Off by default.
+    */
+  private def categoryStub: Option[play.api.inject.Binding[_]] =
+    Option.when(sys.props.get("gatling.categoryStub").contains("true")) {
+      println("[categoryStub] a category filter's files from the fixture's category links, not Commons")
+      play.api.inject.bind[org.intracer.wmua.cmd.DistributeImages].to[StubCategoryFiles]
+    }
 
   /** The timing log's file, if enabled. */
   private def timingConfig: Map[String, Any] =

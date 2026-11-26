@@ -12,7 +12,6 @@ import services.distribution.RoundDistributionHandler.TopNRanking
   * round's top N ([[TopNCandidates]]) over the files its distribution would rank now, the N list of
   * valid values only, and the cut gallery's files.
   *
-  * @param target  the admin's target (none: the first 100 places)
   * @param chosen  the N the form holds, valid or not
   * @param shownTo the gallery's last place shown
   * @param mixedScales the previous rounds' score ranges differ ("previous rounds on different scales")
@@ -22,7 +21,6 @@ import services.distribution.RoundDistributionHandler.TopNRanking
 final case class CutPicker(
     result: Result,
     ranking: TopNRanking,
-    target: Option[Int],
     chosen: Option[Int],
     shownTo: Int,
     mixedScales: Boolean,
@@ -93,13 +91,11 @@ final case class CutPicker(
     if (levels) Msg(CutPicker.PreviewLevelKey, Seq(n, m, scoreAt(n)))
     else Msg(CutPicker.PreviewKey, Seq(n, m, scoreAt(n)))
 
-  /** What the round's settings log keeps of the choice of `n` (`topImagesBasis`): the target, the
-    * candidates listed, how N was chosen (a candidate cut, with its reasons, or the list) and the files
+  /** What the round's settings log keeps of the choice of `n` (`topImagesBasis`): the candidates listed, how N was chosen (a candidate cut, with its reasons, or the list) and the files
     * ranked.
     */
   def basis(n: Int): JsObject = Json.obj(
     "chosen" -> n,
-    "target" -> target,
     "candidates" -> result.candidates.map(_.n),
     "how" -> (if (result.candidate(n).isDefined) CutPicker.HowCandidate else CutPicker.HowList),
     "reasons" -> result.candidate(n).fold(Seq.empty[JsValue])(_.reasons.map(CutPicker.toJson)),
@@ -123,9 +119,6 @@ object CutPicker {
 
   /** "Show more" adds this many places. */
   val ShowMoreStep = 50
-
-  /** The largest target the form takes. */
-  val MaxTarget = 10000
 
   val PreviewKey = "top.n.preview"
   val PreviewLevelKey = "top.n.preview.level"
@@ -152,20 +145,19 @@ object CutPicker {
   }
 
   /** The picker of a ranking: its scale (yes/no levels, or the largest of the rated rounds' ranges),
-    * the window of `target`, the gallery to `showTo` (at least the window's end plus 5).
+    * the main round's window, the gallery to `showTo` (at least the window's end plus 5).
     */
-  def build(ranking: TopNRanking, ranges: Seq[Double], target: Option[Int], chosen: Option[Int],
-      showTo: Option[Int]): CutPicker = {
+  def build(ranking: TopNRanking, ranges: Seq[Double], chosen: Option[Int], showTo: Option[Int]): CutPicker = {
     val scale: Scale = ranking.order.fold[Scale](TopNCandidates.Rated(ranges.maxOption.getOrElse(1.0)))(o =>
       TopNCandidates.Levels(describe(o)))
-    val result = TopNCandidates.compute(ranking.keys, ranking.scores, scale, TopNCandidates.Window.main(target))
+    val result = TopNCandidates.compute(ranking.keys, ranking.scores, scale, TopNCandidates.Window.main)
     val shown = math.min(ranking.files.size, math.max(result.galleryEnd, showTo.getOrElse(0)))
-    CutPicker(result, ranking, target, chosen, shown, mixedScales = ranges.distinct.sizeIs > 1)
+    CutPicker(result, ranking, chosen, shown, mixedScales = ranges.distinct.sizeIs > 1)
   }
 
-  /** The files kept whole for a gallery of `target` shown to `showTo`. */
-  def keep(target: Option[Int], showTo: Option[Int]): Int =
-    math.min(MaxShown, math.max(TopNCandidates.Window.main(target).hi + TopNCandidates.GalleryExtra, showTo.getOrElse(0)))
+  /** The files kept whole for a gallery shown to `showTo`. */
+  def keep(showTo: Option[Int]): Int =
+    math.min(MaxShown, math.max(TopNCandidates.Window.main.hi + TopNCandidates.GalleryExtra, showTo.getOrElse(0)))
 
   /** A message's text, its message arguments first. */
   def text(msg: Msg)(implicit messages: Messages): String =

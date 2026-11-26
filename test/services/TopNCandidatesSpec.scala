@@ -3,16 +3,19 @@ package services
 import org.specs2.mutable.Specification
 import services.TopNCandidates._
 
-/** The cut picker's candidate cuts and valid values (regional winners plan §10.4, §10.9): C1–C5 on rated
-  * lists, yes/no levels, ties at the window's edges and across it, few candidates, the windows, at most
+/** The cut picker's candidate cuts and valid values (regional winners plan §10.4, §10.9): C1, C2, C3 and C5
+  * on rated lists (no C4 and no target, decided 2026-11-26), yes/no levels, ties at the window's edges and
+  * across it, few candidates, the windows, at most
   * six candidates with one N's reasons merged, never N = 0 nor a value inside a tie, nothing above 25
   * for a region, and each reason's message arguments.
   */
 class TopNCandidatesSpec extends Specification {
 
-  /** Rated files of these scores (best first), their keys the score and a sum that never breaks a tie. */
+  /** Rated files of these scores (best first), their keys the score alone (ties by the score, decided
+    * 2026-11-26).
+    */
   private def rated(scores: Double*): (IndexedSeq[Seq[Double]], IndexedSeq[Double]) =
-    (scores.map(s => Seq(s, 0.0)).toIndexedSeq, scores.toIndexedSeq)
+    (scores.map(s => Seq(s)).toIndexedSeq, scores.toIndexedSeq)
 
   private def ratedResult(window: Window, range: Double, scores: Double*): Result = {
     val (keys, s) = rated(scores: _*)
@@ -31,10 +34,8 @@ class TopNCandidatesSpec extends Specification {
       Levels(describe), window)
 
   "the windows" should {
-    "be [⌈0.8 T⌉, ⌊1.25 T⌋] with a target, the first 100 places without" in {
-      (Window.main(Some(40)) === Window(32, 50, target = Some(40))) and
-        (Window.main(Some(1)) === Window(1, 1, target = Some(1))) and
-        (Window.main(None) === Window(1, 100)) and (Window.main(Some(0)) === Window(1, 100))
+    "be the first 100 places for a main round (no target)" in {
+      Window.main === Window(1, 100)
     }
 
     "be a region's [min(3, m), min(15, max(lo, ⌈m/3⌉))]" in {
@@ -45,7 +46,7 @@ class TopNCandidatesSpec extends Specification {
   }
 
   "the valid values" should {
-    val r = ratedResult(Window.main(None), 10, 9, 8, 8, 8, 7, 6, 6)
+    val r = ratedResult(Window.main, 10, 9, 8, 8, 8, 7, 6, 6)
 
     "be the cuts between two different scores and all candidates, never inside a tie nor 0" in {
       (r.validUpTo(100) === Seq(1, 4, 5, 7)) and (r.isValid(0) must beFalse) and (r.isValid(2) must beFalse) and
@@ -61,13 +62,13 @@ class TopNCandidatesSpec extends Specification {
         (r.refusal(6) must beSome(Msg(InTieKey, Seq(6, 6, 7, 5, 7)))) and
         (r.refusal(4) must beNone) and (r.refusal(7) must beNone) and
         (r.refusal(8) must beSome(Msg(AboveAllKey, Seq(8, 7)))) and
-        (compute(IndexedSeq.empty, IndexedSeq.empty, Rated(10), Window.main(None)).refusal(1) must
+        (compute(IndexedSeq.empty, IndexedSeq.empty, Rated(10), Window.main).refusal(1) must
           beSome(Msg(NoCandidatesKey)))
     }
 
     "accept exactly the valid values: the save's check refuses every other N (offered == allowed)" in {
-      val shapes = Seq(r, ratedResult(Window.main(None), 10, 8, 8, 8, 7), ratedResult(Window.main(None), 10, 5, 5),
-        ratedResult(Window.main(None), 10, 9, 8, 7), levels(Window.main(None), (3, 0), (3, 0), (2, 1), (2, 1), (1, 2)))
+      val shapes = Seq(r, ratedResult(Window.main, 10, 8, 8, 8, 7), ratedResult(Window.main, 10, 5, 5),
+        ratedResult(Window.main, 10, 9, 8, 7), levels(Window.main, (3, 0), (3, 0), (2, 1), (2, 1), (1, 2)))
       foreach(shapes) { s =>
         foreach(-1 to s.m + 2)(n => s.refusal(n).isEmpty must_=== s.isValid(n)) and
           (s.validUpTo(s.m) must_=== (-1 to s.m + 2).filter(n => s.refusal(n).isEmpty))
@@ -75,35 +76,36 @@ class TopNCandidatesSpec extends Specification {
     }
 
     "offer only the tie's end when the tie starts at place 1 (no N = 0)" in {
-      val tied = ratedResult(Window.main(None), 10, 8, 8, 8, 7)
+      val tied = ratedResult(Window.main, 10, 8, 8, 8, 7)
       (tied.refusal(2) must beSome(Msg(InTieUpperKey, Seq(2, 1, 3, 3)))) and (tied.validUpTo(10) === Seq(3, 4)) and
         (tied.tieAt(1) must beSome(Tie(1, 3)))
     }
 
-    "tell a sum apart: equal scores with different sums are no tie" in {
-      val keys = IndexedSeq(Seq(7.0, 21.0), Seq(7.0, 14.0), Seq(6.0, 12.0))
-      compute(keys, IndexedSeq(7.0, 7.0, 6.0), Rated(10), Window.main(None)).isValid(1) must beTrue
+    "tie equal scores, whatever their sums (the score alone is the key)" in {
+      val r = ratedResult(Window.main, 10, 7, 7, 6)
+      (r.isValid(1) must beFalse) and (r.refusal(1) must beSome(Msg(InTieUpperKey, Seq(1, 1, 2, 2)))) and
+        (r.validUpTo(10) === Seq(2, 3))
     }
   }
 
   "C1, a significant drop" should {
     "list the drops of 5% of the range and twice the median gap, the largest marked, with both scores" in {
       // gaps 0.1 except 8.7 → 6.0 (2.7) and 5.8 → 5.0 (0.8): both drops, the first the largest
-      val r = ratedResult(Window.main(None), 10, 9, 8.9, 8.8, 8.7, 6.0, 5.9, 5.8, 5.0, 4.9, 4.8)
+      val r = ratedResult(Window.main, 10, 9, 8.9, 8.8, 8.7, 6.0, 5.9, 5.8, 5.0, 4.9, 4.8)
       (ns(r) === Seq(4, 7, 10)) and
         (r.candidate(4).get.reasons === Seq(Msg(LargestDropKey, Seq("8.7", "6")))) and
         (r.candidate(7).get.reasons === Seq(Msg(DropKey, Seq("5.8", "5"))))
     }
 
     "not list a gap below 5% of the range" in {
-      val r = ratedResult(Window.main(None), 100, 9, 8.9, 8.8, 7.0, 6.9, 6.8, 6.7, 6.6, 6.5, 6.4, 6.3)
+      val r = ratedResult(Window.main, 100, 9, 8.9, 8.8, 7.0, 6.9, 6.8, 6.7, 6.6, 6.5, 6.4, 6.3)
       (keysOf(r, 3) must not(contain(DropKey))) and (keysOf(r, 3) must not(contain(LargestDropKey)))
     }
 
     "keep all candidates and the largest drops, at most six, by N" in {
       // ten blocks of three files, 0.1 apart inside a block, about 9.8 between blocks
       val scores = (0 until 10).flatMap(k => Seq(0.0, 0.1, 0.2).map(d => 100.0 - 10 * k - d))
-      val r = ratedResult(Window.main(None), 100, scores: _*)
+      val r = ratedResult(Window.main, 100, scores: _*)
       (r.candidates.size === MaxCandidates) and (ns(r) === ns(r).sorted) and (ns(r) must contain(30))
     }
   }
@@ -111,7 +113,7 @@ class TopNCandidatesSpec extends Specification {
   "C3, all candidates" should {
     "be listed for a main round when all candidates fit in the window" in {
       // 6 files, window [1, 100]: N = 6 is all; the drop before the last file is one, at N = 5
-      val r = ratedResult(Window.main(None), 10, 9, 8.9, 8.8, 8.7, 8.6, 2)
+      val r = ratedResult(Window.main, 10, 9, 8.9, 8.8, 8.7, 8.6, 2)
       (keysOf(r, 6) === Seq(AllKey)) and (r.candidate(6).get.reasons.head.args === Seq(6)) and
         (keysOf(r, 5) === Seq(LargestDropKey))
     }
@@ -123,8 +125,8 @@ class TopNCandidatesSpec extends Specification {
     }
 
     "not be listed when the candidates go past the window" in {
-      val r = ratedResult(Window.main(Some(4)), 10, (1 to 20).map(i => 10.0 - i * 0.3): _*)
-      ns(r) must not(contain(20))
+      val r = ratedResult(Window.main, 1000, (1 to 120).map(i => 1000.0 - i * 3): _*)
+      ns(r) must not(contain(120))
     }
 
     "be listed for a region of up to 25 candidates, past its window" in {
@@ -146,24 +148,23 @@ class TopNCandidatesSpec extends Specification {
     }
 
     "not apply to a main round" in {
-      val r = ratedResult(Window.main(None), 10, Seq(9.0, 8.8, 8.6) ++ (1 to 25).map(i => 8.0 - i * 0.2): _*)
+      val r = ratedResult(Window.main, 10, Seq(9.0, 8.8, 8.6) ++ (1 to 25).map(i => 8.0 - i * 0.2): _*)
       r.candidates.flatMap(_.reasons).map(_.key) must not(contain(CloseToBestKey))
     }
   }
 
-  "C4, around the target" should {
-    "list the cuts nearest the target, one on each side, when no drop stands out" in {
-      val r = ratedResult(Window.main(Some(10)), 100, (1 to 30).map(i => 90.0 - i): _*)
-      (ns(r) === Seq(10, 11)) and
-        (r.candidate(10).get.reasons === Seq(Msg(NoClearDropKey, Seq(8, 12, "82", "78"))))
+  "no clear drop" should {
+    "list no cut but all candidates: the admin picks from the list (no C4)" in {
+      val r = ratedResult(Window.main, 100, (1 to 30).map(i => 90.0 - i): _*)
+      (ns(r) === Seq(30)) and (keysOf(r, 30) === Seq(AllKey)) and (r.validUpTo(100) === (1 to 30))
     }
   }
 
   "C5, a tie at the window's edge" should {
     "list both boundaries of a tie across hi, even outside the window" in {
-      // target 4: window [4, 5]; places 4–7 tie at 6.8
-      val r = ratedResult(Window.main(Some(4)), 10, 9, 8.5, 8, 6.8, 6.8, 6.8, 6.8, 6, 5.5, 5)
-      (r.window === Window(4, 5, target = Some(4))) and
+      // window [4, 5]; places 4–7 tie at 6.8
+      val r = ratedResult(Window(4, 5), 10, 9, 8.5, 8, 6.8, 6.8, 6.8, 6.8, 6, 5.5, 5)
+      (r.window === Window(4, 5)) and
         (r.candidate(3).get.reasons must contain(Msg(TieBeforeKey, Seq("6.8", 4, 7)))) and
         (r.candidate(7).get.reasons must contain(Msg(TieIncludedKey, Seq("6.8", 4, 7))))
     }
@@ -174,7 +175,7 @@ class TopNCandidatesSpec extends Specification {
     }
 
     "not offer the lower boundary 0 when places 1 to hi all tie" in {
-      val r = ratedResult(Window.main(Some(3)), 10, 7, 7, 7, 7, 7, 6)
+      val r = ratedResult(Window(3, 3), 10, 7, 7, 7, 7, 7, 6)
       (ns(r) must not(contain(0))) and (keysOf(r, 5) must contain(TieIncludedKey))
     }
   }
@@ -183,7 +184,7 @@ class TopNCandidatesSpec extends Specification {
     val files = Seq.fill(3)((3, 0)) ++ Seq.fill(4)((3, 1)) ++ Seq.fill(2)((2, 0)) ++ Seq.fill(5)((2, 1)) ++ Seq((1, 2))
 
     "list every level boundary in the window, naming the level and the next one with its files" in {
-      val r = levels(Window.main(None), files: _*)
+      val r = levels(Window.main, files: _*)
       (ns(r) === Seq(3, 7, 9, 14, 15)) and
         // places 1–3 tie at the window's start (place 1): its end is a candidate for that too
         (r.candidate(3).get.reasons === Seq(Msg(LevelKey, Seq(describe(Seq(3.0, 0.0)), 4, describe(Seq(3.0, 1.0)))),
@@ -193,25 +194,24 @@ class TopNCandidatesSpec extends Specification {
 
     "not use the drop or the closeness tests" in {
       val r = levels(Window.region(15), files: _*)
-      r.candidates.flatMap(_.reasons).map(_.key).toSet must not(contain(anyOf(DropKey, LargestDropKey, CloseToBestKey,
-        NoClearDropKey)))
+      r.candidates.flatMap(_.reasons).map(_.key).toSet must not(contain(anyOf(DropKey, LargestDropKey, CloseToBestKey)))
     }
 
-    "keep the six boundaries nearest the target when more are in the window" in {
+    "keep the six boundaries nearest the window's middle when more are in the window" in {
       val many = (0 until 12).flatMap(level => Seq.fill(3)((20 - level, 0)))
-      val r = levels(Window.main(Some(18)), many: _*)
-      // window [15, 22]: boundaries 15, 18, 21, and 24 ending the tie 22–24 at its end; without a target,
-      // all candidates and the boundaries nearest the middle
+      val r = levels(Window(15, 22), many: _*)
+      // window [15, 22]: boundaries 15, 18, 21, and 24 ending the tie 22–24 at its end; a main round's
+      // window: all candidates and the boundaries nearest the middle
       (ns(r) === Seq(15, 18, 21, 24)) and
-        (levels(Window.main(None), many: _*).candidates.size === MaxCandidates)
+        (levels(Window.main, many: _*).candidates.size === MaxCandidates)
     }
 
     "refuse an N inside a level" in {
-      levels(Window.main(None), files: _*).refusal(5) must beSome(Msg(InTieKey, Seq(5, 4, 7, 3, 7)))
+      levels(Window.main, files: _*).refusal(5) must beSome(Msg(InTieKey, Seq(5, 4, 7, 3, 7)))
     }
 
     "name the tie's level for a tie across the window's edge" in {
-      val r = levels(Window.main(Some(5)), files: _*)
+      val r = levels(Window(4, 6), files: _*)
       r.candidate(7).toSeq.flatMap(_.reasons) must contain(Msg(TieIncludedKey, Seq(describe(Seq(3.0, 1.0)), 4, 7)))
     }
   }
@@ -225,14 +225,14 @@ class TopNCandidatesSpec extends Specification {
 
   "the gallery" should {
     "end at the window's end plus five, at most at the last candidate" in {
-      (ratedResult(Window.main(Some(10)), 10, (1 to 40).map(i => 10.0 - i * 0.1): _*).galleryEnd === 17) and
-        (ratedResult(Window.main(None), 10, (1 to 40).map(i => 10.0 - i * 0.1): _*).galleryEnd === 40)
+      (ratedResult(Window(8, 12), 10, (1 to 40).map(i => 10.0 - i * 0.1): _*).galleryEnd === 17) and
+        (ratedResult(Window.main, 10, (1 to 40).map(i => 10.0 - i * 0.1): _*).galleryEnd === 40)
     }
   }
 
   "a few candidates" should {
     "give N = m only, for two tied files" in {
-      val r = ratedResult(Window.main(None), 10, 7, 7)
+      val r = ratedResult(Window.main, 10, 7, 7)
       (r.validUpTo(10) === Seq(2)) and (ns(r) must contain(2))
     }
   }

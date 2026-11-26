@@ -1801,9 +1801,19 @@ we need to unconditionally take all files of a small region? let the organizers 
 top-N count they want to use.")*
 
 **What it does.**
-- It takes a ranked list of eligible candidates, by the same rank key the fill uses
+- It takes a ranked list of eligible candidates, in the order the fill takes them
   (`DistributionSource.rank`: rated rows scored in their round, then by the sum; yes/no rows by
   the `BinaryOrder`), with the same filters (CoI, deleted on Commons, region).
+- **Ties are by the score alone** (decided 2026-11-26 (maintainer)): two files with the same score
+  (a rated source's average; a yes/no source's level by its `BinaryOrder`) tie even if their sums
+  differ, so N never cuts between them. The fill's order inside a tie (score, sum, page id) stays,
+  since a valid N never cuts inside one. The picker and the save's check use one function
+  (`RoundDistributionHandler.tieKey`), so the values offered are the values allowed.
+- **Backstop in the job** (decided 2026-11-26 (maintainer)): after the freeze, the round
+  distribution job's Rank step compares the files at N and N + 1 by the same rule; on a tie it
+  fails with the form's message ("N = n is inside a tie …"), adding no file, and the admin picks N
+  again. It applies to an N the form has just checked (a new round, a re-apply); "Distribute new
+  files" keeps a round's N.
 - It lists **candidate cuts**, each with its reason, and draws them in a **cut gallery**.
 - The admin picks N from the valid values only: a candidate cut, a "Cut here", or the N list,
   which has no value inside a tie (below). The chosen N is stored. Nothing is preselected, for a
@@ -1833,9 +1843,9 @@ from 0, since a ✗ (rate -1) counts as 0, and under `assigned` so does an unrat
   "N = 6: 6 files within 0.5 of the best (8.3)."
 - **C3, all candidates:** N = m, when `m ≤ hi` (main rounds) or `m ≤ 25` (regions, so a small
   region always has "all candidates" among its cuts). Reason: "N = 7: all 7 candidates."
-- **C4, around the target** (when C1 finds none): the cut positions nearest the target (main
-  rounds) or the middle of `[lo, hi]` (regions), one on each side. Reason: "N = 6: no clear drop
-  between files 3 and 10 (scores 8.1 to 7.4)."
+- **C4, around the target: removed** (decided 2026-11-26 (maintainer): no target; the admin picks
+  from the list). With no clear drop, the candidates are C3 and C5 only, and the N list offers
+  every valid value.
 - **C5, tie boundaries at the window's edge:** when a tie spans `lo` or `hi`, or the whole
   window (e.g. `lo = hi = 3` with `s3 = s4`), its two boundaries are candidates, even outside the
   window. Bounds yield to ties. The lower boundary is not offered when it is 0 (places 1 to `hi`
@@ -1869,9 +1879,9 @@ round. The numbers below are **defaults**:
   - v4's `hi = min(10, ⌈m / 5⌉)` gave 4–7 for a region of 21–35 files, half of what rated rounds
     carried (median 16).
 
-**Main rounds:** the admin may give a target `T` (e.g. 40), and the window is `[⌈0.8 T⌉,
-⌊1.25 T⌋]`. Without a target, the window is the first 100 places, and C1 lists the largest drops
-in it.
+**Main rounds** (decided 2026-11-26 (maintainer): no target; the admin picks from the list): the
+window is the first 100 places, and C1 lists the largest drops in it. The N list offers every
+valid value up to the gallery's end ("Show more"), and the admin picks from it.
 
 **The N control** (question 3 **[user]**, 2026-11-26: "why would we allow entering a wrong value
 in the UI in the first place?"):
@@ -1934,7 +1944,7 @@ its yes/no previous rounds are ranked by the same order, today and here.
 today's number box "Number of top files from the previous rounds" (`top.images`), after "Choose N":
 
 ```
-Number of top files from the previous rounds  N [ 37 · scores drop 7.2 → 6.1, largest drop ▾ ]   Target (optional) [ 40 ]
+Number of top files from the previous rounds  N [ 37 · scores drop 7.2 → 6.1, largest drop ▾ ]   [ Choose N ]
   Candidate cuts:  [N = 33 · scores drop 7.6 → 7.2]  [N = 37 · scores drop 7.2 → 6.1, largest drop]
                    [N = 46 · scores drop 5.9 → 5.5]
   Preview (N = 37): 37 of 412 files, lowest included score 7.2.
@@ -2178,7 +2188,7 @@ time (the shared run lock), in this order (question 13 **[user]**, 2026-11-26):
 
 ### 10.9 Tests (v4; updated 2026-11-26)
 
-- **`TopNCandidatesSpec`** (unit): C1–C5 on rated lists, at most 6, duplicates merged, never N = 0,
+- **`TopNCandidatesSpec`** (unit): C1, C2, C3 and C5 on rated lists (no C4), at most 6, duplicates merged, never N = 0,
   none above 25 for a region; the valid values never include an N inside a tie; nothing
   preselected; a small region lists "N = m: all candidates" (m ≤ 25); the window
   `[min(3, m), min(15, max(lo, ⌈m/3⌉))]`; yes/no levels under each `BinaryOrder` and the legacy
@@ -2243,7 +2253,7 @@ One decision each, asked one by one. The recommendation comes last in each.
 
 1. **How N is chosen.** **Decided [user] (maintainer, 2026-11-25):** not a single suggested N:
    "show possible numbers and a gallery to view them and decide". The app lists candidate cuts
-   (C1–C5, §10.4), each with its reason, and a cut gallery; the admin picks N; the chosen N is
+   (C1, C2, C3, C5, §10.4), each with its reason, and a cut gallery; the admin picks N; the chosen N is
    stored. Asked as: (a) the largest gap as one suggested N; (b) a fixed share; (c) natural breaks
    (Jenks); (d) a fixed distance from the best. The recommendation was (a).
 2. **A region's window ("amount").** Asked as: `lo = min(3, m)`, `hi = min(10, max(lo, ⌈m / 5⌉))`,

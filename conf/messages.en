@@ -2084,9 +2084,8 @@ round.wait.unknown = Round {0}’s progress can’t be shown here. Save again wh
 # valid values only, candidate cuts and their reasons, the cut gallery, refusals, the settings log's basis
 top.n.none = No top N: all matching files
 top.n.option = N = {0}
-top.n.target = Target number (optional)
-top.n.target.help = Candidate cuts are looked for between 80% and 125% of the target; without one, among the first 100 places.
 top.n.choose = Choose N
+top.n.choose.help = Candidate cuts are looked for among the first 100 places; the list offers every cut between different scores.
 top.n.choose.again = Update the candidates
 top.n.choose.placeholder = Choose N from the list
 top.n.list.help = Only cuts between different scores are offered, so no tie is split. Files that can be taken: {0}.
@@ -2106,6 +2105,7 @@ top.n.no.previous = Choose the previous rounds first.
 top.n.no.candidates = No file of the previous rounds matches the filters, so there is no top N to choose.
 top.n.failed = Could not find the candidate cuts: {0}
 top.n.failed.reference = Could not find the candidate cuts. If it happens again, tell the organizers this reference: {0}.
+top.n.commons.unavailable = Commons could not be reached to read the category filter’s files, so the top N could not be checked. Nothing was saved. Try again later.
 top.n.not.editable = Round {0}’s files are no longer chosen by its filters, so its top N can’t be changed.
 top.n.in.tie = N = {0} is inside a tie (places {1}–{2}); choose {3} or {4}.
 top.n.in.tie.upper = N = {0} is inside a tie (places {1}–{2}); choose {3}.
@@ -2114,7 +2114,6 @@ top.n.reason.drop = scores drop {0} → {1}
 top.n.reason.drop.largest = scores drop {0} → {1}, the largest drop
 top.n.reason.close = the files within {1} of the best score ({2})
 top.n.reason.all = all candidates
-top.n.reason.no.drop = no clear drop between places {0} and {1} (scores {2} to {3})
 top.n.reason.tie.includes = includes the tie at {0} (places {1}–{2})
 top.n.reason.tie.before = before the tie at {0} (places {1}–{2})
 top.n.reason.level = all files with {0}; next: {2}, files: {1}
@@ -2123,7 +2122,6 @@ top.n.level.difference = yes minus no: {0}
 top.n.level.yes = {0} yes
 top.n.basis.candidate = chosen from the candidate cuts: {0}
 top.n.basis.list = chosen from the list
-top.n.basis.target = target {0}
 
 # locked fields on the round form (bs helpers' `_locked`)
 round.filters.locked = The round''s filters can be changed only while it is waiting for review, with no votes and no job running.

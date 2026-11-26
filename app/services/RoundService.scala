@@ -627,14 +627,14 @@ class RoundService @Inject() (
 
   /** The round form's cut picker (regional winners plan §10.4) of `round` (a stored round, or the
     * form's settings as posted): the files its top N would take from now, ranked as its distribution
-    * ranks them, with the candidate cuts of `target`, the gallery to `showTo`, and the form's `chosen`
-    * N. `skipDqOf`: a re-apply's round, whose disqualified files take no place. None without previous
+    * ranks them, with the candidate cuts of the main round's window, the gallery to `showTo`, and the
+    * form's `chosen` N. `skipDqOf`: a re-apply's round, whose disqualified files take no place. None without previous
     * rounds. Read only; may read Commons (a category filter's files), as "Count new files" does.
     */
-  def cutPicker(round: Round, target: Option[Int], chosen: Option[Int], showTo: Option[Int],
+  def cutPicker(round: Round, chosen: Option[Int], showTo: Option[Int],
       skipDqOf: Option[Long] = None): Option[CutPicker] = {
     val canonical = round.withFixedCategories.withCanonicalCategoryRule
-    distribution.topNRanking(canonical, CutPicker.keep(target, showTo), skipDqOf).map { ranking =>
+    distribution.topNRanking(canonical, CutPicker.keep(showTo), skipDqOf).map { ranking =>
       // a criteria round's criteria: its score range and its files' scores are their sums
       val prev = ranking.prevRounds.map { p =>
         if (!p.hasCriteria) p
@@ -645,7 +645,7 @@ class RoundService @Inject() (
       }
       val ranges = prev.filterNot(_.isBinary).map(p =>
         CutPicker.range(p, if (p.distribution > 0) p.distribution.toLong else p.numberOfAssignedJurors))
-      CutPicker.build(ranking.copy(prevRounds = prev), ranges, target, chosen, showTo)
+      CutPicker.build(ranking.copy(prevRounds = prev), ranges, chosen, showTo)
     }
   }
 

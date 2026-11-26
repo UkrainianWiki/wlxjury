@@ -2,13 +2,12 @@
 @(
         editRoundForm: Form[controllers.EditRound],
         picker: Option[CutPicker],
-        target: Option[Int],
         noEdit: Boolean,
         previewUrl: String
 )(implicit messages: Messages)
 @* The round form's top N (regional winners plan §10.4, place 1: the cut picker). There is no free
-   number box: before "Choose N" the form shows the N it holds (a hidden field) or none; "Choose N"
-   (and a changed target) posts the form to the preview action (RoundController.cutPreview), which
+   number box and no target (decided 2026-11-26): before "Choose N" the form shows the N it holds (a
+   hidden field) or none; "Choose N" posts the form to the preview action (RoundController.cutPreview), which
    shows it again with the candidate cuts, an N list of valid values only (never a value inside a
    tie: the save refuses one from a crafted post), the preview of the N chosen and the cut gallery.
    A candidate cut or "Cut here" sets N the same way. Nothing is preselected and nothing is saved
@@ -25,16 +24,11 @@
     <button type="submit" class="btn btn-outline-primary" id="topImages-choose" formaction="@previewUrl" formnovalidate
         name="cutLoad" value="1">@Messages(label)</button>
 }
-@targetField = {
-    <div class="row mb-3" id="topImagesTarget_field">
-        <label class="col-md-4 col-form-label" for="topImagesTarget">@Messages("top.n.target")</label>
-        <div class="col-md-8">
-            <div class="d-flex flex-wrap gap-2 align-items-start">
-                <input type="number" class="form-control w-auto" id="topImagesTarget" name="topImagesTarget" min="1"
-                    max="@CutPicker.MaxTarget" value="@target.map(_.toString).getOrElse("")" aria-describedby="topImagesTarget_help">
-                @chooseButton(if (picker.isDefined) "top.n.choose.again" else "top.n.choose")
-            </div>
-            <div class="form-text" id="topImagesTarget_help">@Messages("top.n.target.help")</div>
+@chooseRow = {
+    <div class="row mb-3" id="topImages_choose_field">
+        <div class="col-md-8 offset-md-4">
+            @chooseButton(if (picker.isDefined) "top.n.choose.again" else "top.n.choose")
+            <div class="form-text" id="topImages_choose_help">@Messages("top.n.choose.help")</div>
         </div>
     </div>
 }
@@ -59,7 +53,7 @@
                     @for((id, error) <- errors) {<div class="invalid-feedback d-block" id="@id">@error</div>}
                 </div>
             </div>
-            @targetField
+            @chooseRow
         }
         case Some(p) => {
             @* the N list: valid values only; with an N the list can't hold (inside a tie, refused), its
@@ -89,7 +83,7 @@
                 </div>
                 }
             }
-            @targetField
+            @chooseRow
             @if(p.result.candidates.nonEmpty) {
             <div class="row mb-3" id="top-n-candidates">
                 <span class="col-md-4 col-form-label">@Messages("top.n.candidates")</span>

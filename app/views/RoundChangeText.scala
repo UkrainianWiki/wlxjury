@@ -60,7 +60,7 @@ object RoundChangeText {
   private def short(text: String): String = RoundChanges.cut(text, Shown)
 
   /** How a top N was chosen, from the entry's `topImagesBasis` (the cut picker): its candidate cut's
-    * reasons, or "chosen from the list", and the target. Only the picker's own message keys are read.
+    * reasons, or "chosen from the list". Only the picker's own message keys are read.
     */
   def basis(b: JsObject)(implicit messages: Messages): String = {
     def own(msg: services.TopNCandidates.Msg): Option[services.TopNCandidates.Msg] =
@@ -69,11 +69,9 @@ object RoundChangeText {
         case other => other
       }))
     val reasons = (b \ "reasons").asOpt[Seq[JsValue]].getOrElse(Nil).flatMap(services.CutPicker.fromJson).flatMap(own)
-    val how =
-      if ((b \ "how").asOpt[String].contains(services.CutPicker.HowCandidate) && reasons.nonEmpty)
-        messages("top.n.basis.candidate", reasons.map(services.CutPicker.text).mkString("; "))
-      else messages("top.n.basis.list")
-    (Seq(how) ++ (b \ "target").asOpt[Int].map(t => messages("top.n.basis.target", t))).mkString(", ")
+    if ((b \ "how").asOpt[String].contains(services.CutPicker.HowCandidate) && reasons.nonEmpty)
+      messages("top.n.basis.candidate", reasons.map(services.CutPicker.text).mkString("; "))
+    else messages("top.n.basis.list")
   }
 
   /** The entry's changed settings, known ones first in their order; a creation's without "from". */

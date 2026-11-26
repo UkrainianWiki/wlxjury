@@ -17,9 +17,11 @@ object TestRoundServices {
 
   def handler(
       chunkRows: Int = RoundDistributionHandler.DefaultChunkRows,
-      commons: CommonsSource = emptyCommons
+      commons: CommonsSource = emptyCommons,
+      // a category's files: a spec's stand-in for Commons (DistributeImages.categoryFileIds)
+      distributeImages: DistributeImages = new DistributeImages(ImageJdbc)
   ): RoundDistributionHandler =
-    new RoundDistributionHandler(new DistributeImages(ImageJdbc), config(chunkRows), commons)
+    new RoundDistributionHandler(distributeImages, config(chunkRows), commons)
 
   def config(chunkRows: Int): Configuration =
     Configuration("jobs.roundDistribution.chunkRows" -> chunkRows)
