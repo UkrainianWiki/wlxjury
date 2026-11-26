@@ -124,12 +124,72 @@ class MonumentListImportSpec extends Specification with TestDb with BeforeAll wi
     }
   }
 
+  "a monument list import of a nomination's own ids" should {
+    // production's 92-232-4801 (2026-11-26): on the German heritage list of Zaporizhzhia Oblast
+    // until 2025-10-29, then on the Bulgarian heritage list, its prefix's (wlm_ua.conf's idPrefix 92)
+    val german = "Template:WLM Німецька спадщина"
+    val bulgarian = "Template:WLM Болгарська спадщина"
+    val germanPage = "Вікіпедія:Вікі любить пам'ятки/Німецька спадщина/Запорізька область"
+    val bulgarianPage = "Вікіпедія:Вікі любить пам'ятки/Болгарська спадщина/Запорізька область"
+    def page(id: String) = MonumentJdbc.find(id).map(_.page)
+
+    def run(embedding: Map[String, Seq[String]], monumentsOn: Map[String, Seq[Monument]]) = {
+      val lists = new FakeMonumentListSource(embedding = Map(wlmListTemplate -> Seq("Lists A")) ++ embedding,
+        monumentsOn = monumentsOn)
+      val services = new TestImportServices(new FakeCommonsSource(Nil), lists = lists)
+      services.imageService.updateMonuments(contest("Wiki Loves Monuments", 2026), "Category:X")
+        .map(r => JobJdbc.findById(r.toOption.get.id).get.status) must contain(be_==(JobStatus.Done)).forall
+    }
+
+    "store them from their own nomination's list, also when stored from another one before" in {
+      // as a 2025 import stored them: from the German heritage list
+      MonumentJdbc.batchInsert(Seq(m("92-232-4801", "Стара церква (old row)", germanPage),
+        m("94-232-0001", "Кірха", germanPage), m("23-248-0004", "Церква", "Lists A")))
+
+      run(Map(german -> Seq(germanPage), bulgarian -> Seq(bulgarianPage)), Map(
+        "Lists A" -> Seq(m("23-248-0004", "Церква", "Lists A")),
+        germanPage -> Seq(m("94-232-0001", "Кірха", germanPage)),
+        bulgarianPage -> Seq(m("92-232-4801", "Стара церква", bulgarianPage),
+          m("23-248-0004", "Церква, as in the nomination", bulgarianPage))))
+
+      page("92-232-4801") === Some(bulgarianPage)
+      name("92-232-4801") === Some("Стара церква")
+      page("94-232-0001") === Some(germanPage)
+      // a regional id keeps the contest list's data
+      page("23-248-0004") === Some("Lists A")
+      name("23-248-0004") === Some("Церква")
+    }
+
+    "keep them from their own list when another nomination's list has them too, whichever is read last" in {
+      run(Map(german -> Seq(germanPage), bulgarian -> Seq(bulgarianPage)), Map(
+        germanPage -> Seq(m("92-232-4801", "Стара церква, as on the German list", germanPage)),
+        bulgarianPage -> Seq(m("92-232-4801", "Стара церква", bulgarianPage))))
+      page("92-232-4801") === Some(bulgarianPage)
+
+      // imported again: the German list, read before the Bulgarian one, doesn't take it over
+      run(Map(german -> Seq(germanPage)), Map(
+        germanPage -> Seq(m("92-232-4801", "Стара церква, as on the German list", germanPage))))
+      page("92-232-4801") === Some(bulgarianPage)
+      name("92-232-4801") === Some("Стара церква")
+    }
+  }
+
   "a monument list import's job" should {
     val handler = new TestImportServices(new FakeCommonsSource(Nil)).monumentLists
 
     "read only the contest's lists for WLE" in {
       val job = handler.newJob(contest("Wiki Loves Earth"), None).get
       job.params.as[MonumentImportParams].sources === Seq(ListSource("Template:ВЛЗ-рядок"))
+    }
+
+    "give each nomination's lists the id prefix of its own monuments" in {
+      val sources = handler.newJob(contest("Wiki Loves Monuments", 2026), None).get.params.as[MonumentImportParams].sources
+      sources must contain(ListSource("Template:WLM Болгарська спадщина", Some("WLM-рядок"), Some("92")))
+      sources must contain(ListSource("Template:WLM Німецька спадщина", Some("WLM-рядок"), Some("94")))
+      sources.head === ListSource("Template:ВЛП-рядок")
+      // a job created before the prefix was stored reads as before: no home lists
+      play.api.libs.json.Json.obj("page" -> "Template:WLM Болгарська спадщина", "listTemplate" -> "WLM-рядок")
+        .as[ListSource].idPrefix must beNone
     }
 
     "be one at a time for the contests sharing the lists" in {

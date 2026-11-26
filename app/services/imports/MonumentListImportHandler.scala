@@ -15,9 +15,17 @@ import javax.inject.{Inject, Singleton}
   *
   * @param listTemplate the row template of a special nomination's lists (None: the
   *                     contest's own)
+  * @param idPrefix     the id prefix of the monuments of its own, for the lists of the
+  *                     nomination that prefix belongs to (`92` for "Болгарська спадщина":
+  *                     `92-232-4801`): these lists are their home, which their rows are
+  *                     written from wherever they were stored before. None for the
+  *                     contest's lists and for jobs created before it existed
   */
-final case class ListSource(page: String, listTemplate: Option[String] = None) {
+final case class ListSource(page: String, listTemplate: Option[String] = None, idPrefix: Option[String] = None) {
   def isTemplate: Boolean = page.startsWith("Template:")
+
+  /** Whether `id` is one of the monuments this source's nomination gives ids of its own. */
+  def isHomeOf(id: String): Boolean = idPrefix.exists(prefix => id.startsWith(prefix + "-"))
 }
 
 object ListSource {
@@ -67,8 +75,12 @@ final case class MonumentPage(pages: Int, monuments: Seq[Monument], nextSource: 
   * transaction. The contest's lists come first and the special nominations' own lists
   * last; a nomination's monument is written only if it isn't stored or was stored from
   * the same list page, so a monument on both keeps the contest list's data, also when
-  * the job stops halfway. The city-based nominations add nothing: they select monuments
-  * from the contest's lists.
+  * the job stops halfway. The exception is a monument with an id of a nomination's own
+  * (its prefix, [[ListSource.idPrefix]]: `92-232-4801`) on that nomination's lists, its
+  * home: written from there whatever page it was stored from, so a row moved from one
+  * nomination's list to its own (production's `92-` rows, on the German heritage lists
+  * until 2025-10-29) gets its new page and data. The city-based nominations add nothing:
+  * they select monuments from the contest's lists.
   *
   * Held in memory: the monuments of one step's list pages. Monuments removed from the
   * lists stay in the table.
@@ -93,11 +105,17 @@ class MonumentListImportHandler @Inject() (lists: MonumentListSource, config: Co
       val wiki = listContest(lists, contest.year)
       val nominations =
         if (wiki.contestType != ContestType.WLM) Nil
-        else
-          SpecialNomination.nominations
-            .filter(n => n.listTemplate.nonEmpty && n.pages.nonEmpty)
-            .flatMap(n => n.pages.map(ListSource(_, n.listTemplate)))
+        else {
+          val withLists = SpecialNomination.nominations.filter(n => n.listTemplate.nonEmpty && n.pages.nonEmpty)
+          // a prefix's home: the nomination it belongs to (of several, the latest year's)
+          val homes = SpecialNomination.byIdPrefix(withLists)
+          withLists
+            .flatMap { n =>
+              val prefix = n.idPrefix.filter(homes.get(_).contains(n))
+              n.pages.map(ListSource(_, n.listTemplate, prefix))
+            }
             .distinct
+        }
       val ownLists = wiki.listTemplate.map(t => ListSource(templateTitle(t))).toSeq
       val params = MonumentImportParams(contest.getId, lists, contest.year, ownLists ++ nominations)
       NewJob(
@@ -147,13 +165,16 @@ class MonumentListImportHandler @Inject() (lists: MonumentListSource, config: Co
     val p = paramsOf(job)
     val st = stateOf(job)
     val valid = page.monuments.filter(_.id.matches(ValidId))
-    val nomination = p.sources.lift(st.source).exists(_.listTemplate.isDefined)
+    val source = p.sources.lift(st.source)
+    val nomination = source.exists(_.listTemplate.isDefined)
+    // a nomination's own ids on its own lists: written whatever list they were stored from
+    val (home, others) = valid.partition(m => source.exists(_.isHomeOf(m.id)))
     val written =
-      if (!nomination || valid.isEmpty) valid
+      if (!nomination || others.isEmpty) valid
       else {
         // another list has it: the contest's (written before the nominations') or another nomination's
-        val storedOn = MonumentJdbc.pagesOf(valid.map(_.id))
-        valid.filter(m => storedOn.get(m.id).forall(_ == m.page))
+        val storedOn = MonumentJdbc.pagesOf(others.map(_.id))
+        home ++ others.filter(m => storedOn.get(m.id).forall(_ == m.page))
       }
     if (written.nonEmpty) MonumentJdbc.batchInsert(written)
     val next = st.copy(
