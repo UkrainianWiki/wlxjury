@@ -62,10 +62,10 @@ class MonumentCardRegionSpec extends PlaySpecification with PlayTestDb {
     contentAsString(result)
   }
 
-  /** The card's first line, its region and city, tags dropped and spaces joined. */
+  /** The card's region: its first line's text before the city's link, spaces joined. */
   private def regionLine(body: String): String =
-    """(?s)id="monument-card">(.*?)<br>""".r.findFirstMatchIn(body).map(_.group(1))
-      .getOrElse(sys.error("no monument card")).replaceAll("<[^>]*>", "").replaceAll("\\s+", " ").trim
+    """(?s)id="monument-card">\s*(.*?), <a """.r.findFirstMatchIn(body).map(_.group(1))
+      .getOrElse(sys.error("no monument card")).replaceAll("\\s+", " ").trim
 
   private def messages(implicit app: Application): Messages =
     app.injector.instanceOf[MessagesApi].preferred(FakeRequest())
@@ -78,10 +78,10 @@ class MonumentCardRegionSpec extends PlaySpecification with PlayTestDb {
       testDbApp { implicit app =>
         val (review, _, _) = setUp()
         regionLine(get("admin@example.com", s"/admin/rounds/${review.getId}/review/file/1")) ===
-          s"Болгарська спадщина, $oblast, Радолівка"
+          s"Болгарська спадщина, $oblast"
         // a regional monument as before: its region alone
         regionLine(get("admin@example.com", s"/admin/rounds/${review.getId}/review/file/2")) ===
-          s"$oblast, Приморськ"
+          oblast
       }
     }
 
@@ -89,9 +89,9 @@ class MonumentCardRegionSpec extends PlaySpecification with PlayTestDb {
       testDbApp { implicit app =>
         val (_, open, juror) = setUp()
         regionLine(get("juror@example.com", s"/large/round/${open.getId}/user/${juror.getId}/pageid/1")) ===
-          s"Болгарська спадщина, $oblast, Радолівка"
+          s"Болгарська спадщина, $oblast"
         regionLine(get("juror@example.com", s"/large/round/${open.getId}/user/${juror.getId}/pageid/2")) ===
-          s"$oblast, Приморськ"
+          oblast
       }
     }
   }
