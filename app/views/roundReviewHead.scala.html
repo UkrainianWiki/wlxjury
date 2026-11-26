@@ -49,7 +49,7 @@
        (D20, read only) get the state above, and a failure as text *@
     @for(job <- r.job if !job.isDone) {
         @if(r.mayEdit) {
-            @snippets.jobStatus(job, request.uri)
+            @snippets.jobStatus(job, request.uri, label = r.jobTitle)
             <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
         } else {
             @if(job.isFailed) { <p id="round-review-job-failed">@Messages("round.review.job.failed")</p> }
@@ -66,7 +66,7 @@
         <div id="round-review-reapplied" class="mb-2">
             <p class="mb-1">@Messages("round.review.reapplied", d.added, d.removed)</p>
             @if(d.removedTitles.nonEmpty) {
-                <details><summary>@Messages("round.review.reapplied.removed.list", d.removedTitles.size)</summary>
+                <details><summary class="wlx-disclosure"><i class="bi bi-chevron-right wlx-disclosure-icon" aria-hidden="true"></i>@Messages("round.review.reapplied.removed.list", d.removedTitles.size)</summary>
                     <ul class="small mb-0" id="round-review-removed">@for(t <- d.removedTitles) {<li>@t</li>}</ul>
                 </details>
             }

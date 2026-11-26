@@ -96,7 +96,7 @@ class ImageService @Inject() (
       .sortBy(-_.id)
 
   /** What the job does, for messages, e.g. "Importing files from Category:…". */
-  def title(job: Job): String = jobs.handler(job.kind).fold(job.kind)(_.title(job))
+  def title(job: Job): String = jobs.title(job)
 
   /** Creates the job in a transaction, and starts it once that has committed. */
   private def start(create: DBSession => Either[Job, Job]): Either[Job, Job] = {

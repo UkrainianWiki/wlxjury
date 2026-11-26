@@ -4,7 +4,10 @@
  * rendered by app/views/snippets/jobStatus.scala.html is refreshed from its JSON
  * endpoint while the job is queued or running.
  *
- * formatJobStatus(p) – pure: the text for a status object (GET /admin/jobs/:id).
+ * formatJobStatus(p, opts) – pure: the text for a status object (GET /admin/jobs/:id). With
+ *                      opts.labelled (the element shows its label above the text: the
+ *                      partial's data-labelled), the text carries only the progress, not the
+ *                      job's title, so the label isn't said twice.
  * pollJobStatus(el)  – the fetch/poll loop for one element; shows the Retry button of a
  *                      failed job and the Cancel button of an active or failed one, and
  *                      reloads the page when a job finishes (data-reload-on-done), so its
@@ -57,13 +60,15 @@ function formatJobCounts(details) {
     return parts.length > 0 ? ", " + parts.join(", ") : "";
 }
 
-function formatJobStatus(p) {
+function formatJobStatus(p, opts) {
     var progress = formatJobProgress(p);
     var added = formatJobCounts(p.details);
+    var labelled = !!(opts && opts.labelled);
     switch (p.status) {
         case "queued":
             return "Queued" + (p.queuePosition > 0 ? " (" + p.queuePosition + " ahead)" : "");
         case "running":
+            if (labelled) return (progress || "Starting") + added + "…";
             return (p.title || "Running") + ": " + (progress || "starting") + added + "…";
         case "failed":
             return "Failed" + (progress ? " at " + progress : "") + added + ": " + (p.error || "unknown error");
@@ -85,6 +90,8 @@ function pollJobStatus(el, options) {
     var interval = opts.interval || 3000;
     var reload = opts.reload || function () { window.location.reload(); };
     var wasActive = el.getAttribute("data-status") === "queued" || el.getAttribute("data-status") === "running";
+    // the partial shows a label (the job's title, or the page's name for it) above the text
+    var labelled = el.getAttribute("data-labelled") === "true";
 
     function show(selector, visible) {
         var node = el.querySelector(selector);
@@ -108,7 +115,7 @@ function pollJobStatus(el, options) {
                     return p;
                 }
                 var text = el.querySelector(".job-status-text");
-                if (text) text.textContent = formatJobStatus(p);
+                if (text) text.textContent = formatJobStatus(p, { labelled: labelled });
                 el.setAttribute("data-status", p.status);
                 show(".job-retry", p.status === "failed");
                 // a job past the point of no return says so (an account join after its first round)
