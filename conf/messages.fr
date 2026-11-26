@@ -603,6 +603,7 @@ coi.disqualified = Tour {1} : {0} fichiers disqualifiés comme conflits d''inté
 coi.disqualify.open = Le tour {0} est ouvert à ses jurés : ses distributions suivantes excluent ses {1} conflits d''intérêts. Pour les disqualifier, arrêtez le tour, puis utilisez sa page des conflits :
 coi.disqualify.frozen = Tour {0} : la distribution d''un tour suivant lit ses votes. Réessayez une fois terminée.
 coi.action.open = Le tour {0} est ouvert à ses jurés : arrêtez-le d''abord pour disqualifier ou requalifier des fichiers.
+coi.action.setup = Le tour {0} est en cours de préparation : ses jurés ne le voient pas encore, et les fichiers ne peuvent être ni disqualifiés ni requalifiés ici avant qu''il ait été distribué.
 coi.requalified = Tour {1} : {0} fichiers requalifiés, avec leurs votes.
 coi.none.selected = Aucun fichier sélectionné.
 coi.too.many.selected = Plus de {0,number,#} fichiers sélectionnés : sélectionnez-en au plus {0,number,#} et recommencez pour les autres.

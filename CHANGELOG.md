@@ -27,6 +27,7 @@ Merged after the 26.11.17 build, for the release after it.
 - Monument page: a special nomination's own monument (an id like `92-232-4801`) links its nomination's list again after "Update the monument lists", also when an earlier import stored it from another nomination's list it has since moved off (the Bulgarian heritage rows once on the German heritage lists). Run "Update the monument lists" once after the deploy to correct the stored pages.
 - Large views and the round review's file page: the monument card of a special nomination's own monument (an id like `92-232-4801`) names the nomination and the region its id carries ("Болгарська спадщина, Запорізька") in place of the bare "92"; other monuments read as before.
 - Round form: a screen reader now reads the category choice's error ("More category options") with its radio buttons, and announces the group as invalid (#211).
+- Conflicts of interest: a round being set up no longer reads "Round N is open to its jurors: stop it first"; it says the round is being set up and its jurors don't see it yet (under its setup step's line, or with its state when it has no step: being distributed, its creation failed, cancelled or unfinished), and a refused disqualify says the same instead of "its images are being distributed" (#210).
 
 ## Deployed releases
 
