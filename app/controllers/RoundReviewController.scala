@@ -89,6 +89,7 @@ class RoundReviewController @Inject() (
             addedHow = RoundImageJdbc.addedHowCounts(round.getId),
             conflicts = RoundStatLinks.counts(round).conflicts,
             job = job,
+            jobTitle = job.map(roundsService.jobTitle),
             mayDistribute = mayDistribute(user, round) && round.inReview && !job.exists(_.isActive),
             mayEdit = mayDistribute(user, round),
             roundJurors = User.distributionJurors(round.getId).sortBy(_.getId),
@@ -211,6 +212,7 @@ class RoundReviewController @Inject() (
     JurorsFormView(
       round = round,
       job = job,
+      jobTitle = job.map(roundsService.jobTitle),
       filling = filling,
       ready = ready,
       inCount = inCount,
@@ -374,6 +376,8 @@ final case class RoundReview(
     addedHow: Map[String, Int],
     conflicts: Int,
     job: Option[services.jobs.Job],
+    /** The job's title: its status's label (snippets/jobStatus). */
+    jobTitle: Option[String] = None,
     mayDistribute: Boolean,
     mayEdit: Boolean = false,
     roundJurors: Seq[User] = Nil,
@@ -405,6 +409,8 @@ final case class ReviewComments(comments: Seq[org.intracer.wmua.Comment], rounds
 final case class JurorsFormView(
     round: Round,
     job: Option[Job],
+    /** The job's title: its status's label (snippets/jobStatus). */
+    jobTitle: Option[String] = None,
     filling: Boolean,
     ready: Boolean,
     inCount: Int,

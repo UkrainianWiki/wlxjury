@@ -19,7 +19,8 @@
         noActiveJuror: Set[Long] = Set.empty,
         lineage: Option[services.RoundLineage.Lineage] = None,
         findAgain: Set[Long] = Set.empty,
-        setupSteps: Map[Long, controllers.RoundNextStep] = Map.empty
+        setupSteps: Map[Long, controllers.RoundNextStep] = Map.empty,
+        jobTitles: Map[Long, String] = Map.empty
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @* The rounds the Status and Type menus keep, in the Order menu's order (RoundsFilter; the
@@ -133,7 +134,7 @@
                                gave, until the round's next job *@
                             <td>@for(job <- jobs.get(round.getId) if !job.isDone || (round.distributing && !round.inReview) ||
                                     job.kind == services.distribution.RoundRebalanceHandler.Kind) {
-                                @snippets.jobStatus(job, req.uri)
+                                @snippets.jobStatus(job, req.uri, label = jobTitles.get(job.id))
                             }
                             @* a round in review (P3): its images ready and to review; its jurors form, where it is
                                distributed, is linked from its state in the Active column (one Distribute per row) *@
