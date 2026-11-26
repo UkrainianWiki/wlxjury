@@ -362,16 +362,60 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "show a chip on every round of a contest with two tracks, a root named after itself too" in {
+    "show a chip on every round of a contest with two tracks, a first round named after itself too, but none for a round alone on a track named after it" in {
       testDbApp { app =>
         val contest = contestDao.create(None, "Wiki Loves Earth", 2026, "Testland")
         val admin = userDao.create(User("AdminT", "admint@example.com", None, Set("admin"), contestId = contest.id))
         val first = roundDao.create(Round(None, 1, Some("First round"), contest.getId))
         roundDao.create(Round(None, 2, Some("Second round"), contest.getId, previous = Some(first.getId.toString)))
-        roundDao.create(Round(None, 3, Some("Video round"), contest.getId))
+        val third = roundDao.create(Round(None, 3, Some("Photo round"), contest.getId))
+        roundDao.create(Round(None, 4, Some("Photo final"), contest.getId, previous = Some(third.getId.toString)))
+        roundDao.create(Round(None, 5, Some("Video round"), contest.getId))
         val doc = page(app, admin, s"/admin/rounds?contestId=${contest.getId}")
         (rowChips(doc) === Map("First round" -> "First round", "Second round" -> "First round",
-          "Video round" -> "Video round")) and (doc.select("#rounds-track-menu").size === 1)
+          "Photo round" -> "Photo round", "Photo final" -> "Photo round")) and
+          (doc.select("#rounds-track-menu").size === 1)
+      }
+    }
+
+    "show no chips and no Track menu where every round is alone on a track named after it (WLM Serbia 2026)" in {
+      testDbApp { app =>
+        val contest = contestDao.create(None, "Wiki Loves Monuments", 2026, "Serbia",
+          Some("Category:Prejury selection for Wiki Loves Monuments 2026 in Serbia/Second round"))
+        val admin = userDao.create(User("AdminS", "admins@example.com", None, Set("admin"), contestId = contest.id))
+        val organizer = userDao.create(User("OrgS", "orgs@example.com", None, Set("organizer"), contestId = contest.id))
+        val rounds = Seq("Гласање за најбољу фотографију: 1", "РУНДА 2", "РУНДА ДРУГА", "Вики воли споменике 2026. - РУНДА 2")
+          .zipWithIndex.map { case (n, i) => roundDao.create(Round(None, i + 1L, Some(n), contest.getId, active = i == 3)) }
+        val list = page(app, admin, s"/admin/rounds?contestId=${contest.getId}")
+        val stat = page(app, organizer, s"/roundstat/${rounds.last.getId}")
+        val gallery = page(app, organizer, s"/gallery/round/${rounds.last.getId}/user/0/page/1")
+        (list.select("tbody tr.round-row").size === 4) and (list.select(".wlx-track").size === 0) and
+          (list.select("#rounds-track-menu").size === 0) and (stat.select(".wlx-track").size === 0) and
+          (stat.select("#rounds-track-menu").size === 0) and (gallery.select(".wlx-track").size === 0)
+      }
+    }
+
+    "drop only the chips of rounds alone on a track named after them (WLE Kyrgyzstan 2026)" in {
+      testDbApp { app =>
+        val contest = contestDao.create(None, "Wiki Loves Earth", 2026, "Kyrgyzstan",
+          Some("Category:Images from Wiki Loves Earth 2026 in Kyrgyzstan"))
+        val admin = userDao.create(User("AdminK", "admink@example.com", None, Set("admin"), contestId = contest.id))
+        def round(n: Int, name: String, category: Option[String] = None, media: Option[String] = None,
+            previous: Option[Round] = None) =
+          roundDao.create(Round(None, n, Some(name), contest.getId, category = category, mediaType = media,
+            previous = previous.map(_.getId.toString)))
+        round(1, "Wiki Loves Earth 2026 in Kyrgyzstan 1 round", Some("Category:Images from Wiki Loves Earth 2026 in Kyrgyzstan"))
+        round(2, "Wiki Loves Earth 2026 in Kyrgyzstan 2 round",
+          Some("Category:Quality images from Wiki Loves Earth 2026 in Kyrgyzstan"), Some("image"))
+        round(3, "Wiki Loves Earth 2026 in Kyrgyzstan real round", Some("Category:Images from Wiki Loves Earth 2026 in Kyrgyzstan"))
+        round(5, "шорт лист Wiki Loves Earth 2026 in Kyrgyzstan", Some("Category:Commons:Wiki Loves Earth 2026 in Kyrgyzstan/Long list"))
+        val longList = round(6, "6", Some("Category:Wiki Loves Earth 2026 in Kyrgyzstan long list"), Some("image"))
+        round(9, "Топ 10 раунд", previous = Some(longList))
+        val doc = page(app, admin, s"/admin/rounds?contestId=${contest.getId}")
+        // the three rounds alone on tracks named after them lose their chips; Quality (a category's
+        // track, of one round) and the long list keep theirs, and the Track menu stays
+        (rowChips(doc) === Map("Wiki Loves Earth 2026 in Kyrgyzstan 2 round" -> "Quality", "6" -> "long list",
+          "Топ 10 раунд" -> "long list")) and (doc.select("#rounds-track-menu").size === 1)
       }
     }
 

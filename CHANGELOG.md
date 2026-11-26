@@ -24,10 +24,6 @@ Merged after the 26.11.17 build, for the release after it.
 - Track labels: spaces inside a label are kept as typed, so labels share a track only when they are identical, as the form's help says (#209).
 - Track labels: labelling a first round (or giving it a nomination or regions) no longer changes the category track names of the other first rounds (#209).
 - Rounds page: a round with one of several previous rounds deleted no longer says it "starts a track of its own"; it says the deleted round is left out when its track is chosen (#209).
-- Round tracks: a contest with only one track shows no track chips and no Track menu; with two or more, every round shows its chip.
-- Round tracks are named after the part of their category that tells them apart, without the contest's name, year and country ("Quality" instead of "Wiki Loves Earth Ukraine 2026 - Quality"); file lists and Commons pages in the category field, and a media type all the first rounds share, no longer name a track; a long track name shows its start and its end.
-- Because track names change, a track's key and chip colour may change too: a saved link with an old `track=` shows all tracks.
-- Round form: the Track label field shows the automatic track inside it ("Automatic: …"), with a one-line help and a "More about tracks" link to the admin guide.
 
 ## Deployed releases
 

@@ -360,7 +360,9 @@ field is no category. With nothing left the root is named by its media type, **o
 have more than one** (none set counting as all: a video round beside the others), and otherwise by
 its name. **Chips show only in a contest
 with two tracks or more** (the Track menu's rule), then on every round, a root named after itself
-too. A chip longer than 32 characters shows its start and its end, "…" between.
+too, except a name track none of whose rounds was created from another, one round or unlinked
+rounds of one name (26.11.17.2: its chip only repeats the row's name); such tracks don't count
+towards the two either. A chip longer than 32 characters shows its start and its end, "…" between.
 
 **Main and its feeders:**
 - Main's rows come first.

@@ -1127,9 +1127,11 @@ rounds (the rounds it was created from), checks these in order, and takes the fi
    Category** for "Category:Images from Wiki Loves Earth 2026 Nature Loss Special Category"). A
    category made only of such words counts as no category, and so does a list of files or a
    Commons page in the category field. Without a category, the round is named after its media type
-   if the first rounds use more than one (for example **Video** next to rounds of all media; two
-   such video rounds share the **Video** track); otherwise after the round's own name. First
-   rounds with the same category share a track, also when it is written in other capitals.
+   if the first rounds use more than one, a round with none set counting as images (for example
+   **Video** next to the others; two such video rounds share the **Video** track); otherwise after
+   the round's own name, without the contest's own words at its ends ("Wiki Loves Earth 2026 in
+   Kyrgyzstan 1 round": **1 round**). First rounds with the same category share a track, also
+   when it is written in other capitals.
 
 **An example**, from Wiki Loves Monuments in Ukraine:
 
@@ -1180,10 +1182,13 @@ round with no previous round left starts a track of its own (rule 7).
 **The chip and the Track menu.** A coloured chip after a round's name names its track, on the
 Rounds page, the round's statistics and the galleries' round menu (jurors don't see it). Main has
 a colour of its own; the other colours only tell the tracks apart. A region track's chip names its
-regions. A long name shows its start and its end: point at the chip for the full text. Chips show
-only when the contest's rounds are on two tracks or more, and then on every round, a first round
-whose track is named after it included; with one track there are no chips. The **Track** menu, next to **Status** and **Type** on the Rounds page and the
-statistics, shows when the rounds listed are on two tracks or more: **All tracks**, or one track's
+regions. A long name shows its start and its end: point at the chip for the full text. A round
+alone on a track named after it (a first round with no category or media type of its own, from
+which no other round was created) has no chip: it would only repeat the round's name. Chips show
+only when the contest's rounds are on two tracks or more besides those, and then on every other
+round, a first round whose track is named after it included; otherwise there are no chips, as in
+a contest whose rounds were each created on their own. The **Track** menu, next to **Status** and
+**Type** on the Rounds page and the statistics, shows by the same rule: **All tracks**, or one track's
 rounds, with a count for each. It lists Main first, then the tracks that lead into Main in the
 order they join it, then the others. The choice stays in the page's address, as the other menus'
 do.

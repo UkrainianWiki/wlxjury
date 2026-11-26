@@ -164,11 +164,32 @@ object RoundLineage {
       tracks.filter(of.contains)
     }
 
-    /** Whether the pages show tracks at all: with two tracks or more among `listed` (all the
-      * contest's rounds by default). One track says nothing, so a contest with one has neither the
-      * Track chips nor the Track menu (RoundsFilterBar.trackMenuShown reads this too).
+    /** Each track's number of rounds. */
+    lazy val sizes: Map[Track, Int] = trackOf.values.groupBy(identity).view.mapValues(_.size).toMap
+
+    /** A track named after its round (rule 7's last case: a first round with neither a category
+      * nor a media type that tells it apart) with no round created from another on it: one round,
+      * or unlinked rounds of one name. A chip of it would only repeat the round's name (26.11.17.2).
       */
-    def showsTracks(listed: Seq[Round] = rounds.values.toSeq): Boolean = tracksOf(listed).sizeIs > 1
+    def selfNamedTrack(track: Track): Boolean = selfNamedTracks.contains(track)
+
+    // the name tracks whose rounds are all first rounds (no previous round in the contest): one
+    // round, or several unlinked rounds of one name (WLA Ghana 2026's two "ROUND 2")
+    private lazy val selfNamedTracks: Set[Track] = trackOf.toSeq.groupMap(_._2)(_._1).collect {
+      case (t, ids) if t.kind == Kind.Name && ids.forall(id => rounds(id).previousIds.forall(p => !rounds.contains(p))) => t
+    }.toSet
+
+    /** The round is alone on a track named after it ([[selfNamedTrack]]). */
+    def selfNamed(round: Round): Boolean = this.track(round).exists(selfNamedTrack)
+
+    /** Whether the pages show tracks at all: with two tracks or more among `listed` (all the
+      * contest's rounds by default) that say more than a round's own name (not [[selfNamedTrack]]). One
+      * such track says nothing, so a contest with fewer, as one whose rounds are unlinked and each
+      * named after itself, has neither the Track chips nor the Track menu
+      * (RoundsFilterBar.trackMenuShown reads this too).
+      */
+    def showsTracks(listed: Seq[Round] = rounds.values.toSeq): Boolean =
+      tracksOf(listed).filterNot(selfNamedTrack).sizeIs > 1
 
     /** Whether the contest's rounds show their Track chips ([[showsTracks]] of all its rounds). */
     lazy val chipsShown: Boolean = showsTracks()
@@ -316,6 +337,29 @@ object RoundLineage {
     groups.flatMap(g => g.map(_ -> named(g.head))).toMap
   }
 
+  /** The name tracks' names (rule 7's last case): each first round's name without the contest's
+    * own words at its ends, as a category's ([[scopeNames]] step 2: its name, year, country, years,
+    * "in", separators, in any case, where they make a run of three words or more or end at a
+    * separator): "Wiki Loves Earth 2026 in Kyrgyzstan 1 round" → "1 round", "шорт лист Wiki Loves
+    * Earth 2026 in Kyrgyzstan" → "шорт лист". The whole name where nothing else is left, or where
+    * two names would become one.
+    */
+  private[services] def roundNames(names: Seq[String], boilerplate: Set[String]): Map[String, String] = {
+    def noise(t: Token) = t.word.isEmpty || t.word.matches("\\d{4}") || boilerplate.contains(t.word) ||
+      CommonWords.contains(t.word)
+    def trimStart(ts: Seq[Token]): Seq[Token] = {
+      val run = ts.takeWhile(noise)
+      if (run.sizeIs >= 3 || run.lastOption.exists(_.word.isEmpty)) ts.drop(run.size) else ts
+    }
+    val stripped = names.distinct.map { n =>
+      val ts = trimStart(trimStart(tokens(n)).reverse).reverse
+      n -> (if (!ts.exists(!noise(_))) n else n.substring(ts.head.start, ts.last.end).trim)
+    }
+    val clash = stripped.groupBy(_._2.toLowerCase(Locale.ROOT)).values.filter(_.map(_._1).distinct.sizeIs > 1)
+      .flatten.map(_._1).toSet
+    stripped.map { case (n, s) => n -> (if (clash(n)) n else s) }.toMap
+  }
+
   /** A monument or region id's prefix, as a nomination's (`99-141-2306`: `99`), as the files'
     * regions are read ([[db.scalikejdbc.rewrite.ImageDbNew.regionOf]]).
     */
@@ -387,15 +431,22 @@ object RoundLineage {
     // a media type names a track only if it tells the roots apart: the roots have more than one,
     // none set counting as all (a video round beside the others); one alone (WLE international's
     // one image round) leaves the name
+    // (26.11.17.2:) none set counts as images, as contests' files are: a round set to images among
+    // others with none set tells nothing apart (WLE Kyrgyzstan 2026's "Финальный раунд" was "Image")
     def mediaOf(r: Round): String =
-      r.mediaType.map(_.trim).filter(_.nonEmpty).getOrElse(db.scalikejdbc.MediaType.All)
-    def media(r: Round): Option[String] = Some(mediaOf(r)).filter(_ != db.scalikejdbc.MediaType.All)
+      r.mediaType.map(_.trim).filter(m => m.nonEmpty && m != db.scalikejdbc.MediaType.All)
+        .getOrElse(db.scalikejdbc.MediaType.Image)
+    def media(r: Round): Option[String] =
+      r.mediaType.map(_.trim).filter(m => m.nonEmpty && m != db.scalikejdbc.MediaType.All)
     val severalMedia = roots.map(mediaOf).distinct.sizeIs > 1
+
+    // the name tracks' names: the roots' names without the contest's own words at their ends
+    val names = roundNames(roots.map(_.description.trim), context.boilerplate)
 
     def rootScope(r: Round): Track =
       rootCategory(r).map(c => scopes.getOrElse(c, c)).filter(_.nonEmpty).map(Track(Kind.Category, _))
         .orElse(media(r).filter(_ => severalMedia).map(Track(Kind.Media, _)))
-        .getOrElse(Track(Kind.Name, r.description.trim))
+        .getOrElse(Track(Kind.Name, names.getOrElse(r.description.trim, r.description.trim)))
 
     val trackOf = mutable.LinkedHashMap.empty[Long, Track]
     val merges = mutable.Set.empty[Long]
