@@ -19,7 +19,11 @@ const BOX = (count, extra = "") => `<div data-cut-announce="Cuts available: ${co
   <a id="top-n-cut-link" href="#" hidden>Show this cut in the ratings</a>${extra}
 </div>`;
 
-function page({ prev = "", loaded = false, box = '<div data-cut-announce=""><p id="topImages">No top N</p></div>' } = {}) {
+const KEEP = `<input type="radio" name="cutKeep" id="cutKeep_threshold" value="threshold" checked>
+  <input type="radio" name="cutKeep" id="cutKeep_top" value="top">`;
+
+function page({ prev = "", loaded = false, box = '<div data-cut-announce=""><p id="topImages">No top N</p></div>',
+    disabledButton = false } = {}) {
     document.body.innerHTML = `
       <form id="round-form" data-csrf-token="tok-1">
         <input type="hidden" name="csrfToken" value="tok-field">
@@ -32,6 +36,8 @@ function page({ prev = "", loaded = false, box = '<div data-cut-announce=""><p i
         <input type="text" id="source" name="source" value="">
         <input type="checkbox" id="excludeCoi" name="excludeCoi" value="true" checked>
         <select id="jurors" name="jurors[]" multiple><option value="11">Ann</option></select>
+        <button type="submit" id="save">Save</button>
+        <button type="submit" id="other"${disabledButton ? " disabled" : ""}>Other</button>
         <div id="top-n" data-cut-url="/admin/rounds/cut-list"${loaded ? " data-cut-loaded" : ""}
              data-cut-updating="Updating the cuts…" data-cut-failed="The cuts could not be loaded."
              data-cut-signed-out="You have been signed out." data-cut-csrf="This page has expired.">
@@ -299,6 +305,158 @@ describe("cut-list", () => {
         expect([link.hidden, link.getAttribute("href")]).toEqual([false, "/byrate/round/2/user/0/page/1?sort=rate&cut=4#cut"]);
         select("topImages", "9");
         expect([link.hidden, link.getAttribute("href")]).toEqual([true, "#"]);
+    });
+
+    test("a cut picked while a list loads is put back into the new list that has it", async () => {
+        page({ prev: "1", loaded: true, box: BOX(2, KEEP) });
+        const { fetch, calls } = deferredFetch();
+        const list = create(document, { fetch });
+        list.load();
+        select("topImages", "9");
+        const top = document.getElementById("cutKeep_top");
+        top.checked = true;
+        top.dispatchEvent(new Event("change", { bubbles: true }));
+        // the answer was built from the form before the pick: it chooses "No top N" and the threshold
+        calls[0].resolve(html(BOX(3, KEEP)));
+        await flush();
+        await flush();
+        expect(document.getElementById("topImages").value).toBe("9");
+        expect(document.getElementById("cutKeep_top").checked).toBe(true);
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(status()).toBe("Cuts available: 3");
+    });
+
+    test("a cut picked while a list loads that the new list lacks is asked for again, then left to the server", async () => {
+        page({ prev: "1", loaded: true, box: BOX(2) });
+        const { fetch, calls } = deferredFetch();
+        const list = create(document, { fetch });
+        list.load();
+        select("topImages", "9");
+        const without9 = `<div data-cut-announce="Cuts available: 1"><select id="topImages" name="topImages">
+          <option value="">No top N</option><option value="4">top 4</option></select></div>`;
+        calls[0].resolve(html(without9));
+        await flush();
+        await flush();
+        expect(fetch).toHaveBeenCalledTimes(2);
+        expect(new URLSearchParams(calls[1].init.body).getAll("topImages")).toEqual(["9"]);
+        expect(document.getElementById("top-n-box").getAttribute("aria-busy")).toBe("true");
+        const explained = `<div data-cut-announce="Cuts available: 1"><div id="top-n-held">N = 9 is inside a tie</div>
+          <select id="topImages" name="topImages"><option value="9" selected>Choose N from the list</option>
+          <option value="">No top N</option><option value="4">top 4</option></select></div>`;
+        calls[1].resolve(html(explained));
+        await flush();
+        await flush();
+        expect(fetch).toHaveBeenCalledTimes(2);
+        expect(document.getElementById("top-n-held")).not.toBeNull();
+        expect(document.getElementById("topImages").value).toBe("9");
+    });
+
+    test("while the box says the form's errors keep the list from loading, any field's change reloads", () => {
+        jest.useFakeTimers();
+        const invalid = '<div data-cut-announce="The cuts are listed once the form’s errors are corrected.">' +
+            '<p id="topImages">No top N</p><div id="top-n-form-invalid">x</div></div>';
+        page({ prev: "1", loaded: true, box: invalid });
+        const { fetch } = deferredFetch();
+        create(document, { fetch });
+        const name = document.getElementById("name");
+        name.value = "Final";
+        name.dispatchEvent(new Event("input", { bubbles: true }));
+        jest.advanceTimersByTime(500);
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    test("the previous rounds cleared while the box shows an error: the box is asked for again, not left stale", () => {
+        jest.useFakeTimers();
+        const error = '<div data-cut-announce="Commons could not be reached."><p id="topImages" class="is-invalid">No top N</p></div>';
+        page({ prev: "1", loaded: true, box: error });
+        const { fetch } = deferredFetch();
+        create(document, { fetch });
+        select("previousRound", "none");
+        jest.advanceTimersByTime(150);
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    test("Save is disabled while a list is pending or loading, a submit held, then enabled again", async () => {
+        jest.useFakeTimers();
+        page({ prev: "1", loaded: true, box: BOX(2), disabledButton: true });
+        const { fetch, calls } = deferredFetch();
+        create(document, { fetch });
+        const save = document.getElementById("save");
+        const other = document.getElementById("other");
+        expect(save.disabled).toBe(false);
+        select("previousRound", "2");
+        expect(save.disabled).toBe(true); // pending (the pause)
+        jest.advanceTimersByTime(150);
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(save.disabled).toBe(true); // loading
+        const submit = new Event("submit", { cancelable: true });
+        document.getElementById("round-form").dispatchEvent(submit);
+        expect(submit.defaultPrevented).toBe(true);
+        expect(status()).toBe("Updating the cuts…");
+        jest.useRealTimers();
+        calls[0].resolve(html(BOX(2)));
+        await flush();
+        await flush();
+        expect(save.disabled).toBe(false);
+        expect(other.disabled).toBe(true); // disabled by the page: left so
+        const after = new Event("submit", { cancelable: true });
+        document.getElementById("round-form").dispatchEvent(after);
+        expect(after.defaultPrevented).toBe(false);
+    });
+
+    test("Save is enabled again after a failure, and when a pause ends with nothing to ask", async () => {
+        jest.useFakeTimers();
+        page({ prev: "1", loaded: true, box: BOX(2) });
+        const { fetch, calls } = deferredFetch();
+        create(document, { fetch });
+        const save = document.getElementById("save");
+        const coi = document.getElementById("excludeCoi");
+        coi.checked = false;
+        coi.dispatchEvent(new Event("change", { bubbles: true }));
+        coi.checked = true;
+        coi.dispatchEvent(new Event("change", { bubbles: true }));
+        expect(save.disabled).toBe(true);
+        jest.advanceTimersByTime(150);
+        expect(fetch).not.toHaveBeenCalled(); // the form as last asked for
+        expect(save.disabled).toBe(false);
+        select("previousRound", "2");
+        jest.advanceTimersByTime(150);
+        jest.useRealTimers();
+        calls[0].resolve(json({ error: "forbidden" }, 403));
+        await flush();
+        await flush();
+        await flush();
+        expect(save.disabled).toBe(false);
+    });
+
+    test("until a cut is picked, a refresh posts the held threshold again, not the count it took", async () => {
+        page({ prev: "1", box: '<div data-cut-announce=""><input type="hidden" name="minAvgRate" value="7.5"><p id="topImages">files scoring at least 7.5</p></div>' });
+        const { fetch, calls } = deferredFetch();
+        create(document, { fetch });
+        expect(new URLSearchParams(calls[0].init.body).getAll("minAvgRate")).toEqual(["7.5"]);
+        // the list: the cut the threshold keeps (4) preselected, kept as the threshold
+        calls[0].resolve(html(BOX(2, KEEP).replace('<option value="4"', '<option value="4" selected')));
+        await flush();
+        await flush();
+        expect(document.getElementById("topImages").value).toBe("4");
+        jest.useFakeTimers();
+        const coi = document.getElementById("excludeCoi");
+        coi.checked = false;
+        coi.dispatchEvent(new Event("change", { bubbles: true }));
+        jest.advanceTimersByTime(150);
+        const refresh = new URLSearchParams(calls[1].init.body);
+        expect(refresh.getAll("minAvgRate")).toEqual(["7.5"]);
+        expect(refresh.getAll("topImages")).toEqual([]);
+        expect(refresh.getAll("cutKeep")).toEqual([]);
+        // picked: the pick is posted, the held threshold no more
+        select("topImages", "9");
+        coi.checked = true;
+        coi.dispatchEvent(new Event("change", { bubbles: true }));
+        jest.advanceTimersByTime(150);
+        const picked = new URLSearchParams(calls[2].init.body);
+        expect(picked.getAll("topImages")).toEqual(["9"]);
+        expect(picked.getAll("minAvgRate")).toEqual([]);
+        expect(picked.getAll("cutKeep")).toEqual(["threshold"]);
     });
 
     test("a page without a cut box, or without its URL, is left alone", () => {

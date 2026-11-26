@@ -19,6 +19,13 @@
 //   never the response's raw text;
 // - the cut's link to the previous round's rating view (#top-n-cut-link) follows the chosen cut (its
 //   option's data-cut-href), hidden when none is chosen.
+// - while the box says the form's errors keep the list from loading, any field's change reloads;
+// - until the admin picks a cut, a refresh posts the cut the page held (its hidden top N and threshold,
+//   or a refused save's control), so a held threshold or a legacy round's two cuts are held again
+//   (preselected or explained), never turned into the count they took before; a cut picked while a
+//   list loads is put back into the new list, or asked for again if the list doesn't have it;
+// - while a list is pending or loading, the form's submit buttons are disabled (and a submit held,
+//   saying "Updating the cuts…"); the save checks the cut again anyway.
 (function () {
   'use strict';
 
@@ -30,6 +37,19 @@
   /** The pause after a choice (a select, a box) and after typing, before the list is asked for. */
   var CHANGE_DELAY = 150;
   var TYPING_DELAY = 500;
+
+  /** The cut's own fields: its control, a held threshold, and what the round keeps. */
+  var CUT_FIELDS = ['topImages', 'minAvgRate', 'cutKeep'];
+
+  /** The cut's fields of the form as the page came, by name. */
+  function heldFields(form) {
+    var held = {};
+    CUT_FIELDS.forEach(function (name) { held[name] = []; });
+    new FormData(form).forEach(function (value, key) {
+      if (CUT_FIELDS.indexOf(key) >= 0 && typeof value === 'string') held[key].push(value);
+    });
+    return held;
+  }
 
   /** A field's name without its "[]" or "[0]". */
   function baseName(name) {
@@ -95,6 +115,14 @@
     var controller = null;
     var timer = null;
     var lastBody = null;
+    var loading = false;
+    // the cut as the page held it (its hidden fields, or a refused save's control): posted again by an
+    // automatic refresh until the admin picks a cut, so a held threshold or a legacy round's two cuts
+    // are held again (preselected or explained), never turned into the count they took before
+    var held = heldFields(form);
+    var touched = false;
+    // a cut picked while a list was loading: put back into the list that answer brings
+    var pendingPick = null;
 
     function text(name) {
       return wrap.getAttribute('data-cut-' + name) || '';
@@ -112,14 +140,77 @@
       status.classList.toggle('text-danger', !!failed);
     }
 
+    function busy() {
+      return loading || timer !== null;
+    }
+
+    /** The form's submit buttons, disabled while a list is pending or loading (the cut shown may be about
+      * to change); only those this script disabled are enabled again. */
+    function guardSave(on) {
+      Array.prototype.forEach.call(form.querySelectorAll('button[type="submit"], input[type="submit"]'), function (b) {
+        if (on && !b.disabled) {
+          b.disabled = true;
+          b.setAttribute('data-cut-busy', '');
+        } else if (!on && b.hasAttribute('data-cut-busy')) {
+          b.disabled = false;
+          b.removeAttribute('data-cut-busy');
+        }
+      });
+    }
+
+    /** The form's body; until the admin picks a cut, with the cut the page held. */
+    function requestBody(overrides) {
+      var params = new URLSearchParams(body(form));
+      var replace = overrides || (touched ? null : held);
+      if (replace) {
+        CUT_FIELDS.forEach(function (name) { params.delete(name); });
+        CUT_FIELDS.forEach(function (name) {
+          (replace[name] || []).forEach(function (value) { params.append(name, value); });
+        });
+      }
+      return params.toString();
+    }
+
+    /** The cut chosen in the box now: its control's value and what the round keeps. */
+    function currentPick() {
+      var select = box.querySelector('select#topImages');
+      var keep = box.querySelector('input[name="cutKeep"]:checked');
+      return { topImages: select ? [select.value] : [], minAvgRate: [], cutKeep: keep ? [keep.value] : [] };
+    }
+
+    /** Puts a cut picked during the load into the new list, if it has it; true if it did. */
+    function reapply(pick) {
+      var select = box.querySelector('select#topImages');
+      var value = pick.topImages[0];
+      if (!select || value === undefined) return false;
+      var found = Array.prototype.some.call(select.options, function (o) { return o.value === value; });
+      if (!found) return false;
+      select.value = value;
+      var keepValue = pick.cutKeep[0];
+      Array.prototype.forEach.call(box.querySelectorAll('input[name="cutKeep"]'), function (r) {
+        if (keepValue !== undefined) r.checked = r.value === keepValue;
+      });
+      return true;
+    }
+
     function render(html) {
       var active = doc.activeElement;
       var focusId = active && active.id && box.contains(active) ? active.id : null;
       box.innerHTML = html;
+      var pick = pendingPick;
+      pendingPick = null;
+      if (pick && !reapply(pick)) {
+        // the new list doesn't have it: asked again with it, so the server explains (or refuses) it
+        load(pick);
+        return;
+      }
+      loading = false;
       box.removeAttribute('aria-busy');
+      guardSave(busy());
       var root = box.firstElementChild;
       say(root ? root.getAttribute('data-cut-announce') || '' : '', false);
       updateCutLink(doc);
+      lastBody = requestBody();
       if (focusId) {
         var again = doc.getElementById(focusId);
         if (again && box.contains(again)) again.focus();
@@ -127,7 +218,10 @@
     }
 
     function fail(httpStatus, json) {
+      loading = false;
+      pendingPick = null;
       box.removeAttribute('aria-busy');
+      guardSave(busy());
       lastBody = null; // the same form may be asked for again
       var message;
       if (httpStatus === 401) message = text('signed-out');
@@ -137,18 +231,21 @@
       say(message, true);
     }
 
-    /** Asks for the list of the form as it is now; the answer to an older request is dropped. */
-    function load() {
+    /** Asks for the list of the form as it is now (the cut's fields from `overrides`, if given); the
+      * answer to an older request is dropped. */
+    function load(overrides) {
       if (timer) {
         clearTimeout(timer);
         timer = null;
       }
-      var encoded = body(form);
+      var encoded = requestBody(overrides);
       lastBody = encoded;
       seq += 1;
       var mine = seq;
       if (controller) controller.abort();
       controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      loading = true;
+      guardSave(true);
       say(text('updating'), false);
       box.setAttribute('aria-busy', 'true');
       var init = {
@@ -185,32 +282,64 @@
         });
     }
 
+    /** Whether the box has nothing to clear: no list, no error or explanation (its announcement is
+      * empty), and no failure said. */
+    function plainBox() {
+      var root = box.firstElementChild;
+      return !box.querySelector('select#topImages') && !(root && root.getAttribute('data-cut-announce')) &&
+        !status.classList.contains('text-danger');
+    }
+
     /** Loads after `delay`, once the changes stop; nothing if the form is as last asked for, or if it
-      * has no previous round while the box has no list to clear. */
+      * has no previous round while the box has nothing to clear. */
     function schedule(delay) {
       if (timer) clearTimeout(timer);
       timer = setTimeout(function () {
         timer = null;
-        var encoded = body(form);
-        if (encoded === lastBody) return;
-        if (!hasPrevious(encoded) && !box.querySelector('select#topImages')) return;
+        var encoded = requestBody();
+        if (encoded === lastBody || (!hasPrevious(encoded) && plainBox())) {
+          guardSave(busy());
+          return;
+        }
         load();
       }, delay);
+      guardSave(true);
+    }
+
+    /** While the box says the form's errors keep the list from loading, any field outside it counts. */
+    function formInvalid() {
+      return !!box.querySelector('#top-n-form-invalid');
     }
 
     form.addEventListener('change', function (e) {
       var t = e.target;
-      if (t && t.id === 'topImages') updateCutLink(doc);
-      if (ranks(t)) schedule(changeDelay);
+      if (t && box.contains(t)) {
+        if (t.id === 'topImages') updateCutLink(doc);
+        if (t.id === 'topImages' || t.name === 'cutKeep') {
+          touched = true;
+          if (loading) pendingPick = currentPick();
+        }
+        return;
+      }
+      if (ranks(t) || formInvalid()) schedule(changeDelay);
     });
     form.addEventListener('input', function (e) {
       var t = e.target;
-      if (ranks(t) && typed(t)) schedule(typingDelay);
+      if (t && box.contains(t)) return;
+      if ((ranks(t) || formInvalid()) && typed(t)) schedule(typingDelay);
     });
+    // a save while the list is pending or loading (Enter in a field, a button not disabled): held until
+    // the list is in, saying so; the save itself checks the cut again
+    form.addEventListener('submit', function (e) {
+      if (!busy()) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      say(text('updating'), false);
+    }, true);
 
     updateCutLink(doc);
     if (!wrap.hasAttribute('data-cut-loaded') && hasPrevious(body(form))) load();
-    else if (wrap.hasAttribute('data-cut-loaded')) lastBody = body(form);
+    else lastBody = requestBody();
 
     return { load: load, schedule: schedule };
   }

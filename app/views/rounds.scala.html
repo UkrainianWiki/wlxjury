@@ -146,7 +146,8 @@
                                 <div class="round-review" id="round-review-@round.getId">
                                     @Messages("rounds.images.ready", roundsStat.getOrElse(round.getId, 0))
                                     @if(!setupSteps.get(round.getId).exists(_.step == controllers.RoundNextStep.CheckFiles)) {
-                                    <a href="@routes.RoundReviewController.review(round.getId)">@Messages("round.next.files")</a>
+                                    @* underlined: a link in a line of text, told apart without its colour (axe link-in-text-block) *@
+                                    <a class="text-decoration-underline" href="@routes.RoundReviewController.review(round.getId)">@Messages("round.next.files")</a>
                                     }
                                 </div>
                             }

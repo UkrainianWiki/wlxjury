@@ -82,7 +82,7 @@
                 @for((id, error) <- errors) {<div class="invalid-feedback" id="@id">@error</div>}
                 @for(x <- p.heldThreshold) {<input type="hidden" name="@CutPicker.HeldThresholdField" value="@x.bigDecimal.stripTrailingZeros.toPlainString">}
                 @* the previous round's rating view with the chosen cut, where it shows the same cut
-                   (CutPicker.viewable): round-form.js follows the choice; hidden without one *@
+                   (CutPicker.viewable): cut-list.js follows the choice; hidden without one *@
                 @if(p.links.nonEmpty) {
                 <p class="mt-2 mb-0"><a id="top-n-cut-link" href="@p.chosenValid.filter(_ => p.pick.isEmpty).flatMap(p.links.get).getOrElse("#")" target="_blank" rel="noopener"@if(p.pick.nonEmpty || p.chosenValid.isEmpty) { hidden}><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> @Messages("top.n.show.cut")<span class="visually-hidden"> (@Messages("link.new.tab"))</span></a></p>
                 }
