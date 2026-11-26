@@ -44,8 +44,8 @@ async function readBar(bar) {
       titles: Object.fromEntries(tabs.map((a) => [name(a), a.getAttribute('title')])),
       chips: nav.querySelectorAll('.wlx-track').length,
       look: { font: first.fontSize, padding: first.padding, height: Math.round(tabs[0].getBoundingClientRect().height) },
-      // left-aligned: the bar's first item starts at the bar's left edge
-      leftGap: Math.round(nav.querySelector('.page-item').getBoundingClientRect().left - nav.getBoundingClientRect().left),
+      // left-aligned: the bar's first item (a group's label, a tab) starts at the bar's left edge
+      leftGap: Math.round(nav.querySelector('.wlx-round-tabs-label, .page-item').getBoundingClientRect().left - nav.getBoundingClientRect().left),
       inPage: nav.getBoundingClientRect().right <= page.right + 1,
     };
   });

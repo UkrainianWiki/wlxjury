@@ -498,7 +498,9 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
           (rows(old) === Seq("Round 1", "Photography, Round 2", "Photography, Final Round 3")) and
           (old.select("#rounds-track-menu .dropdown-item.active").text must contain("Main")) and
           (page(app, admin, s"$path&track=main").select("tbody tr.round-row").size === 6) and
-          (trackMenu(stat).map(_._1).take(2) === Seq("All tracks", "Main")) and {
+          (trackMenu(stat).map(_._1).take(2) === Seq("All tracks", "Main")) and
+          // the round tabs' groups: the track shown as Main first and labelled Main, as in the Track menu
+          (groups(stat, "#round-stat-rounds").map(_._1) === Seq("Main", repeatTrack)) and {
             // the round form's automatic track keeps its own name: Main copied into the label would
             // make a real Main of it and split the track
             def placeholder(r: Round, lang: String = "en") =
