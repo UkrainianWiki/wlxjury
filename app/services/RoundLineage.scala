@@ -173,6 +173,14 @@ object RoundLineage {
       */
     lazy val colours: Map[Track, Int] = colourSlots(tracks)
 
+    // what the pages derive from the whole lineage once per key (views.TrackChip's chip texts, per
+    // language): not part of the lineage's equality
+    private val memo = new java.util.concurrent.ConcurrentHashMap[Any, Any]()
+
+    /** `compute`'s value, computed once for this lineage and `key`. */
+    def memoized[A](key: Any)(compute: => A): A =
+      memo.computeIfAbsent(key, _ => compute).asInstanceOf[A]
+
     /** Whether none of the round's previous rounds exists ([[missingPrevious]]): it is then placed as a
       * round with no previous round (rule 7). With some left, its track comes as theirs would.
       */
@@ -358,7 +366,9 @@ object RoundLineage {
     *     of three words or more or end at a separator: "Wiki Loves Earth Ukraine 2026 -
     *     Quality": "Quality", "Images from Wiki Loves Earth 2026 Nature Loss Special Category":
     *     "Nature Loss Special Category";
-    *  3. two categories on one name keep step 1's names, and if still one, their full names.
+    *  3. two categories on one name keep step 1's names, and if still one, their full names; then
+    *     any name still shared (a full name equal to another's short one) gives way to the full
+    *     names of all that share it, until every name differs.
     * Categories that differ only in case are one, named after the first in sorted order. Empty
     * when nothing but such words is left: the root is named by its media type or its name instead.
     */
@@ -402,8 +412,17 @@ object RoundLineage {
       named.filter(_._2.nonEmpty).groupBy(_._2.toLowerCase(Locale.ROOT)).values.filter(_.sizeIs > 1).flatten.map(_._1).toSet
     val clash = clashing(first)
     val second = first.map { case (c, n) => c -> (if (clash(c)) shared(c) else n) }
-    val still = clashing(second)
-    val named = second.map { case (c, n) => c -> (if (still(c)) c else n) }.toMap
+    // restoring full names can make a new clash ("Prefix Quality", "Prefix  Quality", "Prefix Prefix
+    // Quality": "Quality" twice and "Prefix Quality"; the first two restored, the first is the third's
+    // name): restore every member of a clash until none is left. Full names never clash (they differ,
+    // in case too, after the grouping above), so each pass restores one name at least and it ends;
+    // without a clash the first pass changes nothing.
+    @scala.annotation.tailrec
+    def restore(named: Seq[(String, String)]): Seq[(String, String)] = {
+      val still = clashing(named)
+      if (still.isEmpty) named else restore(named.map { case (c, n) => c -> (if (still(c)) c else n) })
+    }
+    val named = restore(second).toMap
     groups.flatMap(g => g.map(_ -> named(g.head))).toMap
   }
 
