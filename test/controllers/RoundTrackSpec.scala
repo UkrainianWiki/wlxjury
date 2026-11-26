@@ -394,7 +394,14 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         // the three rounds alone on tracks named after them lose their chips; Quality (a category's
         // track, of one round) and the long list keep theirs, and the Track menu stays
         (rowChips(doc) === Map("Wiki Loves Earth 2026 in Kyrgyzstan 2 round" -> "Quality", "6" -> "long list",
-          "Топ 10 раунд" -> "long list")) and (doc.select("#rounds-track-menu").size === 1)
+          "Топ 10 раунд" -> "long list")) and (doc.select("#rounds-track-menu").size === 1) and
+          // the Track menu lists only the tracks that show chips; the others' rounds under All tracks
+          (trackMenu(doc).map(t => (t._1, t._2)) === Seq("All tracks" -> "6", "long list" -> "2", "Quality" -> "1")) and {
+            // an old link to a track left out still filters, the menu showing it chosen
+            val old = page(app, admin, s"/admin/rounds?contestId=${contest.getId}&track=name%3A1%20round")
+            (rows(old) === Seq("Wiki Loves Earth 2026 in Kyrgyzstan 1 round")) and
+              (old.select("#rounds-track-menu .dropdown-item.active").text must contain("1 round"))
+          }
       }
     }
 

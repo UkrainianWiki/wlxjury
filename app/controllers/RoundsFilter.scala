@@ -185,10 +185,15 @@ final case class RoundsFilterBar(
   def count(track: Option[String]): Int =
     rounds.count(r => filter.status.matches(r) && filter.kind.matches(r) && track.forall(filter.onTrack(r, _)))
 
-  /** The Track menu's tracks, in the lineage's order, those of the rounds listed: shown with two or
-    * more of them, or a track chosen.
+  /** The Track menu's tracks, in the lineage's order, those of the rounds listed that show chips: a
+    * track named after its round that no other round continues (Lineage.selfNamedTrack) is left out,
+    * as its chip is (the maintainer's decision for 26.11.17.2), its rounds still under All tracks;
+    * unless it is the chosen one (an old link), which stays listed. Shown with two or more of them,
+    * or a track chosen.
     */
-  def tracks: Seq[services.RoundLineage.Track] = lineage.fold(Seq.empty[services.RoundLineage.Track])(_.tracksOf(rounds))
+  def tracks: Seq[services.RoundLineage.Track] = lineage.fold(Seq.empty[services.RoundLineage.Track]) { l =>
+    l.tracksOf(rounds).filter(t => !l.selfNamedTrack(t) || filter.track.contains(t.key))
+  }
 
   /** With two tracks or more among the rounds listed (the chips' rule, Lineage.showsTracks), or a track chosen. */
   def trackMenuShown: Boolean = lineage.exists(_.showsTracks(rounds)) || filter.track.isDefined
