@@ -473,6 +473,8 @@ class RoundLineageSpec extends Specification {
         (l.tracks.exists(_.isMain) must beFalse) and (l.merges must beEmpty) and (l.loneMerge must beNone) and
         (l.byKey("main") must beNone) and (spine(l, round1).size === 3) and
         (names(l, round1).size === 3) and (l.chipsShown must beTrue) and
+        // its colour stays its own key's slot, not Main's
+        (views.TrackChip.colour(round1, l) === s"wlx-track-${l.colours(round1) + 1}") and
         // "2" stays alone on a track named after it: no chip, not the one shown as Main
         (l.selfNamed(l.rounds(2)) must beTrue) and (l.selfNamed(l.rounds(3)) must beFalse)
     }
