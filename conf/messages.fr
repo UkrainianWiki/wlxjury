@@ -1532,6 +1532,7 @@ round.track.help = Nomme la piste de ce tour : les tours suivants sans étiquett
 round.track.automatic = Automatique : {0}.
 round.track.main.hint = Le tour {0} réunit des tours de plusieurs pistes : il ouvre donc seul la piste principale. Pour y montrer les tours précédents du concours principal, donnez l''étiquette Principale à son premier tour, dans le formulaire de ce tour.
 round.track.previous.missing = Le tour précédent {0} n''existe plus : ce tour ouvre sa propre piste.
+round.track.previous.missing.some = Le tour précédent {0} n''existe plus : il est ignoré pour choisir la piste de ce tour.
 rounds.filter.track.all = Toutes les pistes
 round.badge.active = Actif
 round.badge.inactive = Inactif
