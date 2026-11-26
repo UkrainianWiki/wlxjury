@@ -360,7 +360,9 @@ field is no category. With nothing left the root is named by its media type, **o
 have more than one** (none set counting as all: a video round beside the others), and otherwise by
 its name. **Chips show only in a contest
 with two tracks or more** (the Track menu's rule), then on every round, a root named after itself
-too. A chip longer than 32 characters shows its start and its end, "…" between.
+too, except a name track none of whose rounds was created from another, one round or unlinked
+rounds of one name (26.11.17.2: its chip only repeats the row's name); such tracks don't count
+towards the two either. A chip longer than 32 characters shows its start and its end, "…" between.
 
 **Main and its feeders:**
 - Main's rows come first.
@@ -874,8 +876,13 @@ slice A builds part of them early.
 - **The label setter on the round form**, also for existing rounds, writing
   `created_at = created_at`, with a form spec (decision 4).
 - **A coloured Track chip** after the round name on the Rounds page, Round Statistics and the
-  gallery round menu. The colour is a stable hash of the track onto a few `--wlx-*` tokens, checked
-  in both themes; the chip's text carries the meaning.
+  gallery round menu. The colour is one of a few `--wlx-*` tokens, checked in both themes; the
+  chip's text carries the meaning. *(Amended 2026-11-26: the hash gave WLM 2026's Quality and
+  Quantity the same colour. Each track keeps its hash colour where it can, and only tracks of one
+  contest on the same token are moved apart: by name, the first keeps it, the others take the next
+  free token. So a track has the same colour every year where its contest's other tracks leave it
+  its token, and the same set of tracks gets the same colours; a track moved off its token in one
+  contest keeps its hash colour in a contest where nothing else wants that token.)*
 - **A Track menu** on Rounds and Statistics, next to Status and Type: `track=` in `RoundsFilter`.
 
 **Logging.** A label change is written to the change log as a new `contest_change` kind, through

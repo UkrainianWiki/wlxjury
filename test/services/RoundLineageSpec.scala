@@ -188,12 +188,33 @@ class RoundLineageSpec extends Specification {
         round(6, "6", category = Some("Category:Wiki Loves Earth 2026 in Kyrgyzstan long list"), media = Some("image")),
         round(8, "8", category = Some("Category:wiki loves earth 2026 in Kyrgyzstan long list"))), kg)
       val longList = Track(Kind.Category, "long list")
-      (l.trackOf(1) === Track(Kind.Name, "Wiki Loves Earth 2026 in Kyrgyzstan 1 round")) and
-        // its media type, image, differs from the other roots' (all)
-        (l.trackOf(2) === Track(Kind.Category, "Quality")) and (l.trackOf(4) === Track(Kind.Media, "image")) and
-        (l.trackOf(5) === Track(Kind.Name, "шорт лист Wiki Loves Earth 2026 in Kyrgyzstan")) and
+      // a name track's name without the contest's words (26.11.17.2); images among rounds of no
+      // media type set name nothing (they are images too): Финальный раунд is named after itself
+      (l.trackOf(1) === Track(Kind.Name, "1 round")) and
+        (l.trackOf(2) === Track(Kind.Category, "Quality")) and (l.trackOf(4) === Track(Kind.Name, "Финальный раунд")) and
+        (l.trackOf(5) === Track(Kind.Name, "шорт лист")) and
         // the same category in another case: one track
-        (l.trackOf(6) === longList) and (l.trackOf(8) === longList)
+        (l.trackOf(6) === longList) and (l.trackOf(8) === longList) and
+        // rounds alone on tracks named after them: no chips (26.11.17.2)
+        (Seq(1L, 4L, 5L).map(id => l.selfNamed(l.rounds(id))) === Seq(true, true, true)) and
+        (Seq(2L, 6L, 8L).map(id => l.selfNamed(l.rounds(id))) === Seq(false, false, false)) and (l.chipsShown must beTrue)
+    }
+
+    "name a name track without the contest's words, keeping a name with nothing else, or one that would join another" in {
+      val words = Set("wiki", "loves", "earth", "2026", "kyrgyzstan")
+      val m = RoundLineage.roundNames(Seq("Wiki Loves Earth 2026 in Kyrgyzstan 1 round", "Wiki Loves Earth 2026 in Kyrgyzstan real round",
+        "шорт лист Wiki Loves Earth 2026 in Kyrgyzstan", "Wiki Loves Earth 2026", "First round", "Images of 2026",
+        "Wiki Loves Earth 2026 final", "Wiki Loves Earth 2026 in Kyrgyzstan final"), words)
+      (m("Wiki Loves Earth 2026 in Kyrgyzstan 1 round") === "1 round") and
+        (m("Wiki Loves Earth 2026 in Kyrgyzstan real round") === "real round") and
+        (m("шорт лист Wiki Loves Earth 2026 in Kyrgyzstan") === "шорт лист") and
+        // nothing meaningful left: the whole name
+        (m("Wiki Loves Earth 2026") === "Wiki Loves Earth 2026") and (m("First round") === "First round") and
+        // only such words: the whole name
+        (m("Images of 2026") === "Images of 2026") and
+        // "final" twice: both keep their whole names
+        (m("Wiki Loves Earth 2026 final") === "Wiki Loves Earth 2026 final") and
+        (m("Wiki Loves Earth 2026 in Kyrgyzstan final") === "Wiki Loves Earth 2026 in Kyrgyzstan final")
     }
 
     "name roots that share no start by what is left of their categories without the contest's words (WLE Ukraine 2026)" in {
@@ -386,6 +407,114 @@ class RoundLineageSpec extends Specification {
       names(Seq("Category:Images from Wiki Loves Earth 2026 in Ukraine - Quality", "Category:Wiki Loves Earth 2026 Quality"),
         "Wiki Loves Earth 2026 Ukraine Images from in") ===
         Seq("Images from Wiki Loves Earth 2026 in Ukraine - Quality", "Wiki Loves Earth 2026 Quality")
+    }
+  }
+
+  "the tracks the pages show (26.11.17.2)" should {
+
+    "leave out a round alone on a track named after it, and count only the other tracks" in {
+      // WLM Serbia 2026: unlinked rounds, each its own track named after it
+      val serbia = RoundLineage(Seq(round(1, "Гласање за најбољу фотографију: 1"), round(2, "РУНДА 2"),
+        round(3, "РУНДА ДРУГА"), round(4, "Вики воли споменике 2026. - РУНДА 2")), context)
+      // a first round named after itself with a later round keeps its track
+      val linked = RoundLineage(Seq(round(1, "First round"), round(2, "Second round", Seq(1)), round(3, "Video round"),
+        round(4, "Photo round"), round(5, "Photo final", Seq(4))), context)
+      (serbia.tracks.size === 4) and forall(serbia.rounds.values)(r => serbia.selfNamed(r) must beTrue) and
+        (serbia.chipsShown must beFalse) and
+        (linked.selfNamed(linked.rounds(3)) must beTrue) and (linked.selfNamed(linked.rounds(1)) must beFalse) and
+        (linked.chipsShown must beTrue)
+    }
+
+    "count unlinked rounds of one name as self-named too (WLA Ghana 2026, Ireland's Celtic Knot)" in {
+      val ghana = RoundLineage(Seq(round(1, "ROUND 1"), round(2, "ROUND 2"), round(3, "ROUND 2"),
+        round(4, "Celtic Knot-Round 1"), round(5, "Celtic Knot-Round 1"), round(6, "Final", Seq(4))), context)
+      // ROUND 2 ×2: one track, both first rounds; Celtic Knot-Round 1 has a round created from it
+      (ghana.trackOf(2) === ghana.trackOf(3)) and (ghana.selfNamed(ghana.rounds(2)) must beTrue) and
+        (ghana.selfNamed(ghana.rounds(3)) must beTrue) and (ghana.selfNamed(ghana.rounds(4)) must beFalse) and
+        (ghana.selfNamed(ghana.rounds(6)) must beFalse) and (ghana.chipsShown must beFalse)
+    }
+
+    "change nothing for WLE Ukraine 2026's and WLM Ukraine 2026's shapes" in {
+      val wle = Context(contestCategory = Some("Category:Images from Wiki Loves Earth 2026 in Ukraine"),
+        boilerplate = Set("wiki", "loves", "earth", "2026", "ukraine"))
+      val wleUa = RoundLineage(Seq(
+        round(1, "Відео: 0 раунд", media = Some("video")),
+        round(2, "Відсіювання: Кількісна", category = Some("Category:Wiki Loves Earth Ukraine 2026 - Quantity")),
+        round(3, "Відсіювання: Якісна", category = Some("Category:Wiki Loves Earth Ukraine 2026 - Quality")),
+        round(4, "Якісна номінація — 1 раунд", Seq(2, 3)),
+        round(8, "Відео номінація: 1 раунд", Seq(1)),
+        round(9, "Втрати природи: 0 раунд", category = Some("Category:Images from Wiki Loves Earth 2026 Nature Loss Special Category"))),
+        wle)
+      val wlmUa = RoundLineage(Seq(round(1, "Q-00", category = Some(Prefix + "Quality")),
+        round(2, "Qn-00", category = Some(Prefix + "Quantity")), round(3, "Q-01", Seq(1)), round(4, "Q-02", Seq(3, 2)),
+        round(5, "Kha-00", nomination = Some("Харків"))), context)
+      forall(Seq(wleUa, wlmUa)) { l =>
+        (l.chipsShown must beTrue) and forall(l.rounds.values)(r => l.selfNamed(r) must beFalse)
+      }
+    }
+  }
+
+  "the track shown as Main in a contest without one (option C, 2026-11-26)" should {
+
+    // WLA A Future for Thatch 2026 Ireland: "Round 1" with later rounds made from it, "2" alone,
+    // and a second track of a repeat round with its own later rounds
+    def thatch(extra: Round*) = RoundLineage(Seq(
+      round(1, "Round 1"), round(2, "2"),
+      round(3, "Sub category 1: Examples of Thatch and Thatching (Photography), Round 2", Seq(1)),
+      round(4, "SSub category 1: Examples of Thatch and Thatching (Photography), Final Round 3", Seq(3)),
+      round(15, "Sub-category 2: Category 3: Heritage in Transition (Photography), Repeat Round 1"),
+      round(16, "Sub-category 2: Category 3: Heritage in Transition (Photography), Repeat Round 2", Seq(15))) ++ extra,
+      context)
+    val round1 = Track(Kind.Name, "Round 1")
+
+    "be the first round's name track, its key, order and spine its own (WLA Thatch Ireland 2026)" in {
+      val l = thatch()
+      (l.shownAsMain === Some(round1)) and (round1.key === "name:Round 1") and (l.byKey("name:Round 1") === Some(round1)) and
+        (l.tracks.exists(_.isMain) must beFalse) and (l.merges must beEmpty) and (l.loneMerge must beNone) and
+        (l.byKey("main") must beNone) and (spine(l, round1).size === 3) and
+        (names(l, round1).size === 3) and (l.chipsShown must beTrue) and
+        // its colour stays its own key's slot, not Main's
+        (views.TrackChip.colour(round1, l) === s"wlx-track-${l.colours(round1) + 1}") and
+        // "2" stays alone on a track named after it: no chip, not the one shown as Main
+        (l.selfNamed(l.rounds(2)) must beTrue) and (l.selfNamed(l.rounds(3)) must beFalse)
+    }
+
+    "skip a first round alone on a track named after it" in {
+      val l = RoundLineage(Seq(round(1, "Test"), round(2, "Round 1"), round(3, "Round 2", Seq(2)),
+        round(4, "Video round"), round(5, "Video final", Seq(4))), context)
+      l.shownAsMain === Some(round1)
+    }
+
+    "be none where the first round is on a category's track, though a name track follows" in {
+      val l = RoundLineage(Seq(round(1, "Q-00", category = Some(Prefix + "Quality")), round(2, "Q-01", Seq(1)),
+        round(3, "Video round"), round(4, "Video final", Seq(3))), context)
+      (l.chipsShown must beTrue) and (l.shownAsMain must beNone)
+    }
+
+    "be none in a contest with a real Main, by a merge or by the label" in {
+      val merged = RoundLineage(Seq(round(1, "Round 1"), round(2, "Round 2", Seq(1)), round(3, "Video round"),
+        round(4, "Final", Seq(2, 3))), context)
+      val labelled = thatch(round(20, "Final", Seq(16), track = Some("main")))
+      (merged.tracks.head === Track.Main) and (merged.shownAsMain must beNone) and
+        (labelled.tracks.head === Track.Main) and (labelled.shownAsMain must beNone)
+    }
+
+    "be none where another track is named Main, so that two never read Main" in {
+      val l = thatch(round(30, "Main"), round(31, "Main 2", Seq(30)))
+      (l.trackOf(30) === Track(Kind.Name, "Main")) and (l.trackOf(30).isMain must beFalse) and (l.shownAsMain must beNone)
+    }
+
+    "be none where another track is named Main in another of the app's languages (Основний, Основной, Principale)" in {
+      forall(Seq("Основний", "основной", "Principale")) { main =>
+        val l = thatch(round(30, main), round(31, "Next", Seq(30)))
+        (l.trackOf(30).kind === Kind.Name) and (l.shownAsMain must beNone)
+      } and (RoundLineage.MainNames must contain(allOf("main", "основний", "основной", "principale")))
+    }
+
+    "be none where the first round is labelled, or alone in its contest" in {
+      val labelled = thatch(round(0, "Screening", track = Some("Second look")), round(40, "Screening 2", Seq(0)))
+      val alone = RoundLineage(Seq(round(1, "Round 1"), round(2, "Round 2", Seq(1))), context)
+      (labelled.shownAsMain must beNone) and (alone.shownAsMain === Some(round1)) and (alone.chipsShown must beFalse)
     }
   }
 

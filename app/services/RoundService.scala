@@ -22,6 +22,9 @@ class RoundService @Inject() (
 
   import RoundService._
 
+  /** A job's title, as its status partial's label (snippets/jobStatus). */
+  def jobTitle(job: Job): String = jobs.title(job)
+
   /** Creates the round and distributes its images, waiting for the distribution (scripts,
     * the API, tests): [[submit]], then the job's end.
     *

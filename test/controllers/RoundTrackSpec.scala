@@ -18,7 +18,8 @@ import scala.jdk.CollectionConverters._
   * `created_at` kept, "Main" in any case or language, kept by a client without the field, refused
   * unchanged to a juror, an organizer and another contest's admin); the Track chip on the Rounds page,
   * the round statistics and the galleries' round menu (not a juror's); the Track menu on Rounds and
-  * Statistics (`track=`, an unknown one all rounds); the Rounds page's hint for a merge alone on Main
+  * Statistics (`track=`, an unknown one all rounds); each track's own chip colour (two tracks of the
+  * contest on one hash token moved apart), the same on every page and in the Track menu's swatches; the Rounds page's hint for a merge alone on Main
   * and its warning for a missing previous round. Organizers see the chips and the menu read only.
   */
 class RoundTrackSpec extends PlaySpecification with PlayTestDb {
@@ -395,6 +396,33 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "give each track its own colour, the same in the Track menu, the statistics and the galleries' menu" in {
+      testDbApp { app =>
+        val f = fixture()
+        // five tracks: Main, its feeders Quality and Quantity, a category root and a nomination
+        roundDao.create(Round(None, 5, Some("F-00"), f.contest.getId, category = Some(Prefix + "Film")))
+        roundDao.create(Round(None, 6, Some("Kha-00"), f.contest.getId, specialNomination = Some("Харків")))
+        def colour(e: Element): String =
+          e.classNames.asScala.filter(c => c.startsWith("wlx-track-") && c != "wlx-track-swatch").mkString(" ")
+        def chipColours(doc: Document, selector: String): Map[String, String] =
+          doc.select(s"$selector .wlx-track").asScala.toSeq.map(c => c.attr("data-track") -> colour(c)).toMap
+        val doc = page(app, f.admin, s"/admin/rounds?contestId=${f.contest.getId}")
+        val chipsByTrack = chipColours(doc, "tbody tr.round-row")
+        val swatches = doc.select("#rounds-track-menu .dropdown-item").asScala.toSeq.flatMap { a =>
+          Option(a.selectFirst(".wlx-track-swatch")).map(s =>
+            java.net.URLDecoder.decode(a.attr("href").replaceAll(".*[?&]track=([^&]*).*", "$1"), "UTF-8") -> colour(s))
+        }.toMap
+        val stat = chipColours(page(app, f.organizer, s"/roundstat/${f.merge.getId}"), "#round-stat-rounds")
+        val gallery = chipColours(page(app, f.organizer, s"/gallery/round/${f.q00.getId}/user/0/page/1"), "#round-menu")
+        // Quality and Quantity share a hash token: Quality (first by name) keeps it, Quantity takes
+        // the next free one, after Film's and Харків's, which keep theirs
+        (chipsByTrack === Map("main" -> "wlx-track-main", "category:Quality" -> "wlx-track-2",
+          "category:Quantity" -> "wlx-track-5", "category:Film" -> "wlx-track-3", "nomination:Харків" -> "wlx-track-4")) and
+          (chipsByTrack.values.toSet.size === 5) and (swatches === chipsByTrack) and
+          (stat === chipsByTrack) and (gallery === chipsByTrack)
+      }
+    }
+
     "list a track's rounds, carry the choice in its links, and list all rounds for an unknown track" in {
       testDbApp { app =>
         val f = fixture()
@@ -423,16 +451,149 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "show a chip on every round of a contest with two tracks, a root named after itself too" in {
+    "show a chip on every round of a contest with two tracks, a first round named after itself too, but none for a round alone on a track named after it" in {
       testDbApp { app =>
         val contest = contestDao.create(None, "Wiki Loves Earth", 2026, "Testland")
         val admin = userDao.create(User("AdminT", "admint@example.com", None, Set("admin"), contestId = contest.id))
         val first = roundDao.create(Round(None, 1, Some("First round"), contest.getId))
         roundDao.create(Round(None, 2, Some("Second round"), contest.getId, previous = Some(first.getId.toString)))
-        roundDao.create(Round(None, 3, Some("Video round"), contest.getId))
+        val third = roundDao.create(Round(None, 3, Some("Photo round"), contest.getId))
+        roundDao.create(Round(None, 4, Some("Photo final"), contest.getId, previous = Some(third.getId.toString)))
+        roundDao.create(Round(None, 5, Some("Video round"), contest.getId))
         val doc = page(app, admin, s"/admin/rounds?contestId=${contest.getId}")
-        (rowChips(doc) === Map("First round" -> "First round", "Second round" -> "First round",
-          "Video round" -> "Video round")) and (doc.select("#rounds-track-menu").size === 1)
+        // no Main track: the first round's track reads Main (option C, 2026-11-26)
+        (rowChips(doc) === Map("First round" -> "Main", "Second round" -> "Main",
+          "Photo round" -> "Photo round", "Photo final" -> "Photo round")) and
+          (doc.select("#rounds-track-menu").size === 1)
+      }
+    }
+
+    "call the first round's track Main in a contest without one, in the chips and the Track menu, its key and old links kept (WLA Thatch Ireland 2026)" in {
+      testDbApp { app =>
+        val contest = contestDao.create(None, "Wiki Loves A Future for Thatch", 2026, "Ireland",
+          Some("Category:Images from Wiki Loves A Future for Thatch 2026"))
+        val admin = userDao.create(User("AdminI", "admini@example.com", None, Set("admin"), contestId = contest.id))
+        val organizer = userDao.create(User("OrgI", "orgi@example.com", None, Set("organizer"), contestId = contest.id))
+        def round(n: Int, name: String, previous: Option[Round] = None, active: Boolean = false) =
+          roundDao.create(Round(None, n, Some(name), contest.getId, active = active, previous = previous.map(_.getId.toString)))
+        val r1 = round(1, "Round 1")
+        round(2, "2")
+        val r3 = round(3, "Photography, Round 2", Some(r1))
+        round(4, "Photography, Final Round 3", Some(r3))
+        val repeat = round(15, "Heritage, Repeat Round 1")
+        val last = round(16, "Heritage, Repeat Round 2", Some(repeat), active = true)
+        val path = s"/admin/rounds?contestId=${contest.getId}"
+        val doc = page(app, admin, path)
+        val uk = page(app, admin, path, "uk")
+        val repeatTrack = "Heritage, Repeat Round 1"
+        // the track's key stays its name's: old links and the menu's links keep it
+        val old = page(app, admin, s"$path&track=name%3ARound%201")
+        val stat = page(app, organizer, s"/roundstat/${last.getId}")
+        (rowChips(doc) === Map("Round 1" -> "Main", "Photography, Round 2" -> "Main", "Photography, Final Round 3" -> "Main",
+          repeatTrack -> repeatTrack, "Heritage, Repeat Round 2" -> repeatTrack)) and
+          // its own colour, not Main's (display only)
+          (doc.select(".wlx-track[data-track=main]").size === 0) and
+          (doc.select(".wlx-track.wlx-track-main").size === 0) and
+          // first in the Track menu, as Main is; "2", alone on a track named after it, left out
+          (trackMenu(doc).map(t => (t._1, t._2)) === Seq("All tracks" -> "6", "Main" -> "3", repeatTrack -> "2")) and
+          (trackMenu(doc)(1)._3 must contain("track=name%3ARound+1")) and
+          (rowChips(uk).get("Round 1") === Some("Основний")) and
+          (rows(old) === Seq("Round 1", "Photography, Round 2", "Photography, Final Round 3")) and
+          (old.select("#rounds-track-menu .dropdown-item.active").text must contain("Main")) and
+          (page(app, admin, s"$path&track=main").select("tbody tr.round-row").size === 6) and
+          (trackMenu(stat).map(_._1).take(2) === Seq("All tracks", "Main")) and {
+            // the round form's automatic track keeps its own name: Main copied into the label would
+            // make a real Main of it and split the track
+            def placeholder(r: Round, lang: String = "en") =
+              page(app, admin, s"/admin/rounds/edit?contestId=${contest.getId}&id=${r.getId}", lang)
+                .getElementById("trackLabel").attr("placeholder")
+            (placeholder(r1) === "Automatic: Round 1") and
+              (placeholder(r3) === "Automatic: Round 1, from its previous rounds") and
+              (placeholder(r3, "uk") must not(contain("Основний"))) and
+              (placeholder(r3) must not(contain("Main")))
+          }
+      }
+    }
+
+    "show a category-first contest's chips and Track menu as before, nothing called Main" in {
+      testDbApp { app =>
+        val contest = contestDao.create(None, "Wiki Loves Monuments", 2026, "Testland",
+          Some("Category:Images from Wiki Loves Monuments 2026 in Testland"))
+        val admin = userDao.create(User("AdminC", "adminc@example.com", None, Set("admin"), contestId = contest.id))
+        def round(n: Int, name: String, previous: Option[Round] = None, category: Option[String] = None) =
+          roundDao.create(Round(None, n, Some(name), contest.getId, category = category, previous = previous.map(_.getId.toString)))
+        val q00 = round(1, "Q-00", category = Some(Prefix + "Quality"))
+        round(2, "Q-01", Some(q00))
+        round(3, "Qn-00", category = Some(Prefix + "Quantity"))
+        val video = round(4, "Video round")
+        round(5, "Video final", Some(video))
+        val doc = page(app, admin, s"/admin/rounds?contestId=${contest.getId}")
+        (rowChips(doc) === Map("Q-00" -> "Quality", "Q-01" -> "Quality", "Qn-00" -> "Quantity",
+          "Video round" -> "Video round", "Video final" -> "Video round")) and
+          (trackMenu(doc).map(t => (t._1, t._2)) === Seq("All tracks" -> "5", "Quality" -> "2", "Quantity" -> "1",
+            "Video round" -> "2"))
+      }
+    }
+
+    "show a real-Main contest's name tracks by their own names, Main only for the real one" in {
+      testDbApp { app =>
+        val f = fixture()
+        val r1 = roundDao.create(Round(None, 5, Some("Round 1"), f.contest.getId))
+        roundDao.create(Round(None, 6, Some("Round 2"), f.contest.getId, previous = Some(r1.getId.toString)))
+        val doc = page(app, f.admin, s"/admin/rounds?contestId=${f.contest.getId}")
+        (rowChips(doc) === Map("Q-00" -> "Quality", "Qn-00" -> "Quantity", "Q-01" -> "Quality", "Q-02" -> "Main",
+          "Round 1" -> "Round 1", "Round 2" -> "Round 1")) and
+          (doc.select(".wlx-track[data-track=main]").size === 1) and
+          (trackMenu(doc).map(t => (t._1, t._2)) === Seq("All tracks" -> "6", "Main" -> "1", "Quality" -> "2",
+            "Quantity" -> "1", "Round 1" -> "2"))
+      }
+    }
+
+    "show no chips and no Track menu where every round is alone on a track named after it (WLM Serbia 2026)" in {
+      testDbApp { app =>
+        val contest = contestDao.create(None, "Wiki Loves Monuments", 2026, "Serbia",
+          Some("Category:Prejury selection for Wiki Loves Monuments 2026 in Serbia/Second round"))
+        val admin = userDao.create(User("AdminS", "admins@example.com", None, Set("admin"), contestId = contest.id))
+        val organizer = userDao.create(User("OrgS", "orgs@example.com", None, Set("organizer"), contestId = contest.id))
+        val rounds = Seq("Гласање за најбољу фотографију: 1", "РУНДА 2", "РУНДА ДРУГА", "Вики воли споменике 2026. - РУНДА 2")
+          .zipWithIndex.map { case (n, i) => roundDao.create(Round(None, i + 1L, Some(n), contest.getId, active = i == 3)) }
+        val list = page(app, admin, s"/admin/rounds?contestId=${contest.getId}")
+        val stat = page(app, organizer, s"/roundstat/${rounds.last.getId}")
+        val gallery = page(app, organizer, s"/gallery/round/${rounds.last.getId}/user/0/page/1")
+        (list.select("tbody tr.round-row").size === 4) and (list.select(".wlx-track").size === 0) and
+          (list.select("#rounds-track-menu").size === 0) and (stat.select(".wlx-track").size === 0) and
+          (stat.select("#rounds-track-menu").size === 0) and (gallery.select(".wlx-track").size === 0)
+      }
+    }
+
+    "drop only the chips of rounds alone on a track named after them (WLE Kyrgyzstan 2026)" in {
+      testDbApp { app =>
+        val contest = contestDao.create(None, "Wiki Loves Earth", 2026, "Kyrgyzstan",
+          Some("Category:Images from Wiki Loves Earth 2026 in Kyrgyzstan"))
+        val admin = userDao.create(User("AdminK", "admink@example.com", None, Set("admin"), contestId = contest.id))
+        def round(n: Int, name: String, category: Option[String] = None, media: Option[String] = None,
+            previous: Option[Round] = None) =
+          roundDao.create(Round(None, n, Some(name), contest.getId, category = category, mediaType = media,
+            previous = previous.map(_.getId.toString)))
+        round(1, "Wiki Loves Earth 2026 in Kyrgyzstan 1 round", Some("Category:Images from Wiki Loves Earth 2026 in Kyrgyzstan"))
+        round(2, "Wiki Loves Earth 2026 in Kyrgyzstan 2 round",
+          Some("Category:Quality images from Wiki Loves Earth 2026 in Kyrgyzstan"), Some("image"))
+        round(3, "Wiki Loves Earth 2026 in Kyrgyzstan real round", Some("Category:Images from Wiki Loves Earth 2026 in Kyrgyzstan"))
+        round(5, "шорт лист Wiki Loves Earth 2026 in Kyrgyzstan", Some("Category:Commons:Wiki Loves Earth 2026 in Kyrgyzstan/Long list"))
+        val longList = round(6, "6", Some("Category:Wiki Loves Earth 2026 in Kyrgyzstan long list"), Some("image"))
+        round(9, "Топ 10 раунд", previous = Some(longList))
+        val doc = page(app, admin, s"/admin/rounds?contestId=${contest.getId}")
+        // the three rounds alone on tracks named after them lose their chips; Quality (a category's
+        // track, of one round) and the long list keep theirs, and the Track menu stays
+        (rowChips(doc) === Map("Wiki Loves Earth 2026 in Kyrgyzstan 2 round" -> "Quality", "6" -> "long list",
+          "Топ 10 раунд" -> "long list")) and (doc.select("#rounds-track-menu").size === 1) and
+          // the Track menu lists only the tracks that show chips; the others' rounds under All tracks
+          (trackMenu(doc).map(t => (t._1, t._2)) === Seq("All tracks" -> "6", "long list" -> "2", "Quality" -> "1")) and {
+            // an old link to a track left out still filters, the menu showing it chosen
+            val old = page(app, admin, s"/admin/rounds?contestId=${contest.getId}&track=name%3A1%20round")
+            (rows(old) === Seq("Wiki Loves Earth 2026 in Kyrgyzstan 1 round")) and
+              (old.select("#rounds-track-menu .dropdown-item.active").text must contain("1 round"))
+          }
       }
     }
 

@@ -8,8 +8,7 @@
     @if(summary.isDefined) {
         <span class="image-check-summary">@summary.get</span>
     } else {
-        @Messages("round.images.check.status", job.id.toString):
-        @snippets.jobStatus(job, returnTo)
+        @snippets.jobStatus(job, returnTo, label = Some(Messages("round.images.check.status", job.id.toString)))
         <a href="@routes.JobController.status(job.id)">@Messages("round.images.check.job.link", job.id.toString)</a>
         <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
     }

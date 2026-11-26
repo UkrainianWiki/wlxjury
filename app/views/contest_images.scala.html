@@ -39,7 +39,7 @@
         @if(importJobs.nonEmpty) {
             <div class="card card-body p-2 mb-3" id="import-jobs">
                 @for((job, title) <- importJobs) {
-                    <div>@title: @snippets.jobStatus(job, req.uri)</div>
+                    <div>@snippets.jobStatus(job, req.uri, label = Some(title))</div>
                     @* a done import that kept no file, or left some out as in no country category of
                        this contest (support diagnostics plan, D-0b) *@
                     @if(ImageImportHandler.foundNoFiles(job)) {
