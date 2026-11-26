@@ -28,7 +28,7 @@ class SeriesReachGuardSpec extends Specification {
 
   /** Each action that opts in to derived roles, by file: the count of `derived = true`. */
   private val DerivedOptIns: Map[String, (Int, String)] = Map(
-    "app/controllers/RoundController.scala" -> (11, "rounds: list, create, edit, start, stop, statistics, round set; " +
+    "app/controllers/RoundController.scala" -> (12, "rounds: list, create, edit, start, stop, statistics, round set, cut preview; " +
       "Find the matching files again (saveRound's reinstating path, as the round form)"),
     "app/controllers/RoundJurorsController.scala" -> (4, "a round's jurors"),
     "app/controllers/RoundReviewController.scala" -> (5, "round review"),
@@ -206,8 +206,9 @@ class SeriesReachGuardSpec extends Specification {
     "app/views/roundStatTable.scala.html" -> (1, "the statistics: other jurors' selections, rejections, lists, totals"),
     "app/views/navbar.scala.html" -> (1, "the organisers' bar: the juror menu and all the jurors' views"),
     "app/views/roundStat.scala.html" -> (1, "the statistics' comments report link: the viewer's own list in an open round they judge"),
-    "app/controllers/RoundController.scala" -> (1, "the statistics' entries of the round stopped, started again or closed by " +
-      "a juror of it: none for a juror of the open round")
+    "app/controllers/RoundController.scala" -> (2, "the statistics' entries of the round stopped, started again or closed by " +
+      "a juror of it: none for a juror of the open round; the round form's cut control's link to the previous round's " +
+      "rating view (all the jurors' votes): none for a juror of that open round (withCutLinks)")
   )
 
   /** The queries that read every juror's votes of a round together outside [[controllers.RoundList]]

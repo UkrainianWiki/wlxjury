@@ -184,7 +184,8 @@
                     <input type="hidden" name="trackShown" value="true" />
 
                     @defining(!newRound) { noEdit =>
-                        @round.edit.imageFiltering(editRoundForm, rounds, regions, user, noEdit && !reapply, specialNominations)
+                        @round.edit.imageFiltering(editRoundForm, rounds, regions, user, noEdit && !reapply, specialNominations,
+                            state.cutPicker, roundsFilter.addTo(routes.RoundController.cutPreview().url) + "#top-n")
 
                         @* for an existing round, saving it ticked disqualifies its conflicts of interest,
                            their votes kept (RoundController.leaveOutConflicts): asked first when it has some *@

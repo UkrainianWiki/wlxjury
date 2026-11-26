@@ -151,6 +151,8 @@ POST        /theme                                                              
 GET         /admin/rounds                                                           @controllers.RoundController.rounds(contestId: Option[Long] ?= None)
 GET         /admin/rounds/edit                                                      @controllers.RoundController.editRound(id: Option[Long] ?= None, contestId: Long, topImages: Option[Int] ?= None, submitToken: Option[String] ?= None)
 POST        /admin/rounds/save                                                      @controllers.RoundController.saveRound()
+# the round form's "Choose N" of its top N (the cut picker): the form again with candidate cuts; saves nothing
+POST        /admin/rounds/cut-preview                                               @controllers.RoundController.cutPreview()
 GET         /admin/criteria                                                         @controllers.CriteriaController.list(contestId: Option[Long] ?= None)
 POST        /admin/criteria                                                         @controllers.CriteriaController.add(contestId: Option[Long] ?= None)
 # round_image_check jobs (round images against their votes): a round's, by its contest's admins; every round's, by root

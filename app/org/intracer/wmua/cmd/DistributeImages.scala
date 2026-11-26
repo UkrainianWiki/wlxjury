@@ -31,13 +31,19 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     )
   }
 
+  /** The page ids of a Commons category's files (not its subcategories'): `list=categorymembers`
+    * with `cmtype=file` and `cmlimit=max`, ids only (500 a request anonymously, 5000 with a bot's
+    * `apihighlimits`), not each file's image info (50 or 500 a request), which only its id was read
+    * of: the same files, a tenth of the requests. The fill, "Count new files", the cut picker and the
+    * save's check of a top N read it (the last three through RoundDistributionHandler's short cache).
+    */
   def categoryFileIds(maybeCategory: Option[String]): Iterable[Long] = {
     maybeCategory
       .filter(_.trim.nonEmpty)
       .map { category =>
         commons
           .page(category)
-          .imageInfoByGenerator("categorymembers", "cm", Set(Namespace.FILE))
+          .categoryMembers(Set(Namespace.FILE))
           .await(5.minutes)
           .flatMap(_.id)
       }

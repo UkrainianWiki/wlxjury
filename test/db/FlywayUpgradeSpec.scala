@@ -1147,6 +1147,58 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+  /** V116's rollback SQL after reopen (the script's last comment): the thresholds rounded to 2 places, the
+    * column narrowed back.
+    */
+  private val v116Rollback = Seq(
+    "UPDATE round SET prev_min_avg_rate = ROUND(prev_min_avg_rate, 2), created_at = created_at " +
+      "WHERE prev_min_avg_rate <> ROUND(prev_min_avg_rate, 2)",
+    "ALTER TABLE round MODIFY COLUMN prev_min_avg_rate DECIMAL(4, 2) NULL DEFAULT NULL",
+    "DELETE FROM flyway_schema_history WHERE version = '116'")
+
+  "V116's threshold precision" should {
+    "run after V115, keep the stored thresholds, store 4 places and large sums exactly, rerun as a no-op, and roll back" in {
+      val before = versions.takeWhile(_ != "116").last
+      emptyDb("fw_v116_prev")
+      flyway("fw_v116_prev", production.copy(target = Some(before))).migrate()
+      emptyDb("fw_v116")
+      flyway("fw_v116", production.copy(target = Some(before))).migrate().success must beTrue
+      Using.resource(connect("fw_v116"))(c => run(c, Seq(
+        "INSERT INTO round (id, number, contest_id, prev_min_avg_rate, created_at) " +
+          "VALUES (1, 1, 1, 7.25, '2020-01-02 03:04:05'), (2, 2, 1, NULL, '2020-01-02 03:04:05')")))
+      flyway("fw_v116", production.copy(target = Some("116"))).migrate().success must beTrue
+      val once = schema("fw_v116")
+      def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+      def values(db: String) = Using.resource(connect(db))(c =>
+        rows(c, "SELECT prev_min_avg_rate, created_at FROM round ORDER BY id")(rs =>
+          Option(rs.getBigDecimal(1)).map(_.toPlainString) -> rs.getString(2)))
+      val existing = values("fw_v116")
+      Using.resource(connect("fw_v116"))(c => run(c, Seq(
+        "INSERT INTO round (id, number, contest_id, prev_min_avg_rate) VALUES (3, 3, 1, 9.9091), (4, 4, 1, 123.4567), " +
+          "(5, 5, 1, 999999.9999)")))
+      val stored = values("fw_v116").map(_._1)
+      (history("fw_v116").map(_.split(" \\| ")(1)) === upTo("116")) and
+        (history("fw_v116").map(_.split(" \\| ")(1)) must contain("115")) and
+        (existing === List(Some("7.2500") -> "2020-01-02 03:04:05", None -> "2020-01-02 03:04:05")) and
+        (stored === List(Some("7.2500"), None, Some("9.9091"), Some("123.4567"), Some("999999.9999"))) and {
+          Using.resource(connect("fw_v116"))(c => run(c, Seq("DELETE FROM round WHERE id > 2")))
+          Using.resource(connect("fw_v116"))(c => run(c, statements("V116__Round_prev_min_avg_rate_precision.sql")))
+          (schema("fw_v116") === once) and (values("fw_v116").map(_._1) === List(Some("7.2500"), None))
+        } and {
+          Using.resource(connect("fw_v116"))(c => run(c, Seq(
+            "INSERT INTO round (id, number, contest_id, prev_min_avg_rate) VALUES (3, 3, 1, 9.9091)")))
+          Using.resource(connect("fw_v116"))(c => run(c, v116Rollback))
+          (history("fw_v116").map(_.split(" \\| ")(1)) === upTo(before)) and
+            (values("fw_v116").map(_._1) === List(Some("7.25"), None, Some("9.91"))) and {
+              Using.resource(connect("fw_v116"))(c => run(c, Seq("DELETE FROM round WHERE id > 2")))
+              tablesOnly(schema("fw_v116")) === tablesOnly(schema("fw_v116_prev"))
+            } and
+            (flyway("fw_v116", production.copy(target = Some("116"))).migrate().success must beTrue) and
+            (tablesOnly(schema("fw_v116")) === tablesOnly(once))
+        }
+    }
+  }
+
   /** V96's rollback SQL after reopen (CHANGELOG, the account change log): the live unsent
     * invitations revoked first, since an older release would show one as mailed; the log dropped.
     */

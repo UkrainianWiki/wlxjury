@@ -41,6 +41,8 @@ class ConcurrentRoundCreationSimulation extends Simulation {
   private val contestId = GatlingTestFixture.contestId
   private val binaryId  = GatlingTestFixture.roundBinaryId
   private val ratedId   = GatlingTestFixture.roundRatingId
+  private lazy val top100 = gatling.setup.TopNValid.atLeast(contestId, ratedId, 100)
+  private lazy val top500 = gatling.setup.TopNValid.atLeast(contestId, ratedId, 500)
   private val jurorIds  = GatlingTestFixture.jurorsIn(Some(binaryId)).map(_._1)
   private val admins    = GatlingTestFixture.organizers.take(math.max(cfg.admins, 1))
   private val timeout   = cfg.timeoutMinutes.minutes
@@ -78,10 +80,11 @@ class ConcurrentRoundCreationSimulation extends Simulation {
     ) ++ regions.map { case (r, _) =>
       AdminJob(s"Region $r$suffix", small = true, newRoundForm(s"Region $r$suffix", "regions[0]" -> r))
     } ++ Seq(
+      // top Ns the form's save takes: moved to the end of a tie they fall in (the cut picker)
       AdminJob(s"Top 100$suffix", small = true,
-        newRoundForm(s"Top 100$suffix", "previousRound[0]" -> ratedId.toString, "topImages" -> "100")),
+        newRoundForm(s"Top 100$suffix", "previousRound[0]" -> ratedId.toString, "topImages" -> top100.toString)),
       AdminJob(s"Top 500$suffix", small = true,
-        newRoundForm(s"Top 500$suffix", "previousRound[0]" -> ratedId.toString, "topImages" -> "500")),
+        newRoundForm(s"Top 500$suffix", "previousRound[0]" -> ratedId.toString, "topImages" -> top500.toString)),
       AdminJob(s"Rated avg 7$suffix", small = true,
         newRoundForm(s"Rated avg 7$suffix", "previousRound[0]" -> ratedId.toString, "minAvgRate" -> "7")),
       AdminJob(s"New files$suffix", small = true,

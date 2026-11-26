@@ -3,7 +3,7 @@
 //   (multi-select.js), a locked one left as rendered (its selected options as text);
 // - the previous rounds' filters: shown with a previous round chosen, a binary round's
 //   selection filters (#selectFilters, which has a class "round<id>" for each binary round)
-//   if any chosen round is binary, else the rates' filters (#rateFilters);
+//   if any chosen round is binary (a rated round's threshold is the cut control's, #top-n);
 // - the distribution's choices, one per number of jurors a file goes to, from the jurors
 //   chosen;
 // - the conflicts of interest's confirmation, when saving a round with the box ticked would
@@ -59,7 +59,7 @@
   function previousRoundsChanged() {
     var vals = $(this).val() || [];
 
-    $('#selectFilters, #rateFilters, #rejectFilters').hide();
+    $('#selectFilters, #rejectFilters').hide();
     var rejecting = false;
 
     if (vals.length) {
@@ -67,7 +67,7 @@
       var anyBinary = vals.some(function (v) {
         return $('#selectFilters').hasClass('round' + v);
       });
-      (anyBinary ? $('#selectFilters') : $('#rateFilters')).show();
+      if (anyBinary) $('#selectFilters').show();
       // "rejected by at least": a yes/no round's "no" votes, a rated round's ✗ (#rejectFilters
       // has the classes of the rounds whose votes may reject)
       rejecting = anyRejecting(vals);
@@ -270,9 +270,30 @@
       $('#new-files-count').text('…');
       $.getJSON(b.data('src'))
         .done(function (r) { $('#new-files-count').text(r.count); })
-        .fail(function () { $('#new-files-count').text('?'); })
+        // a message the server gives (Commons not answering for a category filter), else '?'
+        .fail(function (xhr) {
+          var r = xhr.responseJSON;
+          $('#new-files-count').text(r && typeof r.message === 'string' ? r.message : '?');
+        })
         .always(function () { b.prop('disabled', false); });
     });
+  }
+
+  /** The cut control's link to the previous round's rating view (round/edit/topN, #top-n-cut-link):
+    * the chosen cut's (its option's data-cut-href), hidden when none is chosen. */
+  function initCutLink(doc) {
+    var select = doc.getElementById('topImages');
+    var link = doc.getElementById('top-n-cut-link');
+    if (!select || !link || select.tagName !== 'SELECT') return;
+    function update() {
+      var option = select.options[select.selectedIndex];
+      var href = option ? option.getAttribute('data-cut-href') : null;
+      if (href) link.setAttribute('href', href);
+      else link.setAttribute('href', '#');
+      link.hidden = !href;
+    }
+    select.addEventListener('change', update);
+    update();
   }
 
   /** Space on a card's toggle: a click, as a role=button promises, and no page scroll. */
@@ -298,6 +319,7 @@
     initWorstMark(doc);
     initScoreRuleWarning(doc);
     initLazyParts();
+    initCutLink(doc);
     initCardToggleKeys(doc);
   }
 

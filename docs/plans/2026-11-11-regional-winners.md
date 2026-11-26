@@ -1801,9 +1801,23 @@ we need to unconditionally take all files of a small region? let the organizers 
 top-N count they want to use.")*
 
 **What it does.**
-- It takes a ranked list of eligible candidates, by the same rank key the fill uses
+- It takes a ranked list of eligible candidates, in the order the fill takes them
   (`DistributionSource.rank`: rated rows scored in their round, then by the sum; yes/no rows by
   the `BinaryOrder`), with the same filters (CoI, deleted on Commons, region).
+- **Ties are by the score alone** (decided 2026-11-26 (maintainer)): two files with the same score
+  (a rated source's average; a yes/no source's level by its `BinaryOrder`) tie even if their sums
+  differ, so N never cuts between them. The fill's order inside a tie (score, sum, page id) stays,
+  since a valid N never cuts inside one. The picker and the save's check use one function
+  (`RoundDistributionHandler.tieKey`), so the values offered are the values allowed.
+- **Backstop in the job** (decided 2026-11-26 (maintainer)): after the freeze, the round
+  distribution job's Rank step compares the files at N and N + 1 by the same rule; on a tie it
+  fails with the form's message ("N = n is inside a tie …"), adding no file, and the admin picks N
+  again. It applies to an N the form has just checked (a new round, a re-apply); "Distribute new
+  files" keeps a round's N.
+- **A category filter's files** (accepted 2026-11-26 (maintainer)): the picker, the save's check and
+  "Count new files" read them from Commons once and use them for up to 5 minutes; the job reads them
+  fresh. If the category changes in between, the files the job's top N takes may differ slightly from
+  those the save checked; the backstop catches only a tie at N.
 - It lists **candidate cuts**, each with its reason, and draws them in a **cut gallery**.
 - The admin picks N from the valid values only: a candidate cut, a "Cut here", or the N list,
   which has no value inside a tie (below). The chosen N is stored. Nothing is preselected, for a
@@ -1833,9 +1847,9 @@ from 0, since a ✗ (rate -1) counts as 0, and under `assigned` so does an unrat
   "N = 6: 6 files within 0.5 of the best (8.3)."
 - **C3, all candidates:** N = m, when `m ≤ hi` (main rounds) or `m ≤ 25` (regions, so a small
   region always has "all candidates" among its cuts). Reason: "N = 7: all 7 candidates."
-- **C4, around the target** (when C1 finds none): the cut positions nearest the target (main
-  rounds) or the middle of `[lo, hi]` (regions), one on each side. Reason: "N = 6: no clear drop
-  between files 3 and 10 (scores 8.1 to 7.4)."
+- **C4, around the target: removed** (decided 2026-11-26 (maintainer): no target; the admin picks
+  from the list). With no clear drop, the candidates are C3 and C5 only, and the N list offers
+  every valid value.
 - **C5, tie boundaries at the window's edge:** when a tie spans `lo` or `hi`, or the whole
   window (e.g. `lo = hi = 3` with `s3 = s4`), its two boundaries are candidates, even outside the
   window. Bounds yield to ties. The lower boundary is not offered when it is 0 (places 1 to `hi`
@@ -1869,14 +1883,70 @@ round. The numbers below are **defaults**:
   - v4's `hi = min(10, ⌈m / 5⌉)` gave 4–7 for a region of 21–35 files, half of what rated rounds
     carried (median 16).
 
-**Main rounds:** the admin may give a target `T` (e.g. 40), and the window is `[⌈0.8 T⌉,
-⌊1.25 T⌋]`. Without a target, the window is the first 100 places, and C1 lists the largest drops
-in it.
+**Main rounds** (decided 2026-11-26 (maintainer): no target; the admin picks from the list): the
+window is the first 100 places, and C1 lists the largest drops in it. The control offers every
+valid cut (below: one cut control), and the admin picks from it.
+
+**One cut control for main rounds** (decided 2026-11-26 (maintainer), the rework of #237). "Average
+file rating at least X" (`prev_min_avg_rate`, the form's `minAvgRate`) and the top N are the same
+cut: with ties by the score alone, each valid N is exactly one score threshold. (The fill's "average
+≥ X" compares the same score as `tieKey`, on the same rows; with several previous rounds "any row ≥ X"
+is "the best row ≥ X", the row a file ranks by, so the fill is unchanged.)
+- **The control** lists every valid cut as an "N / score" pair: "top 88 · score ≥ 8.0"; a yes/no
+  source's as N and the lowest level kept ("top 88 · 3 yes, 0 no"). The candidate cuts come first
+  (an option group), labelled with their reasons (C1 largest drop, C2 close to the best, C3 all
+  candidates, C5 tie boundaries); the other valid cuts follow. "No top N" is always an option.
+  Offered == allowed: the options are exactly the values the save accepts. The threshold of a cut is
+  the shortest decimal (at most 4 places) at or below file N's score and above file N + 1's
+  (`CutPicker.threshold`); a cut that 4 places can't separate (averages of thousands of votes) is
+  named and kept by its N only.
+- **What the round keeps** (rated sources): "the files scoring at least the cut's score" (the
+  default) or "the top N files". A threshold can't fall inside a tie, so the job's backstop doesn't
+  apply to it; the help text says so. Yes/no sources always keep N. **Storage:** N in `top_images`,
+  the threshold in `prev_min_avg_rate`; a new save or re-apply never sets both.
+- **The separate threshold field is gone** from the new-round and re-apply form. Before "Choose N" the
+  form shows the cut it holds (a top N, a threshold, or a legacy round's both) as hidden fields.
+- **Legacy rounds:** a started round with either value, or both, shows them read only in #225's locked
+  look. On a re-apply the control preselects the held cut: a valid stored N (kept as N), or the cut a
+  stored threshold keeps now (kept as that threshold, which is stored again unchanged while it takes
+  the same files). Otherwise it explains and requires a pick: an N inside a tie (the placeholder posts
+  it again, so a save refuses it rather than dropping it), a threshold no file reaches, or both values
+  ("a round keeps one cut now: choose it"; a save of both as stored is refused).
+- **The save check:** N must be a valid cut, as before. Any threshold is fine (it can't split a tie);
+  the settings log keeps the N it took when saved (`topImagesBasis.chosen`, with `threshold`).
+- **No match:** when no file matches the filters, the control has "No top N" only, the held N stays
+  in the placeholder, and a save of it is refused ("no cut to choose"): a held N is never dropped
+  silently.
+- **Compact:** no cut gallery, "Show more" or preview line on the form; the picker reads no file in
+  full (`rankAll(keep = 0)`).
+- **"Show this cut in the ratings":** a link, beside the control, to the previous round's rating view
+  (`/byrate/round/:round/user/0/page/:page?sort=…&cut=N#cut`, a new tab), where a divider between file
+  N and N + 1 reads "Cut: top 88 · score ≥ 8.0" on the page with file N, scrolled into view
+  (file-anchor.js). `cut` is checked server-side (`RoundList.cutAt`: only on the unfiltered list of all
+  the jurors' votes in the picker's order, only between two different scores; the text is the
+  server's own). The link is shown only where that view shows the same cut (`CutPicker.viewable` and
+  `RoundDistributionHandler.cutViewData`): one previous round; no filter the view doesn't apply
+  (region, monuments, category, rounds left out, size, megapixels, media type, special nomination,
+  "selected by", "rejected by"); the picker left none of the view's files out (its per-image filters
+  kept every file it read, so "Leave out conflicts of interest", on by default, counts only when it
+  leaves a file out; no deleted file with votes there; no disqualified file of a re-apply); and the same
+  order and tie key, which holds for every average rule (`rated`, `assigned`: the view's exact
+  `AverageRule.keySql` key; `sum`: the sum), criteria rounds (the vote rate is the criteria's sum in
+  both), and each yes/no `BinaryOrder` (the link names it as `sort`). Otherwise no link (not a
+  disabled one). **Confidentiality:** the picker's aggregated scores are shown to every admin of the
+  round, but the link is not shown to a juror of the open previous round
+  (`GalleryService.othersVotesVisible`, listed in the guard spec). A combined cut viewer (several
+  rounds, filters) is a follow-up.
+- **Migration V116:** `prev_min_avg_rate` from DECIMAL(4,2) to DECIMAL(10,4), so every cut between
+  averages of up to about 100 votes per file is stored exactly and large sum or criteria scores fit.
+- The job keeps reading a category filter's files fresh (the 5-minute gap above stays, maintainer-
+  approved).
 
 **The N control** (question 3 **[user]**, 2026-11-26: "why would we allow entering a wrong value
 in the UI in the first place?"):
-- It offers only valid values: a list (`<select>`) of every cut position up to the gallery's end,
-  the candidate cuts labelled with their reasons. A value inside a tie is not in the list. With a
+- It offers only valid values: a list (`<select>`) of every cut position (for main rounds: every
+  valid cut, as "N / score" pairs, see "One cut control"), the candidate cuts labelled with their
+  reasons. A value inside a tie is not in the list. With a
   script, it may become a stepper that jumps from one tie boundary to the next.
 - **"Choose N" replaces the free top-N box** (confirmed **[user]**, 2026-11-26, for main rounds
   and regions): before the candidates are loaded, the round form shows the stored N (or none) and
@@ -1886,7 +1956,9 @@ in the UI in the first place?"):
   36–39); choose 35 or 39" (the lower boundary only if above 0). Today the fill would cut such a
   tie by page id, silently.
 
-**The cut gallery** (a shared Twirl partial; server-rendered, no script needed):
+**The cut gallery** (a shared Twirl partial; server-rendered, no script needed). *(2026-11-26: not on
+the round form any more: main rounds use the one cut control and the rating view's divider instead;
+the regions' places 2 and 3 may still use a gallery.)*
 
 ```
 Round R-03, region 07 Volyn O.: 23 candidates, ranked by average (rated, 1–10)
@@ -1914,7 +1986,7 @@ exactly as the fill ranks.
   cut in the window. C1's gap test and C2 don't apply.
 - The reason names the level: "N = 37: all files with 3 yes and no no; the next 120 files have
   3 yes, 1 no."
-- With more than 6 boundaries in the window, those nearest the target or the middle are listed;
+- With more than 6 boundaries in the window, those nearest its middle are listed;
   the gallery draws them all, and the N list offers them all.
 
 **Several previous rounds:** the fill ranks a file by its best row, each scored in its own round,
@@ -1931,24 +2003,27 @@ its yes/no previous rounds are ranked by the same order, today and here.
 - `views.html.cutGallery`: the partial.
 
 **Place 1: the round form, step 1 "Which files"** (UI-path plan's numbered steps). In place of
-today's number box "Number of top files from the previous rounds" (`top.images`), after "Choose N":
+today's number box "Number of top files from the previous rounds" (`top.images`) and the threshold
+field, after "Choose N" (as built, 2026-11-26: the one cut control above, with "the round keeps"
+and the ratings link, no gallery; the sketch below is the first version):
 
 ```
-Number of top files from the previous rounds  N [ 37 · scores drop 7.2 → 6.1, largest drop ▾ ]   Target (optional) [ 40 ]
+Number of top files from the previous rounds  N [ 37 · scores drop 7.2 → 6.1, largest drop ▾ ]   [ Choose N ]
   Candidate cuts:  [N = 33 · scores drop 7.6 → 7.2]  [N = 37 · scores drop 7.2 → 6.1, largest drop]
                    [N = 46 · scores drop 5.9 → 5.5]
   Preview (N = 37): 37 of 412 files, lowest included score 7.2.
-  (the cut gallery below, from place 1 to 55)
+  (the cut gallery below, from place 1 to 105)
 ```
 
-- "Choose N" (and a changed target) posts the form to a preview action that re-renders step 1 with
+- "Choose N" posts the form to a preview action that re-renders step 1 with
   its values, the N list, the candidates and the gallery. A candidate or "Cut here" is a submit
   button that sets N and re-renders the same way. It saves nothing and needs no script; a script
   may enhance it later.
-- Saving keeps `top_images` as today. The choice (target, the candidates shown, the chosen cut's
-  reason, or "chosen from the list") goes into the round's V114 change-log entry as
+- Saving keeps `top_images` as today, or the threshold in `prev_min_avg_rate` (one cut control,
+  never both). The choice (the candidates shown, the chosen cut's reason, or "chosen from the list",
+  and a threshold's files when saved) goes into the round's V114 change-log entry as
   `topImagesBasis`. So the round form and lineage can say "N = 37, chosen 2026-12-01: scores drop
-  7.2 → 6.1". **No migration.**
+  7.2 → 6.1". Migration V116 widens `prev_min_avg_rate` (one cut control).
 - A re-apply, a resubmit or "Distribute new files" ranks with the stored N; nothing is chosen
   again. If the previous rounds' votes changed since, the preview warns.
 
@@ -2178,7 +2253,7 @@ time (the shared run lock), in this order (question 13 **[user]**, 2026-11-26):
 
 ### 10.9 Tests (v4; updated 2026-11-26)
 
-- **`TopNCandidatesSpec`** (unit): C1–C5 on rated lists, at most 6, duplicates merged, never N = 0,
+- **`TopNCandidatesSpec`** (unit): C1, C2, C3 and C5 on rated lists (no C4), at most 6, duplicates merged, never N = 0,
   none above 25 for a region; the valid values never include an N inside a tie; nothing
   preselected; a small region lists "N = m: all candidates" (m ≤ 25); the window
   `[min(3, m), min(15, max(lo, ⌈m/3⌉))]`; yes/no levels under each `BinaryOrder` and the legacy
@@ -2243,7 +2318,7 @@ One decision each, asked one by one. The recommendation comes last in each.
 
 1. **How N is chosen.** **Decided [user] (maintainer, 2026-11-25):** not a single suggested N:
    "show possible numbers and a gallery to view them and decide". The app lists candidate cuts
-   (C1–C5, §10.4), each with its reason, and a cut gallery; the admin picks N; the chosen N is
+   (C1, C2, C3, C5, §10.4), each with its reason, and a cut gallery; the admin picks N; the chosen N is
    stored. Asked as: (a) the largest gap as one suggested N; (b) a fixed share; (c) natural breaks
    (Jenks); (d) a fixed distance from the best. The recommendation was (a).
 2. **A region's window ("amount").** Asked as: `lo = min(3, m)`, `hi = min(10, max(lo, ⌈m / 5⌉))`,

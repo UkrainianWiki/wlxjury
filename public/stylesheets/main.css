@@ -1181,3 +1181,17 @@ div.thumb_small.wlx-thumb-failed .wlx-video-mark {
         max-height: min(70dvh, calc(100dvh - var(--wlx-topbar-height, 0px) - .5rem));
     }
 }
+
+/* The cut shown in a round's rating view (galleryByRate.scala.html, `?cut=N` from the round form's cut
+   control): a line across the tiles between file N and N + 1, labelled, the tiles' inline-block row
+   broken by its full width. Theme colours only (light and dark); scrolled to by file-anchor.js (#cut). */
+li.wlx-cut-divider {
+    display: block;
+    width: 100%;
+    list-style: none;
+    margin: .5rem 0;
+    padding: .25rem .5rem 0;
+    border-top: 2px dashed var(--bs-primary);
+    color: var(--bs-primary-text-emphasis);
+    font-weight: 600;
+}

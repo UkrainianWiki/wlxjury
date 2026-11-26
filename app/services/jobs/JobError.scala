@@ -74,7 +74,9 @@ object JobError {
   /** Keys of a handler's refusals by its own checks, stored as they are and shown as the form
     * shows them: the round distribution's rounds to leave out (V95).
     */
-  val RefusalKeys: Set[String] = services.distribution.RoundDistributionHandler.ExcludeRoundsKeys
+  val RefusalKeys: Set[String] = services.distribution.RoundDistributionHandler.ExcludeRoundsKeys ++
+    // a top N cutting inside a tie, refused by the job's Rank step (the save's backstop), as the form says it
+    Set(services.TopNCandidates.InTieKey, services.TopNCandidates.InTieUpperKey)
 
   /** A stored `job.error`; anything that isn't one of ours (an older row's exception text)
     * reads as [[UnknownKey]], so it is never shown.

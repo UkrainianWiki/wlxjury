@@ -170,7 +170,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
     "show any other failure of the creation as a reference, not its text" in {
       val failing = org.mockito.Mockito.mock(classOf[services.RoundService])
       import org.mockito.ArgumentMatchers.any
-      org.mockito.Mockito.when(failing.submit(any(), any(), any(), any(), any(), any()))
+      org.mockito.Mockito.when(failing.submit(any(), any(), any(), any(), any(), any(), any()))
         .thenThrow(new IllegalStateException("Duplicate entry 'secret' for key 'round.name'"))
       testDbAppWith(bind[services.RoundService].toInstance(failing)) { implicit app =>
         val (contest, admin, round) = fixture()
@@ -186,7 +186,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
     "keep the number of top files off a new round's form without ?topImages, and refuse one below 1" in {
       testDbApp { implicit app =>
         val (contest, admin, round) = fixture()
-        // top-N stays unlinked until its ties are decided (roadmap, the user, 2026-11-05)
+        // no top N held: no field submits one (the cut picker's "Choose N" loads the valid values, §10.4)
         val html = contentAsString(route(app, get(s"/admin/rounds/edit?contestId=${contest.getId}", admin)).get)
         html must not(contain("""name="topImages""""))
 
@@ -205,12 +205,15 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         topOrderChoices(html) === ((Seq("approvals", "difference", "approvals-only"), Seq("approvals")))
 
         val jurors = User.findRoundJurors(round.getId).map(_.getId)
+        // a top N the save takes: the first that doesn't split a tie of the previous round's ranking (§10.4)
+        val n = services.TestRoundServices.roundService().cutPicker(Round(None, 0, None, contest.getId,
+          previous = Some(round.getId.toString)), None).get.result.validUpTo(1000).head.toString
         val saved = route(app, saveNewRound(contest.getId, jurors, java.util.UUID.randomUUID().toString, admin,
-          Seq("previousRound[0]" -> round.getId.toString, "topImages" -> "1", "topBinaryOrder" -> "approvals"))).get
+          Seq("previousRound[0]" -> round.getId.toString, "topImages" -> n, "topBinaryOrder" -> "approvals"))).get
         status(saved) must_== SEE_OTHER
         // a form without the field (an older page) stores the default too
         val omitted = route(app, saveNewRound(contest.getId, jurors, java.util.UUID.randomUUID().toString, admin,
-          Seq("previousRound[0]" -> round.getId.toString, "topImages" -> "1"))).get
+          Seq("previousRound[0]" -> round.getId.toString, "topImages" -> n))).get
         status(omitted) must_== SEE_OTHER
         roundDao.findByContest(contest.getId).filter(_.name.contains("Round 2")).map(_.topBinaryOrder) ===
           Seq(Some(org.intracer.wmua.BinaryOrder.Default), Some(org.intracer.wmua.BinaryOrder.Default))
@@ -231,7 +234,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "save a round stored with a top-N of 0 (legacy) from its own form, the number field shown only for N > 0" in {
+    "save a round stored with a top-N of 0 (legacy) from its own form, its N shown (read only) only for N > 0" in {
       import scala.jdk.CollectionConverters._
       testDbApp { implicit app =>
         val (contest, admin, previous) = fixture()
@@ -247,7 +250,9 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
           .withFormUrlEncodedBody(sent(stored).filterNot(_._1.startsWith("jurors")) ++ jurors: _*).withCSRFToken).get
         (stored.select("[name=topImages]").size === 0) and
           (page("&topImages=0").select("[name=topImages]").size === 0) and
-          (page("&topImages=3").select("input[name=topImages][type=number][min=1][value=3]").size === 1) and
+          // no free number box (the cut picker, §10.4): a started round's N read only
+          (page("&topImages=3").select("#topImages_field input#topImages.wlx-locked").attr("value") === "3") and
+          (page("&topImages=3").select("input[name=topImages]:not([disabled])").size === 0) and
           // on a refusal, the form's errors say which field
           (status(result) aka org.jsoup.Jsoup.parse(contentAsString(result))
             .select(".invalid-feedback, .alert-danger").asScala.map(e => e.parent().text).mkString(" | ") must_== SEE_OTHER) and
@@ -490,7 +495,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
           (select.hasClass("wlx-locked") must beTrue) and (select.hasAttr("disabled") must beTrue) and
             (select.attr("aria-describedby") must contain("round-filters-locked"))
         }
-        forall(Seq("source", "excludeCategory", "monumentIds", "minAvgRate")) { id =>
+        forall(Seq("source", "excludeCategory", "monumentIds")) { id =>
           val input = doc.getElementById(id)
           (input.hasClass("wlx-locked") must beTrue) and (input.hasAttr("readonly") must beTrue)
         }

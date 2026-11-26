@@ -9,7 +9,9 @@
         regions: Map[String, String] = Map.empty,
         user: User,
         noEdit: Boolean,
-        specialNominations: Seq[SpecialNomination] = Nil
+        specialNominations: Seq[SpecialNomination] = Nil,
+        cutPicker: Option[services.CutPicker] = None,
+        previewUrl: String = ""
 )(implicit messages: Messages)
 @implicitLayout = @{ bs.Layout.horizontal("col-md-4", "col-md-8") }
 @prevIds = @{ editRoundForm("previousRound").indexes.flatMap(i => editRoundForm(s"previousRound[$i]").value) }
@@ -24,9 +26,10 @@
    the section's reason line (#round-filters-locked) *@
 @lockedBy = @{ Option.when(noEdit)("round-filters-locked") }
 @* open when a category is in its boxes, and when one of its fields has an error (a refused save's,
-   RoundFormErrors: shown closed, the 2026-11-25 saves came back with their error out of sight) *@
+   RoundFormErrors: shown closed, the 2026-11-25 saves came back with their error out of sight), and once
+   "Choose N" loaded the top N's candidate cuts (round/edit/topN) *@
 @snippets.collapsible("media.filtering", "headingImageFiltering", "collapseImageFiltering",
-    open = categoryView.hasCategory || controllers.RoundFormErrors.inMediaFiltering(editRoundForm)) {
+    open = categoryView.hasCategory || controllers.RoundFormErrors.inMediaFiltering(editRoundForm) || cutPicker.isDefined) {
     @if(noEdit) {
         <p class="form-text wlx-locked-reason" id="round-filters-locked"><i class="bi bi-lock-fill" aria-hidden="true"></i> @Messages("round.filters.locked")</p>
     }
@@ -62,7 +65,7 @@
             @* the order that picks a top-N from a yes/no previous round, stored with the round, so
                its page shows which rule picked its files and a later distribution picks the same;
                the legacy rule only for a round from before V72 that has it *@
-            @if(editRoundForm("topImages").value.exists(_.nonEmpty) && topOrderApplies) {
+            @if((editRoundForm("topImages").value.exists(_.nonEmpty) || cutPicker.isDefined) && topOrderApplies) {
                 @bs.select(
                     editRoundForm("topBinaryOrder"),
                     BinaryOrder.all.map(order => (order.param, Messages(order.messageKey))) ++
@@ -97,32 +100,11 @@
                 Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy)
             </div>
 
-            <div id="rateFilters"
-            class="@rounds.filterNot(_.isBinary).map(r => "round" + r.getId).mkString(" ")">
-            @* from a criteria round, the average of its files' criteria sums (U7); from a round scored
-               by the sum (AverageRule.Sum), a minimum score, a sum: the hints say so when a round the
-               form offers is one *@
-            @bs.text(
-                editRoundForm("minAvgRate"),
-                Symbol("_label") -> Messages("average.file.rating.is.at.least"),
-                Symbol("_help") -> Seq(
-                    Option.when(rounds.exists(r => r.hasCriteria && !r.isBinary))(Messages("average.file.rating.criteria.sum")),
-                    Option.when(rounds.exists(r => !r.isBinary && r.averageRule == org.intracer.wmua.AverageRule.Sum))(
-                        Messages("average.file.rating.sum"))).flatten.mkString(" "),
-                Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy
-            )
-            </div>
-
-            @* hidden in 26.11 unless the URL gives ?topImages=N (N > 0; RoundController.editRound
-               maps 0 to none), or the form comes back with one: a number of at least 1, as the
-               form's mapping takes *@
-            @for(topImages <- editRoundForm("topImages").value) {
-                @bs.inputType("number",
-                    editRoundForm("topImages"),
-                    Symbol("_label") -> Messages("top.images"),
-                    Symbol("min") -> 1
-                )
-            }
+            @* the cut (regional winners plan §10.4, the cut picker): one control for a top N and a
+               rated source's "average file rating at least X", the same cut (decided 2026-11-26): no
+               free number box and no threshold field; "Choose N" loads every valid cut
+               (round/edit/topN) *@
+            @views.html.round.edit.topN(editRoundForm, cutPicker, noEdit, previewUrl)
         </div>
 
         @* "Leave out files that are in round(s)" (V95): the contest's other rounds; with or without

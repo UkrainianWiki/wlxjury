@@ -7,7 +7,7 @@ import play.api.Logging
 import play.api.data.Form
 import play.api.data.Forms._
 import play.api.i18n.{I18nSupport, Messages}
-import play.api.libs.json.Json
+import play.api.libs.json.{JsObject, Json}
 import play.api.mvc.{AnyContent, ControllerComponents, EssentialAction, Request, RequestHeader, Result}
 import play.twirl.api.Html
 import services.RoundService
@@ -164,7 +164,8 @@ class RoundController @Inject() (
       submitToken: Option[String] = None,
       storedCriteria: Option[Seq[Long]] = None,
       summaryHeading: Option[String] = None,
-      waitKey: Option[String] = None
+      waitKey: Option[String] = None,
+      cutPicker: Option[services.CutPicker] = None
   )(implicit request: RequestHeader): Html = {
     val contestId = round.contestId
     val rounds = knownRounds.getOrElse(Round.findByContest(contestId))
@@ -211,19 +212,164 @@ class RoundController @Inject() (
         resolveUrl = resolveUrl,
         // refused to wait for another round's job (Q7): that job's live progress at the top
         waitFor = RoundFormWait.of(form, contestId, waitKey),
-        summaryHeading = summaryHeading)
+        summaryHeading = summaryHeading,
+        cutPicker = cutPicker)
     )
   }
 
   /** A refused save's page: the round form again through [[roundFormView]] (its mode, menus and
     * jurors as on its GET), answered 400, logged as `form_refused` ([[FormRefusal]]).
     */
-  private def refusedForm(user: User, round: Round, form: Form[EditRound], submitToken: Option[String])(implicit
+  private def refusedForm(user: User, round: Round, form: Form[EditRound], submitToken: Option[String],
+      cutPicker: Option[services.CutPicker] = None)(implicit
       request: RequestHeader): Result = {
     val placed = RoundFormErrors.placed(form)
     RoundController.formPage(FormRefusal.badRequest(RoundController.FormId, user, Some(round.contestId), round.id,
-      placed)(roundFormView(user, round, placed, submitToken = submitToken)))
+      placed)(roundFormView(user, round, placed, submitToken = submitToken, cutPicker = cutPicker)))
   }
+
+  /** "Choose N" of the round form's cut (regional winners plan §10.4, place 1; one control, decided
+    * 2026-11-26): the form, posted here, comes back as it was with the control listing every valid cut
+    * of its previous rounds' files ("N / score"), the candidate cuts labelled, and the cut it holds (a
+    * top N, a threshold, or a legacy round's both) preselected or explained ([[services.CutPicker.holding]]).
+    * Saves nothing (the form's Save does, checking the cut again). The posted contest's admins (and root)
+    * only; an existing round only while its filters are edited (held in review for a re-apply), else back
+    * to its form. Never switches the session's contest (a POST).
+    */
+  def cutPreview(): EssentialAction =
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
+      val bound = editRoundForm.bindFromRequest()
+      val contestId = bound.data.get("contest").flatMap(_.toLongOption)
+      val roundId = bound.data.get("id").flatMap(_.toLongOption)
+      if (!contestPermission(User.ADMIN_ROLES, contestId)(user))
+        onUnAuthorized(user, request, Secured.Denial.contest(contestId, User.ADMIN_ROLES))
+      else (contestId, roundId) match {
+        case (None, _) => BadRequest(views.html.errorPage(Some(user), "error.title", "error.invalid"))
+        case (Some(cid), None) =>
+          val number = bound.data.get("number").flatMap(_.toLongOption).getOrElse(0L)
+          cutPreviewPage(user, new Round(id = None, contestId = cid, number = number), bound,
+            RoundController.formToken(RoundController.submitToken(request)), skipDqOf = None)
+        case (Some(cid), Some(id)) =>
+          withAdminRound(user, id, roundNotFound(user), request) {
+            case stored if stored.contestId != cid =>
+              onUnAuthorized(user, request,
+                Secured.Denial.round(stored, User.ADMIN_ROLES).copy(reason = Some("round_in_other_contest")))
+            // its filters aren't edited (started, voted, or with a job): no N to choose; its form
+            case stored if !roundsService.reapplyable(stored) =>
+              Redirect(routes.RoundController.editRound(Some(id), cid).url)
+                .flashing("error" -> messagesApi.preferred(request)("top.n.not.editable", stored.number))
+            // a re-apply's ranking skips the round's disqualified files, as its fill does (D17)
+            case stored => cutPreviewPage(user, stored, bound, None, skipDqOf = Some(id))
+          }
+      }
+    }
+
+  /** [[cutPreview]]'s page: the posted form with its picker, or with its errors (no picker) if it
+    * doesn't bind.
+    */
+  private def cutPreviewPage(user: User, shown: Round, bound: Form[EditRound], token: Option[String],
+      skipDqOf: Option[Long])(implicit request: Request[AnyContent]): Result = {
+    def page(form: Form[EditRound], picker: Option[services.CutPicker]): Result =
+      RoundController.formPage(Ok(roundFormView(user, shown, RoundFormErrors.placed(form), submitToken = token,
+        cutPicker = picker)))
+    bound.value match {
+      // the form's own errors, as a save would show them: fixed first
+      case None => page(bound, None)
+      case Some(edit) =>
+        // without a top N the form binds no order: the order chosen in the form ranks a yes/no source
+        val round = edit.round.copy(id = shown.id,
+          topBinaryOrder = org.intracer.wmua.BinaryOrder.ofForm(bound.data.get("topBinaryOrder")))
+        try {
+          roundsService.cutPicker(round, None, skipDqOf) match {
+            case None => page(bound.withError("topImages", "top.n.no.previous"), None)
+            case Some(found) =>
+              // the cut the form holds: preselected, or explained with a pick required
+              val held = found.copy(heldThreshold = RoundController.CutParams.heldRate(request))
+                .holding(round.topImages, round.prevMinAvgRate, RoundController.CutParams.keep(request))
+              // an existing round's N chosen before: warned if its previous rounds' votes changed since
+              val basis = shown.id.flatMap(id => ContestChangeJdbc.findByRound(shown.contestId, id, 50)
+                .flatMap(c => (c.detail \ RoundChanges.TopImagesBasis).asOpt[JsObject]).headOption)
+              page(bound, Some(withCutLinks(user, round, held.copy(changedSince = basis.exists(held.differsFrom)),
+                skipDqOf)))
+          }
+        } catch {
+          // the rounds to leave out refused (V95): their message, in the page's language, as a save shows it
+          case refused: RoundDistributionHandler.ExcludeRoundsRefused =>
+            logger.warn(s"Round form: no candidate cuts: ${refused.text}")
+            page(bound.withError("topImages", refused.refusal.key, refused.refusal.args: _*), None)
+          // Commons didn't give the category filter's files
+          case unavailable: RoundDistributionHandler.CategoryFilesUnavailable =>
+            logger.warn(s"Round form: no candidate cuts: ${unavailable.getMessage}")
+            page(bound.withError("topImages", RoundController.CommonsUnavailableKey), None)
+          case NonFatal(e) =>
+            RoundController.refusal(e) match {
+              case Some(text) =>
+                logger.warn(s"Round form: no candidate cuts: $text")
+                page(bound.withError("topImages", "top.n.failed", text), None)
+              case None =>
+                val reference = Secured.newReference()
+                logger.error(s"Round form: no candidate cuts ref=$reference", e)
+                page(bound.withError("topImages", "top.n.failed.reference", reference), None)
+            }
+        }
+    }
+  }
+
+  /** The picker with each cut's link to the previous round's rating view, where that view shows the same
+    * cut between the same files ([[services.RoundService.cutViewable]]) and `user` may see other jurors'
+    * votes there: not a juror of that round while it is open (the conflict-of-interest rule,
+    * GalleryService.othersVotesVisible). The picker's own scores are aggregates, shown to every admin of
+    * the round; the rating view shows each juror's votes.
+    */
+  private def withCutLinks(user: User, round: Round, picker: services.CutPicker, skipDqOf: Option[Long]): services.CutPicker =
+    picker.ranking.prevRounds match {
+      // the settings first, then the viewer, then the data (a count over the round's votes)
+      case Seq(prev) if prev.id.isDefined && services.CutPicker.viewable(round, picker.ranking) &&
+          services.GalleryService.othersVotesVisible(Secured.inContest(user, prev.contestId), prev) &&
+          roundsService.cutViewable(round, picker, skipDqOf) =>
+        picker.copy(links = picker.options.map(n =>
+          n -> services.CutPicker.viewUrl(prev.getId, picker.ranking.order, n)).toMap)
+      case _ => picker
+    }
+
+  /** A posted cut checked against the files it would take now (§10.4; one control, decided 2026-11-26),
+    * and what the round stores of it (never both): a top N inside a tie, above the candidates or of none
+    * is refused ([[RoundController.TopNRefused]], with the picker to choose again), and so is a legacy
+    * round's two cuts posted as they were (a round keeps one now, chosen in the control); a valid N is
+    * kept as posted (`cutKeep`): the top N, or a rated source's threshold ([[services.CutPicker.stored]]).
+    * A threshold alone is kept as it is: any threshold is a cut (it can't fall inside a tie). With how a
+    * cut was chosen, for the round's settings log; nothing without a top N.
+    */
+  private def checkCut(round: Round, skipDqOf: Option[Long])(implicit
+      request: Request[AnyContent]): (Round, Option[JsObject]) =
+    round.topImages match {
+      case Some(n) if round.previousIds.nonEmpty =>
+        val keep = RoundController.CutParams.keep(request)
+        roundsService.cutPicker(round, Some(n), skipDqOf).fold((round.copy(prevMinAvgRate = None), Option.empty[JsObject])) {
+          found =>
+            val picker = found.copy(heldThreshold = RoundController.CutParams.heldRate(request))
+            // a legacy round's top N and threshold posted as stored (the control not loaded): one is chosen
+            if (round.prevMinAvgRate.isDefined && keep.isEmpty && !picker.levels) {
+              val held = picker.holding(Some(n), round.prevMinAvgRate, None)
+              throw RoundController.TopNRefused(held, held.pick.map(_.msg).getOrElse(
+                services.TopNCandidates.Msg(services.TopNCandidates.NoCandidatesKey)))
+            }
+            picker.result.refusal(n).foreach(msg =>
+              throw RoundController.TopNRefused(picker.holding(Some(n), None, keep), msg))
+            val kept = picker.copy(keep = keep.getOrElse(services.CutPicker.Keep.Top))
+            val (top, threshold) = kept.stored(n)
+            (round.copy(topImages = top, prevMinAvgRate = threshold), Some(kept.basis(n, threshold)))
+        }
+      // no previous rounds: no cut to keep
+      case Some(_) => (round.copy(prevMinAvgRate = None), None)
+      // a threshold alone: kept only from a rated head previous round, the one the fill applies it to
+      // (DistributeImages.perImageFilters); none from a yes/no one or without previous rounds, where
+      // it would be shown (the locked form, the contest's health) but never applied
+      case None =>
+        val applies = round.prevMinAvgRate.isDefined &&
+          roundsService.previousRounds(round).headOption.exists(p => !p.isBinary)
+        (if (applies) round else round.copy(prevMinAvgRate = None), None)
+    }
 
   /** The form after a saved edit whose "Distribute new files" (or list, or top-up) was refused: the
     * round form again, headed "Round N is saved. Its new files weren't distributed:", not "Nothing
@@ -312,7 +458,8 @@ class RoundController @Inject() (
     * query Commons), so it runs only when the organizer asks for it. Off the request
     * threads: on one thread of its own ([[RoundController.countContext]]), so a few
     * counts at once queue there instead of holding the blocking dispatcher. Errors are
-    * JSON too, and the request never switches the session's contest.
+    * JSON too (Commons not giving a category filter's files: 503 with the page's message), and the
+    * request never switches the session's contest.
     */
   def newFilesCount(id: Long): EssentialAction =
     Action.async { request =>
@@ -326,6 +473,13 @@ class RoundController @Inject() (
               Future.successful(onUnAuthorizedJson(user, request, Secured.Denial.round(round, User.ADMIN_ROLES)))
             case Some(round) =>
               Future(Ok(Json.obj("count" -> roundsService.newFilesCount(round.getId))))(RoundController.countContext)
+                .recover {
+                  // Commons didn't give the category filter's files: said, in the page's language
+                  case unavailable: RoundDistributionHandler.CategoryFilesUnavailable =>
+                    logger.warn(s"Round ${round.getId}: new files not counted: ${unavailable.getMessage}")
+                    ServiceUnavailable(Json.obj("error" -> "commons",
+                      "message" -> messagesApi.preferred(request)(RoundController.CountCommonsUnavailableKey)))
+                }
           }
       }
     }
@@ -473,6 +627,15 @@ class RoundController @Inject() (
               refusedForm(user, r, filledWith(r, message, args),
                 Option.when(r.id.isEmpty)(RoundController.formToken(liveToken)).flatten)
 
+            // a top N the files it would take don't allow (inside a tie, above them): the form again, the
+            // refusal next to the N list, which the picker loaded offers valid values only (§10.4)
+            def topNRefused(r: Round, picker: services.CutPicker, refusal: services.TopNCandidates.Msg): Result =
+              refusedForm(user, r,
+                editRoundForm.fill(EditRound(r, editForm.jurors, editForm.fileList, editForm.newImages, editForm.criteriaShown))
+                  .withError("topImages", refusal.key, refusal.args: _*),
+                Option.when(r.id.isEmpty)(RoundController.formToken(liveToken)).flatten,
+                cutPicker = Some(withCutLinks(user, r, picker, r.id)))
+
             def filledWith(r: Round, message: String, args: Seq[Any]): Form[EditRound] =
               editRoundForm
                 .fill(EditRound(r, editForm.jurors, editForm.fileList, editForm.newImages, editForm.criteriaShown))
@@ -567,8 +730,11 @@ class RoundController @Inject() (
               if (!EditRound.rejectedByHasSource(round.copy(id = None), previous)) reRender(round, EditRound.RejectedByNoSource)
               else
                 try {
+                  // a top N inside a tie refused, its picker shown (§10.4); ranked without the round's
+                  // disqualified files, as its re-apply ranks; the cut stored as kept (never both)
+                  val (cutRound, basis) = checkCut(round, Some(roundId))
                   var disqualified = Seq.empty[(Long, String, CoiMembers.Member)]
-                  roundsService.reapplyFilters(round, user.id, titles, alsoWrite = { s =>
+                  roundsService.reapplyFilters(cutRound, user.id, titles, topImagesBasis = basis, alsoWrite = { s =>
                     // a started round's criteria are not changed (running or voted): a re-apply's round
                     // is neither, but a refusal rolls everything back
                     criteriaToWrite(stored, edited).foreach(ids =>
@@ -598,6 +764,10 @@ class RoundController @Inject() (
                   }
                 } catch {
                   case RoundController.CriteriaRefused(key) => reRender(round, key)
+                  case RoundController.TopNRefused(picker, refusal) => topNRefused(round, picker, refusal)
+                  // its top N not checked: Commons didn't give the category filter's files
+                  case _: RoundDistributionHandler.CategoryFilesUnavailable =>
+                    reRender(round, RoundController.CommonsUnavailableKey)
                   case NonFatal(e) =>
                     failed(round, "round.reapply.failed", "round.reapply.failed.reference", e,
                       s"Round $roundId: could not re-apply its filters")
@@ -702,11 +872,14 @@ class RoundController @Inject() (
                 reRender(round, EditRound.RejectedByNoSource)
               case None =>
                 try {
+                  // a top N inside a tie (or above the candidates) refused, its picker shown (§10.4); the
+                  // cut stored as kept (never both)
+                  val (cutRound, basis) = checkCut(round, None)
                   // a new round's images are selected and it waits in review, without jurors (the
                   // maintainer's decision of 2026-11-16, superseding D4's "Distribute as soon as the
                   // images are ready"): its jurors are chosen on its jurors form, which distributes it
-                  roundsService.submit(round.copy(active = true, track = Round.trackLabel(round.track, trackMainNames)),
-                    Nil, liveToken, user.id, titles, review = true) match {
+                  roundsService.submit(cutRound.copy(active = true, track = Round.trackLabel(round.track, trackMainNames)),
+                    Nil, liveToken, user.id, titles, review = true, topImagesBasis = basis) match {
                     // "Save and find matching files" (step 1 of its setup, UI-path plan §4 step 1): its
                     // review page, step 2, which shows the matching's progress; saved, said there (never
                     // "created" or "ready": it has no jurors yet). A `next` posted by a form from before
@@ -723,6 +896,10 @@ class RoundController @Inject() (
                         savedAgain(user, t, resubmitted.round))
                   }
                 } catch {
+                  case RoundController.TopNRefused(picker, refusal) => topNRefused(round, picker, refusal)
+                  // its top N not checked: Commons didn't give the category filter's files
+                  case _: RoundDistributionHandler.CategoryFilesUnavailable =>
+                    reRender(round, RoundController.CommonsUnavailableKey)
                   // Rejected before anything was created (bad input): keep the form.
                   case NonFatal(e) =>
                     failed(round, "round.creation.failed", "round.creation.failed.reference", e,
@@ -1131,6 +1308,34 @@ object RoundController {
   /** A re-apply's criteria refused in its transaction (rolled back): the message key. */
   final case class CriteriaRefused(messageKey: String) extends RuntimeException(messageKey, null, false, false)
 
+  /** A posted top N refused by the files it would take (inside a tie, above them, none): the save is
+    * shown again with this picker and the refusal (RoundController.checkCut).
+    */
+  final case class TopNRefused(picker: services.CutPicker, refusal: services.TopNCandidates.Msg)
+      extends RuntimeException("top N refused", null, false, false)
+
+  /** A top N not checked, nor its candidate cuts found: Commons didn't give the category filter's files. */
+  val CommonsUnavailableKey = "top.n.commons.unavailable"
+
+  /** "Count new files" not counted: Commons didn't give the category filter's files. */
+  val CountCommonsUnavailableKey = "count.new.files.commons.unavailable"
+
+  /** The cut control's own fields of the round form, outside its mapping: what a rated source's round
+    * keeps of the cut (`cutKeep`, [[services.CutPicker.Keep]]; none from a form that didn't load the
+    * control, which keeps a top N as it was), and a legacy round's held threshold, kept if it still takes
+    * the cut's files (`cutHeldRate`, [[services.CutPicker.stored]]). Anything else is none.
+    */
+  object CutParams {
+    private def field(request: Request[AnyContent], name: String): Option[String] =
+      request.body.asFormUrlEncoded.flatMap(_.get(name)).flatMap(_.headOption).map(_.trim).filter(_.nonEmpty)
+
+    def keep(request: Request[AnyContent]): Option[services.CutPicker.Keep] =
+      field(request, services.CutPicker.KeepField).flatMap(services.CutPicker.Keep.parse)
+
+    def heldRate(request: Request[AnyContent]): Option[BigDecimal] =
+      field(request, services.CutPicker.HeldThresholdField).flatMap(EditRound.threshold)
+  }
+
   /** The Rounds page's rounds being set up (UI-path plan §4 step 1, replacing #192's interim "Not
     * started – waiting for distribution"): each with its setup step from its latest distribution job,
     * derived from its [[RoundStartBlock]] as on its other pages ([[RoundNextStep.of]]), its matching files
@@ -1286,6 +1491,7 @@ object RoundController {
   * @param resolveUrl     a new round's form: its URL with its token, for the page's history entry
   * @param waitFor        a save refused to wait for another round's job: that job (Q7)
   * @param summaryHeading the error summary's heading, if not "Nothing was saved" (a saved edit's refused distribution)
+  * @param cutPicker      the top N's candidate cuts, N list and gallery, once "Choose N" loaded them (§10.4)
   */
 final case class RoundFormState(
     reapply: Boolean = false,
@@ -1296,7 +1502,8 @@ final case class RoundFormState(
     ratesEditable: Boolean = false,
     resolveUrl: Option[String] = None,
     waitFor: Option[RoundFormWait] = None,
-    summaryHeading: Option[String] = None
+    summaryHeading: Option[String] = None,
+    cutPicker: Option[services.CutPicker] = None
 )
 
 /** The round form's conflict-of-interest counts: the contest's files that are conflicts of
