@@ -1,5 +1,6 @@
 package views
 
+import play.api.i18n.Messages
 import services.jobs.{Job, JobStatus}
 
 import java.text.NumberFormat
@@ -25,7 +26,7 @@ object JobStatusText {
     }
   }
 
-  def text(job: Job): String = {
+  def text(job: Job)(implicit messages: Messages): String = {
     val p = progress(job)
     val at = if (p.isEmpty) "" else s" at $p"
     job.status match {
