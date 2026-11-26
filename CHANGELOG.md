@@ -29,6 +29,7 @@ Merged after the 26.11.17 build, for the release after it.
 - Round form: a screen reader now reads the category choice's error ("More category options") with its radio buttons, and announces the group as invalid (#211).
 - Conflicts of interest: a round being set up no longer reads "Round N is open to its jurors: stop it first"; it says the round is being set up and its jurors don't see it yet (under its setup step's line, or with its state when it has no step: being distributed, its creation failed, cancelled or unfinished), and a refused disqualify says the same instead of "its images are being distributed" (#210).
 - Imports no longer stay slow for 6 hours after Commons refuses the bot's login once: the login is tried again when an import needs it, after 5 minutes at first, waiting longer (up to 1 hour) only while Commons keeps refusing it.
+- Track chips: tracks of one contest no longer share a colour (Quality and Quantity were alike); each track keeps its name's colour across contests and years where it can, and only a track that collides moves to the next free colour (#220).
 
 **Operations**
 
