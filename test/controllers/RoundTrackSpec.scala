@@ -372,9 +372,47 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         roundDao.create(Round(None, 4, Some("Photo final"), contest.getId, previous = Some(third.getId.toString)))
         roundDao.create(Round(None, 5, Some("Video round"), contest.getId))
         val doc = page(app, admin, s"/admin/rounds?contestId=${contest.getId}")
-        (rowChips(doc) === Map("First round" -> "First round", "Second round" -> "First round",
+        // no Main track: the first round's track reads Main (option C, 2026-11-26)
+        (rowChips(doc) === Map("First round" -> "Main", "Second round" -> "Main",
           "Photo round" -> "Photo round", "Photo final" -> "Photo round")) and
           (doc.select("#rounds-track-menu").size === 1)
+      }
+    }
+
+    "call the first round's track Main in a contest without one, in the chips and the Track menu, its key and old links kept (WLA Thatch Ireland 2026)" in {
+      testDbApp { app =>
+        val contest = contestDao.create(None, "Wiki Loves A Future for Thatch", 2026, "Ireland",
+          Some("Category:Images from Wiki Loves A Future for Thatch 2026"))
+        val admin = userDao.create(User("AdminI", "admini@example.com", None, Set("admin"), contestId = contest.id))
+        val organizer = userDao.create(User("OrgI", "orgi@example.com", None, Set("organizer"), contestId = contest.id))
+        def round(n: Int, name: String, previous: Option[Round] = None, active: Boolean = false) =
+          roundDao.create(Round(None, n, Some(name), contest.getId, active = active, previous = previous.map(_.getId.toString)))
+        val r1 = round(1, "Round 1")
+        round(2, "2")
+        val r3 = round(3, "Photography, Round 2", Some(r1))
+        round(4, "Photography, Final Round 3", Some(r3))
+        val repeat = round(15, "Heritage, Repeat Round 1")
+        val last = round(16, "Heritage, Repeat Round 2", Some(repeat), active = true)
+        val path = s"/admin/rounds?contestId=${contest.getId}"
+        val doc = page(app, admin, path)
+        val uk = page(app, admin, path, "uk")
+        val repeatTrack = "Heritage, Repeat Round 1"
+        // the track's key stays its name's: old links and the menu's links keep it
+        val old = page(app, admin, s"$path&track=name%3ARound%201")
+        val stat = page(app, organizer, s"/roundstat/${last.getId}")
+        (rowChips(doc) === Map("Round 1" -> "Main", "Photography, Round 2" -> "Main", "Photography, Final Round 3" -> "Main",
+          repeatTrack -> repeatTrack, "Heritage, Repeat Round 2" -> repeatTrack)) and
+          // its own colour, not Main's (display only)
+          (doc.select(".wlx-track[data-track=main]").size === 0) and
+          (doc.select(".wlx-track.wlx-track-main").size === 0) and
+          // first in the Track menu, as Main is; "2", alone on a track named after it, left out
+          (trackMenu(doc).map(t => (t._1, t._2)) === Seq("All tracks" -> "6", "Main" -> "3", repeatTrack -> "2")) and
+          (trackMenu(doc)(1)._3 must contain("track=name%3ARound+1")) and
+          (rowChips(uk).get("Round 1") === Some("Основний")) and
+          (rows(old) === Seq("Round 1", "Photography, Round 2", "Photography, Final Round 3")) and
+          (old.select("#rounds-track-menu .dropdown-item.active").text must contain("Main")) and
+          (page(app, admin, s"$path&track=main").select("tbody tr.round-row").size === 6) and
+          (trackMenu(stat).map(_._1).take(2) === Seq("All tracks", "Main"))
       }
     }
 

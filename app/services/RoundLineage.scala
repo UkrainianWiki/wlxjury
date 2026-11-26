@@ -176,6 +176,22 @@ object RoundLineage {
       case (t, ids) if t.kind == Kind.Name && ids.forall(id => rounds(id).previousIds.forall(p => !rounds.contains(p))) => t
     }.toSet
 
+    /** The track the pages call Main in a contest without one (no merge, rule 6, and no round
+      * labelled Main): the name track of the contest's first round that isn't on a track named after
+      * itself ([[selfNamedTrack]]), as "Round 1" with the later rounds made from it (the maintainer's
+      * option C, 2026-11-26). None if that round's track is another kind (a category, a media type, a
+      * label, a nomination, regions). Display only: its key, colour and order stay its own, and
+      * nothing else (the regional winners' final round, #181) takes it for Main. None too if another
+      * track is named "Main", so that two tracks never read Main.
+      */
+    lazy val shownAsMain: Option[Track] =
+      if (tracks.exists(_.isMain)) None
+      else
+        rounds.values.toSeq.sortBy(_.getId)
+          .filter(_.previousIds.forall(p => !rounds.contains(p)))
+          .flatMap(track).find(t => !selfNamedTrack(t))
+          .filter(t => t.kind == Kind.Name && !tracks.exists(o => o != t && o.name.trim.equalsIgnoreCase(MainLabel)))
+
     /** The round is alone on a track named after it ([[selfNamedTrack]]). */
     def selfNamed(round: Round): Boolean = this.track(round).exists(selfNamedTrack)
 

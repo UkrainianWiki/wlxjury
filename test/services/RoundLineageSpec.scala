@@ -454,6 +454,61 @@ class RoundLineageSpec extends Specification {
     }
   }
 
+  "the track shown as Main in a contest without one (option C, 2026-11-26)" should {
+
+    // WLA A Future for Thatch 2026 Ireland: "Round 1" with later rounds made from it, "2" alone,
+    // and a second track of a repeat round with its own later rounds
+    def thatch(extra: Round*) = RoundLineage(Seq(
+      round(1, "Round 1"), round(2, "2"),
+      round(3, "Sub category 1: Examples of Thatch and Thatching (Photography), Round 2", Seq(1)),
+      round(4, "SSub category 1: Examples of Thatch and Thatching (Photography), Final Round 3", Seq(3)),
+      round(15, "Sub-category 2: Category 3: Heritage in Transition (Photography), Repeat Round 1"),
+      round(16, "Sub-category 2: Category 3: Heritage in Transition (Photography), Repeat Round 2", Seq(15))) ++ extra,
+      context)
+    val round1 = Track(Kind.Name, "Round 1")
+
+    "be the first round's name track, its key, order and spine its own (WLA Thatch Ireland 2026)" in {
+      val l = thatch()
+      (l.shownAsMain === Some(round1)) and (round1.key === "name:Round 1") and (l.byKey("name:Round 1") === Some(round1)) and
+        (l.tracks.exists(_.isMain) must beFalse) and (l.merges must beEmpty) and (l.loneMerge must beNone) and
+        (l.byKey("main") must beNone) and (spine(l, round1).size === 3) and
+        (names(l, round1).size === 3) and (l.chipsShown must beTrue) and
+        // "2" stays alone on a track named after it: no chip, not the one shown as Main
+        (l.selfNamed(l.rounds(2)) must beTrue) and (l.selfNamed(l.rounds(3)) must beFalse)
+    }
+
+    "skip a first round alone on a track named after it" in {
+      val l = RoundLineage(Seq(round(1, "Test"), round(2, "Round 1"), round(3, "Round 2", Seq(2)),
+        round(4, "Video round"), round(5, "Video final", Seq(4))), context)
+      l.shownAsMain === Some(round1)
+    }
+
+    "be none where the first round is on a category's track, though a name track follows" in {
+      val l = RoundLineage(Seq(round(1, "Q-00", category = Some(Prefix + "Quality")), round(2, "Q-01", Seq(1)),
+        round(3, "Video round"), round(4, "Video final", Seq(3))), context)
+      (l.chipsShown must beTrue) and (l.shownAsMain must beNone)
+    }
+
+    "be none in a contest with a real Main, by a merge or by the label" in {
+      val merged = RoundLineage(Seq(round(1, "Round 1"), round(2, "Round 2", Seq(1)), round(3, "Video round"),
+        round(4, "Final", Seq(2, 3))), context)
+      val labelled = thatch(round(20, "Final", Seq(16), track = Some("main")))
+      (merged.tracks.head === Track.Main) and (merged.shownAsMain must beNone) and
+        (labelled.tracks.head === Track.Main) and (labelled.shownAsMain must beNone)
+    }
+
+    "be none where another track is named Main, so that two never read Main" in {
+      val l = thatch(round(30, "Main"), round(31, "Main 2", Seq(30)))
+      (l.trackOf(30) === Track(Kind.Name, "Main")) and (l.trackOf(30).isMain must beFalse) and (l.shownAsMain must beNone)
+    }
+
+    "be none where the first round is labelled, or alone in its contest" in {
+      val labelled = thatch(round(0, "Screening", track = Some("Second look")), round(40, "Screening 2", Seq(0)))
+      val alone = RoundLineage(Seq(round(1, "Round 1"), round(2, "Round 2", Seq(1))), context)
+      (labelled.shownAsMain must beNone) and (alone.shownAsMain === Some(round1)) and (alone.chipsShown must beFalse)
+    }
+  }
+
   "the stored label" should {
     "be trimmed, its inner white space kept, Main in any case or language, cut at 64 code points" in {
       val emoji = new String(Character.toChars(0x1F600))

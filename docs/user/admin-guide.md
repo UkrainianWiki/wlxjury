@@ -1134,6 +1134,12 @@ rounds (the rounds it was created from), checks these in order, and takes the fi
    Kyrgyzstan 1 round": **1 round**). First rounds with the same category share a track, also
    when it is written in other capitals.
 
+In a contest without a Main track (no round joins tracks and none is labelled Main), the chips and
+the **Track** menu call the track of the contest's first round **Main** when that track is named
+after the round (for example "Round 1", with the later rounds created from it), instead of
+repeating "Round 1" on every later round. This changes only the name shown: the track's links stay
+the same, and a first round with its own category or a label keeps its track's name.
+
 **An example**, from Wiki Loves Monuments in Ukraine:
 
 - Q-00 takes the files of "… 2025 - Quality" and Qt-00 those of "… 2025 - Quantity": they start

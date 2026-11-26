@@ -18,10 +18,12 @@ object TrackChip {
   /** A chip's longest text, in characters (labels cut by count, without font metrics: §2.3). */
   val MaxLength = 32
 
-  /** The track's name: Main's in the page's language; a nomination's or media type's translated
-    * if the messages have it; a region track's regions by name; else as the rule or label gives it.
+  /** The track's name: Main's in the page's language, as for the track shown as Main in a contest
+    * without one (Lineage.shownAsMain); a nomination's or media type's translated if the messages
+    * have it; a region track's regions by name; else as the rule or label gives it.
     */
   def name(track: Track, lineage: Lineage)(implicit messages: Messages): String = track.kind match {
+    case _ if lineage.shownAsMain.contains(track) => messages("round.track.main")
     case Kind.Main                    => messages("round.track.main")
     case Kind.Nomination | Kind.Media => if (messages.isDefinedAt(track.name)) messages(track.name) else track.name
     case Kind.Region =>
