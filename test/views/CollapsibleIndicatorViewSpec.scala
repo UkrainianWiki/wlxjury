@@ -82,15 +82,34 @@ class CollapsibleIndicatorViewSpec extends Specification {
     }
   }
 
+  /** Each <summary> of a template, parsed as HTML, so a tag or its chevron written over several
+    * lines counts as one; with the number of "<summary" in the source, so none is missed. */
+  private def summaries(source: String): (Int, Seq[Element]) =
+    ("""<summary\b""".r.findAllIn(source).size, Jsoup.parseBodyFragment(source).select("summary").asScala.toSeq)
+
+  private def indicated(summary: Element): Boolean = summary.hasClass("wlx-disclosure") && chevron(summary)
+
   "every <summary> in the templates" should {
+    "be found when it spans several lines" in {
+      val (count, found) = summaries(
+        """<details>
+          |  <summary
+          |      class="wlx-disclosure small">
+          |    <i class="bi bi-chevron-right
+          |       wlx-disclosure-icon" aria-hidden="true"></i>
+          |    @Messages("x")
+          |  </summary>
+          |</details>
+          |<details><summary>plain</summary></details>""".stripMargin)
+      (count === 2) and (found.size === 2) and (found.map(indicated) === Seq(true, false))
+    }
+
     "carry the disclosure class and the chevron" in {
       val templates = Files.walk(Paths.get("app/views")).iterator.asScala.filter(_.toString.endsWith(".scala.html")).toSeq
-      val summaries = templates.flatMap { p: Path =>
-        """<summary\b[^>]*>(?:\s*<i\b[^>]*>\s*</i>)?""".r.findAllIn(new String(Files.readAllBytes(p), "UTF-8")).map(p -> _)
-      }
-      (summaries.size must be_>=(4)) and
-        (summaries.filterNot(s => """class="[^"]*\bwlx-disclosure\b""".r.findFirstIn(s._2).isDefined) must beEmpty) and
-        (summaries.filterNot(_._2.contains("""<i class="bi bi-chevron-right wlx-disclosure-icon" aria-hidden="true"></i>""")) must beEmpty)
+      val found = templates.map { p: Path => p -> summaries(new String(Files.readAllBytes(p), "UTF-8")) }
+      (found.map(_._2._1).sum must be_>=(4)) and
+        (found.filter { case (_, (count, els)) => count != els.size }.map(_._1) must beEmpty) and
+        (found.flatMap { case (p, (_, els)) => els.filterNot(indicated).map(e => p -> e.outerHtml) } must beEmpty)
     }
   }
 }
