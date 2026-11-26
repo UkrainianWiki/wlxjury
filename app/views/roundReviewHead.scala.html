@@ -1,7 +1,6 @@
 @import controllers.{ContestFilesView, RoundReview, RoundReviewController}
-@import db.scalikejdbc.{Round, RoundImageJdbc}
+@import db.scalikejdbc.RoundImageJdbc
 @(r: RoundReview, view: ContestFilesView)(implicit flash: Flash, messages: Messages, request: RequestHeader)
-@fillRunning = @{ r.job.exists(j => j.isActive && services.distribution.RoundDistributionHandler.fillOnly(j)) }
 
 @* A round's review page's head (P3, RoundReviewController): its state, its files by how they were
    added, its conflicts of interest, its jurors, the tabs of its files by status, and for its admins
@@ -32,13 +31,18 @@
     @if(r.nextStep.exists(_.state != controllers.RoundNextStep.Matching)) {
         <h3 class="h5" id="round-review-match" data-in="@r.count(RoundImageJdbc.Status.In)" data-files="@r.contestFiles">@Messages("round.review.match." + views.Plural.form(r.count(RoundImageJdbc.Status.In), messages.lang.language), r.count(RoundImageJdbc.Status.In), r.contestFiles)</h3>
     } else {
+    @* its state from its RoundStartBlock, as the Rounds page says it: its files being selected, being
+       distributed (also a creation's fill that opens it when done), its creation failed, cancelled or
+       not finished, or distributed *@
     <p id="round-review-state">@{
-        if (r.job.exists(_.isActive) && r.round.distributing && r.round.lifecycle == Round.Status.Draft) Messages("round.review.filling")
-        else if (fillRunning && r.round.inReview) Messages("round.review.filling")
-        else if (r.job.exists(_.isActive) && r.round.inReview) Messages("round.review.distributing")
-        else if (r.round.inReview) Messages("round.review.ready", r.count(RoundImageJdbc.Status.In))
-        else if (r.round.distributing) Messages("round.review.filling")
-        else Messages("round.review.distributed")
+        services.distribution.RoundStartBlock.of(r.round, r.job) match {
+            case None => Messages("round.review.distributed")
+            case Some(services.distribution.RoundStartBlock.Selecting) => Messages("round.review.filling")
+            case Some(services.distribution.RoundStartBlock.Distributing) => Messages("round.review.distributing")
+            case Some(services.distribution.RoundStartBlock.NotDistributed | services.distribution.RoundStartBlock.ReapplyFailed |
+                services.distribution.RoundStartBlock.ReapplyCancelled) => Messages("round.review.ready", r.count(RoundImageJdbc.Status.In))
+            case Some(block) => Messages(block.stateKey)
+        }
     }</p>
     }
     @* the job's status with Retry / Cancel (and its poll) for those who may act on it; organizers

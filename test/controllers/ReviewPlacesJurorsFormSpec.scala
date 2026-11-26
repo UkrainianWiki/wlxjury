@@ -242,7 +242,7 @@ class ReviewPlacesJurorsFormSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "reload itself while the round is being created with no job to poll" in {
+    "say a creation that didn't finish (no job) as the Rounds page, without reloading or the form" in {
       testDbApp { app =>
         val f = setUp()
         val r = f.round.getId
@@ -251,12 +251,12 @@ class ReviewPlacesJurorsFormSpec extends PlaySpecification with PlayTestDb {
           sql"DELETE FROM job WHERE subject_type = 'round' AND subject_id = $r".update()
         }
         val page = contentAsString(get(app, "admin@example.com", jurorsForm(r)))
-        // after about a minute of reloads it stops, saying the round isn't waiting
-        val gaveUp = contentAsString(get(app, "admin@example.com", jurorsForm(r) + s"?waited=${RoundReviewController.MaxWaits}"))
-        (page must contain("id=\"round-jurors-filling\"")) and (page must contain("http-equiv=\"refresh\"")) and
-          (page must contain(s"${jurorsForm(r)}?waited=1")) and (page must not(contain("id=\"round-jurors-form\""))) and
-          (gaveUp must not(contain("http-equiv=\"refresh\""))) and (gaveUp must contain("id=\"round-jurors-not-in-review\"")) and
-          (gaveUp must contain("id=\"round-jurors-rounds\""))
+        // a link from before, with its reload count: the same page
+        val old = contentAsString(get(app, "admin@example.com", jurorsForm(r) + "?waited=3"))
+        (page must contain("id=\"round-jurors-state\"")) and (page must contain("data-state=\"incomplete\"")) and
+          (page must not(contain("id=\"round-jurors-filling\""))) and (page must not(contain("http-equiv=\"refresh\""))) and
+          (page must not(contain("id=\"round-jurors-form\""))) and (page must contain("id=\"round-jurors-rounds\"")) and
+          (old must contain("data-state=\"incomplete\""))
       }
     }
 

@@ -150,6 +150,7 @@ class MessagesCompletenessSpec extends Specification {
     Seq("round.distribute.running", "round.distribute.running.files", "round.distribute.resumed.files",
       "round.still.distributing", "import.already.running"),        // flashed by RoundController, ImageController
     services.distribution.RoundStartBlock.All.flatMap(b => Seq(b.stateKey, b.refusedKey)), // rounds list, setRound
+    Seq("round.setup.state.2", "round.setup.state.3"),                     // RoundNextStep.stateKey
     Seq("retired", "changed", "incomplete.no.jurors", "cancelled.no.jurors", "incomplete.no.jurors.new",
       "cancelled.no.jurors.new").map("round.start.refused." + _),                                      // RoundController.setRound
     Seq("creation", "distribute").map(w => s"round.$w.failed.reference"), // RoundController.saveRound
