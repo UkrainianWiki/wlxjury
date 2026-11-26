@@ -36,6 +36,7 @@ HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 ID = re.compile(r'<a\s+id="([^"]+)"\s*>\s*</a>')
 ID_LINE = re.compile(r'^\s*(?:<a\s+id="[^"]+"\s*>\s*</a>\s*)+$')
 MD_LINK = re.compile(r"!?\[(?:[^\[\]]|\[[^\]]*\])*\]\(\s*<?([^)\s>]*)>?(?:\s+\"[^\"]*\")?\s*\)")
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 IMG = re.compile(r"<img\s[^>]*?src=\"([^\"]+)\"")
 EXTERNAL = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
@@ -55,10 +56,19 @@ class Page:
     def __init__(self, text):
         self.lines = []  # (number, text, in_code, in_comment)
         code = comment = False
+        fence = None  # the opening fence (its character repeated), while in a code block
         for n, line in enumerate(text.splitlines(), 1):
-            if line.lstrip().startswith("```"):
+            m = FENCE.match(line)
+            if m and fence is None:
+                fence, code = m.group(1), True
                 self.lines.append((n, line, True, comment))
-                code = not code
+                continue
+            if fence is not None:
+                # a closing fence: the same character, at least as long, nothing after it
+                closes = m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence)
+                if closes and not m.group(2).strip():
+                    fence, code = None, False
+                self.lines.append((n, line, True, comment))
                 continue
             start_comment = comment
             if not code:
@@ -127,11 +137,24 @@ class Page:
     def links(self):
         """(line number, target) of the Markdown links and <img src> outside code blocks."""
         out = []
-        for n, line, code, _ in self.lines:
+
+        def strip(line):
+            return re.sub(r"`[^`]*`", "", line)
+
+        for k, (n, line, code, _) in enumerate(self.lines):
             if code:
                 continue
-            line = re.sub(r"`[^`]*`", "", line)
+            line = strip(line)
             out += [(n, t) for t in MD_LINK.findall(line)] + [(n, t) for t in IMG.findall(line)]
+            # a link whose label goes on to the next lines of its paragraph: counted on the line
+            # where it starts
+            joined = line
+            for _, nxt, ncode, _ in self.lines[k + 1:k + 3]:
+                if ncode or not nxt.strip():
+                    break
+                joined += "\n" + strip(nxt)
+            out += [(n, m.group(1)) for m in MD_LINK.finditer(joined)
+                    if m.start() < len(line) < m.end()]
         return out
 
 
@@ -267,7 +290,10 @@ def self_test():
             return
         files[name] = files[name].replace(old, new, 1)
         errs = run(files, legacy_texts)
-        expect(any(expected in e for e in errs), f"{what}: expected {expected!r}, got {errs}")
+        if expected is None:
+            expect(errs == [], f"{what}: expected no error, got {errs}")
+        else:
+            expect(any(expected in e for e in errs), f"{what}: expected {expected!r}, got {errs}")
 
     variant("docs/user/topic.md", "(../deployment.md)", "(../nope.md)", "no such file", "a missing file")
     variant("docs/user/topic.md", "images/x.png", "images/y.png", "no such file", "a missing image")
@@ -286,6 +312,13 @@ def self_test():
             "follows an HTML line", "a heading right after an <img> line")
     variant("docs/README.md", "user/topic.md#t-part", "user/topic.md#nope", "no such anchor",
             "an inbound link to a missing anchor")
+    variant("docs/user/topic.md", "[deploy](../deployment.md)", "[the deployment\nguide](../nope.md)",
+            "no such file", "a link whose label spans two lines")
+    block = "```\n## not a heading [x](nope.md)\n```\n"
+    variant("docs/user/topic.md", block, "````\n" + block + "````\n", None,
+            "a four-backtick block holding a three-backtick one")
+    variant("docs/user/topic.md", block, "````\n```\n````\n[x](nope.md)\n", "no such file",
+            "a link after a four-backtick block")
     variant("docs/user/admin-guide.md", "<a id=\"a-old\"></a>", "", "old anchor #a-old is gone",
             "a legacy anchor dropped", legacy)
 

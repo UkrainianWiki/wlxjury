@@ -93,17 +93,17 @@ guide](../deployment.md).
 ## Normalizing stored authors
 
 Files imported by older versions of the tool may keep their author as wiki markup, such as
-`[[User:Petro_Hrushko|Petro]]` or a photographer's credit template like `{{SergiyBobokPhotos}}`.
-Files imported now keep the author's Commons account. The tool shows these old authors as their
-account. But conflicts of interest are found by the stored account, so such files aren't found
+`[[User:Example_Photographer|Example]]` or a photographer's credit template like
+`{{ExamplePhotographerPhotos}}`. Files imported now keep the author's Commons account. The tool
+shows these old authors as their account. But conflicts of interest are found by the stored account, so such files aren't found
 as conflicts until their authors are normalized. A file deleted on Commons can't be imported
 again, so only this button can fix its author.
 
 **Normalize stored authors**, on the rounds list (root only), does it for the files of every
 contest, as a background job:
 
-- A link to a user page gives that account: `[[User:Petro_Hrushko|Petro]]` becomes
-  `Petro Hrushko`.
+- A link to a user page gives that account: `[[User:Example_Photographer|Example]]` becomes
+  `Example Photographer`.
 - A credit template gives the account its page links to. A template that links to nobody gives
   the file's original uploader, as an import does. A file deleted on Commons, or uploaded by a
   bot, then has no author.
