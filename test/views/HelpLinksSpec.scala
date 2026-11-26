@@ -34,9 +34,11 @@ class HelpLinksSpec extends Specification {
     })
   }.toMap
 
-  /** Every `helpLink("…")` / `helpSection("…")` key in the templates, with its file. */
+  /** Every `helpLink("…")` / `helpSection("…")` key in the templates, and a field's help with its
+    * link (`withHelp(text, "…")`, editRound and imageFiltering), with its file. */
   private lazy val placed: Seq[(String, String)] = {
-    val Call = """help(?:Link|Section)\("([^"]*)"\)""".r
+    val Call = """(?:help(?:Link|Section)\(|withHelp\([^
+]*?,\s*)"([^"]*)"\)""".r
     Files.walk(Paths.get("app", "views")).iterator().asScala.toSeq
       .filter(_.toString.endsWith(".scala.html"))
       .filterNot(p => Set("helpLink.scala.html", "helpSection.scala.html").contains(p.getFileName.toString))

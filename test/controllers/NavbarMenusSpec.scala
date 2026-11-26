@@ -307,7 +307,8 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
       testDbApp { app =>
         val f = fixture()
         val staff = page(app, f.organizer, gallery(f.round, f.juror.getId))
-        groups(staff) === Seq("wlx-nav-links", "wlx-nav-filters", "wlx-nav-order")
+        // and the guide's results link (HelpLinks) last
+        groups(staff) === Seq("wlx-nav-links", "wlx-nav-filters", "wlx-nav-order", "wlx-nav-help")
         staff.select(".wlx-nav-filters").hasClass("border-start") must beTrue
         staff.select(".wlx-nav-order").hasClass("border-start") must beTrue
         staff.select(".wlx-nav-filters > li").asScala.map(li => Option(li.id).filter(_.nonEmpty).getOrElse(li.className)).toList must

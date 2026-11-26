@@ -79,7 +79,7 @@ class RoundMonumentFilterSpec extends PlaySpecification with PlayTestDb {
         val doc = org.jsoup.Jsoup.parse(body)
         doc.select(".wlx-nav-filters #monument-filter .wlx-chip-text").text === "Monument: 07-101-0001"
         doc.select(".wlx-nav-groups > ul").eachAttr("class").toArray.toSeq.map(_.toString.split(" ").find(_.startsWith("wlx-nav-")).get) ===
-          Seq("wlx-nav-filters", "wlx-nav-order")
+          Seq("wlx-nav-filters", "wlx-nav-order", "wlx-nav-help") // the jurors' Help last (HelpLinks)
         doc.select(".wlx-nav-order").hasClass("border-start") must beTrue
         doc.select("#monument-page-link").attr("aria-label") === "The monument's page"
         doc.select("#monument-filter-remove").attr("aria-label") === "Show the files of all monuments"
