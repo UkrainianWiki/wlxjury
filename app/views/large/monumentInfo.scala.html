@@ -4,12 +4,15 @@
         contestId: Option[Long] = None,
         roundId: Option[Long] = None,
         roundLine: Option[controllers.MonumentLine] = None,
-        listMonument: Option[String] = None
+        listMonument: Option[String] = None,
+        regions: Option[services.regions.RegionScheme] = None
         )(implicit flash: Flash, request: play.api.mvc.Request[Any], messages: Messages)
 
-@* The file's monument, for everyone who sees the file (jurors too): its region, city, name and
-   place, then one line with the monument's id (once), its gallery and its page (the maintainer's
-   decision of 2026-11-14): `46-233-0012 · Gallery (2) · Page →`.
+@* The file's monument, for everyone who sees the file (jurors too): its region (with the
+   contest's `regions`, a special nomination's own monument, `92-232-4801`, by the nomination and
+   the region its id carries: RegionScheme.monumentRegion), city, name and place, then one line
+   with the monument's id (once), its gallery and its page (the maintainer's decision of
+   2026-11-14): `46-233-0012 · Gallery (2) · Page →`.
 
    Gallery (N), in a round's large view: the viewer's list with only the monument's files
    (RoundList.monumentLine), N its count. Left out while the list already has only this
@@ -30,7 +33,7 @@
 @monument match {
     case Some(m) => {
     <div class="card card-body large-box" id="monument-card">
-        @Messages(image.region.getOrElse("")), @views.WikiLinks.marked(m.city, "uk.wikipedia.org") <br>
+        @regions.fold(Messages(image.region.getOrElse("")))(_.monumentRegion(m.id)), @views.WikiLinks.marked(m.city, "uk.wikipedia.org") <br>
         @views.WikiLinks.marked(m.name, "uk.wikipedia.org") <br>
         @views.WikiLinks.marked(m.place, "uk.wikipedia.org")
         @idLine(m.id, Some(routes.MonumentController.byId(m.id, contestId, roundId)), true)
