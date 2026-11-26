@@ -138,7 +138,7 @@ class ReadinessControllerSpec extends PlaySpecification with Mockito with JuryTe
       val checkEc = scala.concurrent.ExecutionContext.fromExecutorService(java.util.concurrent.Executors.newSingleThreadExecutor())
       try {
         val started = System.nanoTime()
-        val done = modules.CommonsLoginStartupCheck.start(login)(checkEc)
+        val done = modules.CommonsLoginStartupCheck.start(() => login.ensure())(checkEc)
         (System.nanoTime() - started).nanos must be_<(1.second)
         done.isCompleted must beFalse
         val result = ready(login)
@@ -151,6 +151,26 @@ class ReadinessControllerSpec extends PlaySpecification with Mockito with JuryTe
         if (!answer.isCompleted) answer.success(botInfo)
         checkEc.shutdown()
       }
+    }
+    "run the start-up check on its own thread, stopped with the app" in {
+      val mw = mockBot()
+      val answer = Promise[String]()
+      mw.post(CommonsLogin.UserInfoParams) returns answer.future
+      val lifecycle = new play.api.inject.DefaultApplicationLifecycle
+      val started = System.nanoTime()
+      val startup = new modules.CommonsLoginStartupCheck(new CommonsLogin(mw, credentials), lifecycle)
+      (System.nanoTime() - started).nanos must be_<(1.second)
+      startup.done.isCompleted must beFalse
+      // the spec's one-thread blocking pool is free: readiness answers while the check hangs
+      status(ready(noAccount)) mustEqual OK
+      Await.result(lifecycle.stop(), 5.seconds)
+      answer.success(botInfo)
+      ok
+    }
+    "answer anonymous when the start-up check fails" in {
+      val ec = scala.concurrent.ExecutionContext.global
+      Await.result(modules.CommonsLoginStartupCheck.start(() => throw new IllegalStateException("boom"))(ec), 5.seconds) mustEqual
+        CommonsLogin.Status.Anonymous
     }
     "treat IPv4 and IPv6 loopback as local" in {
       Seq("127.0.0.1", "127.0.1.1", "::1", "0:0:0:0:0:0:0:1").map { address =>

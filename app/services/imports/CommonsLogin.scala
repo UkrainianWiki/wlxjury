@@ -73,9 +73,13 @@ class CommonsLogin(
   @volatile private var refusals: Int = 0
   /** No login before this time, even when a check finds the session anonymous. */
   @volatile private var nextLogin: Option[Long] = None
-  /** When the wiki last refused the login, and when the next login may start: for [[state]]. */
-  @volatile private var refusedAt: Option[Instant] = None
+  /** How and when the last login failed ("refused", or one that threw), and when the next
+    * login may start: for [[state]].
+    */
+  @volatile private var refusedAt: Option[(String, Instant)] = None
   @volatile private var nextLoginAt: Option[Instant] = None
+  /** When the last check couldn't ask the API, and when the next one is due: for [[state]]. */
+  @volatile private var checkFailed: Option[(Instant, Instant)] = None
   /** Set once a check has finished. */
   @volatile private var checkedOnce = false
   /** Set while a caller checks. */
@@ -95,20 +99,27 @@ class CommonsLogin(
   }
 
   /** What the last check found, in a short line for `/health/ready`: "logged in,
-    * apihighlimits: yes", "refused at <time>, next try at <time> at the earliest", "anonymous
-    * (no account configured)", "not checked yet". Asks nothing; no account name, no password.
+    * apihighlimits: yes", "refused at <time>, next try at <time> at the earliest", "could not
+    * check Commons at <time>, next check at <time>", "anonymous (no account configured)", "not
+    * checked yet". Asks nothing; no account name, no password.
     */
-  def state: String =
+  def state: String = {
+    def loggedIn = s"logged in, apihighlimits: ${if (status.highLimits) "yes" else "no"}"
     if (credentials.isEmpty) "anonymous (no account configured)"
     else if (!checkedOnce) "not checked yet"
-    else if (!status.anonymous) s"logged in, apihighlimits: ${if (status.highLimits) "yes" else "no"}"
-    else {
-      val next = nextLoginAt.filter(_.isAfter(clock())).map(t => s", next try at ${iso(t)} at the earliest").getOrElse("")
-      refusedAt.filter(_ => refusals > 0) match {
-        case Some(at) => s"refused at ${iso(at)}$next"
-        case None => s"anonymous$next"
-      }
+    else checkFailed match {
+      case Some((at, next)) =>
+        val last = if (status.anonymous) "" else s" (last answer: $loggedIn)"
+        s"could not check Commons at ${iso(at)}, next check at ${iso(next)}$last"
+      case None if !status.anonymous => loggedIn
+      case None =>
+        val next = nextLoginAt.filter(_.isAfter(clock())).map(t => s", next try at ${iso(t)} at the earliest").getOrElse("")
+        refusedAt.filter(_ => refusals > 0) match {
+          case Some((how, at)) => s"$how at ${iso(at)}$next"
+          case None => s"anonymous$next"
+        }
     }
+  }
 
   /** Page ids or titles per request: [[HighLimit]] with `apihighlimits`, else [[Limit]]. */
   def idsPerRequest: Int = if (ensure().highLimits) HighLimit else Limit
@@ -162,6 +173,7 @@ class CommonsLogin(
     var retry = recheck
     // set once the API has said who the session is: an error before that keeps the last answer
     var answered = false
+    var failedCheck = false
     val checked =
       try {
         val current = userInfo()
@@ -187,7 +199,7 @@ class CommonsLogin(
                   case failed =>
                     // refused, or thrown after the request may have reached the wiki
                     refusals += 1
-                    refusedAt = Some(clock())
+                    refusedAt = Some((if (failed.isSuccess) "refused" else "login failed without an answer", clock()))
                     retry = noLoginFor(refusedGap(refusals))
                     loginFailed(c, failed.fold(e => s"could not log in: ${String.valueOf(e.getMessage)}", identity), retry)
                 }
@@ -197,15 +209,18 @@ class CommonsLogin(
         case NonFatal(e) if !answered =>
           logger.warn(s"${bot.host}: could not check the account: ${controllers.Secured.logValue(String.valueOf(e.getMessage))}; " +
             s"keeping the last answer (${status.describe}), checking again in $recheck")
+          failedCheck = true
           status
         case NonFatal(e) =>
           // only the check after a successful login gets here
           logger.warn(s"${bot.host}: logged in, but could not check the account: ${controllers.Secured.logValue(String.valueOf(e.getMessage))}; " +
             s"keeping the last answer (${status.describe}), checking again in ${describe(recheck)}")
+          failedCheck = true
           status
       }
     if (checked != status || nextCheck.isEmpty) logger.info(s"${bot.host}: ${checked.describe}")
     status = checked
+    checkFailed = if (failedCheck) Some((clock(), clock().plusNanos(retry.toNanos))) else None
     checkedOnce = true
     nextCheck = if (invalidations.get() != invalidated) None else Some(now() + retry.toNanos)
   }

@@ -488,14 +488,31 @@ class CommonsLoginSpec extends Specification with JuryTestHelpers {
       l.state === "refused at 2026-11-26T08:54:00Z"
     }
 
-    "say anonymous with the next try after a login that threw" in {
+    "say when a login failed without an answer, and when it may be tried again" in {
       val mw = mockBot()
       mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous)
       mw.login("ExampleBot@jury", "secret") returns Future.failed(new RuntimeException("<html>503</html>"))
       val clock = Array(0L)
       val l = clocked(mw, clock)
       l.ensure()
-      l.state === "anonymous, next try at 2026-11-26T08:59:00Z at the earliest"
+      l.state === "login failed without an answer at 2026-11-26T08:49:00Z, next try at 2026-11-26T08:54:00Z at the earliest"
+    }
+
+    "say when Commons couldn't be checked, and keep the last answer" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.failed(new java.io.IOException("connection reset")) thenReturns
+        Future.successful(bot) thenReturns Future.successful(readOnly)
+      val clock = Array(0L)
+      val l = clocked(mw, clock)
+      l.ensure()
+      l.state === "could not check Commons at 2026-11-26T08:49:00Z, next check at 2026-11-26T08:59:00Z"
+      clock(0) += 10.minutes.toNanos
+      l.ensure()
+      l.state === "logged in, apihighlimits: yes"
+      clock(0) += 10.minutes.toNanos
+      l.ensure()
+      l.state === "could not check Commons at 2026-11-26T09:09:00Z, next check at 2026-11-26T09:19:00Z " +
+        "(last answer: logged in, apihighlimits: yes)"
     }
 
     "forget a refusal after a successful login" in {
