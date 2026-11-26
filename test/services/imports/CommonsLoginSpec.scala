@@ -66,20 +66,216 @@ class CommonsLoginSpec extends Specification with JuryTestHelpers {
       login(mw).idsPerRequest === 50
     }
 
-    "try a refused login again only after loginRetry" in {
+    "try a refused login again only after 5 minutes, when an import needs it" in {
       val mw = mockBot()
       mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous)
       mw.login("ExampleBot@jury", "secret") returns Future.successful("Failed")
       val clock = Array(0L)
       val l = login(mw, clock)
       l.idsPerRequest === 50
-      clock(0) += 1.hour.toNanos
+      clock(0) += 4.minutes.toNanos
       l.idsPerRequest === 50
       verify(mw, times(1)).login("ExampleBot@jury", "secret")
-      clock(0) += CommonsLogin.LoginRetry.toNanos
+      userInfoRequests(mw, 1)
+      clock(0) += 1.minute.toNanos
       l.idsPerRequest === 50
       verify(mw, times(2)).login("ExampleBot@jury", "secret")
       userInfoRequests(mw, 2)
+    }
+
+    "double the gap after each refused login in a row: 5, 10, 20, 40 minutes, then 1 hour" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous)
+      mw.login("ExampleBot@jury", "secret") returns Future.successful("Failed")
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.ensure()
+      val gaps = Seq(5, 10, 20, 40, 60, 60, 60).map(_.minutes)
+      gaps.zipWithIndex.foreach { case (gap, i) =>
+        clock(0) += gap.toNanos - 1
+        l.ensure()
+        verify(mw, times(i + 1)).login("ExampleBot@jury", "secret")
+        clock(0) += 1
+        l.ensure()
+        verify(mw, times(i + 2)).login("ExampleBot@jury", "secret")
+      }
+      ok
+    }
+
+    "stay within Wikimedia's failed-login limits with a password that stays wrong" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous)
+      mw.login("ExampleBot@jury", "secret") returns Future.successful("Failed")
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      // an import step every 30 seconds for 48 hours
+      (0 until (48 * 60 * 2)).foreach { _ =>
+        l.ensure()
+        clock(0) += 30.seconds.toNanos
+      }
+      // 4 tries in the first 75 minutes, then one an hour
+      verify(mw, times(51)).login("ExampleBot@jury", "secret")
+      ok
+    }
+
+    "reset the gap after a successful login" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous)
+      mw.login("ExampleBot@jury", "secret") returns Future.successful("Failed") thenReturns
+        Future.successful("Failed") thenReturns Future.successful("Success") thenReturns Future.successful("Failed")
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.ensure() // refused: 5 minutes
+      clock(0) += 5.minutes.toNanos
+      l.ensure() // refused: 10 minutes
+      clock(0) += 10.minutes.toNanos
+      l.ensure() // logged in, but the session stays anonymous: check again after recheck
+      verify(mw, times(3)).login("ExampleBot@jury", "secret")
+      clock(0) += 10.minutes.toNanos
+      l.ensure() // refused again: 5 minutes, not 20
+      verify(mw, times(4)).login("ExampleBot@jury", "secret")
+      clock(0) += 5.minutes.toNanos
+      l.ensure()
+      verify(mw, times(5)).login("ExampleBot@jury", "secret")
+      ok
+    }
+
+    "reset the gap when the session is found logged in" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous) thenReturns
+        Future.successful(anonymous) thenReturns Future.successful(bot) thenReturns Future.successful(anonymous)
+      mw.login("ExampleBot@jury", "secret") returns Future.successful("Failed")
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.ensure() // refused: 5 minutes
+      clock(0) += 5.minutes.toNanos
+      l.ensure() // refused: 10 minutes
+      clock(0) += 10.minutes.toNanos
+      l.idsPerRequest === 500 // logged in (e.g. by another process using the same bot)
+      clock(0) += 10.minutes.toNanos
+      l.ensure() // anonymous again, refused: 5 minutes
+      verify(mw, times(3)).login("ExampleBot@jury", "secret")
+      clock(0) += 5.minutes.toNanos
+      l.ensure()
+      verify(mw, times(4)).login("ExampleBot@jury", "secret")
+      ok
+    }
+
+    "not log in before the gap, however many steps call ensure or invalidate" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous)
+      mw.login("ExampleBot@jury", "secret") returns Future.successful("Failed")
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.ensure()
+      (1 to 100).foreach { i =>
+        if (i % 10 == 0) l.invalidate()
+        l.ensure()
+        clock(0) += 2.seconds.toNanos
+      }
+      verify(mw, times(1)).login("ExampleBot@jury", "secret")
+      ok
+    }
+
+    "not log in before the gap from concurrent steps" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous)
+      mw.login("ExampleBot@jury", "secret") returns Future.successful("Failed")
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.ensure()
+      clock(0) += 4.minutes.toNanos
+      implicit val ec: ExecutionContext = ExecutionContext.global
+      val steps = Future.sequence((1 to 200).map(i => Future { if (i % 20 == 0) l.invalidate(); l.ensure() }))
+      Await.result(steps, 10.seconds).forall(_ == CommonsLogin.Status.Anonymous) === true
+      verify(mw, times(1)).login("ExampleBot@jury", "secret")
+      clock(0) += 1.minute.toNanos
+      Await.result(Future.sequence((1 to 200).map(_ => Future(l.ensure()))), 10.seconds)
+      verify(mw, times(2)).login("ExampleBot@jury", "secret")
+      ok
+    }
+
+    "back off the same way after logins that throw (a timeout or an error page)" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous)
+      mw.login("ExampleBot@jury", "secret") returns Future.failed(new java.util.concurrent.TimeoutException("timed out"))
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.ensure()
+      Seq(5, 10, 20, 40, 60, 60).map(_.minutes).zipWithIndex.foreach { case (gap, i) =>
+        clock(0) += gap.toNanos - 1
+        l.invalidate()
+        l.ensure()
+        verify(mw, times(i + 1)).login("ExampleBot@jury", "secret")
+        clock(0) += 1
+        l.ensure()
+        verify(mw, times(i + 2)).login("ExampleBot@jury", "secret")
+      }
+      ok
+    }
+
+    "count refused and throwing logins in one series" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous)
+      mw.login("ExampleBot@jury", "secret") returns Future.successful("Failed") thenReturns
+        Future.failed(new RuntimeException("<html>503</html>")) thenReturns Future.successful("Failed")
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.ensure() // refused: 5
+      clock(0) += 5.minutes.toNanos
+      l.ensure() // throws: 10
+      clock(0) += 9.minutes.toNanos
+      l.ensure()
+      verify(mw, times(2)).login("ExampleBot@jury", "secret")
+      clock(0) += 1.minute.toNanos
+      l.ensure() // refused: 20
+      verify(mw, times(3)).login("ExampleBot@jury", "secret")
+      clock(0) += 19.minutes.toNanos
+      l.ensure()
+      verify(mw, times(3)).login("ExampleBot@jury", "secret")
+      ok
+    }
+
+    "keep the token-result wait at recheck, not the backoff, and not below the current gap" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous)
+      mw.login("ExampleBot@jury", "secret") returns Future.successful("WrongToken") thenReturns
+        Future.successful("WrongToken") thenReturns Future.successful("WrongToken")
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.ensure()
+      clock(0) += 10.minutes.toNanos
+      l.ensure()
+      clock(0) += 10.minutes.toNanos
+      l.ensure()
+      verify(mw, times(3)).login("ExampleBot@jury", "secret")
+      ok
+    }
+
+    "check again after recheck when the check after a successful login throws" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous) thenReturns
+        Future.failed(new java.io.IOException("connection reset")) thenReturns Future.successful(bot)
+      mw.login("ExampleBot@jury", "secret") returns Future.successful("Success")
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.idsPerRequest === 50
+      clock(0) += 9.minutes.toNanos
+      l.idsPerRequest === 50
+      userInfoRequests(mw, 2)
+      clock(0) += 1.minute.toNanos
+      l.idsPerRequest === 500
+      verify(mw, times(1)).login("ExampleBot@jury", "secret")
+      ok
+    }
+
+    "describe the waits it logs" in {
+      CommonsLogin.describe(5.minutes) === "5 minutes"
+      CommonsLogin.describe(1.hour) === "1 hour"
+      CommonsLogin.describe(2.hours) === "2 hours"
+      CommonsLogin.describe(90.seconds) === "90 seconds"
+      CommonsLogin.describe(1.second) === "1 second"
+      CommonsLogin.describe(150.seconds) === "3 minutes"
     }
 
     "check again after recheck when the API couldn't be asked" in {
@@ -93,7 +289,7 @@ class CommonsLoginSpec extends Specification with JuryTestHelpers {
       l.idsPerRequest === 500
     }
 
-    "try a login refused for its token again after recheck, not loginRetry" in {
+    "try a login refused for its token again after recheck, not the refused-login gap" in {
       val mw = mockBot()
       mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous) thenReturns
         Future.successful(anonymous) thenReturns Future.successful(bot)
@@ -107,7 +303,7 @@ class CommonsLoginSpec extends Specification with JuryTestHelpers {
       ok
     }
 
-    "try a login that threw again after recheck" in {
+    "try a login that threw again after the refused-login gap" in {
       val mw = mockBot()
       mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous) thenReturns
         Future.successful(anonymous) thenReturns Future.successful(bot)
@@ -116,7 +312,7 @@ class CommonsLoginSpec extends Specification with JuryTestHelpers {
       val clock = Array(0L)
       val l = login(mw, clock)
       l.idsPerRequest === 50
-      clock(0) += 10.minutes.toNanos
+      clock(0) += 5.minutes.toNanos
       l.idsPerRequest === 500
     }
 
@@ -243,6 +439,93 @@ class CommonsLoginSpec extends Specification with JuryTestHelpers {
       l.invalidate()
       l.ensure()
       userInfoRequests(mw, 2)
+    }
+  }
+
+  "state" should {
+    val start = java.time.Instant.parse("2026-11-26T08:49:00Z")
+
+    /** A login on a monotonic clock and a wall clock that move together. */
+    def clocked(mw: MwBot, clock: Array[Long]) =
+      new CommonsLogin(mw, Some(credentials), recheck = 10.minutes, now = () => clock(0),
+        clock = () => start.plusNanos(clock(0)))
+
+    "say no account is configured" in {
+      CommonsLogin.anonymous(mockBot()).state === "anonymous (no account configured)"
+    }
+
+    "say not checked yet before the first check, and ask nothing for it" in {
+      val mw = mockBot()
+      login(mw).state === "not checked yet"
+      verify(mw, never()).post(any[Map[String, String]])
+      ok
+    }
+
+    "say logged in, with apihighlimits or without, and no account name" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(bot) thenReturns Future.successful(noHighLimits)
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.ensure()
+      l.state === "logged in, apihighlimits: yes"
+      clock(0) += 10.minutes.toNanos
+      l.ensure()
+      (l.state === "logged in, apihighlimits: no") and (l.state must not(contain("Someone")))
+    }
+
+    "say when the login was refused and when it may be tried again" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous)
+      mw.login("ExampleBot@jury", "secret") returns Future.successful("Failed")
+      val clock = Array(0L)
+      val l = clocked(mw, clock)
+      l.ensure()
+      l.state === "refused at 2026-11-26T08:49:00Z, next try at 2026-11-26T08:54:00Z at the earliest"
+      clock(0) += 5.minutes.toNanos
+      l.ensure()
+      l.state === "refused at 2026-11-26T08:54:00Z, next try at 2026-11-26T09:04:00Z at the earliest"
+      clock(0) += 10.minutes.toNanos
+      l.state === "refused at 2026-11-26T08:54:00Z"
+    }
+
+    "say when a login failed without an answer, and when it may be tried again" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous)
+      mw.login("ExampleBot@jury", "secret") returns Future.failed(new RuntimeException("<html>503</html>"))
+      val clock = Array(0L)
+      val l = clocked(mw, clock)
+      l.ensure()
+      l.state === "login failed without an answer at 2026-11-26T08:49:00Z, next try at 2026-11-26T08:54:00Z at the earliest"
+    }
+
+    "say when Commons couldn't be checked, and keep the last answer" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.failed(new java.io.IOException("connection reset")) thenReturns
+        Future.successful(bot) thenReturns Future.successful(readOnly)
+      val clock = Array(0L)
+      val l = clocked(mw, clock)
+      l.ensure()
+      l.state === "could not check Commons at 2026-11-26T08:49:00Z, next check at 2026-11-26T08:59:00Z"
+      clock(0) += 10.minutes.toNanos
+      l.ensure()
+      l.state === "logged in, apihighlimits: yes"
+      clock(0) += 10.minutes.toNanos
+      l.ensure()
+      l.state === "could not check Commons at 2026-11-26T09:09:00Z, next check at 2026-11-26T09:19:00Z " +
+        "(last answer: logged in, apihighlimits: yes)"
+    }
+
+    "forget a refusal after a successful login" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous) thenReturns
+        Future.successful(anonymous) thenReturns Future.successful(bot)
+      mw.login("ExampleBot@jury", "secret") returns Future.successful("Failed") thenReturns Future.successful("Success")
+      val clock = Array(0L)
+      val l = clocked(mw, clock)
+      l.ensure()
+      clock(0) += 5.minutes.toNanos
+      l.ensure()
+      l.state === "logged in, apihighlimits: yes"
     }
   }
 

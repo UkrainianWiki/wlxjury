@@ -70,6 +70,12 @@
 @* an existing round's track without its own label (round lineage slice A), named in the track
    field's help *@
 @automaticTrack = @{ editRoundForm("id").value.flatMap(_.toLongOption).flatMap(views.TrackChip.automatic(_, rounds)) }
+@* a round created from rounds still there takes their track: its placeholder says so, so the
+   automatic name isn't typed again as a label (a second track of the same name) *@
+@inheritsTrack = @{ editRoundForm("id").value.flatMap(_.toLongOption).flatMap(id => rounds.find(_.id.contains(id)))
+    .exists(_.previousIds.exists(p => rounds.exists(_.id.contains(p)))) }
+@* the track label's help: one line, and the admin guide's Tracks section, as of this version (views.Guide) *@
+@trackHelp = {@Messages("round.track.help", Messages("round.track.main")) <a href="@views.Guide.admin("a-tracks")" target="_blank" rel="noopener noreferrer" id="round-track-guide">@views.ExternalLinks.marked(Messages("round.track.more"), views.Guide.admin("a-tracks"))</a>}
 
 @* the track field, "Main" shown as the page names the Main track (saved back as "Main") *@
 @trackField = @{
@@ -156,14 +162,17 @@
                     @bs.text(editRoundForm("name"), Symbol("_label") -> Messages("round.name.optional"))
 
                     @* the round's track label (round lineage decision 4, slice A): empty is the automatic
-                       track; any time, also for an existing round (Round.setTrack); the contest's labels
-                       and Main offered as they are spelled, since identical labels share a track. No native
-                       maxlength (false: not the one its maxLength constraint would add): it counts UTF-16 units,
-                       so an emoji would count twice; the form refuses more than Round.TrackMaxLength code points,
-                       its error at the field and at the top *@
+                       track, named in the field as its placeholder (the chip's name, whole; a new round's
+                       comes from its previous rounds once saved: "Automatic"); any time, also for an
+                       existing round (Round.setTrack); the contest's labels and Main offered as they are
+                       spelled, since identical labels share a track. No native maxlength (false: not the
+                       one its maxLength constraint would add): it counts UTF-16 units, so an emoji would
+                       count twice; the form refuses more than Round.TrackMaxLength code points, its error
+                       at the field and at the top *@
                     @bs.text(trackField, Symbol("_label") -> Messages("round.track.label"),
-                        Symbol("_help") -> (Messages("round.track.help", Messages("round.track.main")) +
-                            automaticTrack.fold("")(t => " " + Messages("round.track.automatic", t))),
+                        Symbol("_help") -> trackHelp,
+                        Symbol("placeholder") -> automaticTrack.fold(Messages("round.track.automatic.new"))(t =>
+                            Messages(if (inheritsTrack) "round.track.automatic.inherited" else "round.track.automatic", t)),
                         Symbol("maxlength") -> false, Symbol("list") -> "round-track-labels",
                         Symbol("autocomplete") -> "off")
                     <datalist id="round-track-labels">

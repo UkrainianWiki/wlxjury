@@ -1,5 +1,7 @@
 @(round: db.scalikejdbc.Round, lineage: Option[services.RoundLineage.Lineage])(implicit messages: Messages)
 @* A round's Track chip, after its name (round lineage slice A, §8.1): its track's name, cut short
    (whole in the title), in its track's colour (views.TrackChip.colour: its hash, collisions
-   in the contest moved apart; theme.css --wlx-track-*); "Track:" before it for screen readers. Nothing without a lineage (a page or viewer without tracks), nor
-   for a round whose track is named after it (TrackChip.shown). No white space around it *@@for(l <- lineage; t <- views.TrackChip.shown(round, l)) {<span class="badge wlx-track @views.TrackChip.colour(t, l)" data-track="@t.key" title="@Messages("round.track"): @views.TrackChip.name(t, l)"><span class="visually-hidden">, @Messages("round.track"): </span>@views.TrackChip.short(t, l)</span>}
+   in the contest moved apart; theme.css --wlx-track-*); "Track:" before it for screen readers.
+   Nothing without a lineage (a page or viewer without tracks), in a contest without two tracks
+   that say more than a round's name, nor for a round alone on a track named after it
+   (TrackChip.shown). No white space around it *@@for(l <- lineage; t <- views.TrackChip.shown(round, l)) {<span class="badge wlx-track @views.TrackChip.colour(t, l)" data-track="@t.key" title="@Messages("round.track"): @views.TrackChip.name(t, l)"><span class="visually-hidden">, @Messages("round.track"): </span>@views.TrackChip.short(t, l)</span>}
