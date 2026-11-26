@@ -63,7 +63,7 @@ roadmap. A plan that takes it up cites it; once nothing is open in it, it follow
 | adds a message key, a page pattern, a script, a theme variable, a vendored patch | UI practices |
 | adds or updates a dependency, action, image or downloaded tool | dependencies practices |
 | ships a user-visible change | a fragment in `changes/unreleased/` (folded into CHANGELOG.md at release) |
-| changes a label, a key or what a juror sees or does | the juror guide (`docs/user/juror-guide.md`, §5) |
+| changes a label, a key or what a juror sees or does | the user guide's topic page for it (`docs/user/`, §5; the jurors' pages are `juror-*.md`) |
 | adds or changes a user-visible flow | the story catalogue (`docs/testing/stories.md`): a story ID, its guide section, a tagged test or its uncovered entry (testing §9.4) |
 | starts, lands or decides a batch | the roadmap |
 | adds, removes or automates a manual check | the release checklist in deployment.md ("Release checklist") |
@@ -117,19 +117,26 @@ The rule is in workflow §8: the update is in the same PR, and the reviewer chec
 
 ## 5. User docs
 
-`docs/user/`: the English [juror guide](user/juror-guide.md), [organizer guide](user/organizer-guide.md),
-[admin guide](user/admin-guide.md) and [what's new in 2026 (up to version 26.11)](user/whats-new-26.11.md) exist
-(written from the tool as it is; **unpublished**). One guide per role: the organizer guide is the
-read-only guide to following the voting and reading the results; the admin guide has accounts,
-the contest and running the judging (rounds, files, conflicts of interest). Screenshots are
+`docs/user/`: the English user guide and [what's new in 2026 (up to version
+26.11)](user/whats-new-26.11.md) exist (written from the tool as it is; **unpublished**). The guide is
+a set of topic pages, flat in `docs/user/` (`signing-in.md`, `round-files.md`, `juror-gallery.md`
+…; the jurors' pages start with `juror-`), each topic written once, with labelled notes where a
+role does more or sees less (**Admins:**, **Organizers:**, `> **For admins.**`). The [juror
+guide](user/juror-guide.md), [organizer guide](user/organizer-guide.md) and [admin
+guide](user/admin-guide.md) are the per-role contents pages, and [user/README.md](user/README.md)
+lists every page by role. Screenshots are
 `docs/user/images/`, made by an opt-in browser spec (`docs-screenshots.spec.js`, run with
 `DOCS_SCREENSHOTS=1`; [images/README.md](user/images/README.md) says which platform made them).
 
-**Stable anchors** (for links in the tool's help later): the organizer and admin guides give
-each section an explicit `<a id="o-…"></a>` (organizer), `a-…` (admin) or `w-…` (what's new) before
-its heading, which doesn't change when the heading's words do. The juror guide's anchors are its
-headings' GitHub slugs, which the story catalogue already links; a heading there is renamed only
-together with its links. It is written for
+**Stable anchors** (for the tool's help links):
+every `##` and `###` heading of a topic page has an explicit `<a id="…"></a>` on the line above,
+`a-…` (admin topics), `o-…` (organizer topics), `j-…` (juror topics) or `w-…` (what's new), which
+doesn't change when the heading's words do, and is unique across the topic pages, so a section
+can move to another page and keep its id. The contents pages keep every anchor of the old
+single-page guides (their explicit ids and heading slugs) on the entry that links the section's
+new place. The story catalogue links the topic pages' heading slugs; a heading there is renamed
+only together with its links. `scripts/docs-links.py` (a CI step) checks every link, image and
+anchor of `docs/user` and these rules. It is written for
 the Translate extension: short paragraphs, headings that stand alone, the interface's labels from
 `conf/messages.en`. The guides link to each other and to their screenshots (`<img>`) with
 relative links, which the release step rewrites for the wiki. A screenshot not made yet is an

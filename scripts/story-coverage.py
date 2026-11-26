@@ -14,7 +14,8 @@ duplicate catalogue row; a guide section link without its #anchor, and a guide o
 missing file or heading; and a vacuous run: no tag in the browser tests or the Scala specs, or a
 raw count of the quoted tags ('@J-21') and the [J-27 groups that differs from what was parsed.
 Reports, without failing: the stories no test cites, those cited by one layer only, the tests
-inside test.fixme or test.skip (not counted as covering) and the guide sections no story links.
+inside test.fixme or test.skip (not counted as covering) and the guide sections (## and ###) no
+story links, over every topic page of docs/user and any other page the catalogue links.
 
     python3 scripts/story-coverage.py [--root DIR] [--out PATH] [--no-summary]
     python3 scripts/story-coverage.py --self-test
@@ -32,6 +33,10 @@ import tempfile
 CATALOGUE = Path("docs/testing/stories.md")
 BROWSER_TESTS = Path("browser-test/tests")
 SCALA_TESTS = Path("test")
+# the user guide: its topic pages are all read for the sections no story links; the contents
+# pages, the index and the release notes only when the catalogue links them
+USER_GUIDE = Path("docs/user")
+NOT_TOPICS = {"admin-guide.md", "organizer-guide.md", "juror-guide.md", "README.md"}
 OUT = Path("target/story-coverage.md")
 SELF_TEST_DATA = Path(__file__).resolve().parent / "testdata" / "story-coverage"
 
@@ -501,8 +506,13 @@ def collect(root):
 
     linked = {(p, a) for s in stories.values() for t, a in s.links
               for p in [(cat_path.parent / t).resolve() if t else cat_path.resolve()]}
-    unlinked = [(p, title) for p, heads in guides.items() if heads
-                for level, title, a in heads if level == 3 and (p, a) not in linked]
+    pages = dict(guides)
+    user = root / USER_GUIDE
+    for f in sorted(user.glob("*.md")) if user.is_dir() else []:
+        if f.name not in NOT_TOPICS and not f.name.startswith("whats-new-"):
+            pages.setdefault(f.resolve(), anchors(f))
+    unlinked = [(p, title) for p, heads in pages.items() if heads
+                for level, title, a in heads if level in (2, 3) and (p, a) not in linked]
     extra = {"counts": (browser_tags, browser_raw, scala_count, scala_raw), "skipped": skipped, "unlinked": [(rel(p) if root.resolve() in p.parents else p.name, t) for p, t in unlinked]}
     return stories, errors, notes, extra
 

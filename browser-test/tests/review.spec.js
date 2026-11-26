@@ -1,5 +1,5 @@
-// A round's review before distribution (P3, docs/user/admin-guide.md "Reviewing a round's images",
-// "Choosing the jurors"), as the contest's admin. The round is set up in numbered steps (UI-path plan
+// A round's review before distribution (P3, docs/user/round-review.md, round-jurors.md "Choosing
+// the jurors"), as the contest's admin. The round is set up in numbered steps (UI-path plan
 // §4 step 1, the maintainer's decision of 2026-11-25): the new-round form (step 1) has filters only and
 // one button, "Save and find matching files", which holds the round in review and lands on its review
 // page (step 2), "N files match (the contest has M)" once they are found; its "Distribute to jurors"

@@ -61,6 +61,21 @@ python scripts/story-coverage.py              # the matrix: stdout, target/story
 python scripts/story-coverage.py --self-test  # on scripts/testdata/story-coverage/
 ```
 
+## docs-links.py
+
+The user guide's link check ([docs README](../docs/README.md) §5): every relative link, image
+and `#anchor` of `docs/user` resolves (an explicit `<a id>` or a heading slug), an id is used
+once, every `##`/`###` heading of a topic page has an id, and no heading follows an HTML line
+(`<img>`) without a blank line (GitHub would show it as text); also the links into `docs/user`
+from `README.md`, `docs/README.md` and the story catalogue. Python standard library only, no
+build; a step of `ci.yml`.
+
+```bash
+python scripts/docs-links.py                        # the check
+python scripts/docs-links.py --legacy-rev 96312a39  # also: the old guides' anchors are kept
+python scripts/docs-links.py --self-test            # each failure on a small fixture
+```
+
 ## coverage-summary.py, coverage_comment.py, coveralls-paths.py
 
 Coverage reporting ([testing practices](../docs/testing/practices.md) §9.5), standard library

@@ -1,4 +1,4 @@
-// The round form's cut control (docs/user/admin-guide.md "Choosing the round's files"; regional winners
+// The round form's cut control (docs/user/round-files.md "Choosing the round's files"; regional winners
 // plan §10.4, one control decided 2026-11-26): "Choose N" over the fixture's rated round lists every
 // valid cut as "top N · score ≥ X", the candidates labelled; picking one shows "Show this cut in the
 // ratings", which opens the rated round's rating view in a new tab at the cut's page, its divider
