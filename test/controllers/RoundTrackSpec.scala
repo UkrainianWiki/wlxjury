@@ -224,7 +224,7 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
           (otherOf(gallery, "#round-menu", ".wlx-menu-other", "ul") === Seq(("Other rounds", true, 1))) and
           (gallery.select("#round-menu .dropdown-divider").size === 1) and
           (page(app, f.organizer, s"/roundstat/${f.merge.getId}", "uk")
-            .select("#round-stat-rounds .wlx-round-tabs-other .visually-hidden").text === "Інші раунди")
+            .select("#round-stat-rounds .wlx-round-tabs-other > .visually-hidden").text === "Інші раунди")
       }
     }
 

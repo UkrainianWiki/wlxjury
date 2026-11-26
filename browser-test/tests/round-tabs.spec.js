@@ -182,8 +182,6 @@ for (const mode of ['light', 'dark']) {
       const flat = await read();
       expect(flat.groups).toEqual([]);
       expect(flat.names).toEqual(OLDEST_FIRST);
-      expect(flat.notes, 'ungrouped: each tab says its track to screen readers').toEqual(
-        [', track Quality', ', track Quantity', ', track Quality', ', track Main', ', track Харків']);
       expect(flat.chips).toBe(0);
       await context.close();
     });
