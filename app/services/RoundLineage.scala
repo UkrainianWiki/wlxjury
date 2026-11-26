@@ -7,6 +7,7 @@ import services.regions.RegionScheme
 import java.text.Collator
 import java.util.Locale
 import scala.collection.mutable
+import scala.jdk.CollectionConverters._
 
 /** A contest's rounds as a graph (round lineage plan, docs/plans/2026-11-10-round-lineage.md): which
   * track each round is on, by the track rule v4 (§2.3, decision 3) and the manual label (decision 4),
@@ -22,6 +23,21 @@ object RoundLineage {
 
   /** The manual label that puts a round's track in the Main group (decision 4), as stored. */
   val MainLabel = "Main"
+
+  /** Main as each of the app's languages names it (`round.track.main` of play.i18n.langs' messages
+    * files), lower case: the names Round.trackLabel takes for Main (RoundController.trackMainNames),
+    * so that no other track reads as Main in any of them ([[Lineage.shownAsMain]]).
+    */
+  lazy val MainNames: Set[String] = {
+    val langs = scala.util.Try(com.typesafe.config.ConfigFactory.load().getStringList("play.i18n.langs").asScala.toSeq)
+      .getOrElse(Seq("en", "fr", "uk", "ru"))
+    val translated = langs.flatMap { lang =>
+      Option(getClass.getResource(s"/messages.$lang"))
+        .flatMap(url => play.api.i18n.Messages.parse(play.api.i18n.Messages.UrlMessageSource(url), lang).toOption)
+        .flatMap(_.get("round.track.main"))
+    }
+    (MainLabel +: translated).map(_.trim.toLowerCase(Locale.ROOT)).toSet
+  }
 
   /** What placed a track: its kind, in the URL's track key and for its order. */
   sealed abstract class Kind(val param: String)
@@ -180,6 +196,24 @@ object RoundLineage {
     private lazy val selfNamedTracks: Set[Track] = trackOf.toSeq.groupMap(_._2)(_._1).collect {
       case (t, ids) if t.kind == Kind.Name && ids.forall(id => rounds(id).previousIds.forall(p => !rounds.contains(p))) => t
     }.toSet
+
+    /** The track the pages call Main in a contest without one (no merge, rule 6, and no round
+      * labelled Main): the name track of the contest's first round that isn't on a track named after
+      * itself ([[selfNamedTrack]]), as "Round 1" with the later rounds made from it (the maintainer's
+      * option C, 2026-11-26). None if that round's track is another kind (a category, a media type, a
+      * label, a nomination, regions). Display only: its key, colour and order stay its own, and
+      * nothing else (the regional winners' final round, #181) takes it for Main. None too if another
+      * track is named Main in any of the app's languages ([[MainNames]]: Основний, Principale…), so
+      * that two tracks never read Main. The round form's automatic track keeps the track's own name
+      * (TrackChip.automatic).
+      */
+    lazy val shownAsMain: Option[Track] =
+      if (tracks.exists(_.isMain)) None
+      else
+        rounds.values.toSeq.sortBy(_.getId)
+          .filter(_.previousIds.forall(p => !rounds.contains(p)))
+          .flatMap(track).find(t => !selfNamedTrack(t))
+          .filter(t => t.kind == Kind.Name && !tracks.exists(o => o != t && MainNames.contains(o.name.trim.toLowerCase(Locale.ROOT))))
 
     /** The round is alone on a track named after it ([[selfNamedTrack]]). */
     def selfNamed(round: Round): Boolean = this.track(round).exists(selfNamedTrack)
