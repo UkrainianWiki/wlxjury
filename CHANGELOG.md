@@ -16,6 +16,10 @@ Deploy dates come from production's migration history, as described at the end.
 
 - Imports no longer stay slow for 6 hours after Commons refuses the bot's login once: the login is tried again when an import needs it, after 5 minutes at first, waiting longer (up to 1 hour) only while Commons keeps refusing it.
 
+**Operations**
+
+- `/health/ready` reports the Commons login as `commons` ("logged in, apihighlimits: yes", "refused at …, next try at …"), checked once in the background when the app starts, so the post-deploy check shows a refused bot password at once; it never makes the app unready.
+
 ## Deployed releases
 
 ### 26.11.17.2 (2026-11-26)

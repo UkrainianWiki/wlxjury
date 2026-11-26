@@ -140,8 +140,12 @@ finds them):
 loopback address (`ReadinessController.isLocal`; a request through Apache carries
 `X-Forwarded-For` and gets 404): 200 with the release identity (`wlxjury-build.json`) when the
 database's Flyway version equals the build's `schemaVersion` **and** the pool runs at READ
-COMMITTED; otherwise 503 `{status: unavailable}`. No JDBC URL, credential or exception text,
-`no-store`. *Why:* the release tools wait on it before reopening, and a server whose
+COMMITTED; otherwise 503 `{status: unavailable}`. The 200 answer adds `commons`, the Commons login's
+last state (`CommonsLogin.state`: "logged in, apihighlimits: yes", "refused at …, next try at … at
+the earliest", "anonymous (no account configured)", "not checked yet"), which never makes the app
+unready and names no account; the app checks the login once at start, in the background
+(`CommonsLoginStartupCheck`), under the same refused-login gap as imports. No JDBC URL, credential
+or exception text, `no-store`. *Why:* the release tools wait on it before reopening, and a server whose
 `production.conf` overrides `db.default.hikaricp.transactionIsolation` must not take traffic (the
 write paths rely on READ COMMITTED, db §6.1); the refusal is logged on `readiness` with the
 setting to fix.

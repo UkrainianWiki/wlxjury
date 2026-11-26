@@ -619,6 +619,7 @@ A change that adds, removes or automates a manual check updates this section
 | Check | What to do | Why by hand | When |
 |---|---|---|---|
 | Smoke test before reopening | The release's pages on `127.0.0.1:9000` with a jury host name, then `reopen` | The production server, its config and data | Every deploy |
+| Commons login | `curl -s http://127.0.0.1:9000/health/ready` and read `commons` (the app checks the login once at start, in the background, so wait a few seconds after the start). `logged in, apihighlimits: yes` is fine; `not checked yet` means asking again a little later. `refused at …, next try at …` or `logged in, apihighlimits: no` is a warning to report to the maintainer (a wrong or revoked bot password, or the account isn't in the bot group), not a reason to back out: imports still work, only slower | The bot password in `runtime.env`, which no test sees | Every deploy |
 | Back out if needed | The [Recovery runbook](#recovery-runbook), by the last milestone | A decision | When the smoke test fails |
 | What was pruned, and monit | Read `reopen`'s `Keep` and `Deleted` lines; `df -h /`; `stat -c '%a %U:%G' /var/www/jury-images` shows `755 wlxjury:wlxjury`; `/var/log/monit.log` has no `wlxjury` error since the reopen | The server's disk and monit, which no test sees | Every deploy |
 

@@ -4,6 +4,8 @@ import org.scalawiki.MwBot
 import play.api.libs.json.{JsValue, Json}
 import play.api.{Configuration, Logging, Mode}
 
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 import scala.concurrent.Await
 import scala.concurrent.duration._
@@ -44,7 +46,11 @@ import scala.util.control.NonFatal
   * answer. An [[invalidate]] while it checks makes the next [[ensure]] check again, as the
   * check may have asked before the session ended.
   *
-  * @param now nanoseconds of a monotonic clock
+  * [[state]] says, in a short line for `/health/ready`, what the last check found, without the
+  * account's name.
+  *
+  * @param now   nanoseconds of a monotonic clock
+  * @param clock the wall clock, for the times [[state]] shows
   */
 class CommonsLogin(
     bot: MwBot,
@@ -52,7 +58,8 @@ class CommonsLogin(
     recheck: FiniteDuration = CommonsLogin.Recheck,
     loginRetryFirst: FiniteDuration = CommonsLogin.LoginRetryFirst,
     loginRetryMax: FiniteDuration = CommonsLogin.LoginRetryMax,
-    now: () => Long = () => System.nanoTime()
+    now: () => Long = () => System.nanoTime(),
+    clock: () => Instant = () => Instant.now()
 ) extends Logging {
 
   import CommonsLogin._
@@ -64,6 +71,11 @@ class CommonsLogin(
   @volatile private var refusals: Int = 0
   /** No login before this time, even when a check finds the session anonymous. */
   @volatile private var nextLogin: Option[Long] = None
+  /** When the wiki last refused the login, and when the next login may start: for [[state]]. */
+  @volatile private var refusedAt: Option[Instant] = None
+  @volatile private var nextLoginAt: Option[Instant] = None
+  /** Set once a check has finished. */
+  @volatile private var checkedOnce = false
   /** Set while a caller checks. */
   private val checking = new AtomicBoolean(false)
   /** Counts [[invalidate]] calls, so a check knows whether one came while it ran. */
@@ -79,6 +91,22 @@ class CommonsLogin(
       finally checking.set(false)
     status
   }
+
+  /** What the last check found, in a short line for `/health/ready`: "logged in,
+    * apihighlimits: yes", "refused at <time>, next try at <time> at the earliest", "anonymous
+    * (no account configured)", "not checked yet". Asks nothing; no account name, no password.
+    */
+  def state: String =
+    if (credentials.isEmpty) "anonymous (no account configured)"
+    else if (!checkedOnce) "not checked yet"
+    else if (!status.anonymous) s"logged in, apihighlimits: ${if (status.highLimits) "yes" else "no"}"
+    else {
+      val next = nextLoginAt.filter(_.isAfter(clock())).map(t => s", next try at ${iso(t)} at the earliest").getOrElse("")
+      refusedAt.filter(_ => refusals > 0) match {
+        case Some(at) => s"refused at ${iso(at)}$next"
+        case None => s"anonymous$next"
+      }
+    }
 
   /** Page ids or titles per request: [[HighLimit]] with `apihighlimits`, else [[Limit]]. */
   def idsPerRequest: Int = if (ensure().highLimits) HighLimit else Limit
@@ -116,12 +144,15 @@ class CommonsLogin(
   /** Records a login attempt that didn't log in: no login before `gap` from now. */
   private def noLoginFor(gap: FiniteDuration): FiniteDuration = {
     nextLogin = Some(now() + gap.toNanos)
+    nextLoginAt = Some(clock().plusNanos(gap.toNanos))
     gap
   }
 
   private def loginOk(): Unit = {
     refusals = 0
     nextLogin = None
+    refusedAt = None
+    nextLoginAt = None
   }
 
   private def check(): Unit = {
@@ -153,6 +184,7 @@ class CommonsLogin(
                     if (TransientLoginResults(result)) noLoginFor(afterFailedLogin())
                     else {
                       refusals += 1
+                      refusedAt = Some(clock())
                       noLoginFor(refusedGap(refusals))
                     }
                   logger.warn(s"${bot.host}: login as ${c.user} failed: ${controllers.Secured.logValue(result.toString)}; " +
@@ -174,6 +206,7 @@ class CommonsLogin(
       }
     if (checked != status || nextCheck.isEmpty) logger.info(s"${bot.host}: ${checked.describe}")
     status = checked
+    checkedOnce = true
     nextCheck = if (invalidations.get() != invalidated) None else Some(now() + retry.toNanos)
   }
 
@@ -228,6 +261,8 @@ object CommonsLogin {
 
   val UserInfoParams: Map[String, String] =
     Map("action" -> "query", "meta" -> "userinfo", "uiprop" -> "rights", "format" -> "json", "utf8" -> "")
+
+  private def iso(t: Instant): String = t.truncatedTo(ChronoUnit.SECONDS).toString
 
   /** A wait for the log: "40 minutes", "1 hour", "90 seconds". */
   def describe(d: FiniteDuration): String = {
