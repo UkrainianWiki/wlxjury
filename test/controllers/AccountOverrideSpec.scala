@@ -87,7 +87,8 @@ class AccountOverrideSpec extends PlaySpecification with PlayTestDb with Account
         (doc.select("a[href^=https://commons.wikimedia.org/wiki/User:Jane_Doe]").size === 1) and
           (doc.select("a[href*=User_talk:Jane_Doe]").size must be_>=(1)) and
           (views.ExternalLinksCheck.problems(doc) must beEmpty) and
-          (views.ExternalLinksCheck.sites(doc) === Set("commons"))
+          // and the guide's help links (HelpLinks), on GitHub
+          (views.ExternalLinksCheck.sites(doc) === Set("commons", "other"))
       }
     }
   }

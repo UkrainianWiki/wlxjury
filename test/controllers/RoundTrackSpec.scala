@@ -262,14 +262,14 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
             .attr("placeholder") === "Automatic: Quantity") and
           (doc.getElementById("trackLabel_help").ownText.trim ===
             "Rounds with the same label share a track. Type Main on the main competition's first round.") and
-          // and the admin guide's Tracks section at this version, in a new tab, an anchor the guide has
-          (doc.select("#trackLabel_help a#round-track-guide").attr("href") ===
-            s"https://github.com/UkrainianWiki/wlxjury/blob/${views.Guide.version}/docs/user/admin-guide.md#a-tracks") and
-          (doc.select("#trackLabel_help a#round-track-guide").attr("target") === "_blank") and
-          (doc.select("#trackLabel_help a#round-track-guide").text must startWith("More about tracks")) and
-          (views.ExternalLinksCheck.newTab(doc.selectFirst("#trackLabel_help a#round-track-guide")) must beTrue) and
-          (views.ExternalLinksCheck.marked(doc.selectFirst("#trackLabel_help a#round-track-guide")) must beTrue) and
-          (new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get("docs/user/admin-guide.md")), "UTF-8") must
+          // and the guide's Tracks section at this version, in a new tab, an anchor the guide has (HelpLinks)
+          (doc.select("#trackLabel_help a[data-help-topic=tracks]").attr("href") ===
+            s"https://github.com/UkrainianWiki/wlxjury/blob/${views.Guide.version}/docs/user/tracks.md#a-track-label") and
+          (doc.select("#trackLabel_help a[data-help-topic=tracks]").attr("target") === "_blank") and
+          (doc.select("#trackLabel_help a[data-help-topic=tracks]").text must startWith("More about tracks")) and
+          (views.ExternalLinksCheck.newTab(doc.selectFirst("#trackLabel_help a[data-help-topic=tracks]")) must beTrue) and
+          (views.ExternalLinksCheck.marked(doc.selectFirst("#trackLabel_help a[data-help-topic=tracks]")) must beTrue) and
+          (new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get("docs/user/tracks.md")), "UTF-8") must
             contain("<a id=\"a-tracks\"></a>")) and
           // a new round: its automatic track comes once saved
           (page(app, f.admin, s"/admin/rounds/edit?contestId=${f.contest.getId}").getElementById("trackLabel")

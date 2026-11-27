@@ -245,7 +245,8 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
         val doc = Jsoup.parse(get(app, f.organizer, filesUrl(f, Some(Petro)))._2)
         (doc.select("a.author-commons").size === 1) and
           (views.ExternalLinksCheck.problems(doc) must beEmpty) and
-          (views.ExternalLinksCheck.sites(doc) === Set("commons"))
+          // and the guide's help link (HelpLinks), on GitHub
+          (views.ExternalLinksCheck.sites(doc) === Set("commons", "other"))
       }
     }
 

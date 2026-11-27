@@ -46,6 +46,7 @@
                 <p class="form-control-plaintext@if(errors.nonEmpty) { is-invalid}" id="topImages"@if(errors.nonEmpty) { aria-describedby="@errors.map(_._1).mkString(" ")"}>@if(stored.isEmpty && storedRate.isEmpty) {@Messages("top.n.none")} else {@for(n <- stored) {<span class="d-block">@Messages(CutPicker.TopCutKey, n)</span>}@for(x <- storedRate) {<span class="d-block">@Messages("top.n.held.threshold", CutPicker.fmtThreshold(x))</span>}}</p>
                 @for((id, error) <- errors) {<div class="invalid-feedback d-block" id="@id">@error</div>}
                 @if(prevIds.isEmpty && errors.isEmpty && !formInvalid) {<div class="form-text" id="topImages_help">@Messages("top.n.no.previous")</div>}
+                <div class="form-text" id="topImages_choose_help">@snippets.helpLink("top-files")</div>
             </div>
         </div>
         @if(formInvalid) {
@@ -82,7 +83,7 @@
                     }
                 </select>
                 <div class="form-text" id="topImages_help">@if(p.m == 0) {@Messages("top.n.no.candidates")} else {@Messages("top.n.list.help", p.m)}</div>
-                <div class="form-text" id="topImages_choose_help">@Messages("top.n.choose.help")</div>
+                <div class="form-text" id="topImages_choose_help">@Messages("top.n.choose.help") @snippets.helpLink("top-files")</div>
                 @for((id, error) <- errors) {<div class="invalid-feedback" id="@id">@error</div>}
                 @for(x <- p.heldThreshold) {<input type="hidden" name="@CutPicker.HeldThresholdField" value="@x.bigDecimal.stripTrailingZeros.toPlainString">}
                 @* the previous round's rating view with the chosen cut, where it shows the same cut

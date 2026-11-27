@@ -19,6 +19,7 @@
     @* the source's Commons suggestions (category-suggest.js) are a Tom Select control *@
     @mainAdmin("contest.files", user, user.getId, contestId = contest.id, head = snippets.tomSelectScripts()) {
         <h1 class="h3">@Messages("contest") @contest.fullName</h1>
+        @snippets.helpSection("import-files")
         <p><a id="browse-files" href="@routes.GalleryController.contestFiles(contest.getId)">&larr; @Messages("contest.files")</a>
             · <a id="contest-health-link" class="text-decoration-underline" href="@routes.ContestHealthController.page(contest.getId)">@Messages("health.title")</a></p>
 
@@ -123,6 +124,7 @@
 
         <hr/>
         <h2 class="h4" id="@controllers.ImageController.ImageCacheSection">@Messages("local.image.cache")</h2>
+        @snippets.helpSection("image-cache")
         <div id="cache-status" data-cache-status-url="@routes.ImageController.imageCacheStatus(contest.getId)"
              data-text-all-cached="@Messages("image.cache.all.cached", "{0}", "{1}")"
              data-text-nothing="@Messages("image.cache.nothing", "{0}")"

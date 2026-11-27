@@ -167,7 +167,8 @@ class MessagesCompletenessSpec extends Specification {
     services.GalleryService.RoundState.All.map("round.state.title." + _.reason), // roundState.scala.html's title
     Seq("no.round.yet.closed"),                                                  // noRoundYet.scala.html's title
     db.scalikejdbc.ApiTokenScope.All.flatMap(s =>
-      Seq(s"api.token.scope.${s.value}", s"api.token.scope.short.${s.value}")) // apiTokens, apiTokenScope
+      Seq(s"api.token.scope.${s.value}", s"api.token.scope.short.${s.value}")), // apiTokens, apiTokenScope
+    HelpLinks.topics.keys.toSeq.map(HelpLinks.messageKey) :+ HelpLinks.EnglishKey // snippets/helpLink's texts
   ).flatten
 
   /** Texts in a key's place that are shown as they are, not keys, each with its reason. */

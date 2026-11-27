@@ -307,14 +307,16 @@ class NavbarMenusSpec extends PlaySpecification with PlayTestDb {
       testDbApp { app =>
         val f = fixture()
         val staff = page(app, f.organizer, gallery(f.round, f.juror.getId))
-        groups(staff) === Seq("wlx-nav-links", "wlx-nav-filters", "wlx-nav-order")
+        // and the guide's results link (HelpLinks) last
+        groups(staff) === Seq("wlx-nav-links", "wlx-nav-filters", "wlx-nav-order", "wlx-nav-help")
         staff.select(".wlx-nav-filters").hasClass("border-start") must beTrue
         staff.select(".wlx-nav-order").hasClass("border-start") must beTrue
         staff.select(".wlx-nav-filters > li").asScala.map(li => Option(li.id).filter(_.nonEmpty).getOrElse(li.className)).toList must
           containTheSameElementsAs(List("round-menu", "juror-menu", "votes-menu", "comments-menu"))
         val juror = page(app, f.juror, gallery(f.round, f.juror.getId))
-        groups(juror) === Seq("wlx-nav-filters", "wlx-nav-order")
-        juror.select(".wlx-nav-groups > ul").asScala.map(_.attr("aria-label")).toList === List("Filters", "Sorting and view")
+        // the jurors' Help last (HelpLinks)
+        groups(juror) === Seq("wlx-nav-filters", "wlx-nav-order", "wlx-nav-help")
+        juror.select(".wlx-nav-groups > ul").asScala.map(_.attr("aria-label")).toList === List("Filters", "Sorting and view", "Help")
       }
     }
   }

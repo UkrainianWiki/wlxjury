@@ -17,6 +17,7 @@ class RawHtmlSinksSpec extends Specification {
     "app/views/bs/FieldView.scala" -> "attributes: names matched by AttrName, values HtmlFormat.escape'd",
     "app/views/GalleryTiles.scala" -> "data-* attributes: booleans and HtmlFormat.escape'd JSON of numbers",
     "app/views/ExternalLinks.scala" -> "a link's text (escaped, or a reviewed caller's Html) with the escaped mark snippet",
+    "app/views/HelpLinks.scala" -> "a help link's text and its hidden words (Messages, HtmlFormat.escape'd) with the escaped mark snippet",
     "app/views/JsTexts.scala" -> "a JSON data block of message texts, '<' escaped",
     "app/views/WikiLinks.scala" -> "monument wikitext as links: text and hrefs escaped (WikiLinksSpec)",
     "app/views/contestFiles.scala.html" -> "constant class attributes of a tab",

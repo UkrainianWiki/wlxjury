@@ -24,6 +24,7 @@
 @mainAdmin("account.join.title", user, user.getId, contestId = contestId) {
     <div class="row account-join">
         <h1 class="h3">@Messages("account.join.title")</h1>
+        @snippets.helpSection("join")
         @for(c <- contest) {
             <p class="text-body-secondary">@Messages("contest") @c.fullName.</p>
         }

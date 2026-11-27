@@ -629,6 +629,10 @@ div.thumb_small.wlx-thumb-failed img {
    snippets/externalLogos) at the text's size, to be recognised */
 .wlx-ext-nowrap { white-space: nowrap; }
 .wlx-ext-tail { -webkit-user-select: none; user-select: none; }
+/* a help link into the user guide (snippets/helpLink): its question mark in the link's colour; a
+   section's on a line of its own under the heading (snippets/helpSection) */
+.help-link .bi-question-circle { font-size: .95em; }
+.wlx-help-section { margin-top: -.25rem; }
 .wlx-ext-mark { display: inline-block; font-size: .85em; line-height: 1; text-decoration: none; }
 .wlx-ext-mark[data-site=commons], .wlx-ext-mark[data-site=wikidata] { font-size: 1em; }
 .wlx-ext-logo { width: 1em; height: 1em; vertical-align: -.125em; fill: currentColor; }

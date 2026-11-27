@@ -28,6 +28,8 @@
                    href="@routes.AuthorsController.list(view.contest.getId)">@Messages("authors.list")</a>
             }
         </h1>
+        @* the guide's section on this page; a round's review (the same page) links its own *@
+        @if(review.isEmpty) {@snippets.helpSection("contest-files")}
 
         @for(r <- review) {
             @roundReviewHead(r, view)

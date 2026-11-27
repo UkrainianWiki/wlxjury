@@ -17,7 +17,7 @@ places, the number in each country (region). Then:
 - **Jurors**: the people who vote in this round. They show the round's jurors, or, for a round
   without jurors yet, all the contest's jurors; change them as you need. If the contest has no
   jurors yet, the form links the contest's users: add them first.
-- **File distribution**: **Each file to all jurors**, or **Each file to N juror(s)**, for contests
+- <a id="a-file-distribution"></a>**File distribution**: **Each file to all jurors**, or **Each file to N juror(s)**, for contests
   with so many files that each juror takes a part. The files are shared out so that each file goes
   to the number of jurors you chose.
 - **Distribute to jurors** gives each juror their share and opens the round to them when it has

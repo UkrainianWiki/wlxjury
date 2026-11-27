@@ -32,7 +32,12 @@ object Guide {
     try new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8) finally stream.close()
   }.toOption.flatMap(versionOf).getOrElse(Fallback)
 
-  /** The admin guide at `anchor` (an `<a id>` in docs/user/admin-guide.md), as of `version`. */
-  def admin(anchor: String, version: String = version): String =
-    s"$Repository/blob/$version/docs/user/admin-guide.md#$anchor"
+  /** The user guide's page `page` (a file of docs/user) at `anchor` (an `<a id>` in it; empty: the
+    * page's top), as of `version`. The help links' URLs ([[HelpLinks]]).
+    */
+  def url(page: String, anchor: String, version: String = version): String =
+    s"$Repository/blob/$version/docs/user/$page" + (if (anchor.isEmpty) "" else s"#$anchor")
+
+  /** The admin guide's contents page at `anchor` (an `<a id>` in docs/user/admin-guide.md), as of `version`. */
+  def admin(anchor: String, version: String = version): String = url("admin-guide.md", anchor, version)
 }

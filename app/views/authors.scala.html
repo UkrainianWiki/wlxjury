@@ -24,6 +24,7 @@
 @main("authors.list", user, contestId = page.contest.id) {
     <div class="container-fluid mt-2" id="authors">
         <h1 class="h4">@Messages("authors.list"): @page.contest.fullName</h1>
+        @snippets.helpSection("authors-list")
 
         @* the contest, or one of its rounds: the round tabs (snippets/roundTabs, as the round
            statistics'), "Whole contest" first *@

@@ -44,8 +44,11 @@
 
             @if(!editUserForm("id").value.contains("0")) {
                 <h1 class="h3">@Messages("edit.user")</h1>
+                @* the admins' guide: not on one's own profile *@
+                @if(othersAccount) {@snippets.helpSection("edit-person")}
             } else {
                 <h1 class="h3">@Messages("create.user")</h1>
+                @snippets.helpSection("add-person")
             }
 
             @* a save refused because other accounts have the wiki account typed (accounts plan A-2):
