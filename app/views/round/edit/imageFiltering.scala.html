@@ -11,7 +11,7 @@
         noEdit: Boolean,
         specialNominations: Seq[SpecialNomination] = Nil,
         cutPicker: Option[services.CutPicker] = None,
-        previewUrl: String = ""
+        listUrl: String = ""
 )(implicit messages: Messages)
 @implicitLayout = @{ bs.Layout.horizontal("col-md-4", "col-md-8") }
 @prevIds = @{ editRoundForm("previousRound").indexes.flatMap(i => editRoundForm(s"previousRound[$i]").value) }
@@ -26,8 +26,8 @@
    the section's reason line (#round-filters-locked) *@
 @lockedBy = @{ Option.when(noEdit)("round-filters-locked") }
 @* open when a category is in its boxes, and when one of its fields has an error (a refused save's,
-   RoundFormErrors: shown closed, the 2026-11-25 saves came back with their error out of sight), and once
-   "Choose N" loaded the top N's candidate cuts (round/edit/topN) *@
+   RoundFormErrors: shown closed, the 2026-11-25 saves came back with their error out of sight), and when
+   the page comes with the cut control (a save that refused its cut; round/edit/topN) *@
 @snippets.collapsible("media.filtering", "headingImageFiltering", "collapseImageFiltering",
     open = categoryView.hasCategory || controllers.RoundFormErrors.inMediaFiltering(editRoundForm) || cutPicker.isDefined) {
     @if(noEdit) {
@@ -102,9 +102,9 @@
 
             @* the cut (regional winners plan §10.4, the cut picker): one control for a top N and a
                rated source's "average file rating at least X", the same cut (decided 2026-11-26): no
-               free number box and no threshold field; "Choose N" loads every valid cut
-               (round/edit/topN) *@
-            @views.html.round.edit.topN(editRoundForm, cutPicker, noEdit, previewUrl)
+               free number box and no threshold field; every valid cut is loaded in place (round/edit/topN,
+               cut-list.js) *@
+            @views.html.round.edit.topN(editRoundForm, cutPicker, noEdit, listUrl)
         </div>
 
         @* "Leave out files that are in round(s)" (V95): the contest's other rounds; with or without

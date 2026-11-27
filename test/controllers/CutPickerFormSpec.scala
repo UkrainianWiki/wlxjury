@@ -15,15 +15,16 @@ import scala.concurrent.Future
 import scala.jdk.CollectionConverters._
 
 /** The round form's one cut control, the cut picker (regional winners plan §10.4 place 1, §10.9 "Round
-  * form (SN)"; decided 2026-11-26): no free number box and no threshold field; "Choose N" posts the form
-  * to the preview, which saves nothing and lists every valid cut ("N / score"), the candidates labelled,
+  * form (SN)"; decided 2026-11-26): no free number box and no threshold field; the form, posted by script
+  * to the cut list (loaded in place, decided 2026-11-26: no "Choose N"), gets back the cut box (an HTML
+  * fragment), which saves nothing and lists every valid cut ("N / score"), the candidates labelled,
   * "No top N" always, and for a rated source what the round keeps; a save refuses an N inside a tie next
   * to its field, and stores a valid cut as kept (a threshold or the top N, never both), with how it was
   * chosen in the round's settings log; the round takes the picker's first N files. Legacy rounds: a
   * started round's cut read only, a re-apply's held cut preselected or explained. The link to the rating
   * view only where it shows the same cut, and not to a juror of the open previous round; the rating
   * view's divider, its page, and its authorization unchanged. Only the contest's admins reach the
-  * preview (an organizer, a juror and another contest's admin are refused).
+  * cut list (an organizer, a juror and another contest's admin are refused, as JSON: a script's endpoint).
   */
 class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
 
@@ -61,8 +62,12 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
   private def post(app: Application, email: String, path: String, body: (String, String)*): Future[Result] =
     route(app, request(POST, email, path, body)).get
 
+  /** The cut list, as cut-list.js asks for it (a script request). */
   private def preview(app: Application, email: String, body: (String, String)*): Future[Result] =
-    post(app, email, "/admin/rounds/cut-preview", body: _*)
+    route(app, FakeRequest(POST, CutList).withFormUrlEncodedBody(body: _*).withSession(Secured.UserName -> email)
+      .withHeaders("X-Requested-With" -> "XMLHttpRequest").withCSRFToken).get
+
+  private val CutList = "/admin/rounds/cut-list"
 
   private def save(app: Application, email: String, body: (String, String)*): Future[Result] =
     post(app, email, "/admin/rounds/save", body: _*)
@@ -89,7 +94,7 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
 
   "the new-round form" should {
 
-    "have no free top-N box, but the stored N (none) and \"Choose N\" posting to the preview" in {
+    "have no free top-N box and no \"Choose N\", but the stored N (none), the cut list's URL and the no-script line" in {
       testDbApp { implicit app =>
         val (contest, _) = setUp()
         val page = doc(route(app, request(GET, "admin@example.com", s"/admin/rounds/edit?contestId=${contest.getId}",
@@ -97,14 +102,70 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
         (page.select("input[name=topImages][type=number]").size === 0) and
           (page.select("select#topImages").size === 0) and
           (page.select("#topImages_field #topImages").text === "No top N: all matching files") and
-          (page.select("#topImages-choose").attr("formaction") must contain("/admin/rounds/cut-preview")) and
+          (page.select("#topImages-choose, [formaction*=cut-preview]").size === 0) and
+          (page.select(s"#top-n[data-cut-url=$CutList]:not([data-cut-loaded])").size === 1) and
+          (page.select("#round-form").attr("data-csrf-token") must not(beEmpty)) and
+          // without scripts: a line says the list needs them (the form needs scripts anyway)
+          (Jsoup.parse(page.select("#top-n noscript").html()).text ===
+            "The list of cuts needs JavaScript: turn it on and reload the page.") and
+          (page.select("#top-n-status[role=status][aria-live=polite]").size === 1) and
+          (page.select("#topImages_help").text === "Choose the previous rounds first.") and
           // no target (decided 2026-11-26): the admin picks from the list
           (page.select("#topImagesTarget").size === 0)
       }
     }
   }
 
-  "\"Choose N\" (the preview)" should {
+  "the cut list (loaded in place)" should {
+
+    "answer a script with the cut box alone, an HTML fragment, its count to announce" in {
+      testDbApp { implicit app =>
+        val (contest, prev) = setUp()
+        val result = preview(app, "admin@example.com", newRound(contest, prev): _*)
+        val html = contentAsString(result)
+        (status(result) === OK) and (contentType(result) must beSome("text/html")) and
+          (html must not(contain("<html"))) and (html must not(contain("round-form"))) and
+          (html.trim must startWith("<div data-cut-announce=\"Cuts available: 5\" data-cut-count=\"5\">")) and
+          (Jsoup.parse(html).select("#topImages-choose, #top-n, noscript").size === 0)
+      }
+    }
+
+    "without a previous round, say to choose one, with no ranking and no error" in {
+      testDbApp { implicit app =>
+        val (contest, prev) = setUp()
+        val result = preview(app, "admin@example.com", newRound(contest, prev).filterNot(_._1.startsWith("previousRound")): _*)
+        val page = doc(result)
+        (status(result) === OK) and (page.select("select#topImages").size === 0) and
+          (page.select("#topImages_help").text === "Choose the previous rounds first.") and
+          (page.select(".invalid-feedback, .is-invalid").size === 0)
+      }
+    }
+
+    "say the form's own errors keep the list from loading, naming a form-wide one" in {
+      testDbApp { implicit app =>
+        val (contest, prev) = setUp()
+        val binary = roundDao.create(Round(None, 2, Some("Yes/no"), contest.getId, rates = Round.binaryRound, active = false))
+        val result = preview(app, "admin@example.com", newRound(contest, prev, "previousRound[1]" -> binary.getId.toString): _*)
+        val page = doc(result)
+        (status(result) === OK) and (page.select("select#topImages").size === 0) and
+          (page.select("#top-n-form-invalid").text must startWith("The cuts are listed once the form’s errors are corrected.")) and
+          (page.select("div[data-cut-announce]").attr("data-cut-announce") ===
+            "The cuts are listed once the form’s errors are corrected.")
+      }
+    }
+
+    "show a refused list of rounds to leave out as its translated message, in the box" in {
+      testDbApp { implicit app =>
+        val (contest, prev) = setUp()
+        // the previous round can't also be left out (V95): refused, its message translated, as a save shows it
+        val result = preview(app, "admin@example.com", newRound(contest, prev, "excludeRounds[0]" -> prev.getId.toString): _*)
+        val page = doc(result)
+        (status(result) === OK) and (page.select("select#topImages").size === 0) and
+          (page.select("#top-n-form-invalid span").text ===
+            "A round to leave out can't also be a previous round of this round: it would leave out all its files.")
+      }
+    }
+
 
     "list every valid cut as N and score, the candidates labelled, no top N chosen, and save nothing" in {
       testDbApp { implicit app =>
@@ -163,24 +224,28 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
           previous = Some(prev.getId.toString)))
         val other = preview(app, "admin@example.com", newRound(contest, prev, "id" -> elsewhere.getId.toString): _*)
         val missing = preview(app, "admin@example.com", newRound(contest, prev, "id" -> "999999"): _*)
-        (status(other) === FORBIDDEN) and (contentAsString(other) must not(contain("cut-gallery"))) and
-          (status(missing) === NOT_FOUND)
+        (status(other) === FORBIDDEN) and ((contentAsJson(other) \ "error").as[String] === "forbidden") and
+          (contentAsString(other) must not(contain("topImages"))) and
+          (status(missing) === NOT_FOUND) and ((contentAsJson(missing) \ "error").as[String] === "round_not_found")
       }
     }
 
-    "be refused to an organizer, a juror and another contest's admin; signed out, the login" in {
+    "be refused to an organizer, a juror and another contest's admin, as JSON; signed out, a JSON 401" in {
       testDbApp { implicit app =>
         val (contest, prev) = setUp()
         val body = newRound(contest, prev)
-        val signedOut = route(app, FakeRequest(POST, "/admin/rounds/cut-preview").withFormUrlEncodedBody(body: _*)
+        val signedOut = route(app, FakeRequest(POST, CutList).withFormUrlEncodedBody(body: _*)
           .withCSRFToken).get
-        val script = route(app, FakeRequest(POST, "/admin/rounds/cut-preview").withFormUrlEncodedBody(body: _*)
+        val script = route(app, FakeRequest(POST, CutList).withFormUrlEncodedBody(body: _*)
           .withHeaders("X-Requested-With" -> "XMLHttpRequest").withCSRFToken).get
+        val organizer = preview(app, "organizer@example.com", body: _*)
         (status(preview(app, "organizer@example.com", body: _*)) === FORBIDDEN) and
           (status(preview(app, "juror1@example.com", body: _*)) === FORBIDDEN) and
           (status(preview(app, "other-admin@example.com", body: _*)) === FORBIDDEN) and
-          (status(signedOut) === SEE_OTHER) and (status(script) === UNAUTHORIZED) and
-          (contentAsString(preview(app, "organizer@example.com", body: _*)) must not(contain("cut-gallery")))
+          (status(signedOut) === UNAUTHORIZED) and (status(script) === UNAUTHORIZED) and
+          ((contentAsJson(script) \ "error").as[String] === "unauthenticated") and
+          ((contentAsJson(organizer) \ "error").as[String] === "forbidden") and
+          (contentAsString(organizer) must not(contain("topImages")))
       }
     }
   }
@@ -290,7 +355,7 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
 
   "an existing round's top N" should {
 
-    "show a stored N read only, even one inside a tie, while its filters aren't edited; the preview sends it back" in {
+    "show a stored N read only, even one inside a tie, while its filters aren't edited; the cut list says why not" in {
       testDbApp { implicit app =>
         val (contest, prev) = setUp()
         val stored = roundDao.create(Round(None, 2, Some("Old"), contest.getId, rates = Round.ratesById(10),
@@ -300,8 +365,10 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
         val sent = preview(app, "admin@example.com", newRound(contest, prev, "id" -> stored.getId.toString,
           "number" -> "2"): _*)
         (page.select("#topImages_field input#topImages.wlx-locked[disabled]").attr("value") === "3") and (page.select("select#topImages").size === 0) and
-          (page.select("#topImages-choose").size === 0) and
-          (status(sent) === SEE_OTHER) and (redirectLocation(sent).get must contain(s"id=${stored.getId}"))
+          (page.select("#topImages-choose, #top-n").size === 0) and
+          (status(sent) === CONFLICT) and ((contentAsJson(sent) \ "error").as[String] === "not_editable") and
+          ((contentAsJson(sent) \ "message").as[String] ===
+            "Round 2’s files are no longer chosen by its filters, so its top N can’t be changed.")
       }
     }
 
@@ -391,7 +458,8 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
         val refused = save(app, "admin@example.com", (edit :+ ("topImages" -> "3")): _*)
         val reapplied = save(app, "admin@example.com", (edit :+ ("topImages" -> "4")): _*)
         (form.select("#topImages_field input[type=hidden][name=topImages]").attr("value") === "3") and
-          (form.select("#topImages-choose").size === 1) and
+          // loaded as the form opens (no control with the page), the held N read only until then
+          (form.select("#top-n[data-cut-url]:not([data-cut-loaded])").size === 1) and (form.select("select#topImages").size === 0) and
           (status(refused) === BAD_REQUEST) and
           (doc(refused).select("#topImages_field .invalid-feedback").text must contain("inside a tie")) and
           (status(reapplied) === SEE_OTHER) and (roundDao.findById(held.getId).get.topImages must beSome(4))
@@ -510,14 +578,34 @@ Seq("excludeRounds[0]" -> other.getId.toString),
     }
   }
 
-  "the preview's CSRF check" should {
+  "the cut list's CSRF check" should {
     "refuse a post without the form's token" in {
       withCsrfApp { app =>
-        val refused = route(app, FakeRequest(POST, "/admin/rounds/cut-preview")
+        val refused = route(app, FakeRequest(POST, CutList)
           .withHeaders(COOKIE -> "PLAY_SESSION=x", ACCEPT -> "text/html")
           .withSession(Secured.UserName -> "admin@example.com", "csrfToken" -> csrfToken(app))
           .withFormUrlEncodedBody("contest" -> "1")).get
         status(refused) === FORBIDDEN
+      }
+    }
+
+    "refuse a script's post without the Csrf-Token header as JSON, and answer one with it" in {
+      withCsrfApp { app =>
+        implicit val a: Application = app
+        SharedTestDb.truncateAll()
+        val (contest, prev) = setUp()
+        val sessionToken = csrfToken(app)
+        def post(header: Option[String]) = route(app, FakeRequest(POST, CutList)
+          .withHeaders(Seq(COOKIE -> "PLAY_SESSION=x", "X-Requested-With" -> "XMLHttpRequest") ++
+            header.map("Csrf-Token" -> _): _*)
+          .withSession(Secured.UserName -> "admin@example.com", "csrfToken" -> sessionToken)
+          .withFormUrlEncodedBody(newRound(contest, prev): _*)).get
+        val refused = post(None)
+        val forged = post(Some("forged"))
+        val accepted = post(Some(sessionToken))
+        (status(refused) === FORBIDDEN) and ((contentAsJson(refused) \ "error").as[String] === "csrf") and
+          (status(forged) === FORBIDDEN) and
+          (status(accepted) === OK) and (cuts(doc(accepted)) === Valid)
       }
     }
   }

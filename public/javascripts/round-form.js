@@ -279,23 +279,6 @@
     });
   }
 
-  /** The cut control's link to the previous round's rating view (round/edit/topN, #top-n-cut-link):
-    * the chosen cut's (its option's data-cut-href), hidden when none is chosen. */
-  function initCutLink(doc) {
-    var select = doc.getElementById('topImages');
-    var link = doc.getElementById('top-n-cut-link');
-    if (!select || !link || select.tagName !== 'SELECT') return;
-    function update() {
-      var option = select.options[select.selectedIndex];
-      var href = option ? option.getAttribute('data-cut-href') : null;
-      if (href) link.setAttribute('href', href);
-      else link.setAttribute('href', '#');
-      link.hidden = !href;
-    }
-    select.addEventListener('change', update);
-    update();
-  }
-
   /** Space on a card's toggle: a click, as a role=button promises, and no page scroll. */
   function initCardToggleKeys(doc) {
     doc.addEventListener('keydown', function (e) {
@@ -319,7 +302,6 @@
     initWorstMark(doc);
     initScoreRuleWarning(doc);
     initLazyParts();
-    initCutLink(doc);
     initCardToggleKeys(doc);
   }
 

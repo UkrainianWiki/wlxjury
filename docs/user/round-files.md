@@ -21,7 +21,9 @@ A round for all the files takes no filters at all.
 - **Selected by at least X jurors**: for earlier yes/no rounds. A file is taken when at least X
   jurors selected it (X from 1 to 6). **No filter** takes all the files of the earlier round.
 - **Number of top files from the previous rounds** (the cut): for earlier rated or yes/no rounds.
-  **Choose N** lists every place where the ranked files can be cut, best first, such as
+  As soon as an earlier round is chosen, the form lists every place where the ranked files can be
+  cut, best first, without reloading the page, and updates the list when you change a filter that
+  changes the ranking (a short "Updating the cuts…" shows meanwhile). Each cut reads like
   **top 88 · score ≥ 8.0** (for a yes/no round, the lowest vote level taken, such as
   **top 88 · 3 yes, 0 no**). Files with the same score are never split, so only cuts between two
   different scores are listed. The suggested cuts come first, each with its reason (a clear drop in

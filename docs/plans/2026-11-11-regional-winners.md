@@ -1904,8 +1904,25 @@ is "the best row ≥ X", the row a file ranks by, so the fill is unchanged.)
   default) or "the top N files". A threshold can't fall inside a tie, so the job's backstop doesn't
   apply to it; the help text says so. Yes/no sources always keep N. **Storage:** N in `top_images`,
   the threshold in `prev_min_avg_rate`; a new save or re-apply never sets both.
-- **The separate threshold field is gone** from the new-round and re-apply form. Before "Choose N" the
-  form shows the cut it holds (a top N, a threshold, or a legacy round's both) as hidden fields.
+- **The separate threshold field is gone** from the new-round and re-apply form. Before the list loads
+  the form shows the cut it holds (a top N, a threshold, or a legacy round's both) as hidden fields.
+- **The list loads in place** (decided 2026-11-26 (maintainer): list loads in place; no Choose N
+  button; no no-JS fallback). The round form posts itself in the background (`POST
+  /admin/rounds/cut-list`, `RoundController.cutList`, a script's endpoint: the same admin and contest
+  checks as before, JSON 401/403/404, a JSON 409 with its message for a round whose filters can't change any more, the CSRF token in the `Csrf-Token` header, on the blocking pool)
+  as soon as a previous round is chosen, as the form opens with one (editing, a re-apply, a form shown
+  again), and, debounced, when a field that ranks the files changes (the previous rounds, region,
+  categories and their combination, media type, size, megapixels, rounds left out, conflicts of
+  interest, "selected by", "rejected by" and its mode, the yes/no order, monuments, special
+  nomination). It gets back the cut box as a server-rendered fragment (`round/edit/topNBox`, the same
+  Twirl markup and translations; one ranking function) and puts it in place, saying "Updating the
+  cuts…" and then "Cuts available: N" (or why there are none) in a polite live region, without moving
+  focus; an older response never overwrites a newer one. Errors (Commons not answering, rounds to leave
+  out refused, the form's own errors) show their translated messages in the box. Without scripts the
+  box says the list needs JavaScript (the form's collapsible sections need scripts anyway); a stored N
+  or threshold still shows read only. Until the admin picks a cut, a refresh posts the cut the page held
+  (a legacy threshold stays a threshold); a cut picked while a list loads is kept; Save is disabled
+  while a list is pending or loading. Save re-checks the cut as before.
 - **Legacy rounds:** a started round with either value, or both, shows them read only in #225's locked
   look. On a re-apply the control preselects the held cut: a valid stored N (kept as N), or the cut a
   stored threshold keeps now (kept as that threshold, which is stored again unchanged while it takes

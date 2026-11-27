@@ -46,7 +46,7 @@ class CutPickerViewSpec extends Specification {
 
   private def render(p: Option[CutPicker], topImages: Option[Int] = None, noEdit: Boolean = false,
       rate: Option[BigDecimal] = None): Document =
-    Jsoup.parse(views.html.round.edit.topN(form(topImages, rate), p, noEdit, "/admin/rounds/cut-preview").body)
+    Jsoup.parse(views.html.round.edit.topN(form(topImages, rate), p, noEdit, "/admin/rounds/cut-list").body)
 
   private def values(page: Document, css: String, attr: String): Seq[String] =
     page.select(css).asScala.toSeq.map(_.attr(attr))
@@ -134,6 +134,15 @@ class CutPickerViewSpec extends Specification {
         (values(page, "select#topImages option[selected]", "value") === Seq("4")) and
         (values(page, "input[name=cutKeep][checked]", "value") === Seq("top")) and
         (picker().holding(Some(4), None, Some(CutPicker.Keep.Threshold)).keep === CutPicker.Keep.Threshold)
+    }
+
+    "come with the page only after a save refused its cut: not loaded again as the form opens, its count to announce" in {
+      val page = render(Some(picker()))
+      (page.select("#top-n[data-cut-loaded]").size === 1) and
+        (page.select("#top-n-box > div[data-cut-announce]").attr("data-cut-announce") === "top.n.cuts.available") and
+        (page.select("#top-n-box > div").attr("data-cut-count") === "5") and
+        (page.select("#topImages_choose_help").text === "top.n.choose.help") and
+        (page.select("select#topImages").attr("aria-describedby") must contain("topImages_choose_help"))
     }
 
     "explain a held N inside a tie and post it again from the placeholder, never dropping it" in {
@@ -267,14 +276,30 @@ class CutPickerViewSpec extends Specification {
   }
 
   "a cut before the control is loaded" should {
-    "show the form's top N, threshold or both, carried as hidden fields, and \"Choose N\"" in {
+    "show the form's top N, threshold or both, carried as hidden fields, to be loaded in place; no \"Choose N\"" in {
       val page = render(None, Some(37), rate = Some(BigDecimal("7.25")))
       (values(page, "#topImages_field input[type=hidden][name=topImages]", "value") === Seq("37")) and
         (values(page, "#topImages_field input[type=hidden][name=minAvgRate]", "value") === Seq("7.25")) and
         (page.select("#topImages span").asScala.map(_.text).toSeq === Seq(CutPicker.TopCutKey, "top.n.held.threshold")) and
-        (page.select("#topImages-choose[formaction=/admin/rounds/cut-preview][formnovalidate]").size === 1) and
+        (page.select("#topImages-choose, [formaction]").size === 0) and
+        (page.select("#top-n[data-cut-url=/admin/rounds/cut-list]:not([data-cut-loaded])").size === 1) and
+        (page.select("#top-n").attr("data-cut-updating") === "top.n.updating") and
+        (Jsoup.parse(page.select("#top-n noscript").html()).text === "top.n.needs.js") and
+        (page.select("#top-n-status[role=status][aria-live=polite]").size === 1) and
+        (page.select("#top-n-box > div[data-cut-announce]").size === 1) and
         (page.select("select#topImages").size === 0) and
         (render(None).select("#topImages").text === "top.n.none")
+    }
+
+    "keep the posting mode and held threshold when a refresh cannot rank the files" in {
+      val posted = form(Some(4))
+      val unavailable = posted.copy(data = posted.data ++ Map(
+        CutPicker.KeepField -> CutPicker.Keep.Threshold.param, CutPicker.HeldThresholdField -> "7.25"))
+        .withError("topImages", "top.n.commons.unavailable")
+      val box = Jsoup.parseBodyFragment(views.html.round.edit.topNBox(unavailable, None).body)
+      (values(box, "input[type=hidden][name=topImages]", "value") === Seq("4")) and
+        (values(box, s"input[type=hidden][name=${CutPicker.KeepField}]", "value") === Seq("threshold")) and
+        (values(box, s"input[type=hidden][name=${CutPicker.HeldThresholdField}]", "value") === Seq("7.25"))
     }
 
     "show a started round's top N and threshold read only (#225's locked look), nothing submitted" in {
@@ -283,7 +308,7 @@ class CutPickerViewSpec extends Specification {
       (both.select("input#topImages.wlx-locked[disabled]").attr("value") === "3") and
         (both.select("input#minAvgRate.wlx-locked[disabled]").attr("value") === "7.5") and
         (both.select("input#topImages").attr("aria-describedby") must contain("round-filters-locked")) and
-        (both.select("#topImages-choose").size === 0) and
+        (both.select("#topImages-choose, #top-n, noscript").size === 0) and
         (both.select("input:not([disabled])").size === 0) and
         (one.select("input#topImages").size === 0) and (one.select("input#minAvgRate[disabled]").size === 1) and
         (render(None, None, noEdit = true).select("input").size === 0)
