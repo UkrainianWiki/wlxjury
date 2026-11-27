@@ -15,6 +15,7 @@ const SCRIPT = path.join(__dirname, "..", "public", "javascripts", "category-sug
 let suggest;
 
 beforeAll(() => {
+    window.wlxSelectLabels = require("../public/javascripts/select-labels");
     window.TomSelect = require("tom-select/dist/js/tom-select.complete.js");
     suggest = require(SCRIPT);
 });
@@ -115,6 +116,23 @@ describe("the request and its answer", () => {
 });
 
 describe("categorySuggest", () => {
+    test("the label focuses the category input without toggling suggestions", () => {
+        const ts = suggest.categorySuggest(field("mixed"));
+        const label = document.querySelector("label");
+        const click = () => {
+            label.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+            label.click();
+        };
+        click();
+        expect(document.activeElement).toBe(ts.control_input);
+        expect(ts.isOpen).toBe(false);
+        ts.open();
+        expect(ts.isOpen).toBe(true);
+        click();
+        expect(ts.isOpen).toBe(true);
+        ts.destroy();
+    });
+
     test("the field's hint describes the control typed in, which the label names", () => {
         const ts = suggest.categorySuggest(field("category", "", ' aria-describedby="source_help"'));
         expect(ts.control_input.getAttribute("aria-describedby")).toBe("source_help");

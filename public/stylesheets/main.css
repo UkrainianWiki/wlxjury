@@ -1199,3 +1199,7 @@ li.wlx-cut-divider {
     color: var(--bs-primary-text-emphasis);
     font-weight: 600;
 }
+
+/* The grid column is wider than its label; only the label text activates the field. */
+label.wlx-field-label.col-form-label { pointer-events: none; }
+label.wlx-field-label.col-form-label > span { pointer-events: auto; }

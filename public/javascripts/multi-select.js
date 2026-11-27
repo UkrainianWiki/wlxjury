@@ -54,6 +54,8 @@
       }
     });
 
+    if (window.wlxSelectLabels) window.wlxSelectLabels.tomLabel(ts);
+
     function refresh() {
       var labels = ts.items.map(function (value) { return ts.options[value].text; });
       var total = Object.keys(ts.options).length;

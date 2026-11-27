@@ -119,6 +119,7 @@
         }
       }
     });
+    if (window.wlxSelectLabels) window.wlxSelectLabels.tomLabel(ts);
     editOnFocus(ts);
     if (dropdownParent) {
       keepInWindow(ts);
