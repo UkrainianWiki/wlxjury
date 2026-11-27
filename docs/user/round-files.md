@@ -146,9 +146,9 @@ another. On an existing round whose filters can't be changed, the cut is shown l
 ## The rejection filter
 
 The rejection filter uses how many jurors rejected each file in an earlier round, each earlier
-round on its own. It works with earlier yes/no rounds, and with earlier rated
-rounds without criteria, where a worst mark counts as a rejection. It shows once you choose
-such a previous round.
+round on its own. On the create-round form, it shows when you choose an earlier yes/no round
+or a rated round with worst marks enabled. A worst mark counts as a rejection. A saved filter
+still counts worst marks already given if the earlier round turns the option off.
 
 It has two fields. **Rejected files** is the mode:
 

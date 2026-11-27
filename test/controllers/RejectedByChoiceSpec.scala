@@ -34,22 +34,37 @@ class RejectedByChoiceSpec extends PlaySpecification {
     (options.map(o => o.attr("value") -> o.text), options.filter(_.hasAttr("selected")).map(_.attr("value")))
   }
 
-  /** The classes of the rejected-by filters for previous rounds `rounds` (round-form.js shows them
-    * when one of them is chosen).
-    */
-  private def rejectClasses(rounds: Seq[Round]): String = {
-    val form = EditRound.editRoundForm.fill(EditRound(rounds.head.copy(id = Some(9), number = 9), Seq(1L), None))
+  private def filters(round: Round, rounds: Seq[Round]) = {
+    val form = EditRound.editRoundForm.fill(EditRound(round, Seq(1L), None))
     Jsoup.parse(views.html.round.edit.imageFiltering(form, rounds, Map.empty, User("u", "e@e", Some(1L)), noEdit = false)
-      .body).getElementById("rejectFilters").className
+      .body)
   }
 
   "the rejected-by filter" should {
-    "be offered from a yes/no round and a rated round without criteria (its worst marks, the option on or off), not a criteria round" in {
-      val rated = new Round(id = Some(2), number = 2, contestId = 1, rates = Round.ratesById(5))
-      rejectClasses(Seq(
-        new Round(id = Some(1), number = 1, contestId = 1, rates = Round.binaryRound),
-        rated, rated.copy(id = Some(3), worstMark = true),
-        rated.copy(id = Some(4), hasCriteria = true))) === "round1 round2 round3"
+    val binary = new Round(id = Some(1), number = 1, contestId = 1, rates = Round.binaryRound)
+    val rated = binary.copy(id = Some(2), number = 2, rates = Round.ratesById(5))
+    val sources = Seq(binary, rated, rated.copy(id = Some(3), worstMark = true),
+      rated.copy(id = Some(4), hasCriteria = true), binary.copy(id = Some(5), rates = Round.commentsOnlyRound))
+    val next = binary.copy(id = None, number = 6)
+
+    "be offered only from a yes/no round or a rated round with worst marks enabled" in {
+      filters(next, sources).getElementById("rejectFilters").className === "round1 round3"
+    }
+
+    "hide inapplicable filters when the form already has a previous round selected" in {
+      val plain = filters(next.copy(previous = Some("2")), sources)
+      val worst = filters(next.copy(previous = Some("3")), sources)
+      (plain.getElementById("rejectFilters").attr("style") === "display: none") and
+        (plain.getElementById("selectFilters").attr("style") === "display: none") and
+        (worst.getElementById("rejectFilters").hasAttr("style") must beFalse) and
+        (worst.getElementById("selectFilters").attr("style") === "display: none")
+    }
+
+    "show a saved rejection filter if its source has since turned worst marks off" in {
+      val saved = next.copy(id = Some(6), previous = Some("2"), prevRejectedBy = Some(2))
+      val rejection = filters(saved, sources :+ saved).getElementById("rejectFilters")
+      (rejection.hasClass("round2") must beTrue) and
+        (rejection.hasAttr("style") must beFalse)
     }
   }
 
