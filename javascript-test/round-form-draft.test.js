@@ -14,6 +14,7 @@ const form = (fields, refused = false) => `
     <input name="csrfToken" type="hidden" value="csrf-fresh">
     <input name="submitToken" type="hidden" value="submit-fresh">
     ${fields}
+    <button id="round-form-reset" type="button" data-reset-url="#reset-target" data-reset-confirm="Discard draft?" hidden>Reset form</button>
     <a id="round-form-cancel" href="#rounds">Cancel</a>
   </form>`;
 
@@ -48,6 +49,40 @@ test("warns only when the editable values differ and clears the warning on a rev
     page.change('[name="name"]', "Original");
     expect(page.warn()).toBe(false);
     expect(page.data.has(slot)).toBe(false);
+});
+
+test("reset asks before discarding the restored draft and clears only that form", () => {
+    const fields = '<input name="name" value="Original">';
+    const otherSlot = "wlxjury:round-draft:" + otherKey;
+    const data = new Map([[otherSlot, "Other draft"]]);
+    const original = boot(form(fields), data);
+    expect(original.el("#round-form-reset").disabled).toBe(true);
+    original.change('[name="name"]', "Unsaved");
+    const page = boot(form(fields), data);
+    const reset = page.el("#round-form-reset");
+    expect(reset.hidden).toBe(false);
+    expect(reset.disabled).toBe(false);
+    page.win.confirm = jest.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
+    reset.click();
+    expect(page.win.confirm).toHaveBeenCalledWith("Discard draft?");
+    expect(page.win.location.hash).toBe("");
+    expect(page.warn()).toBe(true);
+    expect(data.get(slot)).toContain("Unsaved");
+    reset.click();
+    expect(page.win.location.hash).toBe("#reset-target");
+    expect(page.warn()).toBe(false);
+    expect(data.has(slot)).toBe(false);
+    expect(data.get(otherSlot)).toBe("Other draft");
+    const reopened = boot(form(fields), data);
+    expect(reopened.el('[name="name"]').value).toBe("Original");
+    expect(reopened.el("#round-form-reset").disabled).toBe(true);
+});
+
+test("a refused form offers reset even without a local draft", () => {
+    const page = boot(form('<input name="name" value="Refused">', true));
+    const reset = page.el("#round-form-reset");
+    expect(reset.hidden).toBe(false);
+    expect(reset.disabled).toBe(false);
 });
 
 test("restores the sources, dynamic thresholds and cut before the preview loads", () => {

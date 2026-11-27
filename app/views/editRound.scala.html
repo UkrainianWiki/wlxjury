@@ -74,6 +74,9 @@
     editRoundForm("id").value.flatMap(_.toLongOption), submitToken)) }
 @saveUrl = @{ roundsFilter.addTo(routes.RoundController.saveRound().url +
     (if (newRound) controllers.RoundFormDraft.initialTopImages(req).fold("")(n => s"?topImages=$n") else "")) }
+@resetUrl = @{ resolveUrl.orElse(contestId.map(cid =>
+    roundsFilter.addTo(routes.RoundController.editRound(editRoundForm("id").value.flatMap(_.toLongOption),
+        cid, controllers.RoundFormDraft.initialTopImages(req)).url))) }
 
 @* an existing round's track without its own label (round lineage slice A), named in the track
    field's help *@
@@ -411,6 +414,10 @@
                     }
                     <a id="round-form-cancel" class="btn btn-outline-secondary form-action-wide"
                        href="@roundsFilter.addTo(routes.RoundController.rounds(editRoundForm("contest").value.map(_.toLong)).url)">@Messages("cancel")</a>
+                    @for(url <- resetUrl) {
+                        <button type="button" class="btn btn-outline-secondary" id="round-form-reset" hidden
+                                data-reset-url="@url" data-reset-confirm="@Messages("round.form.draft.reset.confirm")">@Messages("round.form.draft.reset")</button>
+                    }
                     @* a round waiting for review: its review page *@
                     @for(rid <- editRoundForm("id").value.flatMap(v => scala.util.Try(v.toLong).toOption) if !newRound) {
                         <a id="round-review-link" class="btn btn-outline-secondary" href="@routes.RoundReviewController.review(rid)"

@@ -156,10 +156,14 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
         val body = newRound(contest, t, "previousRound[0]" -> previous.getId.toString, "topImages" -> "3",
           "source" -> s"Category:<$Secret>")
         val refused = route(app, request(POST, "admin@example.com", action, body)).get
-        val history = doc(refused).select("#round-form").attr("data-resolve-url")
+        val refusedPage = doc(refused)
+        val history = refusedPage.select("#round-form").attr("data-resolve-url")
+        val reset = refusedPage.select("#round-form-reset")
         (form.attr("autocomplete") === "off") and
           (action must contain("topImages=2")) and (status(refused) === BAD_REQUEST) and
-          (history must contain("topImages=2")) and (history must not(contain("topImages=3")))
+          (history must contain("topImages=2")) and (history must not(contain("topImages=3"))) and
+          (opened.select("#round-form-reset").attr("data-reset-url") === form.attr("data-resolve-url")) and
+          (reset.attr("type") === "button") and (reset.attr("data-reset-url") === history)
       }
     }
 
@@ -241,6 +245,7 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
         (status(refused) === BAD_REQUEST) and
           (page.select("#round-form").attr("data-resolve-url") ===
             s"/admin/rounds/edit?id=${round.getId}&contestId=${contest.getId}") and
+          (page.select("#round-form-reset").attr("data-reset-url") === page.select("#round-form").attr("data-resolve-url")) and
           (flash(refused).get(RoundFormDraft.Saved) must beNone) and
           (page.select("input[name=reapply]").size === 1) and
           (page.select("select#minMpx[disabled]").size === 0) and (page.select("input#monumentIds[readonly]").size === 0) and
@@ -427,6 +432,8 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
         val draftKey = formPage.select("#round-form").attr("data-round-draft-key")
         val saved = save(app, "admin@example.com", edit(round, "name" -> "Renamed"): _*)
         (status(saved) === SEE_OTHER) and (flash(saved).get("success") must beSome("Round 1 (Renamed) is saved.")) and
+          (formPage.select("#round-form-reset").attr("data-reset-url") ===
+            s"/admin/rounds/edit?id=${round.getId}&contestId=${contest.getId}") and
           (draftKey must not(beEmpty)) and (flash(saved).get(RoundFormDraft.Saved) must beSome(draftKey))
       }
     }

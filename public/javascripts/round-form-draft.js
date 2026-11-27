@@ -118,6 +118,7 @@
     var original = Object.create(null);
     var changes = Object.create(null);
     var refused = !!form.querySelector('#round-form-errors');
+    var reset = doc.getElementById('round-form-reset');
     var prior = read(win, key);
     var warning = false;
     var skipUnload = false;
@@ -147,6 +148,7 @@
 
     function updateWarning() {
       var dirty = Object.keys(changes).length > 0;
+      if (reset) reset.disabled = discarded || (!dirty && !refused);
       if (dirty === warning) return;
       warning = dirty;
       if (warning) win.addEventListener('beforeunload', beforeUnload);
@@ -156,6 +158,12 @@
     function persist() {
       savedLocally = write(win, key, changes);
       updateWarning();
+    }
+
+    function discard() {
+      discarded = true;
+      changes = Object.create(null);
+      persist();
     }
 
     if (prior) {
@@ -200,10 +208,19 @@
     var cancel = doc.getElementById('round-form-cancel');
     if (cancel) cancel.addEventListener('click', function (event) {
       if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-      discarded = true;
-      changes = Object.create(null);
-      persist();
+      discard();
     });
+
+    if (reset) {
+      updateWarning();
+      reset.hidden = false;
+      reset.addEventListener('click', function () {
+        if (!win.confirm(reset.getAttribute('data-reset-confirm'))) return;
+        discard();
+        // Fetch the starting values and rebuild the controls, also after a refused POST.
+        win.location.replace(reset.getAttribute('data-reset-url'));
+      });
+    }
 
     win.addEventListener('pageshow', function (event) {
       if (!event.persisted) return;
