@@ -67,12 +67,11 @@
             !Seq("minJurors", "topBinaryOrder", "rejectionFilter", "minAvgRate", "topImages").exists(editRoundForm(_).hasErrors)) {style="display: none"}>
             <div id="selectFilters" class="@binarySources.map(r => "round" + r.getId).mkString(" ")"
                 @if(!binarySelected) {style="display: none"}>
-            @* the empty choice is stored as no filter (NULL); a stored 0 means the same (the old
-               form's way of saying it, V73) and shows the empty choice *@
+            @* The cut-list request supplies the options. Keep a saved value while it loads. *@
             @bs.select(
                 editRoundForm("minJurors"),
                 Seq("" -> Messages("selected.by.no.filter")) ++
-                    Seq("1", "2", "3", "4", "5", "6").map(x => (x, x)),
+                    editRoundForm("minJurors").value.filter(_.toIntOption.exists(_ > 0)).map(n => n -> n),
                 Symbol("value") -> "",
                 Symbol("_label") -> Messages("selected.by.at.least.x.jurors"),
                 Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy)
@@ -98,8 +97,8 @@
             @bs.select(
                 rejectionField,
                 Seq(controllers.EditRound.NoRejectedFilter -> Messages("rejected.by.no.filter")) ++
-                    controllers.EditRound.rejectionFilterChoices(rejectionField).map { case (value, mode, count) =>
-                        value -> Messages(mode.messageKey + ".count", count)
+                    rejectionField.value.flatMap(controllers.EditRound.parseRejectionFilter).map { case (mode, count) =>
+                        controllers.EditRound.rejectionFilterValue(mode, count) -> Messages(mode.messageKey + ".count", count)
                     },
                 Symbol("_label") -> Messages("rejected.by.mode"),
                 Symbol("_help") -> Messages("rejected.by.help"),

@@ -68,12 +68,11 @@ class RejectedByChoiceSpec extends PlaySpecification {
         (rejection.hasAttr("style") must beFalse)
     }
 
-    "offer one control with a single no-filter choice and complete mode and count choices" in {
+    "offer one control with no guessed thresholds before the cut preview loads" in {
       val selects = filters(next.copy(previous = Some("1")), sources).select("#rejectFilters select").asScala.toSeq
       val values = selects.flatMap(_.select("option").asScala.map(_.attr("value")))
-      val numbered = for (mode <- Seq("exclude", "only"); count <- 1 to 6) yield s"$mode:$count"
       (selects.map(_.attr("name")) === Seq("rejectionFilter")) and
-        (values === (Seq("none") ++ numbered))
+        (values === Seq("none"))
     }
   }
 

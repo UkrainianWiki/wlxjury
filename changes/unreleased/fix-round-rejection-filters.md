@@ -1,3 +1,3 @@
 section: Fixes
 
-- The Create Round form offers one rejection filter for previous rounds with yes/no votes or worst marks enabled (#240).
+- The Create Round form offers one rejection filter where applicable and shows matching file counts for reachable approval and rejection thresholds (#240).

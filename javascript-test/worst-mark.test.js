@@ -241,7 +241,9 @@ describe("the round form's worst mark", () => {
               <option value="3">Round 3 (rated, criteria)</option>
             </select>
             <div id="prevRoundFilters" style="display: none">
-              <div id="selectFilters" class="round1">select</div>
+              <div id="selectFilters" class="round1"><div id="minJurors_field">
+                <select id="minJurors" name="minJurors"><option value="">No filter</option><option value="2">2</option></select>
+              </div></div>
               <div id="rejectFilters" class="round1 round2">
                 <select id="rejectionFilter" name="rejectionFilter"${locked ? " disabled" : ""}>
                   <option value="none">No filter</option><option value="only:2">Keep only files with 2 or more rejections</option>
@@ -313,6 +315,19 @@ describe("the round form's worst mark", () => {
         field.value = "only:2";
         expect(value()).toBe("only:2");
         prev.clear();
+        expect(value()).toBeNull();
+    });
+
+    test("sends the approval threshold only with a yes/no previous round", () => {
+        form("5");
+        const field = document.getElementById("minJurors");
+        field.value = "2";
+        const value = () => new FormData(field.form).get("minJurors");
+        const prev = document.getElementById("previousRound").tomselect;
+        prev.addItem("1");
+        expect(value()).toBe("2");
+        prev.removeItem("1");
+        prev.addItem("2");
         expect(value()).toBeNull();
     });
 

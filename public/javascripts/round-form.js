@@ -58,45 +58,34 @@
   /** Shows the filters that fit the previous rounds chosen. */
   function previousRoundsChanged() {
     var vals = $(this).val() || [];
-
-    $('#selectFilters, #rejectFilters').hide();
-    var rejecting = false;
-
-    if (vals.length) {
-      $('#prevRoundFilters').show();
-      var anyBinary = vals.some(function (v) {
-        return $('#selectFilters').hasClass('round' + v);
-      });
-      if (anyBinary) $('#selectFilters').show();
-      // "rejected by at least": a yes/no round's "no" votes, a rated round's ✗ (#rejectFilters
-      // has the classes of the rounds whose votes may reject)
-      rejecting = anyRejecting(vals);
-      if (rejecting) $('#rejectFilters').show();
-    } else {
-      $('#prevRoundFilters').hide();
-    }
-    rejectFieldsSent(rejecting);
+    var binary = anySource(vals, '#selectFilters');
+    var rejecting = anySource(vals, '#rejectFilters');
+    $('#prevRoundFilters').toggle(vals.length > 0);
+    $('#selectFilters').toggle(binary);
+    $('#rejectFilters').toggle(rejecting);
+    voteFilterSent('#minJurors_field', binary);
+    voteFilterSent('#rejectFilters', rejecting);
   }
 
-  /** Whether the chosen previous rounds `vals` include one whose votes may reject. */
-  function anyRejecting(vals) {
-    return vals.some(function (v) { return $('#rejectFilters').hasClass('round' + v); });
+  /** Whether a chosen previous round supports the filter. */
+  function anySource(vals, group) {
+    return vals.some(function (v) { return $(group).hasClass('round' + v); });
   }
 
-  /** "Rejected by at least"'s fields are sent only while a chosen previous round may reject: the
-    * server refuses a filter without one. A read-only page's selects (disabled, their values in
-    * hidden inputs: an edit's, whose filters aren't changed) stay disabled; their hidden inputs
-    * follow. */
-  function rejectFieldsSent(on) {
-    $('#rejectFilters select').not('[data-wlx-locked]').prop('disabled', !on);
-    $('#rejectFilters input[type=hidden]').prop('disabled', !on);
+  /** A vote filter is sent only with a supporting source. Locked selects post their hidden value. */
+  function voteFilterSent(group, on) {
+    $(group).find('select').not('[data-wlx-locked]').prop('disabled', !on);
+    $(group).find('input[type=hidden]').prop('disabled', !on);
   }
 
-  /** Marks a read-only page's rejected-by selects (disabled as rendered), then sends the fields
-    * only for the previous rounds chosen as the page loads. */
-  function initRejectFilters() {
-    $('#rejectFilters select').each(function () { if (this.disabled) this.setAttribute('data-wlx-locked', ''); });
-    if ($('#rejectFilters').length) rejectFieldsSent(anyRejecting($('#previousRound').val() || []));
+  /** Preserve fields rendered read only, then use the current sources to decide what to send. */
+  function initVoteFilters() {
+    $('#minJurors, #rejectFilters select').each(function () {
+      if (this.disabled) this.setAttribute('data-wlx-locked', '');
+    });
+    var vals = $('#previousRound').val() || [];
+    voteFilterSent('#minJurors_field', anySource(vals, '#selectFilters'));
+    voteFilterSent('#rejectFilters', anySource(vals, '#rejectFilters'));
   }
 
   /** The distribution's choices for the jurors chosen: to all of them, or to 1 .. n-1. */
@@ -294,7 +283,7 @@
     var t = texts(doc);
     initMultiSelects(doc, t);
     $('#previousRound').change(previousRoundsChanged);
-    initRejectFilters();
+    initVoteFilters();
     $('#jurors').change(jurorsChanged(t.distribution || {}));
     initCoiConfirm(doc);
     initCriteriaSlots(doc);

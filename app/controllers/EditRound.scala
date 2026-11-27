@@ -149,9 +149,9 @@ object EditRound {
     */
   val NoRejectedFilter = "none"
 
-  private def rejectionFilterValue(mode: RejectedMode, count: Int): String = s"${mode.param}:$count"
+  def rejectionFilterValue(mode: RejectedMode, count: Int): String = s"${mode.param}:$count"
 
-  private def parseRejectionFilter(value: String): Option[(RejectedMode, Int)] =
+  def parseRejectionFilter(value: String): Option[(RejectedMode, Int)] =
     value.split(":", 2) match {
       case Array(mode, count) =>
         for {
@@ -172,12 +172,6 @@ object EditRound {
         .fold(NoRejectedFilter)(rejectionFilterValue(RejectedMode.fromStored(mode), _))
       field.copy(value = Some(value))
     }
-  }
-
-  def rejectionFilterChoices(field: Field): Seq[(String, RejectedMode, Int)] = {
-    // Older clients could save counts above six. Keep that choice available on the round's form.
-    val counts = (1 to 6).toVector ++ field.value.flatMap(parseRejectionFilter).map(_._2).filter(_ > 6)
-    for (mode <- RejectedMode.all; count <- counts) yield (rejectionFilterValue(mode, count), mode, count)
   }
 
   /** A posted score threshold ("average file rating at least X", `prev_min_avg_rate`): a number from 0

@@ -35,6 +35,8 @@ function page({ prev = "", loaded = false, box = '<div data-cut-announce=""><p i
         </select>
         <input type="text" id="source" name="source" value="">
         <input type="checkbox" id="excludeCoi" name="excludeCoi" value="true" checked>
+        <select id="minJurors" name="minJurors"><option value="">No filter</option></select>
+        <select id="rejectionFilter" name="rejectionFilter"><option value="none">No filter</option></select>
         <select id="jurors" name="jurors[]" multiple><option value="11">Ann</option></select>
         <button type="submit" id="save">Save</button>
         <button type="submit" id="other"${disabledButton ? " disabled" : ""}>Other</button>
@@ -84,6 +86,33 @@ const select = (id, value) => {
 afterEach(() => jest.useRealTimers());
 
 describe("cut-list", () => {
+    test("refreshes native vote options with the cut and keeps the live selection", async () => {
+        page({ prev: "2" });
+        const { fetch, calls } = deferredFetch();
+        create(document, { fetch });
+        const approval = document.getElementById("minJurors");
+        approval.add(new Option("2", "2", true, true));
+        const rejection = document.getElementById("rejectionFilter");
+        rejection.add(new Option("Only 2", "only:2", true, true));
+        const choices = `<template data-vote-filter="minJurors">
+          <option value="">No filter (4 files)</option>
+          <option value="1">1 (2 files)</option>
+          <option value="2">2 (1 file)</option>
+        </template>
+        <template data-vote-filter="rejectionFilter">
+          <option value="none">No filter (4 files)</option>
+          <option value="only:2">Only 2 (1 file)</option>
+          <option value="only:4" data-vote-held>Only 4 (0 files)</option>
+        </template>`;
+        calls[0].resolve(html(BOX(2, choices)));
+        await flush();
+        await flush();
+        expect(approval.value).toBe("2");
+        expect(rejection.value).toBe("only:2");
+        expect(Array.from(approval.options).map(o => o.text)).toEqual(["No filter (4 files)", "1 (2 files)", "2 (1 file)"]);
+        expect(Array.from(rejection.options).map(o => o.text)).toEqual(["No filter (4 files)", "Only 2 (1 file)"]);
+    });
+
     test("names the ranking fields, a multiple select's [] ignored, and not the cut's own control", () => {
         expect(baseName("previousRound[]")).toBe("previousRound");
         expect(baseName("regions[0]")).toBe("regions");
@@ -130,10 +159,13 @@ describe("cut-list", () => {
         create(document, { fetch: a.fetch });
         expect(a.fetch).not.toHaveBeenCalled();
 
-        page({ prev: "1", loaded: true, box: BOX(2) });
+        const choices = '<template data-vote-filter="minJurors"><option value="">No filter (2 files kept)</option>' +
+            '<option value="1">1 (2 files kept)</option></template>';
+        page({ prev: "1", loaded: true, box: BOX(2, choices) });
         const b = deferredFetch();
         create(document, { fetch: b.fetch });
         expect(b.fetch).not.toHaveBeenCalled();
+        expect(document.getElementById("minJurors").options[1].text).toBe("1 (2 files kept)");
     });
 
     test("a previous round chosen loads after a short pause; changes in a row load once", () => {

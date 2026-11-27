@@ -296,7 +296,7 @@ class RoundController @Inject() (
         val round = edit.round.copy(id = shown.id,
           topBinaryOrder = org.intracer.wmua.BinaryOrder.ofForm(bound.data.get("topBinaryOrder")))
         try {
-          roundsService.cutPicker(round, None, skipDqOf) match {
+          roundsService.cutPicker(round, None, skipDqOf, includeVoteChoices = true) match {
             case None => (bound.withError("topImages", "top.n.no.previous"), None)
             case Some(found) =>
               // the cut the form holds: preselected, or explained with a pick required
@@ -360,8 +360,8 @@ class RoundController @Inject() (
     round.topImages match {
       case Some(n) if round.previousIds.nonEmpty =>
         val keep = RoundController.CutParams.keep(request)
-        roundsService.cutPicker(round, Some(n), skipDqOf).fold((round.copy(prevMinAvgRate = None), Option.empty[JsObject])) {
-          found =>
+        roundsService.cutPicker(round, Some(n), skipDqOf, includeVoteChoices = true)
+          .fold((round.copy(prevMinAvgRate = None), Option.empty[JsObject])) { found =>
             val picker = found.copy(heldThreshold = RoundController.CutParams.heldRate(request))
             // a legacy round's top N and threshold posted as stored (the control not loaded): one is chosen
             if (round.prevMinAvgRate.isDefined && keep.isEmpty && !picker.levels) {
@@ -374,7 +374,7 @@ class RoundController @Inject() (
             val kept = picker.copy(keep = keep.getOrElse(services.CutPicker.Keep.Top))
             val (top, threshold) = kept.stored(n)
             (round.copy(topImages = top, prevMinAvgRate = threshold), Some(kept.basis(n, threshold)))
-        }
+          }
       // no previous rounds: no cut to keep
       case Some(_) => (round.copy(prevMinAvgRate = None), None)
       // a threshold alone: kept only from a rated head previous round, the one the fill applies it to

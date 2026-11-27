@@ -159,7 +159,9 @@ In **Rejected files**, choose what to do and how many rejections to require in o
 - Choose **Keep only files with 2 or more rejections** to review the files that two or more jurors
   rejected.
 
-Both choices offer thresholds from 1 to 6. The rejection filter combines with the round's other filters.
+The approval and rejection menus offer thresholds reached by the previous rounds' votes. Each
+choice shows how many distinct files it would keep with the other filters applied, before a Top N
+cut. A file that appeared in two previous rounds counts once.
 
 <a id="a-add-files"></a>
 ## Adding files by name

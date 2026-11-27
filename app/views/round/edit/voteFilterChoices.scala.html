@@ -1,0 +1,37 @@
+@import controllers.EditRound
+@import org.intracer.wmua.RejectedMode
+@import services.distribution.VoteFilterChoices
+@(
+        editRoundForm: Form[controllers.EditRound],
+        counts: VoteFilterChoices,
+        binary: Boolean
+)(implicit messages: Messages)
+@* Inert options for cut-list.js to copy into the form's two vote filters. *@
+@text(label: String, files: Int) = @{ Messages("vote.filter.files.kept", label, _root_.views.CommentCount.files(files)) }
+@rejectionCount(mode: RejectedMode, threshold: Int) = @{
+    mode match {
+        case RejectedMode.Exclude => counts.minimumRejections.total - counts.minimumRejections.count(threshold)
+        case RejectedMode.Only => counts.maximumRejections.count(threshold)
+    }
+}
+@if(binary) {
+    <template data-vote-filter="minJurors">
+        <option value="">@text(Messages("no.filter"), counts.approvals.total)</option>
+        @for(n <- 1 to counts.approvals.maximum) {
+            <option value="@n">@text(n.toString, counts.approvals.count(n))</option>
+        }
+        @for(n <- editRoundForm("minJurors").value.flatMap(_.toIntOption) if n > counts.approvals.maximum) {
+            <option value="@n" data-vote-held>@text(Messages("vote.filter.held.choice", n), 0)</option>
+        }
+    </template>
+}
+<template data-vote-filter="rejectionFilter">
+    <option value="@EditRound.NoRejectedFilter">@text(Messages("no.filter"), counts.maximumRejections.total)</option>
+    @for(mode <- RejectedMode.all; n <- 1 to counts.maximumRejections.maximum) {
+        <option value="@EditRound.rejectionFilterValue(mode, n)">@text(Messages(mode.messageKey + ".count", n), rejectionCount(mode, n))</option>
+    }
+    @for((mode, n) <- EditRound.rejectionFilterField(editRoundForm).value.flatMap(EditRound.parseRejectionFilter) if n > counts.maximumRejections.maximum) {
+        <option value="@EditRound.rejectionFilterValue(mode, n)" data-vote-held>@text(Messages("vote.filter.held.choice",
+            Messages(mode.messageKey + ".count", n)), rejectionCount(mode, n))</option>
+    }
+</template>
