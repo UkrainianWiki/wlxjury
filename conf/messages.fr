@@ -2052,6 +2052,7 @@ round.next.matching = Ses fichiers correspondants sont encore en cours de recher
 round.next.no.files = Aucun fichier ne correspond aux paramètres du tour : il n’y a rien à distribuer. Modifiez les paramètres.
 round.form.save.find = Enregistrer et trouver les fichiers correspondants
 round.form.save.find.help = L’application choisit les fichiers du concours qui correspondent à ces paramètres, pour que vous les vérifiiez. Cela peut prendre quelques minutes.
+round.form.draft.restored = Vos modifications non enregistrées ont été restaurées depuis cet onglet.
 round.setup.steps = Préparation du tour
 round.setup.step.1 = Quels fichiers
 round.setup.step.2 = Vérifier les fichiers correspondants

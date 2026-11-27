@@ -57,6 +57,9 @@
 @* the round form's scripts (round-form.js), and their texts as JSON, which no script parses
    as code *@
 @formScripts = {
+    @if(req.flash.get(controllers.RoundFormDraft.Saved).isEmpty) {
+        <script src="@routes.Assets.versioned("javascripts/round-form-draft.js")"></script>
+    }
     @snippets.multiSelectScripts()
     <script src="@routes.Assets.versioned("javascripts/round-form.js")"></script>
     <script src="@routes.Assets.versioned("javascripts/cut-list.js")"></script>
@@ -67,6 +70,10 @@
 @* the Rounds page's filter, from its round number link (RoundsFilter): kept in the form's action,
    so that a save, a failed one's form again and Cancel come back to the same list *@
 @roundsFilter = @{ controllers.RoundsFilter.fromRequest(req) }
+@draftKey = @{ contestId.flatMap(cid => controllers.RoundFormDraft.key(user.getId, cid,
+    editRoundForm("id").value.flatMap(_.toLongOption), submitToken)) }
+@saveUrl = @{ roundsFilter.addTo(routes.RoundController.saveRound().url +
+    (if (newRound) controllers.RoundFormDraft.initialTopImages(req).fold("")(n => s"?topImages=$n") else "")) }
 
 @* an existing round's track without its own label (round lineage slice A), named in the track
    field's help *@
@@ -143,11 +150,15 @@
                 <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
             }
 
-            @bs.form(Call("POST", roundsFilter.addTo(routes.RoundController.saveRound().url)), Symbol("id") -> "round-form",
+            @* Draft recovery owns the form values across navigation so Back cannot revive a canceled draft. *@
+            @bs.form(Call("POST", saveUrl), Symbol("id") -> "round-form",
+                Symbol("autocomplete") -> "off",
                 Symbol("data-resolve-url") -> resolveUrl.getOrElse(None),
+                Symbol("data-round-draft-key") -> draftKey.getOrElse(None),
                 Symbol("data-csrf-token") -> play.filters.csrf.CSRF.getToken(req).fold("")(_.value)) {
                 @csrfField()
 
+                <div class="alert alert-info" role="status" id="round-draft-restored" hidden>@Messages("round.form.draft.restored")</div>
                 @round.edit.errorSummary(editRoundForm, controllers.RoundFormErrors.Shown(rounds = rounds.nonEmpty,
                     regions = regions.nonEmpty, nominations = specialNominations.nonEmpty, unrated = unratedRound),
                     state.summaryHeading)
@@ -398,7 +409,8 @@
                     } else {
                     @snippets.submit(if (reapply) "round.form.reapply" else "save")
                     }
-                    @snippets.button(Call("GET", roundsFilter.addTo(routes.RoundController.rounds(editRoundForm("contest").value.map(_.toLong)).url)), "cancel")
+                    <a id="round-form-cancel" class="btn btn-outline-secondary form-action-wide"
+                       href="@roundsFilter.addTo(routes.RoundController.rounds(editRoundForm("contest").value.map(_.toLong)).url)">@Messages("cancel")</a>
                     @* a round waiting for review: its review page *@
                     @for(rid <- editRoundForm("id").value.flatMap(v => scala.util.Try(v.toLong).toOption) if !newRound) {
                         <a id="round-review-link" class="btn btn-outline-secondary" href="@routes.RoundReviewController.review(rid)"

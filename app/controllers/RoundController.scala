@@ -101,7 +101,8 @@ class RoundController @Inject() (
       // stale form (UI-path plan §5 Q6); not saved yet, the form again with the same token
       val token = submitToken.map(_.trim).filter(t => roundId.isEmpty && RoundController.TokenPattern.matches(t))
       token.flatMap(Round.findBySubmitToken).filter(_.contestId == contestId) match {
-        case Some(saved) => RoundController.toSavedRound(saved, messagesApi.preferred(request))
+        case Some(saved) => RoundController.toSavedRound(saved, messagesApi.preferred(request),
+          RoundFormDraft.saved(user.getId, contestId, None, token): _*)
         // a token no round holds (a deleted one's or another contest's: a fresh one)
         case None => roundForm(user, roundId, contestId, topImages,
           token.filterNot(Round.submitTokenTaken).getOrElse(RoundController.newSubmitToken()))
@@ -176,11 +177,15 @@ class RoundController @Inject() (
     // taking its files); then the form is a rated one's as for a new round
     val ratesEditable = stored.exists(s => reapply && !RoundController.takenFrom(s.getId, rounds))
     val job = round.id.flatMap(roundsService.distributionJob)
-    // the new-round form's history entry: its URL with the token (round-form-token.js), so Back after
-    // a save lands on the saved round's Edit page (editRound)
-    val resolveUrl = submitToken.filter(_ => round.id.isEmpty).map(t =>
-      RoundsFilter.fromRequest(request).addTo(routes.RoundController.editRound(None, contestId,
-        form("topImages").value.flatMap(_.toIntOption).filter(_ > 0), Some(t)).url))
+    // New forms keep their token in the URL. A refused edit also needs a GET URL for reload.
+    val resolveUrl = round.id match {
+      case None => submitToken.map(t =>
+        RoundsFilter.fromRequest(request).addTo(routes.RoundController.editRound(None, contestId,
+          RoundFormDraft.initialTopImages(request), Some(t)).url))
+      case Some(id) if request.method == "POST" =>
+        Some(RoundsFilter.fromRequest(request).addTo(routes.RoundController.editRound(Some(id), contestId).url))
+      case _ => None
+    }
     views.html.editRound(
       user,
       RoundFormErrors.placed(form),
@@ -588,7 +593,8 @@ class RoundController @Inject() (
         saved.contestId, saved.getId, if (same) "same" else "changed", distribution))
       val problem = again.fold(text => Some(text), r =>
         Option.when(r.givenUp)(messages("round.distribute.attempts", saved.number, r.reference)))
-      RoundController.toSavedRound(saved, messages, problem.map("error" -> _).toSeq: _*)
+      val receipt = if (same && problem.isEmpty) RoundFormDraft.saved(user.getId, saved.contestId, None, Some(token)) else Nil
+      RoundController.toSavedRound(saved, messages, (problem.map("error" -> _).toSeq ++ receipt): _*)
     }
 
   private def bindAndSave(user: User)(implicit request: Request[AnyContent]): Result =
@@ -634,6 +640,7 @@ class RoundController @Inject() (
             val titles = ImportSource.titles(editForm.fileList.getOrElse(""))
             // the form's token, unless another (a deleted) round holds it: then no dedupe, as without one
             val liveToken = RoundController.submitToken(request).filterNot(Round.submitTokenTaken)
+            val draftReceipt = RoundFormDraft.saved(user.getId, contestId, round.id, liveToken)
 
             // Re-render the same create/edit form with the entered values kept and the
             // failure shown as a global form error, so the admin can fix and resubmit
@@ -769,7 +776,8 @@ class RoundController @Inject() (
                     case RoundService.ReviewDistribution.Started(_) =>
                       RoundConflicts.logDisqualified(roundId, user, disqualified)
                       val coi = if (disqualified.isEmpty) "" else " " + messages("coi.disqualified", disqualified.size, stored.number)
-                      toReview.flashing("success" -> (messages("round.reapply.started", stored.number) + coi))
+                      toReview.flashing((Seq("success" -> (messages("round.reapply.started", stored.number) + coi)) ++
+                        draftReceipt): _*)
                     case RoundService.ReviewDistribution.Running(_) =>
                       reRender(round, "round.distribute.running", stored.number)
                     case RoundService.ReviewDistribution.NotInReview =>
@@ -839,7 +847,9 @@ class RoundController @Inject() (
                 stored.copy(name = round.name).description)
               def flashing(errors: (String, String)*) = {
                 val all = (coi ++ errors).toMap
-                toRoundsList.flashing((all ++ Map("success" -> (savedLine +: all.get("success").toSeq).mkString(" "))).toSeq: _*)
+                val success = (savedLine +: all.get("success").toSeq).mkString(" ")
+                val receipt = if (all.contains("error")) Nil else draftReceipt
+                toRoundsList.flashing((all.updated("success", success).toSeq ++ receipt): _*)
               }
               // "Also give out the waiting files" (round-editing plan §7) on its own: the top-up only, no new
               // files; only a distributed round of N > 0 jurors per file has such files (the form shows the tick)
@@ -902,7 +912,8 @@ class RoundController @Inject() (
                     case created: RoundService.Created =>
                       liveToken.foreach(t => RoundController.SavedForms.remember(t, RoundController.postedHash(request)))
                       Redirect(routes.RoundReviewController.review(created.round.getId)).flashing(
-                        "success" -> messagesApi.preferred(request)("round.saved.matching", created.round.number))
+                        (Seq("success" -> messagesApi.preferred(request)("round.saved.matching", created.round.number)) ++
+                          draftReceipt): _*)
                     // the same token saved a round meanwhile (two submits at once; a later one is
                     // answered by savedAgain before the form is validated): that round's Edit page
                     case resubmitted: RoundService.Resubmitted =>

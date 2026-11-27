@@ -30,7 +30,9 @@ Step 2 of 3: its matching files are being found." The round waits there, hidden 
 see [Reviewing a round's images](round-review.md#a-review).
 
 Reference links such as **Criteria catalogue** open in a new tab, keeping your draft in the
-form tab. **Cancel** discards the draft and returns to the rounds list.
+form tab. With unsaved edits, your browser can warn you before you reload or leave. Reopening
+the form in the same tab can restore those edits and shows a notice when it does. **Cancel**
+discards the draft and returns to the rounds list.
 
 If you press Save twice, or send the form again from the browser's Back button, the tool makes
 one round, not two, and tells you.

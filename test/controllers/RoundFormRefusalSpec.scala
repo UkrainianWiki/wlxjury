@@ -145,6 +145,24 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "keep the initial cut in the history URL without turning a refused edit into its new default" in {
+      testDbApp { implicit app =>
+        val contest = setUp()
+        val previous = inReview(contest)
+        val t = token()
+        val opened = doc(get(app, "admin@example.com", s"/admin/rounds/edit?contestId=${contest.getId}&topImages=2&submitToken=$t"))
+        val form = opened.select("#round-form")
+        val action = form.attr("action")
+        val body = newRound(contest, t, "previousRound[0]" -> previous.getId.toString, "topImages" -> "3",
+          "source" -> s"Category:<$Secret>")
+        val refused = route(app, request(POST, "admin@example.com", action, body)).get
+        val history = doc(refused).select("#round-form").attr("data-resolve-url")
+        (form.attr("autocomplete") === "off") and
+          (action must contain("topImages=2")) and (status(refused) === BAD_REQUEST) and
+          (history must contain("topImages=2")) and (history must not(contain("topImages=3")))
+      }
+    }
+
     "move a form-level error to its field: the second category box without the first" in {
       testDbApp { implicit app =>
         val contest = setUp()
@@ -221,6 +239,9 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
         }
         val page = doc(refused)
         (status(refused) === BAD_REQUEST) and
+          (page.select("#round-form").attr("data-resolve-url") ===
+            s"/admin/rounds/edit?id=${round.getId}&contestId=${contest.getId}") and
+          (flash(refused).get(RoundFormDraft.Saved) must beNone) and
           (page.select("input[name=reapply]").size === 1) and
           (page.select("select#minMpx[disabled]").size === 0) and (page.select("input#monumentIds[readonly]").size === 0) and
           (open(page, "collapseImageFiltering") must beTrue) and
@@ -252,6 +273,8 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
       testDbApp { implicit app =>
         val contest = setUp()
         val t = token()
+        val formPage = doc(get(app, "admin@example.com", s"/admin/rounds/edit?contestId=${contest.getId}&submitToken=$t"))
+        val draftKey = formPage.select("#round-form").attr("data-round-draft-key")
         val first = save(app, "admin@example.com", newRound(contest, t, "monumentIds" -> "80-361-0001"): _*)
         val firstFlash = flash(first).get("success")
         val saved = Round.findByContest(contest.getId).head
@@ -271,16 +294,20 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
           .withFlash(flash(again).data.toSeq: _*).withCSRFToken).get)
         def dropped(lines: Seq[String]) = lines.filter(_.startsWith("resubmit_dropped "))
         (firstFlash must beSome("Round 1 is saved. Step 2 of 3: its matching files are being found. Check them, then choose jurors.")) and
+          (draftKey must not(beEmpty)) and (draftKey must not(contain(t))) and
+          (flash(first).get(RoundFormDraft.Saved) must beSome(draftKey)) and
           (status(again) === SEE_OTHER) and (redirectLocation(again) must beSome(edit)) and
           (flash(again).get("success") must beSome("Round 1 is saved. You can change its settings here.")) and
           (status(changed) === SEE_OTHER) and (redirectLocation(changed) must beSome(edit)) and
+          (flash(changed).get(RoundFormDraft.Saved) must beNone) and
           (Round.findByContest(contest.getId).size === 1) and (Round.findById(saved.getId).get.monuments === saved.monuments) and
           (dropped(sameLines).size === 1) and (dropped(sameLines).head must contain("outcome=same")) and
           (dropped(sameLines).head must contain(s"roundId=${saved.getId}")) and
           (dropped(changedLines).size === 1) and (dropped(changedLines).head must contain("outcome=changed")) and
           ((sameLines ++ changedLines).mkString must not(contain("Final"))) and
           (changedLines.filter(_.startsWith("form_refused ")) must beEmpty) and
-          (Jsoup.parse(editPage).select("#flash-success").text === "Round 1 is saved. You can change its settings here.")
+          (Jsoup.parse(editPage).select("#flash-success").text === "Round 1 is saved. You can change its settings here.") and
+          (Jsoup.parse(editPage).select("[data-round-draft-saved]").attr("data-round-draft-saved") === draftKey)
       }
     }
 
@@ -374,15 +401,21 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
     "be confirmed on its review page, step 2 of its setup, never as created or ready" in {
       testDbApp { implicit app =>
         val contest = setUp()
-        val saved = save(app, "admin@example.com", newRound(contest, token()): _*)
+        val t = token()
+        val form = doc(get(app, "admin@example.com", s"/admin/rounds/edit?contestId=${contest.getId}&submitToken=$t"))
+        val draftKey = form.select("#round-form").attr("data-round-draft-key")
+        val saved = save(app, "admin@example.com", newRound(contest, t): _*)
         status(saved) must_== SEE_OTHER
         val round = Round.findByContest(contest.getId).head
-        val onReview = doc(route(app, FakeRequest(GET, redirectLocation(saved).get)
+        val review = doc(route(app, FakeRequest(GET, redirectLocation(saved).get)
           .withSession(Secured.UserName -> "admin@example.com").withFlash(flash(saved).data.toSeq: _*).withCSRFToken).get)
-          .select("#flash-success").text
+        val onReview = review.select("#flash-success").text
         (redirectLocation(saved) must beSome(s"/admin/rounds/${round.getId}/review")) and
           (onReview === "Round 1 is saved. Step 2 of 3: its matching files are being found. Check them, then choose jurors.") and
-          (onReview must not(contain("created"))) and (onReview must not(contain("ready")))
+          (onReview must not(contain("created"))) and (onReview must not(contain("ready"))) and
+          (draftKey must not(beEmpty)) and
+          (review.select("[data-round-draft-saved]").attr("data-round-draft-saved") === draftKey) and
+          (review.select("script[src$=round-form-draft.js]").size === 1)
       }
     }
 
@@ -390,8 +423,11 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
       testDbApp { implicit app =>
         val contest = setUp()
         val round = inReview(contest)
+        val formPage = doc(get(app, "admin@example.com", s"/admin/rounds/edit?id=${round.getId}&contestId=${contest.getId}"))
+        val draftKey = formPage.select("#round-form").attr("data-round-draft-key")
         val saved = save(app, "admin@example.com", edit(round, "name" -> "Renamed"): _*)
-        (status(saved) === SEE_OTHER) and (flash(saved).get("success") must beSome("Round 1 (Renamed) is saved."))
+        (status(saved) === SEE_OTHER) and (flash(saved).get("success") must beSome("Round 1 (Renamed) is saved.")) and
+          (draftKey must not(beEmpty)) and (flash(saved).get(RoundFormDraft.Saved) must beSome(draftKey))
       }
     }
   }

@@ -284,6 +284,8 @@
     initMultiSelects(doc, t);
     $('#previousRound').change(previousRoundsChanged);
     initVoteFilters();
+    var previous = doc.getElementById('previousRound');
+    if (previous && previous.form && previous.form.hasAttribute('data-round-draft-restored')) previousRoundsChanged.call(previous);
     $('#jurors').change(jurorsChanged(t.distribution || {}));
     initCoiConfirm(doc);
     initCriteriaSlots(doc);
@@ -296,7 +298,9 @@
 
   if (typeof module !== 'undefined') {
     module.exports = { init: init, texts: texts };
+  } else if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { init(document); });
   } else {
-    $(function () { init(document); });
+    init(document);
   }
 })();

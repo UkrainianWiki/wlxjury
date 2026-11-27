@@ -490,7 +490,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         doc.select("#regions_locked li").size === 2
 
         // the single selects disabled, the text inputs readonly, the choice's radios disabled: all locked
-        forall(Seq("mediaType", "minMpx", "minSize", "minJurors", "rejectedMode", "rejectedBy")) { id =>
+        forall(Seq("mediaType", "minMpx", "minSize", "minJurors", "rejectionFilter")) { id =>
           val select = doc.getElementById(id)
           (select.hasClass("wlx-locked") must beTrue) and (select.hasAttr("disabled") must beTrue) and
             (select.attr("aria-describedby") must contain("round-filters-locked"))
