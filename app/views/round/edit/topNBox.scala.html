@@ -17,6 +17,8 @@
 @field = @{ editRoundForm("topImages") }
 @stored = @{ field.value.map(_.trim).filter(_.nonEmpty) }
 @storedRate = @{ editRoundForm("minAvgRate").value.map(_.trim).filter(_.nonEmpty).flatMap(controllers.EditRound.threshold) }
+@storedKeep = @{ editRoundForm(CutPicker.KeepField).value.flatMap(CutPicker.Keep.parse) }
+@heldRate = @{ editRoundForm(CutPicker.HeldThresholdField).value.flatMap(controllers.EditRound.threshold) }
 @prevIds = @{ editRoundForm("previousRound").indexes.flatMap(i => editRoundForm(s"previousRound[$i]").value).filter(_.trim.nonEmpty) }
 @* the form's own errors keep the list from loading: the form-wide ones named (such as previous rounds
    rated differently), the others shown at their fields by a save *@
@@ -39,6 +41,8 @@
             <div class="col-md-8">
                 @for(n <- stored) {<input type="hidden" name="topImages" value="@n">}
                 @for(x <- storedRate) {<input type="hidden" name="minAvgRate" value="@x.bigDecimal.stripTrailingZeros.toPlainString">}
+                @for(k <- storedKeep) {<input type="hidden" name="@CutPicker.KeepField" value="@k.param">}
+                @for(x <- heldRate) {<input type="hidden" name="@CutPicker.HeldThresholdField" value="@x.bigDecimal.stripTrailingZeros.toPlainString">}
                 <p class="form-control-plaintext@if(errors.nonEmpty) { is-invalid}" id="topImages"@if(errors.nonEmpty) { aria-describedby="@errors.map(_._1).mkString(" ")"}>@if(stored.isEmpty && storedRate.isEmpty) {@Messages("top.n.none")} else {@for(n <- stored) {<span class="d-block">@Messages(CutPicker.TopCutKey, n)</span>}@for(x <- storedRate) {<span class="d-block">@Messages("top.n.held.threshold", CutPicker.fmtThreshold(x))</span>}}</p>
                 @for((id, error) <- errors) {<div class="invalid-feedback d-block" id="@id">@error</div>}
                 @if(prevIds.isEmpty && errors.isEmpty && !formInvalid) {<div class="form-text" id="topImages_help">@Messages("top.n.no.previous")</div>}

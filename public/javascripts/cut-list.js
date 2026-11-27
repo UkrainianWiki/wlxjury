@@ -193,7 +193,7 @@
       return true;
     }
 
-    function render(html) {
+    function render(html, sentBody) {
       var active = doc.activeElement;
       var focusId = active && active.id && box.contains(active) ? active.id : null;
       box.innerHTML = html;
@@ -210,7 +210,7 @@
       var root = box.firstElementChild;
       say(root ? root.getAttribute('data-cut-announce') || '' : '', false);
       updateCutLink(doc);
-      lastBody = requestBody();
+      lastBody = sentBody;
       if (focusId) {
         var again = doc.getElementById(focusId);
         if (again && box.contains(again)) again.focus();
@@ -290,7 +290,7 @@
           if (mine !== seq) return null;
           var type = (response.headers && response.headers.get && response.headers.get('Content-Type')) || '';
           if (response.ok && /^text\/html/i.test(type)) {
-            return response.text().then(function (html) { if (mine === seq) render(html); });
+            return response.text().then(function (html) { if (mine === seq) render(html, encoded); });
           }
           return response.json().catch(function () { return {}; })
             .then(function (json) { if (mine === seq) fail(response.status, json); });

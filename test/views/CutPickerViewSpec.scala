@@ -291,6 +291,17 @@ class CutPickerViewSpec extends Specification {
         (render(None).select("#topImages").text === "top.n.none")
     }
 
+    "keep the posting mode and held threshold when a refresh cannot rank the files" in {
+      val posted = form(Some(4))
+      val unavailable = posted.copy(data = posted.data ++ Map(
+        CutPicker.KeepField -> CutPicker.Keep.Threshold.param, CutPicker.HeldThresholdField -> "7.25"))
+        .withError("topImages", "top.n.commons.unavailable")
+      val box = Jsoup.parseBodyFragment(views.html.round.edit.topNBox(unavailable, None).body)
+      (values(box, "input[type=hidden][name=topImages]", "value") === Seq("4")) and
+        (values(box, s"input[type=hidden][name=${CutPicker.KeepField}]", "value") === Seq("threshold")) and
+        (values(box, s"input[type=hidden][name=${CutPicker.HeldThresholdField}]", "value") === Seq("7.25"))
+    }
+
     "show a started round's top N and threshold read only (#225's locked look), nothing submitted" in {
       val both = render(None, Some(3), noEdit = true, rate = Some(BigDecimal("7.5")))
       val one = render(None, None, noEdit = true, rate = Some(BigDecimal("7.5")))

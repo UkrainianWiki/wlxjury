@@ -215,6 +215,22 @@ describe("cut-list", () => {
         expect(fetch).toHaveBeenCalledTimes(1);
     });
 
+    test("a response during the debounce still refreshes the newly selected source round", async () => {
+        jest.useFakeTimers();
+        page({ prev: "1" });
+        const { fetch, calls } = deferredFetch();
+        create(document, { fetch });
+
+        select("previousRound", "2");
+        calls[0].resolve(html(BOX(2)));
+        await jest.advanceTimersByTimeAsync(0);
+        expect(status()).toBe("Cuts available: 2");
+
+        await jest.advanceTimersByTimeAsync(150);
+        expect(calls).toHaveLength(2);
+        expect(new URLSearchParams(calls[1].init.body).getAll("previousRound[]")).toEqual(["2"]);
+    });
+
     test("a slower older answer never overwrites a newer one; the older request is aborted", async () => {
         page({ prev: "1" });
         const { fetch, calls } = deferredFetch();
