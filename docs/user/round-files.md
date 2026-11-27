@@ -21,7 +21,8 @@ A round for all the files takes no filters at all.
 - **Selected by at least X jurors**: for earlier yes/no rounds. A file is taken when at least X
   jurors selected it (X from 1 to 6). **No filter** takes all the files of the earlier round.
 - **Number of top files from the previous rounds** (the cut): take only the best files of the
-  earlier rated or yes/no rounds, chosen with **Choose N**. See [The top files](#a-top-files).
+  earlier rated or yes/no rounds. The cut list loads when you choose a previous round. See
+  [The top files](#a-top-files).
 - The **rejection filter**: take or drop files by how many jurors rejected them in the earlier
   rounds. See [The rejection filter](#a-rejection-filter).
 - <a id="a-leave-out-rounds-setting"></a>**Leave out files that are in round(s)**: choose one or more other rounds of the contest. A file
@@ -87,10 +88,10 @@ for example the 50 best-rated files of a regional round go on to the national ro
 you choose previous rounds that are rated or yes/no. The files are ranked best first by the earlier
 rounds' votes, after the section's other filters, and the round takes those above a **cut**.
 
-**Choosing the cut.** The form shows the cut it holds, or **No top N: all matching files**. Press
-**Choose N**: the form comes back with a list of every place where the ranked files can be cut,
-each as the number of files and the score of the last one taken, such as **top 88 · score ≥ 8.0**
-(for an earlier yes/no round, the lowest vote level taken, such as **top 88 · 3 yes, 0 no**).
+**Choosing the cut.** The form loads the cut list as soon as you select a previous round, or
+when you open a form that already has one selected. Each option shows the number of files and
+the last score included, such as **top 88 · score ≥ 8.0**. For a yes/no round it shows the last
+vote level included, such as **top 88 · 3 yes, 0 no**.
 
 - Files with the same score are never split, so only cuts between two different scores are
   listed: you can't pick a number that falls inside a tie. Under the list, the form says how many
@@ -100,9 +101,9 @@ each as the number of files and the score of the last one taken, such as **top 8
   of a tie ("includes the tie at 7.5 (places 41–44)", "before the tie at …"). They are looked for
   among the first 100 places; **Other cuts** lists the rest.
 - **No top N** takes all the matching files.
-- If you change the previous rounds or the filters after that, press **Update the candidates**.
-  If the earlier rounds' votes changed since the round's cut was chosen, the form says so: check the
-  candidates again.
+- The list refreshes in place when you change the previous rounds or a filter that affects the
+  ranking. If the earlier rounds’ votes changed since the cut was chosen, the form tells you.
+  If you save during a refresh, the form waits for it to finish.
 
 Nothing is saved until you save the form. The round's [change log](statistics.md#o-round-changes)
 records the cut and how it was chosen (from the candidate cuts, with the reason, or from the list).
@@ -111,9 +112,10 @@ records the cut and how it was chosen (from the candidate cuts, with the reason,
 default) or **the top N files**. A score can't fall inside a tie, so the files scoring at least it
 are taken even if votes change before the round's files are chosen (their number may then change).
 The top N takes exactly N files; if votes change so that N falls inside a tie, the round's setup
-stops and asks for a new N. The score follows the earlier round's [file score](scoring.md#a-score-rule): with
-the total of the rates it is a total, and for a round with [criteria](scoring.md#a-criteria) it is the
-sum of the criteria's rates, averaged over the jurors. The hint under the choice says which applies.
+stops and asks for a new N. The score follows the earlier round's [file score rule](scoring.md#a-score-rule).
+For a round with [criteria](scoring.md#a-criteria), each juror's mark for a file is the sum of
+their criteria marks. The round's rule then averages or totals those sums across jurors. The hint
+under the choice says which rule applies.
 Earlier yes/no rounds always keep the top N.
 
 <a id="a-top-files-binary"></a>

@@ -59,6 +59,7 @@
 @formScripts = {
     @snippets.multiSelectScripts()
     <script src="@routes.Assets.versioned("javascripts/round-form.js")"></script>
+    <script src="@routes.Assets.versioned("javascripts/cut-list.js")"></script>
     <script src="@routes.Assets.versioned("javascripts/round-form-token.js")"></script>
     <script src="@routes.Assets.versioned("javascripts/round-form-wait.js")"></script>
 }
@@ -142,7 +143,8 @@
             }
 
             @bs.form(Call("POST", roundsFilter.addTo(routes.RoundController.saveRound().url)), Symbol("id") -> "round-form",
-                Symbol("data-resolve-url") -> resolveUrl.getOrElse(None)) {
+                Symbol("data-resolve-url") -> resolveUrl.getOrElse(None),
+                Symbol("data-csrf-token") -> play.filters.csrf.CSRF.getToken(req).fold("")(_.value)) {
                 @csrfField()
 
                 @round.edit.errorSummary(editRoundForm, controllers.RoundFormErrors.Shown(rounds = rounds.nonEmpty,
@@ -189,7 +191,7 @@
 
                     @defining(!newRound) { noEdit =>
                         @round.edit.imageFiltering(editRoundForm, rounds, regions, user, noEdit && !reapply, specialNominations,
-                            state.cutPicker, roundsFilter.addTo(routes.RoundController.cutPreview().url) + "#top-n")
+                            state.cutPicker, routes.RoundController.cutList().url)
 
                         @* for an existing round, saving it ticked disqualifies its conflicts of interest,
                            their votes kept (RoundController.leaveOutConflicts): asked first when it has some *@

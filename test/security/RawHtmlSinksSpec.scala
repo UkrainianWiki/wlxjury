@@ -28,6 +28,8 @@ class RawHtmlSinksSpec extends Specification {
     "app/views/main.scala.html" -> "empty defaults",
     "app/views/mainAdmin.scala.html" -> "empty defaults",
     "app/views/navbar.scala.html" -> "empty defaults",
+    "public/javascripts/cut-list.js" ->
+      "the cut box from the same-origin cut list (RoundController.cutList): a Twirl fragment, escaped; only a 2xx text/html answer",
     "app/views/pageLinks.scala.html" -> "constant entities (&laquo; &lsaquo; &rsaquo; &raquo;)"
   )
 

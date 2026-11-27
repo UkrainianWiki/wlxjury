@@ -228,60 +228,76 @@ class RoundController @Inject() (
       placed)(roundFormView(user, round, placed, submitToken = submitToken, cutPicker = cutPicker)))
   }
 
-  /** "Choose N" of the round form's cut (regional winners plan §10.4, place 1; one control, decided
-    * 2026-11-26): the form, posted here, comes back as it was with the control listing every valid cut
-    * of its previous rounds' files ("N / score"), the candidate cuts labelled, and the cut it holds (a
-    * top N, a threshold, or a legacy round's both) preselected or explained ([[services.CutPicker.holding]]).
-    * Saves nothing (the form's Save does, checking the cut again). The posted contest's admins (and root)
-    * only; an existing round only while its filters are edited (held in review for a re-apply), else back
-    * to its form. Never switches the session's contest (a POST).
+  /** The round form's cut list (regional winners plan §10.4, place 1; one control, decided 2026-11-26; loaded
+    * in place, decided 2026-11-26: no "Choose N" button, no page without scripts): the form, posted here by
+    * round-form's cut-list.js when a previous round is chosen, when the form opens with one, and when a
+    * filter that ranks the files changes, gets back the cut box (round/edit/topNBox, an HTML fragment) with
+    * the control listing every valid cut of its previous rounds' files ("N / score"), the candidate cuts
+    * labelled, and the cut it holds (a top N, a threshold, or a legacy round's both) preselected or
+    * explained ([[services.CutPicker.holding]]). Saves nothing (the form's Save does, checking the cut
+    * again). The posted contest's admins (and root) only; an existing round only while its filters are
+    * edited (held in review for a re-apply). A script's endpoint ([[withAuthJsonOn]]): signed out a JSON
+    * 401, a denial a JSON 403, a missing round a JSON 404, a round whose filters aren't edited a JSON 409
+    * with its message; never switches the session's contest. On the blocking pool.
     */
-  def cutPreview(): EssentialAction =
-    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
+  def cutList(): EssentialAction =
+    withAuthJsonOn(blocking)(rolePermission(User.ADMIN_ROLES, derived = true)) { user => implicit request =>
       val bound = editRoundForm.bindFromRequest()
       val contestId = bound.data.get("contest").flatMap(_.toLongOption)
       val roundId = bound.data.get("id").flatMap(_.toLongOption)
       if (!contestPermission(User.ADMIN_ROLES, contestId)(user))
-        onUnAuthorized(user, request, Secured.Denial.contest(contestId, User.ADMIN_ROLES))
+        onUnAuthorizedJson(user, request, Secured.Denial.contest(contestId, User.ADMIN_ROLES))
       else (contestId, roundId) match {
-        case (None, _) => BadRequest(views.html.errorPage(Some(user), "error.title", "error.invalid"))
+        case (None, _) => BadRequest(Json.obj("error" -> "invalid"))
         case (Some(cid), None) =>
           val number = bound.data.get("number").flatMap(_.toLongOption).getOrElse(0L)
-          cutPreviewPage(user, new Round(id = None, contestId = cid, number = number), bound,
-            RoundController.formToken(RoundController.submitToken(request)), skipDqOf = None)
+          cutBox(user, new Round(id = None, contestId = cid, number = number), bound, skipDqOf = None)
         case (Some(cid), Some(id)) =>
-          withAdminRound(user, id, roundNotFound(user), request) {
-            case stored if stored.contestId != cid =>
-              onUnAuthorized(user, request,
+          Round.findById(id) match {
+            case None => NotFound(Json.obj("error" -> "round_not_found"))
+            case Some(stored) if !adminOfRound(user, stored) =>
+              onUnAuthorizedJson(user, request, Secured.Denial.round(stored, User.ADMIN_ROLES))
+            case Some(stored) if stored.contestId != cid =>
+              onUnAuthorizedJson(user, request,
                 Secured.Denial.round(stored, User.ADMIN_ROLES).copy(reason = Some("round_in_other_contest")))
-            // its filters aren't edited (started, voted, or with a job): no N to choose; its form
-            case stored if !roundsService.reapplyable(stored) =>
-              Redirect(routes.RoundController.editRound(Some(id), cid).url)
-                .flashing("error" -> messagesApi.preferred(request)("top.n.not.editable", stored.number))
+            // its filters aren't edited (started, voted, or with a job): no N to choose
+            case Some(stored) if !roundsService.reapplyable(stored) =>
+              Conflict(Json.obj("error" -> "not_editable",
+                "message" -> messagesApi.preferred(request)("top.n.not.editable", stored.number)))
             // a re-apply's ranking skips the round's disqualified files, as its fill does (D17)
-            case stored => cutPreviewPage(user, stored, bound, None, skipDqOf = Some(id))
+            case Some(stored) => cutBox(user, stored, bound, skipDqOf = Some(id))
           }
       }
     }
 
-  /** [[cutPreview]]'s page: the posted form with its picker, or with its errors (no picker) if it
-    * doesn't bind.
+  /** [[cutList]]'s fragment: the cut box of the posted form, with its picker, or with why there is none
+    * (no previous round; the form's own errors, which a save shows; a refusal), never raw text.
     */
-  private def cutPreviewPage(user: User, shown: Round, bound: Form[EditRound], token: Option[String],
-      skipDqOf: Option[Long])(implicit request: Request[AnyContent]): Result = {
-    def page(form: Form[EditRound], picker: Option[services.CutPicker]): Result =
-      RoundController.formPage(Ok(roundFormView(user, shown, RoundFormErrors.placed(form), submitToken = token,
-        cutPicker = picker)))
+  private def cutBox(user: User, shown: Round, bound: Form[EditRound], skipDqOf: Option[Long])(implicit
+      request: Request[AnyContent]): Result = {
+    val (form, picker) = cutPickerOf(user, shown, bound, skipDqOf)
+    RoundController.formPage(Ok(views.html.round.edit.topNBox(form, picker,
+      formInvalid = bound.hasErrors)))
+  }
+
+  /** The posted form's picker, with the cut it holds preselected or explained, or the form with the error
+    * that says why there is none: the form's own errors (no picker); no previous round (`top.n.no.previous`);
+    * the rounds to leave out refused; Commons not answering for a category filter; another refusal.
+    */
+  private def cutPickerOf(user: User, shown: Round, bound: Form[EditRound], skipDqOf: Option[Long])(implicit
+      request: Request[AnyContent]): (Form[EditRound], Option[services.CutPicker]) =
     bound.value match {
       // the form's own errors, as a save would show them: fixed first
-      case None => page(bound, None)
+      case None => (bound, None)
+      // no previous round: nothing to rank (no query); the box says to choose one
+      case Some(edit) if edit.round.previousIds.isEmpty => (bound, None)
       case Some(edit) =>
         // without a top N the form binds no order: the order chosen in the form ranks a yes/no source
         val round = edit.round.copy(id = shown.id,
           topBinaryOrder = org.intracer.wmua.BinaryOrder.ofForm(bound.data.get("topBinaryOrder")))
         try {
           roundsService.cutPicker(round, None, skipDqOf) match {
-            case None => page(bound.withError("topImages", "top.n.no.previous"), None)
+            case None => (bound.withError("topImages", "top.n.no.previous"), None)
             case Some(found) =>
               // the cut the form holds: preselected, or explained with a pick required
               val held = found.copy(heldThreshold = RoundController.CutParams.heldRate(request))
@@ -289,31 +305,30 @@ class RoundController @Inject() (
               // an existing round's N chosen before: warned if its previous rounds' votes changed since
               val basis = shown.id.flatMap(id => ContestChangeJdbc.findByRound(shown.contestId, id, 50)
                 .flatMap(c => (c.detail \ RoundChanges.TopImagesBasis).asOpt[JsObject]).headOption)
-              page(bound, Some(withCutLinks(user, round, held.copy(changedSince = basis.exists(held.differsFrom)),
+              (bound, Some(withCutLinks(user, round, held.copy(changedSince = basis.exists(held.differsFrom)),
                 skipDqOf)))
           }
         } catch {
           // the rounds to leave out refused (V95): their message, in the page's language, as a save shows it
           case refused: RoundDistributionHandler.ExcludeRoundsRefused =>
             logger.warn(s"Round form: no candidate cuts: ${refused.text}")
-            page(bound.withError("topImages", refused.refusal.key, refused.refusal.args: _*), None)
+            (bound.withError("topImages", refused.refusal.key, refused.refusal.args: _*), None)
           // Commons didn't give the category filter's files
           case unavailable: RoundDistributionHandler.CategoryFilesUnavailable =>
             logger.warn(s"Round form: no candidate cuts: ${unavailable.getMessage}")
-            page(bound.withError("topImages", RoundController.CommonsUnavailableKey), None)
+            (bound.withError("topImages", RoundController.CommonsUnavailableKey), None)
           case NonFatal(e) =>
             RoundController.refusal(e) match {
               case Some(text) =>
                 logger.warn(s"Round form: no candidate cuts: $text")
-                page(bound.withError("topImages", "top.n.failed", text), None)
+                (bound.withError("topImages", "top.n.failed", text), None)
               case None =>
                 val reference = Secured.newReference()
                 logger.error(s"Round form: no candidate cuts ref=$reference", e)
-                page(bound.withError("topImages", "top.n.failed.reference", reference), None)
+                (bound.withError("topImages", "top.n.failed.reference", reference), None)
             }
         }
     }
-  }
 
   /** The picker with each cut's link to the previous round's rating view, where that view shows the same
     * cut between the same files ([[services.RoundService.cutViewable]]) and `user` may see other jurors'
@@ -1491,7 +1506,7 @@ object RoundController {
   * @param resolveUrl     a new round's form: its URL with its token, for the page's history entry
   * @param waitFor        a save refused to wait for another round's job: that job (Q7)
   * @param summaryHeading the error summary's heading, if not "Nothing was saved" (a saved edit's refused distribution)
-  * @param cutPicker      the top N's candidate cuts, N list and gallery, once "Choose N" loaded them (§10.4)
+  * @param cutPicker      the cut control, rendered with the page after a save refused its cut (§10.4); otherwise cut-list.js loads it in place
   */
 final case class RoundFormState(
     reapply: Boolean = false,
