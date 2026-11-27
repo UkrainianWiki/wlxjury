@@ -6,9 +6,8 @@ import play.api.test.{Helpers, PlaySpecification}
 
 import scala.jdk.CollectionConverters._
 
-/** The round form's "selected by at least X jurors" (minJurors, stored as prevSelectedBy): the
-  * empty choice named as no filter and stored as None, then 1-6; a 0 (the old form's no filter,
-  * V73) is no filter too, bound as None and shown as the empty choice; the stored value selected.
+/** The round form shows "No filter" and preserves its stored threshold while the preview loads
+  * the reachable choices (CutPickerFormSpec). The legacy 0 still binds as no filter.
   */
 class MinJurorsChoiceSpec extends PlaySpecification {
   implicit val messages: play.api.i18n.Messages = Helpers.stubMessages()
@@ -40,19 +39,18 @@ class MinJurorsChoiceSpec extends PlaySpecification {
   }
 
   "the minimum jurors choices" should {
-    "name the empty choice as no filter, then 1-6, with no 0" in {
+    "show only no filter before loading the preview for a form without a stored threshold" in {
       val (options, selected) = choices(None)
-      (options.head === ("" -> "selected.by.no.filter")) and
-        (options.map(_._1) === Seq("", "1", "2", "3", "4", "5", "6")) and
-        (selected === Seq(""))
+      (options === Seq("" -> "selected.by.no.filter")) and (selected === Seq(""))
     }
 
     "have no help" in {
       page(None).select("#minJurors_help").isEmpty must beTrue
     }
 
-    "select a stored value" in {
-      choices(Some(2))._2 === Seq("2")
+    "include and select the stored threshold while the preview loads" in {
+      val (options, selected) = choices(Some(2))
+      (options.map(_._1) === Seq("", "2")) and (selected === Seq("2"))
     }
 
     "show a stored 0 as no filter, with the same choices" in {

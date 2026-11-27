@@ -3,7 +3,7 @@ package controllers
 import db.scalikejdbc._
 import org.intracer.wmua._
 import org.jsoup.Jsoup
-import org.jsoup.nodes.Document
+import org.jsoup.nodes.{Document, Element}
 import org.scalawiki.wlx.dto.Monument
 import scalikejdbc.DB
 import play.api.Application
@@ -57,11 +57,11 @@ class HelpLinksPageSpec extends PlaySpecification with PlayTestDb {
 
   /** Each help link is the table's URL, leaves the tool as every off-site link does, and the page's
     * off-site links are all right. */
-  private def linksRight(doc: Document) = {
+  private def linksRight(doc: Document, ownNewTabs: Set[Element] = Set.empty) = {
     val links = doc.select("a.help-link").asScala.toSeq
     (links.filterNot(a => views.HelpLinks.url(a.attr("data-help-topic")).contains(a.attr("href"))).map(_.outerHtml) must beEmpty) and
       (links.filterNot(views.ExternalLinksCheck.marked).map(_.outerHtml) must beEmpty) and
-      (views.ExternalLinksCheck.problems(doc) must beEmpty)
+      (views.ExternalLinksCheck.problems(doc, ownNewTabs) must beEmpty)
   }
 
   "the round form" should {
@@ -79,7 +79,7 @@ class HelpLinksPageSpec extends PlaySpecification with PlayTestDb {
           (doc.select("#category-more a.help-link").attr("data-help-topic") === "category-options") and
           (doc.select("#averageRule_help a.help-link").attr("data-help-topic") === "score-rule") and
           (doc.select("#topImages_choose_help a.help-link").attr("data-help-topic") === "top-files") and
-          linksRight(doc)
+          linksRight(doc, doc.select("#round-form a[href^='/admin/criteria?']").asScala.toSet)
       }
     }
 
@@ -88,7 +88,7 @@ class HelpLinksPageSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         val doc = page(app, f.admin, s"/admin/rounds/edit?contestId=${f.contest.getId}&id=${f.round.getId}")
         (topics(doc) must containAllOf(Seq("create-round", "distribute-new-files", "image-cache", "image-check"))) and
-          linksRight(doc)
+          linksRight(doc, doc.select("#round-form #round-review-link").asScala.toSet)
       }
     }
   }
