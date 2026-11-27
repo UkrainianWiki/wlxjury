@@ -139,7 +139,7 @@
            organiser view (the controller reads none for a juror of the open round) *@
         @if(jurorChanges.nonEmpty) {
             <div id="round-juror-changes">
-                <p class="mb-1">@Messages("round.juror.changes") <span class="small">@snippets.helpLink("round-changes")</span></p>
+                <p class="mb-1">@Messages("round.juror.changes")</p>
                 <ul class="small">
                 @for((c, name) <- jurorChanges) {
                     <li class="round-juror-change" data-kind="@c.kind">@views.LinkTimes.utc(c.createdAt) — @Messages("round.juror.change." + c.kind, name)@for(next <- (c.detail \ "byRoundNumber").asOpt[Long]) { (@Messages("round.juror.change.by.round", next))}</li>
@@ -153,7 +153,8 @@
            viewers as the entries above *@
         @if(settingChanges.nonEmpty) {
             <div id="round-setting-changes">
-                <p class="mb-1">@Messages("round.changes")@if(jurorChanges.isEmpty) { <span class="small">@snippets.helpLink("round-changes")</span>}</p>
+                <p class="mb-1">@Messages("round.changes")</p>
+                @snippets.helpSection("round-changes")
                 <ul class="small">
                 @for((c, name) <- settingChanges) {
                     <li class="round-setting-change" data-kind="@c.kind" data-path="@{(c.detail \ "path").asOpt[String].getOrElse("")}">@views.LinkTimes.utc(c.createdAt) — @Messages("round.change." + c.kind, views.RoundChangeText.number(c), name)@if(views.RoundChangeText.items(c).nonEmpty) {: @roundChangeItems(c)}</li>

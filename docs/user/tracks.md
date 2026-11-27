@@ -53,6 +53,7 @@ Main there.
 - A round created from a Main round that takes only one region's files is on that region's track
   (rule 4).
 
+<a id="a-track-label"></a>
 **The track label.** The round form has a field **Track label (optional)** under the round's name,
 on a new round and on an existing one, at any time. Empty, it shows the track the tool picks by
 itself ("Automatic: Quality"; on a new round just "Automatic", since its track comes from its

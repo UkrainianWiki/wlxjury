@@ -75,7 +75,7 @@ class HelpLinksSpec extends Specification {
   "a help link's URL" should {
     "be the page at its id as of a release's tag" in {
       (HelpLinks.url("tracks", "26.11.17.1") must beSome(
-        "https://github.com/UkrainianWiki/wlxjury/blob/26.11.17.1/docs/user/tracks.md#a-tracks")) and
+        "https://github.com/UkrainianWiki/wlxjury/blob/26.11.17.1/docs/user/tracks.md#a-track-label")) and
         (HelpLinks.url("guide", "26.12") must beSome(
           "https://github.com/UkrainianWiki/wlxjury/blob/26.12/docs/user/juror-guide.md")) and
         (HelpLinks.url("no-such-topic") must beNone)

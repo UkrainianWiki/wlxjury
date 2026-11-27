@@ -28,9 +28,12 @@ long role guides.
 5. **Jurors:** one **Help** link in the gallery's top bar, to the jurors' contents page. No links
    per field or section for jurors.
 6. **Missing sections are written first** (criteria catalogue, image cache, image check, the round
-   settings change log, and top files, found missing while planning, §3), then linked. No link to "the nearest section".
-7. **Field links only for the hard fields** (Track label, the category boxes, Top N / Choose N, the
-   score rule, the distribution settings); section links elsewhere.
+   settings change log, and top files, found missing while planning, §3), then linked. Each section
+   link sits on its own line immediately below the heading (2026-11-27 **[user]**).
+7. **Field links next to the setting they explain.** The link in the field's help opens the exact
+   explanation in the guide. This includes the track label, category fields, cut and yes/no order,
+   score rule, distribution settings, leaving out rounds or conflicts, adding files, worst mark,
+   and distributing new files (2026-11-27 **[user]**). Section links cover whole sections.
 8. **docs/user is split into about 25 topic pages**, with a contents page per role.
 9. **Shared topics are written once**, with labelled role notes, not one page per role.
 10. **The three guide files stay, as contents pages.** `admin-guide.md`, `organizer-guide.md` and
@@ -268,31 +271,31 @@ once against `96312a39` and reports the result (CI checks out one commit, so it 
 ## 6. Where the links go
 
 After the split and the missing sections. **F** field link (after the field's help text), **S**
-section link (beside the page's or section's heading). Per decision 7 only the five hard fields
-get F.
+section link (on its own line under the page or section heading). See decision 7 for field links.
 
 ### Admins
 
 | Place | Kind | Target |
 |---|---|---|
-| Round form: Track label | F | `tracks.md#a-tracks` (moves #216's link onto the helper) |
-| Round form: category boxes (first, second, More category options) | F | `round-files.md#a-choose-files` |
-| Round form: Top N / Choose N (top files) | F | `round-files.md#a-top-files` |
+| Round form: Track label | F | `tracks.md#a-track-label` (moves #216's link onto the helper) |
+| Round form: category boxes (first, second, More category options) | F | `round-files.md#a-category-first`, `#a-category-second`, `#a-category-options` |
+| Round form: Top N and yes/no order | F | `round-files.md#a-top-files`, `#a-top-files-binary` |
 | Round form: File score | F | `scoring.md#a-score-rule` |
-| Jurors form: File distribution | F | `round-jurors.md#a-round-jurors` |
+| Jurors form: File distribution | F | `round-jurors.md#a-file-distribution` |
 | Round form: heading | S | `round-create.md#a-create-round` |
 | Round form: Media filtering, previous rounds | S | `round-files.md#a-choose-files` |
-| Round form: rejection filter, leave out rounds | S | `round-files.md#a-rejection-filter`, `#a-leave-out-rounds` |
-| Round form: Worst mark | S | `scoring.md#a-worst-mark` |
+| Round form: rejection filter | S | `round-files.md#a-rejection-filter` |
+| Round form: Leave out files that are in rounds | F | `round-files.md#a-leave-out-rounds-setting` |
+| Round form: Worst mark | F | `scoring.md#a-worst-mark` |
 | Round form: Criteria | S | `scoring.md#a-criteria` |
-| Round form: Add files, Distribute N new files | S | `round-files.md#a-add-files`, `#a-distribute-new-files` |
-| Round form: Leave out conflicts of interest | S | `conflicts.md#a-leave-out-conflicts` |
+| Round form: Add files, Distribute N new files | F | `round-files.md#a-add-files`, `#a-distribute-new-files` |
+| Round form: Leave out conflicts of interest | F | `conflicts.md#a-leave-out-conflicts` |
 | Round form / contest files: Download images locally | S | `contest-files.md#a-image-cache` |
 | Round: Check round images | S | `round-create.md#a-image-check` |
 | Review page | S | `round-review.md#a-review` |
 | Rounds list | S | `rounds.md#a-rounds-list` |
 | Add juror, Reassign files, pause | S | `round-jurors.md#a-add-juror`, `#a-reassign-juror`, `#a-pause-juror` |
-| Users page; add, import, from another contest | S | `people.md#a-users-page`, `#a-mass-import`, `#a-add-from-contest` |
+| Users page; add, import, from another contest | S | `people.md#a-users-page`, `#a-add-person`, `#a-mass-import`, `#a-add-from-contest` |
 | Edit user; possible duplicates; join | S | `editing-people.md#a-edit-person`, `#a-duplicates`, `#a-join` |
 | Account changes | S | `editing-people.md#a-account-changes` |
 | Invitations; link to share; greeting | S | `invitations.md#a-pending`, `#a-share-link`, `#a-greeting` |
@@ -321,7 +324,8 @@ get F.
 
 | Place | Kind | Target |
 |---|---|---|
-| Contests, Series | S | `root.md#a-root`, `contest.md#a-contest-settings` |
+| Contests, Series | S | `contest.md#a-contest-settings`, `root.md#a-root` |
+| Check every round’s images | S | `round-create.md#a-image-check` |
 | Normalize stored authors | S | `root.md#a-normalize-authors` |
 
 No link on the Access denied and error pages: they already say what to do, and a juror who needs

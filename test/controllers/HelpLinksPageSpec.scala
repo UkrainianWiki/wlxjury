@@ -4,6 +4,8 @@ import db.scalikejdbc._
 import org.intracer.wmua._
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import org.scalawiki.wlx.dto.Monument
+import scalikejdbc.DB
 import play.api.Application
 import play.api.test.CSRFTokenHelper._
 import play.api.test.{FakeRequest, PlaySpecification}
@@ -34,6 +36,9 @@ class HelpLinksPageSpec extends PlaySpecification with PlayTestDb {
     val juror = user("Juror", "jury")
     val images = (1L to 2L).map(id => Image(id, s"File:Image$id.jpg", None, None, 640, 480, Some(s"12-345-$id")))
     imageDao.batchInsert(images)
+    DB.autoCommit { implicit session =>
+      MonumentJdbc.batchInsert(Seq(Monument(page = "List of monuments", id = "12-345-1", name = "Town hall")))
+    }
     round.addUsers(Seq(RoundUser(round.getId, juror.getId, "jury", active = true)))
     selectionDao.batchInsert(images.map(i => Vote(i, juror, round, 0)))
     Fixture(contest, previous, round, admin, organizer, juror)
@@ -70,6 +75,8 @@ class HelpLinksPageSpec extends PlaySpecification with PlayTestDb {
           // the field links in the fields' help, which describes the field
           (doc.select("#trackLabel_help a.help-link").attr("data-help-topic") === "tracks") and
           (doc.select("#source_help a.help-link").attr("data-help-topic") === "categories") and
+          (doc.select("#excludeCategory_help a.help-link").attr("data-help-topic") === "category-second") and
+          (doc.select("#category-more a.help-link").attr("data-help-topic") === "category-options") and
           (doc.select("#averageRule_help a.help-link").attr("data-help-topic") === "score-rule") and
           (doc.select("#topImages_choose_help a.help-link").attr("data-help-topic") === "top-files") and
           linksRight(doc)
@@ -120,13 +127,52 @@ class HelpLinksPageSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  "the role-specific help links" should {
+    "hide staff help from a juror viewing their comments report and monument page" in {
+      testDbApp { app =>
+        val f = fixture()
+        val commentsPath = s"/comments/round/${f.round.getId}/user/${f.juror.getId}/page/1"
+        val monumentPath = s"/monuments/id/12-345-1?contest=${f.contest.getId}&round=${f.round.getId}"
+        val comments = page(app, f.juror, commentsPath)
+        val monument = page(app, f.juror, monumentPath)
+        (topics(comments) must not(contain("comments-report"))) and
+          (topics(monument) must not(contain("monuments"))) and
+          linksRight(comments) and linksRight(monument)
+      }
+    }
+
+    "show an organizer the contest files help" in {
+      testDbApp { app =>
+        val f = fixture()
+        val files = page(app, f.organizer, s"/contest/${f.contest.getId}/files")
+        (topics(files) must contain("contest-files")) and linksRight(files)
+      }
+    }
+
+    "show root the Contests, Series and image check topics" in {
+      testDbApp { app =>
+        val f = fixture()
+        val root = userDao.create(User("Root", "root@example.com", None, Set(User.ROOT_ROLE), isRoot = true))
+        val contests = page(app, root, "/contests")
+        val series = page(app, root, "/admin/series")
+        val rounds = page(app, root, s"/admin/rounds?contestId=${f.contest.getId}")
+        (topics(contests) must contain("contest-settings")) and
+          (topics(series) must contain("root")) and
+          (topics(rounds) must containAllOf(Seq("image-check", "normalize-authors"))) and
+          linksRight(contests) and linksRight(series) and linksRight(rounds)
+      }
+    }
+  }
+
   "the account form" should {
     "link changing a person for an admin, not on one's own profile" in {
       testDbApp { app =>
         val f = fixture()
         val admin = page(app, f.admin, s"/users/edit/${f.juror.getId}?contestId=${f.contest.getId}")
         val own = page(app, f.juror, s"/users/edit/${f.juror.getId}?contestId=${f.contest.getId}")
-        (topics(admin) must contain("edit-person")) and (topics(own) must beEmpty) and linksRight(admin)
+        val users = page(app, f.admin, s"/admin/users?contestId=${f.contest.getId}")
+        (topics(admin) must contain("edit-person")) and (topics(own) must beEmpty) and
+          (topics(users) must contain("add-person")) and linksRight(admin) and linksRight(users)
       }
     }
   }

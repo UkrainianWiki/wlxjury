@@ -24,19 +24,19 @@ A round for all the files takes no filters at all.
   earlier rated or yes/no rounds, chosen with **Choose N**. See [The top files](#a-top-files).
 - The **rejection filter**: take or drop files by how many jurors rejected them in the earlier
   rounds. See [The rejection filter](#a-rejection-filter).
-- **Leave out files that are in round(s)**: choose one or more other rounds of the contest. A file
+- <a id="a-leave-out-rounds-setting"></a>**Leave out files that are in round(s)**: choose one or more other rounds of the contest. A file
   that is in any of them isn't taken, whatever the votes it got there. It works with or without
   previous rounds, and with every other filter. See the [example](#a-leave-out-rounds) below.
 
 **By the file itself**
 
 - **Media Type**: **All**, **Video** or **Image**.
-- **Only files in category**: a Commons category. Only the contest's files that are directly in
+- <a id="a-category-first"></a>**Only files in category**: a Commons category. Only the contest's files that are directly in
   it are taken, not the files of its subcategories.
-- **Leave out files in category**: a Commons category whose files are not taken. Fill either
+- <a id="a-category-second"></a>**Leave out files in category**: a Commons category whose files are not taken. Fill either
   box, both or neither: with both, the round takes the files of the first category that are not
   in the second. Typing in either box suggests Commons categories.
-- **More category options** (closed at first): what the second box does. **Leave its files out**
+- <a id="a-category-options"></a>**More category options** (closed at first): what the second box does. **Leave its files out**
   is the default. **Files must be in both categories** takes only the files that are in the two
   categories, and the second box reads **…and also in category**. **Files may be in either
   category** takes the files of both, and the second box reads **…or in category**. These two
@@ -116,6 +116,7 @@ the total of the rates it is a total, and for a round with [criteria](scoring.md
 sum of the criteria's rates, averaged over the jurors. The hint under the choice says which applies.
 Earlier yes/no rounds always keep the top N.
 
+<a id="a-top-files-binary"></a>
 **Top files of a yes/no round by** (earlier yes/no rounds) decides how their files are ranked for
 the cut:
 

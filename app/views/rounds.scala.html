@@ -183,6 +183,7 @@
                         <input type="hidden" name="returnTo" value="@routes.RoundController.rounds(contest.id).url">
                         <button type="submit" class="btn btn-outline-secondary">@Messages("round.images.check.all")</button>
                     </form>
+                    <span class="small ms-1">@snippets.helpLink("image-check")</span>
                     <form method="post" action="@routes.AuthorNormalizeController.start()" class="d-inline">
                         @csrfField()
                         <input type="hidden" name="returnTo" value="@routes.RoundController.rounds(contest.id).url">

@@ -18,17 +18,20 @@ final case class HelpTopic(page: String, anchor: String)
 object HelpLinks {
 
   val topics: Map[String, HelpTopic] = Map(
-    // admins: the round form's hard fields (field links)
-    "tracks"               -> HelpTopic("tracks.md", "a-tracks"),
-    "categories"           -> HelpTopic("round-files.md", "a-choose-files"),
+    // admins: settings on the round and jurors forms
+    "tracks"               -> HelpTopic("tracks.md", "a-track-label"),
+    "categories"           -> HelpTopic("round-files.md", "a-category-first"),
+    "category-second"      -> HelpTopic("round-files.md", "a-category-second"),
+    "category-options"     -> HelpTopic("round-files.md", "a-category-options"),
     "top-files"            -> HelpTopic("round-files.md", "a-top-files"),
+    "top-files-binary"     -> HelpTopic("round-files.md", "a-top-files-binary"),
     "score-rule"           -> HelpTopic("scoring.md", "a-score-rule"),
-    "distribution"         -> HelpTopic("round-jurors.md", "a-round-jurors"),
+    "distribution"         -> HelpTopic("round-jurors.md", "a-file-distribution"),
     // admins: sections
     "create-round"         -> HelpTopic("round-create.md", "a-create-round"),
     "choose-files"         -> HelpTopic("round-files.md", "a-choose-files"),
     "rejection-filter"     -> HelpTopic("round-files.md", "a-rejection-filter"),
-    "leave-out-rounds"     -> HelpTopic("round-files.md", "a-leave-out-rounds"),
+    "leave-out-rounds"     -> HelpTopic("round-files.md", "a-leave-out-rounds-setting"),
     "worst-mark"           -> HelpTopic("scoring.md", "a-worst-mark"),
     "criteria"             -> HelpTopic("scoring.md", "a-criteria"),
     "add-files"            -> HelpTopic("round-files.md", "a-add-files"),
@@ -44,6 +47,7 @@ object HelpLinks {
     "users"                -> HelpTopic("people.md", "a-users-page"),
     "mass-import"          -> HelpTopic("people.md", "a-mass-import"),
     "add-from-contest"     -> HelpTopic("people.md", "a-add-from-contest"),
+    "add-person"           -> HelpTopic("people.md", "a-add-person"),
     "edit-person"          -> HelpTopic("editing-people.md", "a-edit-person"),
     "duplicates"           -> HelpTopic("editing-people.md", "a-duplicates"),
     "join"                 -> HelpTopic("editing-people.md", "a-join"),

@@ -75,6 +75,7 @@
                         Option.when(editRoundForm("topBinaryOrder").value.contains(BinaryOrder.LegacyParam))(
                             BinaryOrder.LegacyParam -> Messages(BinaryOrder.LegacyMessageKey)),
                     Symbol("_label") -> Messages("top.images.binary.order"),
+                    Symbol("_help") -> snippets.helpLink("top-files-binary"),
                     Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy)
             }
             </div>
@@ -156,6 +157,7 @@
     @bs.text(
         view.form("excludeCategory"),
         Symbol("_label") -> Messages(view.combine.secondLabelKey),
+        Symbol("_help") -> snippets.helpLink("category-second"),
         Symbol("data-category-suggest") -> "category",
         Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy
     )
@@ -165,6 +167,7 @@
         <div class="@offsetCol">
             <details id="category-more"@if(view.combine != CategoryCombine.Default || view.choiceErrors.nonEmpty) { open}>
                 <summary class="wlx-disclosure"><i class="bi bi-chevron-right wlx-disclosure-icon" aria-hidden="true"></i>@Messages("category.more")</summary>
+                @snippets.helpSection("category-options")
                 @* its errors tied to the group (CodeRabbit #170): a radiogroup, named by its legend, invalid and
                    described by them while it has any *@
                 <fieldset class="mt-2" id="category-combine" role="radiogroup" aria-labelledby="category-combine-legend"@if(view.choiceErrors.nonEmpty) { aria-invalid="true" aria-describedby="@view.choiceErrors.indices.map(i => s"category-combine-error-$i").mkString(" ")"}>

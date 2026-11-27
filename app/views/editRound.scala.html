@@ -305,8 +305,8 @@
                            save keeps them *@
                         <div id="round-criteria">
                         @snippets.collapsible("criteria", "headingCriteria", "collapseCriteria", open = true) {
-                            <p class="form-text wlx-locked-reason" id="round-criteria-locked"><i class="bi bi-lock-fill" aria-hidden="true"></i> @Messages("criteria.locked")</p>
                             @snippets.helpSection("criteria")
+                            <p class="form-text wlx-locked-reason" id="round-criteria-locked"><i class="bi bi-lock-fill" aria-hidden="true"></i> @Messages("criteria.locked")</p>
                             @criteriaErrors
                             @if(stored.isEmpty) {
                             <p class="form-text" id="round-criteria-none">@Messages("criteria.locked.none")</p>
@@ -328,10 +328,10 @@
                         @snippets.collapsible("criteria", "headingCriteria", "collapseCriteria",
                             open = chosen || editRoundForm.errors.exists(e => org.intracer.wmua.Criterion.ErrorKeys(e.message)) ||
                                 controllers.RoundFormErrors.inCriteria(editRoundForm)) {
+                            @snippets.helpSection("criteria")
                             @criteriaErrors
                             <p class="form-text">@Messages("criteria.help", org.intracer.wmua.Criterion.MinPerRound, org.intracer.wmua.Criterion.MaxPerRound)
                                 <a href="@routes.CriteriaController.list(contestId)">@Messages("criteria.catalogue")</a></p>
-                            @snippets.helpSection("criteria")
                             @* all the selects for a page without scripts; round-form.js shows only the chosen
                                ones, each with a remove button labelled by data-remove-label ($X its position),
                                and the add button's row (#criteria-add-row, hidden as rendered): "Add criteria"
