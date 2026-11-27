@@ -11,7 +11,10 @@ function initCategoryFilter($) {
     function update() {
         var chosen = choices.filter(':checked');
         var text = chosen.attr('data-second-label');
-        if (text) label.text(text);
+        if (text) {
+            var labelText = label.children('span').first();
+            (labelText.length ? labelText : label).text(text);
+        }
         if (chosen.length && chosen.val() !== 'minus') more.prop('open', true);
     }
     choices.on('change', update);
