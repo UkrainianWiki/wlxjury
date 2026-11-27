@@ -88,7 +88,7 @@ describe("cut-list", () => {
         expect(baseName("previousRound[]")).toBe("previousRound");
         expect(baseName("regions[0]")).toBe("regions");
         for (const name of ["previousRound[]", "regions[]", "source", "excludeCategory", "categoryCombine", "mediaType",
-            "minSize", "minMpx", "excludeRounds[]", "excludeCoi", "minJurors", "rejectedBy", "rejectedMode",
+            "minSize", "minMpx", "excludeRounds[]", "excludeCoi", "minJurors", "rejectionFilter", "rejectedBy", "rejectedMode",
             "topBinaryOrder", "monumentIds", "specialNomination"]) expect(ranks({ name })).toBe(true);
         for (const name of ["topImages", "cutKeep", "name", "jurors[]", "distribution", "rates", "trackLabel"])
             expect(ranks({ name })).toBe(false);

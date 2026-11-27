@@ -224,8 +224,8 @@ class RoundFormRefusalSpec extends PlaySpecification with PlayTestDb {
           (page.select("input[name=reapply]").size === 1) and
           (page.select("select#minMpx[disabled]").size === 0) and (page.select("input#monumentIds[readonly]").size === 0) and
           (open(page, "collapseImageFiltering") must beTrue) and
-          (summary(page).map(_._1) === Seq("#rejectedBy_field")) and
-          (page.select("#rejectedBy_field .invalid-feedback").size === 1) and
+          (summary(page).map(_._1) === Seq("#rejectionFilter_field")) and
+          (page.select("#rejectionFilter_field .invalid-feedback").size === 1) and
           (page.select("input[name=submitToken]").size === 0) and
           (lines.filter(_.startsWith("form_refused ")).map(_.contains(s"roundId=${round.getId}")) === Seq(true)) and
           (lines.mkString("\n") must not(contain(Secret)))

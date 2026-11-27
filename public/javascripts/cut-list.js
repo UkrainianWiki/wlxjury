@@ -34,7 +34,7 @@
   /** The form fields whose change changes the ranking, by name (a multiple select's "[]" ignored). */
   var RANKING_FIELDS = ['previousRound', 'regions', 'source', 'excludeCategory', 'categoryCombine',
     'categoryClause', 'mediaType', 'minSize', 'minMpx', 'excludeRounds', 'excludeCoi', 'minJurors',
-    'rejectedBy', 'rejectedMode', 'topBinaryOrder', 'monumentIds', 'specialNomination'];
+    'rejectionFilter', 'rejectedBy', 'rejectedMode', 'topBinaryOrder', 'monumentIds', 'specialNomination'];
 
   /** The pause after a choice (a select, a box) and after typing, before the list is asked for. */
   var CHANGE_DELAY = 150;

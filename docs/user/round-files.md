@@ -150,23 +150,16 @@ round on its own. On the create-round form, it shows when you choose an earlier 
 or a rated round with worst marks enabled. A worst mark counts as a rejection. A saved filter
 still counts worst marks already given if the earlier round turns the option off.
 
-It has two fields. **Rejected files** is the mode:
+In **Rejected files**, choose what to do and how many rejections to require in one step.
 
-- **No filter (keep rejected files)**: rejections don't matter.
-- **Exclude files rejected by at least X jurors**: a file is left out when X or more jurors
-  rejected it. This drops the files that jurors agreed were bad, for example after a screening
-  round where jurors rejected only the few worst files. With several earlier rounds, a file is
-  left out only if X or more jurors rejected it in each of the earlier rounds it was in.
-- **Only files rejected by at least X jurors**: a file is taken only when X or more jurors
-  rejected it. This is for a round that looks again at the files that were doubted.
+- Choose **No filter (keep rejected files)** to ignore rejections.
+- Choose **Exclude files with 2 or more rejections** to leave out files that two or more jurors
+  rejected. If a file appeared in several earlier rounds, it is left out only if it reached the
+  rejection threshold in each of those rounds.
+- Choose **Keep only files with 2 or more rejections** to review the files that two or more jurors
+  rejected.
 
-The second field, **X: rejected by at least X jurors**, is the number, from 1 to 6. The filter
-combines with the other filters of the round.
-
-The form refuses these choices: a mode with no X ("Choose X, the number of jurors…"), an X with
-**No filter** ("Choose whether to exclude the rejected files or take only them, or clear X"), and
-the filter with no previous round that has rejections ("The rejected files filter needs a previous
-round with rejections: a yes/no round, or a rated round without criteria").
+Both choices offer thresholds from 1 to 6. The rejection filter combines with the round's other filters.
 
 <a id="a-add-files"></a>
 ## Adding files by name

@@ -1,15 +1,13 @@
 package controllers
 
 import db.scalikejdbc.{Round, User}
+import org.intracer.wmua.RejectedMode
 import org.jsoup.Jsoup
 import play.api.test.{Helpers, PlaySpecification}
 
 import scala.jdk.CollectionConverters._
 
-/** The round form's "exclude files rejected by at least X jurors" (rejectedBy, stored as
-  * prevRejectedBy), with the yes/no previous round filters: the empty choice named as no filter
-  * and stored as None, then 1-6; "0" is no filter too; the stored value selected.
-  */
+/** The round form's rejection choice and compatibility with the two older fields. */
 class RejectedByChoiceSpec extends PlaySpecification {
   implicit val messages: play.api.i18n.Messages = Helpers.stubMessages()
 
@@ -22,15 +20,18 @@ class RejectedByChoiceSpec extends PlaySpecification {
     EditRound.editRoundForm.bind(base ++ data).get.round.prevRejectedBy
 
   /** The choices (value, text) and the selected value, for a round stored with `prevRejectedBy`. */
-  private def choices(prevRejectedBy: Option[Int]): (Seq[(String, String)], Seq[String]) = {
+  private def choices(
+      prevRejectedBy: Option[Int],
+      mode: RejectedMode = RejectedMode.Default
+  ): (Seq[(String, String)], Seq[String]) = {
     val round = new Round(id = Some(2), number = 2, name = Some("Final"), contestId = 1, rates = Round.binaryRound,
-      previous = Some("1"), prevRejectedBy = prevRejectedBy)
+      previous = Some("1"), prevRejectedBy = prevRejectedBy, prevRejectedMode = mode)
     val form = EditRound.editRoundForm.fill(EditRound(round, Seq(1L), None))
     val html = views.html.round.edit
       .imageFiltering(form, Seq(round.copy(id = Some(1), previous = None)), Map.empty, User("u", "e@e", Some(1L)),
         noEdit = false)
       .body
-    val options = Jsoup.parse(html).select("#rejectFilters select#rejectedBy option").asScala.toSeq
+    val options = Jsoup.parse(html).select("#rejectFilters select#rejectionFilter option").asScala.toSeq
     (options.map(o => o.attr("value") -> o.text), options.filter(_.hasAttr("selected")).map(_.attr("value")))
   }
 
@@ -66,18 +67,27 @@ class RejectedByChoiceSpec extends PlaySpecification {
       (rejection.hasClass("round2") must beTrue) and
         (rejection.hasAttr("style") must beFalse)
     }
+
+    "offer one control with a single no-filter choice and complete mode and count choices" in {
+      val selects = filters(next.copy(previous = Some("1")), sources).select("#rejectFilters select").asScala.toSeq
+      val values = selects.flatMap(_.select("option").asScala.map(_.attr("value")))
+      val numbered = for (mode <- Seq("exclude", "only"); count <- 1 to 6) yield s"$mode:$count"
+      (selects.map(_.attr("name")) === Seq("rejectionFilter")) and
+        (values === (Seq("none") ++ numbered))
+    }
   }
 
   "the rejected-by choices" should {
-    "be with the yes/no filters: the empty choice as no filter, then 1-6" in {
+    "select the no-filter choice by default" in {
       val (options, selected) = choices(None)
-      (options.headOption must beSome("" -> "rejected.by.no.filter")) and
-        (options.map(_._1) === Seq("", "1", "2", "3", "4", "5", "6")) and
-        (selected === Seq(""))
+      (options.headOption must beSome("none" -> "rejected.by.no.filter")) and
+        (selected === Seq("none"))
     }
 
-    "select a stored value" in {
-      choices(Some(2))._2 === Seq("2")
+    "select a stored mode and count, including an older count above six" in {
+      (choices(Some(2))._2 === Seq("exclude:2")) and
+        (choices(Some(2), RejectedMode.Only)._2 === Seq("only:2")) and
+        (choices(Some(8), RejectedMode.Only)._2 === Seq("only:8"))
     }
   }
 
@@ -90,6 +100,22 @@ class RejectedByChoiceSpec extends PlaySpecification {
 
   "the rejected-by mode (V93)" should {
     def round(data: Map[String, String]) = EditRound.editRoundForm.bind(base ++ data).get.round
+
+    "bind the mode and count together and allow clearing a filter with one choice" in {
+      val exclude = round(Map("rejectionFilter" -> "exclude:2"))
+      val only = round(Map("rejectionFilter" -> "only:4"))
+      (exclude.prevRejectedMode === RejectedMode.Exclude) and
+        (exclude.prevRejectedBy must beSome(2)) and
+        (only.prevRejectedMode === RejectedMode.Only) and
+        (only.prevRejectedBy must beSome(4)) and
+        (round(Map("rejectionFilter" -> "none", "rejectedBy" -> "3")).prevRejectedBy must beNone)
+    }
+
+    "reject incomplete or invalid combined choices" in {
+      Seq("only", "none:2", "exclude:0", "only:-1", "unknown:2", "exclude:2:3").forall { value =>
+        EditRound.editRoundForm.bind(base + ("rejectionFilter" -> value)).error("rejectionFilter").isDefined
+      } must beTrue
+    }
 
     "exclude for a client without it (the meaning before V93), keep only with \"only\", none with \"none\"" in {
       (round(Map("rejectedBy" -> "2")).prevRejectedMode === org.intracer.wmua.RejectedMode.Exclude) and
@@ -112,16 +138,5 @@ class RejectedByChoiceSpec extends PlaySpecification {
         (EditRound.editRoundForm.bind(base ++ Map("rejectedBy" -> "2", "rejectedMode" -> "ONLY")).hasErrors must beTrue)
     }
 
-    "be shown as stored, \"none\" without a filter" in {
-      def shown(r: Round) = {
-        val form = EditRound.editRoundForm.fill(EditRound(r, Seq(1L), None))
-        Jsoup.parse(views.html.round.edit.imageFiltering(form, Seq(r.copy(id = Some(1), previous = None)), Map.empty,
-          User("u", "e@e", Some(1L)), noEdit = false).body)
-          .select("#rejectFilters select#rejectedMode option[selected]").asScala.map(_.attr("value")).toSeq
-      }
-      val stored = new Round(id = Some(2), number = 2, contestId = 1, rates = Round.binaryRound, previous = Some("1"))
-      (shown(stored.copy(prevRejectedBy = Some(2), prevRejectedMode = org.intracer.wmua.RejectedMode.Only)) === Seq("only")) and
-        (shown(stored.copy(prevRejectedBy = Some(2))) === Seq("exclude")) and (shown(stored) === Seq("none"))
-    }
   }
 }

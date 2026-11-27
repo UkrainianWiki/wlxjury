@@ -28,6 +28,7 @@
         .fold(Set.empty[Long])(_.previousIds.toSet)
     rounds.filter(r => r.isBinary || r.takesWorstMark || (savedSources.contains(r.getId) && r.rejects))
 }
+@rejectionField = @{ controllers.EditRound.rejectionFilterField(editRoundForm) }
 @* the category boxes as shown (a round's rule, or a refused form's boxes): the section opens by
    itself when either has a category *@
 @categoryView = @{ controllers.EditRound.categoryBoxes(editRoundForm) }
@@ -63,7 +64,7 @@
 
         @* shown with previous rounds chosen, or with an error in it *@
         <div id="prevRoundFilters" @if(editRoundForm("previousRound").indexes.isEmpty &&
-            !Seq("minJurors", "topBinaryOrder", "rejectedMode", "rejectedBy", "minAvgRate", "topImages").exists(editRoundForm(_).hasErrors)) {style="display: none"}>
+            !Seq("minJurors", "topBinaryOrder", "rejectionFilter", "minAvgRate", "topImages").exists(editRoundForm(_).hasErrors)) {style="display: none"}>
             <div id="selectFilters" class="@binarySources.map(r => "round" + r.getId).mkString(" ")"
                 @if(!binarySelected) {style="display: none"}>
             @* the empty choice is stored as no filter (NULL); a stored 0 means the same (the old
@@ -94,20 +95,13 @@
             <div id="rejectFilters" class="@rejectionSources.map(r => "round" + r.getId).mkString(" ")"
                 @if(!rejectionSources.exists(r => prevIds.contains(r.getId.toString))) {style="display: none"}>
             @snippets.helpSection("rejection-filter")
-            @* the filter's mode (V93): none, leave out those files, or keep only them (to review the
-               rejected files in a round of their own); X below *@
             @bs.select(
-                editRoundForm("rejectedMode"),
+                rejectionField,
                 Seq(controllers.EditRound.NoRejectedFilter -> Messages("rejected.by.no.filter")) ++
-                    org.intracer.wmua.RejectedMode.all.map(m => (m.param, Messages(m.messageKey))),
+                    controllers.EditRound.rejectionFilterChoices(rejectionField).map { case (value, mode, count) =>
+                        value -> Messages(mode.messageKey + ".count", count)
+                    },
                 Symbol("_label") -> Messages("rejected.by.mode"),
-                Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy)
-            @bs.select(
-                editRoundForm("rejectedBy"),
-                Seq("" -> Messages("rejected.by.no.filter")) ++
-                    Seq("1", "2", "3", "4", "5", "6").map(x => (x, x)),
-                Symbol("value") -> "",
-                Symbol("_label") -> Messages("rejected.by.at.least.x.jurors"),
                 Symbol("_help") -> Messages("rejected.by.help"),
                 Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy)
             </div>
