@@ -1,6 +1,7 @@
 package controllers
 
 import db.scalikejdbc.{Round, User}
+import org.jsoup.Jsoup
 import org.intracer.wmua.{CategoryBoxes, CategoryCombine, CategoryOperation, CategoryRule}
 import play.api.data.Form
 import play.api.test.{Helpers, PlaySpecification}
@@ -49,7 +50,7 @@ class CategoryFormSpec extends PlaySpecification {
   private def filteringOpen(html: String): Boolean =
     """<div id="collapseImageFiltering" class="collapse show"""".r.findFirstIn(html).isDefined
   private def secondLabel(html: String): Option[String] =
-    """<label[^>]*for="excludeCategory"[^>]*>([^<]*)</label>""".r.findFirstMatchIn(html).map(_.group(1))
+    Option(Jsoup.parseBodyFragment(html).selectFirst("label[for=excludeCategory]")).map(_.text())
 
   "the category boxes" should {
     import CategoryCombine._
@@ -124,7 +125,7 @@ class CategoryFormSpec extends PlaySpecification {
 
     "label the boxes, describe the first by its hint, and keep the operation select out" in {
       val html = categoryHtml(EditRound.editRoundForm)
-      ("""<label[^>]*for="source"[^>]*>category.only</label>""".r.findFirstIn(html) must beSome) and
+      (Option(Jsoup.parseBodyFragment(html).selectFirst("label[for=source]")).map(_.text()) === Some("category.only")) and
         (secondLabel(html) === Some("category.leave.out")) and
         (input(html, "source") must contain("""aria-describedby="source_help"""")) and
         (html must contain("""id="source_help"""")) and

@@ -82,8 +82,9 @@ class BsFormHelpersSpec extends Specification {
       val label = one(d, "label")
       val input = one(d, "input")
       classes(wrapper) === Set("mb-3")
-      classes(label) === Set("form-label")
+      classes(label) === Set("form-label", "wlx-field-label")
       label.text === "Your name"
+      one(d, "label.wlx-field-label > span").text === "Your name"
       label.attr("for") === input.id
       input.id === "name"
       input.attr("name") === "name"
@@ -179,7 +180,7 @@ class BsFormHelpersSpec extends Specification {
     "hide the label from sight with `_hiddenLabel`" in {
       val d = doc(bs.text(filled("name"), Symbol("_hiddenLabel") -> "Login", Symbol("placeholder") -> "Login"))
       val label = one(d, "label")
-      classes(label) === Set("form-label", "visually-hidden")
+      classes(label) === Set("form-label", "wlx-field-label", "visually-hidden")
       label.text === "Login"
       label.attr("for") === one(d, "input").id
     }
@@ -188,7 +189,7 @@ class BsFormHelpersSpec extends Specification {
       implicit val layout: Layout = horizontal
       val d = doc(bs.text(failed("name"), Symbol("_label") -> "Name"))
       classes(one(d, "div#name_field")) === Set("row", "mb-3")
-      classes(one(d, "label")) === Set("col-md-4", "col-form-label")
+      classes(one(d, "label")) === Set("col-md-4", "col-form-label", "wlx-field-label")
       val column = one(d, "div.col-md-8")
       column.select("input#name").size === 1
       column.select(".invalid-feedback").size === 1
@@ -197,7 +198,7 @@ class BsFormHelpersSpec extends Specification {
     "take a template's own implicitLayout over the default" in {
       val d = doc(views.html.bstest.horizontalField(filled("name")))
       classes(one(d, "div#name_field")) === Set("row", "mb-3")
-      classes(one(d, "label")) === Set("col-sm-3", "col-form-label")
+      classes(one(d, "label")) === Set("col-sm-3", "col-form-label", "wlx-field-label")
       one(d, "div.col-sm-9").select("input#name").size === 1
     }
 

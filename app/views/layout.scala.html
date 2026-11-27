@@ -54,6 +54,7 @@
            reload, while the head's scripts load): "document.body is null". The app's code calls
            no Bootstrap API, only its data attributes, which work the same deferred. *@
         <script defer src="@routes.WebJars.at("bootstrap/5.3.8/js/bootstrap.bundle.min.js")"></script>
+        <script src="@routes.Assets.versioned("javascripts/select-labels.js")"></script>
         @if(draftReceipt.isDefined) {
             <script src="@routes.Assets.versioned("javascripts/round-form-draft.js")"></script>
         }

@@ -18,7 +18,7 @@ function render(checked, { open = false, disabled = false } = {}) {
             <div class="form-text" id="source_help">Directly in this category</div>
         </div>
         <div id="category-second">
-            <label for="excludeCategory">${labels[checked]}</label>
+            <label class="wlx-field-label col-form-label" for="excludeCategory"><span>${labels[checked]}</span></label>
             <input id="excludeCategory" name="excludeCategory">
         </div>
         <details id="category-more"${open ? ' open' : ''}>
@@ -49,6 +49,7 @@ test('the choice under More renames the second box and keeps the categories ente
 
     choose('and');
     expect(secondLabel()).toBe('…and also in category');
+    expect($('#category-second label > span').text()).toBe('…and also in category');
     choose('or');
     expect(secondLabel()).toBe('…or in category');
     choose('minus');

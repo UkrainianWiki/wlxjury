@@ -16,6 +16,7 @@ const TEXTS = { selectAll: "Select all", none: "None selected", n: "Selected", a
 let summaryText, multiSelect;
 
 beforeAll(() => {
+    window.wlxSelectLabels = require("../public/javascripts/select-labels");
     window.TomSelect = require("tom-select/dist/js/tom-select.complete.js");
     ({ summaryText, multiSelect } = require(SCRIPT));
 });
@@ -46,6 +47,29 @@ describe("summaryText", () => {
 });
 
 describe("multiSelect", () => {
+    test("clicking the label focuses without toggling the dropdown", async () => {
+        const select = jurors();
+        select.insertAdjacentHTML("beforebegin", '<label for="jurors">Jurors</label>');
+        const label = document.querySelector("label");
+        const ts = multiSelect(select, TEXTS);
+        const click = element => {
+            element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+            element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+            element.click();
+        };
+        click(label);
+        await new Promise(resolve => setTimeout(resolve, 10));
+        expect(document.activeElement).toBe(ts.focus_node);
+        expect(ts.isOpen).toBe(false);
+        click(ts.control);
+        await new Promise(resolve => setTimeout(resolve, 10));
+        expect(ts.isOpen).toBe(true);
+        click(label);
+        await new Promise(resolve => setTimeout(resolve, 10));
+        expect(ts.isOpen).toBe(true);
+        ts.destroy();
+    });
+
     test("sums up the selection the page comes with", () => {
         multiSelect(jurors([2, 4]), TEXTS);
         expect(summary()).toBe("Bob, Dan");
