@@ -21,6 +21,24 @@ test.describe(() => {
     await expect(page.locator('#collapseCriteria')).toHaveClass(/\bshow\b/);
   }
 
+  test('opening the criteria catalogue keeps the chosen filters in the draft', { tag: '@A-01' }, async ({ page, fixture }) => {
+    await openCriteria(page, fixture);
+    const filtering = page.locator('#headingImageFiltering a');
+    if ((await filtering.getAttribute('aria-expanded')) !== 'true') await filtering.click();
+    const media = page.locator('#mediaType');
+    await media.selectOption('image');
+
+    const [catalogue] = await Promise.all([
+      page.context().waitForEvent('page'),
+      page.getByRole('link', { name: /^Criteria catalogue/ }).click(),
+    ]);
+    await expect(catalogue).toHaveURL((url) => url.pathname === '/admin/criteria');
+    await catalogue.close();
+    await expect(page).toHaveURL((url) => url.pathname === '/admin/rounds/edit');
+    await expect(media).toHaveValue('image');
+    await expect(page.locator('#rates')).toHaveValue('10');
+  });
+
   test('start with "Add criteria" only; add, choose and remove criteria, the focus following', { tag: '@A-01' }, async ({ page, fixture }) => {
     await openCriteria(page, fixture);
     const selects = page.locator('#round-criteria-selects select');

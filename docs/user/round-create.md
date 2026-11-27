@@ -29,7 +29,8 @@ take a few minutes. You land on the round's review page (step 2), which says "Ro
 Step 2 of 3: its matching files are being found." The round waits there, hidden from the jurors:
 see [Reviewing a round's images](round-review.md#a-review).
 
-**Cancel** leaves the form without saving anything.
+Reference links such as **Criteria catalogue** open in a new tab, keeping your draft in the
+form tab. **Cancel** discards the draft and returns to the rounds list.
 
 If you press Save twice, or send the form again from the browser's Back button, the tool makes
 one round, not two, and tells you.

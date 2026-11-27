@@ -79,6 +79,7 @@
 @trackHelp = {@Messages("round.track.help", Messages("round.track.main")) @snippets.helpLink("tracks")}
 @* a field's help with its help link after it (help plan §6: F for the hard fields, S for a section's) *@
 @withHelp(text: String, key: String) = {@if(text.nonEmpty) {@text }@snippets.helpLink(key)}
+@newTabHint = {<i class="bi bi-box-arrow-up-right ms-1" aria-hidden="true"></i><span class="visually-hidden"> (@Messages("link.new.tab"))</span>}
 
 @* the track field, "Main" shown as the page names the Main track (saved back as "Main") *@
 @trackField = @{
@@ -333,7 +334,7 @@
                             @snippets.helpSection("criteria")
                             @criteriaErrors
                             <p class="form-text">@Messages("criteria.help", org.intracer.wmua.Criterion.MinPerRound, org.intracer.wmua.Criterion.MaxPerRound)
-                                <a href="@routes.CriteriaController.list(contestId)">@Messages("criteria.catalogue")</a></p>
+                                <a href="@routes.CriteriaController.list(contestId)" target="_blank" rel="noopener">@Messages("criteria.catalogue")@newTabHint</a></p>
                             @* all the selects for a page without scripts; round-form.js shows only the chosen
                                ones, each with a remove button labelled by data-remove-label ($X its position),
                                and the add button's row (#criteria-add-row, hidden as rendered): "Add criteria"
@@ -400,7 +401,8 @@
                     @snippets.button(Call("GET", roundsFilter.addTo(routes.RoundController.rounds(editRoundForm("contest").value.map(_.toLong)).url)), "cancel")
                     @* a round waiting for review: its review page *@
                     @for(rid <- editRoundForm("id").value.flatMap(v => scala.util.Try(v.toLong).toOption) if !newRound) {
-                        <a id="round-review-link" class="btn btn-outline-secondary" href="@routes.RoundReviewController.review(rid)">@Messages("round.review")</a>
+                        <a id="round-review-link" class="btn btn-outline-secondary" href="@routes.RoundReviewController.review(rid)"
+                           target="_blank" rel="noopener">@Messages("round.review")@newTabHint</a>
                     }
                 </div>
             </div>
