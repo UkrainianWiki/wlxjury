@@ -15,9 +15,20 @@
 )(implicit messages: Messages)
 @implicitLayout = @{ bs.Layout.horizontal("col-md-4", "col-md-8") }
 @prevIds = @{ editRoundForm("previousRound").indexes.flatMap(i => editRoundForm(s"previousRound[$i]").value) }
+@binarySources = @{ rounds.filter(_.isBinary) }
+@binarySelected = @{ binarySources.exists(r => prevIds.contains(r.getId.toString)) }
 @* a top-N's order picks files only from a yes/no previous round: offered until previous rounds
    are chosen, then only with a yes/no one *@
-@topOrderApplies = @{ prevIds.isEmpty || rounds.exists(r => r.isBinary && r.id.exists(id => prevIds.contains(id.toString))) }
+@topOrderApplies = @{ prevIds.isEmpty || binarySelected }
+@* Keep a saved filter available when its source has since turned off worst marks. *@
+@rejectionSources = @{
+    val savedSources = editRoundForm("id").value.flatMap(_.toLongOption)
+        .flatMap(id => rounds.find(_.id.contains(id)))
+        .filter(_.rejectedByFilter.isDefined)
+        .fold(Set.empty[Long])(_.previousIds.toSet)
+    rounds.filter(r => r.isBinary || r.takesWorstMark || (savedSources.contains(r.getId) && r.rejects))
+}
+@rejectionField = @{ controllers.EditRound.rejectionFilterField(editRoundForm) }
 @* the category boxes as shown (a round's rule, or a refused form's boxes): the section opens by
    itself when either has a category *@
 @categoryView = @{ controllers.EditRound.categoryBoxes(editRoundForm) }
@@ -53,15 +64,14 @@
 
         @* shown with previous rounds chosen, or with an error in it *@
         <div id="prevRoundFilters" @if(editRoundForm("previousRound").indexes.isEmpty &&
-            !Seq("minJurors", "topBinaryOrder", "rejectedMode", "rejectedBy", "minAvgRate", "topImages").exists(editRoundForm(_).hasErrors)) {style="display: none"}>
-            <div id="selectFilters"
-            class="@rounds.filter(_.isBinary).map(r => "round" + r.getId).mkString(" ")">
-            @* the empty choice is stored as no filter (NULL); a stored 0 means the same (the old
-               form's way of saying it, V73) and shows the empty choice *@
+            !Seq("minJurors", "topBinaryOrder", "rejectionFilter", "minAvgRate", "topImages").exists(editRoundForm(_).hasErrors)) {style="display: none"}>
+            <div id="selectFilters" class="@binarySources.map(r => "round" + r.getId).mkString(" ")"
+                @if(!binarySelected) {style="display: none"}>
+            @* The cut-list request supplies the options. Keep a saved value while it loads. *@
             @bs.select(
                 editRoundForm("minJurors"),
                 Seq("" -> Messages("selected.by.no.filter")) ++
-                    Seq("1", "2", "3", "4", "5", "6").map(x => (x, x)),
+                    editRoundForm("minJurors").value.filter(_.toIntOption.exists(_ > 0)).map(n => n -> n),
                 Symbol("value") -> "",
                 Symbol("_label") -> Messages("selected.by.at.least.x.jurors"),
                 Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy)
@@ -80,27 +90,17 @@
             }
             </div>
 
-            @* the files with fewer rejections across the previous rounds' votes (e.g. after a
-               screening where jurors only reject the few bad files): a yes/no round's "no", a rated
-               round's worst marks (a rated round without criteria, Round.rejects, whether its option is on now
-               or not); offered when any chosen previous round has one; empty: no filter (NULL) *@
-            <div id="rejectFilters"
-            class="@rounds.filter(_.rejects).map(r => "round" + r.getId).mkString(" ")">
+            @* The classes also let round-form.js update visibility as the selection changes. *@
+            <div id="rejectFilters" class="@rejectionSources.map(r => "round" + r.getId).mkString(" ")"
+                @if(!rejectionSources.exists(r => prevIds.contains(r.getId.toString))) {style="display: none"}>
             @snippets.helpSection("rejection-filter")
-            @* the filter's mode (V93): none, leave out those files, or keep only them (to review the
-               rejected files in a round of their own); X below *@
             @bs.select(
-                editRoundForm("rejectedMode"),
+                rejectionField,
                 Seq(controllers.EditRound.NoRejectedFilter -> Messages("rejected.by.no.filter")) ++
-                    org.intracer.wmua.RejectedMode.all.map(m => (m.param, Messages(m.messageKey))),
+                    rejectionField.value.flatMap(controllers.EditRound.parseRejectionFilter).map { case (mode, count) =>
+                        controllers.EditRound.rejectionFilterValue(mode, count) -> Messages(mode.messageKey + ".count", count)
+                    },
                 Symbol("_label") -> Messages("rejected.by.mode"),
-                Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy)
-            @bs.select(
-                editRoundForm("rejectedBy"),
-                Seq("" -> Messages("rejected.by.no.filter")) ++
-                    Seq("1", "2", "3", "4", "5", "6").map(x => (x, x)),
-                Symbol("value") -> "",
-                Symbol("_label") -> Messages("rejected.by.at.least.x.jurors"),
                 Symbol("_help") -> Messages("rejected.by.help"),
                 Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy)
             </div>

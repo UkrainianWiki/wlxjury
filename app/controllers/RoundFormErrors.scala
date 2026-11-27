@@ -20,7 +20,7 @@ object RoundFormErrors {
   final case class Item(labelKey: Option[String], anchor: Option[String], text: String)
 
   /** The fields of the "Media filtering" section (round/edit/imageFiltering.scala.html). */
-  val MediaFiltering: Set[String] = Set("previousRound", "minJurors", "topBinaryOrder", "rejectedMode", "rejectedBy",
+  val MediaFiltering: Set[String] = Set("previousRound", "minJurors", "topBinaryOrder", "rejectionFilter",
     "minAvgRate", "topImages", "excludeRounds", "mediaType", "source", "excludeCategory", "categoryCombine",
     "categoryClause", "regions", "monumentIds", "minMpx", "minSize", "specialNomination")
 
@@ -37,9 +37,8 @@ object RoundFormErrors {
     case "error.category.first.required"                  => Some("source")
     case "error.category.second.required"                 => Some("excludeCategory")
     case "error.previous.rounds.mixed.type"               => Some("previousRound")
-    case EditRound.RejectedByCountMissing                 => Some("rejectedBy")
-    case EditRound.RejectedByNoSource                     => Some("rejectedBy")
-    case EditRound.RejectedByWithoutMode                  => Some("rejectedMode")
+    case EditRound.RejectedByCountMissing | EditRound.RejectedByWithoutMode | EditRound.RejectedByNoSource =>
+      Some("rejectionFilter")
     case EditRound.WorstMarkRatedOnly                     => Some("worstMark")
     case "files.list.unreadable"                          => Some("fileList")
     case k if Criterion.ErrorKeys(k)                      => Some("criteria")
@@ -47,13 +46,15 @@ object RoundFormErrors {
     case _                                                => None
   }
 
-  /** The form with each form-level error that belongs to a field moved to that field. */
+  /** Place errors on the visible fields, including submissions of the old rejection fields. */
   def placed[T](form: Form[T]): Form[T] =
-    form.copy(errors = form.errors.map(e =>
-      if (e.key.nonEmpty) e else fieldOf(e).fold(e)(field => e.copy(key = field))))
+    form.copy(errors = form.errors.map(e => fieldOf(e).fold(e)(field => e.copy(key = field))))
 
-  private def fieldOf(error: FormError): Option[String] =
-    if (error.key.nonEmpty) Some(error.key) else fieldOfKey(FormRefusal.messageKey(error))
+  private def fieldOf(error: FormError): Option[String] = error.key match {
+    case ""                            => fieldOfKey(FormRefusal.messageKey(error))
+    case "rejectedMode" | "rejectedBy"  => Some("rejectionFilter")
+    case key                           => Some(key)
+  }
 
   /** The field's name without an index (`criteria[2]` is `criteria`). */
   private def base(key: String): String = key.takeWhile(c => c != '[' && c != '.')
@@ -71,8 +72,7 @@ object RoundFormErrors {
     case "previousRound"     => Some("previous.round")
     case "minJurors"         => Some("selected.by.at.least.x.jurors")
     case "topBinaryOrder"    => Some("top.images.binary.order")
-    case "rejectedMode"      => Some("rejected.by.mode")
-    case "rejectedBy"        => Some("rejected.by.at.least.x.jurors")
+    case "rejectionFilter"   => Some("rejected.by.mode")
     case "minAvgRate"        => Some("average.file.rating.is.at.least")
     case "topImages"         => Some("top.images")
     case "excludeRounds"     => Some("exclude.rounds")
@@ -120,7 +120,7 @@ object RoundFormErrors {
 
   /** Whether the page has the field's element to link to (a crafted post may name another). */
   def onPage(field: String, form: Form[_], shown: Shown): Boolean = base(field) match {
-    case "previousRound" | "minJurors" | "rejectedMode" | "rejectedBy" | "minAvgRate" | "excludeRounds" => shown.rounds
+    case "previousRound" | "minJurors" | "rejectionFilter" | "minAvgRate" | "excludeRounds" => shown.rounds
     // the top N's row is on the page with the previous rounds' fields (round/edit/topN)
     case "topImages" => shown.rounds
     case "topBinaryOrder" => shown.rounds && form("topImages").value.exists(_.nonEmpty)

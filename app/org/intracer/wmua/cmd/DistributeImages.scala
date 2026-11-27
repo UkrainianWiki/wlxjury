@@ -68,7 +68,8 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       prevRounds: Seq[Round],
       firstCategoryIds: Iterable[Long],
       secondCategoryIds: Iterable[Long],
-      excludeAuthors: Set[String] = Set.empty
+      excludeAuthors: Set[String] = Set.empty,
+      distinctFiles: Boolean = true
   ): Seq[ImageWithRating] => Seq[ImageWithRating] = {
     val prevRound = prevRounds.headOption
     val categoryRule = round.categoryRule
@@ -92,7 +93,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
         prevRounds = prevRounds
       )
     )
-    if (prevRounds.isEmpty) chain else rows => chain(rows).distinctBy(_.pageId)
+    if (prevRounds.isEmpty || !distinctFiles) chain else rows => chain(rows).distinctBy(_.pageId)
   }
 
   private def getFilteredImages(

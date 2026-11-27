@@ -639,10 +639,11 @@ class RoundService @Inject() (
     * `skipDqOf`: a re-apply's round, whose disqualified files take no place. None without previous
     * rounds. Read only; may read Commons (a category filter's files), as "Count new files" does.
     */
-  def cutPicker(round: Round, chosen: Option[Int], skipDqOf: Option[Long] = None): Option[CutPicker] = {
+  def cutPicker(round: Round, chosen: Option[Int], skipDqOf: Option[Long] = None,
+      includeVoteChoices: Boolean = false): Option[CutPicker] = {
     val canonical = round.copy(prevMinAvgRate = None).withFixedCategories.withCanonicalCategoryRule
     // no file kept whole: the control shows no file (decided 2026-11-26: no cut gallery)
-    distribution.topNRanking(canonical, keep = 0, skipDqOf).map { ranking =>
+    distribution.topNRanking(canonical, keep = 0, skipDqOf, includeVoteChoices).map { ranking =>
       // a criteria round's criteria: its score range and its files' scores are their sums
       val prev = ranking.prevRounds.map { p =>
         if (!p.hasCriteria) p

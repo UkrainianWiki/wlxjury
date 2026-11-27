@@ -5,9 +5,9 @@ import org.jsoup.nodes.{Document, Element}
 import scala.jdk.CollectionConverters._
 
 /** The links of a rendered page that leave the tool (ExternalLinksViewSpec and the pages' own
-  * specs): each opens in a new tab, `target="_blank" rel="noopener"`, and none of the tool's own
-  * does; a text link among them has the mark of its host after its text (snippets/externalMark:
-  * Commons' logo, Wikipedia's W, Wikidata's logo or the outward arrow) after a no-break space,
+  * specs): each opens in a new tab, `target="_blank" rel="noopener"`. Internal links stay in
+  * the same tab by default. A text link leaving the tool has the mark of its host after its text
+  * (snippets/externalMark: Commons' logo, Wikipedia's W, Wikidata's logo or the outward arrow) after a no-break space,
   * hidden from screen readers, then " (…opens in a new tab)" for them, all in one span that can't
   * be selected; no image's link or icon-only link and none of the tool's own has a mark.
   */
@@ -54,11 +54,13 @@ object ExternalLinksCheck {
     external(doc).filter(textLink).map(a => ExternalLinks.site(a.attr("href")).name).toSet
 
   /** What is wrong with the page's links, each as its markup: empty if nothing. */
-  def problems(doc: Document): Seq[String] = {
+  def problems(doc: Document, ownNewTabs: Set[Element] = Set.empty): Seq[String] = {
     val links = doc.select("a[href]").asScala.toSeq
     val (out, own) = links.partition(a => offSite(a.attr("href")))
+    val (newTabReferences, sameTabLinks) = own.partition(ownNewTabs)
     out.filterNot(newTab).map("not in a new tab: " + _.outerHtml) ++
-      own.filter(_.attr("target") == "_blank").map("the tool's own link in a new tab: " + _.outerHtml) ++
+      sameTabLinks.filter(_.attr("target") == "_blank").map("the tool's own link in a new tab: " + _.outerHtml) ++
+      newTabReferences.filterNot(newTab).map("the tool's own link needs a new tab with noopener: " + _.outerHtml) ++
       out.filter(textLink).filterNot(marked).map("no mark or a wrong one: " + _.outerHtml) ++
       out.filterNot(textLink).filter(_.select(".wlx-ext-mark").size > 0).map("a mark on an image or icon link: " + _.outerHtml) ++
       own.filter(_.select(".wlx-ext-mark").size > 0).map("a mark on the tool's own link: " + _.outerHtml)

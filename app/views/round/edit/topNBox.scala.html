@@ -34,6 +34,9 @@
     <option value="@n"@if(p.pick.isEmpty && p.chosenValid.contains(n)) { selected}@for(href <- p.links.get(n)) { data-cut-href="@href"}>@p.optionText(n)</option>
 }
 <div data-cut-announce="@announce"@for(p <- picker) { data-cut-count="@p.options.size"}>
+@for(p <- picker; votes <- p.ranking.voteFilters) {
+    @voteFilterChoices(editRoundForm, votes, p.ranking.order.isDefined)
+}
 @picker match {
     case None => {
         <div class="row mb-3" id="topImages_field">

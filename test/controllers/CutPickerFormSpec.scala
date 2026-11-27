@@ -118,6 +118,62 @@ class CutPickerFormSpec extends PlaySpecification with PlayTestDb {
 
   "the cut list (loaded in place)" should {
 
+    "offer only reachable vote thresholds and count the files each choice keeps" in {
+      testDbApp { implicit app =>
+        val (contest, rated) = setUp()
+        val binary = roundDao.create(Round(None, 2, Some("Yes/no"), contest.getId, rates = Round.binaryRound, active = false))
+        val jurors = User.findRoundJurors(rated.getId).take(2)
+        binary.addUsers(jurors.map(u => RoundUser(binary.getId, u.getId, "jury", active = true)))
+        for ((page, rates) <- Seq(1L -> Seq(1, 1), 2L -> Seq(1, -1), 3L -> Seq(-1, -1), 4L -> Seq(0, 0));
+             (rate, juror) <- rates.zip(jurors))
+          VoteJdbc.create(page, rate, juror.getId, binary.getId)
+
+        def counts(field: String, extra: (String, String)*): Map[String, String] = {
+          val page = doc(preview(app, "admin@example.com", newRound(contest, binary, extra: _*): _*))
+          page.select(s"template[data-vote-filter=$field] option").asScala.map { o =>
+            o.attr("value") -> o.text.split(" \\(").last.stripSuffix(" kept)")
+          }.toMap
+        }
+        (counts("minJurors") === Map("" -> "4 files", "1" -> "2 files", "2" -> "1 file")) and
+          (counts("rejectionFilter") === Map("none" -> "4 files", "exclude:1" -> "2 files", "exclude:2" -> "3 files",
+            "only:1" -> "2 files", "only:2" -> "1 file")) and
+          (counts("rejectionFilter", "minJurors" -> "1") ===
+            Map("none" -> "2 files", "exclude:1" -> "1 file", "only:1" -> "1 file")) and
+          (counts("minJurors", "rejectionFilter" -> "exclude:1") ===
+            Map("" -> "2 files", "1" -> "1 file", "2" -> "1 file"))
+      }
+    }
+
+    "count rated worst marks and count a file just once across previous rounds" in {
+      testDbApp { implicit app =>
+        val (contest, rated) = setUp()
+        val jurors = User.findRoundJurors(rated.getId).take(2)
+        def withMarks(number: Int, marks: Seq[(Long, Seq[Int])]): Round = {
+          val source = roundDao.create(Round(None, number, Some(s"Rated $number"), contest.getId,
+            rates = Round.ratesById(10), active = false, worstMark = true))
+          source.addUsers(jurors.map(u => RoundUser(source.getId, u.getId, "jury", active = true)))
+          for ((page, rates) <- marks; (rate, juror) <- rates.zip(jurors))
+            VoteJdbc.create(page, rate, juror.getId, source.getId)
+          source
+        }
+        val first = withMarks(2, Seq(1L -> Seq(-1, -1), 2L -> Seq(-1, 5), 3L -> Seq(3)))
+        val second = withMarks(3, Seq(1L -> Seq(5, 4), 4L -> Seq(-1)))
+        val page = doc(preview(app, "admin@example.com",
+          newRound(contest, first, "previousRound[1]" -> second.getId.toString, "rejectionFilter" -> "only:3"): _*))
+        val choices = page.select("template[data-vote-filter=rejectionFilter] option").asScala
+          .map(o => o.attr("value") -> o.text).toMap
+        val onlyTwo = doc(preview(app, "admin@example.com",
+          newRound(contest, first, "previousRound[1]" -> second.getId.toString, "rejectionFilter" -> "only:2"): _*))
+        (choices.keySet === Set("none", "exclude:1", "exclude:2", "only:1", "only:2", "only:3")) and
+          (choices.getOrElse("exclude:1", "") must contain("2 files")) and
+          (choices.getOrElse("exclude:2", "") must contain("4 files")) and
+          (choices.getOrElse("only:1", "") must contain("3 files")) and
+          (choices.getOrElse("only:2", "") must contain("1 file")) and
+          (choices.getOrElse("only:3", "") must contain("0 files")) and
+          (page.select("template[data-vote-filter=minJurors]").size === 0) and (cuts(onlyTwo) === Seq("1"))
+      }
+    }
+
     "answer a script with the cut box alone, an HTML fragment, its count to announce" in {
       testDbApp { implicit app =>
         val (contest, prev) = setUp()

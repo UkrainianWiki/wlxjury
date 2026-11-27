@@ -34,7 +34,7 @@
   /** The form fields whose change changes the ranking, by name (a multiple select's "[]" ignored). */
   var RANKING_FIELDS = ['previousRound', 'regions', 'source', 'excludeCategory', 'categoryCombine',
     'categoryClause', 'mediaType', 'minSize', 'minMpx', 'excludeRounds', 'excludeCoi', 'minJurors',
-    'rejectedBy', 'rejectedMode', 'topBinaryOrder', 'monumentIds', 'specialNomination'];
+    'rejectionFilter', 'rejectedBy', 'rejectedMode', 'topBinaryOrder', 'monumentIds', 'specialNomination'];
 
   /** The pause after a choice (a select, a box) and after typing, before the list is asked for. */
   var CHANGE_DELAY = 150;
@@ -193,10 +193,31 @@
       return true;
     }
 
+    /** Copy the latest vote choices into the two existing selects without changing their selection. */
+    function updateVoteChoices() {
+      ['minJurors', 'rejectionFilter'].forEach(function (id) {
+        var source = box.querySelector('template[data-vote-filter="' + id + '"]');
+        var field = doc.getElementById(id);
+        if (!source || !field || field.tagName !== 'SELECT' || !form.contains(field) || field.disabled) return;
+        var selected = field.value;
+        var oldOption = field.options[field.selectedIndex];
+        var options = source.content.cloneNode(true);
+        var held = options.querySelector('[data-vote-held]');
+        if (held && held.value !== selected) held.remove();
+        field.replaceChildren(options);
+        // A change during the debounce can be newer than this response.
+        if (selected && oldOption && !Array.prototype.some.call(field.options, function (opt) {
+          return opt.value === selected;
+        })) field.add(oldOption);
+        field.value = selected;
+      });
+    }
+
     function render(html, sentBody) {
       var active = doc.activeElement;
       var focusId = active && active.id && box.contains(active) ? active.id : null;
       box.innerHTML = html;
+      updateVoteChoices();
       var pick = pendingPick;
       pendingPick = null;
       if (pick && !reapply(pick)) {
@@ -380,6 +401,7 @@
     }
 
     updateCutLink(doc);
+    updateVoteChoices();
     if (!wrap.hasAttribute('data-cut-loaded') && hasPrevious(body(form))) load();
     else lastBody = requestBody();
 

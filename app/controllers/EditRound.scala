@@ -4,7 +4,7 @@ import db.scalikejdbc.{ContestJuryJdbc, CriterionJdbc, MediaType, Round, RoundCr
 import org.scalawiki.wlx.dto.SpecialNomination
 import org.intracer.wmua.{AverageRule, BinaryOrder, CategoryBoxes, CategoryCombine, CategoryOperation, CategoryRule, Criterion,
   RejectedMode}
-import play.api.data.{Form, FormError, Mapping}
+import play.api.data.{Field, Form, FormError, Mapping}
 import play.api.data.Forms._
 import play.api.data.validation._
 import services.distribution.RoundDistributionHandler
@@ -145,10 +145,34 @@ object EditRound {
       .fold[ValidationResult](Valid)(refusal => Invalid(ValidationError(refusal.key, refusal.args: _*)))
   }
 
-  /** The rejected-by mode select's "no filter" (a value of its own: Play reads "" as absent, which
-    * is an older client's, excluding).
+  /** An explicit "no filter", distinct from a client omitting the choice and posting the legacy fields.
     */
   val NoRejectedFilter = "none"
+
+  def rejectionFilterValue(mode: RejectedMode, count: Int): String = s"${mode.param}:$count"
+
+  def parseRejectionFilter(value: String): Option[(RejectedMode, Int)] =
+    value.split(":", 2) match {
+      case Array(mode, count) =>
+        for {
+          parsedMode <- RejectedMode.parse(mode)
+          parsedCount <- count.toIntOption.filter(_ > 0)
+        } yield (parsedMode, parsedCount)
+      case _ => None
+    }
+
+  /** Redisplay the choice on a refused submission from an older page or client. */
+  def rejectionFilterField(form: Form[EditRound]): Field = {
+    val field = form("rejectionFilter")
+    if (field.value.isDefined) field
+    else {
+      val mode = form("rejectedMode").value
+      val count = form("rejectedBy").value.flatMap(_.toIntOption).filter(_ > 0)
+      val value = count.filterNot(_ => mode.contains(NoRejectedFilter))
+        .fold(NoRejectedFilter)(rejectionFilterValue(RejectedMode.fromStored(mode), _))
+      field.copy(value = Some(value))
+    }
+  }
 
   /** A posted score threshold ("average file rating at least X", `prev_min_avg_rate`): a number from 0
     * to DECIMAL(10,4)'s largest (V116), rounded to its 4 places; else none. The round form no longer
@@ -196,10 +220,11 @@ object EditRound {
       // (an unchecked box sends nothing): a client without both keeps an existing round's option
       "worstMark" -> boolean,
       "worstMarkShown" -> boolean,
-      // "rejected by at least N" (V93): "none" no filter, "exclude" those files, "only" them; a
-      // client without it (an older page, a script) excludes, the meaning before V93
+      // Older pages and scripts can post a mode and count separately. An omitted mode excludes.
       "rejectedMode" -> optional(text).verifying("error.invalid",
         _.forall(m => m == EditRound.NoRejectedFilter || RejectedMode.parse(m).isDefined)),
+      "rejectionFilter" -> optional(text).verifying("error.invalid",
+        _.forall(value => value == NoRejectedFilter || parseRejectionFilter(value).isDefined)),
       // "Leave out files that are in round(s)" (V95): round ids, checked by validExcludedRounds
       "excludeRounds" -> seq(text),
       "topUpWaiting" -> boolean,
@@ -211,7 +236,7 @@ object EditRound {
       "trackLabel" -> optional(text.verifying(trackLabelLength)),
       "trackShown" -> boolean
     )((edit, excludeCoi, selected, combine, topOrder, rejectedBy, criteria, criteriaShown, halfStar, averageRule, worstMark,
-        worstMarkShown, rejectedMode, excludeRounds, topUpWaiting, track, trackShown) => {
+        worstMarkShown, rejectedMode, rejectionFilter, excludeRounds, topUpWaiting, track, trackShown) => {
       val configured = (selected, combine.flatMap(CategoryCombine.parse)) match {
         // the round form's two boxes and its choice: the rule they mean, stored as the operation
         // select stored it (an exclusion's category as the first operand)
@@ -226,12 +251,14 @@ object EditRound {
           else edit.round.copy(categoryClause = operation.storedValue,
             excludeCategory = edit.round.excludeCategory.filter(_ => operation.requiresSecond))
       }
-      val rejectedByChoice = rejectedBy.flatMap(s => Try(s.toInt).toOption).filter(_ > 0)
-      edit.copy(criteriaShown = criteriaShown, rejectedModeChoice = rejectedMode, rejectedByChoice = rejectedByChoice,
+      val combined = rejectionFilter.flatMap(parseRejectionFilter)
+      val rejectedModeChoice = rejectionFilter.map(_ => combined.fold(NoRejectedFilter)(_._1.param)).orElse(rejectedMode)
+      val rejectedByChoice = if (rejectionFilter.isDefined) combined.map(_._2) else rejectedBy.flatMap(_.toIntOption).filter(_ > 0)
+      edit.copy(criteriaShown = criteriaShown, rejectedModeChoice = rejectedModeChoice, rejectedByChoice = rejectedByChoice,
         round = configured.copy(excludeCoi = excludeCoi,
         topBinaryOrder = edit.round.topImages.flatMap(_ => BinaryOrder.ofForm(topOrder)),
-        prevRejectedBy = rejectedByChoice.filterNot(_ => rejectedMode.contains(NoRejectedFilter)),
-        prevRejectedMode = rejectedMode.flatMap(RejectedMode.parse).getOrElse(RejectedMode.Default),
+        prevRejectedBy = rejectedByChoice.filterNot(_ => rejectedModeChoice.contains(NoRejectedFilter)),
+        prevRejectedMode = RejectedMode.fromStored(rejectedModeChoice),
         criterionIds = criterionIdsOf(criteria), halfStar = halfStar,
         averageRule = averageRule.flatMap(AverageRule.parse).getOrElse(AverageRule.Default),
         worstMark = worstMark && worstMarkShown, excludeRounds = excludeRoundIdsOf(excludeRounds),
@@ -243,6 +270,7 @@ object EditRound {
       edit.round.criterionIds.map(_.toString), edit.criteriaShown, edit.round.halfStar,
       Some(edit.round.averageRule.param), edit.round.worstMark, edit.worstMarkShown,
       Some(edit.round.rejectedByFilter.fold(NoRejectedFilter)(_ => edit.round.prevRejectedMode.param)),
+      Some(edit.round.rejectedByFilter.fold(NoRejectedFilter)(rejectionFilterValue(edit.round.prevRejectedMode, _))),
       edit.round.excludeRounds.map(_.toString), edit.topUpWaiting, edit.round.track, edit.trackShown)))
       .verifying(validCategories)
       .verifying(validCriteria)

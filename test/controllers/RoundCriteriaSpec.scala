@@ -189,6 +189,28 @@ class RoundCriteriaSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "open round form reference links separately and keep Cancel in the form tab" in {
+      testDbApp { app =>
+        val (contest, _, jurors) = fixture()
+        val saved = created(app, contest, jurors, Seq(9L, 6L))
+        val newUrl = s"/admin/rounds/edit?contestId=${contest.getId}"
+        val newForm = Jsoup.parse(contentAsString(page(app, "admin@example.com", contest.getId, newUrl)))
+        val editForm = Jsoup.parse(contentAsString(page(app, "admin@example.com", contest.getId,
+          s"$newUrl&id=${saved.getId}")))
+        def pageLinks(doc: org.jsoup.nodes.Document) =
+          doc.select("#round-form a[href]").asScala.filterNot(_.attr("href").startsWith("#")).toSeq
+        val (cancel, links) = (pageLinks(newForm) ++ pageLinks(editForm))
+          .partition(_.attr("href").takeWhile(_ != '?') == "/admin/rounds")
+
+        (links.exists(_.attr("href").startsWith("/admin/criteria")) must beTrue) and
+          (links.exists(_.id() == "round-review-link") must beTrue) and
+          (links.filterNot(a => a.attr("target") == "_blank" && a.attr("rel").split(" ").contains("noopener"))
+            .map(_.attr("href")) must beEmpty) and
+          (cancel.size === 2) and (cancel.exists(_.hasAttr("target")) must beFalse) and
+          (newForm.select("#round-form a[data-bs-toggle=collapse][target]").size === 0)
+      }
+    }
+
     "change a stopped round's criteria freely before its first vote, also to none" in {
       testDbApp { app =>
         val (a, _, jurors) = fixture()

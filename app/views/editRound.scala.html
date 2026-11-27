@@ -57,6 +57,9 @@
 @* the round form's scripts (round-form.js), and their texts as JSON, which no script parses
    as code *@
 @formScripts = {
+    @if(req.flash.get(controllers.RoundFormDraft.Saved).isEmpty) {
+        <script src="@routes.Assets.versioned("javascripts/round-form-draft.js")"></script>
+    }
     @snippets.multiSelectScripts()
     <script src="@routes.Assets.versioned("javascripts/round-form.js")"></script>
     <script src="@routes.Assets.versioned("javascripts/cut-list.js")"></script>
@@ -67,6 +70,13 @@
 @* the Rounds page's filter, from its round number link (RoundsFilter): kept in the form's action,
    so that a save, a failed one's form again and Cancel come back to the same list *@
 @roundsFilter = @{ controllers.RoundsFilter.fromRequest(req) }
+@draftKey = @{ contestId.flatMap(cid => controllers.RoundFormDraft.key(user.getId, cid,
+    editRoundForm("id").value.flatMap(_.toLongOption), submitToken)) }
+@saveUrl = @{ roundsFilter.addTo(routes.RoundController.saveRound().url +
+    (if (newRound) controllers.RoundFormDraft.initialTopImages(req).fold("")(n => s"?topImages=$n") else "")) }
+@resetUrl = @{ resolveUrl.orElse(contestId.map(cid =>
+    roundsFilter.addTo(routes.RoundController.editRound(editRoundForm("id").value.flatMap(_.toLongOption),
+        cid, controllers.RoundFormDraft.initialTopImages(req)).url))) }
 
 @* an existing round's track without its own label (round lineage slice A), named in the track
    field's help *@
@@ -79,6 +89,7 @@
 @trackHelp = {@Messages("round.track.help", Messages("round.track.main")) @snippets.helpLink("tracks")}
 @* a field's help with its help link after it (help plan §6: F for the hard fields, S for a section's) *@
 @withHelp(text: String, key: String) = {@if(text.nonEmpty) {@text }@snippets.helpLink(key)}
+@newTabHint = {<i class="bi bi-box-arrow-up-right ms-1" aria-hidden="true"></i><span class="visually-hidden"> (@Messages("link.new.tab"))</span>}
 
 @* the track field, "Main" shown as the page names the Main track (saved back as "Main") *@
 @trackField = @{
@@ -142,11 +153,15 @@
                 <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
             }
 
-            @bs.form(Call("POST", roundsFilter.addTo(routes.RoundController.saveRound().url)), Symbol("id") -> "round-form",
+            @* Draft recovery owns the form values across navigation so Back cannot revive a canceled draft. *@
+            @bs.form(Call("POST", saveUrl), Symbol("id") -> "round-form",
+                Symbol("autocomplete") -> "off",
                 Symbol("data-resolve-url") -> resolveUrl.getOrElse(None),
+                Symbol("data-round-draft-key") -> draftKey.getOrElse(None),
                 Symbol("data-csrf-token") -> play.filters.csrf.CSRF.getToken(req).fold("")(_.value)) {
                 @csrfField()
 
+                <div class="alert alert-info" role="status" id="round-draft-restored" hidden>@Messages("round.form.draft.restored")</div>
                 @round.edit.errorSummary(editRoundForm, controllers.RoundFormErrors.Shown(rounds = rounds.nonEmpty,
                     regions = regions.nonEmpty, nominations = specialNominations.nonEmpty, unrated = unratedRound),
                     state.summaryHeading)
@@ -333,7 +348,7 @@
                             @snippets.helpSection("criteria")
                             @criteriaErrors
                             <p class="form-text">@Messages("criteria.help", org.intracer.wmua.Criterion.MinPerRound, org.intracer.wmua.Criterion.MaxPerRound)
-                                <a href="@routes.CriteriaController.list(contestId)">@Messages("criteria.catalogue")</a></p>
+                                <a href="@routes.CriteriaController.list(contestId)" target="_blank" rel="noopener">@Messages("criteria.catalogue")@newTabHint</a></p>
                             @* all the selects for a page without scripts; round-form.js shows only the chosen
                                ones, each with a remove button labelled by data-remove-label ($X its position),
                                and the add button's row (#criteria-add-row, hidden as rendered): "Add criteria"
@@ -397,10 +412,16 @@
                     } else {
                     @snippets.submit(if (reapply) "round.form.reapply" else "save")
                     }
-                    @snippets.button(Call("GET", roundsFilter.addTo(routes.RoundController.rounds(editRoundForm("contest").value.map(_.toLong)).url)), "cancel")
+                    <a id="round-form-cancel" class="btn btn-outline-secondary form-action-wide"
+                       href="@roundsFilter.addTo(routes.RoundController.rounds(editRoundForm("contest").value.map(_.toLong)).url)">@Messages("cancel")</a>
+                    @for(url <- resetUrl) {
+                        <button type="button" class="btn btn-outline-secondary" id="round-form-reset" hidden
+                                data-reset-url="@url" data-reset-confirm="@Messages("round.form.draft.reset.confirm")">@Messages("round.form.draft.reset")</button>
+                    }
                     @* a round waiting for review: its review page *@
                     @for(rid <- editRoundForm("id").value.flatMap(v => scala.util.Try(v.toLong).toOption) if !newRound) {
-                        <a id="round-review-link" class="btn btn-outline-secondary" href="@routes.RoundReviewController.review(rid)">@Messages("round.review")</a>
+                        <a id="round-review-link" class="btn btn-outline-secondary" href="@routes.RoundReviewController.review(rid)"
+                           target="_blank" rel="noopener">@Messages("round.review")@newTabHint</a>
                     }
                 </div>
             </div>
