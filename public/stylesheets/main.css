@@ -126,7 +126,7 @@ body.gallery {
     align-items: center; gap: .375rem; flex-basis: 100%;
 }
 .wlx-round-tabs-other > .pagination { grid-column: 2; }
-.wlx-round-tabs .wlx-round-tabs-label { justify-self: start; max-width: 100%; margin-left: 0; overflow: hidden; text-overflow: ellipsis; }
+.wlx-round-tabs .wlx-round-tabs-label { justify-self: start; max-width: 100%; margin-left: 0; white-space: normal; overflow-wrap: anywhere; text-align: start; }
 /* a round's Track chip after its name (round lineage slice A, snippets/trackChip): its track's
    colours (theme.css --wlx-track-*), a thin edge of its text colour so a pale chip shows on the
    stripes and the hover grey; never cut or wrapped inside; in the Track menu a swatch before the name */

@@ -2,7 +2,7 @@
 @* Shared round navigation: ungrouped tabs carry their track chip; grouped tracks show the
    same chip once before the group's tabs. Self-named tracks remain in the unlabelled group. *@
 @tab(r: db.scalikejdbc.Round) = {@defining(tabs.isCurrent(r) && tabs.outside(r)) { marked =>
-    <li class="page-item@if(tabs.isCurrent(r)){ active}" data-round="@r.getId"@if(marked){ title="@Messages("rounds.filter.outside")"}><a class="page-link@if(!r.active) { wlx-round-inactive}@if(marked) { wlx-round-outside}" href="@tabs.url(r)"@if(tabs.isCurrent(r)){ aria-current="page"}@if(!marked){@for(l <- tabs.lineage; t <- tabs.track(r)) { title="@Messages("round.track"): @views.TrackChip.name(t, l)"}}>@if(tabs.icons && controllers.RoundsFilter.Kind.of(r).nonEmpty) {@snippets.roundIcon(r)}@r.description@snippets.roundSpoken(r)@if(!tabs.grouped) {@snippets.trackChip(r, tabs.lineage)}@if(marked) {<span class="visually-hidden wlx-round-spoken wlx-round-outside-note">, @Messages("rounds.filter.outside")</span>}</a></li>
+    <li class="page-item@if(tabs.isCurrent(r)){ active}" data-round="@r.getId"@if(marked){ title="@Messages("rounds.filter.outside")"}><a class="page-link@if(!r.active) { wlx-round-inactive}@if(marked) { wlx-round-outside}" href="@tabs.url(r)"@if(tabs.isCurrent(r)){ aria-current="page"}@if(!marked){@for(l <- tabs.lineage; t <- tabs.track(r)) { title="@Messages("round.track"): @views.TrackChip.name(t, l)"}}>@if(tabs.icons && controllers.RoundsFilter.Kind.of(r).nonEmpty) {@snippets.roundIcon(r)}@r.description@snippets.roundSpoken(r)@if(!tabs.grouped) {@for(l <- tabs.lineage; t <- tabs.track(r)) {<span aria-hidden="true">@snippets.trackChip(r, tabs.lineage)</span><span class="visually-hidden wlx-round-spoken wlx-round-track-note">, @Messages("rounds.tab.track", views.TrackChip.name(t, l))</span>}}@if(marked) {<span class="visually-hidden wlx-round-spoken wlx-round-outside-note">, @Messages("rounds.filter.outside")</span>}</a></li>
 }}
 <nav aria-label="@label" class="wlx-round-tabs@if(tabs.grouped) { wlx-round-tabs-grouped}" id="@tabs.id">
     @if(lead.body.trim.nonEmpty) {<ul class="pagination mb-0 wlx-round-tabs-lead">@lead</ul>}
@@ -11,7 +11,7 @@
             case Some(t) => {
             <div class="wlx-round-tabs-group" data-track="@t.key">
                 @for(l <- tabs.lineage) {
-                <span class="badge wlx-track wlx-round-tabs-label @views.TrackChip.colour(t, l)" id="@tabs.id-group-@i" data-track="@t.key" title="@Messages("round.track"): @views.TrackChip.name(t, l)" aria-label="@views.TrackChip.name(t, l)">@views.TrackChip.short(t, l)</span>
+                <span class="badge wlx-track wlx-round-tabs-label @views.TrackChip.colour(t, l)" id="@tabs.id-group-@i" data-track="@t.key" title="@Messages("round.track"): @views.TrackChip.name(t, l)" aria-label="@views.TrackChip.name(t, l)">@views.TrackChip.name(t, l)</span>
                 }
                 <ul class="pagination mb-0" aria-labelledby="@tabs.id-group-@i">@for(r <- rounds) {@tab(r)}</ul>
             </div>

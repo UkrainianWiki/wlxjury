@@ -180,6 +180,23 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "expose the full track name to screen readers even when its badge is shortened" in {
+      testDbApp { app =>
+        val f = fixture()
+        val longName = "A long track name that is longer than the badge limit"
+        status(save(app, f.admin, Some(f.q00), f.contest.getId, "trackLabel" -> longName, "trackShown" -> "true")) must_== SEE_OTHER
+        val flat = page(app, f.organizer, s"/roundstat/${f.q00.getId}?group=none")
+        val grouped = page(app, f.organizer, s"/roundstat/${f.q00.getId}?group=track")
+        val tab = flat.selectFirst(s"#round-stat-rounds [data-round='${f.q00.getId}'] .page-link")
+        val badge = tab.selectFirst(".wlx-track")
+        val group = grouped.select("#round-stat-rounds .wlx-round-tabs-label").asScala.find(_.attr("aria-label") == longName)
+        (badge.text must not(contain(longName))) and
+          (badge.parent().attr("aria-hidden") === "true") and
+          (tab.selectFirst(".wlx-round-track-note").text must contain(longName)) and
+          (group.map(_.text) must beSome(longName))
+      }
+    }
+
     "be the authors page's too: \"Whole contest\" first, then the rounds grouped by track, the grouping kept" in {
       testDbApp { app =>
         val f = fixture()
