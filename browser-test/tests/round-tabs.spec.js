@@ -134,8 +134,8 @@ test('round statistics and authors keep the track and round order', { tag: '@O-0
     const { roundIds } = fixture.tracksContest;
     const context = await contextAs('root', { viewport: { width: 1366, height: 900 } });
     const page = await context.newPage();
-    // These fixture rounds have no authors; keep the link enabled to exercise its real destination.
-    await page.route('**/roundstat/*/counts', (route) => route.abort());
+    // These fixture rounds have no authors; supply a count so the real link stays enabled.
+    await page.route('**/roundstat/*/counts', (route) => route.fulfill({ json: { authors: 1, withoutAuthor: 0 } }));
     await page.goto(`/roundstat/${roundIds[0]}?track=category%3AQuality&order=newest&group=none`);
     await Promise.all([page.waitForURL(/\/contest\/\d+\/authors/), page.locator('#round-authors-link a').click()]);
     await expect(page.locator('#rounds-track-menu .dropdown-item.active')).toContainText('Quality');
