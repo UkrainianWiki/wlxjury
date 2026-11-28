@@ -202,7 +202,7 @@ class SeriesReachGuardSpec extends Specification {
       "totals by vote, hidden as in roundStatTable"),
     "app/controllers/LargeViewController.scala" -> (1, "the large view's every-juror votes panel (juryStat)"),
     "app/controllers/MonumentController.scala" -> (1, "a monument's files in a round: own votes only"),
-    "app/controllers/AuthorsController.scala" -> (1, "a round's authors with every juror's votes"),
+    "app/controllers/AuthorsController.scala" -> (2, "a round's authors with every juror's votes, and the accessible rounds in its Track menu"),
     "app/views/roundStatTable.scala.html" -> (1, "the statistics: other jurors' selections, rejections, lists, totals"),
     "app/views/navbar.scala.html" -> (1, "the organisers' bar: the juror menu and all the jurors' views"),
     "app/views/roundStat.scala.html" -> (1, "the statistics' comments report link: the viewer's own list in an open round they judge"),

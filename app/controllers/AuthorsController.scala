@@ -47,9 +47,12 @@ class AuthorsController @Inject() (
           case (Some(c), r) =>
             val lineage = services.RoundLineage.of(rounds, c)
             val requested = RoundsFilter.fromRequest(request)
-            val filter = RoundsFilter.Default.withTrack(requested.track).withOrder(requested.order).withGroup(requested.group).withLineage(lineage)
+            val visible = services.GalleryService.othersVotesVisibleIn(Secured.inContest(user, c.getId), rounds)
+            val visibleTracks = visible.flatMap(lineage.keys.get)
+            val filter = RoundsFilter.Default.withTrack(requested.track.filter(visibleTracks)).withOrder(requested.order)
+              .withGroup(requested.group).withLineage(lineage)
             val page = AuthorsPage.of(c, r.flatten, rounds, AuthorsPage.Sort.parse(sort))
-              .copy(lineage = Some(lineage), filter = filter)
+              .copy(lineage = Some(lineage), filter = filter, allowedRounds = Some(visible))
             Ok(views.html.authors(user, page))
         }
     }
@@ -71,7 +74,8 @@ final case class AuthorsPage(
     criteriaCount: Int = 1,
     // the contest's tracks and the round tabs' track, order and grouping choices
     lineage: Option[services.RoundLineage.Lineage] = None,
-    filter: RoundsFilter = RoundsFilter.Default
+    filter: RoundsFilter = RoundsFilter.Default,
+    allowedRounds: Option[Set[Long]] = None
 ) {
   import AuthorsPage._
 
@@ -114,9 +118,12 @@ final case class AuthorsPage(
   def roundUrl(other: Option[Round]): String =
     filter.addTo(routes.AuthorsController.list(contest.getId, other.flatMap(_.id), Some(sort.param)).url)
 
+  /** Rounds whose authors this viewer may open. */
+  def visibleRounds: Seq[Round] = rounds.filter(r => allowedRounds.forall(ids => r.id.exists(ids)))
+
   /** Selecting a track follows the statistics page: choose a matching round, if any. */
   def filterUrl(next: RoundsFilter): String = {
-    val target = round.map(r => next.statRound(r, rounds))
+    val target = round.map(r => next.statRound(r, visibleRounds))
     next.addTo(routes.AuthorsController.list(contest.getId, target.flatMap(_.id), Some(sort.param)).url)
   }
 
@@ -124,7 +131,7 @@ final case class AuthorsPage(
     * where the contest shows tracks.
     */
   def tabs: views.RoundTabs = {
-    val listed = filter.sort(rounds.filter(r => filter.matches(r) || round.exists(_.id == r.id)))
+    val listed = filter.sort(visibleRounds.filter(r => filter.matches(r) || round.exists(_.id == r.id)))
     views.RoundTabs("authors-rounds", listed, round.flatMap(_.id), r => roundUrl(Some(r)),
       lineage, filter.grouped(lineage), outside = r => !filter.matches(r))
   }

@@ -246,6 +246,26 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "choose an accessible authors round when the first matching track round is restricted" in {
+      testDbApp { app =>
+        val f = fixture()
+        Round.setActive(f.q00.getId, active = true)
+        f.q00.addUsers(Seq(RoundUser(f.q00.getId, f.organizer.getId, "jury", active = true)))
+        val authors = page(app, f.organizer, s"/contest/${f.contest.getId}/authors?round=${f.qn00.getId}")
+        val qualityUrl = trackMenu(authors).find(_._1 == "Quality").get._3
+        val selected = page(app, f.organizer, qualityUrl)
+        val firstDenied = status(get(app, f.organizer, s"/contest/${f.contest.getId}/authors?round=${f.q00.getId}"))
+        Round.setActive(f.q01.getId, active = true)
+        f.q01.addUsers(Seq(RoundUser(f.q01.getId, f.organizer.getId, "jury", active = true)))
+        val restricted = page(app, f.organizer, s"/contest/${f.contest.getId}/authors?round=${f.qn00.getId}&track=category%3AQuality")
+        (qualityUrl must contain(s"round=${f.q01.getId}")) and
+          (selected.select("#authors-rounds .page-item.active").attr("data-round") === f.q01.getId.toString) and
+          (firstDenied === FORBIDDEN) and
+          (trackMenu(restricted).map(_._1) must not(contain("Quality"))) and
+          (restricted.select(s"#authors-rounds [data-round='${f.q00.getId}'], #authors-rounds [data-round='${f.q01.getId}']").size === 0)
+      }
+    }
+
     "be the authors page's too: \"Whole contest\" first, then the rounds grouped by track, the grouping kept" in {
       testDbApp { app =>
         val f = fixture()

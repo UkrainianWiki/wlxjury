@@ -21,8 +21,8 @@
 @* a count of the author's files, with its share of them: 12 (86%) *@
 @ofFiles(n: Int, files: Int) = {@n <span class="text-body-secondary small">(@AuthorsPage.percent(AuthorsPage.share(n, files), messages.lang.locale))</span>}
 
-@main("authors.list", user, user.getId, rounds = page.rounds, contestId = page.contest.id,
-    roundFilter = Some(controllers.RoundsFilterBar(page.filter, page.filterUrl, page.rounds, page.lineage, trackOnly = true))) {
+@main("authors.list", user, user.getId, rounds = page.visibleRounds, contestId = page.contest.id,
+    roundFilter = Some(controllers.RoundsFilterBar(page.filter, page.filterUrl, page.visibleRounds, page.lineage, trackOnly = true))) {
     <div class="container-fluid mt-2" id="authors">
         <h1 class="h4">@Messages("authors.list"): @page.contest.fullName @snippets.helpLink("authors-list")</h1>
 
