@@ -60,8 +60,7 @@
             }
 
             @for(contest <- contestOpt) {
-                <h1 class="h3">@Messages("contest") @contest.fullName</h1>
-                @snippets.helpSection("users")
+                <h1 class="h3">@Messages("contest") @contest.fullName @snippets.helpLink("users")</h1>
                 @* the series admins of the contest's live series (contest series plan §3.3): names only,
                    no edit control here; root manages them on the series' page *@
                 @if(seriesAdmins.nonEmpty) {
@@ -247,6 +246,7 @@
                                     title="@Messages("add")" aria-label="@Messages("add")">
                                     <i class="bi bi-person-plus-fill" aria-hidden="true"></i>
                                 </button>
+                                @snippets.helpLink("add-person")
                             </td>
                         </tr>
                     }
@@ -258,7 +258,6 @@
             @* what the add row's roles do (its select's description) *@
             @for(contest <- contestOpt) {
                 <p class="form-text" id="add-user-role-help">@Messages("coi.role.help")</p>
-                @snippets.helpSection("add-person")
                 @* the add row's mail choice, outside the table (its form attribute submits it with the row):
                    unticked by default, no mail; the admin may share a link instead *@
                 @bs.checkbox(editUserForm("sendInvitation"), Symbol("_label") -> Messages("invitation.send.email"),
@@ -350,8 +349,7 @@
                (O2): the role applies once it is accepted. A live one: send it by email again, create a
                link to share instead (where this admin may), or cancel it *@
             @for(contest <- contestOpt; contestId <- contest.id; if pending.nonEmpty) {
-                <h2 class="h5">@Messages("invitations.recent")</h2>
-                @snippets.helpSection("invitations")
+                <h2 class="h5">@Messages("invitations.recent") @snippets.helpLink("invitations")</h2>
                 <div class="table-responsive position-relative">
                 <table class="table table-sm pending-invitations">
                     <thead>

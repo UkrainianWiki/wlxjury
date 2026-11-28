@@ -28,13 +28,13 @@
     @if(stored.nonEmpty) {
     @bs.inputType("number", field,
         Symbol("_label") -> Messages("top.images"),
-        Symbol("_help") -> snippets.helpLink("top-files"),
+        Symbol("_helpTopic") -> "top-files",
         Symbol("disabled") -> true, Symbol("_locked") -> true, Symbol("aria-describedby") -> "round-filters-locked")
     }
     @if(storedRate.nonEmpty) {
     @bs.text(editRoundForm("minAvgRate"),
         Symbol("_label") -> Messages("average.file.rating.is.at.least"),
-        Symbol("_help") -> snippets.helpLink("top-files"),
+        Symbol("_helpTopic") -> "top-files",
         Symbol("disabled") -> true, Symbol("_locked") -> true, Symbol("aria-describedby") -> "round-filters-locked")
     }
 } else {

@@ -1,12 +1,13 @@
-@(titleKey: String, headingId: String, collapsibleId: String, open: Boolean = false)(body: Html)(implicit messages: Messages)
+@(titleKey: String, headingId: String, collapsibleId: String, open: Boolean = false, helpTopic: Option[String] = None)(body: Html)(implicit messages: Messages)
 @* A collapsible card (the round form's sections): the whole header is the toggle for Bootstrap's
    collapse, with a chevron before the title, pointing right while closed and down while open
    (main.css, .wlx-disclosure), so a closed section doesn't read as a plain heading. Bootstrap
    keeps aria-expanded and `collapsed` in step when the section is opened or closed. *@
 <div class="card mb-3">
     <div class="card-header wlx-card-toggle-header" id="@headingId">
-        <h2 class="h6 mb-0">
+        <h2 class="h6 mb-0 d-flex align-items-center">
             <a role="button" class="wlx-disclosure wlx-card-toggle@if(!open) { collapsed}" data-bs-toggle="collapse" href="#@collapsibleId" aria-expanded="@open" aria-controls="@collapsibleId"><i class="bi bi-chevron-right wlx-disclosure-icon" aria-hidden="true"></i>@Messages(titleKey)</a>
+            @for(key <- helpTopic) {@helpLink(key)}
         </h2>
     </div>
 

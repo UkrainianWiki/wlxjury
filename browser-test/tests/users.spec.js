@@ -250,7 +250,7 @@ test.describe('an admin of two contests', () => {
       await signIn(page, data.admin);
       await page.goto(`/admin/users?contestId=${data.targetId}`);
       await page.getByRole('link', { name: 'Add people from another of your contests' }).click();
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Add people from another of your contests');
+      await expect(page.getByRole('heading', { level: 1 })).toContainText('Add people from another of your contests');
       await page.getByLabel('Contest to add people from').selectOption({ label: 'UI add-from source 2025 in Ukraine' });
       await page.getByRole('button', { name: 'Show its people' }).click();
       await expect(page.getByRole('heading', { name: 'People of UI add-from source 2025 in Ukraine' })).toBeVisible();

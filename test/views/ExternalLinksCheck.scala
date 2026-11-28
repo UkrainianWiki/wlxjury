@@ -30,8 +30,13 @@ object ExternalLinksCheck {
     * that doesn't wrap (views.ExternalLinks.marked). */
   def marked(a: Element): Boolean = {
     val tails = a.select(".wlx-ext-tail").asScala.toSeq
-    val nowrap = Option(a.children.last).filter(_.hasClass("wlx-ext-nowrap"))
-    tails.size == 1 && nowrap.exists(n => n.children.last == tails.head && n.ownText.trim.nonEmpty) && {
+    val nowrap = Option(a.selectFirst(".wlx-ext-nowrap"))
+    def atEnd(node: org.jsoup.nodes.Node): Boolean = {
+      val following = node.parent.childNodes.asScala.drop(node.siblingIndex + 1)
+      following.forall(n => n.isInstanceOf[org.jsoup.nodes.TextNode] && n.outerHtml.trim.isEmpty) &&
+        (node.parent == a || (node.parent != null && atEnd(node.parent)))
+    }
+    tails.size == 1 && nowrap.exists(n => atEnd(n) && n.children.last == tails.head && n.ownText.trim.nonEmpty) && {
       val tail = tails.head
       val site = ExternalLinks.site(a.attr("href")).name
       val mark = tail.children.asScala.find(_.hasClass("wlx-ext-mark"))

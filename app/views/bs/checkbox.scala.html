@@ -6,7 +6,7 @@
 @check = {
 <div class="form-check">
     <input type="checkbox" id="@f.id" name="@f.name" value="@f.boxValue" class="@f.inputClass"@if(f.checked) { checked}@if(f.shownDisabled) { disabled} @f.aria @f.attrs("readonly", "disabled", "checked")>
-    @for(t <- f.text.orElse(f.label)) {<label class="form-check-label@if(f.text.isEmpty && f.labelHidden){ visually-hidden}" for="@f.id">@t</label>}
+    @for(t <- f.text.orElse(f.label)) {<label class="form-check-label@if(f.text.isEmpty && f.labelHidden){ visually-hidden}" for="@f.id">@t</label>@for(link <- f.helpTopic) { @link}}
     @for((errorId, error) <- f.errors) {<div class="invalid-feedback" id="@errorId">@error</div>}
 </div>
 @if(f.submitsHidden && f.checked) {<input type="hidden" name="@f.name" value="@f.boxValue">}

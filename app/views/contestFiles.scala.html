@@ -27,9 +27,8 @@
                 <a id="authors-link" class="btn btn-outline-secondary btn-sm ms-2"
                    href="@routes.AuthorsController.list(view.contest.getId)">@Messages("authors.list")</a>
             }
+            @if(review.isEmpty) {@snippets.helpLink("contest-files")}
         </h1>
-        @* the guide's section on this page; a round's review (the same page) links its own *@
-        @if(review.isEmpty) {@snippets.helpSection("contest-files")}
 
         @for(r <- review) {
             @roundReviewHead(r, view)

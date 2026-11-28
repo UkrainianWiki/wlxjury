@@ -16,14 +16,14 @@ test.describe(() => {
   async function openCriteria(page, fixture) {
     await page.goto(formPath(fixture));
     await page.locator('#rates').selectOption('10');
-    const heading = page.locator('#headingCriteria a');
+    const heading = page.locator('#headingCriteria a.wlx-card-toggle');
     if ((await heading.getAttribute('aria-expanded')) !== 'true') await heading.click();
     await expect(page.locator('#collapseCriteria')).toHaveClass(/\bshow\b/);
   }
 
   test('opening the criteria catalogue keeps the chosen filters in the draft', { tag: '@A-01' }, async ({ page, fixture }) => {
     await openCriteria(page, fixture);
-    const filtering = page.locator('#headingImageFiltering a');
+    const filtering = page.locator('#headingImageFiltering a.wlx-card-toggle');
     if ((await filtering.getAttribute('aria-expanded')) !== 'true') await filtering.click();
     const media = page.locator('#mediaType');
     await media.selectOption('image');

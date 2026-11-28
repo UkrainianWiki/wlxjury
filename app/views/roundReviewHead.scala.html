@@ -17,12 +17,10 @@
     @r.nextStep match {
         case Some(step) => {
             @round.setupSteps(controllers.RoundNextStep.CheckFiles, Some(step), mayAct = r.mayEdit)
-            <h2 class="h4" id="round-review-title">@Messages("round.review.setup.title", r.round.number, r.round.description)</h2>
-            @snippets.helpSection("review")
+            <h2 class="h4" id="round-review-title">@Messages("round.review.setup.title", r.round.number, r.round.description) @snippets.helpLink("review")</h2>
         }
         case None => {
-            <h2 class="h4" id="round-review-title">@Messages("round.review.title", r.round.number, r.round.description)</h2>
-            @snippets.helpSection("review")
+            <h2 class="h4" id="round-review-title">@Messages("round.review.title", r.round.number, r.round.description) @snippets.helpLink("review")</h2>
         }
     }
     @snippets.roundLinks(r.links)

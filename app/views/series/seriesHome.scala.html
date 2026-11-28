@@ -21,8 +21,7 @@
 
 @mainAdmin("series.page.title", user, user.getId) {
     <h1 class="h3" id="series-home-heading">@Messages("series.of", series.name)
-        @if(series.retired) {<span class="badge text-bg-secondary align-middle">@Messages("series.retired")</span>}</h1>
-        @snippets.helpSection("series-admins")
+        @if(series.retired) {<span class="badge text-bg-secondary align-middle">@Messages("series.retired")</span>} @snippets.helpLink("series-admins")</h1>
     <p class="text-body-secondary" id="series-home-help">@Messages("series.page.help")</p>
     @outcome()
     @if(user.isRoot || user.hasRole(db.scalikejdbc.User.ROOT_ROLE)) {

@@ -185,6 +185,13 @@ class BsFormHelpersSpec extends Specification {
       label.attr("for") === one(d, "input").id
     }
 
+    "keep a field's help visible when its label is hidden" in {
+      val d = doc(bs.text(filled("name"), Symbol("_hiddenLabel") -> "Login", Symbol("_helpTopic") -> "tracks"))
+      (d.select("label.visually-hidden").size === 1) and
+        (d.select("a.help-link[data-help-topic=tracks]").size === 1) and
+        (d.select(".visually-hidden a.help-link").size === 0)
+    }
+
     "put label and field in columns in a horizontal layout" in {
       implicit val layout: Layout = horizontal
       val d = doc(bs.text(failed("name"), Symbol("_label") -> "Name"))

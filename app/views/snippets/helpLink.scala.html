@@ -1,8 +1,8 @@
 @(key: String)(implicit messages: Messages)
 @* A help link (docs/plans/2026-11-26-help-links-and-guide-split.md §4): the user guide's section of
    topic `key` (views.HelpLinks, the only place with the URLs), as of this build's version, in a new
-   tab so a half-filled form is never lost. A question-mark icon, then the translated text
+   tab so a half-filled form is never lost. A question-mark icon with the translated text on hover,
    (help.more.<key>), " (guide in English)" for screen readers (help.english), and the mark of a link
    that leaves the tool with its " (opens in a new tab)" (views.HelpLinks.content). A key not in the
    table renders nothing (HelpLinksSpec fails on it, never a page). No white space around it *@
-@for(url <- views.HelpLinks.url(key)) {<a class="help-link" href="@url" target="_blank" rel="noopener noreferrer" data-help-topic="@key"><i class="bi bi-question-circle me-1" aria-hidden="true"></i>@views.HelpLinks.content(key, url)</a>}
+@for(url <- views.HelpLinks.url(key)) {<a class="help-link" href="@url" target="_blank" rel="noopener noreferrer" data-help-topic="@key" data-tooltip="@messages(views.HelpLinks.messageKey(key))"><i class="bi bi-question-circle" aria-hidden="true"></i><span class="visually-hidden">@views.HelpLinks.content(key, url)</span></a>}

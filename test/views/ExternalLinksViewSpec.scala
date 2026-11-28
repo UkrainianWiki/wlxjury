@@ -114,6 +114,14 @@ class ExternalLinksViewSpec extends Specification {
   }
 
   "a link's mark" should {
+    "reject a mark followed by content, including after a hidden wrapper" in {
+      val html = views.html.snippets.helpLink("tracks").body
+      val valid = Jsoup.parseBodyFragment(html)
+      val misplaced = Jsoup.parseBodyFragment(html)
+      misplaced.selectFirst("a").append("<span>suffix</span>")
+      (ExternalLinksCheck.problems(valid) must beEmpty) and
+        (ExternalLinksCheck.problems(misplaced) must not(beEmpty))
+    }
     "be chosen by the link's host" in {
       (ExternalLinks.site("https://commons.wikimedia.org/wiki/File:A.jpg") must_== ExternalLinks.Commons) and
         (ExternalLinks.site("https://upload.wikimedia.org/wikipedia/commons/a/ab/A.jpg") must_== ExternalLinks.Commons) and

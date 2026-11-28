@@ -18,8 +18,7 @@
 }
 @mainAdmin("users", user, user.getId, contestId = contestId) {
     <div class="row duplicates-report">
-        <h1 class="h3">@Messages("duplicates.title")</h1>
-        @snippets.helpSection("duplicates")
+        <h1 class="h3">@Messages("duplicates.title") @snippets.helpLink("duplicates")</h1>
         @for(c <- contest) {
             <p class="text-body-secondary">@Messages("contest") @c.fullName.</p>
         }

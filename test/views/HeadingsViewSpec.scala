@@ -26,7 +26,11 @@ class HeadingsViewSpec extends PlaySpecification {
   implicit val msgs: play.api.i18n.Messages = LargeViewRenders.messages(req)
 
   private def h1s(html: String): Seq[(String, String)] =
-    Jsoup.parse(html).select("h1").asScala.toSeq.map(h => h.className -> h.text)
+    Jsoup.parse(html).select("h1").asScala.toSeq.map { h =>
+      val heading = h.clone()
+      heading.select("a.help-link").remove()
+      heading.className -> heading.text
+    }
 
   private val admin = User("Admin", "admin@example.org", id = Some(4), roles = Set("admin"), contestId = Some(1))
 

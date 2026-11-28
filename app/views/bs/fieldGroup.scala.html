@@ -2,7 +2,7 @@
 @(f: FieldView)(input: Html)(implicit layout: Layout)
 @labelTag(cls: String) = {
 @* a locked multiple select's label names its visible list (aria-labelledby), not the hidden select *@
-@for(l <- f.label) {@if(f.lockedList) {<label class="@cls wlx-field-label@if(f.labelHidden){ visually-hidden}" id="@f.labelId"><span>@l</span></label>} else {<label class="@cls wlx-field-label@if(f.labelHidden){ visually-hidden}" for="@f.id"><span>@l</span></label>}}
+@for(l <- f.label) {@if(f.helpTopic.isEmpty) {@if(f.lockedList) {<label class="@cls wlx-field-label@if(f.labelHidden){ visually-hidden}" id="@f.labelId"><span>@l</span></label>} else {<label class="@cls wlx-field-label@if(f.labelHidden){ visually-hidden}" for="@f.id"><span>@l</span></label>}} else {<div class="@cls">@if(f.lockedList) {<label class="wlx-field-label@if(f.labelHidden){ visually-hidden}" id="@f.labelId"><span>@l</span></label>} else {<label class="wlx-field-label@if(f.labelHidden){ visually-hidden}" for="@f.id"><span>@l</span></label>}@for(link <- f.helpTopic) { @link}</div>}}
 }
 @layout.horizontal match {
 case Some(h) => {
