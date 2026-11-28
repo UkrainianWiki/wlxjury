@@ -120,8 +120,13 @@ body.gallery {
    the groups apart from each other; no Track chips in the tabs (the track is the tooltip) */
 .wlx-round-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: .375rem 1rem; margin: .5rem 0 .25rem; }
 .wlx-round-tabs .pagination { flex-wrap: wrap; }
-.wlx-round-tabs-group, .wlx-round-tabs-other { display: flex; flex-wrap: wrap; align-items: center; gap: .375rem; }
-.wlx-round-tabs-label { font-size: .8125rem; color: var(--bs-secondary-color); white-space: nowrap; }
+.wlx-round-tabs-grouped > .wlx-round-tabs-lead { flex-basis: 100%; }
+.wlx-round-tabs-group, .wlx-round-tabs-other {
+    display: grid; grid-template-columns: min(12rem, 35%) minmax(0, 1fr);
+    align-items: center; gap: .375rem; flex-basis: 100%;
+}
+.wlx-round-tabs-other > .pagination { grid-column: 2; }
+.wlx-round-tabs-label { font-size: .8125rem; color: var(--bs-secondary-color); overflow-wrap: anywhere; }
 /* a round's Track chip after its name (round lineage slice A, snippets/trackChip): its track's
    colours (theme.css --wlx-track-*), a thin edge of its text colour so a pale chip shows on the
    stripes and the hover grey; never cut or wrapped inside; in the Track menu a swatch before the name */
