@@ -1,17 +1,8 @@
 @(tabs: views.RoundTabs, label: String, lead: Html = play.twirl.api.HtmlFormat.empty)(implicit messages: Messages)
-@* A page's round tabs (views.RoundTabs; the round statistics and the contest's authors pages): one
-   look on every page. Each tab a page link: the round's type icons (snippets/roundIcon), its name
-   and what the icons say for screen readers (snippets/roundSpoken); grey if not active; the current
-   one selected (aria-current); a round shown although the page's filter leaves it out marked, its
-   item's title saying so, with the same words for screen readers. No Track chip: the round's track
-   is its link's tooltip. Grouped by track: each group a list of its own, labelled by its track's
-   name, shown once before its tabs; the last group of rounds without a label (alone on a track
-   named after them) labelled "Other rounds" for screen readers only. Ungrouped, a tab's track is
-   also said to screen readers after its name (", track Quality"), not only in its tooltip. `lead`: the page's own items before the rounds, as page-item
-   <li>s (the authors page's "Whole contest"), in a list of their own. Left-aligned on every page,
-   wrapped, each group's label at the start of its tabs (main.css wlx-round-tabs) *@
+@* Shared round navigation: ungrouped tabs carry their track chip; grouped tracks show the
+   same chip once before the group's tabs. Self-named tracks remain in the unlabelled group. *@
 @tab(r: db.scalikejdbc.Round) = {@defining(tabs.isCurrent(r) && tabs.outside(r)) { marked =>
-    <li class="page-item@if(tabs.isCurrent(r)){ active}" data-round="@r.getId"@if(marked){ title="@Messages("rounds.filter.outside")"}><a class="page-link@if(!r.active) { wlx-round-inactive}@if(marked) { wlx-round-outside}" href="@tabs.url(r)"@if(tabs.isCurrent(r)){ aria-current="page"}@if(!marked){@for(l <- tabs.lineage; t <- tabs.track(r)) { title="@Messages("round.track"): @views.TrackChip.name(t, l)"}}>@if(tabs.icons && controllers.RoundsFilter.Kind.of(r).nonEmpty) {@snippets.roundIcon(r)}@r.description@snippets.roundSpoken(r)@if(!tabs.grouped) {@for(l <- tabs.lineage; t <- tabs.track(r)) {<span class="visually-hidden wlx-round-spoken wlx-round-track-note">, @Messages("rounds.tab.track", views.TrackChip.name(t, l))</span>}}@if(marked) {<span class="visually-hidden wlx-round-spoken wlx-round-outside-note">, @Messages("rounds.filter.outside")</span>}</a></li>
+    <li class="page-item@if(tabs.isCurrent(r)){ active}" data-round="@r.getId"@if(marked){ title="@Messages("rounds.filter.outside")"}><a class="page-link@if(!r.active) { wlx-round-inactive}@if(marked) { wlx-round-outside}" href="@tabs.url(r)"@if(tabs.isCurrent(r)){ aria-current="page"}@if(!marked){@for(l <- tabs.lineage; t <- tabs.track(r)) { title="@Messages("round.track"): @views.TrackChip.name(t, l)"}}>@if(tabs.icons && controllers.RoundsFilter.Kind.of(r).nonEmpty) {@snippets.roundIcon(r)}@r.description@snippets.roundSpoken(r)@if(!tabs.grouped) {@snippets.trackChip(r, tabs.lineage)}@if(marked) {<span class="visually-hidden wlx-round-spoken wlx-round-outside-note">, @Messages("rounds.filter.outside")</span>}</a></li>
 }}
 <nav aria-label="@label" class="wlx-round-tabs@if(tabs.grouped) { wlx-round-tabs-grouped}" id="@tabs.id">
     @if(lead.body.trim.nonEmpty) {<ul class="pagination mb-0 wlx-round-tabs-lead">@lead</ul>}
@@ -19,7 +10,9 @@
         @track match {
             case Some(t) => {
             <div class="wlx-round-tabs-group" data-track="@t.key">
-                <span class="wlx-round-tabs-label" id="@tabs.id-group-@i">@tabs.lineage.fold(t.name)(views.TrackChip.name(t, _))</span>
+                @for(l <- tabs.lineage) {
+                <span class="badge wlx-track wlx-round-tabs-label @views.TrackChip.colour(t, l)" id="@tabs.id-group-@i" data-track="@t.key" title="@Messages("round.track"): @views.TrackChip.name(t, l)" aria-label="@views.TrackChip.name(t, l)">@views.TrackChip.short(t, l)</span>
+                }
                 <ul class="pagination mb-0" aria-labelledby="@tabs.id-group-@i">@for(r <- rounds) {@tab(r)}</ul>
             </div>
             }

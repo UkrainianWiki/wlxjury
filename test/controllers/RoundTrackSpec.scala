@@ -136,7 +136,7 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
   /** The round tabs' links' names (without what their icons say) and titles. */
   private def tabTitles(doc: Document, bar: String): Map[String, String] =
     doc.select(s"$bar .page-item[data-round] > .page-link").asScala.toSeq.map { a =>
-      val c = a.clone(); c.select(".wlx-round-spoken, .wlx-round-icon").remove()
+      val c = a.clone(); c.select(".wlx-round-spoken, .wlx-round-icon, .wlx-track").remove()
       c.text.trim -> a.attr("title")
     }.toMap
 
@@ -144,7 +144,7 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
   private def groups(doc: Document, bar: String): Seq[(String, Seq[String])] =
     doc.select(s"$bar .wlx-round-tabs-group").asScala.toSeq.map { g =>
       g.selectFirst(".wlx-round-tabs-label").text -> g.select(".page-link").asScala.toSeq.map { a =>
-        val c = a.clone(); c.select(".wlx-round-spoken, .wlx-round-icon").remove(); c.text.trim
+        val c = a.clone(); c.select(".wlx-round-spoken, .wlx-round-icon, .wlx-track").remove(); c.text.trim
       }
     }
 
@@ -164,6 +164,22 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "show track badges on ungrouped statistics tabs and once before each grouped set" in {
+      testDbApp { app =>
+        val f = fixture()
+        val flat = page(app, f.organizer, s"/roundstat/${f.merge.getId}?group=none")
+        val grouped = page(app, f.organizer, s"/roundstat/${f.merge.getId}?group=track")
+        val chips = flat.select("#round-stat-rounds .page-link .wlx-track").asScala.toSeq
+        val labels = grouped.select("#round-stat-rounds .wlx-round-tabs-group > .wlx-round-tabs-label").asScala.toSeq
+        (chips.size === 4) and
+          (labels.size === 3) and
+          (labels.forall(_.hasClass("wlx-track")) must beTrue) and
+          (grouped.select("#round-stat-rounds .page-link .wlx-track").size === 0) and
+          (chips.map(c => c.attr("data-track") -> c.classNames().asScala.find(_.startsWith("wlx-track-")).get).toMap ===
+            labels.map(c => c.attr("data-track") -> c.classNames().asScala.find(_.startsWith("wlx-track-")).get).toMap)
+      }
+    }
+
     "be the authors page's too: \"Whole contest\" first, then the rounds grouped by track, the grouping kept" in {
       testDbApp { app =>
         val f = fixture()
@@ -172,7 +188,9 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         (doc.select("#authors-rounds .wlx-round-tabs-lead .page-link").text === "Whole contest") and
           (groups(doc, "#authors-rounds") === Seq("Main" -> Seq("Q-02"), "Quality" -> Seq("Q-00", "Q-01"),
             "Quantity" -> Seq("Qn-00"))) and
-          (doc.select("#authors-rounds .wlx-track").size === 0) and
+          (doc.select("#authors-rounds .wlx-round-tabs-group > .wlx-track").size === 3) and
+          (doc.select("#authors-rounds .page-link .wlx-track").size === 0) and
+          (flat.select("#authors-rounds .page-link .wlx-track").size === 4) and
           (flat.select("#authors-rounds .wlx-round-tabs-group").size === 0) and
           (flat.select("#authors-rounds .page-link").asScala.map(_.attr("href")).forall(_.contains("group=none")) must beTrue)
       }
@@ -187,14 +205,14 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         roundDao.create(Round(None, 2, Some("Qn-00"), contest.getId, category = Some(Prefix + "Quantity"), active = true))
         val doc = page(app, org, s"/roundstat/${q.getId}")
         val toggle = doc.getElementById("rounds-group-track")
-        def notes(d: Document) = d.select("#round-stat-rounds .wlx-round-track-note").asScala.map(_.text).toSeq
+        def notes(d: Document) = d.select("#round-stat-rounds .page-link .wlx-track").asScala.map(_.attr("title")).toSeq
         (doc.select("#round-stat-rounds .page-link").size === 2) and
           (doc.select("#round-stat-rounds .wlx-round-tabs-group").size === 0) and
           // offered, off
           (toggle.attr("data-grouped") === "false") and (toggle.text must endWith(", off")) and
           (toggle.select(".bi-check2.invisible").size === 1) and
           // ungrouped, each tab's track is said after its name, not only in its tooltip
-          (notes(doc) === Seq(", track Quality", ", track Quantity")) and
+          (notes(doc) === Seq("Track: Quality", "Track: Quantity")) and
           // grouped on request: the labels show the tracks, the tabs say them no more
           (notes(page(app, org, s"/roundstat/${q.getId}?group=track")) === Nil)
       }
@@ -689,8 +707,9 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         val doc = page(app, f.organizer, s"/roundstat/${f.merge.getId}")
         val main = page(app, f.organizer, s"/roundstat/${f.merge.getId}?track=main")
-        // compact tabs: no chip; the track in the link's tooltip
-        (doc.select("#round-stat-rounds .wlx-track").size === 0) and
+        // grouped tracks have one badge each, and none on their tabs
+        (doc.select("#round-stat-rounds .wlx-round-tabs-group > .wlx-track").size === 3) and
+          (doc.select("#round-stat-rounds .page-link .wlx-track").size === 0) and
           (tabTitles(doc, "#round-stat-rounds") === Map("Q-00" -> "Track: Quality", "Qn-00" -> "Track: Quantity",
             "Q-01" -> "Track: Quality", "Q-02" -> "Track: Main")) and
           // grouped by default (the contest shows tracks): Main, then its feeders as they join
@@ -730,7 +749,7 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         val org = page(app, f.organizer, s"/gallery/round/${f.q00.getId}/user/0/page/1")
         val flat = page(app, f.organizer, s"/gallery/round/${f.q00.getId}/user/0/page/1?group=none")
         val juror = page(app, f.juror, s"/gallery/round/${f.merge.getId}/user/${f.juror.getId}/page/1")
-        def name(a: Element): String = { val c = a.clone(); c.select(".wlx-round-spoken, .wlx-round-icon").remove(); c.text.trim }
+        def name(a: Element): String = { val c = a.clone(); c.select(".wlx-round-spoken, .wlx-round-icon, .wlx-track").remove(); c.text.trim }
         def menuGroups(d: Document): Seq[(String, Seq[String])] =
           d.select("#round-menu .wlx-menu-group").asScala.toSeq.map { g =>
             val header = g.selectFirst(".dropdown-header")

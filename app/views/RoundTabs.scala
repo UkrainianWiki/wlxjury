@@ -4,8 +4,7 @@ import db.scalikejdbc.Round
 import services.RoundLineage.{Lineage, Track}
 
 /** A page's round tabs (snippets/roundTabs): the one round bar of the round statistics and the
-  * contest's authors pages (the maintainer's decision for 26.11.18). Compact: a tab is its type
-  * icons and its name, never a Track chip; its track is in its tooltip. Grouped by track when
+  * contest's authors pages (the maintainer's decision for 26.11.18). A tab has its type icons and name, with a Track chip when ungrouped; grouped tracks have one chip before their tabs. Grouped by track when
   * `grouped` (the Order menu's "Group by track", on by default where the contest shows tracks:
   * RoundsFilter.grouped): each track's name once, as a small label before its tabs, the tracks in
   * the lineage's order (Main, the tracks that feed it as they join, the others), the rounds in the
