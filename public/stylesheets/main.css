@@ -116,8 +116,8 @@ body.gallery {
 .wlx-round-named { flex-wrap: wrap; }
 .wlx-round-named > .round-stat-link { max-width: calc(100% - 2.55em); }
 /* a page's round tabs (snippets/roundTabs: the round statistics and the authors pages): wrapped,
-   left-aligned; grouped by track, each group its track's name, small and secondary, then its tabs,
-   the groups apart from each other; no Track chips in the tabs (the track is the tooltip) */
+   left-aligned; grouped by track, each group has its track chip before its tabs; ungrouped tabs
+   have their own chips */
 .wlx-round-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: .375rem 1rem; margin: .5rem 0 .25rem; }
 .wlx-round-tabs .pagination { flex-wrap: wrap; }
 .wlx-round-tabs-grouped > .wlx-round-tabs-lead { flex-basis: 100%; }
@@ -126,7 +126,7 @@ body.gallery {
     align-items: center; gap: .375rem; flex-basis: 100%;
 }
 .wlx-round-tabs-other > .pagination { grid-column: 2; }
-.wlx-round-tabs-label { font-size: .8125rem; color: var(--bs-secondary-color); overflow-wrap: anywhere; }
+.wlx-round-tabs .wlx-round-tabs-label { justify-self: start; max-width: 100%; margin-left: 0; white-space: normal; overflow-wrap: anywhere; text-align: start; }
 /* a round's Track chip after its name (round lineage slice A, snippets/trackChip): its track's
    colours (theme.css --wlx-track-*), a thin edge of its text colour so a pale chip shows on the
    stripes and the hover grey; never cut or wrapped inside; in the Track menu a swatch before the name */

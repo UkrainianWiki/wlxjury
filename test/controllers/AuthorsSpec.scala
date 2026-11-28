@@ -468,13 +468,23 @@ class AuthorsSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "keep the round order and grouping when sorting the authors table" in {
+      testDbApp { app =>
+        val f = fixture()
+        val (_, html) = get(app, f.organizer, authorsUrl(f, Some(f.binary)) + "&order=newest&group=none")
+        val links = Jsoup.parse(html).select("#authors-table th a").asScala.toSeq
+        (links must not(beEmpty)) and
+          (links.forall(a => a.attr("href").contains("order=newest") && a.attr("href").contains("group=none")) must beTrue)
+      }
+    }
+
     "be linked from the contest files page and the round's statistics" in {
       testDbApp { app =>
         val f = fixture()
         val (_, files) = get(app, f.organizer, filesUrl(f))
         val (_, stat) = get(app, f.organizer, s"/roundstat/${f.binary.getId}")
         (Jsoup.parse(files).selectFirst("#authors-link").attr("href") === authorsUrl(f)) and
-          (Jsoup.parse(stat).selectFirst("#round-authors-link a").attr("href") === authorsUrl(f, Some(f.binary)))
+          (Jsoup.parse(stat).selectFirst("#round-authors-link a").attr("href") === (authorsUrl(f, Some(f.binary)) + "&group=none"))
       }
     }
 

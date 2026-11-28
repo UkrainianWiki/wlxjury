@@ -1,7 +1,7 @@
 // The round tabs (views.RoundTabs, snippets/roundTabs; the maintainer's decision for 26.11.18): one
 // component on the round statistics and the contest's authors pages, so the two bars look the same
-// (the same tabs, left-aligned); compact, with no Track chip inside a tab (its track is its
-// tooltip); grouped by track, each track's name once as a small label before its tabs (Main, then
+// (the same tabs, left-aligned); ungrouped tabs carry track chips, while grouped tabs show
+// each track chip once before its tabs (Main, then
 // the tracks that feed it as they join, then the others), on by default where the contest's rounds
 // are on tracks, switched by the Order menu's "Group by track". On the fixture's "Round tracks"
 // contest (tracksContest: Q-00 Quality, Qn-00 Quantity, Q-01 Quality, Q-02 the merge on Main,
@@ -33,7 +33,7 @@ const OLDEST_FIRST = ['Q-00', 'Qn-00', 'Q-01', 'Q-02', 'Kha-00'];
 /** A bar's groups: each label and its tabs' names; its tabs' look (the first tab's box and font). */
 async function readBar(bar) {
   return bar.evaluate((nav) => {
-    const name = (a) => { const c = a.cloneNode(true); c.querySelectorAll('.wlx-round-spoken, .wlx-round-icon').forEach((e) => e.remove()); return c.textContent.trim(); };
+    const name = (a) => { const c = a.cloneNode(true); c.querySelectorAll('.wlx-round-spoken, .wlx-round-icon, .wlx-track').forEach((e) => e.remove()); return c.textContent.trim(); };
     const tabs = [...nav.querySelectorAll('.page-item[data-round] > .page-link')];
     const first = getComputedStyle(tabs[0]);
     const page = document.body.getBoundingClientRect();
@@ -43,10 +43,11 @@ async function readBar(bar) {
       names: tabs.map(name),
       titles: Object.fromEntries(tabs.map((a) => [name(a), a.getAttribute('title')])),
       chips: nav.querySelectorAll('.wlx-track').length,
+      tabChips: nav.querySelectorAll('.page-link .wlx-track').length,
       // each group's list named by its label; the tracks said after the tabs' names when ungrouped
       labelled: [...nav.querySelectorAll('.wlx-round-tabs-group')].every((g) =>
         g.querySelector('ul').getAttribute('aria-labelledby') === g.querySelector('.wlx-round-tabs-label').id),
-      notes: [...nav.querySelectorAll('.wlx-round-track-note')].map((n) => n.textContent.trim()),
+      notes: [...nav.querySelectorAll('.page-link .wlx-track')].map((n) => n.getAttribute('title')),
       look: { font: first.fontSize, padding: first.padding, height: Math.round(tabs[0].getBoundingClientRect().height) },
       // left-aligned: the bar's first item (a group's label, a tab) starts at the bar's left edge
       leftGap: Math.round(nav.querySelector('.wlx-round-tabs-label, .page-item').getBoundingClientRect().left - nav.getBoundingClientRect().left),
@@ -67,15 +68,16 @@ for (const mode of ['light', 'dark']) {
       await page.goto(`/roundstat/${roundIds[3]}`);
       const stat = await readBar(page.locator('#round-stat-rounds'));
       expect(stat.groups).toEqual([['Main', ['Q-02']], ['Quality', ['Q-00', 'Q-01']], ['Quantity', ['Qn-00']], ['Харків', ['Kha-00']]]);
-      expect(stat.chips, 'no Track chip inside a tab').toBe(0);
+      expect(stat.chips, 'one badge per group').toBe(4);
+      expect(stat.tabChips).toBe(0);
       expect(stat.labelled, 'each group a list named by its label').toBe(true);
       expect(stat.notes, 'grouped: the labels say the tracks').toEqual([]);
       expect(stat.titles['Q-01']).toBe('Track: Quality');
       expect(stat.leftGap).toBe(0);
       expect(stat.inPage).toBe(true);
-      // the labels: small, secondary, readable (4.5:1 on the page)
+      // the badge text remains readable against its track colour
       const label = page.locator('#round-stat-rounds .wlx-round-tabs-label').first();
-      const { color, bg } = await label.evaluate((l) => ({ color: getComputedStyle(l).color, bg: getComputedStyle(document.body).backgroundColor }));
+      const { color, bg } = await label.evaluate((l) => ({ color: getComputedStyle(l).color, bg: getComputedStyle(l).backgroundColor }));
       expect(contrast(color, bg), `${mode}: a group's label on the page`).toBeGreaterThanOrEqual(4.5);
       if (SHOTS) {
         fs.mkdirSync(SHOTS, { recursive: true });
@@ -89,7 +91,8 @@ for (const mode of ['light', 'dark']) {
       expect(authors.groups).toEqual(stat.groups);
       expect(authors.look, `${mode}: the same tabs on both pages`).toEqual(stat.look);
       expect(authors.leftGap).toBe(0);
-      expect(authors.chips).toBe(0);
+      expect(authors.chips).toBe(4);
+      expect(authors.tabChips).toBe(0);
       if (SHOTS) await page.locator('#authors-rounds').screenshot({ path: path.join(SHOTS, `authors-grouped-${mode}.png`) });
 
       // the Order menu's "Group by track": off, the tabs in the menu's order, no labels; on again
@@ -103,8 +106,8 @@ for (const mode of ['light', 'dark']) {
       expect(flat.groups).toEqual([]);
       expect(flat.names).toEqual(OLDEST_FIRST);
       expect(flat.notes, 'ungrouped: each tab says its track to screen readers').toEqual(
-        [', track Quality', ', track Quantity', ', track Quality', ', track Main', ', track Харків']);
-      expect(flat.look).toEqual(stat.look);
+        ['Track: Quality', 'Track: Quantity', 'Track: Quality', 'Track: Main', 'Track: Харків']);
+      expect(flat.tabChips).toBe(5);
       if (SHOTS) await page.locator('#round-stat-rounds').screenshot({ path: path.join(SHOTS, `roundstat-ungrouped-${mode}.png`) });
       // kept by the tabs' links: another round's statistics stay ungrouped
       await Promise.all([page.waitForURL(new RegExp(`/roundstat/${roundIds[0]}\\?group=none`)),
@@ -116,11 +119,37 @@ for (const mode of ['light', 'dark']) {
       expect((await readBar(page.locator('#round-stat-rounds'))).groups.map((g) => g[0])).toEqual(LABELS);
 
       await page.goto(`/contest/${contestId}/authors?group=none`);
-      expect((await readBar(page.locator('#authors-rounds'))).names).toEqual(OLDEST_FIRST);
+      const flatAuthors = await readBar(page.locator('#authors-rounds'));
+      expect(flatAuthors.names).toEqual(OLDEST_FIRST);
+      expect(flatAuthors.tabChips).toBe(5);
+      expect(flatAuthors.look).toEqual(flat.look);
       if (SHOTS) await page.locator('#authors-rounds').screenshot({ path: path.join(SHOTS, `authors-ungrouped-${mode}.png`) });
       await context.close();
     });
 }
+
+test('round statistics and authors keep the track and round order', { tag: '@O-07' },
+  async ({ contextAs, fixture }) => {
+    test.skip(!fixture.tracksContest, "the fixture has no round tracks contest");
+    const { roundIds } = fixture.tracksContest;
+    const context = await contextAs('root', { viewport: { width: 1366, height: 900 } });
+    const page = await context.newPage();
+    // These fixture rounds have no authors; supply a count so the real link stays enabled.
+    await page.route('**/roundstat/*/counts', (route) => route.fulfill({ json: { authors: 1, withoutAuthor: 0 } }));
+    await page.goto(`/roundstat/${roundIds[0]}?track=category%3AQuality&order=newest&group=none`);
+    await Promise.all([page.waitForURL(/\/contest\/\d+\/authors/), page.locator('#round-authors-link a').click()]);
+    await expect(page.locator('#rounds-track-menu .dropdown-item.active')).toContainText('Quality');
+    await expect(page.locator('#rounds-order-menu')).toHaveCount(0);
+    await page.locator('#rounds-track-menu > button').click();
+    await page.locator('#rounds-track-menu .dropdown-item').filter({ hasText: 'Quantity' }).click();
+    await expect(page.locator('#authors-rounds .page-item[data-round]')).toHaveCount(1);
+    await expect(page.locator('#menu-statistics')).toHaveAttribute('href', /track=category%3AQuantity/);
+    await expect(page.locator('#menu-statistics')).toHaveAttribute('href', /order=newest/);
+    await page.locator('#pages-menu > button').click();
+    await page.locator('#menu-statistics').click();
+    await expect(page.locator('#rounds-track-menu .dropdown-item.active')).toContainText('Quantity');
+    await context.close();
+  });
 
 for (const mode of ['light', 'dark']) {
   test(`the galleries' round menu: grouped by track under headers, no chips, in ${mode}`, { tag: '@O-07' },
@@ -136,7 +165,7 @@ for (const mode of ['light', 'dark']) {
       const list = menu.locator('.dropdown-menu');
       await expect(list).toBeVisible();
       const read = () => list.evaluate((ul) => {
-        const name = (a) => { const c = a.cloneNode(true); c.querySelectorAll('.wlx-round-spoken, .wlx-round-icon').forEach((e) => e.remove()); return c.textContent.trim(); };
+        const name = (a) => { const c = a.cloneNode(true); c.querySelectorAll('.wlx-round-spoken, .wlx-round-icon, .wlx-track').forEach((e) => e.remove()); return c.textContent.trim(); };
         return {
           groups: [...ul.querySelectorAll('.wlx-menu-group')].map((g) => {
             const h = g.querySelector('h6.dropdown-header');
@@ -165,7 +194,7 @@ for (const mode of ['light', 'dark']) {
       for (let i = 0; i < grouped.names.length; i++) {
         focused.push(await page.evaluate(() => {
           const c = document.activeElement.cloneNode(true);
-          c.querySelectorAll('.wlx-round-spoken, .wlx-round-icon').forEach((e) => e.remove());
+          c.querySelectorAll('.wlx-round-spoken, .wlx-round-icon, .wlx-track').forEach((e) => e.remove());
           return c.textContent.trim();
         }));
         await page.keyboard.press('ArrowDown');

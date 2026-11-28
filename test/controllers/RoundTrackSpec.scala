@@ -136,7 +136,7 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
   /** The round tabs' links' names (without what their icons say) and titles. */
   private def tabTitles(doc: Document, bar: String): Map[String, String] =
     doc.select(s"$bar .page-item[data-round] > .page-link").asScala.toSeq.map { a =>
-      val c = a.clone(); c.select(".wlx-round-spoken, .wlx-round-icon").remove()
+      val c = a.clone(); c.select(".wlx-round-spoken, .wlx-round-icon, .wlx-track").remove()
       c.text.trim -> a.attr("title")
     }.toMap
 
@@ -144,7 +144,7 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
   private def groups(doc: Document, bar: String): Seq[(String, Seq[String])] =
     doc.select(s"$bar .wlx-round-tabs-group").asScala.toSeq.map { g =>
       g.selectFirst(".wlx-round-tabs-label").text -> g.select(".page-link").asScala.toSeq.map { a =>
-        val c = a.clone(); c.select(".wlx-round-spoken, .wlx-round-icon").remove(); c.text.trim
+        val c = a.clone(); c.select(".wlx-round-spoken, .wlx-round-icon, .wlx-track").remove(); c.text.trim
       }
     }
 
@@ -164,6 +164,108 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "show track badges on ungrouped statistics tabs and once before each grouped set" in {
+      testDbApp { app =>
+        val f = fixture()
+        val flat = page(app, f.organizer, s"/roundstat/${f.merge.getId}?group=none")
+        val grouped = page(app, f.organizer, s"/roundstat/${f.merge.getId}?group=track")
+        val chips = flat.select("#round-stat-rounds .page-link .wlx-track").asScala.toSeq
+        val labels = grouped.select("#round-stat-rounds .wlx-round-tabs-group > .wlx-round-tabs-label").asScala.toSeq
+        (chips.size === 4) and
+          (labels.size === 3) and
+          (labels.forall(_.hasClass("wlx-track")) must beTrue) and
+          (grouped.select("#round-stat-rounds .page-link .wlx-track").size === 0) and
+          (chips.map(c => c.attr("data-track") -> c.classNames().asScala.find(_.startsWith("wlx-track-")).get).toMap ===
+            labels.map(c => c.attr("data-track") -> c.classNames().asScala.find(_.startsWith("wlx-track-")).get).toMap)
+      }
+    }
+
+    "expose the full track name to screen readers even when its badge is shortened" in {
+      testDbApp { app =>
+        val f = fixture()
+        val longName = "A long track name that is longer than the badge limit"
+        status(save(app, f.admin, Some(f.q00), f.contest.getId, "trackLabel" -> longName, "trackShown" -> "true")) must_== SEE_OTHER
+        val flat = page(app, f.organizer, s"/roundstat/${f.q00.getId}?group=none")
+        val grouped = page(app, f.organizer, s"/roundstat/${f.q00.getId}?group=track")
+        val tab = flat.selectFirst(s"#round-stat-rounds [data-round='${f.q00.getId}'] .page-link")
+        val badge = tab.selectFirst(".wlx-track")
+        val group = grouped.select("#round-stat-rounds .wlx-round-tabs-label").asScala.find(_.attr("aria-label") == longName)
+        (badge.text must not(contain(longName))) and
+          (badge.parent().attr("aria-hidden") === "true") and
+          (tab.selectFirst(".wlx-round-track-note").text must contain(longName)) and
+          (group.map(_.text) must beSome(longName))
+      }
+    }
+
+    "keep the statistics grouping choice when opening the round's authors" in {
+      testDbApp { app =>
+        val f = fixture()
+        def destination(query: String): (String, Document) = {
+          val stat = page(app, f.organizer, s"/roundstat/${f.merge.getId}$query")
+          val href = stat.selectFirst("#round-authors-link a").attr("href")
+          href -> page(app, f.organizer, href)
+        }
+        val (flatUrl, flat) = destination("?group=none&order=newest")
+        val (groupedUrl, grouped) = destination("?group=track")
+        val (defaultUrl, default) = destination("")
+        (flatUrl must contain("group=none")) and
+          (flatUrl must contain("order=newest")) and
+          (flat.select("#authors-rounds .wlx-round-tabs-group").size === 0) and
+          (groupedUrl must contain("group=track")) and
+          (grouped.select("#authors-rounds .wlx-round-tabs-group").size === 3) and
+          (defaultUrl must contain("group=track")) and
+          (default.select("#authors-rounds .wlx-round-tabs-group").size === 3)
+      }
+    }
+
+    "keep the track filter between statistics and authors, including authors navigation" in {
+      testDbApp { app =>
+        val f = fixture()
+        val stat = page(app, f.organizer, s"/roundstat/${f.q00.getId}?track=category%3AQuality&group=none&order=newest")
+        val authors = page(app, f.organizer, stat.selectFirst("#round-authors-link a").attr("href"))
+        val quality = trackMenu(authors).find(_._1 == "Quality").get
+        val toStats = authors.selectFirst("#menu-statistics").attr("href")
+        val quantityUrl = trackMenu(authors).find(_._1 == "Quantity").get._3
+        val quantity = page(app, f.organizer, quantityUrl)
+        val backRedirect = get(app, f.organizer, quantity.selectFirst("#menu-statistics").attr("href"))
+        val back = page(app, f.organizer, redirectLocation(backRedirect).get)
+        (quality._3 must contain("track=category%3AQuality")) and
+          (authors.select("#authors-rounds .page-item[data-round]").size === 2) and
+          (toStats must contain("track=category%3AQuality")) and
+          (toStats must contain("group=none")) and
+          (toStats must contain("order=newest")) and
+          (authors.select("#authors-rounds .page-item[data-round]").asScala.map(_.attr("data-round")).toSeq === Seq(f.q01.getId.toString, f.q00.getId.toString)) and
+          (authors.select("#rounds-order-menu").size === 0) and
+          (quantityUrl must contain("track=category%3AQuantity")) and
+          (quantityUrl must contain("order=newest")) and
+          (quantity.select("#authors-rounds .page-item[data-round]").size === 1) and
+          (quantity.select("#authors-rounds .page-item.active").attr("data-round") === f.qn00.getId.toString) and
+          (back.select("#rounds-track-menu .dropdown-item.active").text must contain("Quantity")) and
+          (quantity.select("#authors-rounds .page-link").asScala.forall(_.attr("href").contains("track=category%3AQuantity")) must beTrue) and
+          (page(app, f.organizer, s"/contest/${f.contest.getId}/authors?track=unknown").select("#rounds-track-menu .dropdown-item.active").text must contain("All tracks"))
+      }
+    }
+
+    "choose an accessible authors round when the first matching track round is restricted" in {
+      testDbApp { app =>
+        val f = fixture()
+        Round.setActive(f.q00.getId, active = true)
+        f.q00.addUsers(Seq(RoundUser(f.q00.getId, f.organizer.getId, "jury", active = true)))
+        val authors = page(app, f.organizer, s"/contest/${f.contest.getId}/authors?round=${f.qn00.getId}")
+        val qualityUrl = trackMenu(authors).find(_._1 == "Quality").get._3
+        val selected = page(app, f.organizer, qualityUrl)
+        val firstDenied = status(get(app, f.organizer, s"/contest/${f.contest.getId}/authors?round=${f.q00.getId}"))
+        Round.setActive(f.q01.getId, active = true)
+        f.q01.addUsers(Seq(RoundUser(f.q01.getId, f.organizer.getId, "jury", active = true)))
+        val restricted = page(app, f.organizer, s"/contest/${f.contest.getId}/authors?round=${f.qn00.getId}&track=category%3AQuality")
+        (qualityUrl must contain(s"round=${f.q01.getId}")) and
+          (selected.select("#authors-rounds .page-item.active").attr("data-round") === f.q01.getId.toString) and
+          (firstDenied === FORBIDDEN) and
+          (trackMenu(restricted).map(_._1) must not(contain("Quality"))) and
+          (restricted.select(s"#authors-rounds [data-round='${f.q00.getId}'], #authors-rounds [data-round='${f.q01.getId}']").size === 0)
+      }
+    }
+
     "be the authors page's too: \"Whole contest\" first, then the rounds grouped by track, the grouping kept" in {
       testDbApp { app =>
         val f = fixture()
@@ -172,7 +274,9 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         (doc.select("#authors-rounds .wlx-round-tabs-lead .page-link").text === "Whole contest") and
           (groups(doc, "#authors-rounds") === Seq("Main" -> Seq("Q-02"), "Quality" -> Seq("Q-00", "Q-01"),
             "Quantity" -> Seq("Qn-00"))) and
-          (doc.select("#authors-rounds .wlx-track").size === 0) and
+          (doc.select("#authors-rounds .wlx-round-tabs-group > .wlx-track").size === 3) and
+          (doc.select("#authors-rounds .page-link .wlx-track").size === 0) and
+          (flat.select("#authors-rounds .page-link .wlx-track").size === 4) and
           (flat.select("#authors-rounds .wlx-round-tabs-group").size === 0) and
           (flat.select("#authors-rounds .page-link").asScala.map(_.attr("href")).forall(_.contains("group=none")) must beTrue)
       }
@@ -187,14 +291,17 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         roundDao.create(Round(None, 2, Some("Qn-00"), contest.getId, category = Some(Prefix + "Quantity"), active = true))
         val doc = page(app, org, s"/roundstat/${q.getId}")
         val toggle = doc.getElementById("rounds-group-track")
-        def notes(d: Document) = d.select("#round-stat-rounds .wlx-round-track-note").asScala.map(_.text).toSeq
+        val authorsUrl = doc.selectFirst("#round-authors-link a").attr("href")
+        def notes(d: Document) = d.select("#round-stat-rounds .page-link .wlx-track").asScala.map(_.attr("title")).toSeq
         (doc.select("#round-stat-rounds .page-link").size === 2) and
+          (authorsUrl must contain("group=none")) and
+          (page(app, org, authorsUrl).select("#authors-rounds .wlx-round-tabs-group").size === 0) and
           (doc.select("#round-stat-rounds .wlx-round-tabs-group").size === 0) and
           // offered, off
           (toggle.attr("data-grouped") === "false") and (toggle.text must endWith(", off")) and
           (toggle.select(".bi-check2.invisible").size === 1) and
           // ungrouped, each tab's track is said after its name, not only in its tooltip
-          (notes(doc) === Seq(", track Quality", ", track Quantity")) and
+          (notes(doc) === Seq("Track: Quality", "Track: Quantity")) and
           // grouped on request: the labels show the tracks, the tabs say them no more
           (notes(page(app, org, s"/roundstat/${q.getId}?group=track")) === Nil)
       }
@@ -689,8 +796,9 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         val doc = page(app, f.organizer, s"/roundstat/${f.merge.getId}")
         val main = page(app, f.organizer, s"/roundstat/${f.merge.getId}?track=main")
-        // compact tabs: no chip; the track in the link's tooltip
-        (doc.select("#round-stat-rounds .wlx-track").size === 0) and
+        // grouped tracks have one badge each, and none on their tabs
+        (doc.select("#round-stat-rounds .wlx-round-tabs-group > .wlx-track").size === 3) and
+          (doc.select("#round-stat-rounds .page-link .wlx-track").size === 0) and
           (tabTitles(doc, "#round-stat-rounds") === Map("Q-00" -> "Track: Quality", "Qn-00" -> "Track: Quantity",
             "Q-01" -> "Track: Quality", "Q-02" -> "Track: Main")) and
           // grouped by default (the contest shows tracks): Main, then its feeders as they join
@@ -730,7 +838,7 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         val org = page(app, f.organizer, s"/gallery/round/${f.q00.getId}/user/0/page/1")
         val flat = page(app, f.organizer, s"/gallery/round/${f.q00.getId}/user/0/page/1?group=none")
         val juror = page(app, f.juror, s"/gallery/round/${f.merge.getId}/user/${f.juror.getId}/page/1")
-        def name(a: Element): String = { val c = a.clone(); c.select(".wlx-round-spoken, .wlx-round-icon").remove(); c.text.trim }
+        def name(a: Element): String = { val c = a.clone(); c.select(".wlx-round-spoken, .wlx-round-icon, .wlx-track").remove(); c.text.trim }
         def menuGroups(d: Document): Seq[(String, Seq[String])] =
           d.select("#round-menu .wlx-menu-group").asScala.toSeq.map { g =>
             val header = g.selectFirst(".dropdown-header")
