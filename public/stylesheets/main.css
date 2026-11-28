@@ -639,7 +639,9 @@ div.thumb_small.wlx-thumb-failed img {
 .help-link { position: relative; }
 .help-link::after { content: attr(data-tooltip); display: none; position: absolute; z-index: 10; inset-block-start: 100%; inset-inline-start: 0; width: 16rem; padding: .35rem .5rem; border-radius: .25rem; background: var(--bs-body-color); color: var(--bs-body-bg); font-size: .875rem; font-weight: normal; white-space: normal; }
 .help-link:hover::after, .help-link:focus-visible::after { display: block; }
-.navbar .help-link::after { inset-inline-start: auto; inset-inline-end: 0; }
+.navbar .help-link::after, .wlx-card-toggle-header .help-link::after { inset-inline-start: auto; inset-inline-end: 0; }
+.wlx-disclosure-help { position: absolute; inset-block-start: 0; inset-inline-end: 0; }
+.wlx-disclosure-help .help-link::after { inset-inline-start: auto; inset-inline-end: 0; }
 .wlx-card-toggle-header .wlx-card-toggle { flex: 1; }
 .wlx-card-toggle-header .help-link { margin-inline: .5rem; }
 .wlx-help-section { margin-top: -.25rem; }

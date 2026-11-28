@@ -161,9 +161,9 @@
     </div>
 
     <div class="row mb-3" id="category-more_field">
-        <div class="@offsetCol">
+        <div class="@offsetCol position-relative">
             <details id="category-more"@if(view.combine != CategoryCombine.Default || view.choiceErrors.nonEmpty) { open}>
-                <summary class="wlx-disclosure"><i class="bi bi-chevron-right wlx-disclosure-icon" aria-hidden="true"></i>@Messages("category.more") @snippets.helpLink("category-options")</summary>
+                <summary class="wlx-disclosure"><i class="bi bi-chevron-right wlx-disclosure-icon" aria-hidden="true"></i>@Messages("category.more")</summary>
                 @* its errors tied to the group (CodeRabbit #170): a radiogroup, named by its legend, invalid and
                    described by them while it has any *@
                 <fieldset class="mt-2" id="category-combine" role="radiogroup" aria-labelledby="category-combine-legend"@if(view.choiceErrors.nonEmpty) { aria-invalid="true" aria-describedby="@view.choiceErrors.indices.map(i => s"category-combine-error-$i").mkString(" ")"}>
@@ -180,6 +180,7 @@
                     }
                 </fieldset>
             </details>
+            <span class="wlx-disclosure-help">@snippets.helpLink("category-options")</span>
         </div>
     </div>
     }

@@ -76,7 +76,7 @@ class HelpLinksPageSpec extends PlaySpecification with PlayTestDb {
           (doc.select("#trackLabel_field a.help-link").attr("data-help-topic") === "tracks") and
           (doc.select("#source_field a.help-link").attr("data-help-topic") === "categories") and
           (doc.select("#excludeCategory_field a.help-link").attr("data-help-topic") === "category-second") and
-          (doc.select("#category-more a.help-link").attr("data-help-topic") === "category-options") and
+          (doc.select("#category-more_field a.help-link").attr("data-help-topic") === "category-options") and
           (doc.select("#averageRule_field a.help-link").attr("data-help-topic") === "score-rule") and
           (doc.select("#topImages_field a.help-link").attr("data-help-topic") === "top-files") and
           linksRight(doc, doc.select("#round-form a[href^='/admin/criteria?']").asScala.toSet)

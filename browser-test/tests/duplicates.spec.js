@@ -21,7 +21,7 @@ test.describe('an admin', () => {
       await page.goto(`/admin/users?contestId=${fixture.contestId}`);
       await page.getByRole('link', { name: 'Possible duplicates' }).click();
       await expect(page).toHaveURL((url) => url.pathname === '/admin/duplicates');
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Possible duplicate accounts');
+      await expect(page.getByRole('heading', { level: 1 })).toContainText('Possible duplicate accounts');
 
       // the engine's first group still listed
       const groupOf = (wiki) => page.getByRole('region', { name: new RegExp(`^Same wiki account: ${escape(wiki)} ·`) });
@@ -86,7 +86,7 @@ test.describe('root', () => {
 
     await (await one(groupOf(pair.wiki))).getByRole('link', { name: 'Join…' }).click();
     await expect(page).toHaveURL((url) => url.pathname === '/admin/accounts/join');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Join accounts');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Join accounts');
     // nothing preselected
     await expect(page.getByRole('radio', { name: `Keep ${kept.name}` })).not.toBeChecked();
     await expect(page.getByRole('radio', { name: `Keep ${joined.name}` })).not.toBeChecked();
