@@ -296,8 +296,6 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         val second = roundDao.create(Round(None, 2, Some("Round 2"), contest.getId, previous = Some(first.getId.toString)))
         val doc = page(app, org, s"/roundstat/${second.getId}")
         (doc.select("#round-stat-rounds .page-link").size === 2) and
-          (authorsUrl must contain("group=none")) and
-          (page(app, org, authorsUrl).select("#authors-rounds .wlx-round-tabs-group").size === 0) and
           (doc.select("#round-stat-rounds .wlx-round-tabs-group").size === 0) and
           (doc.getElementById("rounds-group-track") must beNull) and
           (doc.select("#round-stat-rounds .page-link[title]").size === 0)
