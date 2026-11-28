@@ -12,8 +12,8 @@
 @implicitLayout = @{ bs.Layout.horizontal("col-md-3", "col-md-9") }
 @scripts = {
     <script src="@routes.Assets.versioned("javascripts/submit-once.js")"></script>
-    @if(v.ready && v.jurorsEditable && v.contestJurors.nonEmpty) {
-        @snippets.multiSelectScripts()
+    @if(v.ready) {
+        @if(v.jurorsEditable && v.contestJurors.nonEmpty) { @snippets.multiSelectScripts() }
         <script src="@routes.Assets.versioned("javascripts/round-form.js")"></script>
     }
 }
@@ -103,6 +103,55 @@
                         <p id="round-jurors-fixed">@Messages("jurors"): @if(v.roundJurors.isEmpty) {
                             <span id="round-jurors-fixed-none">@Messages("round.review.jurors.none")</span>
                         } else { @v.roundJurors.map(_.fullname).mkString(", ") }</p>
+                    }
+                    @for(signature <- v.form("ratingSignature").value) { <input type="hidden" name="ratingSignature" value="@signature" /> }
+                    @bs.select(v.form("rates"),
+                        db.scalikejdbc.Round.rates.map(x => (x.id.toString, views.RatingType.label(x))),
+                        Symbol("_label") -> Messages("rating.type"),
+                        Symbol("_help") -> (if (v.ratesEditable) "" else Messages("round.rates.locked.help")),
+                        Symbol("readonly") -> !v.ratesEditable, Symbol("_locked") -> !v.ratesEditable)
+                    @bs.select(v.form("averageRule"),
+                        org.intracer.wmua.AverageRule.all.map(r => (r.param, Messages(r.messageKey))),
+                        Symbol("_label") -> Messages("round.average.rule"),
+                        Symbol("_help") -> Messages("round.average.rule.help"), Symbol("_helpTopic") -> "score-rule",
+                        Symbol("aria-describedby") -> v.scoreRuleWarning.fold[Any](None)(_ => "averageRule_warning"))
+                    @for(w <- v.scoreRuleWarning) {
+                        <div class="row mb-3" id="averageRule_warning_row" data-stored-rule="@w.storedRule.param">
+                            <div class="@implicitLayout.horizontal.fold("")(_.offsetFieldCol)">
+                                <div class="alert alert-warning mb-0" id="averageRule_warning">
+                                    <p class="mb-0">@Messages("round.average.rule.change.warning")</p>
+                                    @if(w.laterRounds.nonEmpty) {
+                                        <p class="mb-0 mt-2" id="averageRule_warning_later">@Messages("round.average.rule.change.later", w.laterRoundsText, w.laterRounds.size)</p>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    @if(v.ratesEditable) {
+                        <input type="hidden" name="criteriaShown" value="true" />
+                        <div id="round-criteria">
+                            @snippets.collapsible("criteria", "headingCriteria", "collapseCriteria", open = v.form("criteria").indexes.nonEmpty, helpTopic = Some("criteria")) {
+                                <p class="form-text">@Messages("criteria.help", org.intracer.wmua.Criterion.MinPerRound, org.intracer.wmua.Criterion.MaxPerRound)
+                                    <a href="@routes.CriteriaController.list(Some(v.round.contestId))" target="_blank" rel="noopener">@Messages("criteria.catalogue")<span class="visually-hidden"> (@Messages("link.new.tab"))</span></a></p>
+                                <div id="round-criteria-selects" data-remove-label="@Messages("criteria.form.remove", "$X")">
+                                    @for(i <- 0 until math.max(org.intracer.wmua.Criterion.MaxPerRound, v.form("criteria").indexes.size)) {
+                                        @bs.select(v.form(s"criteria[$i]"), v.criteria.map(c => (c.id.toString, c.name)),
+                                            Symbol("_label") -> Messages("criteria.position", i + 1), Symbol("_default") -> "")
+                                    }
+                                </div>
+                                <div class="row mb-3" id="criteria-add-row" hidden>
+                                    <div class="@implicitLayout.horizontal.fold("")(_.offsetFieldCol)">
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" id="criteria-add"
+                                            data-text-first="@Messages("criteria.form.add")" data-text-more="@Messages("criteria.form.add.another")">@Messages("criteria.form.add")</button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                        <div id="round-worst-mark">
+                            <input type="hidden" name="worstMarkShown" value="true" />
+                            @bs.checkbox(field = v.form("worstMark"), Symbol("_text") -> Messages("round.worst.mark"),
+                                Symbol("_help") -> Messages("round.worst.mark.help"), Symbol("_helpTopic") -> "worst-mark")
+                        </div>
                     }
                     @if(v.prevChanged) {
                         @bs.checkbox(field = v.form("confirmPrevChanged"),

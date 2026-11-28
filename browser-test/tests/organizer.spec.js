@@ -97,7 +97,8 @@ test.describe('an admin', () => {
     await page.goto(`/admin/rounds/edit?contestId=${fixture.contestId}`);
     await expect(page.getByRole('heading', { level: 1, name: 'Create round' })).toBeVisible();
     await expect(page.getByLabel('Round name (optional)')).toHaveValue('');
-    await expect(page.getByLabel('Rating type')).toBeVisible();
+    await expect(page.getByLabel('Rating type')).toHaveCount(0);
+    await expect(page.getByLabel('File score')).toHaveCount(0);
   });
 
   // At a phone's width the users and rounds tables scroll inside their .table-responsive box

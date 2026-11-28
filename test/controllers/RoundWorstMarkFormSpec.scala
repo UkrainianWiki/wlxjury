@@ -64,8 +64,11 @@ class RoundWorstMarkFormSpec extends PlaySpecification with PlayTestDb {
     "be offered unchecked for a new round, with its help and the hidden field" in {
       testDbApp { app =>
         setUp()
+        CategoryLinkJdbc.addToCategory(contestDao.findById(contestId).get.categoryId.get, Seq(Image(1, "File:Image1.jpg", None, None, 640, 480, Some("12-345-1"))))
+        val round = services.TestRoundServices.roundService()
+          .submit(Round(None, 2, Some("New"), contestId, active = true), Nil, None, review = true).round
         val doc = org.jsoup.Jsoup.parse(contentAsString(page(app, "admin@example.com",
-          s"/admin/rounds/edit?contestId=$contestId")))
+          s"/admin/rounds/${round.getId}/jurors")))
         val box = doc.getElementById("worstMark")
         (box must not(beNull)) and (box.hasAttr("checked") must beFalse) and
           (doc.select("#round-worst-mark input[type=hidden][name=worstMarkShown]").size === 1) and

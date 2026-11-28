@@ -2207,3 +2207,5 @@ help.more.authors-list = More about the authors list
 help.more.root = More about what only root can do
 help.more.contest-settings = More about contest settings
 help.more.normalize-authors = More about normalizing stored authors
+
+round.review.rating.changed = The rating settings changed since this page was opened. Check them again before distributing.

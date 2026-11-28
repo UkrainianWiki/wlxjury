@@ -2191,3 +2191,5 @@ help.more.authors-list = En savoir plus sur la liste des auteurs
 help.more.root = En savoir plus sur ce que seul root peut faire
 help.more.contest-settings = En savoir plus sur les paramètres du concours
 help.more.normalize-authors = En savoir plus sur la normalisation des auteurs enregistrés
+
+round.review.rating.changed = Les paramètres de notation ont changé depuis l’ouverture de cette page. Vérifiez-les avant de distribuer.

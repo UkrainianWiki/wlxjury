@@ -69,17 +69,20 @@ class HelpLinksPageSpec extends PlaySpecification with PlayTestDb {
       testDbApp { app =>
         val f = fixture()
         val doc = page(app, f.admin, s"/admin/rounds/edit?contestId=${f.contest.getId}")
+        val review = roundDao.create(Round(None, 3, Some("Review"), f.contest.getId, distributing = true,
+          status = Some(Round.Status.Paused)))
+        val jurors = page(app, f.admin, s"/admin/rounds/${review.getId}/jurors")
         (topics(doc) must containAllOf(Seq("create-round", "tracks", "choose-files", "categories", "top-files",
-          "rejection-filter", "leave-out-rounds", "score-rule", "worst-mark", "criteria", "add-files",
-          "leave-out-conflicts"))) and
+          "rejection-filter", "leave-out-rounds", "add-files", "leave-out-conflicts"))) and
+          (topics(jurors) must containAllOf(Seq("score-rule", "worst-mark", "criteria"))) and
           // the field links in the fields' help, which describes the field
           (doc.select("#trackLabel_field a.help-link").attr("data-help-topic") === "tracks") and
           (doc.select("#source_field a.help-link").attr("data-help-topic") === "categories") and
           (doc.select("#excludeCategory_field a.help-link").attr("data-help-topic") === "category-second") and
           (doc.select("#category-more_field a.help-link").attr("data-help-topic") === "category-options") and
-          (doc.select("#averageRule_field a.help-link").attr("data-help-topic") === "score-rule") and
+          (jurors.select("#averageRule_field a.help-link").attr("data-help-topic") === "score-rule") and
           (doc.select("#topImages_field a.help-link").attr("data-help-topic") === "top-files") and
-          linksRight(doc, doc.select("#round-form a[href^='/admin/criteria?']").asScala.toSet)
+          linksRight(doc) and linksRight(jurors, jurors.select("#round-jurors-form a[href^='/admin/criteria?']").asScala.toSet)
       }
     }
 

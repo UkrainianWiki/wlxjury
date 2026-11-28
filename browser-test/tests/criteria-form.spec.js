@@ -1,32 +1,40 @@
-// The round form's criteria start small (the maintainer's decisions of 2026-11-19; round-form.js
-// initCriteriaSlots): the server renders all ten selects for a page without script, the script
-// shows only the chosen ones, each with a remove button, and "Add criteria" / "Add another
-// criterion". Checked on a new round's form of the fixture's contest, which has no criteria round
-// (nothing prefilled), as its admin; nothing is saved. With script off, all ten are shown and the
-// add button's row stays hidden. A round of one criterion's gallery stars, below.
+// Criteria controls on the Jurors step: rating-dependent visibility, keyboard interaction,
+// the catalogue link and the form without JavaScript. Each test creates a round held in review.
 import { test, expect } from '../lib/fixtures.js';
 import { signIn } from '../lib/actions.js';
 
 test.describe(() => {
   test.use({ role: 'admin' });
+  test.setTimeout(180_000);
 
   const formPath = (f) => `/admin/rounds/edit?contestId=${f.contestId}`;
 
-  /** The new round's form with a rated rating chosen and the Criteria section opened. */
-  async function openCriteria(page, fixture) {
+  /** Create a round, wait for its files, and open its Jurors step. */
+  async function openJurors(page, fixture) {
     await page.goto(formPath(fixture));
+    await page.getByLabel('Round name (optional)').fill(`Criteria ${Date.now()} ${Math.random()}`);
+    await page.locator('#round-form-save-find').click();
+    await expect(page).toHaveURL((url) => /^\/admin\/rounds\/\d+\/review$/.test(url.pathname));
+    const roundId = new URL(page.url()).pathname.split('/')[3];
+    await expect(async () => {
+      await page.goto(`/admin/rounds/${roundId}/jurors`);
+      await expect(page.locator('select#rates')).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 90_000, intervals: [500, 1000, 2000] });
+  }
+
+  async function openCriteria(page, fixture) {
+    await openJurors(page, fixture);
     await page.locator('#rates').selectOption('10');
     const heading = page.locator('#headingCriteria a.wlx-card-toggle');
     if ((await heading.getAttribute('aria-expanded')) !== 'true') await heading.click();
     await expect(page.locator('#collapseCriteria')).toHaveClass(/\bshow\b/);
   }
 
-  test('opening the criteria catalogue keeps the chosen filters in the draft', { tag: '@A-01' }, async ({ page, fixture }) => {
+  test('opening the criteria catalogue keeps the chosen rating and criterion', { tag: '@A-01' }, async ({ page, fixture }) => {
     await openCriteria(page, fixture);
-    const filtering = page.locator('#headingImageFiltering a.wlx-card-toggle');
-    if ((await filtering.getAttribute('aria-expanded')) !== 'true') await filtering.click();
-    const media = page.locator('#mediaType');
-    await media.selectOption('image');
+    await page.getByRole('button', { name: 'Add criteria' }).click();
+    await page.locator('#criteria_0').selectOption({ index: 1 });
+    const criterion = await page.locator('#criteria_0').inputValue();
 
     const [catalogue] = await Promise.all([
       page.context().waitForEvent('page'),
@@ -34,8 +42,8 @@ test.describe(() => {
     ]);
     await expect(catalogue).toHaveURL((url) => url.pathname === '/admin/criteria');
     await catalogue.close();
-    await expect(page).toHaveURL((url) => url.pathname === '/admin/rounds/edit');
-    await expect(media).toHaveValue('image');
+    await expect(page).toHaveURL((url) => /\/jurors$/.test(url.pathname));
+    await expect(page.locator('#criteria_0')).toHaveValue(criterion);
     await expect(page.locator('#rates')).toHaveValue('10');
   });
 
@@ -98,7 +106,7 @@ test.describe(() => {
     test.use({ javaScriptEnabled: false });
 
     test('show all ten selects and no add button', { tag: '@A-01' }, async ({ page, fixture }) => {
-      await page.goto(formPath(fixture));
+      await openJurors(page, fixture);
       // without script the collapsed section can't open: its selects are in the page, not shown
       const selects = page.locator('#round-criteria-selects select');
       await expect(selects).toHaveCount(10);

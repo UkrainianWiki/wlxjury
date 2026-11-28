@@ -113,7 +113,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         def options(form: org.jsoup.nodes.Document) = Seq(0, 1, 5).map(value =>
           form.select(s"select#rates option[value=$value]").asScala.map(_.text).mkString)
         def cells(list: org.jsoup.nodes.Document) = list.select("td").asScala.map(_.text)
-        val formUrl = s"/admin/rounds/edit?contestId=${contest.getId}"
+        val formUrl = s"/admin/rounds/edit?id=${round.getId}&contestId=${contest.getId}"
         val listUrl = s"/admin/rounds?contestId=${contest.getId}"
         val (form, list) = (page(formUrl), page(listUrl))
         val labels = Seq("Comments only", "Yes/No", "1-5 rating")
@@ -180,6 +180,19 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         val html = contentAsString(result)
         html must contain("Could not create the round. If it happens again, tell the organizers this reference:")
         html must not(contain("Duplicate entry"))
+      }
+    }
+
+    "preserve older rating settings when a new round form is refused" in {
+      testDbApp { implicit app =>
+        val (contest, admin, round) = fixture()
+        val jurors = User.findRoundJurors(round.getId).map(_.getId)
+        val result = route(app, saveNewRound(contest.getId, jurors, java.util.UUID.randomUUID().toString, admin,
+          Seq("rates" -> "5", "averageRule" -> "sum", "worstMarkShown" -> "true", "worstMark" -> "true",
+            "previousRound[0]" -> round.getId.toString, "topImages" -> "0"))).get
+        val doc = org.jsoup.Jsoup.parse(contentAsString(result))
+        (status(result) === BAD_REQUEST) and (doc.select("input[name=averageRule]").attr("value") === "sum") and
+          (doc.select("input[name=worstMark]").attr("value") === "true")
       }
     }
 

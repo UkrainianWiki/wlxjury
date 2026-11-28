@@ -2168,3 +2168,5 @@ help.more.authors-list = Подробнее о списке авторов
 help.more.root = Подробнее о том, что может только root
 help.more.contest-settings = Подробнее о настройках конкурса
 help.more.normalize-authors = Подробнее о нормализации сохранённых авторов
+
+round.review.rating.changed = Настройки оценивания изменились с момента открытия страницы. Проверьте их перед распределением.
