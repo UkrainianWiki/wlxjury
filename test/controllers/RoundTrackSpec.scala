@@ -197,6 +197,27 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "keep the statistics grouping choice when opening the round's authors" in {
+      testDbApp { app =>
+        val f = fixture()
+        def destination(query: String): (String, Document) = {
+          val stat = page(app, f.organizer, s"/roundstat/${f.merge.getId}$query")
+          val href = stat.selectFirst("#round-authors-link a").attr("href")
+          href -> page(app, f.organizer, href)
+        }
+        val (flatUrl, flat) = destination("?group=none&order=newest")
+        val (groupedUrl, grouped) = destination("?group=track")
+        val (defaultUrl, default) = destination("")
+        (flatUrl must contain("group=none")) and
+          (flatUrl must not(contain("order="))) and
+          (flat.select("#authors-rounds .wlx-round-tabs-group").size === 0) and
+          (groupedUrl must contain("group=track")) and
+          (grouped.select("#authors-rounds .wlx-round-tabs-group").size === 3) and
+          (defaultUrl must contain("group=track")) and
+          (default.select("#authors-rounds .wlx-round-tabs-group").size === 3)
+      }
+    }
+
     "be the authors page's too: \"Whole contest\" first, then the rounds grouped by track, the grouping kept" in {
       testDbApp { app =>
         val f = fixture()
@@ -222,8 +243,11 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         roundDao.create(Round(None, 2, Some("Qn-00"), contest.getId, category = Some(Prefix + "Quantity"), active = true))
         val doc = page(app, org, s"/roundstat/${q.getId}")
         val toggle = doc.getElementById("rounds-group-track")
+        val authorsUrl = doc.selectFirst("#round-authors-link a").attr("href")
         def notes(d: Document) = d.select("#round-stat-rounds .page-link .wlx-track").asScala.map(_.attr("title")).toSeq
         (doc.select("#round-stat-rounds .page-link").size === 2) and
+          (authorsUrl must contain("group=none")) and
+          (page(app, org, authorsUrl).select("#authors-rounds .wlx-round-tabs-group").size === 0) and
           (doc.select("#round-stat-rounds .wlx-round-tabs-group").size === 0) and
           // offered, off
           (toggle.attr("data-grouped") === "false") and (toggle.text must endWith(", off")) and
@@ -272,6 +296,8 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         val second = roundDao.create(Round(None, 2, Some("Round 2"), contest.getId, previous = Some(first.getId.toString)))
         val doc = page(app, org, s"/roundstat/${second.getId}")
         (doc.select("#round-stat-rounds .page-link").size === 2) and
+          (authorsUrl must contain("group=none")) and
+          (page(app, org, authorsUrl).select("#authors-rounds .wlx-round-tabs-group").size === 0) and
           (doc.select("#round-stat-rounds .wlx-round-tabs-group").size === 0) and
           (doc.getElementById("rounds-group-track") must beNull) and
           (doc.select("#round-stat-rounds .page-link[title]").size === 0)
