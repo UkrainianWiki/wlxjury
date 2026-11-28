@@ -104,7 +104,8 @@ class RoundScoreRuleWarningSpec extends PlaySpecification with PlayTestDb {
             (doc.getElementById("averageRule_warning_row") must beNull) and
             (doc.getElementById("averageRule").attr("aria-describedby").split(" ").toSeq must
               not(contain("averageRule_warning")))
-        absent(newForm) and absent(editPage(app, unrated)) and absent(editPage(app, worstOnly)) and
+        (newForm.select("select#averageRule, #averageRule_warning_row").size === 0) and
+          absent(editPage(app, unrated)) and absent(editPage(app, worstOnly)) and
           absent(editPage(app, binary))
       }
     }

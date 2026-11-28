@@ -62,7 +62,11 @@ class RoundAverageRuleFormSpec extends PlaySpecification with PlayTestDb {
     "be offered to an admin with the three rules, rated chosen for a new round, in every language" in {
       testDbApp { app =>
         val round = setUp()
-        val html = contentAsString(page(app, "admin@example.com", s"/admin/rounds/edit?contestId=$contestId"))
+        CategoryLinkJdbc.addToCategory(contestDao.findById(contestId).get.categoryId.get,
+          Seq(Image(1, "File:Image1.jpg", None, None, 640, 480, Some("12-345-1"))))
+        val created = services.TestRoundServices.roundService()
+          .submit(Round(None, 2, Some("New"), contestId, active = true), Nil, None, review = true).round
+        val html = contentAsString(page(app, "admin@example.com", s"/admin/rounds/${created.getId}/jurors"))
         val doc = org.jsoup.Jsoup.parse(html)
         val select = doc.getElementById("averageRule")
         (select must not(beNull)) and
