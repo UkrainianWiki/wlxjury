@@ -183,6 +183,19 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "preserve older rating settings when a new round form is refused" in {
+      testDbApp { implicit app =>
+        val (contest, admin, round) = fixture()
+        val jurors = User.findRoundJurors(round.getId).map(_.getId)
+        val result = route(app, saveNewRound(contest.getId, jurors, java.util.UUID.randomUUID().toString, admin,
+          Seq("rates" -> "5", "averageRule" -> "sum", "worstMarkShown" -> "true", "worstMark" -> "true",
+            "previousRound[0]" -> round.getId.toString, "topImages" -> "0"))).get
+        val doc = org.jsoup.Jsoup.parse(contentAsString(result))
+        (status(result) === BAD_REQUEST) and (doc.select("input[name=averageRule]").attr("value") === "sum") and
+          (doc.select("input[name=worstMark]").attr("value") === "true")
+      }
+    }
+
     "keep the number of top files off a new round's form without ?topImages, and refuse one below 1" in {
       testDbApp { implicit app =>
         val (contest, admin, round) = fixture()
