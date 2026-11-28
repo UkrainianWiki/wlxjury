@@ -83,12 +83,6 @@
             </div>
         </div>
 
-        @* the guide's statistics section, and for the round's admins its pausing a juror (the table's
-           Voting buttons) *@
-        @if(user.canViewOrgInfo(round)) {
-            <p class="wlx-help-section small mb-2" id="round-stat-help">@snippets.helpLink("statistics")@if(administers) { · @snippets.helpLink("pause-juror")}</p>
-        }
-
         @* how the round scores its files in its results (V90), for a rated round *@
         @if(round.isRated) {
             <p class="text-muted small" id="round-average-rule">@Messages("round.average.rule.of", Messages(round.averageRule.messageKey))</p>
@@ -153,8 +147,7 @@
            viewers as the entries above *@
         @if(settingChanges.nonEmpty) {
             <div id="round-setting-changes">
-                <p class="mb-1">@Messages("round.changes")</p>
-                @snippets.helpSection("round-changes")
+                <p class="mb-1">@Messages("round.changes") @snippets.helpLink("round-changes")</p>
                 <ul class="small">
                 @for((c, name) <- settingChanges) {
                     <li class="round-setting-change" data-kind="@c.kind" data-path="@{(c.detail \ "path").asOpt[String].getOrElse("")}">@views.LinkTimes.utc(c.createdAt) — @Messages("round.change." + c.kind, views.RoundChangeText.number(c), name)@if(views.RoundChangeText.items(c).nonEmpty) {: @roundChangeItems(c)}</li>

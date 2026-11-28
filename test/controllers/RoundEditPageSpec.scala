@@ -511,7 +511,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
           (doc.select("#distribution_help").text must contain("jurors page"))
         // a round without jurors: "Distribute new files" locked, with its reason
         (doc.getElementById("newImages").hasClass("wlx-locked") must beTrue) and
-          (doc.select("#newImages_help").text must startWith("The round has no jurors to give new files to. More about distributing new files"))
+          (doc.select("#newImages_help").text must startWith("The round has no jurors to give new files to."))
         // the round's name, track and score rule stay editable
         lockedIn(doc, "#round-form") must not(containAnyOf(Seq("name", "trackLabel", "averageRule")))
       }

@@ -85,10 +85,6 @@
    automatic name isn't typed again as a label (a second track of the same name) *@
 @inheritsTrack = @{ editRoundForm("id").value.flatMap(_.toLongOption).flatMap(id => rounds.find(_.id.contains(id)))
     .exists(_.previousIds.exists(p => rounds.exists(_.id.contains(p)))) }
-@* the track label's help: one line, and the guide's Tracks section, as of this version (snippets/helpLink) *@
-@trackHelp = {@Messages("round.track.help", Messages("round.track.main")) @snippets.helpLink("tracks")}
-@* a field's help with its help link after it (help plan §6: F for the hard fields, S for a section's) *@
-@withHelp(text: String, key: String) = {@if(text.nonEmpty) {@text }@snippets.helpLink(key)}
 @newTabHint = {<i class="bi bi-box-arrow-up-right ms-1" aria-hidden="true"></i><span class="visually-hidden"> (@Messages("link.new.tab"))</span>}
 
 @* the track field, "Main" shown as the page names the Main track (saved back as "Main") *@
@@ -108,11 +104,9 @@
 
 
             @if(newRound) {
-                <h1 class="h3">@Messages("create.round")</h1>
-                @snippets.helpSection("create-round")
+                <h1 class="h3">@Messages("create.round") @snippets.helpLink("create-round")</h1>
             } else {
-                <h1 class="h3">@Messages("edit.round")</h1>
-                @snippets.helpSection("create-round")
+                <h1 class="h3">@Messages("edit.round") @snippets.helpLink("create-round")</h1>
                 @* the rounds it was created from and those created from it (RoundLineage.links), from the
                    contest's rounds the page already has *@
                 @for(rid <- editRoundForm("id").value.flatMap(_.toLongOption); round <- rounds.find(_.id.contains(rid))) {
@@ -191,7 +185,7 @@
                        count twice; the form refuses more than Round.TrackMaxLength code points, its error
                        at the field and at the top *@
                     @bs.text(trackField, Symbol("_label") -> Messages("round.track.label"),
-                        Symbol("_help") -> trackHelp,
+                        Symbol("_help") -> Messages("round.track.help", Messages("round.track.main")), Symbol("_helpTopic") -> "tracks",
                         Symbol("placeholder") -> automaticTrack.fold(Messages("round.track.automatic.new"))(t =>
                             Messages(if (inheritsTrack) "round.track.automatic.inherited" else "round.track.automatic", t)),
                         Symbol("maxlength") -> false, Symbol("list") -> "round-track-labels",
@@ -212,7 +206,7 @@
                            their votes kept (RoundController.leaveOutConflicts): asked first when it has some *@
                         @bs.checkbox(field = editRoundForm("excludeCoi"),
                             Symbol("_label") -> Messages("coi.exclude"),
-                            Symbol("_help") -> withHelp(coi.fold("")(c => c.describe), "leave-out-conflicts"),
+                            Symbol("_help") -> coi.fold("")(c => c.describe), Symbol("_helpTopic") -> "leave-out-conflicts",
                             Symbol("data-coi-round-files") -> coi.fold(0)(_.toConfirm),
                             Symbol("data-coi-confirm") -> Messages("coi.exclude.confirm", coi.flatMap(_.inRound).getOrElse(0)))
 
@@ -221,7 +215,7 @@
                             open = editRoundForm("fileList").value.exists(_.trim.nonEmpty) || controllers.RoundFormErrors.inAddFiles(editRoundForm)) {
                             @bs.textarea(editRoundForm("fileList"),
                                 Symbol("_label") -> Messages("add.files.list"),
-                                Symbol("_help") -> withHelp(Messages("add.files.help"), "add-files"),
+                                Symbol("_help") -> Messages("add.files.help"), Symbol("_helpTopic") -> "add-files",
                                 Symbol("rows") -> 8)
                         }
 
@@ -274,7 +268,7 @@
                             editRoundForm("averageRule"),
                             org.intracer.wmua.AverageRule.all.map(r => (r.param, Messages(r.messageKey))),
                             Symbol("_label") -> Messages("round.average.rule"),
-                            Symbol("_help") -> withHelp(Messages("round.average.rule.help"), "score-rule"),
+                            Symbol("_help") -> Messages("round.average.rule.help"), Symbol("_helpTopic") -> "score-rule",
                             Symbol("aria-describedby") -> scoreRuleWarning.fold[Any](None)(_ => "averageRule_warning"))
                         @* (aria-describedby: a string, or None, left out; the helpers would render an
                            Option's text.) A rated round with a vote of stars: what saving another rule does, in the page
@@ -303,7 +297,7 @@
                             <input type="hidden" name="worstMarkShown" value="true" />
                             @bs.checkbox(field = editRoundForm("worstMark"),
                                 Symbol("_text") -> Messages("round.worst.mark"),
-                                Symbol("_help") -> withHelp(Messages("round.worst.mark.help"), "worst-mark"))
+                                Symbol("_help") -> Messages("round.worst.mark.help"), Symbol("_helpTopic") -> "worst-mark")
                         </div>
                         }
 
@@ -321,8 +315,7 @@
                         @* started (running or voted): read only, no selects and no `criteriaShown`, so a
                            save keeps them *@
                         <div id="round-criteria">
-                        @snippets.collapsible("criteria", "headingCriteria", "collapseCriteria", open = true) {
-                            @snippets.helpSection("criteria")
+                        @snippets.collapsible("criteria", "headingCriteria", "collapseCriteria", open = true, helpTopic = Some("criteria")) {
                             <p class="form-text wlx-locked-reason" id="round-criteria-locked"><i class="bi bi-lock-fill" aria-hidden="true"></i> @Messages("criteria.locked")</p>
                             @criteriaErrors
                             @if(stored.isEmpty) {
@@ -344,8 +337,7 @@
                         <div id="round-criteria">
                         @snippets.collapsible("criteria", "headingCriteria", "collapseCriteria",
                             open = chosen || editRoundForm.errors.exists(e => org.intracer.wmua.Criterion.ErrorKeys(e.message)) ||
-                                controllers.RoundFormErrors.inCriteria(editRoundForm)) {
-                            @snippets.helpSection("criteria")
+                                controllers.RoundFormErrors.inCriteria(editRoundForm), helpTopic = Some("criteria")) {
                             @criteriaErrors
                             <p class="form-text">@Messages("criteria.help", org.intracer.wmua.Criterion.MinPerRound, org.intracer.wmua.Criterion.MaxPerRound)
                                 <a href="@routes.CriteriaController.list(contestId)" target="_blank" rel="noopener">@Messages("criteria.catalogue")@newTabHint</a></p>
@@ -379,7 +371,7 @@
                         @if(!newRound && !reapply) {
                             @bs.checkbox(field = editRoundForm("newImages"),
                                 Symbol("_label") -> Messages("distribute.x.new.files", "?"),
-                                Symbol("_help") -> withHelp(if (numJurors == 0) Messages("round.new.files.locked") else "", "distribute-new-files"),
+                                Symbol("_help") -> (if (numJurors == 0) Messages("round.new.files.locked") else ""), Symbol("_helpTopic") -> "distribute-new-files",
                                 Symbol("readonly") -> (numJurors == 0), Symbol("_locked") -> (numJurors == 0))
                             @* the files waiting for a juror (round-editing plan §7): topped up only if ticked,
                                off by default, with "Distribute new files" *@
@@ -438,8 +430,7 @@
               rid    <- scala.util.Try(ridStr.toLong).toOption
             ) {
               <hr/>
-              <h2 class="h4" id="@controllers.ImageController.RoundImageCacheSection">@Messages("local.image.cache")</h2>
-              @snippets.helpSection("image-cache")
+              <h2 class="h4" id="@controllers.ImageController.RoundImageCacheSection">@Messages("local.image.cache") @snippets.helpLink("image-cache")</h2>
               <div id="round-cache-status" data-cache-status-url="@routes.ImageController.roundImageCacheStatus(cid, rid)"
                    data-text-all-cached="@Messages("image.cache.all.cached", "{0}", "{1}")"
                    data-text-nothing="@Messages("image.cache.nothing", "{0}")"
@@ -454,8 +445,7 @@
               @snippets.button(routes.RoundConflictsController.page(rid), "coi.round.link")
 
               <hr/>
-              <h2 class="h4">@Messages("round.images.check.title")</h2>
-              @snippets.helpSection("image-check")
+              <h2 class="h4">@Messages("round.images.check.title") @snippets.helpLink("image-check")</h2>
               <form method="post" action="@routes.RoundImageCheckController.checkRound(rid)">
                 @csrfField()
                 <button type="submit" class="btn btn-outline-secondary">@Messages("round.images.check")</button>

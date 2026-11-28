@@ -11,8 +11,7 @@
 @mainAdmin("users", adminUser, adminUser.getId, contestId = Some(contestId)) {
     <div class="row" >
 
-        <h1 class="h3">@Messages("import")</h1>
-        @snippets.helpSection("mass-import")
+        <h1 class="h3">@Messages("import") @snippets.helpLink("mass-import")</h1>
 
         @* after an import with lines not added: what was added, then each of those lines *@
         @result.map { msg =>

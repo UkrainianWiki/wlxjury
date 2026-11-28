@@ -634,9 +634,14 @@ div.thumb_small.wlx-thumb-failed img {
    snippets/externalLogos) at the text's size, to be recognised */
 .wlx-ext-nowrap { white-space: nowrap; }
 .wlx-ext-tail { -webkit-user-select: none; user-select: none; }
-/* a help link into the user guide (snippets/helpLink): its question mark in the link's colour; a
-   section's on a line of its own under the heading (snippets/helpSection) */
+/* A help link into the user guide. */
 .help-link .bi-question-circle { font-size: .95em; }
+.help-link { position: relative; }
+.help-link::after { content: attr(data-tooltip); display: none; position: absolute; z-index: 10; inset-block-start: 100%; inset-inline-start: 0; width: 16rem; padding: .35rem .5rem; border-radius: .25rem; background: var(--bs-body-color); color: var(--bs-body-bg); font-size: .875rem; font-weight: normal; white-space: normal; }
+.help-link:hover::after, .help-link:focus-visible::after { display: block; }
+.navbar .help-link::after { inset-inline-start: auto; inset-inline-end: 0; }
+.wlx-card-toggle-header .wlx-card-toggle { flex: 1; }
+.wlx-card-toggle-header .help-link { margin-inline: .5rem; }
 .wlx-help-section { margin-top: -.25rem; }
 .wlx-ext-mark { display: inline-block; font-size: .85em; line-height: 1; text-decoration: none; }
 .wlx-ext-mark[data-site=commons], .wlx-ext-mark[data-site=wikidata] { font-size: 1em; }

@@ -94,7 +94,7 @@
                                     Seq(("0", Messages("each.file.to.all.jurors"))) ++
                                         (1 until chosen).map(x => (x.toString, Messages("each.file.to.i.juror.s", x))),
                                     Symbol("_label") -> Messages("file.distribution"),
-                                    Symbol("_help") -> views.html.snippets.helpLink("distribution"),
+                                    Symbol("_helpTopic") -> "distribution",
                                     Symbol("disabled") -> (chosen == 0))
                             }
                         }

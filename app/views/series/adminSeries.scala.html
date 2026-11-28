@@ -17,8 +17,7 @@
 @typeName(code: Option[String]) = @{ code.map(services.series.SeriesIdentity.typeOfCode(_).name).getOrElse("") }
 
 @mainAdmin("series.title", user, user.getId) {
-    <h1 class="h3">@Messages("series.title")</h1>
-    @snippets.helpSection("root")
+    <h1 class="h3">@Messages("series.title") @snippets.helpLink("root")</h1>
     <p class="text-body-secondary" id="series-help">@Messages("series.help")</p>
     @outcome()
 

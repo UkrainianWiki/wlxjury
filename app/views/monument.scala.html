@@ -14,8 +14,8 @@
     <div class="container mt-3" id="monument">
         <h1 class="h4 mb-1">@views.WikiLinks.marked(m.name, MonumentPage.ListsHost)
             <small class="text-body-secondary fs-6 ms-1" id="monument-meta">@m.id@for(t <- m.typ.filter(_.trim.nonEmpty)) { · @t}@for(y <- m.year.filter(_.trim.nonEmpty)) { · @views.WikiLinks.marked(y, MonumentPage.ListsHost)}</small>
+            @if(user.hasAnyRole(db.scalikejdbc.User.ADMIN_ROLES ++ db.scalikejdbc.User.ORG_COM_ROLES)) {@snippets.helpLink("monuments")}
         </h1>
-        @if(user.hasAnyRole(db.scalikejdbc.User.ADMIN_ROLES ++ db.scalikejdbc.User.ORG_COM_ROLES)) {@snippets.helpSection("monuments")}
         <p class="mb-3" id="monument-place">
             @for(c <- m.city.filter(_.trim.nonEmpty)) {@views.WikiLinks.marked(c, MonumentPage.ListsHost)@if(m.place.exists(_.trim.nonEmpty)) {, }}@for(p <- m.place.filter(_.trim.nonEmpty)) {@views.WikiLinks.marked(p, MonumentPage.ListsHost)}
         </p>

@@ -23,8 +23,7 @@
 @rateText(rate: Int, aside: Boolean) = @{ rate.toString + (if (aside) " " + Messages("account.join.collision.aside") else "") }
 @mainAdmin("account.join.title", user, user.getId, contestId = contestId) {
     <div class="row account-join">
-        <h1 class="h3">@Messages("account.join.title")</h1>
-        @snippets.helpSection("join")
+        <h1 class="h3">@Messages("account.join.title") @snippets.helpLink("join")</h1>
         @for(c <- contest) {
             <p class="text-body-secondary">@Messages("contest") @c.fullName.</p>
         }

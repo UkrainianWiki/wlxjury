@@ -40,7 +40,7 @@
 @picker match {
     case None => {
         <div class="row mb-3" id="topImages_field">
-            <span class="col-md-4 col-form-label">@Messages("top.images")</span>
+            <span class="col-md-4 col-form-label">@Messages("top.images") @snippets.helpLink("top-files")</span>
             <div class="col-md-8">
                 @for(n <- stored) {<input type="hidden" name="topImages" value="@n">}
                 @for(x <- storedRate) {<input type="hidden" name="minAvgRate" value="@x.bigDecimal.stripTrailingZeros.toPlainString">}
@@ -49,7 +49,6 @@
                 <p class="form-control-plaintext@if(errors.nonEmpty) { is-invalid}" id="topImages"@if(errors.nonEmpty) { aria-describedby="@errors.map(_._1).mkString(" ")"}>@if(stored.isEmpty && storedRate.isEmpty) {@Messages("top.n.none")} else {@for(n <- stored) {<span class="d-block">@Messages(CutPicker.TopCutKey, n)</span>}@for(x <- storedRate) {<span class="d-block">@Messages("top.n.held.threshold", CutPicker.fmtThreshold(x))</span>}}</p>
                 @for((id, error) <- errors) {<div class="invalid-feedback d-block" id="@id">@error</div>}
                 @if(prevIds.isEmpty && errors.isEmpty && !formInvalid) {<div class="form-text" id="topImages_help">@Messages("top.n.no.previous")</div>}
-                <div class="form-text" id="topImages_choose_help">@snippets.helpLink("top-files")</div>
             </div>
         </div>
         @if(formInvalid) {
@@ -66,7 +65,7 @@
         </div></div>
         }
         <div class="row mb-3" id="topImages_field">
-            <label class="col-md-4 col-form-label wlx-field-label" for="topImages"><span>@Messages("top.images")</span></label>
+            <div class="col-md-4 col-form-label"><label class="wlx-field-label" for="topImages"><span>@Messages("top.images")</span></label> @snippets.helpLink("top-files")</div>
             <div class="col-md-8">
                 @* "No top N" always; a pick needed: a placeholder first, posting the held N (refused
                    again, never dropped) or, for a held threshold, nothing (required) *@
@@ -86,7 +85,7 @@
                     }
                 </select>
                 <div class="form-text" id="topImages_help">@if(p.m == 0) {@Messages("top.n.no.candidates")} else {@Messages("top.n.list.help", p.m)}</div>
-                <div class="form-text" id="topImages_choose_help">@Messages("top.n.choose.help") @snippets.helpLink("top-files")</div>
+                <div class="form-text" id="topImages_choose_help">@Messages("top.n.choose.help")</div>
                 @for((id, error) <- errors) {<div class="invalid-feedback" id="@id">@error</div>}
                 @for(x <- p.heldThreshold) {<input type="hidden" name="@CutPicker.HeldThresholdField" value="@x.bigDecimal.stripTrailingZeros.toPlainString">}
                 @* the previous round's rating view with the chosen cut, where it shows the same cut

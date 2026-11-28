@@ -65,6 +65,9 @@ final class FieldView(field: Field, args: Seq[(Symbol, Any)], baseClass: String)
 
   val text: Option[Any] = arg("_text").map(translate)
 
+  /** Guide link displayed next to the field label. */
+  val helpTopic: Option[Html] = arg("_helpTopic").map(k => views.html.snippets.helpLink(k.toString)(messages.messages))
+
   /** An empty help (`_help -> ""`) renders nothing. */
   val help: Option[Any] = arg("_help").map(translate).filter(_.toString.trim.nonEmpty)
 

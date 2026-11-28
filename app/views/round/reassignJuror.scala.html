@@ -34,8 +34,7 @@
     @for(from <- p.from) { @defining(from.user.fullname) { name =>
     <div class="row">
         <div class="col-md-10">
-            <h1 class="h3">@Messages("round.juror.reassign.title.of", name, round.number, round.name.getOrElse(""))</h1>
-            @snippets.helpSection("reassign-juror")
+            <h1 class="h3">@Messages("round.juror.reassign.title.of", name, round.number, round.name.getOrElse("")) @snippets.helpLink("reassign-juror")</h1>
             <p>@Messages("round.juror.reassign.help")</p>
 
             @for(text <- notice) {

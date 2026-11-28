@@ -38,7 +38,7 @@ class HelpLinksSpec extends Specification {
     * link (`withHelp(text, "…")`, editRound and imageFiltering), with its file. */
   private lazy val placed: Seq[(String, String)] = {
     val Call = """(?:help(?:Link|Section)\(|withHelp\([^
-]*?,\s*)"([^"]*)"\)""".r
+]*?,\s*|Symbol\("_helpTopic"\)\s*->\s*|helpTopic\s*=\s*Some\()"([^"]*)"(?:\))?""".r
     Files.walk(Paths.get("app", "views")).iterator().asScala.toSeq
       .filter(_.toString.endsWith(".scala.html"))
       .filterNot(p => Set("helpLink.scala.html", "helpSection.scala.html").contains(p.getFileName.toString))
@@ -102,8 +102,9 @@ class HelpLinksSpec extends Specification {
         (ExternalLinksCheck.newTab(a) must beTrue) and
         (ExternalLinksCheck.marked(a) must beTrue) and
         (a.select("i.bi-question-circle[aria-hidden=true]").size === 1) and
+        (a.attr("data-tooltip") === "More about the file score") and
         (ExternalLinksCheck.ownText(a) === "More about the file score (guide in English)") and
-        (a.select(".visually-hidden").asScala.map(_.text).toSeq === Seq("(guide in English)", "(opens in a new tab)"))
+        (a.select(".visually-hidden .visually-hidden").asScala.map(_.text).toSeq === Seq("(guide in English)", "(opens in a new tab)"))
     }
 
     "render nothing for a topic not in the table" in {

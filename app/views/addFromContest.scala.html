@@ -21,8 +21,7 @@
 @roleNames(roles: Set[String]) = @{ roles.toSeq.sorted.map(r => Messages("role." + r)).mkString(", ") }
 @mainAdmin("users", adminUser, adminUser.getId, contestId = contest.id, head = pageScripts) {
     <div class="row add-from-contest">
-        <h1 class="h3">@Messages("users.add.from.title")</h1>
-        @snippets.helpSection("add-from-contest")
+        <h1 class="h3">@Messages("users.add.from.title") @snippets.helpLink("add-from-contest")</h1>
         <p>@Messages("users.add.from.intro", contest.fullName)</p>
         <p><a href="@routes.UserController.users(contest.id)">@Messages("account.changes.back")</a></p>
 

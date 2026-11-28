@@ -36,8 +36,7 @@
         rounds = rounds, selectedRound = None, contestId = contest.id,
         roundFilter = Some(controllers.RoundsFilterBar(filter, roundsUrl, rounds, lineage)), stickyBar = true) {
         <div class="row" >
-            <h1 class="h3">@Messages("contest") @contest.fullName</h1>
-            @snippets.helpSection("rounds-list")
+            <h1 class="h3">@Messages("contest") @contest.fullName @snippets.helpLink("rounds-list")</h1>
             @* the contest's health report (support diagnostics plan, D-1a): this page is its admins' and root's *@
             <p class="mb-2"><a id="contest-health-link" class="text-decoration-underline" href="@routes.ContestHealthController.page(contest.getId)">@Messages("health.title")</a></p>
 

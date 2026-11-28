@@ -30,7 +30,7 @@ object ExternalLinksCheck {
     * that doesn't wrap (views.ExternalLinks.marked). */
   def marked(a: Element): Boolean = {
     val tails = a.select(".wlx-ext-tail").asScala.toSeq
-    val nowrap = Option(a.children.last).filter(_.hasClass("wlx-ext-nowrap"))
+    val nowrap = Option(a.selectFirst(".wlx-ext-nowrap"))
     tails.size == 1 && nowrap.exists(n => n.children.last == tails.head && n.ownText.trim.nonEmpty) && {
       val tail = tails.head
       val site = ExternalLinks.site(a.attr("href")).name

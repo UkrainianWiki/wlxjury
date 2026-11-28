@@ -142,7 +142,7 @@ class CutPickerViewSpec extends Specification {
         (page.select("#top-n-box > div[data-cut-announce]").attr("data-cut-announce") === "top.n.cuts.available") and
         (page.select("#top-n-box > div").attr("data-cut-count") === "5") and
         (page.selectFirst("#topImages_choose_help").ownText() === "top.n.choose.help") and
-        (page.select("#topImages_choose_help a[data-help-topic=top-files]").size === 1) and
+        (page.select("#topImages_field a[data-help-topic=top-files]").size === 1) and
         (page.select("select#topImages").attr("aria-describedby") must contain("topImages_choose_help"))
     }
 
@@ -288,7 +288,7 @@ class CutPickerViewSpec extends Specification {
         (Jsoup.parse(page.select("#top-n noscript").html()).text === "top.n.needs.js") and
         (page.select("#top-n-status[role=status][aria-live=polite]").size === 1) and
         (page.select("#top-n-box > div[data-cut-announce]").size === 1) and
-        (page.select("#topImages_choose_help a[data-help-topic=top-files]").size === 1) and
+        (page.select("#topImages_field a[data-help-topic=top-files]").size === 1) and
         (page.select("select#topImages").size === 0) and
         (render(None).select("#topImages").text === "top.n.none")
     }

@@ -73,12 +73,12 @@ class HelpLinksPageSpec extends PlaySpecification with PlayTestDb {
           "rejection-filter", "leave-out-rounds", "score-rule", "worst-mark", "criteria", "add-files",
           "leave-out-conflicts"))) and
           // the field links in the fields' help, which describes the field
-          (doc.select("#trackLabel_help a.help-link").attr("data-help-topic") === "tracks") and
-          (doc.select("#source_help a.help-link").attr("data-help-topic") === "categories") and
-          (doc.select("#excludeCategory_help a.help-link").attr("data-help-topic") === "category-second") and
+          (doc.select("#trackLabel_field a.help-link").attr("data-help-topic") === "tracks") and
+          (doc.select("#source_field a.help-link").attr("data-help-topic") === "categories") and
+          (doc.select("#excludeCategory_field a.help-link").attr("data-help-topic") === "category-second") and
           (doc.select("#category-more a.help-link").attr("data-help-topic") === "category-options") and
-          (doc.select("#averageRule_help a.help-link").attr("data-help-topic") === "score-rule") and
-          (doc.select("#topImages_choose_help a.help-link").attr("data-help-topic") === "top-files") and
+          (doc.select("#averageRule_field a.help-link").attr("data-help-topic") === "score-rule") and
+          (doc.select("#topImages_field a.help-link").attr("data-help-topic") === "top-files") and
           linksRight(doc, doc.select("#round-form a[href^='/admin/criteria?']").asScala.toSet)
       }
     }

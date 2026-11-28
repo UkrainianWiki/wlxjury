@@ -36,14 +36,11 @@
 @* a field that can't be changed (`noEdit`) has its locked look (FieldView `_locked`), described by
    the section's reason line (#round-filters-locked) *@
 @lockedBy = @{ Option.when(noEdit)("round-filters-locked") }
-@* a field's help with its help link after it (help plan §6) *@
-@withHelp(text: String, key: String) = {@if(text.nonEmpty) {@text }@snippets.helpLink(key)}
 @* open when a category is in its boxes, and when one of its fields has an error (a refused save's,
    RoundFormErrors: shown closed, the 2026-11-25 saves came back with their error out of sight), and when
    the page comes with the cut control (a save that refused its cut; round/edit/topN) *@
 @snippets.collapsible("media.filtering", "headingImageFiltering", "collapseImageFiltering",
-    open = categoryView.hasCategory || controllers.RoundFormErrors.inMediaFiltering(editRoundForm) || cutPicker.isDefined) {
-    @snippets.helpSection("choose-files")
+    open = categoryView.hasCategory || controllers.RoundFormErrors.inMediaFiltering(editRoundForm) || cutPicker.isDefined, helpTopic = Some("choose-files")) {
     @if(noEdit) {
         <p class="form-text wlx-locked-reason" id="round-filters-locked"><i class="bi bi-lock-fill" aria-hidden="true"></i> @Messages("round.filters.locked")</p>
     }
@@ -85,7 +82,7 @@
                         Option.when(editRoundForm("topBinaryOrder").value.contains(BinaryOrder.LegacyParam))(
                             BinaryOrder.LegacyParam -> Messages(BinaryOrder.LegacyMessageKey)),
                     Symbol("_label") -> Messages("top.images.binary.order"),
-                    Symbol("_help") -> snippets.helpLink("top-files-binary"),
+                    Symbol("_helpTopic") -> "top-files-binary",
                     Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy)
             }
             </div>
@@ -93,7 +90,6 @@
             @* The classes also let round-form.js update visibility as the selection changes. *@
             <div id="rejectFilters" class="@rejectionSources.map(r => "round" + r.getId).mkString(" ")"
                 @if(!rejectionSources.exists(r => prevIds.contains(r.getId.toString))) {style="display: none"}>
-            @snippets.helpSection("rejection-filter")
             @bs.select(
                 rejectionField,
                 Seq(controllers.EditRound.NoRejectedFilter -> Messages("rejected.by.no.filter")) ++
@@ -101,6 +97,7 @@
                         controllers.EditRound.rejectionFilterValue(mode, count) -> Messages(mode.messageKey + ".count", count)
                     },
                 Symbol("_label") -> Messages("rejected.by.mode"),
+                Symbol("_helpTopic") -> "rejection-filter",
                 Symbol("_help") -> Messages("rejected.by.help"),
                 Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy)
             </div>
@@ -120,7 +117,7 @@
                 editRoundForm("excludeRounds"),
                 rounds.filterNot(r => r.id.map(_.toString) == roundId).map(r => (r.id.map(_.toString).get, r.description)),
                 Symbol("_label") -> Messages("exclude.rounds"),
-                Symbol("_help") -> withHelp(Messages("exclude.rounds.help"), "leave-out-rounds"),
+                Symbol("_help") -> Messages("exclude.rounds.help"), Symbol("_helpTopic") -> "leave-out-rounds",
                 Symbol("multiple") -> true,
                 Symbol("disabled") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy
             )
@@ -147,7 +144,7 @@
     @bs.text(
         view.form("source"),
         Symbol("_label") -> Messages("category.only"),
-        Symbol("_help") -> withHelp(Messages("category.only.help"), "categories"),
+        Symbol("_help") -> Messages("category.only.help"), Symbol("_helpTopic") -> "categories",
         Symbol("data-category-suggest") -> "category",
         Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy
     )
@@ -157,7 +154,7 @@
     @bs.text(
         view.form("excludeCategory"),
         Symbol("_label") -> Messages(view.combine.secondLabelKey),
-        Symbol("_help") -> snippets.helpLink("category-second"),
+        Symbol("_helpTopic") -> "category-second",
         Symbol("data-category-suggest") -> "category",
         Symbol("readonly") -> noEdit, Symbol("_locked") -> noEdit, Symbol("aria-describedby") -> lockedBy
     )
@@ -166,8 +163,7 @@
     <div class="row mb-3" id="category-more_field">
         <div class="@offsetCol">
             <details id="category-more"@if(view.combine != CategoryCombine.Default || view.choiceErrors.nonEmpty) { open}>
-                <summary class="wlx-disclosure"><i class="bi bi-chevron-right wlx-disclosure-icon" aria-hidden="true"></i>@Messages("category.more")</summary>
-                @snippets.helpSection("category-options")
+                <summary class="wlx-disclosure"><i class="bi bi-chevron-right wlx-disclosure-icon" aria-hidden="true"></i>@Messages("category.more") @snippets.helpLink("category-options")</summary>
                 @* its errors tied to the group (CodeRabbit #170): a radiogroup, named by its legend, invalid and
                    described by them while it has any *@
                 <fieldset class="mt-2" id="category-combine" role="radiogroup" aria-labelledby="category-combine-legend"@if(view.choiceErrors.nonEmpty) { aria-invalid="true" aria-describedby="@view.choiceErrors.indices.map(i => s"category-combine-error-$i").mkString(" ")"}>

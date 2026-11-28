@@ -37,8 +37,7 @@
 @mainAdmin("round.juror.add.title", user, user.getId, contestId = Some(round.contestId), head = scripts) {
     <div class="row">
         <div class="col-md-10">
-            <h1 class="h3">@Messages("round.juror.add.title.of", round.number, round.name.getOrElse(""))</h1>
-            @snippets.helpSection("add-juror")
+            <h1 class="h3">@Messages("round.juror.add.title.of", round.number, round.name.getOrElse("")) @snippets.helpLink("add-juror")</h1>
             <p>@Messages("round.juror.add.help")</p>
 
             @for(text <- notice) {
