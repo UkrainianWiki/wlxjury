@@ -159,7 +159,8 @@ class RoundSetupStepsSpec extends PlaySpecification with PlayTestDb {
           (review.select("#round-setup-steps").attr("data-page") === "2") and
           (steps(review) === Seq(("1", false, true, Some(s"/admin/rounds/edit?id=$r&contestId=${contest.getId}")),
             ("2", true, true, None), ("3", false, false, Some(s"/admin/rounds/$r/jurors")), ("open", false, false, None))) and
-          (text(review.selectFirst("#round-review-title")) === "Round 1 (Final) – step 2 of 3: check the matching files") and
+          (review.selectFirst("#round-review-title").ownText === "Round 1 (Final) – step 2 of 3: check the matching files") and
+          (review.select("#round-review-title a[data-help-topic=review]").size === 1) and
           (review.select("#round-review-match").first().tagName === "h3") and
           (text(review.selectFirst("#round-review-match")) === "2 files match (the contest has 8)") and
           (text(review.selectFirst("#round-next-step-text")) ===
@@ -427,7 +428,8 @@ class RoundSetupStepsSpec extends PlaySpecification with PlayTestDb {
           (edit.select("#round-setup-steps, #round-setup-state, #round-next-step").size === 0) and
           (stat.select("#round-setup-state").size === 0) and
           (review.select("#round-setup-steps").size === 0) and
-          (text(review.selectFirst("#round-review-title")) === "Round 1 (Open): its images before distribution") and
+          (review.selectFirst("#round-review-title").ownText === "Round 1 (Open): its images before distribution") and
+          (review.select("#round-review-title a[data-help-topic=review]").size === 1) and
           (status(saved) === SEE_OTHER) and
           (text(list.selectFirst("#flash-success")) === "Round 1 (Renamed) is saved.") and
           (list.select(s"#set-active-form-$r").size === 1) and

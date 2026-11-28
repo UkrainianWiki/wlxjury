@@ -81,7 +81,8 @@ class RoundStatTableViewSpec extends PlaySpecification {
       def states(doc: Document) = doc.select("tbody tr").asScala.toList.map(_.select("td").get(3))
       val asAdmin = table(admin)
       (asAdmin.select("form[id^=set-active-form-]").size must_== 2) and
-        (asAdmin.select("thead th").get(3).text must_== "start.stop") and
+        (asAdmin.select("thead th").get(3).ownText must_== "start.stop") and
+        (asAdmin.select("thead th a[data-help-topic=pause-juror]").size must_== 1) and
         (asAdmin.select(".juror-voting").size must_== 0) and
         // a paused juror's button resumes their voting
         (states(asAdmin).map(_.select("button").attr("aria-label")) must_== List("juror.stop", "juror.start")) and

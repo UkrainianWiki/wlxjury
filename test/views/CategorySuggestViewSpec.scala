@@ -82,7 +82,8 @@ class CategorySuggestViewSpec extends PlaySpecification {
       val doc = org.jsoup.Jsoup.parse(contentAsString(views.html.contests(root, Seq(contest),
         Form(ignored(contest)), Form(single("source" -> nonEmptyText)))))
       val h2 = doc.select("h2").eachText()
-      (doc.title === messages("contests")) and (doc.select("h1").text === messages("contests")) and
+      (doc.title === messages("contests")) and (doc.selectFirst("h1").ownText === messages("contests")) and
+        (doc.select("h1 a[data-help-topic=contest-settings]").size === 1) and
         (doc.select("h1.visually-hidden").size === 0) and
         (h2.get(0) === messages("import.from.list.page.images.category")) and (h2.get(1) === messages("contests.list"))
     }

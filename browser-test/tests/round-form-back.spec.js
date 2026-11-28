@@ -44,13 +44,17 @@ for (const [button, landing] of [['Save and find matching files', /^\/admin\/rou
       ]);
       expect(await landed.text()).toMatch(/id="flash-success"[^>]*>\s*Round \d+ is saved\. Step 2 of 3: its matching files are being found\./);
       await page.waitForURL((url) => landing.test(url.pathname));
+      // The matching job reloads the review page when it completes. Wait for that reload before
+      // navigating back, so it cannot cancel Back's navigation in WebKit.
+      await expect(page.locator('#round-review-title')).toBeVisible();
+      await expect(page.locator('.job-status[data-reload-on-done]')).toHaveCount(0, { timeout: 60_000 });
 
       // Back: the saved round's Edit page with its line (in the page as served: the job status script
       // reloads it, without the line, when the round's matching ends), never the filled new-round form
       const isEdit = (url) => url.pathname === '/admin/rounds/edit' && /^\d+$/.test(url.searchParams.get('id') ?? '');
       const [edit] = await Promise.all([
         page.waitForResponse((r) => r.request().method() === 'GET' && isEdit(new URL(r.url()))),
-        page.goBack(),
+        page.goBack({ waitUntil: 'commit' }),
       ]);
       expect(await edit.text()).toMatch(/id="flash-success"[^>]*>\s*Round \d+ is saved\. You can change its settings here\.\s*</);
       await expect(page).toHaveURL(isEdit);
