@@ -104,6 +104,157 @@ class RoundReviewJurorsReapplyPageSpec extends PlaySpecification with PlayTestDb
       }
     }
 
+    "choose the rating and file score on the jurors step and save them with distribution" in {
+      testDbAppWith() { app =>
+        val (round, jurors) = setUp()
+        val edit = org.jsoup.Jsoup.parse(contentAsString(get(app, "admin@example.com", s"/admin/rounds/edit?contestId=$contestId")))
+        val page = org.jsoup.Jsoup.parse(contentAsString(get(app, "admin@example.com", s"/admin/rounds/${round.getId}/jurors")))
+        val result = post(app, "admin@example.com", distribute(round.getId), "jurorsShown" -> "true",
+          "jurors[0]" -> jurors.head.getId.toString, "distribution" -> "0", "rates" -> "5", "averageRule" -> "sum")
+        val resultStatus = status(result)
+        val saved = Round.findById(round.getId).get
+        (edit.select("select#rates, select#averageRule").size === 0) and
+          (page.select("#round-jurors-form select#rates, #round-jurors-form select#averageRule").size === 2) and
+          (resultStatus === SEE_OTHER) and (flash(result).get("success") must beSome) and
+          (saved.rates.id === 5) and (saved.averageRule.param === "sum")
+      }(Map("jobs.mode" -> "inline"))
+    }
+
+    "configure criteria with the rating on the jurors step" in {
+      testDbAppWith() { app =>
+        val (round, jurors) = setUp()
+        val page = org.jsoup.Jsoup.parse(contentAsString(get(app, "admin@example.com", s"/admin/rounds/${round.getId}/jurors")))
+        val result = post(app, "admin@example.com", distribute(round.getId), "jurorsShown" -> "true",
+          "jurors[0]" -> jurors.head.getId.toString, "rates" -> "5", "averageRule" -> "rated",
+          "criteriaShown" -> "true", "criteria[0]" -> "1", "worstMarkShown" -> "true")
+        (page.select("#round-criteria select").size > 0 must beTrue) and
+          (status(result) === SEE_OTHER) and (flash(result).get("success") must beSome) and
+          (RoundCriterion.idsOf(round.getId) === Seq(1L))
+      }(Map("jobs.mode" -> "inline"))
+    }
+
+    "clear criteria when the selected rating becomes yes or no" in {
+      testDbAppWith() { app =>
+        val (round, jurors) = setUp()
+        DB.localTx { implicit session =>
+          Round.updateRates(round.getId, Round.ratesById(5))
+          RoundCriterion.updateIn(round.getId, Seq(1L))
+        }
+        val result = post(app, "admin@example.com", distribute(round.getId), "jurorsShown" -> "true",
+          "jurors[0]" -> jurors.head.getId.toString, "rates" -> "1", "criteriaShown" -> "true")
+        (status(result) === SEE_OTHER) and (flash(result).get("success") must beSome) and
+          (Round.findById(round.getId).get.rates.id === 1) and (RoundCriterion.idsOf(round.getId) must beEmpty)
+      }(Map("jobs.mode" -> "inline"))
+    }
+
+    "preserve legacy criteria when an unrated type stays unchanged" in {
+      testDbAppWith() { app =>
+        val (round, jurors) = setUp()
+        DB.localTx { implicit session => RoundCriterion.updateIn(round.getId, Seq(1L)) }
+        val result = post(app, "admin@example.com", distribute(round.getId), "jurorsShown" -> "true",
+          "jurors[0]" -> jurors.head.getId.toString, "rates" -> "1", "criteriaShown" -> "true")
+        (status(result) === SEE_OTHER) and (flash(result).get("success") must beSome) and
+          (RoundCriterion.idsOf(round.getId) === Seq(1L))
+      }(Map("jobs.mode" -> "inline"))
+    }
+
+    "allow a settings-free post for a legacy criteria round with an inert worst mark" in {
+      testDbAppWith() { app =>
+        val (round, jurors) = setUp()
+        DB.localTx { implicit session =>
+          Round.updateRates(round.getId, Round.ratesById(5))
+          RoundCriterion.updateIn(round.getId, Seq(1L))
+          Round.updateRound(round.getId, round.copy(worstMark = true))
+        }
+        val result = post(app, "admin@example.com", distribute(round.getId), "jurorsShown" -> "true",
+          "jurors[0]" -> jurors.head.getId.toString)
+        (status(result) === SEE_OTHER) and (flash(result).get("success") must beSome) and
+          (RoundCriterion.idsOf(round.getId) === Seq(1L)) and (Round.findById(round.getId).get.worstMark must beTrue)
+      }(Map("jobs.mode" -> "inline"))
+    }
+
+    "retain an inert worst mark when unchanged criteria are submitted" in {
+      testDbAppWith() { app =>
+        val (round, jurors) = setUp()
+        DB.localTx { implicit session =>
+          Round.updateRates(round.getId, Round.ratesById(5))
+          RoundCriterion.updateIn(round.getId, Seq(1L))
+          Round.updateRound(round.getId, round.copy(worstMark = true))
+        }
+        val result = post(app, "admin@example.com", distribute(round.getId), "jurorsShown" -> "true",
+          "jurors[0]" -> jurors.head.getId.toString, "rates" -> "5", "criteriaShown" -> "true", "criteria[0]" -> "1")
+        (status(result) === SEE_OTHER) and (flash(result).get("success") must beSome) and
+          (Round.findById(round.getId).get.worstMark must beTrue)
+      }(Map("jobs.mode" -> "inline"))
+    }
+
+    "clear a posted worst mark when switching to an unrated type" in {
+      testDbAppWith() { app =>
+        val (round, jurors) = setUp()
+        DB.localTx { implicit session =>
+          Round.updateRates(round.getId, Round.ratesById(5))
+          Round.updateRound(round.getId, round.copy(worstMark = true))
+        }
+        val result = post(app, "admin@example.com", distribute(round.getId), "jurorsShown" -> "true",
+          "jurors[0]" -> jurors.head.getId.toString, "rates" -> "1", "worstMarkShown" -> "true", "worstMark" -> "true")
+        (status(result) === SEE_OTHER) and (flash(result).get("success") must beSome) and
+          (Round.findById(round.getId).get.worstMark must beFalse)
+      }(Map("jobs.mode" -> "inline"))
+    }
+
+    "warn about changing the score rule after a star vote" in {
+      testDbAppWith() { app =>
+        val (round, jurors) = setUp()
+        DB.localTx { implicit session =>
+          Round.updateRates(round.getId, Round.ratesById(5))
+          VoteJdbc.create(1L, 3, jurors.head.getId, round.getId)
+        }
+        val page = org.jsoup.Jsoup.parse(contentAsString(get(app, "admin@example.com", s"/admin/rounds/${round.getId}/jurors")))
+        (page.select("#averageRule_warning").size === 1) and
+          (page.select("#averageRule").attr("aria-describedby") must contain("averageRule_warning"))
+      }(Map("jobs.mode" -> "inline"))
+    }
+
+    "refuse a stale jurors page after rating settings changed" in {
+      testDbAppWith() { app =>
+        val (round, jurors) = setUp()
+        val signature = services.RoundService.ratingSignature(round, RoundCriterion.idsOf(round.getId))
+        DB.localTx { implicit session => Round.updateRates(round.getId, Round.ratesById(5)) }
+        val result = post(app, "admin@example.com", distribute(round.getId), "jurorsShown" -> "true",
+          "jurors[0]" -> jurors.head.getId.toString, "rates" -> "1", "ratingSignature" -> signature)
+        (status(result) === SEE_OTHER) and (flash(result).get("error") must beSome) and
+          (Round.findById(round.getId).get.rates.id === 5) and (roundUsers(round.getId) must beEmpty)
+      }(Map("jobs.mode" -> "inline"))
+    }
+
+    "reject invalid rating settings and leave the round unchanged" in {
+      testDbAppWith() { app =>
+        val (round, jurors) = setUp()
+        val result = post(app, "admin@example.com", distribute(round.getId), "jurorsShown" -> "true",
+          "jurors[0]" -> jurors.head.getId.toString, "rates" -> "2", "averageRule" -> "sum")
+        val resultStatus = status(result)
+        val saved = Round.findById(round.getId).get
+        (resultStatus === SEE_OTHER) and (flash(result).get("error") must beSome) and
+          (saved.rates === round.rates) and (saved.averageRule === round.averageRule) and
+          (roundUsers(round.getId) must beEmpty) and (saved.inReview must beTrue)
+      }(Map("jobs.mode" -> "inline"))
+    }
+
+    "roll back the jury and rating when criteria or worst mark are invalid" in {
+      testDbAppWith() { app =>
+        val (round, jurors) = setUp()
+        val body = Seq("jurorsShown" -> "true", "jurors[0]" -> jurors.head.getId.toString,
+          "rates" -> "5", "criteriaShown" -> "true", "criteria[0]" -> "1", "criteria[1]" -> "1")
+        val duplicate = post(app, "admin@example.com", distribute(round.getId), body: _*)
+        val duplicateError = flash(duplicate).get("error")
+        val conflict = post(app, "admin@example.com", distribute(round.getId),
+          (body.filterNot(_._1 == "criteria[1]") ++ Seq("worstMarkShown" -> "true", "worstMark" -> "true")): _*)
+        (duplicateError must beSome) and (flash(conflict).get("error") must beSome) and
+          (Round.findById(round.getId).get.rates === round.rates) and
+          (RoundCriterion.idsOf(round.getId) must beEmpty) and (roundUsers(round.getId) must beEmpty)
+      }(Map("jobs.mode" -> "inline"))
+    }
+
     "refuse Distribute with no juror picked, and distribute to those picked" in {
       testDbApp { app =>
         val (round, jurors) = setUp()
@@ -128,11 +279,13 @@ class RoundReviewJurorsReapplyPageSpec extends PlaySpecification with PlayTestDb
       testDbApp { app =>
         val (round, jurors) = setUp()
         val r = round.getId
-        val body = Seq("jurorsShown" -> "true", "jurors[0]" -> jurors.head.getId.toString, "distribution" -> "0")
+        val body = Seq("jurorsShown" -> "true", "jurors[0]" -> jurors.head.getId.toString, "distribution" -> "0",
+          "rates" -> "5", "averageRule" -> "sum")
         (status(post(app, "organizer@example.com", distribute(r), body: _*)) === FORBIDDEN) and
           (status(post(app, "juror1@example.com", distribute(r), body: _*)) === FORBIDDEN) and
           (status(post(app, "other-admin@example.com", distribute(r), body: _*)) === FORBIDDEN) and
-          (roundUsers(r) must beEmpty) and (Round.findById(r).get.inReview must beTrue)
+          (roundUsers(r) must beEmpty) and (Round.findById(r).get.inReview must beTrue) and
+          (Round.findById(r).get.rates === round.rates) and (Round.findById(r).get.averageRule === round.averageRule)
       }
     }
   }

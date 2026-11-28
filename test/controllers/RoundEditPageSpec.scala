@@ -113,7 +113,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         def options(form: org.jsoup.nodes.Document) = Seq(0, 1, 5).map(value =>
           form.select(s"select#rates option[value=$value]").asScala.map(_.text).mkString)
         def cells(list: org.jsoup.nodes.Document) = list.select("td").asScala.map(_.text)
-        val formUrl = s"/admin/rounds/edit?contestId=${contest.getId}"
+        val formUrl = s"/admin/rounds/edit?id=${round.getId}&contestId=${contest.getId}"
         val listUrl = s"/admin/rounds?contestId=${contest.getId}"
         val (form, list) = (page(formUrl), page(listUrl))
         val labels = Seq("Comments only", "Yes/No", "1-5 rating")

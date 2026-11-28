@@ -205,6 +205,7 @@ class RoundReviewController @Inject() (
     val filling = block.contains(services.distribution.RoundStartBlock.Selecting)
     val ready = round.inReview && !job.exists(_.isActive)
     val inCount = if (ready) RoundImageJdbc.statusCounts(round.getId).getOrElse(RoundImageJdbc.Status.In, 0) else 0
+    val criterionIds = db.scalikejdbc.RoundCriterion.idsOf(round.getId)
     val roundJurors = User.distributionJurors(round.getId).sortBy(_.getId)
     val contestJurors = if (ready) User.loadJurors(round.contestId).filter(_.deletedAt.isEmpty) else Nil
     val chosen = if (roundJurors.nonEmpty) roundJurors.flatMap(_.id) else contestJurors.flatMap(_.id)
@@ -224,10 +225,18 @@ class RoundReviewController @Inject() (
       roundJurors = roundJurors,
       contestJurors = contestJurors,
       jurorsEditable = ready && !RoundImageJdbc.hasVotes(round.getId),
+      ratesEditable = ready && !RoundImageJdbc.hasVotes(round.getId) &&
+        !RoundController.takenFrom(round.getId, Round.findByContest(round.contestId)),
       prevChanged = ready && RoundService.prevChanged(round),
       reapplyUnfinished = reapplyUnfinished(round, job),
       form = distributeForm.fill(DistributeChoice(jurorsShown = true, chosen.map(_.toString),
-        Some(round.distribution), confirmPrevChanged = false, jury = Some(RoundService.jurySignature(round.getId)))),
+        Some(round.distribution), confirmPrevChanged = false, jury = Some(RoundService.jurySignature(round.getId)),
+        rates = Some(round.rates.id), averageRule = Some(round.averageRule.param),
+        criteria = criterionIds.map(_.toString),
+        criteriaShown = true, worstMark = round.worstMark, worstMarkShown = true,
+        ratingSignature = Some(RoundService.ratingSignature(round, criterionIds)))),
+      criteria = db.scalikejdbc.CriterionJdbc.all(),
+      scoreRuleWarning = RoundController.ScoreRuleWarning.of(round.getId, Round.findByContest(round.contestId)),
       // being set up: step 3's heading and the step bar
       nextStep = RoundNextStep.of(round, job, inCount),
       block = block
@@ -266,7 +275,12 @@ class RoundReviewController @Inject() (
             jurors = Option.when(choice.jurorsShown)(choice.jurors.flatMap(_.toLongOption)),
             distribution = choice.distribution.filter(_ => choice.jurorsShown),
             confirmPrevChanged = choice.confirmPrevChanged,
-            shownJury = choice.jury.filter(_ => choice.jurorsShown)) match {
+            shownJury = choice.jury.filter(_ => choice.jurorsShown),
+            rates = choice.rates.flatMap(Round.ratesById.get),
+            averageRule = choice.averageRule.flatMap(org.intracer.wmua.AverageRule.parse),
+            criteria = Option.when(choice.criteriaShown)(EditRound.criterionIdsOf(choice.criteria)),
+            worstMark = Option.when(choice.worstMarkShown)(choice.worstMark),
+            shownRating = choice.ratingSignature) match {
             case RoundService.ReviewDistribution.Started(_) =>
               toReview.flashing("success" -> messages("round.review.distribute.started", round.number))
             case RoundService.ReviewDistribution.Running(_) =>
@@ -344,7 +358,14 @@ object RoundReviewController {
     "distribution" -> optional(number(min = 0)),
     "confirmPrevChanged" -> boolean,
     // the round's jurors as the page showed them (RoundService.jurySignature)
-    "jury" -> optional(text(maxLength = 20000))
+    "jury" -> optional(text(maxLength = 20000)),
+    "rates" -> optional(number).verifying("error.invalid", _.forall(Round.ratesById.contains)),
+    "averageRule" -> optional(text).verifying("error.invalid", _.forall(org.intracer.wmua.AverageRule.parse(_).isDefined)),
+    "criteria" -> seq(text).verifying("error.invalid", _.size <= org.intracer.wmua.Criterion.MaxEntries),
+    "criteriaShown" -> boolean,
+    "worstMark" -> boolean,
+    "worstMarkShown" -> boolean,
+    "ratingSignature" -> optional(text(maxLength = 10000))
   )(DistributeChoice.apply)(DistributeChoice.unapply))
 }
 
@@ -354,7 +375,14 @@ final case class DistributeChoice(
     jurors: Seq[String] = Nil,
     distribution: Option[Int] = None,
     confirmPrevChanged: Boolean = false,
-    jury: Option[String] = None
+    jury: Option[String] = None,
+    rates: Option[Int] = None,
+    averageRule: Option[String] = None,
+    criteria: Seq[String] = Nil,
+    criteriaShown: Boolean = false,
+    worstMark: Boolean = false,
+    worstMarkShown: Boolean = false,
+    ratingSignature: Option[String] = None
 )
 
 /** A re-apply's result (P3-5): files added, files removed (no longer passing, D16) and the first
@@ -415,6 +443,9 @@ final case class JurorsFormView(
     roundJurors: Seq[User],
     contestJurors: Seq[User],
     jurorsEditable: Boolean,
+    ratesEditable: Boolean,
+    criteria: Seq[org.intracer.wmua.Criterion],
+    scoreRuleWarning: Option[RoundController.ScoreRuleWarning],
     prevChanged: Boolean,
     reapplyUnfinished: Boolean,
     form: Form[DistributeChoice],

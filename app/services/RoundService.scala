@@ -441,7 +441,12 @@ class RoundService @Inject() (
       jurors: Option[Seq[Long]] = None,
       distribution: Option[Int] = None,
       confirmPrevChanged: Boolean = false,
-      shownJury: Option[String] = None
+      shownJury: Option[String] = None,
+      rates: Option[db.scalikejdbc.Rates] = None,
+      averageRule: Option[org.intracer.wmua.AverageRule] = None,
+      criteria: Option[Seq[Long]] = None,
+      worstMark: Option[Boolean] = None,
+      shownRating: Option[String] = None
   ): RoundService.ReviewDistribution =
     dao.findById(roundId) match {
       case None => RoundService.ReviewDistribution.NotInReview
@@ -460,7 +465,40 @@ class RoundService @Inject() (
                 mode = RoundDistributionHandler.Mode.Distribute, requireInReview = true,
                 // the jurors per file it sets, in the round's settings log (RoundChanges)
                 underLocks = s => RoundChanges.logged(roundId, createdBy, ContestChangeJdbc.RoundChanged,
-                  RoundChanges.Path.Jurors)(reviewJury(fresh, chosen, perFile, confirmPrevChanged, shownJury)(s))(s))
+                  RoundChanges.Path.Jurors)({
+                    reviewJury(fresh, chosen, perFile, confirmPrevChanged, shownJury)(s)
+                    val current = dao.findById(roundId).getOrElse(throw NotInReviewRefused)
+                    val oldCriteria = db.scalikejdbc.RoundCriterion.idsOf(roundId)(s)
+                    if (shownRating.exists(_ != RoundService.ratingSignature(current, oldCriteria)))
+                      throw ReviewRefused("round.review.rating.changed", Nil)
+                    val selected = rates.getOrElse(current.rates)
+                    val rated = current.copy(rates = selected).isRated
+                    val selectedCriteria = if (!rated) {
+                      if (selected != current.rates) Nil else oldCriteria
+                    } else criteria.getOrElse(oldCriteria)
+                    val changedRating = selected != current.rates
+                    val changedCriteria = selectedCriteria != oldCriteria
+                    if (changedRating && (RoundImageJdbc.hasVotes(roundId)(s) ||
+                        controllers.RoundController.takenFrom(roundId, Round.findByContestIn(current.contestId)(s))))
+                      throw ReviewRefused(controllers.RoundController.RatesLockedKey, Nil)
+                    if (changedCriteria) {
+                      if (RoundImageJdbc.hasVotes(roundId)(s))
+                        throw ReviewRefused(controllers.RoundController.RatesLockedKey, Nil)
+                      org.intracer.wmua.Criterion.validationError(selectedCriteria, rated,
+                        ids => db.scalikejdbc.CriterionJdbc.existing(ids)(s)).foreach(key =>
+                          throw ReviewRefused(key, Seq("1", org.intracer.wmua.Criterion.MaxPerRound.toString)))
+                      db.scalikejdbc.RoundCriterion.updateIn(roundId, selectedCriteria)(s).left.foreach(r =>
+                        throw ReviewRefused(r.messageKey, Nil))
+                    }
+                    val selectedWorst = if (changedRating && !rated) false else worstMark.getOrElse(
+                      if (changedCriteria && selectedCriteria.nonEmpty) false else current.worstMark)
+                    if (worstMark.contains(true) && selectedWorst && (!rated || selectedCriteria.nonEmpty))
+                      throw ReviewRefused(controllers.EditRound.WorstMarkRatedOnly, Nil)
+                    if (changedRating) Round.updateRates(roundId, selected)(s)
+                    if (averageRule.isDefined || selectedWorst != current.worstMark)
+                      Round.updateRound(roundId, current.copy(averageRule = averageRule.getOrElse(current.averageRule),
+                        worstMark = selectedWorst))(s)
+                  })(s))
             } catch {
               case StaleRound if left > 0 => attempt(left - 1)
             }
@@ -791,6 +829,10 @@ object RoundService {
     val (active, stopped) = RoundUser.byRoundId(roundId).partition(_.active)
     active.map(_.userId).distinct.sorted.mkString(",") + "|" + stopped.map(_.userId).distinct.sorted.mkString(",")
   }
+
+  /** Rating settings shown on the jurors form, compared again under the round lock. */
+  def ratingSignature(round: Round, criteria: Seq[Long]): String =
+    s"${round.rates.id}|${round.averageRule.param}|${round.worstMark}|${criteria.mkString(",")}"
 
   /** D18: the round is in review and its previous rounds' votes changed since its latest fill read
     * them ([[RoundDistributionHandler.prevFingerprint]]). False without previous rounds, or for a

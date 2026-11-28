@@ -171,11 +171,10 @@ class RoundCriteriaSpec extends PlaySpecification with PlayTestDb {
         val first = created(app, a, jurors, Seq(9L, 6L))
         val custom = CriterionJdbc.add("Composition", None).toOption.get
         val html = contentAsString(page(app, "admin@example.com", a.getId, s"/admin/rounds/edit?contestId=${a.getId}"))
-        selected(html).take(3) === Seq("9", "6", "")
-        Jsoup.parse(html).select("select#rates option[selected]").attr("value") === "10"
-        // the catalogue's criteria offered, by name, the one added by its fallback text
-        Jsoup.parse(html).select("select[name='criteria[0]'] option").asScala.map(_.text).toSeq must
-          contain(allOf("Technical quality", "Extra points", "Composition"))
+        val newForm = Jsoup.parse(html)
+        newForm.select("input[name^=criteria][name!=criteriaShown]").asScala.map(_.attr("value")).toSeq === Seq("9", "6")
+        newForm.select("input#rates").attr("value") === "10"
+        newForm.select("select[name^=criteria]").size === 0
 
         // the latest round without criteria: none prefilled
         status(save(app, "admin@example.com", a.getId, roundForm(a.getId, jurors, Nil, rates = 1))) === SEE_OTHER
@@ -195,6 +194,7 @@ class RoundCriteriaSpec extends PlaySpecification with PlayTestDb {
         val saved = created(app, contest, jurors, Seq(9L, 6L))
         val newUrl = s"/admin/rounds/edit?contestId=${contest.getId}"
         val newForm = Jsoup.parse(contentAsString(page(app, "admin@example.com", contest.getId, newUrl)))
+        setActive(saved, active = false)
         val editForm = Jsoup.parse(contentAsString(page(app, "admin@example.com", contest.getId,
           s"$newUrl&id=${saved.getId}")))
         def pageLinks(doc: org.jsoup.nodes.Document) =

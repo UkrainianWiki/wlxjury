@@ -251,7 +251,10 @@
                             Symbol("readonly") -> (noEdit || numJurors == 0), Symbol("_locked") -> (noEdit || numJurors == 0))
                         }
 
-                        @* locked unless the round is new or being set up (#184), with its reason *@
+                        @if(newRound) {
+                            <input type="hidden" id="rates" name="rates" value="@editRoundForm("rates").value.getOrElse("1")" />
+                        } else {
+                        @* locked unless the round is being set up (#184), with its reason *@
                         @defining(noEdit && !ratesEditable) { ratesLocked =>
                         @bs.select(
                             editRoundForm("rates"),
@@ -287,6 +290,16 @@
                             </div>
                         }
 
+                        }
+
+                        @if(newRound) {
+                            <input type="hidden" name="halfStar" value="@editRoundForm("halfStar").value.getOrElse("false")" />
+                            <input type="hidden" name="criteriaShown" value="true" />
+                            @for(i <- editRoundForm("criteria").indexes; value <- editRoundForm(s"criteria[$i]").value) {
+                                <input type="hidden" name="criteria[@i]" value="@value" />
+                            }
+                            <input type="hidden" name="worstMarkShown" value="true" />
+                        } else {
                         @* a rated round's worst mark (rate -1, V92): off by default, editable on an existing
                            round; the hidden field says the form had the checkbox (an unchecked box sends
                            nothing). Hidden and not sent for a yes/no or comments-only rating of a new round
@@ -366,6 +379,8 @@
                         }
                         }
                         }
+                        }
+
                         }
 
                         @if(!newRound && !reapply) {
