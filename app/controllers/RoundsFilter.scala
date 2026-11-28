@@ -195,7 +195,8 @@ final case class RoundsFilterBar(
     rounds: Seq[Round],
     lineage: Option[services.RoundLineage.Lineage] = None,
     // the page shows round tabs (views.RoundTabs): its Order menu has "Group by track"
-    tabs: Boolean = false
+    tabs: Boolean = false,
+    trackOnly: Boolean = false
 ) {
 
   /** The Order menu's "Group by track": on a page with round tabs, in a contest that shows tracks. */

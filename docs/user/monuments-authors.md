@@ -91,7 +91,8 @@ the table says how many authors and files there are, and how many files the auth
 most has, with their share, for example "Round 2: 87 authors, 482 files; most by one author: 41
 (8.5%)". Files without a stored author are counted below that line.
 
-The buttons above the list choose the whole contest or one of its rounds. A round's list counts
+The buttons above the list choose the whole contest or one of its rounds. The **Track** menu filters the round tabs; their order and grouping follow the choices on
+statistics. The table columns are sorted separately. A round's list counts
 only the files in that round. Once the round has votes, it also counts them per author, over
 all its jurors:
 

@@ -128,6 +128,27 @@ for (const mode of ['light', 'dark']) {
     });
 }
 
+test('round statistics and authors keep the track and round order', { tag: '@O-07' },
+  async ({ contextAs, fixture }) => {
+    test.skip(!fixture.tracksContest, "the fixture has no round tracks contest");
+    const { roundIds } = fixture.tracksContest;
+    const context = await contextAs('root', { viewport: { width: 1366, height: 900 } });
+    const page = await context.newPage();
+    await page.goto(`/roundstat/${roundIds[0]}?track=category%3AQuality&order=newest&group=none`);
+    await page.locator('#round-authors-link a').click();
+    await expect(page.locator('#rounds-track-menu .dropdown-item.active')).toContainText('Quality');
+    await expect(page.locator('#rounds-order-menu')).toHaveCount(0);
+    await page.locator('#rounds-track-menu > button').click();
+    await page.locator('#rounds-track-menu .dropdown-item').filter({ hasText: 'Quantity' }).click();
+    await expect(page.locator('#authors-rounds .page-item[data-round]')).toHaveCount(1);
+    await expect(page.locator('#menu-statistics')).toHaveAttribute('href', /track=category%3AQuantity/);
+    await expect(page.locator('#menu-statistics')).toHaveAttribute('href', /order=newest/);
+    await page.locator('#pages-menu > button').click();
+    await page.locator('#menu-statistics').click();
+    await expect(page.locator('#rounds-track-menu .dropdown-item.active')).toContainText('Quantity');
+    await context.close();
+  });
+
 for (const mode of ['light', 'dark']) {
   test(`the galleries' round menu: grouped by track under headers, no chips, in ${mode}`, { tag: '@O-07' },
     async ({ contextAs, fixture, baseURL }) => {

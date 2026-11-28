@@ -446,6 +446,7 @@
    Type menu's items with the round type icons (snippets/roundTypeIcon, coloured; All's slot empty),
    a legend of the icons before the rounds' names *@
 @roundsFilterMenus(bar: RoundsFilterBar) = {
+    @if(!bar.trackOnly) {
     @(new UiSelectionDto[RoundsFilter.Status](
         (s: RoundsFilter.Status) => Call("GET", bar.url(bar.filter.withStatus(s))),
         bar.filter.status,
@@ -461,6 +462,7 @@
         hideEmpty = true, alwaysShown = (k: RoundsFilter.Kind) => k == RoundsFilter.Kind.All
     ).toDropDown(id = Some("rounds-type-menu"), label = Some(Messages("rounds.filter.type")),
         labelShown = true))
+    }
     @* the Track menu (round lineage slice A, §8.1, next to Status and Type): the contest's tracks
        of the rounds listed, in the lineage's order (Main, its feeders, the others), each with its
        chip's colour as a swatch and its count; shown with two tracks or more, or one chosen *@
@@ -560,7 +562,7 @@
     }
     }
     }
-    @for(bar <- roundFilter) {
+    @for(bar <- roundFilter if !bar.trackOnly) {
         @roundsOrderMenu(bar)
     }
     @* a page's own order menu (the contests page's) *@

@@ -97,18 +97,18 @@ on a track named after it that no other round continues has no chip: it would on
 round's name. Chips show only when the contest's rounds are on two tracks or more besides those,
 and then on every other round; otherwise there are no chips, as in a contest whose rounds were
 each created on their own. The **Track** menu, next to **Status** and
-**Type** on the Rounds page and the statistics, shows by the same rule: **All tracks**, or one track's
+**Type** on the Rounds page and the statistics, and on the authors list, shows by the same rule: **All tracks**, or one track's
 rounds, with a count for each. It lists Main first, then the tracks that lead into Main in the
 order they join it, then the others. The choice stays in the page's address, as the other menus'
 do.
 
-**The round tabs.** The round's statistics and the authors list show the contest's rounds as a row
-of tabs, the same on both pages: each tab is the round's type icons and its name, with no chip;
-point at a tab to see its track. Where the contest's rounds are on tracks, the tabs are grouped by
-track: each track's name once, small, before its rounds, Main first, then the tracks that lead
-into it, then the others. **Group by track** at the end of the **Order** menu turns the groups off
-(the tabs then follow the order chosen above it) and on again; the choice stays in the page's
-address, and the tabs' links keep it.
+**The round tabs.** Round statistics and the authors list show the contest's rounds as tabs.
+When grouped by track, a coloured track badge appears before each group; when ungrouped, each tab
+has its track badge. The **Track** menu narrows the tabs to a track. On statistics, **Order**
+changes their order and
+**Group by track** turns grouping off and on. These choices stay in the address and follow you
+between statistics and the authors list. On the authors list they affect the round tabs, not the
+authors table's column sort.
 The galleries' round menu (galleries, by rating, the large view) groups the rounds the same way,
 each track's name as a heading in the menu before its rounds, without chips; jurors' menus are not
 grouped.

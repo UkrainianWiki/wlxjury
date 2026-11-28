@@ -45,8 +45,11 @@ class AuthorsController @Inject() (
             onUnAuthorized(user, request, Secured.Denial.round(r, User.ADMIN_ROLES ++ User.ORG_COM_ROLES)
               .copy(reason = Some(services.GalleryService.OtherUsersVotesReason)))
           case (Some(c), r) =>
+            val lineage = services.RoundLineage.of(rounds, c)
+            val requested = RoundsFilter.fromRequest(request)
+            val filter = RoundsFilter.Default.withTrack(requested.track).withOrder(requested.order).withGroup(requested.group).withLineage(lineage)
             val page = AuthorsPage.of(c, r.flatten, rounds, AuthorsPage.Sort.parse(sort))
-              .copy(lineage = Some(services.RoundLineage.of(rounds, c)), group = RoundsFilter.fromRequest(request).group)
+              .copy(lineage = Some(lineage), filter = filter)
             Ok(views.html.authors(user, page))
         }
     }
@@ -66,10 +69,9 @@ final case class AuthorsPage(
     withoutAuthor: Int,
     sort: AuthorsPage.Sort,
     criteriaCount: Int = 1,
-    // the contest's tracks, and the round tabs' grouping as chosen (RoundsFilter.group, the `group`
-    // param; None: the default, by track where the contest shows tracks)
+    // the contest's tracks and the round tabs' track, order and grouping choices
     lineage: Option[services.RoundLineage.Lineage] = None,
-    group: Option[Boolean] = None
+    filter: RoundsFilter = RoundsFilter.Default
 ) {
   import AuthorsPage._
 
@@ -106,19 +108,26 @@ final case class AuthorsPage(
 
   /** The list with another order: its URL. */
   def sortUrl(column: Column): String =
-    withGroup(routes.AuthorsController.list(contest.getId, round.flatMap(_.id), Some(sort.toggled(column).param)).url)
+    filter.addTo(routes.AuthorsController.list(contest.getId, round.flatMap(_.id), Some(sort.toggled(column).param)).url)
 
   /** The list of another round (None: the contest's), in the same order, the tabs grouped alike. */
   def roundUrl(other: Option[Round]): String =
-    withGroup(routes.AuthorsController.list(contest.getId, other.flatMap(_.id), Some(sort.param)).url)
+    filter.addTo(routes.AuthorsController.list(contest.getId, other.flatMap(_.id), Some(sort.param)).url)
 
-  private def withGroup(url: String): String = RoundsFilter.Default.withGroup(group).addTo(url)
+  /** Selecting a track follows the statistics page: choose a matching round, if any. */
+  def filterUrl(next: RoundsFilter): String = {
+    val target = round.map(r => next.statRound(r, rounds))
+    next.addTo(routes.AuthorsController.list(contest.getId, target.flatMap(_.id), Some(sort.param)).url)
+  }
 
   /** The round tabs (snippets/roundTabs, as the round statistics'): grouped by track as chosen, else
     * where the contest shows tracks.
     */
-  def tabs: views.RoundTabs = views.RoundTabs("authors-rounds", rounds, round.flatMap(_.id), r => roundUrl(Some(r)),
-    lineage, RoundsFilter.Default.withGroup(group).grouped(lineage))
+  def tabs: views.RoundTabs = {
+    val listed = filter.sort(rounds.filter(r => filter.matches(r) || round.exists(_.id == r.id)))
+    views.RoundTabs("authors-rounds", listed, round.flatMap(_.id), r => roundUrl(Some(r)),
+      lineage, filter.grouped(lineage), outside = r => !filter.matches(r))
+  }
 }
 
 object AuthorsPage {

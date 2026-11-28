@@ -125,7 +125,7 @@
         @* the round's authors with their files and votes, for those who may see authors; its
            count as the conflicts link's *@
         @if(user.canViewAuthors(round.contestId)) {
-            <p id="round-authors-link"><a href="@controllers.RoundsFilter.Default.withGroup(Some(filter.grouped(lineage))).addTo(routes.AuthorsController.list(round.contestId, round.id).url)"@for(url <- countsUrl) { data-roundstat-counts="@url" data-kind="authors" data-lang="@messages.lang.language" data-label-count="@Messages("authors.round.link")" data-label-none="@template("authors.round.none")" data-label-none-unknown="@template("authors.round.none.unknown")"@pluralTemplates("authors.round.unknown", "unknown")}>@Messages("authors.round.link")</a></p>
+            <p id="round-authors-link"><a href="@controllers.RoundsFilter.Default.withGroup(Some(filter.grouped(lineage))).withTrack(filter.track).withOrder(filter.order).addTo(routes.AuthorsController.list(round.contestId, round.id).url)"@for(url <- countsUrl) { data-roundstat-counts="@url" data-kind="authors" data-lang="@messages.lang.language" data-label-count="@Messages("authors.round.link")" data-label-none="@template("authors.round.none")" data-label-none-unknown="@template("authors.round.none.unknown")"@pluralTemplates("authors.round.unknown", "unknown")}>@Messages("authors.round.link")</a></p>
         }
 
         @* the round stopped, started again or closed by creating the next round, by an account that

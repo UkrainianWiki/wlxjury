@@ -209,12 +209,40 @@ class RoundTrackSpec extends PlaySpecification with PlayTestDb {
         val (groupedUrl, grouped) = destination("?group=track")
         val (defaultUrl, default) = destination("")
         (flatUrl must contain("group=none")) and
-          (flatUrl must not(contain("order="))) and
+          (flatUrl must contain("order=newest")) and
           (flat.select("#authors-rounds .wlx-round-tabs-group").size === 0) and
           (groupedUrl must contain("group=track")) and
           (grouped.select("#authors-rounds .wlx-round-tabs-group").size === 3) and
           (defaultUrl must contain("group=track")) and
           (default.select("#authors-rounds .wlx-round-tabs-group").size === 3)
+      }
+    }
+
+    "keep the track filter between statistics and authors, including authors navigation" in {
+      testDbApp { app =>
+        val f = fixture()
+        val stat = page(app, f.organizer, s"/roundstat/${f.q00.getId}?track=category%3AQuality&group=none&order=newest")
+        val authors = page(app, f.organizer, stat.selectFirst("#round-authors-link a").attr("href"))
+        val quality = trackMenu(authors).find(_._1 == "Quality").get
+        val toStats = authors.selectFirst("#menu-statistics").attr("href")
+        val quantityUrl = trackMenu(authors).find(_._1 == "Quantity").get._3
+        val quantity = page(app, f.organizer, quantityUrl)
+        val backRedirect = get(app, f.organizer, quantity.selectFirst("#menu-statistics").attr("href"))
+        val back = page(app, f.organizer, redirectLocation(backRedirect).get)
+        (quality._3 must contain("track=category%3AQuality")) and
+          (authors.select("#authors-rounds .page-item[data-round]").size === 2) and
+          (toStats must contain("track=category%3AQuality")) and
+          (toStats must contain("group=none")) and
+          (toStats must contain("order=newest")) and
+          (authors.select("#authors-rounds .page-item[data-round]").asScala.map(_.attr("data-round")).toSeq === Seq(f.q01.getId.toString, f.q00.getId.toString)) and
+          (authors.select("#rounds-order-menu").size === 0) and
+          (quantityUrl must contain("track=category%3AQuantity")) and
+          (quantityUrl must contain("order=newest")) and
+          (quantity.select("#authors-rounds .page-item[data-round]").size === 1) and
+          (quantity.select("#authors-rounds .page-item.active").attr("data-round") === f.qn00.getId.toString) and
+          (back.select("#rounds-track-menu .dropdown-item.active").text must contain("Quantity")) and
+          (quantity.select("#authors-rounds .page-link").asScala.forall(_.attr("href").contains("track=category%3AQuantity")) must beTrue) and
+          (page(app, f.organizer, s"/contest/${f.contest.getId}/authors?track=unknown").select("#rounds-track-menu .dropdown-item.active").text must contain("All tracks"))
       }
     }
 
